@@ -30,6 +30,7 @@
   - [x] Multi-column uniqueness decisions honor composite evidence, suppress when duplicates are detected, and surface rationale counts in the SSDT manifest summary.
 - [x] Implement decision logging/explanations to accompany each decision (inputs: model metadata, profiling evidence, toggle state). *(See `PolicyDecisionReporter` and `DecisionReportTests`.)*
 - [x] Provide unit tests using micro-fixtures (F1, F2, F3) verifying policy outcomes under each mode and null budget setting.
+- [ ] Extract unique index decision evaluation into a dedicated strategy to reduce `TighteningPolicy` complexity and enable reuse in future CLI telemetry refactors.
 - 🔗 **Checklist**: covers §3.1–§3.9, §11.1–§11.2, and cross-schema items in §16.
 
 ## 4. SMO Object Graph Construction
@@ -38,6 +39,7 @@
 - [ ] Ensure indexes respect `isPlatformAuto` toggle; exclude when configured.
   - Covered today via offline definitions and unit tests; revalidate once full SMO objects are emitted.
 - [ ] Validate NOT NULL/UNIQUE/FK flagging via SMO assertions on the edge-case fixture baseline (`tests/Osm.Smo.Tests/SmoModelFactoryTests.cs`).
+- [x] Unique index enforcement / suppression flows through SMO definitions and emitted scripts. *(Unit · P1 · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs), [tests/Osm.Emission.Tests/SsdtEmitterTests.cs](tests/Osm.Emission.Tests/SsdtEmitterTests.cs))*
 - 🔗 **Checklist**: targets §4.1–§4.6 and feeds §15 drift handling once SMO objects are live.
 
 - [x] Emit SSDT-ready files under `out/Modules/<Module>/{Tables,Indexes,ForeignKeys}` honoring deterministic naming conventions.
@@ -70,7 +72,7 @@
 
 ## 10. SQL Extraction & Evidence Cache Kickoff
 - [ ] Build a configurable SQL Server extraction adapter that hydrates the OutSystems metadata JSON without coupling the domain layer to ADO.NET primitives; respect Clean Architecture boundaries by routing through the Pipeline layer.
-- [ ] Persist extraction payloads (model JSON, profiling pivots, DMM exports) into a cache directory with deterministic keys derived from module selection, toggle states, and connection metadata so repeated runs can reuse evidence.
-- [ ] Add CLI flags (`--connection`, `--module-filter`, `--refresh-cache`) and typed options that govern both live extraction and cache behavior.
-- [ ] Design cache manifests that record hash digests, timestamps, and provenance for each payload, enabling future ETL stages to verify freshness before emitting SSDT artifacts.
+- [x] Persist extraction payloads (model JSON, profiling pivots, DMM exports) into a cache directory with deterministic keys derived from module selection, toggle states, and connection metadata so repeated runs can reuse evidence. *(EvidenceCacheService + CLI cache integration)*
+- [ ] Add CLI flags (`--connection`, `--module-filter`) and typed options that govern both live extraction and cache behavior. *(Cache root / refresh flags shipped; connection + filtering still pending.)*
+- [x] Design cache manifests that record hash digests, timestamps, and provenance for each payload, enabling future ETL stages to verify freshness before emitting SSDT artifacts.
 - 🔗 **Checklist**: unlocks §7.4, §9.1, §14 matrix coverage, and new caching verification scenarios in §17.

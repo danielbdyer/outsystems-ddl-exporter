@@ -75,6 +75,32 @@ public class DmmComparatorTests
         Assert.Contains(comparison.Differences, diff => diff.Contains("nullability mismatch", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public void Compare_detects_column_order_difference()
+    {
+        var parser = new DmmParser();
+        var reorderedScript = EdgeCaseScript.Replace(
+            "[ID] INT NOT NULL,\n    [EMAIL] NVARCHAR(255) NOT NULL,",
+            "[EMAIL] NVARCHAR(255) NOT NULL,\n    [ID] INT NOT NULL,");
+        using var reader = new StringReader(reorderedScript);
+        var parseResult = parser.Parse(reader);
+        if (!parseResult.IsSuccess)
+        {
+            foreach (var error in parseResult.Errors)
+            {
+                Console.WriteLine($"Parse error: {error.Code} -> {error.Message}");
+            }
+        }
+
+        Assert.True(parseResult.IsSuccess, string.Join(Environment.NewLine, parseResult.Errors.Select(e => $"{e.Code}:{e.Message}")));
+
+        var comparator = new DmmComparator();
+        var comparison = comparator.Compare(_smoModel, parseResult.Value);
+
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(comparison.Differences, diff => diff.Contains("column order mismatch for dbo.OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
+    }
+
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
     [ID] INT NOT NULL,
     [EMAIL] NVARCHAR(255) NOT NULL,

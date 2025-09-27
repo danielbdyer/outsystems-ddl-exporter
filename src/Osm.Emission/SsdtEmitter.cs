@@ -123,9 +123,13 @@ public sealed class SsdtEmitter
                 decisionReport.ColumnCount,
                 decisionReport.TightenedColumnCount,
                 decisionReport.RemediationColumnCount,
+                decisionReport.UniqueIndexCount,
+                decisionReport.UniqueIndexesEnforcedCount,
+                decisionReport.UniqueIndexesRequireRemediationCount,
                 decisionReport.ForeignKeyCount,
                 decisionReport.ForeignKeysCreatedCount,
                 decisionReport.ColumnRationaleCounts,
+                decisionReport.UniqueIndexRationaleCounts,
                 decisionReport.ForeignKeyRationaleCounts);
         }
 

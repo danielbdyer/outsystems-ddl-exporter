@@ -44,7 +44,7 @@ public sealed class SmoModelFactory
         IReadOnlyDictionary<EntityName, EntityModel> entityLookup)
     {
         var columns = BuildColumns(entity, decisions);
-        var indexes = BuildIndexes(entity, options.IncludePlatformAutoIndexes);
+        var indexes = BuildIndexes(entity, decisions, options.IncludePlatformAutoIndexes);
         var foreignKeys = BuildForeignKeys(entity, decisions, entityLookup);
         var catalog = string.IsNullOrWhiteSpace(entity.Catalog) ? options.DefaultCatalogName : entity.Catalog!;
 
@@ -110,9 +110,10 @@ public sealed class SmoModelFactory
         return attribute.IsMandatory;
     }
 
-    private static ImmutableArray<SmoIndexDefinition> BuildIndexes(EntityModel entity, bool includePlatformAuto)
+    private static ImmutableArray<SmoIndexDefinition> BuildIndexes(EntityModel entity, PolicyDecisionSet decisions, bool includePlatformAuto)
     {
         var builder = ImmutableArray.CreateBuilder<SmoIndexDefinition>();
+        var uniqueDecisions = decisions.UniqueIndexes;
 
         var keyColumns = entity.Attributes.Where(a => a.IsIdentifier).ToArray();
         if (keyColumns.Length > 0)
@@ -146,9 +147,16 @@ public sealed class SmoModelFactory
                 .Select(c => new SmoIndexColumnDefinition(c.Column.Value, c.Ordinal))
                 .ToImmutableArray();
 
+            var indexCoordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
+            var enforceUnique = index.IsUnique;
+            if (index.IsUnique && uniqueDecisions.TryGetValue(indexCoordinate, out var decision))
+            {
+                enforceUnique = decision.EnforceUnique;
+            }
+
             builder.Add(new SmoIndexDefinition(
                 index.Name.Value,
-                index.IsUnique,
+                enforceUnique,
                 IsPrimaryKey: false,
                 index.IsPlatformAuto,
                 columns));

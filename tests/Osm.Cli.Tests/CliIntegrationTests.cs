@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Tests.Support;
 
@@ -31,7 +32,9 @@ public class CliIntegrationTests
         {
             var root = document.RootElement;
             Assert.True(root.GetProperty("TightenedColumnCount").GetInt32() >= 0);
+            Assert.True(root.GetProperty("UniqueIndexCount").GetInt32() >= 0);
             Assert.True(root.GetProperty("Columns").GetArrayLength() > 0);
+            Assert.True(root.GetProperty("UniqueIndexes").GetArrayLength() >= 0);
         }
 
         var dmmScriptPath = Path.Combine(output.Path, "edge-case.dmm.sql");
@@ -39,6 +42,36 @@ public class CliIntegrationTests
 
         var compareExit = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath}");
         Assert.Equal(0, compareExit);
+    }
+
+    [Fact]
+    public async Task BuildSsdt_ShouldWriteEvidenceCacheManifest()
+    {
+        var repoRoot = FixtureFile.RepositoryRoot;
+        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+
+        using var output = new TempDirectory();
+        using var cacheRoot = new TempDirectory();
+
+        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --out \"{output.Path}\" --cache-root \"{cacheRoot.Path}\" --refresh-cache";
+        var exit = await RunCliAsync(repoRoot, command);
+        Assert.Equal(0, exit);
+
+        var entries = Directory.GetDirectories(cacheRoot.Path);
+        var cacheEntry = Assert.Single(entries);
+        var manifestPath = Path.Combine(cacheEntry, "manifest.json");
+        Assert.True(File.Exists(manifestPath));
+
+        using var stream = File.OpenRead(manifestPath);
+        using var manifest = JsonDocument.Parse(stream);
+        var root = manifest.RootElement;
+        Assert.Equal("build-ssdt", root.GetProperty("Command").GetString());
+        Assert.Equal(Path.GetFileName(cacheEntry), root.GetProperty("Key").GetString());
+
+        var artifacts = root.GetProperty("Artifacts");
+        Assert.True(artifacts.GetArrayLength() >= 2);
     }
 
     private static async Task<int> RunCliAsync(string workingDirectory, string arguments)

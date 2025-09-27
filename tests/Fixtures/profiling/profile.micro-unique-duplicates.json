@@ -1,0 +1,10 @@
+{
+  "columns": [
+    { "Schema": "dbo", "Table": "OSUSR_U_USER", "Column": "ID", "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 100 },
+    { "Schema": "dbo", "Table": "OSUSR_U_USER", "Column": "EMAIL", "IsNullablePhysical": true, "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 100 }
+  ],
+  "uniqueCandidates": [
+    { "Schema": "dbo", "Table": "OSUSR_U_USER", "Column": "EMAIL", "HasDuplicate": true }
+  ],
+  "fkReality": []
+}

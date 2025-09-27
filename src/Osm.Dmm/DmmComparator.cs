@@ -62,13 +62,45 @@ public sealed class DmmComparator
             return;
         }
 
-        for (var i = 0; i < table.Columns.Length; i++)
+        var expectedNames = table.Columns.Select(c => c.Name).ToArray();
+        var actualNames = dmmTable.Columns.Select(c => c.Name).ToArray();
+
+        var sequencesMatch = expectedNames.SequenceEqual(actualNames, StringComparer.OrdinalIgnoreCase);
+        var expectedSet = new HashSet<string>(expectedNames, StringComparer.OrdinalIgnoreCase);
+        var actualSet = new HashSet<string>(actualNames, StringComparer.OrdinalIgnoreCase);
+
+        var missingColumns = expectedNames
+            .Where(name => !actualSet.Contains(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (missingColumns.Length > 0)
         {
-            var expected = table.Columns[i];
-            var actual = dmmTable.Columns[i];
-            if (!string.Equals(expected.Name, actual.Name, StringComparison.OrdinalIgnoreCase))
+            differences.Add($"missing columns for {table.Schema}.{table.Name}: {string.Join(", ", missingColumns)}");
+        }
+
+        var unexpectedColumns = actualNames
+            .Where(name => !expectedSet.Contains(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (unexpectedColumns.Length > 0)
+        {
+            differences.Add($"unexpected columns for {table.Schema}.{table.Name}: {string.Join(", ", unexpectedColumns)}");
+        }
+
+        if (!sequencesMatch && missingColumns.Length == 0 && unexpectedColumns.Length == 0)
+        {
+            differences.Add($"column order mismatch for {table.Schema}.{table.Name}: expected [{string.Join(", ", expectedNames)}], actual [{string.Join(", ", actualNames)}]");
+        }
+
+        var actualByName = dmmTable.Columns
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var expected in table.Columns)
+        {
+            if (!actualByName.TryGetValue(expected.Name, out var actual))
             {
-                differences.Add($"column name mismatch at ordinal {i + 1} for {table.Schema}.{table.Name}: expected {expected.Name}, actual {actual.Name}");
+                continue;
             }
 
             if (expected.Nullable != actual.IsNullable)
