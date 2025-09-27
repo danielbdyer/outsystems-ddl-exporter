@@ -71,4 +71,55 @@ public class SmoModelFactoryTests
         var hasPlatformIndex = jobRunTable.Indexes.Any(i => i.Name.Equals("OSIDX_JOBRUN_CREATEDON", StringComparison.OrdinalIgnoreCase));
         Assert.True(hasPlatformIndex);
     }
+
+    [Fact]
+    public void Build_applies_unique_decisions_from_policy()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUniqueWithDuplicates);
+        var options = TighteningOptions.Default;
+        var decisions = new TighteningPolicy().Decide(model, snapshot, options);
+        var factory = new SmoModelFactory();
+        var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
+
+        var smoModel = factory.Create(model, decisions, smoOptions);
+
+        var userTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
+        var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_USER_EMAIL", StringComparison.OrdinalIgnoreCase));
+        Assert.False(uniqueIndex.IsUnique);
+    }
+
+    [Fact]
+    public void Build_enforces_unique_even_when_remediation_required()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUniqueWithDuplicates);
+        var defaults = TighteningOptions.Default;
+        var aggressivePolicy = PolicyOptions.Create(TighteningMode.Aggressive, defaults.Policy.NullBudget).Value;
+        var aggressiveOptions = TighteningOptions.Create(
+            aggressivePolicy,
+            defaults.ForeignKeys,
+            defaults.Uniqueness,
+            defaults.Remediation,
+            defaults.Emission,
+            defaults.Mocking).Value;
+
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(model, snapshot, aggressiveOptions);
+
+        var entity = model.Modules.Single().Entities.Single();
+        var indexModel = entity.Indexes.Single();
+        var coordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, indexModel.Name);
+        var indexDecision = decisions.UniqueIndexes[coordinate];
+        Assert.True(indexDecision.EnforceUnique);
+        Assert.True(indexDecision.RequiresRemediation);
+
+        var factory = new SmoModelFactory();
+        var smoOptions = SmoBuildOptions.FromEmission(aggressiveOptions.Emission);
+        var smoModel = factory.Create(model, decisions, smoOptions);
+
+        var userTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
+        var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_USER_EMAIL", StringComparison.OrdinalIgnoreCase));
+        Assert.True(uniqueIndex.IsUnique);
+    }
 }

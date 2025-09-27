@@ -36,7 +36,7 @@
 ## 4. SMO Object Builder (`Osm.Smo`)
 - [x] **4.1 Column nullability applied** — offline `SmoColumnDefinition` records reflect tightening decisions. *(Unit · P0 · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs))*
 - [x] **4.2 PK creation** — offline index definitions preserve clustered PK column order. *(Unit · P0 · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs))*
-- [ ] **4.3 Unique index enforcement / suppression** — toggle unique vs. disabled. *(Unit · P1 · [tests/Osm.Smo.Tests/IndexBuilder/UniqueTests.cs](tests/Osm.Smo.Tests/IndexBuilder/UniqueTests.cs))*
+- [x] **4.3 Unique index enforcement / suppression** — toggle unique vs. disabled. *(Unit · P1 · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs), [tests/Osm.Emission.Tests/SsdtEmitterTests.cs](tests/Osm.Emission.Tests/SsdtEmitterTests.cs))*
 - [x] **4.4 FK creation only when allowed** — offline FK definitions obey decision flags. *(Unit · P0 · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs))*
 - [x] **4.5 External schema handling** — offline table definitions retain non-dbo schemas. *(Unit · P1 · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs))*
 - [x] **4.6 External db type passthrough** — offline columns honor external type metadata. *(Unit · P2 · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs))*
@@ -51,7 +51,7 @@
 
 ## 6. DMM Parity Comparator (`Osm.Dmm`)
 - [x] **6.1 Perfect parity passes** — identical DDL yields no diffs. *(Unit · P0 · [tests/Osm.Dmm.Tests/DmmComparatorTests.cs](tests/Osm.Dmm.Tests/DmmComparatorTests.cs))*
-- [ ] **6.2 Column order sensitivity** — detect mismatched order when strict. *(Unit · P1 · pending)*
+- [x] **6.2 Column order sensitivity** — detect mismatched order when strict. *(Unit · P1 · [tests/Osm.Dmm.Tests/DmmComparatorTests.cs](tests/Osm.Dmm.Tests/DmmComparatorTests.cs))*
 - [ ] **6.3 Type canonicalization** — ignore stylistic differences. *(Unit · P1 · pending)*
 - [ ] **6.4 Missing or extra table/column** — report presence diffs. *(Unit · P0 · pending)*
 - [ ] **6.5 PK differences** — highlight PK mismatches. *(Unit · P0 · pending)*
@@ -105,9 +105,9 @@
 
 ## 18. Evidence Extraction & Caching
 - [ ] **18.1 Configurable SQL extraction** — CLI connects via typed options and emits sanitized model JSON for selected modules. *(Integration · P0 · [tests/Osm.Cli.Tests/Extraction/ConfigurableConnectionTests.cs](tests/Osm.Cli.Tests/Extraction/ConfigurableConnectionTests.cs))*
-- [ ] **18.2 Cache key determinism** — identical module/toggle selections reuse cached payloads; differing inputs create new entries. *(Unit · P1 · [tests/Osm.Pipeline.Tests/Extraction/CacheKeyTests.cs](tests/Osm.Pipeline.Tests/Extraction/CacheKeyTests.cs))*
-- [ ] **18.3 Refresh override** — `--refresh-cache` bypasses cached payloads and records new timestamp/hash metadata. *(Integration · P1 · [tests/Osm.Cli.Tests/Extraction/RefreshCacheTests.cs](tests/Osm.Cli.Tests/Extraction/RefreshCacheTests.cs))*
-- [ ] **18.4 Cache manifest integrity** — manifest enumerates payload provenance, SHA hashes, and timestamps for auditing. *(Unit · P1 · [tests/Osm.Pipeline.Tests/Extraction/CacheManifestTests.cs](tests/Osm.Pipeline.Tests/Extraction/CacheManifestTests.cs))*
+- [x] **18.2 Cache key determinism** — identical module/toggle selections reuse cached payloads; differing inputs create new entries. *(Unit · P1 · [tests/Osm.Pipeline.Tests/EvidenceCacheServiceTests.cs](tests/Osm.Pipeline.Tests/EvidenceCacheServiceTests.cs))*
+- [x] **18.3 Refresh override** — `--refresh-cache` bypasses cached payloads and records new timestamp/hash metadata. *(Integration · P1 · [tests/Osm.Cli.Tests/CliIntegrationTests.cs](tests/Osm.Cli.Tests/CliIntegrationTests.cs))*
+- [x] **18.4 Cache manifest integrity** — manifest enumerates payload provenance, SHA hashes, and timestamps for auditing. *(Unit · P1 · [tests/Osm.Pipeline.Tests/EvidenceCacheServiceTests.cs](tests/Osm.Pipeline.Tests/EvidenceCacheServiceTests.cs))*
 
 ---
 

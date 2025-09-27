@@ -37,10 +37,14 @@ public sealed class TighteningPolicy
 
         var singleUniqueClean = BuildSingleColumnUniqueSignals(model, uniqueProfiles, options.Uniqueness.EnforceSingleColumnUnique);
         var singleUniqueDuplicates = BuildSingleColumnDuplicateSignals(model, uniqueProfiles);
-        var (compositeUniqueClean, compositeUniqueDuplicates) = BuildCompositeUniqueSignals(model, snapshot.CompositeUniqueCandidates, options.Uniqueness.EnforceMultiColumnUnique);
+        var compositeSignals = BuildCompositeUniqueSignals(model, snapshot.CompositeUniqueCandidates, options.Uniqueness.EnforceMultiColumnUnique);
+        var compositeUniqueClean = compositeSignals.Clean;
+        var compositeUniqueDuplicates = compositeSignals.Duplicates;
+        var compositeProfileLookup = compositeSignals.Lookup;
 
         var nullabilityBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, NullabilityDecision>();
         var foreignKeyBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ForeignKeyDecision>();
+        var uniqueIndexBuilder = ImmutableDictionary.CreateBuilder<IndexCoordinate, UniqueIndexDecision>();
 
         foreach (var entity in model.Modules.SelectMany(m => m.Entities))
         {
@@ -81,9 +85,31 @@ public sealed class TighteningPolicy
                     foreignKeyBuilder[coordinate] = fkDecision;
                 }
             }
+
+            foreach (var index in entity.Indexes.Where(static i => i.IsUnique))
+            {
+                var indexCoordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
+                var uniqueDecision = EvaluateUniqueIndex(
+                    entity,
+                    index,
+                    indexCoordinate,
+                    options,
+                    columnProfiles,
+                    uniqueProfiles,
+                    compositeProfileLookup,
+                    singleUniqueClean,
+                    singleUniqueDuplicates,
+                    compositeUniqueClean,
+                    compositeUniqueDuplicates);
+
+                uniqueIndexBuilder[indexCoordinate] = uniqueDecision;
+            }
         }
 
-        return PolicyDecisionSet.Create(nullabilityBuilder.ToImmutable(), foreignKeyBuilder.ToImmutable());
+        return PolicyDecisionSet.Create(
+            nullabilityBuilder.ToImmutable(),
+            foreignKeyBuilder.ToImmutable(),
+            uniqueIndexBuilder.ToImmutable());
     }
 
     private static NullabilityDecision EvaluateNullability(
@@ -295,6 +321,173 @@ public sealed class TighteningPolicy
         return ForeignKeyDecision.Create(coordinate, createConstraint, rationales.ToImmutableArray());
     }
 
+    private static UniqueIndexDecision EvaluateUniqueIndex(
+        EntityModel entity,
+        IndexModel index,
+        IndexCoordinate coordinate,
+        TighteningOptions options,
+        IReadOnlyDictionary<ColumnCoordinate, ColumnProfile> columnProfiles,
+        IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> uniqueProfiles,
+        IReadOnlyDictionary<string, CompositeUniqueCandidateProfile> compositeProfileLookup,
+        ISet<ColumnCoordinate> singleUniqueClean,
+        ISet<ColumnCoordinate> singleUniqueDuplicates,
+        ISet<ColumnCoordinate> compositeUniqueClean,
+        ISet<ColumnCoordinate> compositeUniqueDuplicates)
+    {
+        var rationales = new SortedSet<string>(StringComparer.Ordinal);
+
+        if (!index.IsUnique)
+        {
+            return UniqueIndexDecision.Create(coordinate, false, false, rationales.ToImmutableArray());
+        }
+
+        var columnCoordinates = index.Columns
+            .Select(c => new ColumnCoordinate(entity.Schema, entity.PhysicalName, c.Column))
+            .ToArray();
+
+        var physicalUnique = columnCoordinates.All(c => columnProfiles.TryGetValue(c, out var profile) && profile.IsUniqueKey);
+        if (physicalUnique)
+        {
+            rationales.Add(TighteningRationales.PhysicalUniqueKey);
+        }
+
+        var isComposite = index.Columns.Length > 1;
+        var policyDisabled = isComposite
+            ? !options.Uniqueness.EnforceMultiColumnUnique
+            : !options.Uniqueness.EnforceSingleColumnUnique;
+
+        if (policyDisabled)
+        {
+            rationales.Add(TighteningRationales.UniquePolicyDisabled);
+        }
+
+        var hasProfile = false;
+        var hasDuplicates = false;
+        var dataClean = false;
+        var hasEvidence = false;
+
+        if (isComposite)
+        {
+            var key = CreateCompositeKey(entity.Schema.Value, entity.PhysicalName.Value, index.Columns.Select(c => c.Column.Value));
+            if (compositeProfileLookup.TryGetValue(key, out var profile))
+            {
+                hasProfile = true;
+                hasEvidence = true;
+                hasDuplicates = profile.HasDuplicate;
+                dataClean = !profile.HasDuplicate;
+            }
+            else
+            {
+                if (columnCoordinates.Any(compositeUniqueDuplicates.Contains))
+                {
+                    hasEvidence = true;
+                    hasDuplicates = true;
+                }
+                else if (columnCoordinates.All(compositeUniqueClean.Contains))
+                {
+                    hasEvidence = true;
+                    dataClean = true;
+                }
+            }
+
+            if (hasDuplicates)
+            {
+                rationales.Add(TighteningRationales.CompositeUniqueDuplicatesPresent);
+            }
+            else if (dataClean)
+            {
+                rationales.Add(TighteningRationales.CompositeUniqueNoNulls);
+            }
+        }
+        else
+        {
+            var columnCoordinate = columnCoordinates[0];
+            if (uniqueProfiles.TryGetValue(columnCoordinate, out var profile))
+            {
+                hasProfile = true;
+                hasEvidence = true;
+                hasDuplicates = profile.HasDuplicate;
+                dataClean = !profile.HasDuplicate;
+            }
+            else if (singleUniqueDuplicates.Contains(columnCoordinate))
+            {
+                hasEvidence = true;
+                hasDuplicates = true;
+            }
+            else if (singleUniqueClean.Contains(columnCoordinate))
+            {
+                hasEvidence = true;
+                dataClean = true;
+            }
+
+            if (hasDuplicates)
+            {
+                rationales.Add(TighteningRationales.UniqueDuplicatesPresent);
+            }
+            else if (dataClean)
+            {
+                rationales.Add(TighteningRationales.UniqueNoNulls);
+            }
+        }
+
+        if (!hasProfile && !physicalUnique)
+        {
+            rationales.Add(TighteningRationales.ProfileMissing);
+        }
+
+        var enforceUnique = false;
+        var requiresRemediation = false;
+
+        if (policyDisabled)
+        {
+            enforceUnique = false;
+        }
+        else if (hasDuplicates)
+        {
+            if (options.Policy.Mode == TighteningMode.Aggressive)
+            {
+                enforceUnique = true;
+                requiresRemediation = true;
+                rationales.Add(TighteningRationales.RemediateBeforeTighten);
+            }
+            else if (physicalUnique)
+            {
+                enforceUnique = true;
+            }
+            else
+            {
+                enforceUnique = false;
+            }
+        }
+        else if (physicalUnique)
+        {
+            enforceUnique = true;
+        }
+        else
+        {
+            switch (options.Policy.Mode)
+            {
+                case TighteningMode.Cautious:
+                    enforceUnique = false;
+                    break;
+                case TighteningMode.EvidenceGated:
+                    enforceUnique = hasEvidence && dataClean;
+                    break;
+                case TighteningMode.Aggressive:
+                    enforceUnique = true;
+                    if (!hasEvidence || !dataClean)
+                    {
+                        requiresRemediation = true;
+                        rationales.Add(TighteningRationales.RemediateBeforeTighten);
+                    }
+
+                    break;
+            }
+        }
+
+        return UniqueIndexDecision.Create(coordinate, enforceUnique, requiresRemediation, rationales.ToImmutableArray());
+    }
+
     private static ISet<ColumnCoordinate> BuildSingleColumnUniqueSignals(
         OsmModel model,
         IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> uniqueProfiles,
@@ -379,23 +572,23 @@ public sealed class TighteningPolicy
         return true;
     }
 
-    private static (ISet<ColumnCoordinate> Clean, ISet<ColumnCoordinate> Duplicates) BuildCompositeUniqueSignals(
+    private static CompositeUniqueSignalSet BuildCompositeUniqueSignals(
         OsmModel model,
         ImmutableArray<CompositeUniqueCandidateProfile> compositeProfiles,
         bool enforceComposite)
     {
         var clean = new HashSet<ColumnCoordinate>();
         var duplicates = new HashSet<ColumnCoordinate>();
+        var lookup = new Dictionary<string, CompositeUniqueCandidateProfile>(StringComparer.OrdinalIgnoreCase);
 
-        if (compositeProfiles.IsDefaultOrEmpty)
+        if (!compositeProfiles.IsDefaultOrEmpty)
         {
-            return (clean, duplicates);
+            foreach (var profile in compositeProfiles)
+            {
+                var key = CreateCompositeKey(profile.Schema.Value, profile.Table.Value, profile.Columns.Select(c => c.Value));
+                lookup[key] = profile;
+            }
         }
-
-        var lookup = compositeProfiles.ToDictionary(
-            profile => CreateCompositeKey(profile.Schema.Value, profile.Table.Value, profile.Columns.Select(c => c.Value)),
-            profile => profile,
-            StringComparer.OrdinalIgnoreCase);
 
         foreach (var entity in model.Modules.SelectMany(m => m.Entities))
         {
@@ -422,8 +615,13 @@ public sealed class TighteningPolicy
             }
         }
 
-        return (clean, duplicates);
+        return new CompositeUniqueSignalSet(clean, duplicates, lookup);
     }
+
+    private sealed record CompositeUniqueSignalSet(
+        ISet<ColumnCoordinate> Clean,
+        ISet<ColumnCoordinate> Duplicates,
+        IReadOnlyDictionary<string, CompositeUniqueCandidateProfile> Lookup);
 
     private static string CreateCompositeKey(string schema, string table, IEnumerable<string> columns)
     {

@@ -32,6 +32,8 @@ public class SsdtEmitterTests
         Assert.Equal(options.Emission.IncludePlatformAutoIndexes, manifest.Options.IncludePlatformAutoIndexes);
         Assert.NotNull(manifest.PolicySummary);
         Assert.Equal(report.TightenedColumnCount, manifest.PolicySummary!.TightenedColumnCount);
+        Assert.Equal(report.UniqueIndexCount, manifest.PolicySummary!.UniqueIndexCount);
+        Assert.Equal(report.UniqueIndexesEnforcedCount, manifest.PolicySummary!.UniqueIndexesEnforcedCount);
 
         var customerTable = manifest.Tables.Single(t => t.Table.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
         var customerPath = Path.Combine(temp.Path, customerTable.TableFile);
@@ -89,6 +91,40 @@ public class SsdtEmitterTests
         var concatenated = await File.ReadAllTextAsync(concatenatedPath);
         Assert.Contains("CREATE TABLE", concatenated);
         Assert.Contains("GO", concatenated);
+    }
+
+    [Fact]
+    public async Task EmitAsync_honors_unique_index_policy_flags()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+        var policy = new TighteningPolicy();
+        var defaults = TighteningOptions.Default;
+        var smoOptions = SmoBuildOptions.FromEmission(defaults.Emission);
+        var factory = new SmoModelFactory();
+        var emitter = new SsdtEmitter();
+
+        using var temp = new TempDirectory();
+
+        var cleanSnapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUnique);
+        var cleanDecisions = policy.Decide(model, cleanSnapshot, defaults);
+        var cleanOut = Path.Combine(temp.Path, "clean");
+        Directory.CreateDirectory(cleanOut);
+        var cleanModel = factory.Create(model, cleanDecisions, smoOptions);
+        await emitter.EmitAsync(cleanModel, cleanOut, smoOptions, null);
+        var cleanIndexPath = Directory.GetFiles(cleanOut, "*UX_USER_EMAIL.sql", SearchOption.AllDirectories).Single();
+        var cleanScript = await File.ReadAllTextAsync(cleanIndexPath);
+        Assert.Contains("CREATE UNIQUE INDEX", cleanScript, StringComparison.OrdinalIgnoreCase);
+
+        var duplicateSnapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUniqueWithDuplicates);
+        var duplicateDecisions = policy.Decide(model, duplicateSnapshot, defaults);
+        var duplicateOut = Path.Combine(temp.Path, "duplicates");
+        Directory.CreateDirectory(duplicateOut);
+        var duplicateModel = factory.Create(model, duplicateDecisions, smoOptions);
+        await emitter.EmitAsync(duplicateModel, duplicateOut, smoOptions, null);
+        var duplicateIndexPath = Directory.GetFiles(duplicateOut, "*UX_USER_EMAIL.sql", SearchOption.AllDirectories).Single();
+        var duplicateScript = await File.ReadAllTextAsync(duplicateIndexPath);
+        Assert.Contains("CREATE INDEX", duplicateScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CREATE UNIQUE INDEX", duplicateScript, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class TempDirectory : IDisposable

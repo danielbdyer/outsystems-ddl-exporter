@@ -22,4 +22,6 @@ public static class TighteningRationales
     public const string RemediateBeforeTighten = "REMEDIATE_BEFORE_TIGHTEN";
     public const string UniqueDuplicatesPresent = "UNIQUE_DUPLICATES_PRESENT";
     public const string CompositeUniqueDuplicatesPresent = "COMPOSITE_UNIQUE_DUPLICATES_PRESENT";
+    public const string PhysicalUniqueKey = "PHYSICAL_UNIQUE_KEY";
+    public const string UniquePolicyDisabled = "UNIQUE_POLICY_DISABLED";
 }
