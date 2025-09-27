@@ -13,6 +13,7 @@ using Osm.Json.Configuration;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
@@ -32,10 +33,62 @@ static async Task<int> DispatchAsync(string[] args)
     return command switch
     {
         "inspect" => await RunInspectAsync(remainder),
+        "extract-model" => await RunExtractModelAsync(remainder),
         "build-ssdt" => await RunBuildSsdtAsync(remainder),
         "dmm-compare" => await RunDmmCompareAsync(remainder),
         _ => UnknownCommand(command),
     };
+}
+
+static async Task<int> RunExtractModelAsync(string[] args)
+{
+    var options = ParseOptions(args);
+    if (!options.TryGetValue("--mock-advanced-sql", out var manifestPath) || string.IsNullOrWhiteSpace(manifestPath))
+    {
+        Console.Error.WriteLine("Live SQL extraction is not yet implemented. Provide --mock-advanced-sql <manifest.json> to replay fixtures.");
+        return 1;
+    }
+
+    var modules = Array.Empty<string>();
+    if (options.TryGetValue("--modules", out var modulesValue) && !string.IsNullOrWhiteSpace(modulesValue))
+    {
+        modules = modulesValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    var includeSystem = options.ContainsKey("--include-system-modules");
+    var onlyActive = options.ContainsKey("--only-active-attributes");
+
+    var commandResult = ModelExtractionCommand.Create(modules, includeSystem, onlyActive);
+    if (commandResult.IsFailure)
+    {
+        WriteErrors(commandResult.Errors);
+        return 1;
+    }
+
+    var outputPath = options.TryGetValue("--out", out var outValue) && !string.IsNullOrWhiteSpace(outValue)
+        ? outValue!
+        : "model.extracted.json";
+
+    var executor = new FixtureAdvancedSqlExecutor(manifestPath!);
+    var extractionService = new SqlModelExtractionService(executor, new ModelJsonDeserializer());
+
+    var extractionResult = await extractionService.ExtractAsync(commandResult.Value);
+    if (extractionResult.IsFailure)
+    {
+        WriteErrors(extractionResult.Errors);
+        return 1;
+    }
+
+    var result = extractionResult.Value;
+    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath)) ?? Directory.GetCurrentDirectory());
+    await File.WriteAllTextAsync(outputPath, result.Json);
+
+    var moduleCount = result.Model.Modules.Length;
+    var entityCount = result.Model.Modules.Sum(static m => m.Entities.Length);
+    Console.WriteLine($"Extracted {moduleCount} modules spanning {entityCount} entities.");
+    Console.WriteLine($"Model written to {outputPath}.");
+    Console.WriteLine($"Extraction timestamp (UTC): {result.ExtractedAtUtc:O}");
+    return 0;
 }
 
 static async Task<int> RunInspectAsync(string[] args)
@@ -121,6 +174,14 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
     var decisionReport = PolicyDecisionReporter.Create(decisions);
 
     var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission);
+    var namingOverrideResult = ResolveNamingOverrides(options, smoOptions.NamingOverrides);
+    if (namingOverrideResult.IsFailure)
+    {
+        WriteErrors(namingOverrideResult.Errors);
+        return 1;
+    }
+
+    smoOptions = smoOptions.WithNamingOverrides(namingOverrideResult.Value);
     var smoModel = new SmoModelFactory().Create(modelResult.Value, decisions, smoOptions);
 
     var emitter = new SsdtEmitter();
@@ -199,7 +260,7 @@ static async Task<int> RunDmmCompareAsync(string[] args)
 
     var policy = new TighteningPolicy();
     var decisions = policy.Decide(modelResult.Value, profileResult.Value, tighteningOptions);
-    var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission);
+    var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission, applyNamingOverrides: false);
     var smoModel = new SmoModelFactory().Create(modelResult.Value, decisions, smoOptions);
 
     var parser = new DmmParser();
@@ -369,6 +430,68 @@ static Dictionary<string, string?> ParseOptions(string[] args)
     return options;
 }
 
+static Result<NamingOverrideOptions> ResolveNamingOverrides(
+    Dictionary<string, string?> options,
+    NamingOverrideOptions existingOverrides)
+{
+    if (!options.TryGetValue("--rename-table", out var rawOverrides) || string.IsNullOrWhiteSpace(rawOverrides))
+    {
+        return existingOverrides;
+    }
+
+    var separators = new[] { ';', ',' };
+    var tokens = rawOverrides.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (tokens.Length == 0)
+    {
+        return existingOverrides;
+    }
+
+    var parsedOverrides = new List<TableNamingOverride>();
+    foreach (var token in tokens)
+    {
+        var assignment = token.Split('=', 2, StringSplitOptions.TrimEntries);
+        if (assignment.Length != 2)
+        {
+            return ValidationError.Create(
+                "cli.rename.invalidFormat",
+                $"Invalid table rename '{token}'. Expected format schema.table=OverrideName.");
+        }
+
+        var source = assignment[0];
+        var replacement = assignment[1];
+
+        if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(replacement))
+        {
+            return ValidationError.Create(
+                "cli.rename.missingValue",
+                "Table rename overrides must include both source and replacement values.");
+        }
+
+        string? schema = null;
+        string tableName;
+        var sourceParts = source.Split('.', 2, StringSplitOptions.TrimEntries);
+        if (sourceParts.Length == 2)
+        {
+            schema = sourceParts[0];
+            tableName = sourceParts[1];
+        }
+        else
+        {
+            tableName = sourceParts[0];
+        }
+
+        var overrideResult = TableNamingOverride.Create(schema, tableName, replacement);
+        if (overrideResult.IsFailure)
+        {
+            return Result<NamingOverrideOptions>.Failure(overrideResult.Errors);
+        }
+
+        parsedOverrides.Add(overrideResult.Value);
+    }
+
+    return existingOverrides.MergeWith(parsedOverrides);
+}
+
 static bool TryGetRequired(Dictionary<string, string?> options, string key, out string? value)
 {
     if (!options.TryGetValue(key, out value) || string.IsNullOrWhiteSpace(value))
@@ -394,7 +517,8 @@ static void PrintRootUsage()
     Console.WriteLine();
     Console.WriteLine("Commands:");
     Console.WriteLine("  inspect --model <model.json>");
-    Console.WriteLine("  build-ssdt --model <model.json> --profile <profile.json> [--out <dir>] [--config <path>] [--cache-root <dir>] [--refresh-cache]");
+    Console.WriteLine("  extract-model --mock-advanced-sql <manifest.json> [--modules <csv>] [--include-system-modules] [--only-active-attributes] [--out <path>]");
+    Console.WriteLine("  build-ssdt --model <model.json> --profile <profile.json> [--out <dir>] [--config <path>] [--cache-root <dir>] [--refresh-cache] [--rename-table schema.table=Override]");
     Console.WriteLine("  dmm-compare --model <model.json> --profile <profile.json> --dmm <dmm.sql> [--config <path>] [--cache-root <dir>] [--refresh-cache]");
 }
 

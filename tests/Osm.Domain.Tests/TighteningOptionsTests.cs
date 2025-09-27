@@ -46,4 +46,27 @@ public class TighteningOptionsTests
         Assert.Equal(TighteningMode.Aggressive, options.Value.Policy.Mode);
         Assert.Equal("0", options.Value.Remediation.Sentinels.Numeric);
     }
+
+    [Fact]
+    public void TableNamingOverride_Should_Default_Schema_When_Omitted()
+    {
+        var result = TableNamingOverride.Create(null, "OSUSR_ABC_CUSTOMER", "CUSTOMER_PORTAL");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("dbo", result.Value.Schema.Value);
+        Assert.Equal("OSUSR_ABC_CUSTOMER", result.Value.Source.Value);
+        Assert.Equal("CUSTOMER_PORTAL", result.Value.Target.Value);
+    }
+
+    [Fact]
+    public void NamingOverrideOptions_Should_Fail_On_Conflicting_Duplicate()
+    {
+        var first = TableNamingOverride.Create("dbo", "OSUSR_ABC_CUSTOMER", "CUSTOMER_PORTAL").Value;
+        var second = TableNamingOverride.Create("dbo", "OSUSR_ABC_CUSTOMER", "CUSTOMER_BACKOFFICE").Value;
+
+        var result = NamingOverrideOptions.Create(new[] { first, second });
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "namingOverride.duplicate");
+    }
 }

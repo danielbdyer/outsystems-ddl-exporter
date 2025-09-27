@@ -7,19 +7,22 @@ public sealed record SmoBuildOptions(
     string DefaultCatalogName,
     bool IncludePlatformAutoIndexes,
     bool EmitConcatenatedConstraints,
-    bool SanitizeModuleNames)
+    bool SanitizeModuleNames,
+    NamingOverrideOptions NamingOverrides)
 {
     public static SmoBuildOptions Default { get; } = new(
         DefaultCatalogName: "OutSystems",
         IncludePlatformAutoIndexes: false,
         EmitConcatenatedConstraints: false,
-        SanitizeModuleNames: true);
+        SanitizeModuleNames: true,
+        NamingOverrides: NamingOverrideOptions.Empty);
 
-    public static SmoBuildOptions FromEmission(EmissionOptions emission) => new(
+    public static SmoBuildOptions FromEmission(EmissionOptions emission, bool applyNamingOverrides = true) => new(
         DefaultCatalogName: "OutSystems",
         emission.IncludePlatformAutoIndexes,
         emission.EmitConcatenatedConstraints,
-        emission.SanitizeModuleNames);
+        emission.SanitizeModuleNames,
+        applyNamingOverrides ? emission.NamingOverrides : NamingOverrideOptions.Empty);
 
     public SmoBuildOptions WithCatalog(string catalogName)
     {
@@ -29,5 +32,15 @@ public sealed record SmoBuildOptions(
         }
 
         return this with { DefaultCatalogName = catalogName.Trim() };
+    }
+
+    public SmoBuildOptions WithNamingOverrides(NamingOverrideOptions namingOverrides)
+    {
+        if (namingOverrides is null)
+        {
+            throw new ArgumentNullException(nameof(namingOverrides));
+        }
+
+        return this with { NamingOverrides = namingOverrides };
     }
 }

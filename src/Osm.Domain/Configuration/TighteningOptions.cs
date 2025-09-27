@@ -232,12 +232,18 @@ public sealed record RemediationSentinelOptions
 
 public sealed record EmissionOptions
 {
-    private EmissionOptions(bool perTableFiles, bool includePlatformAutoIndexes, bool sanitizeModuleNames, bool emitConcatenatedConstraints)
+    private EmissionOptions(
+        bool perTableFiles,
+        bool includePlatformAutoIndexes,
+        bool sanitizeModuleNames,
+        bool emitConcatenatedConstraints,
+        NamingOverrideOptions namingOverrides)
     {
         PerTableFiles = perTableFiles;
         IncludePlatformAutoIndexes = includePlatformAutoIndexes;
         SanitizeModuleNames = sanitizeModuleNames;
         EmitConcatenatedConstraints = emitConcatenatedConstraints;
+        NamingOverrides = namingOverrides;
     }
 
     public bool PerTableFiles { get; }
@@ -248,9 +254,21 @@ public sealed record EmissionOptions
 
     public bool EmitConcatenatedConstraints { get; }
 
-    public static Result<EmissionOptions> Create(bool perTableFiles, bool includePlatformAutoIndexes, bool sanitizeModuleNames, bool emitConcatenatedConstraints)
+    public NamingOverrideOptions NamingOverrides { get; }
+
+    public static Result<EmissionOptions> Create(
+        bool perTableFiles,
+        bool includePlatformAutoIndexes,
+        bool sanitizeModuleNames,
+        bool emitConcatenatedConstraints,
+        NamingOverrideOptions? namingOverrides = null)
     {
-        return new EmissionOptions(perTableFiles, includePlatformAutoIndexes, sanitizeModuleNames, emitConcatenatedConstraints);
+        return new EmissionOptions(
+            perTableFiles,
+            includePlatformAutoIndexes,
+            sanitizeModuleNames,
+            emitConcatenatedConstraints,
+            namingOverrides ?? NamingOverrideOptions.Empty);
     }
 }
 

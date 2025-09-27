@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -61,9 +62,10 @@ public sealed class SsdtEmitter
             Directory.CreateDirectory(indexesRoot);
             Directory.CreateDirectory(foreignKeysRoot);
 
-            var tableStatement = BuildCreateTableStatement(table);
+            var effectiveTableName = options.NamingOverrides.GetEffectiveTableName(table.Schema, table.Name, table.LogicalName);
+            var tableStatement = BuildCreateTableStatement(table, effectiveTableName);
             var tableScript = Script(tableStatement);
-            var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{table.Name}.sql");
+            var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.sql");
             await WriteAsync(tableFilePath, tableScript, cancellationToken);
 
             var indexFiles = new List<string>();
@@ -71,9 +73,10 @@ public sealed class SsdtEmitter
             foreach (var index in table.Indexes.Where(i => !i.IsPrimaryKey))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var indexStatement = BuildCreateIndexStatement(table, index);
+                var indexName = ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
+                var indexStatement = BuildCreateIndexStatement(table, index, effectiveTableName, indexName);
                 var script = Script(indexStatement);
-                var indexFilePath = Path.Combine(indexesRoot, $"{table.Schema}.{table.Name}.{index.Name}.sql");
+                var indexFilePath = Path.Combine(indexesRoot, $"{table.Schema}.{effectiveTableName}.{indexName}.sql");
                 await WriteAsync(indexFilePath, script, cancellationToken);
                 indexFiles.Add(Relativize(indexFilePath, outputDirectory));
                 indexStatements.Add(script);
@@ -84,9 +87,19 @@ public sealed class SsdtEmitter
             foreach (var foreignKey in table.ForeignKeys)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var fkStatement = BuildForeignKeyStatement(table, foreignKey);
+                var referencedTableName = options.NamingOverrides.GetEffectiveTableName(
+                    foreignKey.ReferencedSchema,
+                    foreignKey.ReferencedTable,
+                    foreignKey.ReferencedLogicalTable);
+                var foreignKeyName = ResolveConstraintName(foreignKey.Name, table.Name, table.LogicalName, effectiveTableName);
+                var fkStatement = BuildForeignKeyStatement(
+                    table,
+                    foreignKey,
+                    effectiveTableName,
+                    foreignKeyName,
+                    referencedTableName);
                 var script = Script(fkStatement);
-                var fkFilePath = Path.Combine(foreignKeysRoot, $"{table.Schema}.{table.Name}.{foreignKey.Name}.sql");
+                var fkFilePath = Path.Combine(foreignKeysRoot, $"{table.Schema}.{effectiveTableName}.{foreignKeyName}.sql");
                 await WriteAsync(fkFilePath, script, cancellationToken);
                 foreignKeyFiles.Add(Relativize(fkFilePath, outputDirectory));
                 foreignKeyStatements.Add(script);
@@ -101,7 +114,7 @@ public sealed class SsdtEmitter
                 var combined = string.Join(
                     $"{Environment.NewLine}GO{Environment.NewLine}",
                     combinedStatements.Where(s => !string.IsNullOrWhiteSpace(s)));
-                var combinedPath = Path.Combine(tablesRoot, $"{table.Schema}.{table.Name}.full.sql");
+                var combinedPath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.full.sql");
                 await WriteAsync(combinedPath, combined, cancellationToken);
                 concatenatedFile = Relativize(combinedPath, outputDirectory);
             }
@@ -109,7 +122,7 @@ public sealed class SsdtEmitter
             manifestEntries.Add(new TableManifestEntry(
                 table.Module,
                 table.Schema,
-                table.Name,
+                effectiveTableName,
                 Relativize(tableFilePath, outputDirectory),
                 indexFiles,
                 foreignKeyFiles,
@@ -145,7 +158,9 @@ public sealed class SsdtEmitter
         return manifest;
     }
 
-    private CreateTableStatement BuildCreateTableStatement(SmoTableDefinition table)
+    private CreateTableStatement BuildCreateTableStatement(
+        SmoTableDefinition table,
+        string effectiveTableName)
     {
         var definition = new TableDefinition();
         foreach (var column in table.Columns)
@@ -160,7 +175,10 @@ public sealed class SsdtEmitter
             {
                 IsPrimaryKey = true,
                 Clustered = true,
-                ConstraintIdentifier = new Identifier { Value = primaryKey.Name },
+                ConstraintIdentifier = new Identifier
+                {
+                    Value = ResolveConstraintName(primaryKey.Name, table.Name, table.LogicalName, effectiveTableName),
+                },
             };
 
             foreach (var column in primaryKey.Columns.OrderBy(c => c.Ordinal))
@@ -177,7 +195,7 @@ public sealed class SsdtEmitter
 
         return new CreateTableStatement
         {
-            SchemaObjectName = BuildSchemaObjectName(table.Schema, table.Name),
+            SchemaObjectName = BuildSchemaObjectName(table.Schema, effectiveTableName),
             Definition = definition,
         };
     }
@@ -207,12 +225,16 @@ public sealed class SsdtEmitter
         return definition;
     }
 
-    private CreateIndexStatement BuildCreateIndexStatement(SmoTableDefinition table, SmoIndexDefinition index)
+    private CreateIndexStatement BuildCreateIndexStatement(
+        SmoTableDefinition table,
+        SmoIndexDefinition index,
+        string effectiveTableName,
+        string indexName)
     {
         var statement = new CreateIndexStatement
         {
-            Name = new Identifier { Value = index.Name },
-            OnName = BuildSchemaObjectName(table.Schema, table.Name),
+            Name = new Identifier { Value = indexName },
+            OnName = BuildSchemaObjectName(table.Schema, effectiveTableName),
             Unique = index.IsUnique,
         };
 
@@ -228,12 +250,17 @@ public sealed class SsdtEmitter
         return statement;
     }
 
-    private AlterTableAddTableElementStatement BuildForeignKeyStatement(SmoTableDefinition table, SmoForeignKeyDefinition foreignKey)
+    private AlterTableAddTableElementStatement BuildForeignKeyStatement(
+        SmoTableDefinition table,
+        SmoForeignKeyDefinition foreignKey,
+        string effectiveTableName,
+        string foreignKeyName,
+        string referencedTableName)
     {
         var constraint = new ForeignKeyConstraintDefinition
         {
-            ConstraintIdentifier = new Identifier { Value = foreignKey.Name },
-            ReferenceTableName = BuildSchemaObjectName(foreignKey.ReferencedSchema, foreignKey.ReferencedTable),
+            ConstraintIdentifier = new Identifier { Value = foreignKeyName },
+            ReferenceTableName = BuildSchemaObjectName(foreignKey.ReferencedSchema, referencedTableName),
             DeleteAction = MapDeleteAction(foreignKey.DeleteAction),
             UpdateAction = DeleteUpdateAction.NoAction,
         };
@@ -246,9 +273,54 @@ public sealed class SsdtEmitter
 
         return new AlterTableAddTableElementStatement
         {
-            SchemaObjectName = BuildSchemaObjectName(table.Schema, table.Name),
+            SchemaObjectName = BuildSchemaObjectName(table.Schema, effectiveTableName),
             Definition = definition,
         };
+    }
+
+    private static string ResolveConstraintName(
+        string originalName,
+        string originalTableName,
+        string logicalTableName,
+        string effectiveTableName)
+    {
+        if (string.IsNullOrWhiteSpace(originalName) ||
+            string.Equals(originalTableName, effectiveTableName, StringComparison.OrdinalIgnoreCase))
+        {
+            return originalName;
+        }
+
+        var renamed = ReplaceIgnoreCase(originalName, originalTableName, effectiveTableName);
+        renamed = ReplaceIgnoreCase(renamed, logicalTableName, effectiveTableName);
+        return renamed;
+    }
+
+    private static string ReplaceIgnoreCase(string source, string search, string replacement)
+    {
+        if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(search))
+        {
+            return source;
+        }
+
+        var result = new StringBuilder();
+        var currentIndex = 0;
+        var comparison = StringComparison.OrdinalIgnoreCase;
+
+        while (true)
+        {
+            var matchIndex = source.IndexOf(search, currentIndex, comparison);
+            if (matchIndex < 0)
+            {
+                result.Append(source, currentIndex, source.Length - currentIndex);
+                break;
+            }
+
+            result.Append(source, currentIndex, matchIndex - currentIndex);
+            result.Append(replacement);
+            currentIndex = matchIndex + search.Length;
+        }
+
+        return result.ToString();
     }
 
     private SchemaObjectName BuildSchemaObjectName(string schema, string name)

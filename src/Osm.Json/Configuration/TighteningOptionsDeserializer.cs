@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Osm.Domain.Abstractions;
@@ -127,11 +128,30 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
             return ValidationError.Create("config.emission.missing", "Configuration must include 'emission'.");
         }
 
+        NamingOverrideOptions namingOverrides = NamingOverrideOptions.Empty;
+        if (document.Emission.NamingOverrides?.Tables is { Length: > 0 } overrideDocuments)
+        {
+            var overrides = Result.Collect(overrideDocuments.Select(o => TableNamingOverride.Create(o.Schema, o.Table, o.Override)));
+            if (overrides.IsFailure)
+            {
+                return Result<TighteningOptions>.Failure(overrides.Errors);
+            }
+
+            var namingOverrideResult = NamingOverrideOptions.Create(overrides.Value);
+            if (namingOverrideResult.IsFailure)
+            {
+                return Result<TighteningOptions>.Failure(namingOverrideResult.Errors);
+            }
+
+            namingOverrides = namingOverrideResult.Value;
+        }
+
         var emissionResult = EmissionOptions.Create(
             document.Emission.PerTableFiles,
             document.Emission.IncludePlatformAutoIndexes,
             document.Emission.SanitizeModuleNames,
-            document.Emission.EmitConcatenatedConstraints);
+            document.Emission.EmitConcatenatedConstraints,
+            namingOverrides);
 
         if (emissionResult.IsFailure)
         {
@@ -249,6 +269,27 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
 
         [JsonPropertyName("emitConcatenatedConstraints")]
         public bool EmitConcatenatedConstraints { get; init; }
+
+        [JsonPropertyName("namingOverrides")]
+        public NamingOverridesDocument? NamingOverrides { get; init; }
+    }
+
+    private sealed record NamingOverridesDocument
+    {
+        [JsonPropertyName("tables")]
+        public TableOverrideDocument[]? Tables { get; init; }
+    }
+
+    private sealed record TableOverrideDocument
+    {
+        [JsonPropertyName("schema")]
+        public string? Schema { get; init; }
+
+        [JsonPropertyName("table")]
+        public string? Table { get; init; }
+
+        [JsonPropertyName("override")]
+        public string? Override { get; init; }
     }
 
     private sealed record MockingDocument

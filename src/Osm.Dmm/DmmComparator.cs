@@ -56,18 +56,17 @@ public sealed class DmmComparator
 
     private static void CompareColumns(SmoTableDefinition table, DmmTable dmmTable, List<string> differences)
     {
-        if (table.Columns.Length != dmmTable.Columns.Count)
-        {
-            differences.Add($"column count mismatch for {table.Schema}.{table.Name}: expected {table.Columns.Length}, actual {dmmTable.Columns.Count}");
-            return;
-        }
-
         var expectedNames = table.Columns.Select(c => c.Name).ToArray();
         var actualNames = dmmTable.Columns.Select(c => c.Name).ToArray();
 
         var sequencesMatch = expectedNames.SequenceEqual(actualNames, StringComparer.OrdinalIgnoreCase);
         var expectedSet = new HashSet<string>(expectedNames, StringComparer.OrdinalIgnoreCase);
         var actualSet = new HashSet<string>(actualNames, StringComparer.OrdinalIgnoreCase);
+
+        if (expectedNames.Length != actualNames.Length)
+        {
+            differences.Add($"column count mismatch for {table.Schema}.{table.Name}: expected {expectedNames.Length}, actual {actualNames.Length}");
+        }
 
         var missingColumns = expectedNames
             .Where(name => !actualSet.Contains(name))

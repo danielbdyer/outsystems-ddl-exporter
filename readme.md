@@ -37,7 +37,17 @@
 
 ## 0. TL;DR Quickstart
 
-1. **Run Advanced SQL** inside an OutSystems Server Action (or use the provided fixtures) to produce **JSON** for your chosen modules. Save it to `model.json`.
+1. **Run Advanced SQL** inside an OutSystems Server Action (or use the provided fixtures) to produce **JSON** for your chosen modules. Save it to `model.json`. When operating fixture-first, you can replay the Advanced SQL output with the CLI:
+
+   ```bash
+   dotnet run --project src/Osm.Cli \
+     extract-model \
+     --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
+     --modules "AppCore,ExtBilling,Ops" \
+     --out ./out/model.edge-case.json
+   ```
+
+   The manifest maps module selections to deterministic JSON payloads, giving the same shape you would fetch from a live OutSystems database.
 2. **Run the .NET pipeline** (fixture-first example shown; swap in your live export and profiler snapshot when ready):
 
    ```bash
@@ -90,7 +100,7 @@ src/
   Osm.Smo/                    # SMO builder + PerTableDdlEmitter
   Osm.Dmm/                    # DMM lens, ScriptDom parser, comparator
   Osm.Pipeline/               # Orchestrators (use cases)
-  Osm.Cli/                    # CLI entry points (build-ssdt, dmm-compare)
+  Osm.Cli/                    # CLI entry points (extract-model, build-ssdt, dmm-compare)
 tests/
   Osm.Domain.Tests/
   Osm.Validation.Tests/
@@ -516,6 +526,8 @@ out/
   README.txt
 ```
 
+> **Identifier casing:** the emitter now projects each table and column to its logical, human-readable name by default (for example, `dbo.OSUSR_ABC_CUSTOMER` becomes `dbo.Customer` and columns like `ID`/`NAME` render as `Id`/`Name`). Explicit overrides supplied via configuration or `--rename-table` still win when you need deterministic collision handling across modules.
+
 **Emitter** uses three **Scripter** passes with distinct `ScriptingOptions`:
 
 * **Tables**: PK only; no non-PK indexes, no FKs.
@@ -571,6 +583,8 @@ if (!rcol.NotNull) diff.Add("expected NOT NULL but actual nullable");
 if (!lt.PrimaryKey.Columns.SequenceEqual(rt.PrimaryKey.Columns, OrdinalIgnoreCase)) diff.Add("PK columns differ");
 ```
 
+> **Roadmap:** upcoming comparator hardening will canonicalize ScriptDom type facets (length/precision/scale) and expand parsing coverage to inline `CREATE TABLE` PK declarations plus mixed `ALTER TABLE` batches. Track progress in `tasks.md` §6 and the living test plan §6.3/§6.7.
+
 **CLI example**
 
 ```bash
@@ -593,16 +607,18 @@ dotnet run --project src/Osm.Cli dmm-compare \
    * No missing tables/files (check `manifest.json` vs DB).
    * No nullability violations unless pre-scripts included.
    * DMM parity passes (if you use DMM as source-of-deploy).
+   * `dmm-compare` returns non-zero and writes a diff artifact whenever drift is detected (tracked in `tasks.md` §7).
 
 ---
 
 ## 12. Testing Strategy
 
-* **Golden tests**: assert scripted DDL equals expected snapshots for small models.
+* **Golden tests**: assert scripted DDL equals expected snapshots for small models — see the `Osm.Etl.Integration.Tests` suite for the fixture-to-emission parity check.
 * **Property tests**: randomly generate entity/attribute combos and ensure builder+emitter don’t throw; output compiles in SSDT.
 * **Policy tests**: verify EvidenceGated mode only flips `NOT NULL` when `NullCount==0`.
 * **DMM parser tests**: parse curated T-SQL variants (CREATE TABLE PK inline; PK via ALTER TABLE; case/quote variants).
 * **Performance**: profile a 100+ table model; ensure single pass per layer and per-table dynamic profiling.
+* **Evidence cache longevity**: validate cache eviction/refresh semantics when module selections change and smoke the forthcoming live SQL adapter. *(See `notes/test-plan.md` §18.5–§18.6.)*
 
 ---
 
@@ -611,6 +627,22 @@ dotnet run --project src/Osm.Cli dmm-compare \
 **Baseline toggles**
 
 The repository ships with `config/default-tightening.json`, which the configuration deserializer loads into `TighteningOptions` (EvidenceGated policy, FK creation enabled, platform auto-indexes suppressed). Use it as the starting point for local runs or copy it into environment-specific settings before overriding individual flags.
+
+```jsonc
+"emission": {
+  "perTableFiles": true,
+  "includePlatformAutoIndexes": false,
+  "sanitizeModuleNames": true,
+  "emitConcatenatedConstraints": false,
+  "namingOverrides": {
+    "tables": [
+      { "schema": "dbo", "table": "OSUSR_ABC_CUSTOMER", "override": "CUSTOMER_PORTAL" }
+    ]
+  }
+}
+```
+
+The `namingOverrides.tables` collection remaps the emitted table name (and derived PK/FK/manifest identifiers) without mutating the original OutSystems metadata. CLI callers can layer ad-hoc renames with `--rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL`, separating multiple overrides with `;` or `,`.
 
 **AppSettings (example)**
 
@@ -627,12 +659,22 @@ The repository ships with `config/default-tightening.json`, which the configurat
 
 **CLI flags**
 
-* `--in`: path to `model.json`
-* `--profile-conn`: connection string for profiling
-* `--out`: root output folder
-* `--mode`: `Cautious|EvidenceGated|Aggressive` (tightening)
-* `--dmm`: glob(s) for DMM DDL
-* `--diff-out`: path for `dmm-diff.json`
+* `extract-model`
+  * `--mock-advanced-sql <manifest.json>` — replay deterministic Advanced SQL payloads (until the live SQL adapter ships).
+  * `--modules <csv>` — optional module filter; trimmed, case-insensitive.
+  * `--include-system-modules` — include OutSystems system producers.
+  * `--include-inactive-attributes` — future toggle to rehydrate inactive columns when downstream tooling still expects them.
+  * `--out <path>` — destination for the JSON payload (defaults to `model.extracted.json`).
+* `build-ssdt`
+  * `--model <model.json>` / `--profile <profile.json>` — deterministic inputs (fixtures or cached extraction outputs).
+  * `--config <tightening.json>` — optional policy overrides.
+  * `--out <directory>` — emission root (`./out` by default).
+  * `--cache-root <directory>` / `--refresh-cache` — evidence cache control for model/profile/DMM/config artifacts.
+  * `--rename-table schema.table=Override` — rename the emitted table/constraint identifiers (separate multiple overrides with `;` or `,`).
+* `dmm-compare`
+  * `--model <model.json>` / `--profile <profile.json>` — same as `build-ssdt`.
+  * `--dmm <path>` — baseline DMM script to compare against SMO output.
+  * `--config`, `--cache-root`, `--refresh-cache` — same semantics as `build-ssdt`.
 
 ---
 
@@ -641,8 +683,9 @@ The repository ships with `config/default-tightening.json`, which the configurat
 * **“Mandatory” vs DB `NOT NULL`**: OutSystems `isMandatory` is logical; our policy upgrades to `NOT NULL` only with evidence (or Aggressive + pre-fix).
 * **Index ASC/DESC**: OutSystems model doesn’t expose per-column sort direction; DDL omits direction (default ASC).
 * **Cross-catalog FKs**: metamodel can show logical refs that DB can’t enforce; policy won’t create FK when catalogs/schemas differ (or when orphans exist).
-* **Inactive attributes**: columns may persist physically after model removal; we mark with `physical.isPresentButInactive`. We do **not** drop them by default.
-* **Name collisions**: ensure OS module names map to safe folder names (we sanitize).
+* **Inactive attributes**: columns flagged `isActive = false` or `physical.isPresentButInactive = 1` are omitted from emission by default while remaining in the decision log for audit trails.
+* **Constraint casing**: emitted PK/IX/FK identifiers are regenerated using PascalCase table/column names; table rename overrides propagate across every constraint artifact.
+* **Name collisions**: sanitized module names keep paths safe; use `emission.namingOverrides.tables` or `--rename-table` when downstream tooling requires human-friendly table/constraint names.
 * **ScriptDom parsing errors**: DMM DDL must be valid T-SQL; errors list file & line.
 
 ---

@@ -28,33 +28,37 @@ public class SmoModelFactoryTests
         var smoModel = factory.Create(model, decisions, SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission));
 
         var customerTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
-        var emailColumn = customerTable.Columns.Single(c => c.Name.Equals("EMAIL", StringComparison.OrdinalIgnoreCase));
-        var cityColumn = customerTable.Columns.Single(c => c.Name.Equals("CITYID", StringComparison.OrdinalIgnoreCase));
+        var emailColumn = customerTable.Columns.Single(c => c.Name.Equals("Email", StringComparison.Ordinal));
+        var cityColumn = customerTable.Columns.Single(c => c.Name.Equals("CityId", StringComparison.Ordinal));
         Assert.False(emailColumn.Nullable);
         Assert.False(cityColumn.Nullable);
         Assert.Equal(SqlDataType.NVarChar, emailColumn.DataType.SqlDataType);
         Assert.Equal(255, emailColumn.DataType.MaximumLength);
+        Assert.DoesNotContain(customerTable.Columns, c => c.Name.Equals("LegacyCode", StringComparison.Ordinal));
 
         var pk = customerTable.Indexes.Single(i => i.IsPrimaryKey);
+        Assert.Equal("PK_Customer", pk.Name);
         Assert.Collection(pk.Columns.OrderBy(c => c.Ordinal),
-            col => Assert.Equal("ID", col.Name));
+            col => Assert.Equal("Id", col.Name));
 
-        var emailIndex = customerTable.Indexes.Single(i => i.Name.Equals("IDX_CUSTOMER_EMAIL", StringComparison.OrdinalIgnoreCase));
+        var emailIndex = customerTable.Indexes.Single(i => i.Name.Equals("IDX_Customer_Email", StringComparison.OrdinalIgnoreCase));
         Assert.True(emailIndex.IsUnique);
 
         var cityForeignKey = customerTable.ForeignKeys.Single();
+        Assert.Equal("FK_Customer_CityId", cityForeignKey.Name);
         Assert.Equal("OSUSR_DEF_CITY", cityForeignKey.ReferencedTable);
         Assert.Equal("dbo", cityForeignKey.ReferencedSchema);
         Assert.Equal(ForeignKeyAction.NoAction, cityForeignKey.DeleteAction);
+        Assert.Equal("City", cityForeignKey.ReferencedLogicalTable);
 
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
-        var jobRunTriggeredByColumn = jobRunTable.Columns.Single(c => c.Name.Equals("TRIGGEREDBYUSERID", StringComparison.OrdinalIgnoreCase));
+        var jobRunTriggeredByColumn = jobRunTable.Columns.Single(c => c.Name.Equals("TriggeredByUserId", StringComparison.Ordinal));
         Assert.True(jobRunTriggeredByColumn.Nullable);
         Assert.Empty(jobRunTable.ForeignKeys);
 
         var billingTable = smoModel.Tables.Single(t => t.Name.Equals("BILLING_ACCOUNT", StringComparison.OrdinalIgnoreCase));
         Assert.Equal("billing", billingTable.Schema);
-        var accountNumberColumn = billingTable.Columns.Single(c => c.Name.Equals("ACCOUNTNUMBER", StringComparison.OrdinalIgnoreCase));
+        var accountNumberColumn = billingTable.Columns.Single(c => c.Name.Equals("AccountNumber", StringComparison.Ordinal));
         Assert.Equal(SqlDataType.VarChar, accountNumberColumn.DataType.SqlDataType);
         Assert.Equal(50, accountNumberColumn.DataType.MaximumLength);
     }
@@ -64,11 +68,16 @@ public class SmoModelFactoryTests
     {
         var (model, decisions) = LoadEdgeCaseDecisions();
         var factory = new SmoModelFactory();
-        var options = new SmoBuildOptions("OutSystems", IncludePlatformAutoIndexes: true, EmitConcatenatedConstraints: false, SanitizeModuleNames: true);
+        var options = new SmoBuildOptions(
+            "OutSystems",
+            IncludePlatformAutoIndexes: true,
+            EmitConcatenatedConstraints: false,
+            SanitizeModuleNames: true,
+            NamingOverrides: NamingOverrideOptions.Empty);
         var smoModel = factory.Create(model, decisions, options);
 
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
-        var hasPlatformIndex = jobRunTable.Indexes.Any(i => i.Name.Equals("OSIDX_JOBRUN_CREATEDON", StringComparison.OrdinalIgnoreCase));
+        var hasPlatformIndex = jobRunTable.Indexes.Any(i => i.Name.Equals("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
         Assert.True(hasPlatformIndex);
     }
 
@@ -85,7 +94,7 @@ public class SmoModelFactoryTests
         var smoModel = factory.Create(model, decisions, smoOptions);
 
         var userTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
-        var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_USER_EMAIL", StringComparison.OrdinalIgnoreCase));
+        var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
         Assert.False(uniqueIndex.IsUnique);
     }
 
@@ -119,7 +128,7 @@ public class SmoModelFactoryTests
         var smoModel = factory.Create(model, decisions, smoOptions);
 
         var userTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
-        var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_USER_EMAIL", StringComparison.OrdinalIgnoreCase));
+        var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
         Assert.True(uniqueIndex.IsUnique);
     }
 }

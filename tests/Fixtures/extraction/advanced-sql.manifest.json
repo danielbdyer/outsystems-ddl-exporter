@@ -1,0 +1,10 @@
+{
+  "cases": [
+    {
+      "modules": ["AppCore", "ExtBilling", "Ops"],
+      "includeSystemModules": false,
+      "onlyActiveAttributes": false,
+      "jsonPath": "../model.edge-case.json"
+    }
+  ]
+}

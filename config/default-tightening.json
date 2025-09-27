@@ -25,7 +25,10 @@
     "perTableFiles": true,
     "includePlatformAutoIndexes": false,
     "sanitizeModuleNames": true,
-    "emitConcatenatedConstraints": false
+    "emitConcatenatedConstraints": false,
+    "namingOverrides": {
+      "tables": []
+    }
   },
   "mocking": {
     "useProfileMockFolder": false,

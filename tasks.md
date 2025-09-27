@@ -30,7 +30,7 @@
   - [x] Multi-column uniqueness decisions honor composite evidence, suppress when duplicates are detected, and surface rationale counts in the SSDT manifest summary.
 - [x] Implement decision logging/explanations to accompany each decision (inputs: model metadata, profiling evidence, toggle state). *(See `PolicyDecisionReporter` and `DecisionReportTests`.)*
 - [x] Provide unit tests using micro-fixtures (F1, F2, F3) verifying policy outcomes under each mode and null budget setting.
-- [ ] Extract unique index decision evaluation into a dedicated strategy to reduce `TighteningPolicy` complexity and enable reuse in future CLI telemetry refactors.
+- [x] Extract unique index decision evaluation into a dedicated strategy to reduce `TighteningPolicy` complexity and enable reuse in future CLI telemetry refactors.
 - 🔗 **Checklist**: covers §3.1–§3.9, §11.1–§11.2, and cross-schema items in §16.
 
 ## 4. SMO Object Graph Construction
@@ -40,6 +40,7 @@
   - Covered today via offline definitions and unit tests; revalidate once full SMO objects are emitted.
 - [ ] Validate NOT NULL/UNIQUE/FK flagging via SMO assertions on the edge-case fixture baseline (`tests/Osm.Smo.Tests/SmoModelFactoryTests.cs`).
 - [x] Unique index enforcement / suppression flows through SMO definitions and emitted scripts. *(Unit · P1 · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs), [tests/Osm.Emission.Tests/SsdtEmitterTests.cs](tests/Osm.Emission.Tests/SsdtEmitterTests.cs))*
+- [x] Emitters skip inactive or physically retired columns, project logical table/column identifiers into the DDL, and regenerate PK/IX/FK names using PascalCase identifiers to avoid downstream collisions. *(Unit · P1 · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs); Integration · P1 · [tests/Osm.Etl.Integration.Tests/EmissionPipelineTests.cs](tests/Osm.Etl.Integration.Tests/EmissionPipelineTests.cs))*
 - 🔗 **Checklist**: targets §4.1–§4.6 and feeds §15 drift handling once SMO objects are live.
 
 - [x] Emit SSDT-ready files under `out/Modules/<Module>/{Tables,Indexes,ForeignKeys}` honoring deterministic naming conventions.
@@ -51,15 +52,22 @@
 - [x] Build DMM parser layer using ScriptDom to ingest PK-only, NOT NULL baseline scripts.
 - [x] Implement diffing between SMO-emitted tables and DMM tables (PK alignment, column nullability).
 - [x] Add CLI command `dmm-compare` with JSON + console output, plus tests leveraging synthetic DMM fixtures.
+- [x] Expand DMM comparator coverage to report missing/extra tables or columns and primary key drift. *(Unit · P0 · [tests/Osm.Dmm.Tests/DmmComparatorTests.cs](tests/Osm.Dmm.Tests/DmmComparatorTests.cs))*
+- [ ] Canonicalize ScriptDom types (length/precision/scale) during comparison to eliminate cosmetic drift noise. *(Test Plan §6.3)*
+- [ ] Support inline `CREATE TABLE` primary key declarations and mixed `ALTER TABLE` batches when parsing DMM scripts. *(Test Plan §6.7)*
 - 🔗 **Checklist**: unlocks §6.1–§6.7 and error diagnostics in §9.2.
 
 - [x] Expand CLI verbs (`build-ssdt`, `dmm-compare`) with rich argument parsing, validation, and help text (document mock-profiler flag).
 - [x] Surface decision summaries (counts of tightened columns, skipped FKs with reasons) and write an execution log artifact.
 - [x] Update README quickstart to reference fixture-driven dry runs and configuration options.
+- [ ] Fail `dmm-compare` with a non-zero exit code and persisted diff artifact when parity gaps exist. *(Test Plan §7.2)*
+- [ ] Honor CLI/environment overrides for tightening toggles, profiler selection, and cache configuration. *(Test Plan §7.3 · Guardrail §2)*
+  - Progress: table/constraint rename overrides flow through config and the `--rename-table` flag with manifest/script coverage.
 - 🔗 **Checklist**: required for §7.1–§7.4, §9.3, §12.1, and §14.1.
 
 ## 8. Quality Gates & CI Enablement
 - [ ] Establish unit + integration test projects for Validation, SMO, DMM, and Pipeline layers (reuse fixtures and mocks).
+  - Progress: added `Osm.Etl.Integration.Tests` to replay the fixture-driven emission pipeline against golden SSDT snapshots.
 - [ ] Add `dotnet format`/style checks and ensure analyzers are enabled (`TreatWarningsAsErrors` in critical projects).
 - [ ] Configure CI pipeline template documenting commands to run (tests, format, CLI smoke against fixtures).
 - 🔗 **Checklist**: underpins automated execution of §§1–17.
@@ -71,8 +79,11 @@
 - 🔗 **Checklist**: keeps future work aligned with §§10–§17 and observability guardrails.
 
 ## 10. SQL Extraction & Evidence Cache Kickoff
-- [ ] Build a configurable SQL Server extraction adapter that hydrates the OutSystems metadata JSON without coupling the domain layer to ADO.NET primitives; respect Clean Architecture boundaries by routing through the Pipeline layer.
+- [ ] Build a configurable SQL Server extraction adapter that hydrates the OutSystems metadata JSON without coupling the domain layer to ADO.NET primitives; respect Clean Architecture boundaries by routing through the Pipeline layer. *(Progress: fixture-backed `SqlModelExtractionService` + CLI `extract-model` command with manifest-driven executor; live SQL adapter still pending.)*
+  - [ ] Implement a concrete `IAdvancedSqlExecutor` that shells `Microsoft.Data.SqlClient` while honoring read-only guardrails. *(Test Plan §12.1 · Guardrail §10)*
+  - [ ] Add integration smoke tests that replay a containerized SQL Server or deterministic stub to prove the live adapter wiring. *(Test Plan §18 follow-up)*
 - [x] Persist extraction payloads (model JSON, profiling pivots, DMM exports) into a cache directory with deterministic keys derived from module selection, toggle states, and connection metadata so repeated runs can reuse evidence. *(EvidenceCacheService + CLI cache integration)*
 - [ ] Add CLI flags (`--connection`, `--module-filter`) and typed options that govern both live extraction and cache behavior. *(Cache root / refresh flags shipped; connection + filtering still pending.)*
 - [x] Design cache manifests that record hash digests, timestamps, and provenance for each payload, enabling future ETL stages to verify freshness before emitting SSDT artifacts.
+- [ ] Introduce cache eviction/expiry heuristics so obsolete payloads age out once source toggles or modules disappear. *(Test Plan §18 follow-up)*
 - 🔗 **Checklist**: unlocks §7.4, §9.1, §14 matrix coverage, and new caching verification scenarios in §17.

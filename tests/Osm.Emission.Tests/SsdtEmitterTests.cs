@@ -35,13 +35,14 @@ public class SsdtEmitterTests
         Assert.Equal(report.UniqueIndexCount, manifest.PolicySummary!.UniqueIndexCount);
         Assert.Equal(report.UniqueIndexesEnforcedCount, manifest.PolicySummary!.UniqueIndexesEnforcedCount);
 
-        var customerTable = manifest.Tables.Single(t => t.Table.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
+        var customerTable = manifest.Tables.Single(t => t.Table.Equals("Customer", StringComparison.Ordinal));
         var customerPath = Path.Combine(temp.Path, customerTable.TableFile);
         Assert.True(File.Exists(customerPath));
         var customerScript = await File.ReadAllTextAsync(customerPath);
-        Assert.Contains("CREATE TABLE dbo.OSUSR_ABC_CUSTOMER", customerScript);
+        Assert.Contains("CREATE TABLE dbo.Customer", customerScript);
         Assert.Contains("PRIMARY KEY", customerScript);
-        Assert.DoesNotContain("CREATE INDEX", customerScript);
+        Assert.DoesNotContain("CREATE INDEX", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("LegacyCode", customerScript, StringComparison.Ordinal);
 
         foreach (var entry in manifest.Tables)
         {
@@ -64,7 +65,7 @@ public class SsdtEmitterTests
         var manifestJsonPath = Path.Combine(temp.Path, "manifest.json");
         Assert.True(File.Exists(manifestJsonPath));
         var manifestJson = await File.ReadAllTextAsync(manifestJsonPath);
-        Assert.Contains("OSUSR_ABC_CUSTOMER", manifestJson);
+        Assert.Contains("Customer", manifestJson);
     }
 
     [Fact]
@@ -84,7 +85,7 @@ public class SsdtEmitterTests
         var emitter = new SsdtEmitter();
         var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, report);
 
-        var customerTable = manifest.Tables.Single(t => t.Table.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
+        var customerTable = manifest.Tables.Single(t => t.Table.Equals("Customer", StringComparison.Ordinal));
         Assert.NotNull(customerTable.ConcatenatedFile);
         var concatenatedPath = Path.Combine(temp.Path, customerTable.ConcatenatedFile!);
         Assert.True(File.Exists(concatenatedPath));
@@ -110,8 +111,11 @@ public class SsdtEmitterTests
         var cleanOut = Path.Combine(temp.Path, "clean");
         Directory.CreateDirectory(cleanOut);
         var cleanModel = factory.Create(model, cleanDecisions, smoOptions);
-        await emitter.EmitAsync(cleanModel, cleanOut, smoOptions, null);
-        var cleanIndexPath = Directory.GetFiles(cleanOut, "*UX_USER_EMAIL.sql", SearchOption.AllDirectories).Single();
+        var cleanManifest = await emitter.EmitAsync(cleanModel, cleanOut, smoOptions, null);
+        var cleanIndexRelative = cleanManifest.Tables
+            .SelectMany(t => t.IndexFiles)
+            .Single(path => path.EndsWith("UX_User_Email.sql", StringComparison.OrdinalIgnoreCase));
+        var cleanIndexPath = Path.Combine(cleanOut, cleanIndexRelative);
         var cleanScript = await File.ReadAllTextAsync(cleanIndexPath);
         Assert.Contains("CREATE UNIQUE INDEX", cleanScript, StringComparison.OrdinalIgnoreCase);
 
@@ -120,11 +124,70 @@ public class SsdtEmitterTests
         var duplicateOut = Path.Combine(temp.Path, "duplicates");
         Directory.CreateDirectory(duplicateOut);
         var duplicateModel = factory.Create(model, duplicateDecisions, smoOptions);
-        await emitter.EmitAsync(duplicateModel, duplicateOut, smoOptions, null);
-        var duplicateIndexPath = Directory.GetFiles(duplicateOut, "*UX_USER_EMAIL.sql", SearchOption.AllDirectories).Single();
+        var duplicateManifest = await emitter.EmitAsync(duplicateModel, duplicateOut, smoOptions, null);
+        var duplicateIndexRelative = duplicateManifest.Tables
+            .SelectMany(t => t.IndexFiles)
+            .Single(path => path.EndsWith("UX_User_Email.sql", StringComparison.OrdinalIgnoreCase));
+        var duplicateIndexPath = Path.Combine(duplicateOut, duplicateIndexRelative);
         var duplicateScript = await File.ReadAllTextAsync(duplicateIndexPath);
         Assert.Contains("CREATE INDEX", duplicateScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("CREATE UNIQUE INDEX", duplicateScript, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task EmitAsync_applies_table_override_across_artifacts()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var options = TighteningOptions.Default;
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(model, snapshot, options);
+        var report = PolicyDecisionReporter.Create(decisions);
+
+        var overrideResult = TableNamingOverride.Create("dbo", "OSUSR_ABC_CUSTOMER", "CUSTOMER_PORTAL");
+        Assert.True(overrideResult.IsSuccess);
+        var overrides = NamingOverrideOptions.Create(new[] { overrideResult.Value });
+        Assert.True(overrides.IsSuccess);
+
+        var smoOptions = SmoBuildOptions.FromEmission(options.Emission).WithNamingOverrides(overrides.Value);
+        var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, report);
+
+        var renamedEntry = manifest.Tables.FirstOrDefault(t => t.Table.Equals("CUSTOMER_PORTAL", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(renamedEntry);
+        Assert.Equal($"dbo.CUSTOMER_PORTAL.sql", Path.GetFileName(renamedEntry!.TableFile));
+
+        var tablePath = Path.Combine(temp.Path, renamedEntry.TableFile);
+        var tableScript = await File.ReadAllTextAsync(tablePath);
+        Assert.Contains("CREATE TABLE dbo.CUSTOMER_PORTAL", tableScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", tableScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PK_CUSTOMER_PORTAL", tableScript, StringComparison.OrdinalIgnoreCase);
+
+        foreach (var indexFile in renamedEntry.IndexFiles)
+        {
+            Assert.Contains("CUSTOMER_PORTAL", indexFile, StringComparison.OrdinalIgnoreCase);
+        }
+
+        foreach (var fkFile in renamedEntry.ForeignKeyFiles)
+        {
+            Assert.Contains("CUSTOMER_PORTAL", fkFile, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var allSqlFiles = Directory.GetFiles(temp.Path, "*.sql", SearchOption.AllDirectories);
+        Assert.Contains(allSqlFiles, path =>
+        {
+            var content = File.ReadAllText(path);
+            return content.Contains("CUSTOMER_PORTAL", StringComparison.OrdinalIgnoreCase);
+        });
+
+        foreach (var sqlPath in allSqlFiles)
+        {
+            var content = File.ReadAllText(sqlPath);
+            Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", content, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private sealed class TempDirectory : IDisposable
