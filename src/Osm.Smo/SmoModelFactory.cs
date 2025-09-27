@@ -206,6 +206,13 @@ public sealed class SmoModelFactory
                 enforceUnique = decision.EnforceUnique;
             }
 
+            var indexCoordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
+            var enforceUnique = index.IsUnique;
+            if (index.IsUnique && uniqueDecisions.TryGetValue(indexCoordinate, out var decision))
+            {
+                enforceUnique = decision.EnforceUnique;
+            }
+
             builder.Add(new SmoIndexDefinition(
                 normalizedName,
                 enforceUnique,
