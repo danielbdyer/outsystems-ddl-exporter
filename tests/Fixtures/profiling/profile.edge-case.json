@@ -1,0 +1,40 @@
+{
+  "columns": [
+    { "Schema": "dbo", "Table": "OSUSR_ABC_CUSTOMER", "Column": "ID",         "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null,          "NullCount": 0,    "RowCount": 125000 },
+    { "Schema": "dbo", "Table": "OSUSR_ABC_CUSTOMER", "Column": "EMAIL",      "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": true,  "DefaultDefinition": null,          "NullCount": 0,    "RowCount": 125000 },
+    { "Schema": "dbo", "Table": "OSUSR_ABC_CUSTOMER", "Column": "FIRSTNAME",  "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": "('')",        "NullCount": 432,  "RowCount": 125000 },
+    { "Schema": "dbo", "Table": "OSUSR_ABC_CUSTOMER", "Column": "LASTNAME",   "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": "('')",        "NullCount": 125,  "RowCount": 125000 },
+    { "Schema": "dbo", "Table": "OSUSR_ABC_CUSTOMER", "Column": "CITYID",     "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null,          "NullCount": 0,    "RowCount": 125000 },
+    { "Schema": "dbo", "Table": "OSUSR_DEF_CITY",     "Column": "ID",         "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null,          "NullCount": 0,    "RowCount": 320 },
+    { "Schema": "dbo", "Table": "OSUSR_DEF_CITY",     "Column": "NAME",       "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null,          "NullCount": 0,    "RowCount": 320 },
+    { "Schema": "dbo", "Table": "OSUSR_DEF_CITY",     "Column": "ISACTIVE",   "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": "((1))",       "NullCount": 0,    "RowCount": 320 },
+    { "Schema": "billing", "Table": "BILLING_ACCOUNT", "Column": "ID",         "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null,          "NullCount": 0,    "RowCount": 58000 },
+    { "Schema": "billing", "Table": "BILLING_ACCOUNT", "Column": "ACCOUNTNUMBER", "IsNullablePhysical": true, "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": true,  "DefaultDefinition": null,          "NullCount": 0,    "RowCount": 58000 },
+    { "Schema": "billing", "Table": "BILLING_ACCOUNT", "Column": "EXTREF",     "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null,          "NullCount": 540,  "RowCount": 58000 },
+    { "Schema": "dbo", "Table": "OSUSR_XYZ_JOBRUN",   "Column": "ID",         "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null,          "NullCount": 0,    "RowCount": 2500000 },
+    { "Schema": "dbo", "Table": "OSUSR_XYZ_JOBRUN",   "Column": "TRIGGEREDBYUSERID", "IsNullablePhysical": true, "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 950000, "RowCount": 2500000 },
+    { "Schema": "dbo", "Table": "OSUSR_XYZ_JOBRUN",   "Column": "CREATEDON",  "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": "(getutcdate())", "NullCount": 0,    "RowCount": 2500000 }
+  ],
+  "uniqueCandidates": [
+    { "Schema": "dbo",     "Table": "OSUSR_ABC_CUSTOMER", "Column": "EMAIL",         "HasDuplicate": false },
+    { "Schema": "billing", "Table": "BILLING_ACCOUNT",    "Column": "ACCOUNTNUMBER", "HasDuplicate": false }
+  ],
+  "fkReality": [
+    {
+      "Ref": {
+        "FromSchema": "dbo", "FromTable": "OSUSR_ABC_CUSTOMER", "FromColumn": "CITYID",
+        "ToSchema": "dbo", "ToTable": "OSUSR_DEF_CITY", "ToColumn": "ID",
+        "HasDbConstraint": true
+      },
+      "HasOrphan": false
+    },
+    {
+      "Ref": {
+        "FromSchema": "dbo", "FromTable": "OSUSR_XYZ_JOBRUN", "FromColumn": "TRIGGEREDBYUSERID",
+        "ToSchema": "dbo", "ToTable": "OSUSR_ABC_CUSTOMER", "ToColumn": "ID",
+        "HasDbConstraint": false
+      },
+      "HasOrphan": true
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "modules": [
+    {
+      "name": "M",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "A",
+          "physicalName": "OSUSR_A",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db.catalog": null,
+          "db.schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            }
+          ],
+          "indexes": [],
+          "relationships": []
+        },
+        {
+          "name": "B",
+          "physicalName": "OSUSR_B",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db.catalog": null,
+          "db.schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "AId",
+              "physicalName": "AID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 1,
+              "refEntityId": 1,
+              "refEntity.name": "A",
+              "refEntity.physicalName": "OSUSR_A",
+              "reference.deleteRuleCode": "Ignore",
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            }
+          ],
+          "indexes": [],
+          "relationships": [
+            {
+              "viaAttributeId": 2,
+              "viaAttributeName": "AId",
+              "toEntity.name": "A",
+              "toEntity.physicalName": "OSUSR_A",
+              "deleteRuleCode": "Ignore",
+              "hasDbConstraint": 0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

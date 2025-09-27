@@ -1,0 +1,22 @@
+{
+  "columns": [
+    { "Schema": "dbo", "Table": "OSUSR_P_PARENT", "Column": "ID",       "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 500 },
+    { "Schema": "dbo", "Table": "OSUSR_C_CHILD",  "Column": "ID",       "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 5000 },
+    { "Schema": "dbo", "Table": "OSUSR_C_CHILD",  "Column": "PARENTID", "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 5000 }
+  ],
+  "uniqueCandidates": [],
+  "fkReality": [
+    {
+      "Ref": {
+        "FromSchema": "dbo",
+        "FromTable": "OSUSR_C_CHILD",
+        "FromColumn": "PARENTID",
+        "ToSchema": "dbo",
+        "ToTable": "OSUSR_P_PARENT",
+        "ToColumn": "ID",
+        "HasDbConstraint": true
+      },
+      "HasOrphan": false
+    }
+  ]
+}

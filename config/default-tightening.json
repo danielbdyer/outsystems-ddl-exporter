@@ -1,0 +1,34 @@
+{
+  "policy": {
+    "mode": "EvidenceGated",
+    "nullBudget": 0.0
+  },
+  "foreignKeys": {
+    "enableCreation": true,
+    "allowCrossSchema": false,
+    "allowCrossCatalog": false
+  },
+  "uniqueness": {
+    "enforceSingleColumnUnique": true,
+    "enforceMultiColumnUnique": true
+  },
+  "remediation": {
+    "generatePreScripts": true,
+    "sentinels": {
+      "numeric": "0",
+      "text": "",
+      "date": "1900-01-01"
+    },
+    "maxRowsDefaultBackfill": 100000
+  },
+  "emission": {
+    "perTableFiles": true,
+    "includePlatformAutoIndexes": false,
+    "sanitizeModuleNames": true,
+    "emitConcatenatedConstraints": false
+  },
+  "mocking": {
+    "useProfileMockFolder": false,
+    "profileMockFolder": null
+  }
+}

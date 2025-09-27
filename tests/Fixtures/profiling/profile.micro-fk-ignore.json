@@ -1,0 +1,22 @@
+{
+  "columns": [
+    { "Schema": "dbo", "Table": "OSUSR_A", "Column": "ID",   "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0,   "RowCount": 200 },
+    { "Schema": "dbo", "Table": "OSUSR_B", "Column": "ID",   "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0,   "RowCount": 4000 },
+    { "Schema": "dbo", "Table": "OSUSR_B", "Column": "AID",  "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 800, "RowCount": 4000 }
+  ],
+  "uniqueCandidates": [],
+  "fkReality": [
+    {
+      "Ref": {
+        "FromSchema": "dbo",
+        "FromTable": "OSUSR_B",
+        "FromColumn": "AID",
+        "ToSchema": "dbo",
+        "ToTable": "OSUSR_A",
+        "ToColumn": "ID",
+        "HasDbConstraint": false
+      },
+      "HasOrphan": true
+    }
+  ]
+}
