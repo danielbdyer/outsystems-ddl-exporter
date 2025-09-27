@@ -37,29 +37,29 @@
 
 ## 0. TL;DR Quickstart
 
-1. **Run Advanced SQL** inside an OutSystems Server Action to produce **JSON** for your chosen modules. Save it to `model.json`.
-2. **Run the .NET pipeline**:
+1. **Run Advanced SQL** inside an OutSystems Server Action (or use the provided fixtures) to produce **JSON** for your chosen modules. Save it to `model.json`.
+2. **Run the .NET pipeline** (fixture-first example shown; swap in your live export and profiler snapshot when ready):
 
    ```bash
    dotnet run --project src/Osm.Cli \
      build-ssdt \
-     --in model.json \
-     --profile-conn "Server=...;Database=...;Integrated Security=true" \
+     --model tests/Fixtures/model.edge-case.json \
+     --profile tests/Fixtures/profiling/profile.edge-case.json \
      --out ./out
    ```
 
-   This profiles your DB, decides NOT NULL/UNIQUE/FK, builds SMO objects, and emits SSDT-ready per-table files to `./out/Modules/...`.
-3. **(Optional) Verify DMM parity**:
+   The command evaluates NOT NULL/UNIQUE/FK decisions, materializes SMO tables, emits SSDT-ready per-table files to `./out/Modules/...`, and records a structured summary in `./out/policy-decisions.json` alongside the `manifest.json` snapshot.
+3. **(Optional) Verify DMM parity** using the same model/profile inputs:
 
    ```bash
    dotnet run --project src/Osm.Cli \
      dmm-compare \
-     --in model.json \
-     --dmm ./dmm_ddl/*.sql \
-     --out ./out/dmm-diff.json
+     --model tests/Fixtures/model.edge-case.json \
+     --profile tests/Fixtures/profiling/profile.edge-case.json \
+     --dmm ./out/dmm/edge-case.sql
    ```
 
-   Fail the PR if any diffs exist.
+   The CLI exits with a non-zero status and writes `dmm-diff.json` when parity gaps exist, making it CI-friendly.
 
 ---
 
@@ -607,6 +607,10 @@ dotnet run --project src/Osm.Cli dmm-compare \
 ---
 
 ## 13. Configuration & Environment
+
+**Baseline toggles**
+
+The repository ships with `config/default-tightening.json`, which the configuration deserializer loads into `TighteningOptions` (EvidenceGated policy, FK creation enabled, platform auto-indexes suppressed). Use it as the starting point for local runs or copy it into environment-specific settings before overriding individual flags.
 
 **AppSettings (example)**
 

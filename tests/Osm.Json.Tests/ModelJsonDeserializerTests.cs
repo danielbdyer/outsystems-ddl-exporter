@@ -1,0 +1,488 @@
+using System.Linq;
+using System.Text;
+using Osm.Json;
+using Tests.Support;
+
+namespace Osm.Json.Tests;
+
+public class ModelJsonDeserializerTests
+{
+    private static MemoryStream ToStream(string json) => new(Encoding.UTF8.GetBytes(json));
+
+    [Fact]
+    public void Deserialize_ShouldProduceDomainModel_ForRichPayload()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db.schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    },
+                    {
+                      "name": "CustomerId",
+                      "physicalName": "CUSTOMERID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isReference": 1,
+                      "refEntityId": 100,
+                      "refEntity.name": "Customer",
+                      "refEntity.physicalName": "OSUSR_FIN_CUSTOMER",
+                      "reference.deleteRuleCode": "Protect",
+                      "reference.hasDbConstraint": 1,
+                      "isActive": true
+                    },
+                    {
+                      "name": "LegacyCode",
+                      "physicalName": "LEGACYCODE",
+                      "dataType": "Text",
+                      "length": 50,
+                      "default": null,
+                      "isMandatory": false,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isActive": false,
+                      "physical.isPresentButInactive": 1
+                    }
+                  ],
+                  "relationships": [
+                    {
+                      "viaAttributeName": "CustomerId",
+                      "toEntity.name": "Customer",
+                      "toEntity.physicalName": "OSUSR_FIN_CUSTOMER",
+                      "deleteRuleCode": "Protect",
+                      "hasDbConstraint": 1
+                    }
+                  ],
+                  "indexes": [
+                    {
+                      "name": "IDX_INVOICE_NUMBER",
+                      "isUnique": true,
+                      "isPlatformAuto": 0,
+                      "columns": [
+                        { "attribute": "Id", "physicalColumn": "ID", "ordinal": 1 }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsSuccess);
+        var module = Assert.Single(result.Value.Modules);
+        Assert.Equal("Finance", module.Name.Value);
+        Assert.True(module.IsActive);
+        Assert.False(module.IsSystemModule);
+
+        var entity = Assert.Single(module.Entities);
+        Assert.Equal("Invoice", entity.LogicalName.Value);
+        Assert.Equal("OSUSR_FIN_INVOICE", entity.PhysicalName.Value);
+        Assert.False(entity.IsStatic);
+        Assert.False(entity.IsExternal);
+        Assert.True(entity.IsActive);
+        Assert.Equal("dbo", entity.Schema.Value);
+
+        var attributes = entity.Attributes;
+        Assert.Equal(3, attributes.Length);
+        var legacy = attributes.Single(a => a.LogicalName.Value == "LegacyCode");
+        Assert.False(legacy.IsActive);
+        Assert.True(legacy.Reality.IsPresentButInactive);
+
+        var reference = attributes.Single(a => a.LogicalName.Value == "CustomerId").Reference;
+        Assert.True(reference.IsReference);
+        Assert.Equal("Customer", reference.TargetEntity?.Value);
+        Assert.Equal("Protect", reference.DeleteRuleCode);
+        Assert.True(reference.HasDatabaseConstraint);
+
+        var index = Assert.Single(entity.Indexes);
+        Assert.Equal("IDX_INVOICE_NUMBER", index.Name.Value);
+        Assert.True(index.IsUnique);
+        Assert.False(index.IsPlatformAuto);
+        var indexColumn = Assert.Single(index.Columns);
+        Assert.Equal(1, indexColumn.Ordinal);
+
+        var relationship = Assert.Single(entity.Relationships);
+        Assert.Equal("Customer", relationship.TargetEntity.Value);
+        Assert.Equal("CustomerId", relationship.ViaAttribute.Value);
+        Assert.True(relationship.HasDatabaseConstraint);
+    }
+
+    [Fact]
+    public void Deserialize_ShouldFail_WhenModuleNameMissing()
+    {
+        const string json = """
+        {
+          "modules": [
+            {
+              "entities": []
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "module.name.invalid");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldFail_WhenAttributePhysicalNameMissing()
+    {
+        const string json = """
+        {
+          "modules": [
+            {
+              "name": "Finance",
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "db.schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "column.name.invalid");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldLoadEdgeCaseFixture()
+    {
+        using var stream = FixtureFile.OpenStream("model.edge-case.json");
+        var deserializer = new ModelJsonDeserializer();
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsSuccess);
+        var appCore = Assert.Single(result.Value.Modules.Where(m => m.Name.Value == "AppCore"));
+        var customer = Assert.Single(appCore.Entities.Where(e => e.LogicalName.Value == "Customer"));
+        Assert.Equal(6, customer.Attributes.Length);
+        var legacy = customer.Attributes.Single(a => a.LogicalName.Value == "LegacyCode");
+        Assert.False(legacy.IsActive);
+        Assert.True(legacy.Reality.IsPresentButInactive);
+        var cityId = customer.Attributes.Single(a => a.LogicalName.Value == "CityId");
+        Assert.Equal("Protect", cityId.Reference.DeleteRuleCode);
+        Assert.True(cityId.Reference.HasDatabaseConstraint);
+        var jobRun = result.Value.Modules
+            .Single(m => m.Name.Value == "Ops")
+            .Entities.Single(e => e.LogicalName.Value == "JobRun");
+        var relationship = jobRun.Relationships.Single();
+        Assert.Equal("Ignore", relationship.DeleteRuleCode);
+        Assert.False(relationship.HasDatabaseConstraint);
+    }
+
+    [Fact]
+    public void Deserialize_ShouldFail_WhenAttributesCollectionMissing()
+    {
+        const string json = """
+        {
+          "modules": [
+            {
+              "name": "Finance",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db.schema": "dbo"
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "entity.attributes.missing");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldFail_WhenReferenceAttributeMissingTargetLogicalName()
+    {
+        const string json = """
+        {
+          "modules": [
+            {
+              "name": "Finance",
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "db.schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "CustomerId",
+                      "physicalName": "CUSTOMERID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isReference": 1,
+                      "refEntity.physicalName": "OSUSR_FIN_CUSTOMER"
+                    },
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "attribute.reference.target.missing");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldFail_WhenReferenceAttributeMissingTargetPhysicalName()
+    {
+        const string json = """
+        {
+          "modules": [
+            {
+              "name": "Finance",
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "db.schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "CustomerId",
+                      "physicalName": "CUSTOMERID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isReference": 1,
+                      "refEntity.name": "Customer"
+                    },
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "attribute.reference.physical.missing");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldFail_WhenDuplicateAttributeColumnsDetected()
+    {
+        const string json = """
+        {
+          "modules": [
+            {
+              "name": "Finance",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db.schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    },
+                    {
+                      "name": "Legacy",
+                      "physicalName": "id",
+                      "dataType": "Identifier",
+                      "isMandatory": false,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "entity.attributes.duplicateColumn");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldFail_WhenDuplicateEntityPhysicalNames()
+    {
+        const string json = """
+        {
+          "modules": [
+            {
+              "name": "Finance",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db.schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ]
+                },
+                {
+                  "name": "InvoiceShadow",
+                  "physicalName": "osusr_fin_invoice",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db.schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "module.entities.duplicatePhysical");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldFail_WhenJsonMalformed()
+    {
+        const string json = "{";
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "json.parse.failed");
+    }
+}

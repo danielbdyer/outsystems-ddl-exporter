@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userprefs
+*.csproj.user
+*.DotSettings.user
+.vs/
+TestResults/
+[Dd]ebug/
+[Rr]elease/
+[Bb]uild/
+.nuget/packages/

@@ -1,0 +1,123 @@
+{
+  "modules": [
+    {
+      "name": "M",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "OrderAllocation",
+          "physicalName": "OSUSR_A_ORDERALLOCATION",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db.catalog": null,
+          "db.schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "CountryId",
+              "physicalName": "COUNTRYID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "DocumentId",
+              "physicalName": "DOCUMENTID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "Quantity",
+              "physicalName": "QTY",
+              "originalName": null,
+              "dataType": "Integer",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": "0",
+              "isMandatory": false,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            }
+          ],
+          "indexes": [
+            {
+              "name": "UX_ORDERALLOC_COUNTRY_DOCUMENT",
+              "isUnique": true,
+              "isPrimary": false,
+              "isPlatformAuto": 0,
+              "columns": [
+                { "attribute": "CountryId", "physicalColumn": "COUNTRYID", "ordinal": 1 },
+                { "attribute": "DocumentId", "physicalColumn": "DOCUMENTID", "ordinal": 2 }
+              ]
+            }
+          ],
+          "relationships": []
+        }
+      ]
+    }
+  ]
+}

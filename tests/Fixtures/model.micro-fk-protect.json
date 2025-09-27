@@ -1,0 +1,112 @@
+{
+  "modules": [
+    {
+      "name": "M",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Parent",
+          "physicalName": "OSUSR_P_PARENT",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db.catalog": null,
+          "db.schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            }
+          ],
+          "indexes": [],
+          "relationships": []
+        },
+        {
+          "name": "Child",
+          "physicalName": "OSUSR_C_CHILD",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db.catalog": null,
+          "db.schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "ParentId",
+              "physicalName": "PARENTID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 1,
+              "refEntityId": 1,
+              "refEntity.name": "Parent",
+              "refEntity.physicalName": "OSUSR_P_PARENT",
+              "reference.deleteRuleCode": "Protect",
+              "reference.hasDbConstraint": 1,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            }
+          ],
+          "indexes": [],
+          "relationships": [
+            {
+              "viaAttributeId": 2,
+              "viaAttributeName": "ParentId",
+              "toEntity.name": "Parent",
+              "toEntity.physicalName": "OSUSR_P_PARENT",
+              "deleteRuleCode": "Protect",
+              "hasDbConstraint": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

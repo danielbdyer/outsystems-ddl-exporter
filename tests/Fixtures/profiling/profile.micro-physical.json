@@ -1,0 +1,8 @@
+{
+  "columns": [
+    { "Schema": "dbo", "Table": "OSUSR_PH_RECORD", "Column": "ID",           "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 10 },
+    { "Schema": "dbo", "Table": "OSUSR_PH_RECORD", "Column": "EXTERNALCODE", "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 10 }
+  ],
+  "uniqueCandidates": [],
+  "fkReality": []
+}

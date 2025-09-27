@@ -1,0 +1,108 @@
+using System;
+using System.Linq;
+using System.Text.Json;
+using Osm.Domain.Profiling;
+using Osm.Domain.ValueObjects;
+
+namespace Tests.Support;
+
+public static class ProfileFixtures
+{
+    public static ProfileSnapshot LoadSnapshot(string fixtureName)
+    {
+        using var stream = FixtureFile.OpenStream(fixtureName);
+        using var document = JsonDocument.Parse(stream);
+        var root = document.RootElement;
+
+        var columns = root.GetProperty("columns")
+            .EnumerateArray()
+            .Select(ParseColumn)
+            .ToArray();
+
+        var uniques = root.TryGetProperty("uniqueCandidates", out var uniqueElement)
+            ? uniqueElement.EnumerateArray().Select(ParseUnique).ToArray()
+            : Array.Empty<UniqueCandidateProfile>();
+
+        var composite = root.TryGetProperty("compositeUniqueCandidates", out var compositeElement)
+            ? compositeElement.EnumerateArray().Select(ParseCompositeUnique).ToArray()
+            : Array.Empty<CompositeUniqueCandidateProfile>();
+
+        var fks = root.GetProperty("fkReality")
+            .EnumerateArray()
+            .Select(ParseForeignKey)
+            .ToArray();
+
+        return ProfileSnapshot.Create(columns, uniques, composite, fks).Value;
+    }
+
+    private static ColumnProfile ParseColumn(JsonElement element)
+    {
+        var schema = SchemaName.Create(element.GetProperty("Schema").GetString()).Value;
+        var table = TableName.Create(element.GetProperty("Table").GetString()).Value;
+        var column = ColumnName.Create(element.GetProperty("Column").GetString()).Value;
+        var nullable = element.GetProperty("IsNullablePhysical").GetBoolean();
+        var computed = element.GetProperty("IsComputed").GetBoolean();
+        var primaryKey = element.GetProperty("IsPrimaryKey").GetBoolean();
+        var uniqueKey = element.GetProperty("IsUniqueKey").GetBoolean();
+        var defaultDefinition = element.GetProperty("DefaultDefinition").ValueKind == JsonValueKind.Null
+            ? null
+            : element.GetProperty("DefaultDefinition").GetString();
+        var nullCount = element.GetProperty("NullCount").GetInt64();
+        var rowCount = element.GetProperty("RowCount").GetInt64();
+
+        return ColumnProfile.Create(
+            schema,
+            table,
+            column,
+            nullable,
+            computed,
+            primaryKey,
+            uniqueKey,
+            defaultDefinition,
+            rowCount,
+            nullCount).Value;
+    }
+
+    private static UniqueCandidateProfile ParseUnique(JsonElement element)
+    {
+        var schema = SchemaName.Create(element.GetProperty("Schema").GetString()).Value;
+        var table = TableName.Create(element.GetProperty("Table").GetString()).Value;
+        var column = ColumnName.Create(element.GetProperty("Column").GetString()).Value;
+        var hasDuplicate = element.GetProperty("HasDuplicate").GetBoolean();
+        return UniqueCandidateProfile.Create(schema, table, column, hasDuplicate).Value;
+    }
+
+    private static CompositeUniqueCandidateProfile ParseCompositeUnique(JsonElement element)
+    {
+        var schema = SchemaName.Create(element.GetProperty("Schema").GetString()).Value;
+        var table = TableName.Create(element.GetProperty("Table").GetString()).Value;
+        var columns = element.GetProperty("Columns")
+            .EnumerateArray()
+            .Select(c => ColumnName.Create(c.GetString()).Value)
+            .ToArray();
+        var hasDuplicate = element.GetProperty("HasDuplicate").GetBoolean();
+        return CompositeUniqueCandidateProfile.Create(schema, table, columns, hasDuplicate).Value;
+    }
+
+    private static ForeignKeyReality ParseForeignKey(JsonElement element)
+    {
+        var referenceElement = element.GetProperty("Ref");
+        var fromSchema = SchemaName.Create(referenceElement.GetProperty("FromSchema").GetString()).Value;
+        var fromTable = TableName.Create(referenceElement.GetProperty("FromTable").GetString()).Value;
+        var fromColumn = ColumnName.Create(referenceElement.GetProperty("FromColumn").GetString()).Value;
+        var toSchema = SchemaName.Create(referenceElement.GetProperty("ToSchema").GetString()).Value;
+        var toTable = TableName.Create(referenceElement.GetProperty("ToTable").GetString()).Value;
+        var toColumn = ColumnName.Create(referenceElement.GetProperty("ToColumn").GetString()).Value;
+        var hasDbConstraint = referenceElement.GetProperty("HasDbConstraint").GetBoolean();
+        var reference = ForeignKeyReference.Create(
+            fromSchema,
+            fromTable,
+            fromColumn,
+            toSchema,
+            toTable,
+            toColumn,
+            hasDbConstraint).Value;
+        var hasOrphan = element.GetProperty("HasOrphan").GetBoolean();
+        return ForeignKeyReality.Create(reference, hasOrphan).Value;
+    }
+}

@@ -1,0 +1,455 @@
+{
+  "modules": [
+    {
+      "name": "AppCore",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Customer",
+          "physicalName": "OSUSR_ABC_CUSTOMER",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db.catalog": null,
+          "db.schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "Email",
+              "physicalName": "EMAIL",
+              "originalName": "EmailAddress",
+              "dataType": "Text",
+              "length": 255,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "FirstName",
+              "physicalName": "FIRSTNAME",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 100,
+              "precision": null,
+              "scale": null,
+              "default": "''",
+              "isMandatory": false,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "LastName",
+              "physicalName": "LASTNAME",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 100,
+              "precision": null,
+              "scale": null,
+              "default": "''",
+              "isMandatory": false,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "CityId",
+              "physicalName": "CITYID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 1,
+              "refEntityId": 2001,
+              "refEntity.name": "City",
+              "refEntity.physicalName": "OSUSR_DEF_CITY",
+              "reference.deleteRuleCode": "Protect",
+              "reference.hasDbConstraint": 1,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "LegacyCode",
+              "physicalName": "LEGACYCODE",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 50,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isActive": false,
+              "isIdentifier": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 1
+            }
+          ],
+          "relationships": [
+            {
+              "viaAttributeId": 31001,
+              "viaAttributeName": "CityId",
+              "toEntity.name": "City",
+              "toEntity.physicalName": "OSUSR_DEF_CITY",
+              "deleteRuleCode": "Protect",
+              "hasDbConstraint": 1
+            }
+          ],
+          "indexes": [
+            {
+              "name": "IDX_CUSTOMER_EMAIL",
+              "isUnique": true,
+              "isPlatformAuto": 0,
+              "columns": [
+                { "attribute": "Email", "physicalColumn": "EMAIL", "ordinal": 1 }
+              ]
+            },
+            {
+              "name": "IDX_CUSTOMER_NAME",
+              "isUnique": false,
+              "isPlatformAuto": 0,
+              "columns": [
+                { "attribute": "LastName", "physicalColumn": "LASTNAME", "ordinal": 1 },
+                { "attribute": "FirstName", "physicalColumn": "FIRSTNAME", "ordinal": 2 }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "City",
+          "physicalName": "OSUSR_DEF_CITY",
+          "isStatic": true,
+          "isExternal": false,
+          "isActive": true,
+          "db.catalog": null,
+          "db.schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "Name",
+              "physicalName": "NAME",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 200,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "IsActive",
+              "physicalName": "ISACTIVE",
+              "originalName": null,
+              "dataType": "Boolean",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": "1",
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            }
+          ],
+          "relationships": [],
+          "indexes": [
+            {
+              "name": "OSIDX_CITY_NAME",
+              "isUnique": false,
+              "isPlatformAuto": 1,
+              "columns": [
+                { "attribute": "Name", "physicalColumn": "NAME", "ordinal": 1 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ExtBilling",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "BillingAccount",
+          "physicalName": "BILLING_ACCOUNT",
+          "isStatic": false,
+          "isExternal": true,
+          "isActive": true,
+          "db.catalog": null,
+          "db.schema": "billing",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": "int",
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "AccountNumber",
+              "physicalName": "ACCOUNTNUMBER",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 50,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": "varchar(50)",
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "ExtRef",
+              "physicalName": "EXTREF",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 50,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": "varchar(50)",
+              "physical.isPresentButInactive": 0
+            }
+          ],
+          "relationships": [],
+          "indexes": [
+            {
+              "name": "IDX_BILLINGACCOUNT_ACCTNUM",
+              "isUnique": true,
+              "isPlatformAuto": 0,
+              "columns": [
+                { "attribute": "AccountNumber", "physicalColumn": "ACCOUNTNUMBER", "ordinal": 1 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ops",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "JobRun",
+          "physicalName": "OSUSR_XYZ_JOBRUN",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db.catalog": null,
+          "db.schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "TriggeredByUserId",
+              "physicalName": "TRIGGEREDBYUSERID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 1,
+              "refEntityId": 1001,
+              "refEntity.name": "Customer",
+              "refEntity.physicalName": "OSUSR_ABC_CUSTOMER",
+              "reference.deleteRuleCode": "Ignore",
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "CreatedOn",
+              "physicalName": "CREATEDON",
+              "originalName": null,
+              "dataType": "DateTime",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": "getutcdate()",
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            }
+          ],
+          "relationships": [
+            {
+              "viaAttributeId": 41003,
+              "viaAttributeName": "TriggeredByUserId",
+              "toEntity.name": "Customer",
+              "toEntity.physicalName": "OSUSR_ABC_CUSTOMER",
+              "deleteRuleCode": "Ignore",
+              "hasDbConstraint": 0
+            }
+          ],
+          "indexes": [
+            {
+              "name": "OSIDX_JOBRUN_CREATEDON",
+              "isUnique": false,
+              "isPlatformAuto": 1,
+              "columns": [
+                { "attribute": "CreatedOn", "physicalColumn": "CREATEDON", "ordinal": 1 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

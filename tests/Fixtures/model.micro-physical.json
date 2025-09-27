@@ -1,0 +1,66 @@
+{
+  "modules": [
+    {
+      "name": "M",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Record",
+          "physicalName": "OSUSR_PH_RECORD",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db.catalog": null,
+          "db.schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isActive": true,
+              "isIdentifier": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            },
+            {
+              "name": "ExternalCode",
+              "physicalName": "EXTERNALCODE",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 50,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isActive": true,
+              "isIdentifier": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity.name": null,
+              "refEntity.physicalName": null,
+              "reference.deleteRuleCode": null,
+              "reference.hasDbConstraint": 0,
+              "external.dbType": null,
+              "physical.isPresentButInactive": 0
+            }
+          ],
+          "relationships": [],
+          "indexes": []
+        }
+      ]
+    }
+  ]
+}

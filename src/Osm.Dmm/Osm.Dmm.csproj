@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="170.23.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Osm.Domain\Osm.Domain.csproj" />
+    <ProjectReference Include="..\Osm.Smo\Osm.Smo.csproj" />
+  </ItemGroup>
+</Project>

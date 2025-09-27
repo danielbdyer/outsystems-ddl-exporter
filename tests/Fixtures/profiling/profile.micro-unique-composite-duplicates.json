@@ -1,0 +1,12 @@
+{
+  "columns": [
+    { "Schema": "dbo", "Table": "OSUSR_A_ORDERALLOCATION", "Column": "ID",         "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 1200 },
+    { "Schema": "dbo", "Table": "OSUSR_A_ORDERALLOCATION", "Column": "COUNTRYID",  "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 5, "RowCount": 1200 },
+    { "Schema": "dbo", "Table": "OSUSR_A_ORDERALLOCATION", "Column": "DOCUMENTID", "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 1200 }
+  ],
+  "uniqueCandidates": [],
+  "compositeUniqueCandidates": [
+    { "Schema": "dbo", "Table": "OSUSR_A_ORDERALLOCATION", "Columns": ["COUNTRYID", "DOCUMENTID"], "HasDuplicate": true }
+  ],
+  "fkReality": []
+}
