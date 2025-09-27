@@ -35,12 +35,23 @@ public sealed class TighteningPolicy
             .SelectMany(m => m.Entities)
             .ToDictionary(e => e.LogicalName, e => e);
 
-        var singleUniqueClean = BuildSingleColumnUniqueSignals(model, uniqueProfiles, options.Uniqueness.EnforceSingleColumnUnique);
-        var singleUniqueDuplicates = BuildSingleColumnDuplicateSignals(model, uniqueProfiles);
-        var (compositeUniqueClean, compositeUniqueDuplicates) = BuildCompositeUniqueSignals(model, snapshot.CompositeUniqueCandidates, options.Uniqueness.EnforceMultiColumnUnique);
+        var uniqueEvidence = UniqueIndexEvidenceAggregator.Create(
+            model,
+            uniqueProfiles,
+            snapshot.CompositeUniqueCandidates,
+            options.Uniqueness.EnforceSingleColumnUnique,
+            options.Uniqueness.EnforceMultiColumnUnique);
+
+        var singleUniqueClean = uniqueEvidence.SingleColumnClean;
+        var singleUniqueDuplicates = uniqueEvidence.SingleColumnDuplicates;
+        var compositeUniqueClean = uniqueEvidence.CompositeClean;
+        var compositeUniqueDuplicates = uniqueEvidence.CompositeDuplicates;
+
+        var uniqueStrategy = new UniqueIndexDecisionStrategy(options, columnProfiles, uniqueProfiles, uniqueEvidence);
 
         var nullabilityBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, NullabilityDecision>();
         var foreignKeyBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ForeignKeyDecision>();
+        var uniqueIndexBuilder = ImmutableDictionary.CreateBuilder<IndexCoordinate, UniqueIndexDecision>();
 
         foreach (var entity in model.Modules.SelectMany(m => m.Entities))
         {
@@ -81,9 +92,20 @@ public sealed class TighteningPolicy
                     foreignKeyBuilder[coordinate] = fkDecision;
                 }
             }
+
+            foreach (var index in entity.Indexes.Where(static i => i.IsUnique))
+            {
+                var indexCoordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
+                var uniqueDecision = uniqueStrategy.Decide(entity, index);
+
+                uniqueIndexBuilder[indexCoordinate] = uniqueDecision;
+            }
         }
 
-        return PolicyDecisionSet.Create(nullabilityBuilder.ToImmutable(), foreignKeyBuilder.ToImmutable());
+        return PolicyDecisionSet.Create(
+            nullabilityBuilder.ToImmutable(),
+            foreignKeyBuilder.ToImmutable(),
+            uniqueIndexBuilder.ToImmutable());
     }
 
     private static NullabilityDecision EvaluateNullability(
@@ -295,54 +317,6 @@ public sealed class TighteningPolicy
         return ForeignKeyDecision.Create(coordinate, createConstraint, rationales.ToImmutableArray());
     }
 
-    private static ISet<ColumnCoordinate> BuildSingleColumnUniqueSignals(
-        OsmModel model,
-        IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> uniqueProfiles,
-        bool enforceSingleColumnUnique)
-    {
-        var result = new HashSet<ColumnCoordinate>();
-
-        if (!enforceSingleColumnUnique)
-        {
-            return result;
-        }
-
-        foreach (var entity in model.Modules.SelectMany(m => m.Entities))
-        {
-            foreach (var index in entity.Indexes.Where(i => i.IsUnique && i.Columns.Length == 1))
-            {
-                var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, index.Columns[0].Column);
-                if (uniqueProfiles.TryGetValue(coordinate, out var profile) && !profile.HasDuplicate)
-                {
-                    result.Add(coordinate);
-                }
-            }
-        }
-
-        return result;
-    }
-
-    private static ISet<ColumnCoordinate> BuildSingleColumnDuplicateSignals(
-        OsmModel model,
-        IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> uniqueProfiles)
-    {
-        var result = new HashSet<ColumnCoordinate>();
-
-        foreach (var entity in model.Modules.SelectMany(m => m.Entities))
-        {
-            foreach (var index in entity.Indexes.Where(i => i.IsUnique && i.Columns.Length == 1))
-            {
-                var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, index.Columns[0].Column);
-                if (uniqueProfiles.TryGetValue(coordinate, out var profile) && profile.HasDuplicate)
-                {
-                    result.Add(coordinate);
-                }
-            }
-        }
-
-        return result;
-    }
-
     private static bool ForeignKeySupportsTightening(
         EntityModel entity,
         AttributeModel attribute,
@@ -377,62 +351,6 @@ public sealed class TighteningPolicy
         }
 
         return true;
-    }
-
-    private static (ISet<ColumnCoordinate> Clean, ISet<ColumnCoordinate> Duplicates) BuildCompositeUniqueSignals(
-        OsmModel model,
-        ImmutableArray<CompositeUniqueCandidateProfile> compositeProfiles,
-        bool enforceComposite)
-    {
-        var clean = new HashSet<ColumnCoordinate>();
-        var duplicates = new HashSet<ColumnCoordinate>();
-
-        if (compositeProfiles.IsDefaultOrEmpty)
-        {
-            return (clean, duplicates);
-        }
-
-        var lookup = compositeProfiles.ToDictionary(
-            profile => CreateCompositeKey(profile.Schema.Value, profile.Table.Value, profile.Columns.Select(c => c.Value)),
-            profile => profile,
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (var entity in model.Modules.SelectMany(m => m.Entities))
-        {
-            foreach (var index in entity.Indexes.Where(i => i.IsUnique && i.Columns.Length > 1))
-            {
-                var key = CreateCompositeKey(entity.Schema.Value, entity.PhysicalName.Value, index.Columns.Select(c => c.Column.Value));
-                if (!lookup.TryGetValue(key, out var profile))
-                {
-                    continue;
-                }
-
-                foreach (var column in index.Columns)
-                {
-                    var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, column.Column);
-                    if (profile.HasDuplicate)
-                    {
-                        duplicates.Add(coordinate);
-                    }
-                    else if (enforceComposite)
-                    {
-                        clean.Add(coordinate);
-                    }
-                }
-            }
-        }
-
-        return (clean, duplicates);
-    }
-
-    private static string CreateCompositeKey(string schema, string table, IEnumerable<string> columns)
-    {
-        var normalizedColumns = columns
-            .Where(static c => !string.IsNullOrWhiteSpace(c))
-            .Select(static c => c.Trim().ToUpperInvariant())
-            .OrderBy(static c => c, StringComparer.Ordinal);
-
-        return $"{schema.ToUpperInvariant()}|{table.ToUpperInvariant()}|{string.Join(',', normalizedColumns)}";
     }
 
     private static EntityModel? GetTargetEntity(AttributeReference reference, IReadOnlyDictionary<EntityName, EntityModel> lookup)

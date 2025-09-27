@@ -1,0 +1,82 @@
+{
+  "Tables": [
+    {
+      "Module": "AppCore",
+      "Schema": "dbo",
+      "Table": "Customer",
+      "TableFile": "Modules/AppCore/Tables/dbo.Customer.sql",
+      "IndexFiles": [
+        "Modules/AppCore/Indexes/dbo.Customer.IDX_Customer_Email.sql",
+        "Modules/AppCore/Indexes/dbo.Customer.IDX_Customer_Name.sql"
+      ],
+      "ForeignKeyFiles": [
+        "Modules/AppCore/ForeignKeys/dbo.Customer.FK_Customer_CityId.sql"
+      ],
+      "ConcatenatedFile": null
+    },
+    {
+      "Module": "AppCore",
+      "Schema": "dbo",
+      "Table": "City",
+      "TableFile": "Modules/AppCore/Tables/dbo.City.sql",
+      "IndexFiles": [],
+      "ForeignKeyFiles": [],
+      "ConcatenatedFile": null
+    },
+    {
+      "Module": "ExtBilling",
+      "Schema": "billing",
+      "Table": "BillingAccount",
+      "TableFile": "Modules/ExtBilling/Tables/billing.BillingAccount.sql",
+      "IndexFiles": [
+        "Modules/ExtBilling/Indexes/billing.BillingAccount.IDX_BillingAccount_Acctnum.sql"
+      ],
+      "ForeignKeyFiles": [],
+      "ConcatenatedFile": null
+    },
+    {
+      "Module": "Ops",
+      "Schema": "dbo",
+      "Table": "JobRun",
+      "TableFile": "Modules/Ops/Tables/dbo.JobRun.sql",
+      "IndexFiles": [],
+      "ForeignKeyFiles": [],
+      "ConcatenatedFile": null
+    }
+  ],
+  "Options": {
+    "IncludePlatformAutoIndexes": false,
+    "EmitConcatenatedConstraints": false
+  },
+  "PolicySummary": {
+    "ColumnCount": 15,
+    "TightenedColumnCount": 10,
+    "RemediationColumnCount": 0,
+    "UniqueIndexCount": 2,
+    "UniqueIndexesEnforcedCount": 2,
+    "UniqueIndexesRequireRemediationCount": 0,
+    "ForeignKeyCount": 2,
+    "ForeignKeysCreatedCount": 1,
+    "ColumnRationales": {
+      "PHYSICAL_NOT_NULL": 4,
+      "MANDATORY": 10,
+      "DATA_NO_NULLS": 10,
+      "PK": 4,
+      "FK_ENFORCED": 1,
+      "PROFILE_MISSING": 1,
+      "UNIQUE_NO_NULLS": 2,
+      "DEFAULT_PRESENT": 2,
+      "DATA_HAS_ORPHANS": 1,
+      "DELETE_RULE_IGNORE": 1
+    },
+    "UniqueIndexRationales": {
+      "PHYSICAL_UNIQUE_KEY": 2,
+      "UNIQUE_NO_NULLS": 2
+    },
+    "ForeignKeyRationales": {
+      "DB_CONSTRAINT_PRESENT": 1,
+      "DATA_HAS_ORPHANS": 1,
+      "DELETE_RULE_IGNORE": 1
+    }
+  }
+}

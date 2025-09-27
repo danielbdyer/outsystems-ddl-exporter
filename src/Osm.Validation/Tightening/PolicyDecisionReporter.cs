@@ -28,10 +28,18 @@ public static class PolicyDecisionReporter
             .ThenBy(r => r.Column.Column.Value, StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
 
+        var uniqueIndexReports = decisions.UniqueIndexes.Values
+            .Select(UniqueIndexDecisionReport.From)
+            .OrderBy(r => r.Index.Schema.Value, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.Index.Table.Value, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.Index.Index.Value, StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
+
         var columnRationales = AggregateRationales(columnReports.SelectMany(r => r.Rationales));
+        var uniqueRationales = AggregateRationales(uniqueIndexReports.SelectMany(r => r.Rationales));
         var foreignKeyRationales = AggregateRationales(foreignKeyReports.SelectMany(r => r.Rationales));
 
-        return new PolicyDecisionReport(columnReports, foreignKeyReports, columnRationales, foreignKeyRationales);
+        return new PolicyDecisionReport(columnReports, uniqueIndexReports, foreignKeyReports, columnRationales, uniqueRationales, foreignKeyRationales);
     }
 
     private static ImmutableDictionary<string, int> AggregateRationales(IEnumerable<string> rationales)
@@ -56,8 +64,10 @@ public static class PolicyDecisionReporter
 
 public sealed record PolicyDecisionReport(
     ImmutableArray<ColumnDecisionReport> Columns,
+    ImmutableArray<UniqueIndexDecisionReport> UniqueIndexes,
     ImmutableArray<ForeignKeyDecisionReport> ForeignKeys,
     ImmutableDictionary<string, int> ColumnRationaleCounts,
+    ImmutableDictionary<string, int> UniqueIndexRationaleCounts,
     ImmutableDictionary<string, int> ForeignKeyRationaleCounts)
 {
     public int ColumnCount => Columns.Length;
@@ -65,6 +75,12 @@ public sealed record PolicyDecisionReport(
     public int TightenedColumnCount => Columns.Count(static c => c.MakeNotNull);
 
     public int RemediationColumnCount => Columns.Count(static c => c.RequiresRemediation);
+
+    public int UniqueIndexCount => UniqueIndexes.Length;
+
+    public int UniqueIndexesEnforcedCount => UniqueIndexes.Count(static u => u.EnforceUnique);
+
+    public int UniqueIndexesRequireRemediationCount => UniqueIndexes.Count(static u => u.RequiresRemediation);
 
     public int ForeignKeyCount => ForeignKeys.Length;
 
@@ -88,4 +104,14 @@ public sealed record ForeignKeyDecisionReport(
 {
     public static ForeignKeyDecisionReport From(ForeignKeyDecision decision)
         => new(decision.Column, decision.CreateConstraint, decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales);
+}
+
+public sealed record UniqueIndexDecisionReport(
+    IndexCoordinate Index,
+    bool EnforceUnique,
+    bool RequiresRemediation,
+    ImmutableArray<string> Rationales)
+{
+    public static UniqueIndexDecisionReport From(UniqueIndexDecision decision)
+        => new(decision.Index, decision.EnforceUnique, decision.RequiresRemediation, decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales);
 }

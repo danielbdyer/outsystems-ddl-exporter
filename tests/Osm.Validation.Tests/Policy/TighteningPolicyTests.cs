@@ -152,6 +152,71 @@ public sealed class TighteningPolicyTests
         Assert.Contains(TighteningRationales.CompositeUniqueDuplicatesPresent, decision.Rationales);
     }
 
+    [Fact]
+    public void UniqueIndexDecision_DisablesWhenDuplicatesInEvidenceMode()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUniqueWithDuplicates);
+        var policy = new TighteningPolicy();
+        var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
+
+        var decisions = policy.Decide(model, snapshot, options);
+        var entity = GetEntity(model, "User");
+        var indexCoordinate = GetIndexCoordinate(entity, "UX_USER_EMAIL");
+        var decision = decisions.UniqueIndexes[indexCoordinate];
+
+        Assert.False(decision.EnforceUnique);
+        Assert.False(decision.RequiresRemediation);
+        Assert.Contains(TighteningRationales.UniqueDuplicatesPresent, decision.Rationales);
+        Assert.DoesNotContain(TighteningRationales.RemediateBeforeTighten, decision.Rationales);
+    }
+
+    [Fact]
+    public void UniqueIndexDecision_AggressiveRequiresRemediationWhenDuplicates()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUniqueWithDuplicates);
+        var policy = new TighteningPolicy();
+        var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.Aggressive);
+
+        var decisions = policy.Decide(model, snapshot, options);
+        var entity = GetEntity(model, "User");
+        var indexCoordinate = GetIndexCoordinate(entity, "UX_USER_EMAIL");
+        var decision = decisions.UniqueIndexes[indexCoordinate];
+
+        Assert.True(decision.EnforceUnique);
+        Assert.True(decision.RequiresRemediation);
+        Assert.Contains(TighteningRationales.UniqueDuplicatesPresent, decision.Rationales);
+        Assert.Contains(TighteningRationales.RemediateBeforeTighten, decision.Rationales);
+    }
+
+    [Fact]
+    public void UniqueIndexDecision_RespectsUniquenessToggle()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUnique);
+        var policy = new TighteningPolicy();
+
+        var defaults = TighteningOptions.Default;
+        var policyOptions = PolicyOptions.Create(TighteningMode.EvidenceGated, defaults.Policy.NullBudget).Value;
+        var uniqueness = UniquenessOptions.Create(enforceSingleColumnUnique: false, defaults.Uniqueness.EnforceMultiColumnUnique).Value;
+        var options = TighteningOptions.Create(
+            policyOptions,
+            defaults.ForeignKeys,
+            uniqueness,
+            defaults.Remediation,
+            defaults.Emission,
+            defaults.Mocking).Value;
+
+        var decisions = policy.Decide(model, snapshot, options);
+        var entity = GetEntity(model, "User");
+        var indexCoordinate = GetIndexCoordinate(entity, "UX_USER_EMAIL");
+        var decision = decisions.UniqueIndexes[indexCoordinate];
+
+        Assert.False(decision.EnforceUnique);
+        Assert.Contains(TighteningRationales.UniquePolicyDisabled, decision.Rationales);
+    }
+
     private static EntityModel GetEntity(OsmModel model, string logicalName)
         => model.Modules.SelectMany(m => m.Entities).Single(e => string.Equals(e.LogicalName.Value, logicalName, StringComparison.Ordinal));
 
@@ -159,5 +224,11 @@ public sealed class TighteningPolicyTests
     {
         var attribute = entity.Attributes.Single(a => string.Equals(a.LogicalName.Value, attributeName, StringComparison.Ordinal));
         return new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
+    }
+
+    private static IndexCoordinate GetIndexCoordinate(EntityModel entity, string indexName)
+    {
+        var index = entity.Indexes.Single(i => string.Equals(i.Name.Value, indexName, StringComparison.Ordinal));
+        return new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
     }
 }
