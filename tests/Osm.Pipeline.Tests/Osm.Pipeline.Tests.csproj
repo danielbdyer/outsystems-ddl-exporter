@@ -26,6 +26,7 @@
     <Compile Include="..\TestSupport\FixtureFile.cs" Link="TestSupport\FixtureFile.cs" />
     <Compile Include="..\TestSupport\FixtureProfileSource.cs" Link="TestSupport\FixtureProfileSource.cs" />
     <Compile Include="..\TestSupport\ProfileFixtures.cs" Link="TestSupport\ProfileFixtures.cs" />
+    <Compile Include="..\TestSupport\ModelFixtures.cs" Link="TestSupport\ModelFixtures.cs" />
   </ItemGroup>
 
   <ItemGroup>

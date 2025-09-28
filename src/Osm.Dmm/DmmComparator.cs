@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.SqlServer.Management.Smo;
 using Osm.Smo;
 
 namespace Osm.Dmm;
@@ -56,19 +57,56 @@ public sealed class DmmComparator
 
     private static void CompareColumns(SmoTableDefinition table, DmmTable dmmTable, List<string> differences)
     {
-        if (table.Columns.Length != dmmTable.Columns.Count)
+        var expectedNames = table.Columns.Select(c => c.Name).ToArray();
+        var actualNames = dmmTable.Columns.Select(c => c.Name).ToArray();
+
+        var sequencesMatch = expectedNames.SequenceEqual(actualNames, StringComparer.OrdinalIgnoreCase);
+        var expectedSet = new HashSet<string>(expectedNames, StringComparer.OrdinalIgnoreCase);
+        var actualSet = new HashSet<string>(actualNames, StringComparer.OrdinalIgnoreCase);
+
+        if (expectedNames.Length != actualNames.Length)
         {
-            differences.Add($"column count mismatch for {table.Schema}.{table.Name}: expected {table.Columns.Length}, actual {dmmTable.Columns.Count}");
-            return;
+            differences.Add($"column count mismatch for {table.Schema}.{table.Name}: expected {expectedNames.Length}, actual {actualNames.Length}");
         }
 
-        for (var i = 0; i < table.Columns.Length; i++)
+        var missingColumns = expectedNames
+            .Where(name => !actualSet.Contains(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (missingColumns.Length > 0)
         {
-            var expected = table.Columns[i];
-            var actual = dmmTable.Columns[i];
-            if (!string.Equals(expected.Name, actual.Name, StringComparison.OrdinalIgnoreCase))
+            differences.Add($"missing columns for {table.Schema}.{table.Name}: {string.Join(", ", missingColumns)}");
+        }
+
+        var unexpectedColumns = actualNames
+            .Where(name => !expectedSet.Contains(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (unexpectedColumns.Length > 0)
+        {
+            differences.Add($"unexpected columns for {table.Schema}.{table.Name}: {string.Join(", ", unexpectedColumns)}");
+        }
+
+        if (!sequencesMatch && missingColumns.Length == 0 && unexpectedColumns.Length == 0)
+        {
+            differences.Add($"column order mismatch for {table.Schema}.{table.Name}: expected [{string.Join(", ", expectedNames)}], actual [{string.Join(", ", actualNames)}]");
+        }
+
+        var actualByName = dmmTable.Columns
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var expected in table.Columns)
+        {
+            if (!actualByName.TryGetValue(expected.Name, out var actual))
             {
-                differences.Add($"column name mismatch at ordinal {i + 1} for {table.Schema}.{table.Name}: expected {expected.Name}, actual {actual.Name}");
+                continue;
+            }
+
+            var expectedType = Canonicalize(expected.DataType);
+            if (!string.Equals(expectedType, actual.DataType, StringComparison.OrdinalIgnoreCase))
+            {
+                differences.Add($"data type mismatch for {table.Schema}.{table.Name}.{expected.Name}: expected {expectedType}, actual {actual.DataType}");
             }
 
             if (expected.Nullable != actual.IsNullable)
@@ -115,4 +153,57 @@ public sealed class DmmComparator
     }
 
     private static string Key(string schema, string name) => $"{schema}.{name}";
+
+    private static string Canonicalize(DataType dataType)
+    {
+        return dataType.SqlDataType switch
+        {
+            SqlDataType.BigInt => "bigint",
+            SqlDataType.Int => "int",
+            SqlDataType.SmallInt => "smallint",
+            SqlDataType.TinyInt => "tinyint",
+            SqlDataType.Bit => "bit",
+            SqlDataType.Date => "date",
+            SqlDataType.DateTime => "datetime",
+            SqlDataType.Float => "float",
+            SqlDataType.Real => "real",
+            SqlDataType.Decimal => FormatDecimal(dataType.NumericPrecision, dataType.NumericScale, "decimal"),
+            SqlDataType.Numeric => FormatDecimal(dataType.NumericPrecision, dataType.NumericScale, "decimal"),
+            SqlDataType.Money => "money",
+            SqlDataType.SmallMoney => "smallmoney",
+            SqlDataType.UniqueIdentifier => "uniqueidentifier",
+            SqlDataType.VarChar => FormatLengthType("varchar", dataType),
+            SqlDataType.NVarChar => FormatLengthType("nvarchar", dataType),
+            SqlDataType.Char => FormatLengthType("char", dataType),
+            SqlDataType.NChar => FormatLengthType("nchar", dataType),
+            SqlDataType.VarBinary => FormatLengthType("varbinary", dataType),
+            SqlDataType.Binary => FormatLengthType("binary", dataType),
+            SqlDataType.Text => "text",
+            SqlDataType.NText => "ntext",
+            SqlDataType.Image => "image",
+            _ => dataType.SqlDataType.ToString().ToLowerInvariant(),
+        };
+    }
+
+    private static string FormatDecimal(int numericPrecision, int numericScale, string baseName)
+    {
+        var precision = numericPrecision <= 0 ? 18 : numericPrecision;
+        var scale = numericScale < 0 ? 0 : numericScale;
+        return $"{baseName}({precision},{scale})";
+    }
+
+    private static string FormatLengthType(string baseName, DataType dataType)
+    {
+        if (dataType.MaximumLength < 0)
+        {
+            return $"{baseName}(max)";
+        }
+
+        if (dataType.MaximumLength == 0)
+        {
+            return baseName;
+        }
+
+        return $"{baseName}({dataType.MaximumLength})";
+    }
 }

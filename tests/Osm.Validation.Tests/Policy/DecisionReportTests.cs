@@ -22,10 +22,15 @@ public sealed class DecisionReportTests
         Assert.True(report.TightenedColumnCount > 0);
         Assert.Equal(0, report.RemediationColumnCount);
 
+        Assert.True(report.UniqueIndexCount > 0);
+        Assert.Equal(report.UniqueIndexCount, report.UniqueIndexesEnforcedCount);
+        Assert.Equal(0, report.UniqueIndexesRequireRemediationCount);
+
         Assert.Equal(2, report.ForeignKeyCount);
         Assert.Equal(1, report.ForeignKeysCreatedCount);
 
         Assert.Equal(2, report.ColumnRationaleCounts[TighteningRationales.UniqueNoNulls]);
+        Assert.True(report.UniqueIndexRationaleCounts[TighteningRationales.PhysicalUniqueKey] >= 2);
         Assert.Equal(1, report.ColumnRationaleCounts[TighteningRationales.ForeignKeyEnforced]);
         Assert.Equal(1, report.ForeignKeyRationaleCounts[TighteningRationales.DataHasOrphans]);
 

@@ -1,0 +1,246 @@
+{
+  "ColumnCount": 15,
+  "TightenedColumnCount": 10,
+  "RemediationColumnCount": 0,
+  "UniqueIndexCount": 2,
+  "UniqueIndexesEnforcedCount": 2,
+  "UniqueIndexesRequireRemediationCount": 0,
+  "ForeignKeyCount": 2,
+  "ForeignKeysCreatedCount": 1,
+  "ColumnRationales": {
+    "MANDATORY": 10,
+    "PK": 4,
+    "DATA_NO_NULLS": 10,
+    "PROFILE_MISSING": 1,
+    "UNIQUE_NO_NULLS": 2,
+    "DEFAULT_PRESENT": 2,
+    "DELETE_RULE_IGNORE": 1,
+    "DATA_HAS_ORPHANS": 1,
+    "FK_ENFORCED": 1,
+    "PHYSICAL_NOT_NULL": 4
+  },
+  "UniqueIndexRationales": {
+    "UNIQUE_NO_NULLS": 2,
+    "PHYSICAL_UNIQUE_KEY": 2
+  },
+  "ForeignKeyRationales": {
+    "DB_CONSTRAINT_PRESENT": 1,
+    "DELETE_RULE_IGNORE": 1,
+    "DATA_HAS_ORPHANS": 1
+  },
+  "Columns": [
+    {
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT",
+      "Column": "ACCOUNTNUMBER",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "UNIQUE_NO_NULLS"
+      ]
+    },
+    {
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT",
+      "Column": "EXTREF",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": []
+    },
+    {
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Column": "CITYID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "FK_ENFORCED",
+        "MANDATORY"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Column": "EMAIL",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "UNIQUE_NO_NULLS"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Column": "FIRSTNAME",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": []
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Column": "LASTNAME",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": []
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Column": "LEGACYCODE",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "PROFILE_MISSING"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_DEF_CITY",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_DEF_CITY",
+      "Column": "ISACTIVE",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT",
+        "MANDATORY"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_DEF_CITY",
+      "Column": "NAME",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_XYZ_JOBRUN",
+      "Column": "CREATEDON",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT",
+        "MANDATORY"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_XYZ_JOBRUN",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_XYZ_JOBRUN",
+      "Column": "TRIGGEREDBYUSERID",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_HAS_ORPHANS",
+        "DELETE_RULE_IGNORE"
+      ]
+    }
+  ],
+  "UniqueIndexes": [
+    {
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT",
+      "Index": "IDX_BILLINGACCOUNT_ACCTNUM",
+      "EnforceUnique": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY",
+        "UNIQUE_NO_NULLS"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Index": "IDX_CUSTOMER_EMAIL",
+      "EnforceUnique": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY",
+        "UNIQUE_NO_NULLS"
+      ]
+    }
+  ],
+  "ForeignKeys": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Column": "CITYID",
+      "CreateConstraint": true,
+      "Rationales": [
+        "DB_CONSTRAINT_PRESENT"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_XYZ_JOBRUN",
+      "Column": "TRIGGEREDBYUSERID",
+      "CreateConstraint": false,
+      "Rationales": [
+        "DATA_HAS_ORPHANS",
+        "DELETE_RULE_IGNORE"
+      ]
+    }
+  ]
+}

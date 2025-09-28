@@ -23,7 +23,11 @@ public sealed record SsdtPolicySummary(
     int ColumnCount,
     int TightenedColumnCount,
     int RemediationColumnCount,
+    int UniqueIndexCount,
+    int UniqueIndexesEnforcedCount,
+    int UniqueIndexesRequireRemediationCount,
     int ForeignKeyCount,
     int ForeignKeysCreatedCount,
     IReadOnlyDictionary<string, int> ColumnRationales,
+    IReadOnlyDictionary<string, int> UniqueIndexRationales,
     IReadOnlyDictionary<string, int> ForeignKeyRationales);

@@ -23,12 +23,14 @@ public sealed record SmoTableDefinition(
     string Name,
     string Schema,
     string Catalog,
+    string LogicalName,
     ImmutableArray<SmoColumnDefinition> Columns,
     ImmutableArray<SmoIndexDefinition> Indexes,
     ImmutableArray<SmoForeignKeyDefinition> ForeignKeys);
 
 public sealed record SmoColumnDefinition(
     string Name,
+    string LogicalName,
     DataType DataType,
     bool Nullable,
     bool IsIdentity,
@@ -50,4 +52,5 @@ public sealed record SmoForeignKeyDefinition(
     string ReferencedTable,
     string ReferencedSchema,
     string ReferencedColumn,
+    string ReferencedLogicalTable,
     ForeignKeyAction DeleteAction);
