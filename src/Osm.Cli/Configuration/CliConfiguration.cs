@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
 
 namespace Osm.Cli.Configuration;
@@ -35,9 +36,27 @@ public sealed record ProfilerConfiguration(string? Provider, string? ProfilePath
     public static ProfilerConfiguration Empty { get; } = new(null, null, null);
 }
 
-public sealed record SqlConfiguration(string? ConnectionString, int? CommandTimeoutSeconds)
+public sealed record SqlConfiguration(
+    string? ConnectionString,
+    int? CommandTimeoutSeconds,
+    SqlSamplingConfiguration Sampling,
+    SqlAuthenticationConfiguration Authentication)
 {
-    public static SqlConfiguration Empty { get; } = new(null, null);
+    public static SqlConfiguration Empty { get; } = new(null, null, SqlSamplingConfiguration.Empty, SqlAuthenticationConfiguration.Empty);
+}
+
+public sealed record SqlSamplingConfiguration(long? RowSamplingThreshold, int? SampleSize)
+{
+    public static SqlSamplingConfiguration Empty { get; } = new(null, null);
+}
+
+public sealed record SqlAuthenticationConfiguration(
+    SqlAuthenticationMethod? Method,
+    bool? TrustServerCertificate,
+    string? ApplicationName,
+    string? AccessToken)
+{
+    public static SqlAuthenticationConfiguration Empty { get; } = new(null, null, null, null);
 }
 
 public sealed record ModuleFilterConfiguration(

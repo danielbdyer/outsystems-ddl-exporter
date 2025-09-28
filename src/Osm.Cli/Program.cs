@@ -9,6 +9,8 @@ using System.Text.Json;
 using Osm.Cli.Configuration;
 using Osm.Domain.Configuration;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Model;
+using Osm.Domain.Profiling;
 using Osm.Dmm;
 using Osm.Emission;
 using Osm.Json;
@@ -16,9 +18,11 @@ using Osm.Json.Configuration;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+using Microsoft.Data.SqlClient;
 
 const string EnvConfigPath = "OSM_CLI_CONFIG_PATH";
 const string EnvModelPath = "OSM_CLI_MODEL_PATH";
@@ -30,6 +34,10 @@ const string EnvProfilerProvider = "OSM_CLI_PROFILER_PROVIDER";
 const string EnvProfilerMockFolder = "OSM_CLI_PROFILER_MOCK_FOLDER";
 const string EnvSqlConnectionString = "OSM_CLI_CONNECTION_STRING";
 const string EnvSqlCommandTimeout = "OSM_CLI_SQL_COMMAND_TIMEOUT";
+const string EnvSqlAuthentication = "OSM_CLI_SQL_AUTHENTICATION";
+const string EnvSqlAccessToken = "OSM_CLI_SQL_ACCESS_TOKEN";
+const string EnvSqlTrustServerCertificate = "OSM_CLI_SQL_TRUST_SERVER_CERTIFICATE";
+const string EnvSqlApplicationName = "OSM_CLI_SQL_APPLICATION_NAME";
 
 return await DispatchAsync(args);
 
@@ -57,18 +65,15 @@ static async Task<int> DispatchAsync(string[] args)
 static async Task<int> RunExtractModelAsync(string[] args)
 {
     var options = ParseOptions(args);
-    if (!options.TryGetValue("--mock-advanced-sql", out var manifestPath) || string.IsNullOrWhiteSpace(manifestPath))
+    var configurationResult = await LoadCliConfigurationAsync(options);
+    if (configurationResult.IsFailure)
     {
-        Console.Error.WriteLine("Live SQL extraction is not yet implemented. Provide --mock-advanced-sql <manifest.json> to replay fixtures.");
+        WriteErrors(configurationResult.Errors);
         return 1;
     }
 
-    var modules = Array.Empty<string>();
-    if (options.TryGetValue("--modules", out var modulesValue) && !string.IsNullOrWhiteSpace(modulesValue))
-    {
-        modules = modulesValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    }
-
+    var configuration = configurationResult.Value.Configuration;
+    var modules = ResolveModuleArguments(options);
     var includeSystem = options.ContainsKey("--include-system-modules");
     var onlyActive = options.ContainsKey("--only-active-attributes");
 
@@ -83,7 +88,36 @@ static async Task<int> RunExtractModelAsync(string[] args)
         ? outValue!
         : "model.extracted.json";
 
-    var executor = new FixtureAdvancedSqlExecutor(manifestPath!);
+    var sqlOptionsResult = ResolveSqlOptions(options, configuration.Sql);
+    if (sqlOptionsResult.IsFailure)
+    {
+        WriteErrors(sqlOptionsResult.Errors);
+        return 1;
+    }
+
+    var sqlOptions = sqlOptionsResult.Value;
+    IAdvancedSqlExecutor executor;
+    if (options.TryGetValue("--mock-advanced-sql", out var manifestPath) && !string.IsNullOrWhiteSpace(manifestPath))
+    {
+        executor = new FixtureAdvancedSqlExecutor(manifestPath!);
+    }
+    else
+    {
+        if (string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
+        {
+            Console.Error.WriteLine("Connection string is required for live extraction. Provide --connection-string or configure sql.connectionString.");
+            return 1;
+        }
+
+        var samplingOptions = CreateSamplingOptions(sqlOptions.Sampling);
+        var connectionOptions = CreateConnectionOptions(sqlOptions.Authentication);
+        var executionOptions = new SqlExecutionOptions(sqlOptions.CommandTimeoutSeconds, samplingOptions);
+        executor = new SqlClientAdvancedSqlExecutor(
+            new SqlConnectionFactory(sqlOptions.ConnectionString!, connectionOptions),
+            new EmbeddedAdvancedSqlScriptProvider(),
+            executionOptions);
+    }
+
     var extractionService = new SqlModelExtractionService(executor, new ModelJsonDeserializer());
 
     var extractionResult = await extractionService.ExtractAsync(commandResult.Value);
@@ -156,14 +190,44 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
 
     var moduleFilter = moduleFilterResult.Value;
 
+    var sqlOptionsResult = ResolveSqlOptions(options, configuration.Sql);
+    if (sqlOptionsResult.IsFailure)
+    {
+        WriteErrors(sqlOptionsResult.Errors);
+        return 1;
+    }
+
+    var sqlOptions = sqlOptionsResult.Value;
+
     if (!TryResolveRequiredPath(options, "--model", EnvModelPath, configuration.ModelPath, "model path", out var modelPath))
     {
         return 1;
     }
 
-    if (!TryResolveRequiredPath(options, "--profile", EnvProfilePath, configuration.ProfilePath, "profile path", out var profilePath))
+    var profilerProvider = ResolveProfilerProvider(options, configuration.Profiler);
+    string? profilePath = null;
+    if (string.Equals(profilerProvider, "fixture", StringComparison.OrdinalIgnoreCase))
     {
-        return 1;
+        var defaultProfilePath = configuration.ProfilePath ?? configuration.Profiler.ProfilePath;
+        if (!TryResolveRequiredPath(options, "--profile", EnvProfilePath, defaultProfilePath, "profile path", out profilePath))
+        {
+            return 1;
+        }
+    }
+    else
+    {
+        if (options.TryGetValue("--profile", out var optionalProfile) && !string.IsNullOrWhiteSpace(optionalProfile))
+        {
+            profilePath = optionalProfile;
+        }
+        else if (!string.IsNullOrWhiteSpace(configuration.ProfilePath))
+        {
+            profilePath = configuration.ProfilePath;
+        }
+        else if (!string.IsNullOrWhiteSpace(configuration.Profiler.ProfilePath))
+        {
+            profilePath = configuration.Profiler.ProfilePath;
+        }
     }
 
     var outputPath = options.TryGetValue("--out", out var outValue) && !string.IsNullOrWhiteSpace(outValue)
@@ -190,7 +254,7 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
 
     var model = filteredModelResult.Value;
 
-    var profileResult = await new FixtureDataProfiler(profilePath, new ProfileSnapshotDeserializer()).CaptureAsync();
+    var profileResult = await CaptureProfileAsync(profilerProvider, profilePath, sqlOptions, model);
     if (profileResult.IsFailure)
     {
         WriteErrors(profileResult.Errors);
@@ -369,10 +433,22 @@ static async Task<int> RunDmmCompareAsync(string[] args)
         return 0;
     }
 
-    Console.Error.WriteLine("DMM parity differences detected:");
-    foreach (var difference in comparison.Differences)
+    if (comparison.ModelDifferences.Count > 0)
     {
-        Console.Error.WriteLine($" - {difference}");
+        Console.Error.WriteLine("Model requires additional SSDT coverage:");
+        foreach (var difference in comparison.ModelDifferences)
+        {
+            Console.Error.WriteLine($" - {difference}");
+        }
+    }
+
+    if (comparison.SsdtDifferences.Count > 0)
+    {
+        Console.Error.WriteLine("SSDT scripts drift from OutSystems model:");
+        foreach (var difference in comparison.SsdtDifferences)
+        {
+            Console.Error.WriteLine($" - {difference}");
+        }
     }
 
     Console.Error.WriteLine($"Diff artifact written to {diffArtifactPath}.");
@@ -466,6 +542,32 @@ static CliConfiguration ApplyEnvironmentOverrides(CliConfiguration configuration
     {
         sql = sql with { CommandTimeoutSeconds = timeout };
     }
+
+    var authentication = sql.Authentication;
+    var authenticationRaw = Environment.GetEnvironmentVariable(EnvSqlAuthentication);
+    if (!string.IsNullOrWhiteSpace(authenticationRaw) && Enum.TryParse(authenticationRaw, true, out SqlAuthenticationMethod method))
+    {
+        authentication = authentication with { Method = method };
+    }
+
+    if (TryParseBoolean(Environment.GetEnvironmentVariable(EnvSqlTrustServerCertificate), out var trustServerCertificate))
+    {
+        authentication = authentication with { TrustServerCertificate = trustServerCertificate };
+    }
+
+    var applicationName = Environment.GetEnvironmentVariable(EnvSqlApplicationName);
+    if (!string.IsNullOrWhiteSpace(applicationName))
+    {
+        authentication = authentication with { ApplicationName = applicationName!.Trim() };
+    }
+
+    var accessToken = Environment.GetEnvironmentVariable(EnvSqlAccessToken);
+    if (!string.IsNullOrWhiteSpace(accessToken))
+    {
+        authentication = authentication with { AccessToken = accessToken };
+    }
+
+    sql = sql with { Authentication = authentication };
 
     result = result with { Sql = sql };
 
@@ -629,7 +731,8 @@ static async Task<string> WriteDmmDiffAsync(
         profilePath,
         dmmPath,
         DateTimeOffset.UtcNow,
-        comparison.Differences.ToArray());
+        comparison.ModelDifferences.ToArray(),
+        comparison.SsdtDifferences.ToArray());
 
     var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
     await File.WriteAllTextAsync(fullPath, json);
@@ -759,6 +862,36 @@ static IReadOnlyDictionary<string, string?> BuildCacheMetadata(
         metadata["sql.commandTimeoutSeconds"] = configuration.Sql.CommandTimeoutSeconds.Value.ToString(CultureInfo.InvariantCulture);
     }
 
+    if (configuration.Sql.Sampling.RowSamplingThreshold.HasValue)
+    {
+        metadata["sql.sampling.rowThreshold"] = configuration.Sql.Sampling.RowSamplingThreshold.Value.ToString(CultureInfo.InvariantCulture);
+    }
+
+    if (configuration.Sql.Sampling.SampleSize.HasValue)
+    {
+        metadata["sql.sampling.sampleSize"] = configuration.Sql.Sampling.SampleSize.Value.ToString(CultureInfo.InvariantCulture);
+    }
+
+    if (configuration.Sql.Authentication.Method.HasValue)
+    {
+        metadata["sql.authentication.method"] = configuration.Sql.Authentication.Method.Value.ToString();
+    }
+
+    if (configuration.Sql.Authentication.TrustServerCertificate.HasValue)
+    {
+        metadata["sql.authentication.trustServerCertificate"] = configuration.Sql.Authentication.TrustServerCertificate.Value.ToString();
+    }
+
+    if (!string.IsNullOrWhiteSpace(configuration.Sql.Authentication.ApplicationName))
+    {
+        metadata["sql.authentication.applicationName"] = configuration.Sql.Authentication.ApplicationName;
+    }
+
+    if (!string.IsNullOrWhiteSpace(configuration.Sql.Authentication.AccessToken))
+    {
+        metadata["sql.authentication.accessTokenHash"] = ComputeSha256(configuration.Sql.Authentication.AccessToken);
+    }
+
     return metadata;
 }
 
@@ -783,6 +916,151 @@ static Dictionary<string, string?> ParseOptions(string[] args)
     }
 
     return options;
+}
+
+static Result<ResolvedSqlOptions> ResolveSqlOptions(Dictionary<string, string?> options, SqlConfiguration configuration)
+{
+    var connection = configuration.ConnectionString;
+    var timeout = configuration.CommandTimeoutSeconds;
+    var sampling = configuration.Sampling;
+    var authentication = configuration.Authentication;
+
+    if (options.TryGetValue("--connection-string", out var connectionValue) && !string.IsNullOrWhiteSpace(connectionValue))
+    {
+        connection = connectionValue;
+    }
+
+    if (options.TryGetValue("--command-timeout", out var timeoutValue) && !string.IsNullOrWhiteSpace(timeoutValue))
+    {
+        if (!int.TryParse(timeoutValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTimeout) || parsedTimeout < 0)
+        {
+            return ValidationError.Create("cli.sql.commandTimeout.invalid", "Invalid --command-timeout value. Expected non-negative integer seconds.");
+        }
+
+        timeout = parsedTimeout;
+    }
+
+    if (options.TryGetValue("--sampling-threshold", out var thresholdValue) && !string.IsNullOrWhiteSpace(thresholdValue))
+    {
+        if (!long.TryParse(thresholdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedThreshold) || parsedThreshold <= 0)
+        {
+            return ValidationError.Create("cli.sql.samplingThreshold.invalid", "Invalid --sampling-threshold value. Expected positive integer rows.");
+        }
+
+        sampling = sampling with { RowSamplingThreshold = parsedThreshold };
+    }
+
+    if (options.TryGetValue("--sampling-size", out var sampleValue) && !string.IsNullOrWhiteSpace(sampleValue))
+    {
+        if (!int.TryParse(sampleValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedSample) || parsedSample <= 0)
+        {
+            return ValidationError.Create("cli.sql.samplingSize.invalid", "Invalid --sampling-size value. Expected positive integer rows.");
+        }
+
+        sampling = sampling with { SampleSize = parsedSample };
+    }
+
+    if (options.TryGetValue("--sql-authentication", out var authValue) && !string.IsNullOrWhiteSpace(authValue))
+    {
+        if (!Enum.TryParse(authValue, true, out SqlAuthenticationMethod method))
+        {
+            return ValidationError.Create("cli.sql.authentication.invalid", "Invalid --sql-authentication value. Expected a valid SqlAuthenticationMethod.");
+        }
+
+        authentication = authentication with { Method = method };
+    }
+
+    if (options.TryGetValue("--sql-trust-server-certificate", out var trustValue))
+    {
+        if (string.IsNullOrWhiteSpace(trustValue))
+        {
+            authentication = authentication with { TrustServerCertificate = true };
+        }
+        else if (bool.TryParse(trustValue, out var parsedTrust))
+        {
+            authentication = authentication with { TrustServerCertificate = parsedTrust };
+        }
+        else
+        {
+            return ValidationError.Create("cli.sql.trustServerCertificate.invalid", "Invalid --sql-trust-server-certificate value. Expected 'true' or 'false'.");
+        }
+    }
+
+    if (options.TryGetValue("--sql-application-name", out var appValue) && !string.IsNullOrWhiteSpace(appValue))
+    {
+        authentication = authentication with { ApplicationName = appValue!.Trim() };
+    }
+
+    if (options.TryGetValue("--sql-access-token", out var tokenValue) && !string.IsNullOrWhiteSpace(tokenValue))
+    {
+        authentication = authentication with { AccessToken = tokenValue };
+    }
+
+    return new ResolvedSqlOptions(connection?.Trim(), timeout, sampling, authentication);
+}
+
+static SqlSamplingOptions CreateSamplingOptions(SqlSamplingConfiguration configuration)
+{
+    var threshold = configuration.RowSamplingThreshold ?? SqlSamplingOptions.Default.RowCountSamplingThreshold;
+    var sampleSize = configuration.SampleSize ?? SqlSamplingOptions.Default.SampleSize;
+    return new SqlSamplingOptions(threshold, sampleSize);
+}
+
+static SqlConnectionOptions CreateConnectionOptions(SqlAuthenticationConfiguration configuration)
+{
+    return new SqlConnectionOptions(
+        configuration.Method,
+        configuration.TrustServerCertificate,
+        configuration.ApplicationName,
+        configuration.AccessToken);
+}
+
+static string ResolveProfilerProvider(Dictionary<string, string?> options, ProfilerConfiguration configuration)
+{
+    if (options.TryGetValue("--profiler-provider", out var providerValue) && !string.IsNullOrWhiteSpace(providerValue))
+    {
+        return providerValue!;
+    }
+
+    if (!string.IsNullOrWhiteSpace(configuration.Provider))
+    {
+        return configuration.Provider!;
+    }
+
+    return "fixture";
+}
+
+static async Task<Result<ProfileSnapshot>> CaptureProfileAsync(
+    string provider,
+    string? profilePath,
+    ResolvedSqlOptions sqlOptions,
+    OsmModel model)
+{
+    if (string.Equals(provider, "sql", StringComparison.OrdinalIgnoreCase))
+    {
+        if (string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
+        {
+            return Result<ProfileSnapshot>.Failure(ValidationError.Create(
+                "cli.sql.connectionString.missing",
+                "Connection string is required when using the sql profiler."));
+        }
+
+        var samplingOptions = CreateSamplingOptions(sqlOptions.Sampling);
+        var connectionOptions = CreateConnectionOptions(sqlOptions.Authentication);
+        var profilerOptions = new SqlProfilerOptions(sqlOptions.CommandTimeoutSeconds, samplingOptions);
+        var profiler = new SqlDataProfiler(new SqlConnectionFactory(sqlOptions.ConnectionString!, connectionOptions), model, profilerOptions);
+        return await profiler.CaptureAsync().ConfigureAwait(false);
+    }
+
+    if (string.IsNullOrWhiteSpace(profilePath))
+    {
+        return Result<ProfileSnapshot>.Failure(ValidationError.Create(
+            "cli.profile.path.missing",
+            "Profile path is required when using the fixture profiler."));
+    }
+
+    var fixtureProfiler = new FixtureDataProfiler(profilePath!, new ProfileSnapshotDeserializer());
+    return await fixtureProfiler.CaptureAsync().ConfigureAwait(false);
 }
 
 static Result<NamingOverrideOptions> ResolveNamingOverrides(
@@ -941,8 +1219,8 @@ static void PrintRootUsage()
     Console.WriteLine();
     Console.WriteLine("Commands:");
     Console.WriteLine("  inspect --model <model.json>");
-    Console.WriteLine("  extract-model --mock-advanced-sql <manifest.json> [--modules <csv>] [--include-system-modules] [--only-active-attributes] [--out <path>]");
-    Console.WriteLine("  build-ssdt --model <model.json> --profile <profile.json> [--modules <csv>] [--exclude-system-modules] [--only-active-modules] [--out <dir>] [--config <path>] [--cache-root <dir>] [--refresh-cache] [--rename-table schema.table=Override]");
+    Console.WriteLine("  extract-model [--connection-string <value>] [--command-timeout <seconds>] [--sql-authentication <method>] [--sql-access-token <token>] [--sql-trust-server-certificate [true|false]] [--sql-application-name <name>] [--sampling-threshold <rows>] [--sampling-size <rows>] [--mock-advanced-sql <manifest.json>] [--modules <csv>] [--include-system-modules] [--only-active-attributes] [--out <path>] [--config <path>]");
+    Console.WriteLine("  build-ssdt --model <model.json> [--profile <profile.json>] [--profiler-provider <fixture|sql>] [--connection-string <value>] [--command-timeout <seconds>] [--sql-authentication <method>] [--sql-access-token <token>] [--sql-trust-server-certificate [true|false]] [--sql-application-name <name>] [--sampling-threshold <rows>] [--sampling-size <rows>] [--modules <csv>] [--exclude-system-modules] [--only-active-modules] [--out <dir>] [--config <path>] [--cache-root <dir>] [--refresh-cache] [--rename-table schema.table=Override]");
     Console.WriteLine("  dmm-compare --model <model.json> --profile <profile.json> --dmm <dmm.sql> [--modules <csv>] [--exclude-system-modules] [--only-active-modules] [--config <path>] [--out <path>] [--cache-root <dir>] [--refresh-cache]");
 }
 
@@ -953,6 +1231,11 @@ static int UnknownCommand(string command)
     return 1;
 }
 
+file sealed record ResolvedSqlOptions(
+    string? ConnectionString,
+    int? CommandTimeoutSeconds,
+    SqlSamplingConfiguration Sampling,
+    SqlAuthenticationConfiguration Authentication);
 file sealed record CliConfigurationContext(CliConfiguration Configuration, string? ConfigPath);
 
 file sealed record PolicyDecisionLog(
@@ -1000,4 +1283,5 @@ file sealed record DmmDiffLog(
     string ProfilePath,
     string DmmPath,
     DateTimeOffset GeneratedAtUtc,
-    IReadOnlyList<string> Differences);
+    IReadOnlyList<string> ModelDifferences,
+    IReadOnlyList<string> SsdtDifferences);

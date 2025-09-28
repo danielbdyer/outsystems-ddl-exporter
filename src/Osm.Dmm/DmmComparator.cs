@@ -20,7 +20,8 @@ public sealed class DmmComparator
             throw new ArgumentNullException(nameof(dmmTables));
         }
 
-        var differences = new List<string>();
+        var modelDifferences = new List<string>();
+        var ssdtDifferences = new List<string>();
         var dmmLookup = dmmTables.ToDictionary(
             table => Key(table.Schema, table.Name),
             table => table,
@@ -33,14 +34,14 @@ public sealed class DmmComparator
             var key = Key(table.Schema, table.Name);
             if (!dmmLookup.TryGetValue(key, out var dmmTable))
             {
-                differences.Add($"missing table {table.Schema}.{table.Name}");
+                modelDifferences.Add($"missing table {table.Schema}.{table.Name}");
                 continue;
             }
 
             seen.Add(key);
 
-            CompareColumns(table, dmmTable, differences);
-            ComparePrimaryKeys(table, dmmTable, differences);
+            CompareColumns(table, dmmTable, modelDifferences, ssdtDifferences);
+            ComparePrimaryKeys(table, dmmTable, modelDifferences, ssdtDifferences);
         }
 
         foreach (var table in dmmTables)
@@ -48,14 +49,19 @@ public sealed class DmmComparator
             var key = Key(table.Schema, table.Name);
             if (!seen.Contains(key))
             {
-                differences.Add($"unexpected table {table.Schema}.{table.Name}");
+                ssdtDifferences.Add($"unexpected table {table.Schema}.{table.Name}");
             }
         }
 
-        return new DmmComparisonResult(differences.Count == 0, differences);
+        var isMatch = modelDifferences.Count == 0 && ssdtDifferences.Count == 0;
+        return new DmmComparisonResult(isMatch, modelDifferences, ssdtDifferences);
     }
 
-    private static void CompareColumns(SmoTableDefinition table, DmmTable dmmTable, List<string> differences)
+    private static void CompareColumns(
+        SmoTableDefinition table,
+        DmmTable dmmTable,
+        List<string> modelDifferences,
+        List<string> ssdtDifferences)
     {
         var expectedNames = table.Columns.Select(c => c.Name).ToArray();
         var actualNames = dmmTable.Columns.Select(c => c.Name).ToArray();
@@ -66,7 +72,15 @@ public sealed class DmmComparator
 
         if (expectedNames.Length != actualNames.Length)
         {
-            differences.Add($"column count mismatch for {table.Schema}.{table.Name}: expected {expectedNames.Length}, actual {actualNames.Length}");
+            var message = $"column count mismatch for {table.Schema}.{table.Name}: expected {expectedNames.Length}, actual {actualNames.Length}";
+            if (expectedNames.Length > actualNames.Length)
+            {
+                modelDifferences.Add(message);
+            }
+            else
+            {
+                ssdtDifferences.Add(message);
+            }
         }
 
         var missingColumns = expectedNames
@@ -75,7 +89,7 @@ public sealed class DmmComparator
             .ToArray();
         if (missingColumns.Length > 0)
         {
-            differences.Add($"missing columns for {table.Schema}.{table.Name}: {string.Join(", ", missingColumns)}");
+            modelDifferences.Add($"missing columns for {table.Schema}.{table.Name}: {string.Join(", ", missingColumns)}");
         }
 
         var unexpectedColumns = actualNames
@@ -84,12 +98,12 @@ public sealed class DmmComparator
             .ToArray();
         if (unexpectedColumns.Length > 0)
         {
-            differences.Add($"unexpected columns for {table.Schema}.{table.Name}: {string.Join(", ", unexpectedColumns)}");
+            ssdtDifferences.Add($"unexpected columns for {table.Schema}.{table.Name}: {string.Join(", ", unexpectedColumns)}");
         }
 
         if (!sequencesMatch && missingColumns.Length == 0 && unexpectedColumns.Length == 0)
         {
-            differences.Add($"column order mismatch for {table.Schema}.{table.Name}: expected [{string.Join(", ", expectedNames)}], actual [{string.Join(", ", actualNames)}]");
+            ssdtDifferences.Add($"column order mismatch for {table.Schema}.{table.Name}: expected [{string.Join(", ", expectedNames)}], actual [{string.Join(", ", actualNames)}]");
         }
 
         var actualByName = dmmTable.Columns
@@ -106,26 +120,30 @@ public sealed class DmmComparator
             var expectedType = Canonicalize(expected.DataType);
             if (!string.Equals(expectedType, actual.DataType, StringComparison.OrdinalIgnoreCase))
             {
-                differences.Add($"data type mismatch for {table.Schema}.{table.Name}.{expected.Name}: expected {expectedType}, actual {actual.DataType}");
+                ssdtDifferences.Add($"data type mismatch for {table.Schema}.{table.Name}.{expected.Name}: expected {expectedType}, actual {actual.DataType}");
             }
 
             if (expected.Nullable != actual.IsNullable)
             {
                 var expectation = expected.Nullable ? "NULL" : "NOT NULL";
                 var actualNullability = actual.IsNullable ? "NULL" : "NOT NULL";
-                differences.Add($"nullability mismatch for {table.Schema}.{table.Name}.{expected.Name}: expected {expectation}, actual {actualNullability}");
+                ssdtDifferences.Add($"nullability mismatch for {table.Schema}.{table.Name}.{expected.Name}: expected {expectation}, actual {actualNullability}");
             }
         }
     }
 
-    private static void ComparePrimaryKeys(SmoTableDefinition table, DmmTable dmmTable, List<string> differences)
+    private static void ComparePrimaryKeys(
+        SmoTableDefinition table,
+        DmmTable dmmTable,
+        List<string> modelDifferences,
+        List<string> ssdtDifferences)
     {
         var expected = table.Indexes.FirstOrDefault(i => i.IsPrimaryKey);
         if (expected is null)
         {
             if (dmmTable.PrimaryKeyColumns.Count > 0)
             {
-                differences.Add($"unexpected primary key defined in DMM for {table.Schema}.{table.Name}");
+                ssdtDifferences.Add($"unexpected primary key defined in DMM for {table.Schema}.{table.Name}");
             }
 
             return;
@@ -139,7 +157,16 @@ public sealed class DmmComparator
 
         if (expectedColumns.Length != actualColumns.Length)
         {
-            differences.Add($"primary key length mismatch for {table.Schema}.{table.Name}: expected {expectedColumns.Length}, actual {actualColumns.Length}");
+            var message = $"primary key length mismatch for {table.Schema}.{table.Name}: expected {expectedColumns.Length}, actual {actualColumns.Length}";
+            if (expectedColumns.Length > actualColumns.Length)
+            {
+                modelDifferences.Add(message);
+            }
+            else
+            {
+                ssdtDifferences.Add(message);
+            }
+
             return;
         }
 
@@ -147,7 +174,7 @@ public sealed class DmmComparator
         {
             if (!string.Equals(expectedColumns[i], actualColumns[i], StringComparison.OrdinalIgnoreCase))
             {
-                differences.Add($"primary key mismatch for {table.Schema}.{table.Name} at ordinal {i + 1}: expected {expectedColumns[i]}, actual {actualColumns[i]}");
+                ssdtDifferences.Add($"primary key mismatch for {table.Schema}.{table.Name} at ordinal {i + 1}: expected {expectedColumns[i]}, actual {actualColumns[i]}");
             }
         }
     }

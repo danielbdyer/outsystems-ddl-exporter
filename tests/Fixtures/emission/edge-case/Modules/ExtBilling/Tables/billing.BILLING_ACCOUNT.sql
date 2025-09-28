@@ -1,6 +1,0 @@
-﻿CREATE TABLE billing.BILLING_ACCOUNT (
-    ID            INT          NOT NULL,
-    ACCOUNTNUMBER VARCHAR (50) NOT NULL,
-    EXTREF        VARCHAR (50),
-    CONSTRAINT PK_BillingAccount PRIMARY KEY CLUSTERED (ID)
-)
