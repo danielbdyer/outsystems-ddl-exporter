@@ -32,6 +32,7 @@
 * [14. Troubleshooting & Gotchas](#14-troubleshooting--gotchas)
 * [15. Security, Performance, and Operations](#15-security-performance-and-operations)
 * [16. Extensibility Roadmap](#16-extensibility-roadmap)
+* [Appendix D — Design Contracts at the Boundaries](#appendix-d--design-contracts-at-the-boundaries)
 
 ---
 
@@ -47,7 +48,7 @@
      --out ./out/model.edge-case.json
    ```
 
-   The manifest maps module selections to deterministic JSON payloads, giving the same shape you would fetch from a live OutSystems database.
+   The manifest maps module selections to deterministic JSON payloads, giving the same shape you would fetch from a live OutSystems database. For a hands-on reference, inspect `tests/Fixtures/model.edge-case.json` and its companion profiler snapshot under `tests/Fixtures/profiling/profile.edge-case.json`.
 2. **Run the .NET pipeline** (fixture-first example shown; swap in your live export and profiler snapshot when ready):
 
    ```bash
@@ -59,6 +60,8 @@
    ```
 
    The command evaluates NOT NULL/UNIQUE/FK decisions, materializes SMO tables, emits SSDT-ready per-table files to `./out/Modules/...`, and records a structured summary in `./out/policy-decisions.json` alongside the `manifest.json` snapshot.
+
+  The emitted manifest mirrors the fixtures we keep under `tests/Fixtures/emission/edge-case` (and the rename variant under `tests/Fixtures/emission/edge-case-rename`), so you can diff your live runs against the curated baselines.
 3. **(Optional) Verify DMM parity** using the same model/profile inputs:
 
    ```bash
@@ -66,10 +69,11 @@
      dmm-compare \
      --model tests/Fixtures/model.edge-case.json \
      --profile tests/Fixtures/profiling/profile.edge-case.json \
-     --dmm ./out/dmm/edge-case.sql
+     --dmm ./out/dmm/edge-case.sql \
+     --out ./out/dmm-diff.json
    ```
 
-   The CLI exits with a non-zero status and writes `dmm-diff.json` when parity gaps exist, making it CI-friendly.
+   The command emits a structured diff artifact (default `./dmm-diff.json`) summarizing the comparison outcome and exits with a non-zero status when drift is detected, making it CI-friendly.
 
 ---
 
@@ -77,7 +81,7 @@
 
 * **OutSystems**: Platform Server O11+ (cloud) with the **System** producer available (metamodel).
 * **SQL Server**: 2017+ (recommended 2019/2022).
-* **.NET**: .NET 8 SDK (or .NET 6 LTS).
+* **.NET**: .NET 9 SDK (or the version pinned in `global.json` when introduced).
 * **NuGet Packages**:
 
   * `Microsoft.SqlServer.SqlManagementObjects` (SMO)
@@ -124,16 +128,11 @@ tests/
 **Place in**: a *Server Action* → **Advanced SQL** node.
 **Output**: a single row with a single `Text` column containing the JSON.
 
-<details>
-<summary>Advanced SQL (click to open)</summary>
+
+The full query now lives in [`src/AdvancedSql/outsystems_model_export.sql`](src/AdvancedSql/outsystems_model_export.sql) so that IDEs and linters can reason about it. The opening excerpt below shows the documented inputs and module filter:
 
 ```sql
-/* ===========================
-   OutSystems Advanced SQL: One-shot model → JSON
-   Inputs:
-     @ModuleNamesCsv (Text), @IncludeSystem (Boolean), @OnlyActiveAttributes (Boolean)
-   Output: JSON
-   =========================== */
+/* OutSystems Advanced SQL: One-shot model → JSON */
 WITH ModuleNames AS (
   SELECT LTRIM(RTRIM(value)) AS ModuleName
   FROM STRING_SPLIT(@ModuleNamesCsv, ',')
@@ -145,151 +144,29 @@ E AS (
   FROM {Espace} e
   WHERE (@IncludeSystem = 1 OR ISNULL(e.[Is_System],0) = 0)
     AND (NOT EXISTS (SELECT 1 FROM ModuleNames) OR e.[Name] IN (SELECT ModuleName FROM ModuleNames))
-),
-Ent AS (
-  SELECT en.[Id] EntityId, en.[Name] EntityName, en.[Physical_Table_Name] PhysicalTableName,
-         ISNULL(en.[Is_Static],0) IsStaticEntity, ISNULL(en.[Is_External],0) IsExternalEntity,
-         ISNULL(en.[Is_Active],1) EntityIsActive,
-         NULLIF(en.[Db_Catalog],'') DbCatalog, NULLIF(en.[Db_Schema],'') DbSchema,
-         en.[Espace_Id] EspaceId
-  FROM {Entity} en
-  WHERE en.[Espace_Id] IN (SELECT EspaceId FROM E)
-),
-Attr AS (
-  SELECT a.[Id] AttrId, a.[Entity_Id] EntityId, a.[Name] AttrName,
-         a.[Physical_Column_Name] PhysicalColumnName, a.[Data_Type] DataType,
-         a.[Length] [Length], a.[Precision] [Precision], a.[Scale] [Scale],
-         a.[Default_Value] DefaultValue,
-         ISNULL(a.[Is_Mandatory],0) IsMandatory,
-         ISNULL(a.[Is_Active],1) AttrIsActive, ISNULL(a.[Is_Identifier],0) IsIdentifier,
-         a.[Referenced_Entity_Id] RefEntityId,
-         a.[Original_Name] OriginalName, a.[External_Column_Type] ExternalColumnType,
-         a.[Delete_Rule] DeleteRuleCode
-  FROM {Entity_Attr} a
-  WHERE (@OnlyActiveAttributes = 0 OR ISNULL(a.[Is_Active],1) = 1)
-),
-Idx AS (
-  SELECT i.[Id] IndexId, i.[Entity_Id] EntityId, i.[Name] IndexName,
-         ISNULL(i.[Is_Unique],0) IsUnique, ISNULL(i.[Is_Active],1) IndexIsActive
-  FROM {Index} i
-),
-IdxAttr AS (
-  SELECT ia.[Id] IndexAttrId, ia.[Index_Id] IndexId, ia.[Entity_Attr_Id] AttrId, ia.[Sort_Order] OrdinalPosition
-  FROM {Index_Attr} ia
-),
-RefMap AS (
-  SELECT a.[Id] AttrId, a.[Entity_Id] FromEntityId, a.[Referenced_Entity_Id] ToEntityId
-  FROM Attr a WHERE a.RefEntityId IS NOT NULL
-),
-AttrAll AS (
-  SELECT a.*, en.EntityName, en.PhysicalTableName, en.IsStaticEntity, en.IsExternalEntity, en.DbCatalog, en.DbSchema
-  FROM Attr a JOIN Ent en ON en.EntityId = a.EntityId
-),
-IdxAll AS (
-  SELECT i.IndexId, i.EntityId, i.IndexName, i.IsUnique
-  FROM Idx i WHERE ISNULL(i.IndexIsActive,1) = 1
-),
-IdxCols AS (
-  SELECT ia.IndexId, ia.AttrId, ia.OrdinalPosition, a.AttrName, a.PhysicalColumnName
-  FROM IdxAttr ia JOIN Attr a ON a.AttrId = ia.AttrId
-),
-EntObj AS (
-  SELECT en.EntityId, en.PhysicalTableName,
-         QUOTENAME(ISNULL(NULLIF(en.DbSchema,''),'dbo')) + N'.' + QUOTENAME(en.PhysicalTableName) AS TwoPartName
-  FROM Ent en
-),
-PhysCols AS (
-  SELECT a.AttrId, sc.column_id AS ColumnId
-  FROM AttrAll a JOIN EntObj eo ON eo.EntityId = a.EntityId
-  OUTER APPLY (
-    SELECT sc.column_id FROM sys.columns sc
-    WHERE sc.object_id = OBJECT_ID(eo.TwoPartName) AND sc.name = a.PhysicalColumnName
-  ) pc WHERE pc.column_id IS NOT NULL
 )
-SELECT
-  e.EspaceName AS [module.name],
-  e.IsSystemModule AS [module.isSystem],
-  e.ModuleIsActive AS [module.isActive],
-  (
-    SELECT
-      en.EntityName AS [name],
-      en.PhysicalTableName AS [physicalName],
-      en.IsStaticEntity AS [isStatic],
-      en.IsExternalEntity AS [isExternal],
-      en.EntityIsActive AS [isActive],
-      en.DbCatalog AS [db.catalog],
-      en.DbSchema AS [db.schema],
-      (
-        SELECT
-          a.AttrName AS [name],
-          a.PhysicalColumnName AS [physicalName],
-          a.OriginalName AS [originalName],
-          a.DataType AS [dataType], a.[Length] AS [length],
-          a.[Precision] AS [precision], a.[Scale] AS [scale],
-          a.DefaultValue AS [default],
-          a.IsMandatory AS [isMandatory],
-          a.AttrIsActive AS [isActive],
-          a.IsIdentifier AS [isIdentifier],
-          CASE WHEN a.RefEntityId IS NOT NULL THEN 1 ELSE 0 END AS [isReference],
-          a.RefEntityId AS [refEntityId],
-          refEn.EntityName AS [refEntity.name],
-          refEn.PhysicalTableName AS [refEntity.physicalName],
-          a.DeleteRuleCode AS [reference.deleteRuleCode],
-          CASE WHEN a.RefEntityId IS NOT NULL AND (a.DeleteRuleCode IN ('Protect','Delete',1,2)) THEN 1 ELSE 0 END AS [reference.hasDbConstraint],
-          a.ExternalColumnType AS [external.dbType],
-          CASE WHEN a.AttrIsActive = 0 AND EXISTS (SELECT 1 FROM PhysCols pc WHERE pc.AttrId = a.AttrId) THEN 1 ELSE 0 END AS [physical.isPresentButInactive]
-        FROM AttrAll a
-        LEFT JOIN Ent refEn ON refEn.EntityId = a.RefEntityId
-        WHERE a.EntityId = en.EntityId
-        ORDER BY a.IsIdentifier DESC, a.AttrName
-        FOR JSON PATH
-      ) AS [attributes],
-      (
-        SELECT DISTINCT
-          f.AttrId AS [viaAttributeId],
-          a.AttrName AS [viaAttributeName],
-          toEn.EntityName AS [toEntity.name],
-          toEn.PhysicalTableName AS [toEntity.physicalName],
-          a.DeleteRuleCode AS [deleteRuleCode],
-          CASE WHEN a.DeleteRuleCode IN ('Protect','Delete',1,2) THEN 1 ELSE 0 END AS [hasDbConstraint]
-        FROM RefMap f
-        JOIN Attr a ON a.AttrId = f.AttrId
-        JOIN Ent toEn ON toEn.EntityId = f.ToEntityId
-        WHERE f.FromEntityId = en.EntityId
-        ORDER BY a.AttrName
-        FOR JSON PATH
-      ) AS [relationships],
-      (
-        SELECT
-          i.IndexName AS [name],
-          i.IsUnique AS [isUnique],
-          CASE WHEN i.IndexName LIKE 'OSIDX\_%' ESCAPE '\' THEN 1 ELSE 0 END AS [isPlatformAuto],
-          (
-            SELECT
-              c.AttrName AS [attribute],
-              c.PhysicalColumnName AS [physicalColumn],
-              c.OrdinalPosition AS [ordinal]
-            FROM IdxCols c
-            WHERE c.IndexId = i.IndexId
-            ORDER BY c.OrdinalPosition
-            FOR JSON PATH
-          ) AS [columns]
-        FROM IdxAll i
-        WHERE i.EntityId = en.EntityId
-        ORDER BY i.IndexName
-        FOR JSON PATH
-      ) AS [indexes]
-    FROM Ent en
-    WHERE en.EspaceId = e.EspaceId
-    ORDER BY en.EntityName
-    FOR JSON PATH
-  ) AS [module.entities]
-FROM E e
-ORDER BY e.EspaceName
-FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;
 ```
 
-</details>
+> 💡 **Sample output row**: the fixtures under `tests/Fixtures/model.edge-case.json` mirror the JSON payload produced by the SQL. The first module entry expands to:
+
+```json
+{
+  "module": {
+    "name": "AppCore",
+    "isSystem": false,
+    "isActive": true
+  },
+  "entities": [
+    {
+      "name": "Customer",
+      "physicalName": "OSUSR_ABC_CUSTOMER",
+      "isStatic": false,
+      "isExternal": false,
+      "isActive": true
+    }
+  ]
+}
+```
 
 **Export tip:** write the JSON to a Site Property, an entity, or an S3/GCS/Blob via Integration Builders; or stream back in Service Studio for download.
 
@@ -558,7 +435,7 @@ DMM will push a **PK-only, all `NOT NULL`** schema into SSDT. We ensure our inte
 
 1. **Lens** our model into **DMM shape** (all columns `NotNull=true`; PK = Identifier).
 2. **Parse DMM DDL** with **ScriptDom** (no regex) into a comparable model.
-3. **Compare**: table presence, column order/names/types/length/precision/scale, PK column list.
+3. **Compare**: table presence, column order/names/types/length/precision/scale (canonicalized), PK column list.
 
 **Lens** (excerpt)
 
@@ -583,7 +460,7 @@ if (!rcol.NotNull) diff.Add("expected NOT NULL but actual nullable");
 if (!lt.PrimaryKey.Columns.SequenceEqual(rt.PrimaryKey.Columns, OrdinalIgnoreCase)) diff.Add("PK columns differ");
 ```
 
-> **Roadmap:** upcoming comparator hardening will canonicalize ScriptDom type facets (length/precision/scale) and expand parsing coverage to inline `CREATE TABLE` PK declarations plus mixed `ALTER TABLE` batches. Track progress in `tasks.md` §6 and the living test plan §6.3/§6.7.
+> **Now shipping:** the comparator canonicalizes ScriptDom type facets (length/precision/scale), tolerates casing/whitespace variance, treats `NUMERIC` and `DECIMAL` as the same family, and captures primary keys declared inline or via follow-up `ALTER TABLE` batches. Track regression coverage in `tests/Osm.Dmm.Tests/DmmComparatorTests.cs` and the living test plan §6.3/§6.7.
 
 **CLI example**
 
@@ -593,6 +470,21 @@ dotnet run --project src/Osm.Cli dmm-compare \
   --dmm dmm_out/*.sql \
   --out out/dmm-diff.json
 ```
+
+The `dmm-diff.json` artifact captures:
+
+```jsonc
+{
+  "IsMatch": true,
+  "ModelPath": "./model.json",
+  "ProfilePath": "./profile.json",
+  "DmmPath": "./dmm_out/edge-case.sql",
+  "GeneratedAtUtc": "2024-09-16T20:01:37.4280793Z",
+  "Differences": []
+}
+```
+
+When drift exists, `IsMatch` flips to `false`, `Differences` enumerates the human-readable messages printed to stderr, and the CLI exits with code `2`.
 
 ---
 
@@ -607,7 +499,7 @@ dotnet run --project src/Osm.Cli dmm-compare \
    * No missing tables/files (check `manifest.json` vs DB).
    * No nullability violations unless pre-scripts included.
    * DMM parity passes (if you use DMM as source-of-deploy).
-   * `dmm-compare` returns non-zero and writes a diff artifact whenever drift is detected (tracked in `tasks.md` §7).
+   * `dmm-compare` writes a diff artifact (`IsMatch`, `Differences`) on every run and returns non-zero whenever drift is detected (tracked in `tasks.md` §7).
 
 ---
 
@@ -624,7 +516,7 @@ dotnet run --project src/Osm.Cli dmm-compare \
 
 ## 13. Configuration & Environment
 
-**Baseline toggles**
+**Baseline tightening defaults**
 
 The repository ships with `config/default-tightening.json`, which the configuration deserializer loads into `TighteningOptions` (EvidenceGated policy, FK creation enabled, platform auto-indexes suppressed). Use it as the starting point for local runs or copy it into environment-specific settings before overriding individual flags.
 
@@ -644,18 +536,39 @@ The repository ships with `config/default-tightening.json`, which the configurat
 
 The `namingOverrides.tables` collection remaps the emitted table name (and derived PK/FK/manifest identifiers) without mutating the original OutSystems metadata. CLI callers can layer ad-hoc renames with `--rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL`, separating multiple overrides with `;` or `,`.
 
-**AppSettings (example)**
+**CLI configuration file**
 
-```json
+Copy `config/appsettings.example.json` to an environment-specific location (e.g., `config/appsettings.json`) and adjust the paths/toggles that should act as defaults for every CLI run.
+
+```jsonc
 {
-  "Profiling": {
-    "ConnectionString": "Server=.;Database=MyDb;Integrated Security=true",
-    "NullBudget": 0.0
+  "tighteningPath": "config/default-tightening.json",   // optional override for TighteningOptions
+  "model": {
+    "path": "tests/Fixtures/model.edge-case.json",
+    "modules": ["AppCore", "ExtBilling"],
+    "includeSystemModules": false,
+    "includeInactiveModules": true
   },
-  "Policy": { "Mode": "EvidenceGated" },
-  "Output": { "Root": "./out" }
+  "profile": { "path": "tests/Fixtures/profiling/profile.edge-case.json" },
+  "cache": { "root": ".artifacts/cache", "refresh": false },
+  "profiler": { "provider": "Fixture", "profilePath": "tests/Fixtures/profiling/profile.edge-case.json" },
+  "sql": { "connectionString": "Server=localhost;Database=OutSystems;Trusted_Connection=True;", "commandTimeoutSeconds": 120 }
 }
 ```
+
+Module filters declared in configuration act as defaults—`--modules`, `--exclude-system-modules`, and `--only-active-modules` override them on the command line. The evidence cache key incorporates the resolved module list and toggles so cached payloads stay aligned when you swap module selections between runs.
+
+**Precedence**
+
+When resolving inputs, the CLI honours the following order: CLI flag ➝ environment variable ➝ CLI config file ➝ built-in defaults.
+
+**Environment variables**
+
+* `OSM_CLI_CONFIG_PATH` — default `--config` path when none is supplied.
+* `OSM_CLI_MODEL_PATH`, `OSM_CLI_PROFILE_PATH`, `OSM_CLI_DMM_PATH` — fallbacks for required inputs.
+* `OSM_CLI_CACHE_ROOT`, `OSM_CLI_REFRESH_CACHE` — cache root and refresh behavior.
+* `OSM_CLI_PROFILER_PROVIDER`, `OSM_CLI_PROFILER_MOCK_FOLDER` — override profiler defaults.
+* `OSM_CLI_CONNECTION_STRING`, `OSM_CLI_SQL_COMMAND_TIMEOUT` — staged for the live SQL adapter and cached metadata hashing.
 
 **CLI flags**
 
@@ -667,13 +580,17 @@ The `namingOverrides.tables` collection remaps the emitted table name (and deriv
   * `--out <path>` — destination for the JSON payload (defaults to `model.extracted.json`).
 * `build-ssdt`
   * `--model <model.json>` / `--profile <profile.json>` — deterministic inputs (fixtures or cached extraction outputs).
-  * `--config <tightening.json>` — optional policy overrides.
+  * `--modules <csv>` — optional module filter; values are trimmed and case-insensitive.
+  * `--exclude-system-modules` / `--include-system-modules` — toggle whether system modules participate when the filter is empty.
+  * `--only-active-modules` / `--include-inactive-modules` — drop inactive modules entirely (active-only by default when the flag is present).
+  * `--config <appsettings.json>` — optional CLI configuration (model/profile defaults, cache root, tightening overrides).
   * `--out <directory>` — emission root (`./out` by default).
   * `--cache-root <directory>` / `--refresh-cache` — evidence cache control for model/profile/DMM/config artifacts.
   * `--rename-table schema.table=Override` — rename the emitted table/constraint identifiers (separate multiple overrides with `;` or `,`).
 * `dmm-compare`
   * `--model <model.json>` / `--profile <profile.json>` — same as `build-ssdt`.
   * `--dmm <path>` — baseline DMM script to compare against SMO output.
+  * `--modules`, `--exclude-system-modules`, `--only-active-modules` — same semantics as `build-ssdt`; restricts the SMO baseline prior to diffing.
   * `--config`, `--cache-root`, `--refresh-cache` — same semantics as `build-ssdt`.
 
 ---
@@ -855,4 +772,16 @@ Emission rules:
 
 ---
 
-You now have **everything** needed to implement, operate, and extend this pipeline—end-to-end—from OutSystems Advanced SQL through profiling and policy-driven tightening to SSDT-ready per-table DDL, plus a DMM comparator for PK-only, NOT-NULL parity. If you want me to tailor the default **type map** (e.g., treat OutSystems `Identifier` as `bigint`), say which variant you prefer and I’ll inline the exact mapper.
+You now have **everything** needed to implement, operate, and extend this pipeline—end-to-end—from OutSystems Advanced SQL through profiling and policy-driven tightening to SSDT-ready per-table DDL, plus a DMM comparator for PK-only, NOT-NULL parity. Cross-check the interface contracts in [Appendix D](#appendix-d--design-contracts-at-the-boundaries) whenever you add a new integration or tweak a policy so that boundaries stay honest. If you want me to tailor the default **type map** (e.g., treat OutSystems `Identifier` as `bigint`), say which variant you prefer and I’ll inline the exact mapper.
+
+---
+
+## Appendix D — Design Contracts at the Boundaries
+
+We keep the executable contracts for every major seam—model ingestion, profiling, tightening, SMO building, emission, and DMM comparison—in [`notes/design-contracts.md`](notes/design-contracts.md). Each contract documents:
+
+* The interface signature.
+* Required invariants (e.g., logical names vs. physical names, schema casing rules).
+* Expected failure shapes (`Result<T>` codes) and telemetry hooks.
+
+Visit the appendix whenever you introduce a new adapter or extend CLI options so you can align with the boundary guarantees and reuse the existing fixture-first tests.

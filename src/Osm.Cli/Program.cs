@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Osm.Cli.Configuration;
 using Osm.Domain.Configuration;
 using Osm.Domain.Abstractions;
 using Osm.Dmm;
@@ -16,6 +19,17 @@ using Osm.Pipeline.Profiling;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+
+const string EnvConfigPath = "OSM_CLI_CONFIG_PATH";
+const string EnvModelPath = "OSM_CLI_MODEL_PATH";
+const string EnvProfilePath = "OSM_CLI_PROFILE_PATH";
+const string EnvDmmPath = "OSM_CLI_DMM_PATH";
+const string EnvCacheRoot = "OSM_CLI_CACHE_ROOT";
+const string EnvRefreshCache = "OSM_CLI_REFRESH_CACHE";
+const string EnvProfilerProvider = "OSM_CLI_PROFILER_PROVIDER";
+const string EnvProfilerMockFolder = "OSM_CLI_PROFILER_MOCK_FOLDER";
+const string EnvSqlConnectionString = "OSM_CLI_CONNECTION_STRING";
+const string EnvSqlCommandTimeout = "OSM_CLI_SQL_COMMAND_TIMEOUT";
 
 return await DispatchAsync(args);
 
@@ -122,55 +136,84 @@ static async Task<int> RunInspectAsync(string[] args)
 static async Task<int> RunBuildSsdtAsync(string[] args)
 {
     var options = ParseOptions(args);
-    if (!TryGetRequired(options, "--model", out var modelPath))
+    var configurationResult = await LoadCliConfigurationAsync(options);
+    if (configurationResult.IsFailure)
+    {
+        WriteErrors(configurationResult.Errors);
+        return 1;
+    }
+
+    var configurationContext = configurationResult.Value;
+    var configuration = configurationContext.Configuration;
+    var configPath = configurationContext.ConfigPath;
+
+    var moduleFilterResult = ResolveModuleFilterOptions(options, configuration.ModuleFilter);
+    if (moduleFilterResult.IsFailure)
+    {
+        WriteErrors(moduleFilterResult.Errors);
+        return 1;
+    }
+
+    var moduleFilter = moduleFilterResult.Value;
+
+    if (!TryResolveRequiredPath(options, "--model", EnvModelPath, configuration.ModelPath, "model path", out var modelPath))
     {
         return 1;
     }
 
-    if (!TryGetRequired(options, "--profile", out var profilePath))
+    if (!TryResolveRequiredPath(options, "--profile", EnvProfilePath, configuration.ProfilePath, "profile path", out var profilePath))
     {
         return 1;
     }
 
-    var outputPath = options.TryGetValue("--out", out var outValue) ? outValue ?? "out" : "out";
-    var configPath = options.TryGetValue("--config", out var configValue) ? configValue : null;
+    var outputPath = options.TryGetValue("--out", out var outValue) && !string.IsNullOrWhiteSpace(outValue)
+        ? outValue!
+        : "out";
 
-    var tighteningOptionsResult = await LoadTighteningOptionsAsync(configPath);
-    if (tighteningOptionsResult.IsFailure)
-    {
-        WriteErrors(tighteningOptionsResult.Errors);
-        return 1;
-    }
+    var cacheRoot = ResolveCacheRoot(options, configuration);
+    var refreshCache = ResolveRefreshCache(options, configuration);
+    var tighteningOptions = configuration.Tightening;
 
-    var modelResult = await new ModelIngestionService(new ModelJsonDeserializer()).LoadFromFileAsync(modelPath!);
+    var modelResult = await new ModelIngestionService(new ModelJsonDeserializer()).LoadFromFileAsync(modelPath);
     if (modelResult.IsFailure)
     {
         WriteErrors(modelResult.Errors);
         return 1;
     }
 
-    var profileResult = await new FixtureDataProfiler(profilePath!, new ProfileSnapshotDeserializer()).CaptureAsync();
+    var filteredModelResult = new ModuleFilter().Apply(modelResult.Value, moduleFilter);
+    if (filteredModelResult.IsFailure)
+    {
+        WriteErrors(filteredModelResult.Errors);
+        return 1;
+    }
+
+    var model = filteredModelResult.Value;
+
+    var profileResult = await new FixtureDataProfiler(profilePath, new ProfileSnapshotDeserializer()).CaptureAsync();
     if (profileResult.IsFailure)
     {
         WriteErrors(profileResult.Errors);
         return 1;
     }
 
-    var tighteningOptions = tighteningOptionsResult.Value;
     if (!await TryCacheEvidenceAsync(
-            options,
+            cacheRoot,
+            refreshCache,
             command: "build-ssdt",
-            modelPath!,
-            profilePath!,
+            modelPath,
+            profilePath,
             dmmPath: null,
             configPath,
-            tighteningOptions))
+            tighteningOptions,
+            moduleFilter,
+            configuration))
     {
         return 1;
     }
 
     var policy = new TighteningPolicy();
-    var decisions = policy.Decide(modelResult.Value, profileResult.Value, tighteningOptions);
+    var decisions = policy.Decide(model, profileResult.Value, tighteningOptions);
     var decisionReport = PolicyDecisionReporter.Create(decisions);
 
     var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission);
@@ -182,7 +225,7 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
     }
 
     smoOptions = smoOptions.WithNamingOverrides(namingOverrideResult.Value);
-    var smoModel = new SmoModelFactory().Create(modelResult.Value, decisions, smoOptions);
+    var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
 
     var emitter = new SsdtEmitter();
     var manifest = await emitter.EmitAsync(smoModel, outputPath!, smoOptions, decisionReport);
@@ -200,71 +243,100 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
 static async Task<int> RunDmmCompareAsync(string[] args)
 {
     var options = ParseOptions(args);
-    if (!TryGetRequired(options, "--model", out var modelPath))
+    var configurationResult = await LoadCliConfigurationAsync(options);
+    if (configurationResult.IsFailure)
+    {
+        WriteErrors(configurationResult.Errors);
+        return 1;
+    }
+
+    var configurationContext = configurationResult.Value;
+    var configuration = configurationContext.Configuration;
+    var configPath = configurationContext.ConfigPath;
+
+    var moduleFilterResult = ResolveModuleFilterOptions(options, configuration.ModuleFilter);
+    if (moduleFilterResult.IsFailure)
+    {
+        WriteErrors(moduleFilterResult.Errors);
+        return 1;
+    }
+
+    var moduleFilter = moduleFilterResult.Value;
+
+    if (!TryResolveRequiredPath(options, "--model", EnvModelPath, configuration.ModelPath, "model path", out var modelPath))
     {
         return 1;
     }
 
-    if (!TryGetRequired(options, "--profile", out var profilePath))
+    if (!TryResolveRequiredPath(options, "--profile", EnvProfilePath, configuration.ProfilePath, "profile path", out var profilePath))
     {
         return 1;
     }
 
-    if (!TryGetRequired(options, "--dmm", out var dmmPath))
+    if (!TryResolveRequiredPath(options, "--dmm", EnvDmmPath, configuration.DmmPath, "DMM path", out var dmmPath))
     {
         return 1;
     }
 
-    var configPath = options.TryGetValue("--config", out var configValue) ? configValue : null;
+    var diffPath = options.TryGetValue("--out", out var diffValue) && !string.IsNullOrWhiteSpace(diffValue)
+        ? diffValue!
+        : "dmm-diff.json";
 
-    var tighteningOptionsResult = await LoadTighteningOptionsAsync(configPath);
-    if (tighteningOptionsResult.IsFailure)
-    {
-        WriteErrors(tighteningOptionsResult.Errors);
-        return 1;
-    }
+    var cacheRoot = ResolveCacheRoot(options, configuration);
+    var refreshCache = ResolveRefreshCache(options, configuration);
+    var tighteningOptions = configuration.Tightening;
 
-    var modelResult = await new ModelIngestionService(new ModelJsonDeserializer()).LoadFromFileAsync(modelPath!);
+    var modelResult = await new ModelIngestionService(new ModelJsonDeserializer()).LoadFromFileAsync(modelPath);
     if (modelResult.IsFailure)
     {
         WriteErrors(modelResult.Errors);
         return 1;
     }
 
-    var profileResult = await new FixtureDataProfiler(profilePath!, new ProfileSnapshotDeserializer()).CaptureAsync();
+    var filteredModelResult = new ModuleFilter().Apply(modelResult.Value, moduleFilter);
+    if (filteredModelResult.IsFailure)
+    {
+        WriteErrors(filteredModelResult.Errors);
+        return 1;
+    }
+
+    var model = filteredModelResult.Value;
+
+    var profileResult = await new FixtureDataProfiler(profilePath, new ProfileSnapshotDeserializer()).CaptureAsync();
     if (profileResult.IsFailure)
     {
         WriteErrors(profileResult.Errors);
         return 1;
     }
 
-    var tighteningOptions = tighteningOptionsResult.Value;
-
-    if (!File.Exists(dmmPath!))
+    if (!File.Exists(dmmPath))
     {
         Console.Error.WriteLine($"DMM script '{dmmPath}' not found.");
         return 1;
     }
 
     if (!await TryCacheEvidenceAsync(
-            options,
+            cacheRoot,
+            refreshCache,
             command: "dmm-compare",
-            modelPath!,
-            profilePath!,
-            dmmPath!,
+            modelPath,
+            profilePath,
+            dmmPath,
             configPath,
-            tighteningOptions))
+            tighteningOptions,
+            moduleFilter,
+            configuration))
     {
         return 1;
     }
 
     var policy = new TighteningPolicy();
-    var decisions = policy.Decide(modelResult.Value, profileResult.Value, tighteningOptions);
+    var decisions = policy.Decide(model, profileResult.Value, tighteningOptions);
     var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission, applyNamingOverrides: false);
-    var smoModel = new SmoModelFactory().Create(modelResult.Value, decisions, smoOptions);
+    var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
 
     var parser = new DmmParser();
-    using var reader = File.OpenText(dmmPath!);
+    using var reader = File.OpenText(dmmPath);
     var parseResult = parser.Parse(reader);
     if (parseResult.IsFailure)
     {
@@ -274,9 +346,26 @@ static async Task<int> RunDmmCompareAsync(string[] args)
 
     var comparator = new DmmComparator();
     var comparison = comparator.Compare(smoModel, parseResult.Value);
+
+    string diffArtifactPath;
+    try
+    {
+        diffArtifactPath = await WriteDmmDiffAsync(
+            diffPath,
+            modelPath,
+            profilePath,
+            dmmPath,
+            comparison);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Failed to write diff artifact to '{diffPath}': {ex.Message}");
+        return 1;
+    }
+
     if (comparison.IsMatch)
     {
-        Console.WriteLine("DMM parity confirmed.");
+        Console.WriteLine($"DMM parity confirmed. Diff artifact written to {diffArtifactPath}.");
         return 0;
     }
 
@@ -286,19 +375,197 @@ static async Task<int> RunDmmCompareAsync(string[] args)
         Console.Error.WriteLine($" - {difference}");
     }
 
+    Console.Error.WriteLine($"Diff artifact written to {diffArtifactPath}.");
     return 2;
 }
 
-static async Task<Result<TighteningOptions>> LoadTighteningOptionsAsync(string? configPath)
+static async Task<Result<CliConfigurationContext>> LoadCliConfigurationAsync(Dictionary<string, string?> options)
 {
-    if (string.IsNullOrWhiteSpace(configPath))
+    var configPath = ResolveConfigPath(options);
+    var loader = new CliConfigurationLoader();
+    var loadResult = await loader.LoadAsync(configPath);
+    if (loadResult.IsFailure)
     {
-        return Result<TighteningOptions>.Success(TighteningOptions.Default);
+        return Result<CliConfigurationContext>.Failure(loadResult.Errors);
     }
 
-    await using var stream = File.OpenRead(configPath);
-    var deserializer = new TighteningOptionsDeserializer();
-    return deserializer.Deserialize(stream);
+    var configuration = ApplyEnvironmentOverrides(loadResult.Value);
+    return new CliConfigurationContext(configuration, configPath);
+}
+
+static string? ResolveConfigPath(Dictionary<string, string?> options)
+{
+    if (options.TryGetValue("--config", out var configValue) && !string.IsNullOrWhiteSpace(configValue))
+    {
+        return configValue;
+    }
+
+    var envPath = Environment.GetEnvironmentVariable(EnvConfigPath);
+    return string.IsNullOrWhiteSpace(envPath) ? null : envPath;
+}
+
+static CliConfiguration ApplyEnvironmentOverrides(CliConfiguration configuration)
+{
+    var result = configuration;
+
+    if (TryGetEnvironmentPath(EnvModelPath, out var modelPath))
+    {
+        result = result with { ModelPath = modelPath };
+    }
+
+    if (TryGetEnvironmentPath(EnvProfilePath, out var profilePath))
+    {
+        result = result with { ProfilePath = profilePath };
+        result = result with { Profiler = result.Profiler with { ProfilePath = profilePath } };
+    }
+    else if (string.IsNullOrWhiteSpace(result.ProfilePath) && !string.IsNullOrWhiteSpace(result.Profiler.ProfilePath))
+    {
+        result = result with { ProfilePath = result.Profiler.ProfilePath };
+    }
+
+    if (TryGetEnvironmentPath(EnvDmmPath, out var dmmPath))
+    {
+        result = result with { DmmPath = dmmPath };
+    }
+
+    var cache = result.Cache;
+    if (TryGetEnvironmentPath(EnvCacheRoot, out var cacheRoot))
+    {
+        cache = cache with { Root = cacheRoot };
+    }
+
+    if (TryParseBoolean(Environment.GetEnvironmentVariable(EnvRefreshCache), out var refreshCache))
+    {
+        cache = cache with { Refresh = refreshCache };
+    }
+
+    result = result with { Cache = cache };
+
+    var profiler = result.Profiler;
+    var provider = Environment.GetEnvironmentVariable(EnvProfilerProvider);
+    if (!string.IsNullOrWhiteSpace(provider))
+    {
+        profiler = profiler with { Provider = provider };
+    }
+
+    if (TryGetEnvironmentPath(EnvProfilerMockFolder, out var mockFolder))
+    {
+        profiler = profiler with { MockFolder = mockFolder };
+    }
+
+    result = result with { Profiler = profiler };
+
+    var sql = result.Sql;
+    var connectionString = Environment.GetEnvironmentVariable(EnvSqlConnectionString);
+    if (!string.IsNullOrWhiteSpace(connectionString))
+    {
+        sql = sql with { ConnectionString = connectionString.Trim() };
+    }
+
+    if (TryParseInt(Environment.GetEnvironmentVariable(EnvSqlCommandTimeout), out var timeout))
+    {
+        sql = sql with { CommandTimeoutSeconds = timeout };
+    }
+
+    result = result with { Sql = sql };
+
+    return result;
+}
+
+static bool TryGetEnvironmentPath(string variable, out string path)
+{
+    var raw = Environment.GetEnvironmentVariable(variable);
+    if (string.IsNullOrWhiteSpace(raw))
+    {
+        path = string.Empty;
+        return false;
+    }
+
+    var trimmed = raw.Trim();
+    try
+    {
+        path = Path.GetFullPath(trimmed);
+    }
+    catch
+    {
+        path = trimmed;
+    }
+
+    return true;
+}
+
+static bool TryParseBoolean(string? value, out bool result)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        result = default;
+        return false;
+    }
+
+    return bool.TryParse(value, out result);
+}
+
+static bool TryParseInt(string? value, out int result)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        result = default;
+        return false;
+    }
+
+    return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+}
+
+static bool TryResolveRequiredPath(
+    Dictionary<string, string?> options,
+    string optionKey,
+    string envVariable,
+    string? configurationValue,
+    string friendlyName,
+    out string value)
+{
+    if (options.TryGetValue(optionKey, out var cliValue) && !string.IsNullOrWhiteSpace(cliValue))
+    {
+        value = cliValue!;
+        return true;
+    }
+
+    if (!string.IsNullOrWhiteSpace(configurationValue))
+    {
+        value = configurationValue!;
+        return true;
+    }
+
+    Console.Error.WriteLine($"Missing required {friendlyName}. Provide {optionKey} <value>, set {envVariable}, or define it in the CLI configuration file.");
+    value = string.Empty;
+    return false;
+}
+
+static string? ResolveCacheRoot(Dictionary<string, string?> options, CliConfiguration configuration)
+{
+    if (options.TryGetValue("--cache-root", out var cliValue) && !string.IsNullOrWhiteSpace(cliValue))
+    {
+        return cliValue;
+    }
+
+    return configuration.Cache.Root;
+}
+
+static bool ResolveRefreshCache(Dictionary<string, string?> options, CliConfiguration configuration)
+{
+    if (options.ContainsKey("--refresh-cache"))
+    {
+        return true;
+    }
+
+    return configuration.Cache.Refresh ?? false;
+}
+
+static string ComputeSha256(string value)
+{
+    using var sha = SHA256.Create();
+    var bytes = Encoding.UTF8.GetBytes(value);
+    return Convert.ToHexString(sha.ComputeHash(bytes));
 }
 
 static async Task<string> WriteDecisionLogAsync(string outputDirectory, PolicyDecisionReport report)
@@ -342,30 +609,62 @@ static async Task<string> WriteDecisionLogAsync(string outputDirectory, PolicyDe
     return path;
 }
 
+static async Task<string> WriteDmmDiffAsync(
+    string outputPath,
+    string modelPath,
+    string profilePath,
+    string dmmPath,
+    DmmComparisonResult comparison)
+{
+    var fullPath = Path.GetFullPath(outputPath);
+    var directory = Path.GetDirectoryName(fullPath);
+    if (!string.IsNullOrEmpty(directory))
+    {
+        Directory.CreateDirectory(directory);
+    }
+
+    var log = new DmmDiffLog(
+        comparison.IsMatch,
+        modelPath,
+        profilePath,
+        dmmPath,
+        DateTimeOffset.UtcNow,
+        comparison.Differences.ToArray());
+
+    var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
+    await File.WriteAllTextAsync(fullPath, json);
+    return fullPath;
+}
+
 static async Task<bool> TryCacheEvidenceAsync(
-    Dictionary<string, string?> options,
+    string? cacheRoot,
+    bool refreshCache,
     string command,
     string modelPath,
     string? profilePath,
     string? dmmPath,
     string? configPath,
-    TighteningOptions tighteningOptions)
+    TighteningOptions tighteningOptions,
+    ModuleFilterOptions moduleFilter,
+    CliConfiguration configuration)
 {
-    if (!options.TryGetValue("--cache-root", out var root) || string.IsNullOrWhiteSpace(root))
+    if (string.IsNullOrWhiteSpace(cacheRoot))
     {
         return true;
     }
 
-    var metadata = BuildCacheMetadata(tighteningOptions);
+    var root = cacheRoot.Trim();
+
+    var metadata = BuildCacheMetadata(tighteningOptions, moduleFilter, configuration);
     var request = new EvidenceCacheRequest(
-        root.Trim(),
+        root,
         command,
         modelPath,
         profilePath,
         dmmPath,
         configPath,
         metadata,
-        options.ContainsKey("--refresh-cache"));
+        refreshCache);
 
     var cacheResult = await new EvidenceCacheService().CacheAsync(request).ConfigureAwait(false);
     if (cacheResult.IsFailure)
@@ -379,7 +678,10 @@ static async Task<bool> TryCacheEvidenceAsync(
     return true;
 }
 
-static IReadOnlyDictionary<string, string?> BuildCacheMetadata(TighteningOptions options)
+static IReadOnlyDictionary<string, string?> BuildCacheMetadata(
+    TighteningOptions options,
+    ModuleFilterOptions moduleFilter,
+    CliConfiguration configuration)
 {
     var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
     {
@@ -399,9 +701,62 @@ static IReadOnlyDictionary<string, string?> BuildCacheMetadata(TighteningOptions
         ["mocking.useProfileMockFolder"] = options.Mocking.UseProfileMockFolder.ToString(),
     };
 
+    metadata["moduleFilter.includeSystemModules"] = moduleFilter.IncludeSystemModules.ToString();
+    metadata["moduleFilter.includeInactiveModules"] = moduleFilter.IncludeInactiveModules.ToString();
+
+    if (!moduleFilter.Modules.IsDefaultOrEmpty)
+    {
+        metadata["moduleFilter.modules"] = string.Join(",", moduleFilter.Modules);
+    }
+
     if (!string.IsNullOrWhiteSpace(options.Mocking.ProfileMockFolder))
     {
         metadata["mocking.profileMockFolder"] = options.Mocking.ProfileMockFolder;
+    }
+
+    if (!string.IsNullOrWhiteSpace(configuration.ModelPath))
+    {
+        metadata["inputs.model"] = Path.GetFullPath(configuration.ModelPath);
+    }
+
+    if (!string.IsNullOrWhiteSpace(configuration.ProfilePath))
+    {
+        metadata["inputs.profile"] = Path.GetFullPath(configuration.ProfilePath);
+    }
+
+    if (!string.IsNullOrWhiteSpace(configuration.DmmPath))
+    {
+        metadata["inputs.dmm"] = Path.GetFullPath(configuration.DmmPath);
+    }
+
+    if (!string.IsNullOrWhiteSpace(configuration.Cache.Root))
+    {
+        metadata["cache.root"] = Path.GetFullPath(configuration.Cache.Root);
+    }
+
+    if (configuration.Cache.Refresh.HasValue)
+    {
+        metadata["cache.refreshRequested"] = configuration.Cache.Refresh.Value.ToString();
+    }
+
+    if (!string.IsNullOrWhiteSpace(configuration.Profiler.Provider))
+    {
+        metadata["profiler.provider"] = configuration.Profiler.Provider;
+    }
+
+    if (!string.IsNullOrWhiteSpace(configuration.Profiler.MockFolder))
+    {
+        metadata["profiler.mockFolder"] = Path.GetFullPath(configuration.Profiler.MockFolder);
+    }
+
+    if (!string.IsNullOrWhiteSpace(configuration.Sql.ConnectionString))
+    {
+        metadata["sql.connectionHash"] = ComputeSha256(configuration.Sql.ConnectionString);
+    }
+
+    if (configuration.Sql.CommandTimeoutSeconds.HasValue)
+    {
+        metadata["sql.commandTimeoutSeconds"] = configuration.Sql.CommandTimeoutSeconds.Value.ToString(CultureInfo.InvariantCulture);
     }
 
     return metadata;
@@ -492,15 +847,84 @@ static Result<NamingOverrideOptions> ResolveNamingOverrides(
     return existingOverrides.MergeWith(parsedOverrides);
 }
 
-static bool TryGetRequired(Dictionary<string, string?> options, string key, out string? value)
+static Result<ModuleFilterOptions> ResolveModuleFilterOptions(
+    Dictionary<string, string?> options,
+    ModuleFilterConfiguration configuration)
 {
-    if (!options.TryGetValue(key, out value) || string.IsNullOrWhiteSpace(value))
+    if (options is null)
     {
-        Console.Error.WriteLine($"Missing required option {key} <value>.");
-        return false;
+        throw new ArgumentNullException(nameof(options));
     }
 
-    return true;
+    if (configuration is null)
+    {
+        throw new ArgumentNullException(nameof(configuration));
+    }
+
+    var includeSystemModules = configuration.IncludeSystemModules ?? true;
+    var includeInactiveModules = configuration.IncludeInactiveModules ?? true;
+
+    var configuredModules = configuration.Modules?.Count > 0
+        ? configuration.Modules.ToArray()
+        : Array.Empty<string>();
+
+    var cliModules = ResolveModuleArguments(options);
+    if (cliModules.Count > 0)
+    {
+        configuredModules = cliModules.ToArray();
+    }
+
+    if (options.ContainsKey("--exclude-system-modules"))
+    {
+        includeSystemModules = false;
+    }
+    else if (options.ContainsKey("--include-system-modules"))
+    {
+        includeSystemModules = true;
+    }
+
+    if (options.ContainsKey("--only-active-modules"))
+    {
+        includeInactiveModules = false;
+    }
+    else if (options.ContainsKey("--include-inactive-modules"))
+    {
+        includeInactiveModules = true;
+    }
+
+    return ModuleFilterOptions.Create(configuredModules, includeSystemModules, includeInactiveModules);
+}
+
+static IReadOnlyList<string> ResolveModuleArguments(Dictionary<string, string?> options)
+{
+    if (options.TryGetValue("--modules", out var modulesValue) && !string.IsNullOrWhiteSpace(modulesValue))
+    {
+        return SplitModuleList(modulesValue);
+    }
+
+    if (options.TryGetValue("--module", out var moduleValue) && !string.IsNullOrWhiteSpace(moduleValue))
+    {
+        return SplitModuleList(moduleValue);
+    }
+
+    return Array.Empty<string>();
+}
+
+static IReadOnlyList<string> SplitModuleList(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return Array.Empty<string>();
+    }
+
+    var separators = new[] { ',', ';' };
+    var tokens = value.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (tokens.Length == 0)
+    {
+        return Array.Empty<string>();
+    }
+
+    return tokens;
 }
 
 static void WriteErrors(IEnumerable<ValidationError> errors)
@@ -518,8 +942,8 @@ static void PrintRootUsage()
     Console.WriteLine("Commands:");
     Console.WriteLine("  inspect --model <model.json>");
     Console.WriteLine("  extract-model --mock-advanced-sql <manifest.json> [--modules <csv>] [--include-system-modules] [--only-active-attributes] [--out <path>]");
-    Console.WriteLine("  build-ssdt --model <model.json> --profile <profile.json> [--out <dir>] [--config <path>] [--cache-root <dir>] [--refresh-cache] [--rename-table schema.table=Override]");
-    Console.WriteLine("  dmm-compare --model <model.json> --profile <profile.json> --dmm <dmm.sql> [--config <path>] [--cache-root <dir>] [--refresh-cache]");
+    Console.WriteLine("  build-ssdt --model <model.json> --profile <profile.json> [--modules <csv>] [--exclude-system-modules] [--only-active-modules] [--out <dir>] [--config <path>] [--cache-root <dir>] [--refresh-cache] [--rename-table schema.table=Override]");
+    Console.WriteLine("  dmm-compare --model <model.json> --profile <profile.json> --dmm <dmm.sql> [--modules <csv>] [--exclude-system-modules] [--only-active-modules] [--config <path>] [--out <path>] [--cache-root <dir>] [--refresh-cache]");
 }
 
 static int UnknownCommand(string command)
@@ -528,6 +952,8 @@ static int UnknownCommand(string command)
     PrintRootUsage();
     return 1;
 }
+
+file sealed record CliConfigurationContext(CliConfiguration Configuration, string? ConfigPath);
 
 file sealed record PolicyDecisionLog(
     int ColumnCount,
@@ -567,3 +993,11 @@ file sealed record PolicyDecisionLogForeignKey(
     string Column,
     bool CreateConstraint,
     IReadOnlyList<string> Rationales);
+
+file sealed record DmmDiffLog(
+    bool IsMatch,
+    string ModelPath,
+    string ProfilePath,
+    string DmmPath,
+    DateTimeOffset GeneratedAtUtc,
+    IReadOnlyList<string> Differences);

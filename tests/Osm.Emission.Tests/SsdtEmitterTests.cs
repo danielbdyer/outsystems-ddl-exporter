@@ -95,6 +95,52 @@ public class SsdtEmitterTests
     }
 
     [Fact]
+    public async Task EmitAsync_skips_platform_auto_indexes_when_option_disabled()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var options = TighteningOptions.Default;
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(model, snapshot, options);
+        var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
+        var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, null);
+
+        var jobRun = manifest.Tables.Single(t => t.Table.Equals("JobRun", StringComparison.Ordinal));
+        Assert.DoesNotContain(jobRun.IndexFiles, path => path.Contains("OSIDX", StringComparison.OrdinalIgnoreCase));
+
+        var emittedOsidx = Directory.GetFiles(temp.Path, "*OSIDX*.sql", SearchOption.AllDirectories);
+        Assert.Empty(emittedOsidx);
+    }
+
+    [Fact]
+    public async Task EmitAsync_includes_platform_auto_indexes_when_enabled()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var options = CreateOptionsWithPlatformIndexesEnabled();
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(model, snapshot, options);
+        var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
+        var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, null);
+
+        var jobRun = manifest.Tables.Single(t => t.Table.Equals("JobRun", StringComparison.Ordinal));
+        var osidxPath = jobRun.IndexFiles.Single(path => path.Contains("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
+
+        var fullPath = Path.Combine(temp.Path, osidxPath);
+        Assert.True(File.Exists(fullPath));
+        var script = await File.ReadAllTextAsync(fullPath);
+        Assert.Contains("CREATE INDEX", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task EmitAsync_honors_unique_index_policy_flags()
     {
         var model = ModelFixtures.LoadModel("model.micro-unique.json");
@@ -207,5 +253,29 @@ public class SsdtEmitterTests
                 Directory.Delete(Path, recursive: true);
             }
         }
+    }
+
+    private static TighteningOptions CreateOptionsWithPlatformIndexesEnabled()
+    {
+        var defaults = TighteningOptions.Default;
+        var emissionResult = EmissionOptions.Create(
+            defaults.Emission.PerTableFiles,
+            includePlatformAutoIndexes: true,
+            defaults.Emission.SanitizeModuleNames,
+            defaults.Emission.EmitConcatenatedConstraints,
+            defaults.Emission.NamingOverrides);
+
+        Assert.True(emissionResult.IsSuccess);
+
+        var optionsResult = TighteningOptions.Create(
+            defaults.Policy,
+            defaults.ForeignKeys,
+            defaults.Uniqueness,
+            defaults.Remediation,
+            emissionResult.Value,
+            defaults.Mocking);
+
+        Assert.True(optionsResult.IsSuccess);
+        return optionsResult.Value;
     }
 }

@@ -75,6 +75,41 @@ public sealed class FixtureDataProfilerTests
     }
 
     [Fact]
+    public async Task CaptureAsync_ShouldPreservePhysicalMetadataFlags()
+    {
+        var path = FixtureFile.GetPath(FixtureProfileSource.EdgeCase);
+        var profiler = new FixtureDataProfiler(path, new ProfileSnapshotDeserializer());
+
+        var result = await profiler.CaptureAsync();
+
+        Assert.True(result.IsSuccess);
+        var snapshot = result.Value;
+
+        var createdOn = snapshot.Columns.Single(c =>
+            c.Table.Value == "OSUSR_XYZ_JOBRUN" &&
+            c.Column.Value == "CREATEDON");
+
+        Assert.True(createdOn.IsComputed);
+        Assert.True(createdOn.IsNullablePhysical);
+        Assert.Equal("(getutcdate())", createdOn.DefaultDefinition);
+
+        var firstName = snapshot.Columns.Single(c =>
+            c.Table.Value == "OSUSR_ABC_CUSTOMER" &&
+            c.Column.Value == "FIRSTNAME");
+
+        Assert.True(firstName.IsNullablePhysical);
+        Assert.False(firstName.IsComputed);
+        Assert.Equal("('')", firstName.DefaultDefinition);
+
+        var identifier = snapshot.Columns.Single(c =>
+            c.Table.Value == "OSUSR_ABC_CUSTOMER" &&
+            c.Column.Value == "ID");
+
+        Assert.False(identifier.IsNullablePhysical);
+        Assert.True(identifier.IsPrimaryKey);
+    }
+
+    [Fact]
     public async Task CaptureAsync_ShouldReturnFailure_WhenFixtureMissing()
     {
         var fileSystem = new MockFileSystem();

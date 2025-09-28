@@ -25,44 +25,60 @@ public sealed class SmoModelFactory
 
         options ??= SmoBuildOptions.Default;
 
-        var entityLookup = model.Modules
-            .SelectMany(m => m.Entities)
-            .ToDictionary(e => e.LogicalName, e => e);
+        var contexts = BuildEntityContexts(model);
+        var tablesBuilder = ImmutableArray.CreateBuilder<SmoTableDefinition>(contexts.Count);
 
-        var tables = model.Modules
-            .SelectMany(module => module.Entities.Select(entity => BuildTable(module.Name.Value, entity, decisions, options, entityLookup)))
-            .ToImmutableArray();
+        foreach (var module in model.Modules)
+        {
+            foreach (var entity in module.Entities)
+            {
+                if (!contexts.TryGetValue(entity.LogicalName, out var context))
+                {
+                    continue;
+                }
 
-        return SmoModel.Create(tables);
+                tablesBuilder.Add(BuildTable(context, decisions, options, contexts));
+            }
+        }
+
+        return SmoModel.Create(tablesBuilder.ToImmutable());
+    }
+
+    private static Dictionary<EntityName, EntityEmissionContext> BuildEntityContexts(OsmModel model)
+    {
+        var lookup = new Dictionary<EntityName, EntityEmissionContext>();
+
+        foreach (var module in model.Modules)
+        {
+            foreach (var entity in module.Entities)
+            {
+                var context = EntityEmissionContext.Create(module.Name.Value, entity);
+                lookup[entity.LogicalName] = context;
+            }
+        }
+
+        return lookup;
     }
 
     private static SmoTableDefinition BuildTable(
-        string moduleName,
-        EntityModel entity,
+        EntityEmissionContext context,
         PolicyDecisionSet decisions,
         SmoBuildOptions options,
-        IReadOnlyDictionary<EntityName, EntityModel> entityLookup)
+        IReadOnlyDictionary<EntityName, EntityEmissionContext> entityLookup)
     {
-        var emittableAttributes = entity.Attributes
-            .Where(IsEmittableAttribute)
-            .ToArray();
+        var columns = BuildColumns(context, decisions);
+        var indexes = BuildIndexes(context, decisions, options.IncludePlatformAutoIndexes);
+        var foreignKeys = BuildForeignKeys(context, decisions, entityLookup);
+        var catalog = string.IsNullOrWhiteSpace(context.Entity.Catalog) ? options.DefaultCatalogName : context.Entity.Catalog!;
 
-        var attributeLookup = emittableAttributes
-            .ToDictionary(a => a.ColumnName.Value, StringComparer.OrdinalIgnoreCase);
-
-        var columns = BuildColumns(entity, emittableAttributes, decisions);
-        var indexes = BuildIndexes(entity, emittableAttributes, decisions, options.IncludePlatformAutoIndexes, attributeLookup);
-        var foreignKeys = BuildForeignKeys(entity, emittableAttributes, decisions, entityLookup);
-        var catalog = string.IsNullOrWhiteSpace(entity.Catalog) ? options.DefaultCatalogName : entity.Catalog!;
-
-        var module = options.SanitizeModuleNames ? SanitizeModuleName(moduleName) : moduleName;
+        var moduleName = options.SanitizeModuleNames ? SanitizeModuleName(context.ModuleName) : context.ModuleName;
 
         return new SmoTableDefinition(
-            module,
-            entity.PhysicalName.Value,
-            entity.Schema.Value,
+            moduleName,
+            context.Entity.PhysicalName.Value,
+            context.Entity.Schema.Value,
             catalog,
-            entity.LogicalName.Value,
+            context.Entity.LogicalName.Value,
             columns,
             indexes,
             foreignKeys);
@@ -99,16 +115,15 @@ public sealed class SmoModelFactory
     }
 
     private static ImmutableArray<SmoColumnDefinition> BuildColumns(
-        EntityModel entity,
-        IReadOnlyList<AttributeModel> attributes,
+        EntityEmissionContext context,
         PolicyDecisionSet decisions)
     {
         var builder = ImmutableArray.CreateBuilder<SmoColumnDefinition>();
 
-        foreach (var attribute in attributes)
+        foreach (var attribute in context.EmittableAttributes)
         {
             var dataType = SqlDataTypeMapper.Resolve(attribute);
-            var nullable = !ShouldEnforceNotNull(entity, attribute, decisions);
+            var nullable = !ShouldEnforceNotNull(context.Entity, attribute, decisions);
             var isIdentity = attribute.IsAutoNumber;
             var identitySeed = isIdentity ? 1 : 0;
             var identityIncrement = isIdentity ? 1 : 0;
@@ -138,21 +153,24 @@ public sealed class SmoModelFactory
     }
 
     private static ImmutableArray<SmoIndexDefinition> BuildIndexes(
-        EntityModel entity,
-        IReadOnlyList<AttributeModel> attributes,
+        EntityEmissionContext context,
         PolicyDecisionSet decisions,
-        bool includePlatformAuto,
-        IReadOnlyDictionary<string, AttributeModel> attributeLookup)
+        bool includePlatformAuto)
     {
         var builder = ImmutableArray.CreateBuilder<SmoIndexDefinition>();
         var uniqueDecisions = decisions.UniqueIndexes;
 
-        var keyColumns = attributes.Where(a => a.IsIdentifier).ToArray();
-        if (keyColumns.Length > 0)
+        if (!context.IdentifierAttributes.IsDefaultOrEmpty)
         {
-            var pkColumns = keyColumns
-                .Select((attribute, ordinal) => new SmoIndexColumnDefinition(attribute.LogicalName.Value, ordinal + 1))
-                .ToImmutableArray();
+            var pkColumns = ImmutableArray.CreateBuilder<SmoIndexColumnDefinition>(context.IdentifierAttributes.Length);
+            for (var i = 0; i < context.IdentifierAttributes.Length; i++)
+            {
+                var attribute = context.IdentifierAttributes[i];
+                pkColumns.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, i + 1));
+            }
+
+            var pkName = NormalizeConstraintName($"PK_{context.Entity.PhysicalName.Value}", context.Entity, context.IdentifierAttributes);
+            var pkColumnArray = pkColumns.ToImmutable();
 
             var pkName = NormalizeConstraintName($"PK_{entity.PhysicalName.Value}", entity, keyColumns);
 
@@ -161,10 +179,10 @@ public sealed class SmoModelFactory
                 IsUnique: true,
                 IsPrimaryKey: true,
                 IsPlatformAuto: false,
-                pkColumns));
+                pkColumnArray));
         }
 
-        foreach (var index in entity.Indexes)
+        foreach (var index in context.Entity.Indexes)
         {
             if (index.IsPrimary)
             {
@@ -176,11 +194,14 @@ public sealed class SmoModelFactory
                 continue;
             }
 
-            var referencedAttributes = new List<AttributeModel>();
-            var columnsBuilder = ImmutableArray.CreateBuilder<SmoIndexColumnDefinition>();
-            foreach (var column in index.Columns.OrderBy(c => c.Ordinal))
+            var referencedAttributes = new List<AttributeModel>(index.Columns.Length);
+            var orderedColumns = index.Columns.ToBuilder();
+            orderedColumns.Sort(static (left, right) => left.Ordinal.CompareTo(right.Ordinal));
+
+            var columnsBuilder = ImmutableArray.CreateBuilder<SmoIndexColumnDefinition>(orderedColumns.Count);
+            foreach (var column in orderedColumns)
             {
-                if (!attributeLookup.TryGetValue(column.Column.Value, out var attribute))
+                if (!context.AttributeLookup.TryGetValue(column.Column.Value, out var attribute))
                 {
                     referencedAttributes.Clear();
                     columnsBuilder.Clear();
@@ -197,16 +218,9 @@ public sealed class SmoModelFactory
             }
 
             var columns = columnsBuilder.ToImmutable();
-            var normalizedName = NormalizeConstraintName(index.Name.Value, entity, referencedAttributes);
+            var normalizedName = NormalizeConstraintName(index.Name.Value, context.Entity, referencedAttributes);
 
-            var indexCoordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
-            var enforceUnique = index.IsUnique;
-            if (index.IsUnique && uniqueDecisions.TryGetValue(indexCoordinate, out var decision))
-            {
-                enforceUnique = decision.EnforceUnique;
-            }
-
-            var indexCoordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
+            var indexCoordinate = new IndexCoordinate(context.Entity.Schema, context.Entity.PhysicalName, index.Name);
             var enforceUnique = index.IsUnique;
             if (index.IsUnique && uniqueDecisions.TryGetValue(indexCoordinate, out var decision))
             {
@@ -225,16 +239,20 @@ public sealed class SmoModelFactory
     }
 
     private static ImmutableArray<SmoForeignKeyDefinition> BuildForeignKeys(
-        EntityModel entity,
-        IReadOnlyList<AttributeModel> attributes,
+        EntityEmissionContext context,
         PolicyDecisionSet decisions,
-        IReadOnlyDictionary<EntityName, EntityModel> entityLookup)
+        IReadOnlyDictionary<EntityName, EntityEmissionContext> entityLookup)
     {
         var builder = ImmutableArray.CreateBuilder<SmoForeignKeyDefinition>();
 
-        foreach (var attribute in attributes.Where(a => a.Reference.IsReference))
+        foreach (var attribute in context.EmittableAttributes)
         {
-            var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
+            if (!attribute.Reference.IsReference)
+            {
+                continue;
+            }
+
+            var coordinate = new ColumnCoordinate(context.Entity.Schema, context.Entity.PhysicalName, attribute.ColumnName);
             if (!decisions.ForeignKeys.TryGetValue(coordinate, out var decision) || !decision.CreateConstraint)
             {
                 continue;
@@ -248,25 +266,24 @@ public sealed class SmoModelFactory
             var targetEntityName = attribute.Reference.TargetEntity.Value;
             if (!entityLookup.TryGetValue(targetEntityName, out var targetEntity))
             {
-                throw new InvalidOperationException($"Target entity '{targetEntityName.Value}' not found for foreign key on '{entity.PhysicalName.Value}.{attribute.ColumnName.Value}'.");
+                throw new InvalidOperationException($"Target entity '{targetEntityName.Value}' not found for foreign key on '{context.Entity.PhysicalName.Value}.{attribute.ColumnName.Value}'.");
             }
 
-            var referencedColumn = targetEntity.Attributes.FirstOrDefault(a => a.IsIdentifier && IsEmittableAttribute(a))
-                ?? targetEntity.Attributes.FirstOrDefault(a => a.IsIdentifier);
+            var referencedColumn = targetEntity.GetPreferredIdentifier();
             if (referencedColumn is null)
             {
-                throw new InvalidOperationException($"Target entity '{targetEntity.PhysicalName.Value}' is missing an identifier column for foreign key creation.");
+                throw new InvalidOperationException($"Target entity '{targetEntity.Entity.PhysicalName.Value}' is missing an identifier column for foreign key creation.");
             }
 
             var referencedAttributes = new[] { attribute };
-            var name = NormalizeConstraintName($"FK_{entity.PhysicalName.Value}_{attribute.ColumnName.Value}", entity, referencedAttributes);
+            var name = NormalizeConstraintName($"FK_{context.Entity.PhysicalName.Value}_{attribute.ColumnName.Value}", context.Entity, referencedAttributes);
             builder.Add(new SmoForeignKeyDefinition(
                 name,
                 attribute.LogicalName.Value,
-                targetEntity.PhysicalName.Value,
-                targetEntity.Schema.Value,
+                targetEntity.Entity.PhysicalName.Value,
+                targetEntity.Entity.Schema.Value,
                 referencedColumn.LogicalName.Value,
-                targetEntity.LogicalName.Value,
+                targetEntity.Entity.LogicalName.Value,
                 MapDeleteRule(attribute.Reference.DeleteRuleCode)));
         }
 
@@ -372,5 +389,68 @@ public sealed class SmoModelFactory
         }
 
         return builder.ToString();
+    }
+    private sealed record EntityEmissionContext(
+        string ModuleName,
+        EntityModel Entity,
+        ImmutableArray<AttributeModel> EmittableAttributes,
+        ImmutableArray<AttributeModel> IdentifierAttributes,
+        IReadOnlyDictionary<string, AttributeModel> AttributeLookup,
+        AttributeModel? ActiveIdentifier,
+        AttributeModel? FallbackIdentifier)
+    {
+        public static EntityEmissionContext Create(string moduleName, EntityModel entity)
+        {
+            if (entity is null)
+            {
+                throw new ArgumentNullException(nameof(entity));
+            }
+
+            var emittableBuilder = ImmutableArray.CreateBuilder<AttributeModel>();
+            var attributeLookup = new Dictionary<string, AttributeModel>(StringComparer.OrdinalIgnoreCase);
+            AttributeModel? activeIdentifier = null;
+            AttributeModel? fallbackIdentifier = null;
+
+            foreach (var attribute in entity.Attributes)
+            {
+                if (attribute.IsIdentifier && fallbackIdentifier is null)
+                {
+                    fallbackIdentifier = attribute;
+                }
+
+                if (!IsEmittableAttribute(attribute))
+                {
+                    continue;
+                }
+
+                emittableBuilder.Add(attribute);
+                attributeLookup[attribute.ColumnName.Value] = attribute;
+
+                if (attribute.IsIdentifier && activeIdentifier is null)
+                {
+                    activeIdentifier = attribute;
+                }
+            }
+
+            var identifierBuilder = ImmutableArray.CreateBuilder<AttributeModel>();
+            foreach (var attribute in emittableBuilder)
+            {
+                if (attribute.IsIdentifier)
+                {
+                    identifierBuilder.Add(attribute);
+                }
+            }
+
+            return new EntityEmissionContext(
+                moduleName,
+                entity,
+                emittableBuilder.ToImmutable(),
+                identifierBuilder.ToImmutable(),
+                attributeLookup,
+                activeIdentifier,
+                fallbackIdentifier);
+        }
+
+        public AttributeModel? GetPreferredIdentifier() => ActiveIdentifier ?? FallbackIdentifier;
     }
 }

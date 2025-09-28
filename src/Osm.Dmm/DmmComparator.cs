@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.SqlServer.Management.Smo;
 using Osm.Smo;
 
 namespace Osm.Dmm;
@@ -102,6 +103,12 @@ public sealed class DmmComparator
                 continue;
             }
 
+            var expectedType = Canonicalize(expected.DataType);
+            if (!string.Equals(expectedType, actual.DataType, StringComparison.OrdinalIgnoreCase))
+            {
+                differences.Add($"data type mismatch for {table.Schema}.{table.Name}.{expected.Name}: expected {expectedType}, actual {actual.DataType}");
+            }
+
             if (expected.Nullable != actual.IsNullable)
             {
                 var expectation = expected.Nullable ? "NULL" : "NOT NULL";
@@ -146,4 +153,57 @@ public sealed class DmmComparator
     }
 
     private static string Key(string schema, string name) => $"{schema}.{name}";
+
+    private static string Canonicalize(DataType dataType)
+    {
+        return dataType.SqlDataType switch
+        {
+            SqlDataType.BigInt => "bigint",
+            SqlDataType.Int => "int",
+            SqlDataType.SmallInt => "smallint",
+            SqlDataType.TinyInt => "tinyint",
+            SqlDataType.Bit => "bit",
+            SqlDataType.Date => "date",
+            SqlDataType.DateTime => "datetime",
+            SqlDataType.Float => "float",
+            SqlDataType.Real => "real",
+            SqlDataType.Decimal => FormatDecimal(dataType.NumericPrecision, dataType.NumericScale, "decimal"),
+            SqlDataType.Numeric => FormatDecimal(dataType.NumericPrecision, dataType.NumericScale, "decimal"),
+            SqlDataType.Money => "money",
+            SqlDataType.SmallMoney => "smallmoney",
+            SqlDataType.UniqueIdentifier => "uniqueidentifier",
+            SqlDataType.VarChar => FormatLengthType("varchar", dataType),
+            SqlDataType.NVarChar => FormatLengthType("nvarchar", dataType),
+            SqlDataType.Char => FormatLengthType("char", dataType),
+            SqlDataType.NChar => FormatLengthType("nchar", dataType),
+            SqlDataType.VarBinary => FormatLengthType("varbinary", dataType),
+            SqlDataType.Binary => FormatLengthType("binary", dataType),
+            SqlDataType.Text => "text",
+            SqlDataType.NText => "ntext",
+            SqlDataType.Image => "image",
+            _ => dataType.SqlDataType.ToString().ToLowerInvariant(),
+        };
+    }
+
+    private static string FormatDecimal(int numericPrecision, int numericScale, string baseName)
+    {
+        var precision = numericPrecision <= 0 ? 18 : numericPrecision;
+        var scale = numericScale < 0 ? 0 : numericScale;
+        return $"{baseName}({precision},{scale})";
+    }
+
+    private static string FormatLengthType(string baseName, DataType dataType)
+    {
+        if (dataType.MaximumLength < 0)
+        {
+            return $"{baseName}(max)";
+        }
+
+        if (dataType.MaximumLength == 0)
+        {
+            return baseName;
+        }
+
+        return $"{baseName}({dataType.MaximumLength})";
+    }
 }

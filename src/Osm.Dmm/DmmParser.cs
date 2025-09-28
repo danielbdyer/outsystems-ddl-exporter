@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Osm.Domain.Abstractions;
 
@@ -57,7 +58,7 @@ public sealed class DmmParser
             {
                 accumulator.Columns.Add(new DmmColumn(
                     column.ColumnIdentifier.Value,
-                    Script(column.DataType),
+                    Canonicalize(Script(column.DataType)),
                     IsNullable(column)));
             }
 
@@ -114,6 +115,27 @@ public sealed class DmmParser
         {
             _generator.GenerateScript(dataType, out var script);
             return script.Trim();
+        }
+
+        private static string Canonicalize(string dataType)
+        {
+            if (string.IsNullOrWhiteSpace(dataType))
+            {
+                return string.Empty;
+            }
+
+            var lower = dataType.Trim().ToLowerInvariant();
+            lower = Regex.Replace(lower, "\\s+", " ");
+            lower = Regex.Replace(lower, "\\s*\\(\\s*", "(");
+            lower = Regex.Replace(lower, "\\s*,\\s*", ",");
+            lower = Regex.Replace(lower, "\\s*\\)\\s*", ")");
+
+            if (lower.StartsWith("numeric", StringComparison.Ordinal))
+            {
+                lower = "decimal" + lower["numeric".Length..];
+            }
+
+            return lower;
         }
     }
 

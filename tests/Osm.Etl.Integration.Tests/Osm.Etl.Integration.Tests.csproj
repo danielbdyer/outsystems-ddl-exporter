@@ -18,6 +18,7 @@
   <ItemGroup>
     <Compile Include="..\TestSupport\FixtureFile.cs" Link="TestSupport\FixtureFile.cs" />
     <Compile Include="..\TestSupport\TempDirectory.cs" Link="TestSupport\TempDirectory.cs" />
+    <Compile Include="..\TestSupport\DirectorySnapshot.cs" Link="TestSupport\DirectorySnapshot.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Osm.Domain\Osm.Domain.csproj" />

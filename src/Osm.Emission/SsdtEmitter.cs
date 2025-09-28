@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Text.Json;
 using Microsoft.SqlServer.Management.Smo;
@@ -47,20 +46,17 @@ public sealed class SsdtEmitter
         cancellationToken.ThrowIfCancellationRequested();
 
         Directory.CreateDirectory(outputDirectory);
-        var manifestEntries = new List<TableManifestEntry>();
+        var manifestEntries = new List<TableManifestEntry>(model.Tables.Length);
+        var moduleDirectories = new Dictionary<string, ModuleDirectoryPaths>(StringComparer.Ordinal);
 
         foreach (var table in model.Tables)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var moduleRoot = Path.Combine(outputDirectory, "Modules", table.Module);
-            var tablesRoot = Path.Combine(moduleRoot, "Tables");
-            var indexesRoot = Path.Combine(moduleRoot, "Indexes");
-            var foreignKeysRoot = Path.Combine(moduleRoot, "ForeignKeys");
-
-            Directory.CreateDirectory(tablesRoot);
-            Directory.CreateDirectory(indexesRoot);
-            Directory.CreateDirectory(foreignKeysRoot);
+            var modulePaths = EnsureModuleDirectories(moduleDirectories, outputDirectory, table.Module);
+            var tablesRoot = modulePaths.TablesRoot;
+            var indexesRoot = modulePaths.IndexesRoot;
+            var foreignKeysRoot = modulePaths.ForeignKeysRoot;
 
             var effectiveTableName = options.NamingOverrides.GetEffectiveTableName(table.Schema, table.Name, table.LogicalName);
             var tableStatement = BuildCreateTableStatement(table, effectiveTableName);
@@ -68,10 +64,24 @@ public sealed class SsdtEmitter
             var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.sql");
             await WriteAsync(tableFilePath, tableScript, cancellationToken);
 
-            var indexFiles = new List<string>();
-            var indexStatements = new List<string>();
-            foreach (var index in table.Indexes.Where(i => !i.IsPrimaryKey))
+            var indexCapacity = CountNonPrimaryIndexes(table);
+            var indexFiles = new List<string>(indexCapacity);
+            StringBuilder? concatenatedBuilder = null;
+            var concatenatedFirst = true;
+
+            if (options.EmitConcatenatedConstraints)
             {
+                concatenatedBuilder = new StringBuilder(tableScript.Length + 256);
+                AppendConcatenatedStatement(concatenatedBuilder, tableScript, ref concatenatedFirst);
+            }
+
+            foreach (var index in table.Indexes)
+            {
+                if (index.IsPrimaryKey)
+                {
+                    continue;
+                }
+
                 cancellationToken.ThrowIfCancellationRequested();
                 var indexName = ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
                 var indexStatement = BuildCreateIndexStatement(table, index, effectiveTableName, indexName);
@@ -79,11 +89,14 @@ public sealed class SsdtEmitter
                 var indexFilePath = Path.Combine(indexesRoot, $"{table.Schema}.{effectiveTableName}.{indexName}.sql");
                 await WriteAsync(indexFilePath, script, cancellationToken);
                 indexFiles.Add(Relativize(indexFilePath, outputDirectory));
-                indexStatements.Add(script);
+
+                if (concatenatedBuilder is not null)
+                {
+                    AppendConcatenatedStatement(concatenatedBuilder, script, ref concatenatedFirst);
+                }
             }
 
-            var foreignKeyFiles = new List<string>();
-            var foreignKeyStatements = new List<string>();
+            var foreignKeyFiles = new List<string>(table.ForeignKeys.Length);
             foreach (var foreignKey in table.ForeignKeys)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -102,21 +115,22 @@ public sealed class SsdtEmitter
                 var fkFilePath = Path.Combine(foreignKeysRoot, $"{table.Schema}.{effectiveTableName}.{foreignKeyName}.sql");
                 await WriteAsync(fkFilePath, script, cancellationToken);
                 foreignKeyFiles.Add(Relativize(fkFilePath, outputDirectory));
-                foreignKeyStatements.Add(script);
+
+                if (concatenatedBuilder is not null)
+                {
+                    AppendConcatenatedStatement(concatenatedBuilder, script, ref concatenatedFirst);
+                }
             }
 
             string? concatenatedFile = null;
             if (options.EmitConcatenatedConstraints)
             {
-                var combinedStatements = new List<string> { tableScript };
-                combinedStatements.AddRange(indexStatements);
-                combinedStatements.AddRange(foreignKeyStatements);
-                var combined = string.Join(
-                    $"{Environment.NewLine}GO{Environment.NewLine}",
-                    combinedStatements.Where(s => !string.IsNullOrWhiteSpace(s)));
-                var combinedPath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.full.sql");
-                await WriteAsync(combinedPath, combined, cancellationToken);
-                concatenatedFile = Relativize(combinedPath, outputDirectory);
+                if (concatenatedBuilder is not null)
+                {
+                    var combinedPath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.full.sql");
+                    await WriteAsync(combinedPath, concatenatedBuilder.ToString(), cancellationToken);
+                    concatenatedFile = Relativize(combinedPath, outputDirectory);
+                }
             }
 
             manifestEntries.Add(new TableManifestEntry(
@@ -156,6 +170,61 @@ public sealed class SsdtEmitter
         await File.WriteAllTextAsync(manifestPath, manifestJson, Encoding.UTF8, cancellationToken);
 
         return manifest;
+    }
+
+    private static ModuleDirectoryPaths EnsureModuleDirectories(
+        IDictionary<string, ModuleDirectoryPaths> cache,
+        string outputDirectory,
+        string module)
+    {
+        if (!cache.TryGetValue(module, out var paths))
+        {
+            var moduleRoot = Path.Combine(outputDirectory, "Modules", module);
+            var tablesRoot = Path.Combine(moduleRoot, "Tables");
+            var indexesRoot = Path.Combine(moduleRoot, "Indexes");
+            var foreignKeysRoot = Path.Combine(moduleRoot, "ForeignKeys");
+
+            Directory.CreateDirectory(tablesRoot);
+            Directory.CreateDirectory(indexesRoot);
+            Directory.CreateDirectory(foreignKeysRoot);
+
+            paths = new ModuleDirectoryPaths(tablesRoot, indexesRoot, foreignKeysRoot);
+            cache[module] = paths;
+        }
+
+        return paths;
+    }
+
+    private static int CountNonPrimaryIndexes(SmoTableDefinition table)
+    {
+        var count = 0;
+        foreach (var index in table.Indexes)
+        {
+            if (!index.IsPrimaryKey)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static void AppendConcatenatedStatement(StringBuilder builder, string statement, ref bool isFirst)
+    {
+        if (string.IsNullOrWhiteSpace(statement))
+        {
+            return;
+        }
+
+        if (!isFirst)
+        {
+            builder.AppendLine();
+            builder.Append("GO");
+            builder.AppendLine();
+        }
+
+        builder.Append(statement);
+        isFirst = false;
     }
 
     private CreateTableStatement BuildCreateTableStatement(
@@ -413,4 +482,6 @@ public sealed class SsdtEmitter
     {
         return Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
     }
+
+    private sealed record ModuleDirectoryPaths(string TablesRoot, string IndexesRoot, string ForeignKeysRoot);
 }

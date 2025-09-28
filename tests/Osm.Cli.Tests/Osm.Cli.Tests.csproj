@@ -21,6 +21,7 @@
     <Compile Include="..\TestSupport\ProfileFixtures.cs" Link="TestSupport\ProfileFixtures.cs" />
     <Compile Include="..\TestSupport\FixtureProfileSource.cs" Link="TestSupport\FixtureProfileSource.cs" />
     <Compile Include="..\TestSupport\TempDirectory.cs" Link="TestSupport\TempDirectory.cs" />
+    <Compile Include="..\TestSupport\DirectorySnapshot.cs" Link="TestSupport\DirectorySnapshot.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Osm.Cli\Osm.Cli.csproj" />

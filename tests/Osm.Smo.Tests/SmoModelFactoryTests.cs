@@ -64,6 +64,22 @@ public class SmoModelFactoryTests
     }
 
     [Fact]
+    public void Build_excludes_platform_auto_indexes_when_disabled()
+    {
+        var (model, decisions) = LoadEdgeCaseDecisions();
+        var factory = new SmoModelFactory();
+        var smoOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+
+        var smoModel = factory.Create(model, decisions, smoOptions);
+
+        var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
+
+        Assert.All(jobRunTable.Indexes, index => Assert.False(index.IsPlatformAuto));
+        Assert.DoesNotContain(jobRunTable.Indexes, index =>
+            index.Name.Contains("OSIDX", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Build_respects_platform_auto_index_toggle()
     {
         var (model, decisions) = LoadEdgeCaseDecisions();

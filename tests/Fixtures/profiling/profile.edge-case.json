@@ -13,7 +13,7 @@
     { "Schema": "billing", "Table": "BILLING_ACCOUNT", "Column": "EXTREF",     "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null,          "NullCount": 540,  "RowCount": 58000 },
     { "Schema": "dbo", "Table": "OSUSR_XYZ_JOBRUN",   "Column": "ID",         "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null,          "NullCount": 0,    "RowCount": 2500000 },
     { "Schema": "dbo", "Table": "OSUSR_XYZ_JOBRUN",   "Column": "TRIGGEREDBYUSERID", "IsNullablePhysical": true, "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 950000, "RowCount": 2500000 },
-    { "Schema": "dbo", "Table": "OSUSR_XYZ_JOBRUN",   "Column": "CREATEDON",  "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": "(getutcdate())", "NullCount": 0,    "RowCount": 2500000 }
+    { "Schema": "dbo", "Table": "OSUSR_XYZ_JOBRUN",   "Column": "CREATEDON",  "IsNullablePhysical": true,  "IsComputed": true,  "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": "(getutcdate())", "NullCount": 0,    "RowCount": 2500000 }
   ],
   "uniqueCandidates": [
     { "Schema": "dbo",     "Table": "OSUSR_ABC_CUSTOMER", "Column": "EMAIL",         "HasDuplicate": false },

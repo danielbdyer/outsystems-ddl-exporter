@@ -1,0 +1,8 @@
+﻿CREATE TABLE dbo.CUSTOMER_PORTAL (
+    Id        INT            NOT NULL,
+    Email     NVARCHAR (255) NOT NULL,
+    FirstName NVARCHAR (100),
+    LastName  NVARCHAR (100),
+    CityId    INT            NOT NULL,
+    CONSTRAINT PK_CUSTOMER_PORTAL PRIMARY KEY CLUSTERED (Id)
+)
