@@ -310,6 +310,68 @@ public class CliIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task BuildSsdt_honors_rename_table_overrides()
+    {
+        var repoRoot = FixtureFile.RepositoryRoot;
+        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+
+        using var output = new TempDirectory();
+
+        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --out \"{output.Path}\" --rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL";
+        var exit = await RunCliAsync(repoRoot, command);
+        Assert.Equal(0, exit);
+
+        var renamedTable = Directory.GetFiles(output.Path, "dbo.CUSTOMER_PORTAL.sql", SearchOption.AllDirectories);
+        var originalTable = Directory.GetFiles(output.Path, "dbo.Customer.sql", SearchOption.AllDirectories);
+
+        Assert.Single(renamedTable);
+        Assert.Empty(originalTable);
+
+        var script = await File.ReadAllTextAsync(renamedTable[0]);
+        Assert.Contains("CREATE TABLE dbo.CUSTOMER_PORTAL", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", script, StringComparison.OrdinalIgnoreCase);
+
+        var manifestPath = Path.Combine(output.Path, "manifest.json");
+        using var manifestStream = File.OpenRead(manifestPath);
+        using var manifestJson = JsonDocument.Parse(manifestStream);
+        var tables = manifestJson.RootElement.GetProperty("Tables");
+        var renamedEntry = tables.EnumerateArray().Single(t => t.GetProperty("Table").GetString() == "CUSTOMER_PORTAL");
+        Assert.EndsWith("dbo.CUSTOMER_PORTAL.sql", renamedEntry.GetProperty("TableFile").GetString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task BuildSsdt_ShouldWriteEvidenceCacheManifest()
+    {
+        var repoRoot = FixtureFile.RepositoryRoot;
+        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+
+        using var output = new TempDirectory();
+        using var cacheRoot = new TempDirectory();
+
+        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --out \"{output.Path}\" --cache-root \"{cacheRoot.Path}\" --refresh-cache";
+        var exit = await RunCliAsync(repoRoot, command);
+        Assert.Equal(0, exit);
+
+        var entries = Directory.GetDirectories(cacheRoot.Path);
+        var cacheEntry = Assert.Single(entries);
+        var manifestPath = Path.Combine(cacheEntry, "manifest.json");
+        Assert.True(File.Exists(manifestPath));
+
+        using var stream = File.OpenRead(manifestPath);
+        using var manifest = JsonDocument.Parse(stream);
+        var root = manifest.RootElement;
+        Assert.Equal("build-ssdt", root.GetProperty("Command").GetString());
+        Assert.Equal(Path.GetFileName(cacheEntry), root.GetProperty("Key").GetString());
+
+        var artifacts = root.GetProperty("Artifacts");
+        Assert.True(artifacts.GetArrayLength() >= 2);
+    }
+
     private static async Task<int> RunCliAsync(string workingDirectory, string arguments)
     {
         var startInfo = new ProcessStartInfo("dotnet", arguments)
@@ -377,5 +439,4 @@ CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
     [CREATEDON] DATETIME NOT NULL,
     CONSTRAINT [PK_JobRun] PRIMARY KEY ([ID])
 );";
-
 }
