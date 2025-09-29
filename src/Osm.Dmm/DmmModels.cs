@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Osm.Dmm;
 
@@ -13,4 +14,12 @@ public sealed record DmmColumn(
     string DataType,
     bool IsNullable);
 
-public sealed record DmmComparisonResult(bool IsMatch, IReadOnlyList<string> Differences);
+public sealed record DmmComparisonResult(
+    bool IsMatch,
+    IReadOnlyList<string> ModelDifferences,
+    IReadOnlyList<string> SsdtDifferences)
+{
+    public IReadOnlyList<string> Differences => _differences ??= ModelDifferences.Concat(SsdtDifferences).ToArray();
+
+    private IReadOnlyList<string>? _differences;
+}

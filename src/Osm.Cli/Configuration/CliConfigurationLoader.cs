@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
 using Osm.Json.Configuration;
 
@@ -273,6 +274,8 @@ public sealed class CliConfigurationLoader
 
         string? connection = null;
         int? timeout = null;
+        var sampling = SqlSamplingConfiguration.Empty;
+        var authentication = SqlAuthenticationConfiguration.Empty;
 
         if (element.TryGetProperty("connectionString", out var connectionElement) && connectionElement.ValueKind == JsonValueKind.String)
         {
@@ -303,7 +306,92 @@ public sealed class CliConfigurationLoader
             }
         }
 
-        sql = new SqlConfiguration(connection, timeout);
+        if (element.TryGetProperty("sampling", out var samplingElement) && samplingElement.ValueKind == JsonValueKind.Object)
+        {
+            long? threshold = null;
+            int? sampleSize = null;
+
+            if (samplingElement.TryGetProperty("rowThreshold", out var thresholdElement))
+            {
+                switch (thresholdElement.ValueKind)
+                {
+                    case JsonValueKind.Number:
+                        if (thresholdElement.TryGetInt64(out var number))
+                        {
+                            threshold = number;
+                        }
+                        break;
+                    case JsonValueKind.String:
+                        var rawThreshold = thresholdElement.GetString();
+                        if (!string.IsNullOrWhiteSpace(rawThreshold) && long.TryParse(rawThreshold, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedThreshold))
+                        {
+                            threshold = parsedThreshold;
+                        }
+                        break;
+                }
+            }
+
+            if (samplingElement.TryGetProperty("sampleSize", out var sampleElement))
+            {
+                switch (sampleElement.ValueKind)
+                {
+                    case JsonValueKind.Number:
+                        if (sampleElement.TryGetInt32(out var number))
+                        {
+                            sampleSize = number;
+                        }
+                        break;
+                    case JsonValueKind.String:
+                        var rawSample = sampleElement.GetString();
+                        if (!string.IsNullOrWhiteSpace(rawSample) && int.TryParse(rawSample, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedSample))
+                        {
+                            sampleSize = parsedSample;
+                        }
+                        break;
+                }
+            }
+
+            sampling = new SqlSamplingConfiguration(threshold, sampleSize);
+        }
+
+        if (element.TryGetProperty("authentication", out var authElement) && authElement.ValueKind == JsonValueKind.Object)
+        {
+            SqlAuthenticationMethod? method = null;
+            if (authElement.TryGetProperty("method", out var methodElement) && methodElement.ValueKind == JsonValueKind.String)
+            {
+                var raw = methodElement.GetString();
+                if (!string.IsNullOrWhiteSpace(raw) && Enum.TryParse(raw, true, out SqlAuthenticationMethod parsed))
+                {
+                    method = parsed;
+                }
+            }
+
+            var trust = ReadOptionalBoolean(authElement, "trustServerCertificate");
+
+            string? applicationName = null;
+            if (authElement.TryGetProperty("applicationName", out var appElement) && appElement.ValueKind == JsonValueKind.String)
+            {
+                var raw = appElement.GetString();
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    applicationName = raw.Trim();
+                }
+            }
+
+            string? accessToken = null;
+            if (authElement.TryGetProperty("accessToken", out var tokenElement) && tokenElement.ValueKind == JsonValueKind.String)
+            {
+                var raw = tokenElement.GetString();
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    accessToken = raw;
+                }
+            }
+
+            authentication = new SqlAuthenticationConfiguration(method, trust, applicationName, accessToken);
+        }
+
+        sql = new SqlConfiguration(connection, timeout, sampling, authentication);
         return true;
     }
 

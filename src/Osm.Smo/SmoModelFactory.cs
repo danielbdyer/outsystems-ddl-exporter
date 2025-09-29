@@ -172,8 +172,6 @@ public sealed class SmoModelFactory
             var pkName = NormalizeConstraintName($"PK_{context.Entity.PhysicalName.Value}", context.Entity, context.IdentifierAttributes);
             var pkColumnArray = pkColumns.ToImmutable();
 
-            var pkName = NormalizeConstraintName($"PK_{entity.PhysicalName.Value}", entity, keyColumns);
-
             builder.Add(new SmoIndexDefinition(
                 pkName,
                 IsUnique: true,

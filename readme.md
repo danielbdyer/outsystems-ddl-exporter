@@ -323,6 +323,8 @@ SELECT
 FROM [dbo].[MyTable];
 ```
 
+**Sampling:** when `sql.sampling.rowThreshold` is exceeded the profiler automatically samples `sql.sampling.sampleSize` rows per table to keep scans predictable. NULL/duplicate/orphan counts are scaled back to estimated totals so decisions remain comparable to full-table sweeps.
+
 ---
 
 ## 7. Tightening Policy (NOT NULL / UNIQUE / FK Decisions)
@@ -558,6 +560,8 @@ Copy `config/appsettings.example.json` to an environment-specific location (e.g.
 
 Module filters declared in configuration act as defaults—`--modules`, `--exclude-system-modules`, and `--only-active-modules` override them on the command line. The evidence cache key incorporates the resolved module list and toggles so cached payloads stay aligned when you swap module selections between runs.
 
+`sql.sampling` tunes when the profiler switches to sampling and how many rows it inspects; `sql.authentication` plugs in Azure AD / managed identity authentication or per-connection ADO.NET overrides (e.g., application name, certificate trust) without polluting the connection string.
+
 **Precedence**
 
 When resolving inputs, the CLI honours the following order: CLI flag ➝ environment variable ➝ CLI config file ➝ built-in defaults.
@@ -569,17 +573,23 @@ When resolving inputs, the CLI honours the following order: CLI flag ➝ environ
 * `OSM_CLI_CACHE_ROOT`, `OSM_CLI_REFRESH_CACHE` — cache root and refresh behavior.
 * `OSM_CLI_PROFILER_PROVIDER`, `OSM_CLI_PROFILER_MOCK_FOLDER` — override profiler defaults.
 * `OSM_CLI_CONNECTION_STRING`, `OSM_CLI_SQL_COMMAND_TIMEOUT` — staged for the live SQL adapter and cached metadata hashing.
+* `OSM_CLI_SQL_AUTHENTICATION`, `OSM_CLI_SQL_ACCESS_TOKEN`, `OSM_CLI_SQL_TRUST_SERVER_CERTIFICATE`, `OSM_CLI_SQL_APPLICATION_NAME` — fine-tune SQL connectivity without hard-coding sensitive values in the config file.
 
 **CLI flags**
 
 * `extract-model`
-  * `--mock-advanced-sql <manifest.json>` — replay deterministic Advanced SQL payloads (until the live SQL adapter ships).
+  * `--connection-string <value>` / `--command-timeout <seconds>` — point at the live OutSystems catalog and adjust the ADO.NET timeout.
+  * `--sql-authentication <method>` / `--sql-access-token <token>` / `--sql-trust-server-certificate [true|false]` / `--sql-application-name <name>` — optional authentication and connection-management overrides (supports Azure AD, managed identity, and application tagging).
+  * `--sampling-threshold <rows>` / `--sampling-size <rows>` — override the profiler’s built-in sampling defaults for very large tables.
+  * `--mock-advanced-sql <manifest.json>` — replay deterministic Advanced SQL payloads (bypasses live extraction).
   * `--modules <csv>` — optional module filter; trimmed, case-insensitive.
   * `--include-system-modules` — include OutSystems system producers.
   * `--include-inactive-attributes` — future toggle to rehydrate inactive columns when downstream tooling still expects them.
   * `--out <path>` — destination for the JSON payload (defaults to `model.extracted.json`).
 * `build-ssdt`
   * `--model <model.json>` / `--profile <profile.json>` — deterministic inputs (fixtures or cached extraction outputs).
+  * `--connection-string`, `--command-timeout`, `--sql-authentication`, `--sql-access-token`, `--sql-trust-server-certificate`, `--sql-application-name` — same semantics as `extract-model`; only required when running the live SQL profiler.
+  * `--sampling-threshold`, `--sampling-size` — override profiler sampling defaults when capturing directly from SQL Server.
   * `--modules <csv>` — optional module filter; values are trimmed and case-insensitive.
   * `--exclude-system-modules` / `--include-system-modules` — toggle whether system modules participate when the filter is empty.
   * `--only-active-modules` / `--include-inactive-modules` — drop inactive modules entirely (active-only by default when the flag is present).

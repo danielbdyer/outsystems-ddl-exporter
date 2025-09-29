@@ -6,7 +6,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
     <PackageReference Include="System.IO.Abstractions" Version="22.0.16" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\AdvancedSql\outsystems_model_export.sql">
+      <Link>AdvancedSql\outsystems_model_export.sql</Link>
+    </EmbeddedResource>
   </ItemGroup>
 
   <PropertyGroup>

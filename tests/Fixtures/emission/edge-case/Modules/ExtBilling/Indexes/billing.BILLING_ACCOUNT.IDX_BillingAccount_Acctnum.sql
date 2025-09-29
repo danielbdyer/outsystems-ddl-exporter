@@ -1,2 +1,0 @@
-﻿CREATE UNIQUE INDEX IDX_BillingAccount_Acctnum
-    ON billing.BILLING_ACCOUNT(ACCOUNTNUMBER)

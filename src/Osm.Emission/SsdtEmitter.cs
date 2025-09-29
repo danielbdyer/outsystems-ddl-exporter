@@ -14,6 +14,7 @@ namespace Osm.Emission;
 
 public sealed class SsdtEmitter
 {
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly Sql150ScriptGenerator _scriptGenerator;
 
     public SsdtEmitter()
@@ -167,7 +168,7 @@ public sealed class SsdtEmitter
 
         var manifestPath = Path.Combine(outputDirectory, "manifest.json");
         var manifestJson = JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(manifestPath, manifestJson, Encoding.UTF8, cancellationToken);
+        await File.WriteAllTextAsync(manifestPath, manifestJson, Utf8NoBom, cancellationToken);
 
         return manifest;
     }
@@ -475,7 +476,7 @@ public sealed class SsdtEmitter
 
     private static async Task WriteAsync(string path, string contents, CancellationToken cancellationToken)
     {
-        await File.WriteAllTextAsync(path, contents + Environment.NewLine, Encoding.UTF8, cancellationToken);
+        await File.WriteAllTextAsync(path, contents + Environment.NewLine, Utf8NoBom, cancellationToken);
     }
 
     private static string Relativize(string path, string root)
