@@ -87,8 +87,8 @@ SELECT
       en.IsStaticEntity AS [isStatic],
       en.IsExternalEntity AS [isExternal],
       en.EntityIsActive AS [isActive],
-      en.DbCatalog AS [db.catalog],
-      en.DbSchema AS [db.schema],
+      en.DbCatalog AS [db_catalog],
+      en.DbSchema AS [db_schema],
       (
         SELECT
           a.AttrName AS [name],
@@ -102,12 +102,12 @@ SELECT
           a.IsIdentifier AS [isIdentifier],
           CASE WHEN a.RefEntityId IS NOT NULL THEN 1 ELSE 0 END AS [isReference],
           a.RefEntityId AS [refEntityId],
-          refEn.EntityName AS [refEntity.name],
-          refEn.PhysicalTableName AS [refEntity.physicalName],
-          a.DeleteRuleCode AS [reference.deleteRuleCode],
-          CASE WHEN a.RefEntityId IS NOT NULL AND (a.DeleteRuleCode IN ('Protect','Delete',1,2)) THEN 1 ELSE 0 END AS [reference.hasDbConstraint],
-          a.ExternalColumnType AS [external.dbType],
-          CASE WHEN a.AttrIsActive = 0 AND EXISTS (SELECT 1 FROM PhysCols pc WHERE pc.AttrId = a.AttrId) THEN 1 ELSE 0 END AS [physical.isPresentButInactive]
+          refEn.EntityName AS [refEntity_name],
+          refEn.PhysicalTableName AS [refEntity_physicalName],
+          a.DeleteRuleCode AS [reference_deleteRuleCode],
+          CASE WHEN a.RefEntityId IS NOT NULL AND (a.DeleteRuleCode IN ('Protect','Delete',1,2)) THEN 1 ELSE 0 END AS [reference_hasDbConstraint],
+          a.ExternalColumnType AS [external_dbType],
+          CASE WHEN a.AttrIsActive = 0 AND EXISTS (SELECT 1 FROM PhysCols pc WHERE pc.AttrId = a.AttrId) THEN 1 ELSE 0 END AS [physical_isPresentButInactive]
         FROM AttrAll a
         LEFT JOIN Ent refEn ON refEn.EntityId = a.RefEntityId
         WHERE a.EntityId = en.EntityId
@@ -118,8 +118,8 @@ SELECT
         SELECT DISTINCT
           f.AttrId AS [viaAttributeId],
           a.AttrName AS [viaAttributeName],
-          toEn.EntityName AS [toEntity.name],
-          toEn.PhysicalTableName AS [toEntity.physicalName],
+          toEn.EntityName AS [toEntity_name],
+          toEn.PhysicalTableName AS [toEntity_physicalName],
           a.DeleteRuleCode AS [deleteRuleCode],
           CASE WHEN a.DeleteRuleCode IN ('Protect','Delete',1,2) THEN 1 ELSE 0 END AS [hasDbConstraint]
         FROM RefMap f

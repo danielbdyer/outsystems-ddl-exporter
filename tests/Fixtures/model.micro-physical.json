@@ -11,8 +11,8 @@
           "isStatic": false,
           "isExternal": false,
           "isActive": true,
-          "db.catalog": null,
-          "db.schema": "dbo",
+          "db_catalog": null,
+          "db_schema": "dbo",
           "attributes": [
             {
               "name": "Id",
@@ -28,12 +28,12 @@
               "isIdentifier": true,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "ExternalCode",
@@ -49,12 +49,12 @@
               "isIdentifier": false,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             }
           ],
           "relationships": [],

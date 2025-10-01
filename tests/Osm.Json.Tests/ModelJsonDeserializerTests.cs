@@ -27,7 +27,7 @@ public class ModelJsonDeserializerTests
                   "isStatic": false,
                   "isExternal": false,
                   "isActive": true,
-                  "db.schema": "dbo",
+                  "db_schema": "dbo",
                   "attributes": [
                     {
                       "name": "Id",
@@ -47,10 +47,10 @@ public class ModelJsonDeserializerTests
                       "isAutoNumber": false,
                       "isReference": 1,
                       "refEntityId": 100,
-                      "refEntity.name": "Customer",
-                      "refEntity.physicalName": "OSUSR_FIN_CUSTOMER",
-                      "reference.deleteRuleCode": "Protect",
-                      "reference.hasDbConstraint": 1,
+                      "refEntity_name": "Customer",
+                      "refEntity_physicalName": "OSUSR_FIN_CUSTOMER",
+                      "reference_deleteRuleCode": "Protect",
+                      "reference_hasDbConstraint": 1,
                       "isActive": true
                     },
                     {
@@ -63,14 +63,14 @@ public class ModelJsonDeserializerTests
                       "isIdentifier": false,
                       "isAutoNumber": false,
                       "isActive": false,
-                      "physical.isPresentButInactive": 1
+                      "physical_isPresentButInactive": 1
                     }
                   ],
                   "relationships": [
                     {
                       "viaAttributeName": "CustomerId",
-                      "toEntity.name": "Customer",
-                      "toEntity.physicalName": "OSUSR_FIN_CUSTOMER",
+                      "toEntity_name": "Customer",
+                      "toEntity_physicalName": "OSUSR_FIN_CUSTOMER",
                       "deleteRuleCode": "Protect",
                       "hasDbConstraint": 1
                     }
@@ -170,7 +170,7 @@ public class ModelJsonDeserializerTests
                 {
                   "name": "Invoice",
                   "physicalName": "OSUSR_FIN_INVOICE",
-                  "db.schema": "dbo",
+                  "db_schema": "dbo",
                   "attributes": [
                     {
                       "name": "Id",
@@ -239,7 +239,7 @@ public class ModelJsonDeserializerTests
                   "isStatic": false,
                   "isExternal": false,
                   "isActive": true,
-                  "db.schema": "dbo"
+                  "db_schema": "dbo"
                 }
               ]
             }
@@ -268,7 +268,7 @@ public class ModelJsonDeserializerTests
                 {
                   "name": "Invoice",
                   "physicalName": "OSUSR_FIN_INVOICE",
-                  "db.schema": "dbo",
+                  "db_schema": "dbo",
                   "attributes": [
                     {
                       "name": "CustomerId",
@@ -278,7 +278,7 @@ public class ModelJsonDeserializerTests
                       "isIdentifier": false,
                       "isAutoNumber": false,
                       "isReference": 1,
-                      "refEntity.physicalName": "OSUSR_FIN_CUSTOMER"
+                      "refEntity_physicalName": "OSUSR_FIN_CUSTOMER"
                     },
                     {
                       "name": "Id",
@@ -317,7 +317,7 @@ public class ModelJsonDeserializerTests
                 {
                   "name": "Invoice",
                   "physicalName": "OSUSR_FIN_INVOICE",
-                  "db.schema": "dbo",
+                  "db_schema": "dbo",
                   "attributes": [
                     {
                       "name": "CustomerId",
@@ -327,7 +327,7 @@ public class ModelJsonDeserializerTests
                       "isIdentifier": false,
                       "isAutoNumber": false,
                       "isReference": 1,
-                      "refEntity.name": "Customer"
+                      "refEntity_name": "Customer"
                     },
                     {
                       "name": "Id",
@@ -371,7 +371,7 @@ public class ModelJsonDeserializerTests
                   "isStatic": false,
                   "isExternal": false,
                   "isActive": true,
-                  "db.schema": "dbo",
+                  "db_schema": "dbo",
                   "attributes": [
                     {
                       "name": "Id",
@@ -425,7 +425,7 @@ public class ModelJsonDeserializerTests
                   "isStatic": false,
                   "isExternal": false,
                   "isActive": true,
-                  "db.schema": "dbo",
+                  "db_schema": "dbo",
                   "attributes": [
                     {
                       "name": "Id",
@@ -444,7 +444,7 @@ public class ModelJsonDeserializerTests
                   "isStatic": false,
                   "isExternal": false,
                   "isActive": true,
-                  "db.schema": "dbo",
+                  "db_schema": "dbo",
                   "attributes": [
                     {
                       "name": "Id",

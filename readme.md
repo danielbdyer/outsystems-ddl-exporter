@@ -198,8 +198,8 @@ E AS (
   "isStatic": false,
   "isExternal": false,
   "isActive": true,
-  "db.catalog": null,
-  "db.schema": "dbo",
+  "db_catalog": null,
+  "db_schema": "dbo",
   "attributes": [ /* attributes[] below */ ],
   "relationships": [ /* derived references */ ],
   "indexes": [ /* modeled indexes */ ]
@@ -223,12 +223,12 @@ E AS (
   "isIdentifier": false,
   "isReference": 0,
   "refEntityId": null,
-  "refEntity.name": null,
-  "refEntity.physicalName": null,
-  "reference.deleteRuleCode": null,
-  "reference.hasDbConstraint": 0,
-  "external.dbType": null,
-  "physical.isPresentButInactive": 0
+  "refEntity_name": null,
+  "refEntity_physicalName": null,
+  "reference_deleteRuleCode": null,
+  "reference_hasDbConstraint": 0,
+  "external_dbType": null,
+  "physical_isPresentButInactive": 0
 }
 ```
 
@@ -238,8 +238,8 @@ E AS (
 {
   "viaAttributeId": 12345,
   "viaAttributeName": "CityId",
-  "toEntity.name": "City",
-  "toEntity.physicalName": "OSUSR_DEF_CITY",
+  "toEntity_name": "City",
+  "toEntity_physicalName": "OSUSR_DEF_CITY",
   "deleteRuleCode": "Protect",
   "hasDbConstraint": 1
 }

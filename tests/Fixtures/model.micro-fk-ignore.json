@@ -11,8 +11,8 @@
           "isStatic": false,
           "isExternal": false,
           "isActive": true,
-          "db.catalog": null,
-          "db.schema": "dbo",
+          "db_catalog": null,
+          "db_schema": "dbo",
           "attributes": [
             {
               "name": "Id",
@@ -29,12 +29,12 @@
               "isActive": true,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             }
           ],
           "indexes": [],
@@ -46,8 +46,8 @@
           "isStatic": false,
           "isExternal": false,
           "isActive": true,
-          "db.catalog": null,
-          "db.schema": "dbo",
+          "db_catalog": null,
+          "db_schema": "dbo",
           "attributes": [
             {
               "name": "Id",
@@ -64,12 +64,12 @@
               "isActive": true,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "AId",
@@ -86,12 +86,12 @@
               "isActive": true,
               "isReference": 1,
               "refEntityId": 1,
-              "refEntity.name": "A",
-              "refEntity.physicalName": "OSUSR_A",
-              "reference.deleteRuleCode": "Ignore",
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": "A",
+              "refEntity_physicalName": "OSUSR_A",
+              "reference_deleteRuleCode": "Ignore",
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             }
           ],
           "indexes": [],
@@ -99,8 +99,8 @@
             {
               "viaAttributeId": 2,
               "viaAttributeName": "AId",
-              "toEntity.name": "A",
-              "toEntity.physicalName": "OSUSR_A",
+              "toEntity_name": "A",
+              "toEntity_physicalName": "OSUSR_A",
               "deleteRuleCode": "Ignore",
               "hasDbConstraint": 0
             }
