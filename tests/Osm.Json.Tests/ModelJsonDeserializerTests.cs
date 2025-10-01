@@ -257,6 +257,107 @@ public class ModelJsonDeserializerTests
     }
 
     [Fact]
+    public void Deserialize_ShouldSkipInactiveEntitiesMissingAttributes()
+    {
+        const string json = """
+        {
+          "modules": [
+            {
+              "name": "Finance",
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true
+                    }
+                  ]
+                },
+                {
+                  "name": "Legacy",
+                  "physicalName": "OSUSR_FIN_LEGACY",
+                  "db_schema": "dbo",
+                  "isActive": false
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsSuccess);
+        var module = Assert.Single(result.Value.Modules);
+        var entity = Assert.Single(module.Entities);
+        Assert.Equal("Invoice", entity.LogicalName.Value);
+    }
+
+    [Fact]
+    public void Deserialize_ShouldSkipInactiveModuleWhenAllEntitiesAreInactiveWithoutAttributes()
+    {
+        const string json = """
+        {
+          "modules": [
+            {
+              "name": "Common",
+              "isActive": false,
+              "entities": [
+                {
+                  "name": "AuditLog",
+                  "physicalName": "OSUSR_COM_AUDIT",
+                  "db_schema": "dbo",
+                  "isActive": false
+                }
+              ]
+            },
+            {
+              "name": "Finance",
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsSuccess);
+        var module = Assert.Single(result.Value.Modules);
+        Assert.Equal("Finance", module.Name.Value);
+        var entity = Assert.Single(module.Entities);
+        Assert.Equal("Invoice", entity.LogicalName.Value);
+    }
+
+    [Fact]
     public void Deserialize_ShouldFail_WhenReferenceAttributeMissingTargetLogicalName()
     {
         const string json = """
