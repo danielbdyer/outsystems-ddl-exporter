@@ -50,6 +50,11 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         var moduleResults = new List<ModuleModel>(modules.Length);
         foreach (var module in modules)
         {
+            if (ShouldSkipInactiveModule(module))
+            {
+                continue;
+            }
+
             var moduleResult = MapModule(module);
             if (moduleResult.IsFailure)
             {
@@ -74,6 +79,11 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         var entityResults = new List<EntityModel>(entities.Length);
         foreach (var entity in entities)
         {
+            if (ShouldSkipInactiveEntity(entity))
+            {
+                continue;
+            }
+
             var entityResult = MapEntity(moduleNameResult.Value, entity);
             if (entityResult.IsFailure)
             {
@@ -84,6 +94,46 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         }
 
         return ModuleModel.Create(moduleNameResult.Value, doc.IsSystem, doc.IsActive, entityResults);
+    }
+
+    private static bool ShouldSkipInactiveModule(ModuleDocument doc)
+    {
+        if (doc is null || doc.IsActive)
+        {
+            return false;
+        }
+
+        var entities = doc.Entities;
+        if (entities is null || entities.Length == 0)
+        {
+            return true;
+        }
+
+        foreach (var entity in entities)
+        {
+            if (!ShouldSkipInactiveEntity(entity))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ShouldSkipInactiveEntity(EntityDocument doc)
+    {
+        if (doc is null)
+        {
+            return false;
+        }
+
+        if (doc.IsActive)
+        {
+            return false;
+        }
+
+        var attributes = doc.Attributes;
+        return attributes is null || attributes.Length == 0;
     }
 
     private static Result<EntityModel> MapEntity(ModuleName moduleName, EntityDocument doc)
