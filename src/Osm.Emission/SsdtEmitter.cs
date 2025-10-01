@@ -263,6 +263,15 @@ public sealed class SsdtEmitter
             definition.TableConstraints.Add(constraint);
         }
 
+        foreach (var checkConstraint in table.CheckConstraints)
+        {
+            var constraint = BuildCheckConstraintDefinition(
+                table,
+                checkConstraint,
+                effectiveTableName);
+            definition.TableConstraints.Add(constraint);
+        }
+
         return new CreateTableStatement
         {
             SchemaObjectName = BuildSchemaObjectName(table.Schema, effectiveTableName),
@@ -346,6 +355,63 @@ public sealed class SsdtEmitter
             SchemaObjectName = BuildSchemaObjectName(table.Schema, effectiveTableName),
             Definition = definition,
         };
+    }
+
+    private CheckConstraintDefinition BuildCheckConstraintDefinition(
+        SmoTableDefinition table,
+        SmoCheckConstraintDefinition checkConstraint,
+        string effectiveTableName)
+    {
+        var resolvedName = ResolveConstraintName(
+            checkConstraint.Name,
+            table.Name,
+            table.LogicalName,
+            effectiveTableName);
+
+        return new CheckConstraintDefinition
+        {
+            ConstraintIdentifier = new Identifier { Value = resolvedName },
+            CheckCondition = ParseCheckCondition(checkConstraint.Definition),
+        };
+    }
+
+    private BooleanExpression ParseCheckCondition(string definition)
+    {
+        if (string.IsNullOrWhiteSpace(definition))
+        {
+            throw new ArgumentException("Check constraint definition must be provided.", nameof(definition));
+        }
+
+        var trimmedDefinition = definition.Trim();
+        var parser = new TSql150Parser(initialQuotedIdentifiers: false);
+        using var reader = new StringReader($"IF {trimmedDefinition} SELECT 1;");
+        var fragment = parser.Parse(reader, out var errors);
+
+        if (errors is not null && errors.Count > 0)
+        {
+            var messageBuilder = new StringBuilder();
+            foreach (var error in errors)
+            {
+                if (messageBuilder.Length > 0)
+                {
+                    messageBuilder.Append(' ');
+                }
+
+                messageBuilder.Append(error.Message);
+            }
+
+            throw new InvalidOperationException($"Failed to parse check constraint definition '{trimmedDefinition}': {messageBuilder}.");
+        }
+
+        if (fragment is TSqlScript script &&
+            script.Batches.Count == 1 &&
+            script.Batches[0].Statements.Count == 1 &&
+            script.Batches[0].Statements[0] is IfStatement ifStatement)
+        {
+            return ifStatement.Predicate;
+        }
+
+        throw new InvalidOperationException($"Failed to parse check constraint definition '{trimmedDefinition}'.");
     }
 
     private static string ResolveConstraintName(

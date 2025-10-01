@@ -628,7 +628,7 @@ When resolving inputs, the CLI honours the following order: CLI flag ➝ environ
 ## 16. Extensibility Roadmap
 
 * **ScriptDom type parser** for `external.dbType` → exact SMO `DataType`.
-* **Check constraints**: model custom checks from your domain JSON (not native to OS), and emit `CHECK` statements.
+* **Check constraints**: provide custom `checks` per entity in the domain JSON (name + definition) to emit deterministic `CHECK` statements alongside tables.
 * **Seed data** for static entities: dump rows and emit idempotent `MERGE` scripts.
 * **Automated pre-deploy runner**: Wire pre-scripts into a controlled pre-deployment phase before SSDT publish.
 * **Bidirectional diff**: parse SSDT project files and detect drift vs model.

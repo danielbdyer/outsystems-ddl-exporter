@@ -17,7 +17,8 @@ public sealed record EntityModel(
     bool IsActive,
     ImmutableArray<AttributeModel> Attributes,
     ImmutableArray<IndexModel> Indexes,
-    ImmutableArray<RelationshipModel> Relationships)
+    ImmutableArray<RelationshipModel> Relationships,
+    ImmutableArray<CheckConstraintModel> CheckConstraints)
 {
     public static Result<EntityModel> Create(
         ModuleName module,
@@ -30,7 +31,8 @@ public sealed record EntityModel(
         bool isActive,
         IEnumerable<AttributeModel> attributes,
         IEnumerable<IndexModel>? indexes = null,
-        IEnumerable<RelationshipModel>? relationships = null)
+        IEnumerable<RelationshipModel>? relationships = null,
+        IEnumerable<CheckConstraintModel>? checkConstraints = null)
     {
         if (attributes is null)
         {
@@ -60,7 +62,15 @@ public sealed record EntityModel(
 
         var indexArray = (indexes ?? Enumerable.Empty<IndexModel>()).ToImmutableArray();
         var relationshipArray = (relationships ?? Enumerable.Empty<RelationshipModel>()).ToImmutableArray();
+        var checkConstraintArray = (checkConstraints ?? Enumerable.Empty<CheckConstraintModel>()).ToImmutableArray();
         var normalizedCatalog = string.IsNullOrWhiteSpace(catalog) ? null : catalog!.Trim();
+
+        if (HasDuplicates(checkConstraintArray.Select(c => c.Name.Value), StringComparer.OrdinalIgnoreCase))
+        {
+            return Result<EntityModel>.Failure(ValidationError.Create(
+                "entity.checkConstraints.duplicate",
+                "Entity contains duplicate check constraint names."));
+        }
 
         return Result<EntityModel>.Success(new EntityModel(
             module,
@@ -73,7 +83,8 @@ public sealed record EntityModel(
             isActive,
             attributeArray,
             indexArray,
-            relationshipArray));
+            relationshipArray,
+            checkConstraintArray));
     }
 
     private static bool HasDuplicates(IEnumerable<string> values, IEqualityComparer<string>? comparer = null)

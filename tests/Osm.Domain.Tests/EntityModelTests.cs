@@ -151,6 +151,50 @@ public class EntityModelTests
     }
 
     [Fact]
+    public void Create_ShouldFail_WhenDuplicateCheckConstraintNamesDetected()
+    {
+        var module = ModuleName.Create("Module").Value;
+        var logical = EntityName.Create("Entity").Value;
+        var schema = SchemaName.Create("dbo").Value;
+        var table = TableName.Create("OSUSR_ENTITY").Value;
+
+        var id = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true,
+            reference: AttributeReference.None).Value;
+
+        var constraint = CheckConstraintModel.Create(
+            ConstraintName.Create("CK_Entity_Positive").Value,
+            "Id > 0",
+            isActive: true).Value;
+
+        var duplicate = CheckConstraintModel.Create(
+            ConstraintName.Create("CK_Entity_Positive").Value,
+            "Id >= 0",
+            isActive: true).Value;
+
+        var result = EntityModel.Create(
+            module,
+            logical,
+            table,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { id },
+            checkConstraints: new[] { constraint, duplicate });
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "entity.checkConstraints.duplicate");
+    }
+
+    [Fact]
     public void Create_ShouldSucceed_WhenInputsAreValid()
     {
         var module = ModuleName.Create("Module").Value;

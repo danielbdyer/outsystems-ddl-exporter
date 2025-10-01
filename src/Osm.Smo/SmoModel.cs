@@ -26,7 +26,8 @@ public sealed record SmoTableDefinition(
     string LogicalName,
     ImmutableArray<SmoColumnDefinition> Columns,
     ImmutableArray<SmoIndexDefinition> Indexes,
-    ImmutableArray<SmoForeignKeyDefinition> ForeignKeys);
+    ImmutableArray<SmoForeignKeyDefinition> ForeignKeys,
+    ImmutableArray<SmoCheckConstraintDefinition> CheckConstraints);
 
 public sealed record SmoColumnDefinition(
     string Name,
@@ -54,3 +55,5 @@ public sealed record SmoForeignKeyDefinition(
     string ReferencedColumn,
     string ReferencedLogicalTable,
     ForeignKeyAction DeleteAction);
+
+public sealed record SmoCheckConstraintDefinition(string Name, string Definition);
