@@ -215,8 +215,14 @@ public sealed class SqlDataProfiler : IDataProfiler
     {
         var metadata = new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(ColumnKeyComparer.Instance);
 
+        if (tables.Count == 0)
+        {
+            return metadata;
+        }
+
         var command = connection.CreateCommand();
-        command.CommandText = @"SELECT
+        var filterClause = BuildTableFilterClause(command, tables, "s.name", "t.name");
+        command.CommandText = @$"SELECT
     s.name AS SchemaName,
     t.name AS TableName,
     c.name AS ColumnName,
@@ -234,7 +240,7 @@ LEFT JOIN (
     JOIN sys.index_columns AS ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
     WHERE i.is_primary_key = 1
 ) AS pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
-WHERE t.is_ms_shipped = 0;";
+WHERE t.is_ms_shipped = 0 AND {filterClause};";
 
         if (_options.CommandTimeoutSeconds.HasValue)
         {
@@ -270,15 +276,21 @@ WHERE t.is_ms_shipped = 0;";
     {
         var counts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance);
 
+        if (tables.Count == 0)
+        {
+            return counts;
+        }
+
         var command = connection.CreateCommand();
-        command.CommandText = @"SELECT
+        var filterClause = BuildTableFilterClause(command, tables, "s.name", "t.name");
+        command.CommandText = @$"SELECT
     s.name AS SchemaName,
     t.name AS TableName,
-    SUM(p.rows) AS RowCount
+    SUM(p.rows) AS [RowCount]
 FROM sys.tables AS t
 JOIN sys.schemas AS s ON t.schema_id = s.schema_id
 JOIN sys.dm_db_partition_stats AS p ON t.object_id = p.object_id
-WHERE p.index_id IN (0,1)
+WHERE p.index_id IN (0,1) AND {filterClause}
 GROUP BY s.name, t.name;";
 
         if (_options.CommandTimeoutSeconds.HasValue)
@@ -515,6 +527,58 @@ GROUP BY s.name, t.name;";
         }
 
         return "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]";
+    }
+
+    internal static string BuildTableFilterClause(
+        DbCommand command,
+        IReadOnlyCollection<(string Schema, string Table)> tables,
+        string schemaColumn,
+        string tableColumn)
+    {
+        if (command is null)
+        {
+            throw new ArgumentNullException(nameof(command));
+        }
+
+        if (tables is null)
+        {
+            throw new ArgumentNullException(nameof(tables));
+        }
+
+        if (tables.Count == 0)
+        {
+            return "1 = 0";
+        }
+
+        var builder = new StringBuilder();
+        builder.Append("EXISTS (SELECT 1 FROM (VALUES ");
+
+        var index = 0;
+        foreach (var (schema, table) in tables)
+        {
+            if (index > 0)
+            {
+                builder.Append(", ");
+            }
+
+            var schemaParameter = command.CreateParameter();
+            schemaParameter.ParameterName = $"@schema{index}";
+            schemaParameter.DbType = DbType.String;
+            schemaParameter.Value = schema;
+            command.Parameters.Add(schemaParameter);
+
+            var tableParameter = command.CreateParameter();
+            tableParameter.ParameterName = $"@table{index}";
+            tableParameter.DbType = DbType.String;
+            tableParameter.Value = table;
+            command.Parameters.Add(tableParameter);
+
+            builder.Append($"({schemaParameter.ParameterName}, {tableParameter.ParameterName})");
+            index++;
+        }
+
+        builder.Append($") AS targets(SchemaName, TableName) WHERE targets.SchemaName = {schemaColumn} AND targets.TableName = {tableColumn})");
+        return builder.ToString();
     }
 
     private static string QualifyIdentifier(string schema, string table)
