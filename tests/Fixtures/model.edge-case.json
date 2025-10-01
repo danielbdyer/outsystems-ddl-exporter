@@ -11,8 +11,8 @@
           "isStatic": false,
           "isExternal": false,
           "isActive": true,
-          "db.catalog": null,
-          "db.schema": "dbo",
+          "db_catalog": null,
+          "db_schema": "dbo",
           "attributes": [
             {
               "name": "Id",
@@ -28,12 +28,12 @@
               "isIdentifier": true,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "Email",
@@ -49,12 +49,12 @@
               "isIdentifier": false,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "FirstName",
@@ -70,12 +70,12 @@
               "isIdentifier": false,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "LastName",
@@ -91,12 +91,12 @@
               "isIdentifier": false,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "CityId",
@@ -112,12 +112,12 @@
               "isIdentifier": false,
               "isReference": 1,
               "refEntityId": 2001,
-              "refEntity.name": "City",
-              "refEntity.physicalName": "OSUSR_DEF_CITY",
-              "reference.deleteRuleCode": "Protect",
-              "reference.hasDbConstraint": 1,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": "City",
+              "refEntity_physicalName": "OSUSR_DEF_CITY",
+              "reference_deleteRuleCode": "Protect",
+              "reference_hasDbConstraint": 1,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "LegacyCode",
@@ -133,20 +133,20 @@
               "isIdentifier": false,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 1
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 1
             }
           ],
           "relationships": [
             {
               "viaAttributeId": 31001,
               "viaAttributeName": "CityId",
-              "toEntity.name": "City",
-              "toEntity.physicalName": "OSUSR_DEF_CITY",
+              "toEntity_name": "City",
+              "toEntity_physicalName": "OSUSR_DEF_CITY",
               "deleteRuleCode": "Protect",
               "hasDbConstraint": 1
             }
@@ -177,8 +177,8 @@
           "isStatic": true,
           "isExternal": false,
           "isActive": true,
-          "db.catalog": null,
-          "db.schema": "dbo",
+          "db_catalog": null,
+          "db_schema": "dbo",
           "attributes": [
             {
               "name": "Id",
@@ -194,12 +194,12 @@
               "isIdentifier": true,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "Name",
@@ -215,12 +215,12 @@
               "isIdentifier": false,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "IsActive",
@@ -236,12 +236,12 @@
               "isIdentifier": false,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             }
           ],
           "relationships": [],
@@ -269,8 +269,8 @@
           "isStatic": false,
           "isExternal": true,
           "isActive": true,
-          "db.catalog": null,
-          "db.schema": "billing",
+          "db_catalog": null,
+          "db_schema": "billing",
           "attributes": [
             {
               "name": "Id",
@@ -286,12 +286,12 @@
               "isIdentifier": true,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": "int",
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": "int",
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "AccountNumber",
@@ -307,12 +307,12 @@
               "isIdentifier": false,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": "varchar(50)",
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": "varchar(50)",
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "ExtRef",
@@ -328,12 +328,12 @@
               "isIdentifier": false,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": "varchar(50)",
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": "varchar(50)",
+              "physical_isPresentButInactive": 0
             }
           ],
           "relationships": [],
@@ -361,8 +361,8 @@
           "isStatic": false,
           "isExternal": false,
           "isActive": true,
-          "db.catalog": null,
-          "db.schema": "dbo",
+          "db_catalog": null,
+          "db_schema": "dbo",
           "attributes": [
             {
               "name": "Id",
@@ -378,12 +378,12 @@
               "isIdentifier": true,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "TriggeredByUserId",
@@ -399,12 +399,12 @@
               "isIdentifier": false,
               "isReference": 1,
               "refEntityId": 1001,
-              "refEntity.name": "Customer",
-              "refEntity.physicalName": "OSUSR_ABC_CUSTOMER",
-              "reference.deleteRuleCode": "Ignore",
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": "Customer",
+              "refEntity_physicalName": "OSUSR_ABC_CUSTOMER",
+              "reference_deleteRuleCode": "Ignore",
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             },
             {
               "name": "CreatedOn",
@@ -420,20 +420,20 @@
               "isIdentifier": false,
               "isReference": 0,
               "refEntityId": null,
-              "refEntity.name": null,
-              "refEntity.physicalName": null,
-              "reference.deleteRuleCode": null,
-              "reference.hasDbConstraint": 0,
-              "external.dbType": null,
-              "physical.isPresentButInactive": 0
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
             }
           ],
           "relationships": [
             {
               "viaAttributeId": 41003,
               "viaAttributeName": "TriggeredByUserId",
-              "toEntity.name": "Customer",
-              "toEntity.physicalName": "OSUSR_ABC_CUSTOMER",
+              "toEntity_name": "Customer",
+              "toEntity_physicalName": "OSUSR_ABC_CUSTOMER",
               "deleteRuleCode": "Ignore",
               "hasDbConstraint": 0
             }

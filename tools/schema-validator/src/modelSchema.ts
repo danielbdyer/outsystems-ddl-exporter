@@ -260,32 +260,32 @@ const attributeSchema = z
 
       return numeric;
     }),
-    "refEntity.name": optionalTrimmedString("Referenced entity logical name"),
-    "refEntity.physicalName": optionalTrimmedString("Referenced entity physical name"),
-    "reference.deleteRuleCode": optionalTrimmedString("Reference delete rule code"),
-    "reference.hasDbConstraint": z
+    refEntity_name: optionalTrimmedString("Referenced entity logical name"),
+    refEntity_physicalName: optionalTrimmedString("Referenced entity physical name"),
+    reference_deleteRuleCode: optionalTrimmedString("Reference delete rule code"),
+    reference_hasDbConstraint: z
       .union([boolish, z.null(), z.undefined()])
       .transform((value) => (value === null || value === undefined ? null : value)),
-    "external.dbType": optionalTrimmedString("External database type"),
-    "physical.isPresentButInactive": boolish,
+    external_dbType: optionalTrimmedString("External database type"),
+    physical_isPresentButInactive: boolish,
     reality: z.union([attributeRealitySchema, z.null(), z.undefined()])
   })
   .strict()
   .superRefine((attribute, ctx) => {
     if (attribute.isReference) {
-      if (!attribute["refEntity.name"]) {
+      if (!attribute.refEntity_name) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Referenced entity logical name is required when isReference is true.",
-          path: ["refEntity.name"]
+          path: ["refEntity_name"]
         });
       }
 
-      if (!attribute["refEntity.physicalName"]) {
+      if (!attribute.refEntity_physicalName) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Referenced entity physical name is required when isReference is true.",
-          path: ["refEntity.physicalName"]
+          path: ["refEntity_physicalName"]
         });
       }
     }
@@ -300,17 +300,20 @@ const attributeSchema = z
         hasDuplicates: null,
         hasOrphans: null
       }),
-      isPresentButInactive: attribute["physical.isPresentButInactive"]
+      isPresentButInactive: attribute.physical_isPresentButInactive
     };
 
     const reference: AttributeReference = isReference
       ? {
           isReference: true,
           targetEntityId: attribute.refEntityId,
-          targetEntityName: attribute["refEntity.name"]!,
-          targetEntityPhysicalName: attribute["refEntity.physicalName"]!,
-          deleteRuleCode: attribute["reference.deleteRuleCode"] ?? null,
-          hasDbConstraint: attribute["reference.hasDbConstraint"] === null ? false : attribute["reference.hasDbConstraint"]!
+          targetEntityName: attribute.refEntity_name!,
+          targetEntityPhysicalName: attribute.refEntity_physicalName!,
+          deleteRuleCode: attribute.reference_deleteRuleCode ?? null,
+          hasDbConstraint:
+            attribute.reference_hasDbConstraint === null
+              ? false
+              : attribute.reference_hasDbConstraint!
         }
       : {
           isReference: false,
@@ -334,7 +337,7 @@ const attributeSchema = z
       isIdentifier: attribute.isIdentifier,
       isAutoNumber: attribute.isAutoNumber,
       isActive: attribute.isActive,
-      externalDbType: attribute["external.dbType"],
+      externalDbType: attribute.external_dbType,
       reference,
       reality
     };
@@ -401,8 +404,8 @@ const relationshipSchema = z
   .object({
     viaAttributeId: z.union([z.number(), z.string(), z.null(), z.undefined()]).optional(),
     viaAttributeName: requiredIdentifier("Relationship attribute name"),
-    "toEntity.name": requiredIdentifier("Relationship target entity name"),
-    "toEntity.physicalName": requiredIdentifier("Relationship target entity physical name"),
+    toEntity_name: requiredIdentifier("Relationship target entity name"),
+    toEntity_physicalName: requiredIdentifier("Relationship target entity physical name"),
     deleteRuleCode: optionalTrimmedString("Relationship delete rule code"),
     hasDbConstraint: z.union([boolish, z.null(), z.undefined()]).transform((value) =>
       value === null || value === undefined ? false : value
@@ -411,8 +414,8 @@ const relationshipSchema = z
   .strict()
   .transform((relationship) => ({
     viaAttributeName: relationship.viaAttributeName,
-    toEntityName: relationship["toEntity.name"],
-    toEntityPhysicalName: relationship["toEntity.physicalName"],
+    toEntityName: relationship.toEntity_name,
+    toEntityPhysicalName: relationship.toEntity_physicalName,
     deleteRuleCode:
       relationship.deleteRuleCode && relationship.deleteRuleCode.length > 0
         ? relationship.deleteRuleCode
@@ -442,8 +445,8 @@ const entitySchema = z
     isStatic: boolish,
     isExternal: boolish,
     isActive: boolish,
-    "db.catalog": optionalTrimmedString("Entity catalog"),
-    "db.schema": requiredIdentifier("Entity schema"),
+    db_catalog: optionalTrimmedString("Entity catalog"),
+    db_schema: requiredIdentifier("Entity schema"),
     attributes: z.array(attributeSchema),
     indexes: optionalArray(indexSchema),
     relationships: optionalArray(relationshipSchema)
@@ -489,8 +492,8 @@ const entitySchema = z
   .transform((entity) => ({
     name: entity.name,
     physicalName: entity.physicalName,
-    schema: entity["db.schema"],
-    catalog: entity["db.catalog"],
+    schema: entity.db_schema,
+    catalog: entity.db_catalog,
     isStatic: entity.isStatic,
     isExternal: entity.isExternal,
     isActive: entity.isActive,

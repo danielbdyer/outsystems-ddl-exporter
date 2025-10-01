@@ -33,7 +33,7 @@ public class ModelIngestionServiceTests
                   "isStatic": false,
                   "isExternal": false,
                   "isActive": true,
-                  "db.schema": "dbo",
+                  "db_schema": "dbo",
                   "attributes": [
                     {
                       "name": "Id",

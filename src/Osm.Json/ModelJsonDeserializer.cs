@@ -415,10 +415,10 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         [JsonPropertyName("isActive")]
         public bool IsActive { get; init; } = true;
 
-        [JsonPropertyName("db.catalog")]
+        [JsonPropertyName("db_catalog")]
         public string? Catalog { get; init; }
 
-        [JsonPropertyName("db.schema")]
+        [JsonPropertyName("db_schema")]
         public string? Schema { get; init; }
 
         [JsonPropertyName("attributes")]
@@ -475,22 +475,22 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         [JsonPropertyName("refEntityId")]
         public int? ReferenceEntityId { get; init; }
 
-        [JsonPropertyName("refEntity.name")]
+        [JsonPropertyName("refEntity_name")]
         public string? ReferenceEntityName { get; init; }
 
-        [JsonPropertyName("refEntity.physicalName")]
+        [JsonPropertyName("refEntity_physicalName")]
         public string? ReferenceEntityPhysicalName { get; init; }
 
-        [JsonPropertyName("reference.deleteRuleCode")]
+        [JsonPropertyName("reference_deleteRuleCode")]
         public string? ReferenceDeleteRuleCode { get; init; }
 
-        [JsonPropertyName("reference.hasDbConstraint")]
+        [JsonPropertyName("reference_hasDbConstraint")]
         public int? ReferenceHasDbConstraint { get; init; }
 
-        [JsonPropertyName("external.dbType")]
+        [JsonPropertyName("external_dbType")]
         public string? ExternalDbType { get; init; }
 
-        [JsonPropertyName("physical.isPresentButInactive")]
+        [JsonPropertyName("physical_isPresentButInactive")]
         public int PhysicalIsPresentButInactive { get; init; }
 
         [JsonPropertyName("reality")]
@@ -549,10 +549,10 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         [JsonPropertyName("viaAttributeName")]
         public string? ViaAttributeName { get; init; }
 
-        [JsonPropertyName("toEntity.name")]
+        [JsonPropertyName("toEntity_name")]
         public string? TargetEntityName { get; init; }
 
-        [JsonPropertyName("toEntity.physicalName")]
+        [JsonPropertyName("toEntity_physicalName")]
         public string? TargetEntityPhysicalName { get; init; }
 
         [JsonPropertyName("deleteRuleCode")]
