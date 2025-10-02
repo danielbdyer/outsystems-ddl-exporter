@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using Osm.Domain.Configuration;
+using Osm.Domain.ValueObjects;
 using Osm.Dmm;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -29,7 +31,7 @@ public class DmmComparatorTests
     public void Compare_returns_match_for_equivalent_dmm_script()
     {
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(EdgeCaseScript));
+        var comparison = comparator.Compare(_smoModel, ParseScript(EdgeCaseScript), NamingOverrideOptions.Empty);
 
         Assert.True(comparison.IsMatch);
         Assert.Empty(comparison.ModelDifferences);
@@ -40,7 +42,10 @@ public class DmmComparatorTests
     public void Compare_detects_nullability_difference()
     {
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(EdgeCaseScript.Replace("[EMAIL] NVARCHAR(255) NOT NULL", "[EMAIL] NVARCHAR(255) NULL")));
+        var comparison = comparator.Compare(
+            _smoModel,
+            ParseScript(EdgeCaseScript.Replace("[EMAIL] NVARCHAR(255) NOT NULL", "[EMAIL] NVARCHAR(255) NULL")),
+            NamingOverrideOptions.Empty);
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("nullability mismatch", StringComparison.OrdinalIgnoreCase));
@@ -55,7 +60,7 @@ public class DmmComparatorTests
             "[EMAIL] NVARCHAR(255) NOT NULL,\n    [ID] INT NOT NULL,");
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(reorderedScript));
+        var comparison = comparator.Compare(_smoModel, ParseScript(reorderedScript), NamingOverrideOptions.Empty);
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("column order mismatch", StringComparison.OrdinalIgnoreCase));
@@ -70,7 +75,7 @@ public class DmmComparatorTests
             string.Empty);
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script));
+        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.ModelDifferences, diff => diff.Equals("missing table dbo.OSUSR_DEF_CITY", StringComparison.OrdinalIgnoreCase));
@@ -82,7 +87,7 @@ public class DmmComparatorTests
     {
         var script = EdgeCaseScript + "CREATE TABLE [dbo].[EXTRA](\n    [ID] INT NOT NULL,\n    CONSTRAINT [PK_EXTRA] PRIMARY KEY ([ID])\n);";
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script));
+        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Equals("unexpected table dbo.EXTRA", StringComparison.OrdinalIgnoreCase));
@@ -94,7 +99,7 @@ public class DmmComparatorTests
     {
         var script = EdgeCaseScript.Replace("    [EMAIL] NVARCHAR(255) NOT NULL,\n", string.Empty);
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script));
+        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.ModelDifferences, diff => diff.Contains("missing columns", StringComparison.OrdinalIgnoreCase));
@@ -109,7 +114,7 @@ public class DmmComparatorTests
             "    [EMAIL] NVARCHAR(255) NOT NULL,\n    [EXTRA] INT NULL,\n");
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script));
+        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("unexpected columns", StringComparison.OrdinalIgnoreCase));
@@ -124,7 +129,7 @@ public class DmmComparatorTests
             "CONSTRAINT [PK_Customer] PRIMARY KEY ([EMAIL])");
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script));
+        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("primary key mismatch", StringComparison.OrdinalIgnoreCase));
@@ -135,7 +140,7 @@ public class DmmComparatorTests
     {
         var script = EdgeCaseScript.Replace("[EMAIL] NVARCHAR(255) NOT NULL", "[EMAIL] NVARCHAR(200) NOT NULL");
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script));
+        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("data type mismatch", StringComparison.OrdinalIgnoreCase));
@@ -149,11 +154,62 @@ public class DmmComparatorTests
             .Replace("[ACCOUNTNUMBER] VARCHAR(50) NOT NULL", "[ACCOUNTNUMBER] varchar ( 50 ) NOT NULL");
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script));
+        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
 
         Assert.True(comparison.IsMatch);
         Assert.Empty(comparison.ModelDifferences);
         Assert.Empty(comparison.SsdtDifferences);
+    }
+
+    [Fact]
+    public void Compare_honors_entity_name_overrides()
+    {
+        var overrideResult = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_EXTERNAL");
+        Assert.True(overrideResult.IsSuccess);
+        var namingOverrides = NamingOverrideOptions.Create(null, new[] { overrideResult.Value });
+        Assert.True(namingOverrides.IsSuccess);
+
+        var renamedScript = EdgeCaseScript.Replace("OSUSR_ABC_CUSTOMER", "CUSTOMER_EXTERNAL");
+
+        var comparator = new DmmComparator();
+        var comparison = comparator.Compare(_smoModel, ParseScript(renamedScript), namingOverrides.Value);
+
+        Assert.True(comparison.IsMatch);
+    }
+
+    [Fact]
+    public void Compare_honors_module_scoped_entity_name_overrides_with_sanitized_module_name()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var module = model.Modules.First(m => string.Equals(m.Name.Value, "AppCore", StringComparison.OrdinalIgnoreCase));
+
+        var renamedModuleName = ModuleName.Create("App Core");
+        Assert.True(renamedModuleName.IsSuccess);
+
+        var renamedEntities = module.Entities
+            .Select(e => e with { Module = renamedModuleName.Value })
+            .ToImmutableArray();
+        var mutatedModule = module with { Name = renamedModuleName.Value, Entities = renamedEntities };
+        var mutatedModel = model with { Modules = model.Modules.Replace(module, mutatedModule) };
+
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var options = TighteningOptions.Default;
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(mutatedModel, snapshot, options);
+        var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
+        var smoModel = new SmoModelFactory().Create(mutatedModel, decisions, smoOptions);
+
+        var overrideResult = EntityNamingOverride.Create("App Core", "Customer", "CUSTOMER_EXTERNAL");
+        Assert.True(overrideResult.IsSuccess);
+        var namingOverrides = NamingOverrideOptions.Create(null, new[] { overrideResult.Value });
+        Assert.True(namingOverrides.IsSuccess);
+
+        var renamedScript = EdgeCaseScript.Replace("OSUSR_ABC_CUSTOMER", "CUSTOMER_EXTERNAL");
+
+        var comparator = new DmmComparator();
+        var comparison = comparator.Compare(smoModel, ParseScript(renamedScript), namingOverrides.Value);
+
+        Assert.True(comparison.IsMatch);
     }
 
     [Fact]

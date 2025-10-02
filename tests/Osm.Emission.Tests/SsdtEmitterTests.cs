@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using Osm.Domain.Configuration;
+using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -234,6 +236,99 @@ public class SsdtEmitterTests
             var content = File.ReadAllText(sqlPath);
             Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", content, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public async Task EmitAsync_applies_entity_override_across_artifacts()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var options = TighteningOptions.Default;
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(model, snapshot, options);
+        var report = PolicyDecisionReporter.Create(decisions);
+
+        var overrideResult = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_EXTERNAL");
+        Assert.True(overrideResult.IsSuccess);
+        var overrides = NamingOverrideOptions.Create(null, new[] { overrideResult.Value });
+        Assert.True(overrides.IsSuccess);
+
+        var smoOptions = SmoBuildOptions.FromEmission(options.Emission).WithNamingOverrides(overrides.Value);
+        var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, report);
+
+        var renamedEntry = manifest.Tables.FirstOrDefault(t => t.Table.Equals("CUSTOMER_EXTERNAL", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(renamedEntry);
+        Assert.Equal($"dbo.CUSTOMER_EXTERNAL.sql", Path.GetFileName(renamedEntry!.TableFile));
+
+        var tablePath = Path.Combine(temp.Path, renamedEntry.TableFile);
+        var tableScript = await File.ReadAllTextAsync(tablePath);
+        Assert.Contains("CREATE TABLE dbo.CUSTOMER_EXTERNAL", tableScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", tableScript, StringComparison.OrdinalIgnoreCase);
+
+        foreach (var indexFile in renamedEntry.IndexFiles)
+        {
+            Assert.Contains("CUSTOMER_EXTERNAL", indexFile, StringComparison.OrdinalIgnoreCase);
+        }
+
+        foreach (var fkFile in renamedEntry.ForeignKeyFiles)
+        {
+            Assert.Contains("CUSTOMER_EXTERNAL", fkFile, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var allSqlFiles = Directory.GetFiles(temp.Path, "*.sql", SearchOption.AllDirectories);
+        foreach (var sqlPath in allSqlFiles)
+        {
+            var content = File.ReadAllText(sqlPath);
+            Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", content, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task EmitAsync_applies_module_scoped_entity_override_with_sanitized_module_name()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var module = model.Modules.First(m => string.Equals(m.Name.Value, "AppCore", StringComparison.OrdinalIgnoreCase));
+
+        var renamedModuleName = ModuleName.Create("App Core");
+        Assert.True(renamedModuleName.IsSuccess);
+
+        var renamedEntities = module.Entities
+            .Select(e => e with { Module = renamedModuleName.Value })
+            .ToImmutableArray();
+        var mutatedModule = module with { Name = renamedModuleName.Value, Entities = renamedEntities };
+        var mutatedModel = model with { Modules = model.Modules.Replace(module, mutatedModule) };
+
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var options = TighteningOptions.Default;
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(mutatedModel, snapshot, options);
+        var report = PolicyDecisionReporter.Create(decisions);
+
+        var overrideResult = EntityNamingOverride.Create("App Core", "Customer", "CUSTOMER_EXTERNAL");
+        Assert.True(overrideResult.IsSuccess);
+        var overrides = NamingOverrideOptions.Create(null, new[] { overrideResult.Value });
+        Assert.True(overrides.IsSuccess);
+
+        var smoOptions = SmoBuildOptions.FromEmission(options.Emission).WithNamingOverrides(overrides.Value);
+        var smoModel = new SmoModelFactory().Create(mutatedModel, decisions, smoOptions);
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, report);
+
+        var renamedEntry = manifest.Tables.FirstOrDefault(
+            t => t.Table.Equals("CUSTOMER_EXTERNAL", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(renamedEntry);
+        Assert.Contains("Modules/App_Core", renamedEntry!.TableFile, StringComparison.OrdinalIgnoreCase);
+
+        var tablePath = Path.Combine(temp.Path, renamedEntry.TableFile);
+        var tableScript = await File.ReadAllTextAsync(tablePath);
+        Assert.Contains("CREATE TABLE dbo.CUSTOMER_EXTERNAL", tableScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", tableScript, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class TempDirectory : IDisposable

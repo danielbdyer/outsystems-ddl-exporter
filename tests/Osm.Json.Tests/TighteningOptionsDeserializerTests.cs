@@ -1,3 +1,4 @@
+using System.IO;
 using Osm.Domain.Configuration;
 using Osm.Json.Configuration;
 using Tests.Support;
@@ -43,4 +44,19 @@ public class TighteningOptionsDeserializerTests
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, e => e.Code == "options.policy.nullBudget.outOfRange");
     }
+
+    [Fact]
+    public void Deserialize_Should_Parse_Entity_Naming_Overrides()
+    {
+        const string json = "{ \"policy\": { \"mode\": \"EvidenceGated\", \"nullBudget\": 0.0 }, \"foreignKeys\": { \"enableCreation\": true, \"allowCrossSchema\": false, \"allowCrossCatalog\": false }, \"uniqueness\": { \"enforceSingleColumnUnique\": true, \"enforceMultiColumnUnique\": true }, \"remediation\": { \"generatePreScripts\": true, \"sentinels\": { \"numeric\": \"0\", \"text\": \"\", \"date\": \"1900-01-01\" }, \"maxRowsDefaultBackfill\": 10 }, \"emission\": { \"perTableFiles\": true, \"includePlatformAutoIndexes\": false, \"sanitizeModuleNames\": true, \"emitConcatenatedConstraints\": false, \"namingOverrides\": { \"entities\": [ { \"module\": null, \"entity\": \"Customer\", \"override\": \"CUSTOMER_EXTERNAL\" } ] } }, \"mocking\": { \"useProfileMockFolder\": false, \"profileMockFolder\": null } }";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+
+        var result = _deserializer.Deserialize(stream);
+
+        Assert.True(result.IsSuccess);
+        var namingOverrides = result.Value.Emission.NamingOverrides;
+        Assert.True(namingOverrides.TryGetEntityOverride(null, "Customer", out var tableName));
+        Assert.Equal("CUSTOMER_EXTERNAL", tableName.Value);
+    }
+
 }
