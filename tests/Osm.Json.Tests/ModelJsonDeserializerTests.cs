@@ -574,6 +574,63 @@ public class ModelJsonDeserializerTests
     }
 
     [Fact]
+    public void Deserialize_ShouldMapCheckConstraints()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2024-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ],
+                  "checks": [
+                    {
+                      "name": "CK_Invoice_TotalPositive",
+                      "definition": " Total > 0 ",
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsSuccess);
+        var entity = result.Value.Modules.Single().Entities.Single();
+        var constraint = entity.CheckConstraints.Single();
+        Assert.Equal("CK_Invoice_TotalPositive", constraint.Name.Value);
+        Assert.Equal("Total > 0", constraint.Definition);
+        Assert.True(constraint.IsActive);
+    }
+
+    [Fact]
     public void Deserialize_ShouldFail_WhenJsonMalformed()
     {
         const string json = "{";

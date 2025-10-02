@@ -176,6 +176,12 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
             return Result<EntityModel>.Failure(relationshipsResult.Errors);
         }
 
+        var checkConstraintsResult = MapCheckConstraints(doc.CheckConstraints);
+        if (checkConstraintsResult.IsFailure)
+        {
+            return Result<EntityModel>.Failure(checkConstraintsResult.Errors);
+        }
+
         return EntityModel.Create(
             moduleName,
             logicalNameResult.Value,
@@ -187,7 +193,8 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
             doc.IsActive,
             attributesResult.Value,
             indexesResult.Value,
-            relationshipsResult.Value);
+            relationshipsResult.Value,
+            checkConstraintsResult.Value);
     }
 
     private static Result<ImmutableArray<AttributeModel>> MapAttributes(AttributeDocument[]? docs)
@@ -424,6 +431,34 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         return Result<ImmutableArray<RelationshipModel>>.Success(builder.ToImmutable());
     }
 
+    private static Result<ImmutableArray<CheckConstraintModel>> MapCheckConstraints(CheckConstraintDocument[]? docs)
+    {
+        if (docs is null || docs.Length == 0)
+        {
+            return Result<ImmutableArray<CheckConstraintModel>>.Success(ImmutableArray<CheckConstraintModel>.Empty);
+        }
+
+        var builder = ImmutableArray.CreateBuilder<CheckConstraintModel>(docs.Length);
+        foreach (var doc in docs)
+        {
+            var nameResult = ConstraintName.Create(doc.Name);
+            if (nameResult.IsFailure)
+            {
+                return Result<ImmutableArray<CheckConstraintModel>>.Failure(nameResult.Errors);
+            }
+
+            var modelResult = CheckConstraintModel.Create(nameResult.Value, doc.Definition, doc.IsActive);
+            if (modelResult.IsFailure)
+            {
+                return Result<ImmutableArray<CheckConstraintModel>>.Failure(modelResult.Errors);
+            }
+
+            builder.Add(modelResult.Value);
+        }
+
+        return Result<ImmutableArray<CheckConstraintModel>>.Success(builder.ToImmutable());
+    }
+
     private sealed record ModelDocument
     {
         [JsonPropertyName("exportedAtUtc")]
@@ -479,6 +514,9 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("relationships")]
         public RelationshipDocument[]? Relationships { get; init; }
+
+        [JsonPropertyName("checks")]
+        public CheckConstraintDocument[]? CheckConstraints { get; init; }
     }
 
     private sealed record AttributeDocument
@@ -545,6 +583,18 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("reality")]
         public AttributeRealityDocument? Reality { get; init; }
+    }
+
+    private sealed record CheckConstraintDocument
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+
+        [JsonPropertyName("definition")]
+        public string? Definition { get; init; }
+
+        [JsonPropertyName("isActive")]
+        public bool IsActive { get; init; } = true;
     }
 
     private sealed record AttributeRealityDocument

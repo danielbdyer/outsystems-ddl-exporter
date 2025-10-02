@@ -69,6 +69,7 @@ public sealed class SmoModelFactory
         var columns = BuildColumns(context, decisions);
         var indexes = BuildIndexes(context, decisions, options.IncludePlatformAutoIndexes);
         var foreignKeys = BuildForeignKeys(context, decisions, entityLookup);
+        var checkConstraints = BuildCheckConstraints(context);
         var catalog = string.IsNullOrWhiteSpace(context.Entity.Catalog) ? options.DefaultCatalogName : context.Entity.Catalog!;
 
         var moduleName = options.SanitizeModuleNames ? SanitizeModuleName(context.ModuleName) : context.ModuleName;
@@ -81,7 +82,8 @@ public sealed class SmoModelFactory
             context.Entity.LogicalName.Value,
             columns,
             indexes,
-            foreignKeys);
+            foreignKeys,
+            checkConstraints);
     }
 
     private static bool IsEmittableAttribute(AttributeModel attribute)
@@ -288,6 +290,28 @@ public sealed class SmoModelFactory
         return builder.ToImmutable();
     }
 
+    private static ImmutableArray<SmoCheckConstraintDefinition> BuildCheckConstraints(EntityEmissionContext context)
+    {
+        if (context.ActiveCheckConstraints.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<SmoCheckConstraintDefinition>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<SmoCheckConstraintDefinition>(context.ActiveCheckConstraints.Length);
+
+        foreach (var constraint in context.ActiveCheckConstraints)
+        {
+            var normalizedName = NormalizeConstraintName(
+                constraint.Name.Value,
+                context.Entity,
+                context.EmittableAttributes);
+
+            builder.Add(new SmoCheckConstraintDefinition(normalizedName, constraint.Definition));
+        }
+
+        return builder.ToImmutable();
+    }
+
     private static ForeignKeyAction MapDeleteRule(string? deleteRule)
     {
         if (string.IsNullOrWhiteSpace(deleteRule))
@@ -395,7 +419,8 @@ public sealed class SmoModelFactory
         ImmutableArray<AttributeModel> IdentifierAttributes,
         IReadOnlyDictionary<string, AttributeModel> AttributeLookup,
         AttributeModel? ActiveIdentifier,
-        AttributeModel? FallbackIdentifier)
+        AttributeModel? FallbackIdentifier,
+        ImmutableArray<CheckConstraintModel> ActiveCheckConstraints)
     {
         public static EntityEmissionContext Create(string moduleName, EntityModel entity)
         {
@@ -408,6 +433,7 @@ public sealed class SmoModelFactory
             var attributeLookup = new Dictionary<string, AttributeModel>(StringComparer.OrdinalIgnoreCase);
             AttributeModel? activeIdentifier = null;
             AttributeModel? fallbackIdentifier = null;
+            var checkConstraintBuilder = ImmutableArray.CreateBuilder<CheckConstraintModel>();
 
             foreach (var attribute in entity.Attributes)
             {
@@ -439,6 +465,14 @@ public sealed class SmoModelFactory
                 }
             }
 
+            foreach (var constraint in entity.CheckConstraints)
+            {
+                if (constraint.IsActive)
+                {
+                    checkConstraintBuilder.Add(constraint);
+                }
+            }
+
             return new EntityEmissionContext(
                 moduleName,
                 entity,
@@ -446,7 +480,8 @@ public sealed class SmoModelFactory
                 identifierBuilder.ToImmutable(),
                 attributeLookup,
                 activeIdentifier,
-                fallbackIdentifier);
+                fallbackIdentifier,
+                checkConstraintBuilder.ToImmutable());
         }
 
         public AttributeModel? GetPreferredIdentifier() => ActiveIdentifier ?? FallbackIdentifier;

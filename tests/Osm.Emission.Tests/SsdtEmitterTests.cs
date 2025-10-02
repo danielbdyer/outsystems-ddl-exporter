@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
 using Osm.Emission;
 using Osm.Smo;
@@ -234,6 +236,60 @@ public class SsdtEmitterTests
             var content = File.ReadAllText(sqlPath);
             Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", content, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public async Task EmitAsync_includes_check_constraints_in_table_script()
+    {
+        var columns = ImmutableArray.Create(
+            new SmoColumnDefinition(
+                "Id",
+                "Id",
+                DataType.Int,
+                Nullable: false,
+                IsIdentity: false,
+                IdentitySeed: 0,
+                IdentityIncrement: 0),
+            new SmoColumnDefinition(
+                "Amount",
+                "Amount",
+                DataType.Decimal(18, 2),
+                Nullable: false,
+                IsIdentity: false,
+                IdentitySeed: 0,
+                IdentityIncrement: 0));
+
+        var primaryKey = new SmoIndexDefinition(
+            "PK_OSUSR_FIN_INVOICE",
+            IsUnique: true,
+            IsPrimaryKey: true,
+            IsPlatformAuto: false,
+            ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1)));
+
+        var checkConstraints = ImmutableArray.Create(new SmoCheckConstraintDefinition("CK_Invoice_Positive", "Amount > 0"));
+
+        var table = new SmoTableDefinition(
+            Module: "Finance",
+            Name: "OSUSR_FIN_INVOICE",
+            Schema: "dbo",
+            Catalog: "OutSystems",
+            LogicalName: "Invoice",
+            Columns: columns,
+            Indexes: ImmutableArray.Create(primaryKey),
+            ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
+            CheckConstraints: checkConstraints);
+
+        var smoModel = SmoModel.Create(ImmutableArray.Create(table));
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        await emitter.EmitAsync(smoModel, temp.Path, SmoBuildOptions.Default, null);
+
+        var tablePath = Path.Combine(temp.Path, "Modules", "Finance", "Tables", "dbo.Invoice.sql");
+        Assert.True(File.Exists(tablePath));
+        var script = await File.ReadAllTextAsync(tablePath);
+        Assert.Contains("CHECK", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Amount > 0", script, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class TempDirectory : IDisposable

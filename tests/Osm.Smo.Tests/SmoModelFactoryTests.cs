@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
@@ -146,5 +149,57 @@ public class SmoModelFactoryTests
         var userTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
         var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
         Assert.True(uniqueIndex.IsUnique);
+    }
+
+    [Fact]
+    public void Build_includes_active_check_constraints()
+    {
+        var moduleName = ModuleName.Create("Finance").Value;
+        var entityName = EntityName.Create("Invoice").Value;
+        var schema = SchemaName.Create("dbo").Value;
+        var tableName = TableName.Create("OSUSR_FIN_INVOICE").Value;
+
+        var idAttribute = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true,
+            reference: AttributeReference.None).Value;
+
+        var checkConstraint = CheckConstraintModel.Create(
+            ConstraintName.Create("CK_Invoice_Positive").Value,
+            "Id > 0",
+            isActive: true).Value;
+
+        var entity = EntityModel.Create(
+            moduleName,
+            entityName,
+            tableName,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { idAttribute },
+            checkConstraints: new[] { checkConstraint }).Value;
+
+        var module = ModuleModel.Create(moduleName, isSystemModule: false, isActive: true, new[] { entity }).Value;
+        var osmModel = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var decisions = PolicyDecisionSet.Create(
+            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty);
+
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(osmModel, decisions, SmoBuildOptions.Default);
+
+        var table = smoModel.Tables.Single();
+        var constraint = table.CheckConstraints.Single();
+        Assert.Equal("CK_Invoice_Positive", constraint.Name);
+        Assert.Equal("Id > 0", constraint.Definition);
     }
 }
