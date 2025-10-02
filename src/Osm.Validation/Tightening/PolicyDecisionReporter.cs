@@ -39,7 +39,20 @@ public static class PolicyDecisionReporter
         var uniqueRationales = AggregateRationales(uniqueIndexReports.SelectMany(r => r.Rationales));
         var foreignKeyRationales = AggregateRationales(foreignKeyReports.SelectMany(r => r.Rationales));
 
-        return new PolicyDecisionReport(columnReports, uniqueIndexReports, foreignKeyReports, columnRationales, uniqueRationales, foreignKeyRationales);
+        var diagnostics = decisions.Diagnostics
+            .OrderBy(d => d.Severity)
+            .ThenBy(d => d.LogicalName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(d => d.CanonicalModule, StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
+
+        return new PolicyDecisionReport(
+            columnReports,
+            uniqueIndexReports,
+            foreignKeyReports,
+            columnRationales,
+            uniqueRationales,
+            foreignKeyRationales,
+            diagnostics);
     }
 
     private static ImmutableDictionary<string, int> AggregateRationales(IEnumerable<string> rationales)
@@ -68,7 +81,8 @@ public sealed record PolicyDecisionReport(
     ImmutableArray<ForeignKeyDecisionReport> ForeignKeys,
     ImmutableDictionary<string, int> ColumnRationaleCounts,
     ImmutableDictionary<string, int> UniqueIndexRationaleCounts,
-    ImmutableDictionary<string, int> ForeignKeyRationaleCounts)
+    ImmutableDictionary<string, int> ForeignKeyRationaleCounts,
+    ImmutableArray<TighteningDiagnostic> Diagnostics)
 {
     public int ColumnCount => Columns.Length;
 

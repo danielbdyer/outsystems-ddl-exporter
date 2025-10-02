@@ -190,7 +190,8 @@ public class SmoModelFactoryTests
         var decisions = PolicyDecisionSet.Create(
             ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(fkCoordinate, foreignKeyDecision),
-            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty);
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty);
 
         var factory = new SmoModelFactory();
         var smoOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);

@@ -2,6 +2,8 @@ using System;
 using System.Linq;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using Osm.Domain.Profiling;
+using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
 using Tests.Support;
 
@@ -217,6 +219,65 @@ public sealed class TighteningPolicyTests
         Assert.Contains(TighteningRationales.UniquePolicyDisabled, decision.Rationales);
     }
 
+    [Fact]
+    public void DuplicateLogicalNames_WithoutOverride_ProducesWarningDiagnostic()
+    {
+        var model = CreateDuplicateModel();
+        var snapshot = CreateEmptySnapshot();
+        var policy = new TighteningPolicy();
+        var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
+
+        var decisions = policy.Decide(model, snapshot, options);
+
+        var diagnostic = Assert.Single(decisions.Diagnostics);
+        Assert.Equal("tightening.entity.duplicate.unresolved", diagnostic.Code);
+        Assert.Equal(TighteningDiagnosticSeverity.Warning, diagnostic.Severity);
+        Assert.False(diagnostic.ResolvedByOverride);
+        Assert.Equal("Customer", diagnostic.LogicalName);
+        Assert.Equal("Alpha", diagnostic.CanonicalModule);
+        Assert.Equal(2, diagnostic.Candidates.Length);
+    }
+
+    [Fact]
+    public void DuplicateLogicalNames_WithModuleOverride_SelectsOverride()
+    {
+        var model = CreateDuplicateModel();
+        var snapshot = CreateEmptySnapshot();
+        var policy = new TighteningPolicy();
+
+        var defaults = TighteningOptions.Default;
+        var ruleResult = NamingOverrideRule.Create(null, null, "Beta", "Customer", "OSUSR_BETA_CUSTOMER_CANON");
+        Assert.True(ruleResult.IsSuccess, string.Join(Environment.NewLine, ruleResult.Errors.Select(e => e.Message)));
+
+        var overridesResult = NamingOverrideOptions.Create(new[] { ruleResult.Value });
+        Assert.True(overridesResult.IsSuccess, string.Join(Environment.NewLine, overridesResult.Errors.Select(e => e.Message)));
+
+        var emissionResult = EmissionOptions.Create(
+            defaults.Emission.PerTableFiles,
+            defaults.Emission.IncludePlatformAutoIndexes,
+            defaults.Emission.SanitizeModuleNames,
+            defaults.Emission.EmitConcatenatedConstraints,
+            overridesResult.Value);
+        Assert.True(emissionResult.IsSuccess, string.Join(Environment.NewLine, emissionResult.Errors.Select(e => e.Message)));
+
+        var options = TighteningOptions.Create(
+            defaults.Policy,
+            defaults.ForeignKeys,
+            defaults.Uniqueness,
+            defaults.Remediation,
+            emissionResult.Value,
+            defaults.Mocking).Value;
+
+        var decisions = policy.Decide(model, snapshot, options);
+
+        var diagnostic = Assert.Single(decisions.Diagnostics);
+        Assert.Equal("tightening.entity.duplicate.resolved", diagnostic.Code);
+        Assert.Equal(TighteningDiagnosticSeverity.Info, diagnostic.Severity);
+        Assert.True(diagnostic.ResolvedByOverride);
+        Assert.Equal("Beta", diagnostic.CanonicalModule);
+        Assert.Equal(2, diagnostic.Candidates.Length);
+    }
+
     private static EntityModel GetEntity(OsmModel model, string logicalName)
         => model.Modules.SelectMany(m => m.Entities).Single(e => string.Equals(e.LogicalName.Value, logicalName, StringComparison.Ordinal));
 
@@ -231,4 +292,57 @@ public sealed class TighteningPolicyTests
         var index = entity.Indexes.Single(i => string.Equals(i.Name.Value, indexName, StringComparison.Ordinal));
         return new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
     }
+
+    private static OsmModel CreateDuplicateModel()
+    {
+        var alphaModuleName = ModuleName.Create("Alpha").Value;
+        var betaModuleName = ModuleName.Create("Beta").Value;
+        var logicalName = EntityName.Create("Customer").Value;
+        var schema = SchemaName.Create("dbo").Value;
+
+        var alphaEntity = EntityModel.Create(
+            alphaModuleName,
+            logicalName,
+            TableName.Create("OSUSR_ALPHA_CUSTOMER").Value,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { CreateIdAttribute() }).Value;
+
+        var betaEntity = EntityModel.Create(
+            betaModuleName,
+            logicalName,
+            TableName.Create("OSUSR_BETA_CUSTOMER").Value,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { CreateIdAttribute() }).Value;
+
+        var alphaModule = ModuleModel.Create(alphaModuleName, isSystemModule: false, isActive: true, new[] { alphaEntity }).Value;
+        var betaModule = ModuleModel.Create(betaModuleName, isSystemModule: false, isActive: true, new[] { betaEntity }).Value;
+
+        return OsmModel.Create(DateTime.UtcNow, new[] { alphaModule, betaModule }).Value;
+    }
+
+    private static ProfileSnapshot CreateEmptySnapshot()
+        => ProfileSnapshot.Create(
+            Array.Empty<ColumnProfile>(),
+            Array.Empty<UniqueCandidateProfile>(),
+            Array.Empty<CompositeUniqueCandidateProfile>(),
+            Array.Empty<ForeignKeyReality>()).Value;
+
+    private static AttributeModel CreateIdAttribute()
+        => AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "int",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true,
+            reality: AttributeReality.Unknown).Value;
 }
