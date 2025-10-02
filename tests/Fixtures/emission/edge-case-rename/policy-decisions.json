@@ -242,5 +242,6 @@
         "DELETE_RULE_IGNORE"
       ]
     }
-  ]
+  ],
+  "Diagnostics": []
 }

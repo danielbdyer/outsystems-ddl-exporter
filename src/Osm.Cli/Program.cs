@@ -280,6 +280,11 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
     var decisions = policy.Decide(model, profileResult.Value, tighteningOptions);
     var decisionReport = PolicyDecisionReporter.Create(decisions);
 
+    foreach (var diagnostic in decisionReport.Diagnostics.Where(d => d.Severity == TighteningDiagnosticSeverity.Warning))
+    {
+        Console.Error.WriteLine($"[warning] {diagnostic.Message}");
+    }
+
     var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission);
     var namingOverrideResult = ResolveNamingOverrides(options, smoOptions.NamingOverrides);
     if (namingOverrideResult.IsFailure)
@@ -703,7 +708,20 @@ static async Task<string> WriteDecisionLogAsync(string outputDirectory, PolicyDe
             f.Column.Table.Value,
             f.Column.Column.Value,
             f.CreateConstraint,
-            f.Rationales.ToArray())).ToArray());
+            f.Rationales.ToArray())).ToArray(),
+        report.Diagnostics.Select(static d => new PolicyDecisionLogDiagnostic(
+            d.LogicalName,
+            d.CanonicalModule,
+            d.CanonicalSchema,
+            d.CanonicalPhysicalName,
+            d.Code,
+            d.Message,
+            d.Severity.ToString(),
+            d.ResolvedByOverride,
+            d.Candidates.Select(static c => new PolicyDecisionLogDuplicateCandidate(
+                c.Module,
+                c.Schema,
+                c.PhysicalName)).ToArray())).ToArray());
 
     var path = Path.Combine(outputDirectory, "policy-decisions.json");
     var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
@@ -1289,7 +1307,8 @@ file sealed record PolicyDecisionLog(
     IReadOnlyDictionary<string, int> ForeignKeyRationales,
     IReadOnlyList<PolicyDecisionLogColumn> Columns,
     IReadOnlyList<PolicyDecisionLogUniqueIndex> UniqueIndexes,
-    IReadOnlyList<PolicyDecisionLogForeignKey> ForeignKeys);
+    IReadOnlyList<PolicyDecisionLogForeignKey> ForeignKeys,
+    IReadOnlyList<PolicyDecisionLogDiagnostic> Diagnostics);
 
 file sealed record PolicyDecisionLogColumn(
     string Schema,
@@ -1313,6 +1332,19 @@ file sealed record PolicyDecisionLogForeignKey(
     string Column,
     bool CreateConstraint,
     IReadOnlyList<string> Rationales);
+
+file sealed record PolicyDecisionLogDiagnostic(
+    string LogicalName,
+    string CanonicalModule,
+    string CanonicalSchema,
+    string CanonicalPhysicalName,
+    string Code,
+    string Message,
+    string Severity,
+    bool ResolvedByOverride,
+    IReadOnlyList<PolicyDecisionLogDuplicateCandidate> Candidates);
+
+file sealed record PolicyDecisionLogDuplicateCandidate(string Module, string Schema, string PhysicalName);
 
 file sealed record DmmDiffLog(
     bool IsMatch,

@@ -148,7 +148,20 @@ public class EmissionPipelineTests
                 f.Column.Table.Value,
                 f.Column.Column.Value,
                 f.CreateConstraint,
-                f.Rationales.ToArray())).ToArray());
+                f.Rationales.ToArray())).ToArray(),
+            report.Diagnostics.Select(static d => new PolicyDecisionLogDiagnostic(
+                d.LogicalName,
+                d.CanonicalModule,
+                d.CanonicalSchema,
+                d.CanonicalPhysicalName,
+                d.Code,
+                d.Message,
+                d.Severity.ToString(),
+                d.ResolvedByOverride,
+                d.Candidates.Select(static c => new PolicyDecisionLogDuplicateCandidate(
+                    c.Module,
+                    c.Schema,
+                    c.PhysicalName)).ToArray())).ToArray());
 
         var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(Path.Combine(outputDirectory, "policy-decisions.json"), json);
@@ -168,7 +181,8 @@ public class EmissionPipelineTests
         IReadOnlyDictionary<string, int> ForeignKeyRationales,
         IReadOnlyList<PolicyDecisionLogColumn> Columns,
         IReadOnlyList<PolicyDecisionLogUniqueIndex> UniqueIndexes,
-        IReadOnlyList<PolicyDecisionLogForeignKey> ForeignKeys);
+        IReadOnlyList<PolicyDecisionLogForeignKey> ForeignKeys,
+        IReadOnlyList<PolicyDecisionLogDiagnostic> Diagnostics);
 
     private sealed record PolicyDecisionLogColumn(
         string Schema,
@@ -192,4 +206,17 @@ public class EmissionPipelineTests
         string Column,
         bool CreateConstraint,
         IReadOnlyList<string> Rationales);
+
+    private sealed record PolicyDecisionLogDiagnostic(
+        string LogicalName,
+        string CanonicalModule,
+        string CanonicalSchema,
+        string CanonicalPhysicalName,
+        string Code,
+        string Message,
+        string Severity,
+        bool ResolvedByOverride,
+        IReadOnlyList<PolicyDecisionLogDuplicateCandidate> Candidates);
+
+    private sealed record PolicyDecisionLogDuplicateCandidate(string Module, string Schema, string PhysicalName);
 }

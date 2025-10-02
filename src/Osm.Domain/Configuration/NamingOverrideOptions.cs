@@ -168,6 +168,29 @@ public sealed record NamingOverrideOptions
         return false;
     }
 
+    public bool TryGetModuleScopedEntityOverride(string module, string logicalName, out TableName overrideName)
+    {
+        if (module is null)
+        {
+            throw new ArgumentNullException(nameof(module));
+        }
+
+        if (logicalName is null)
+        {
+            throw new ArgumentNullException(nameof(logicalName));
+        }
+
+        var key = EntityKey(module, logicalName);
+        if (_entityOverrides.TryGetValue(key, out var value))
+        {
+            overrideName = value;
+            return true;
+        }
+
+        overrideName = default;
+        return false;
+    }
+
     public string GetEffectiveTableName(string schema, string table, string? logicalName = null, string? module = null)
     {
         if (TryGetTableOverride(schema, table, out var overrideName))

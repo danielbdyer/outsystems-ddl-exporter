@@ -36,5 +36,7 @@ public sealed class DecisionReportTests
 
         var suppressedForeignKey = Assert.Single(report.ForeignKeys.Where(f => !f.CreateConstraint));
         Assert.Contains(TighteningRationales.DeleteRuleIgnore, suppressedForeignKey.Rationales);
+
+        Assert.Empty(report.Diagnostics);
     }
 }
