@@ -1079,7 +1079,7 @@ static Result<NamingOverrideOptions> ResolveNamingOverrides(
         return existingOverrides;
     }
 
-    var parsedOverrides = new List<TableNamingOverride>();
+    var parsedOverrides = new List<NamingOverrideRule>();
     foreach (var token in tokens)
     {
         var assignment = token.Split('=', 2, StringSplitOptions.TrimEntries);
@@ -1087,7 +1087,7 @@ static Result<NamingOverrideOptions> ResolveNamingOverrides(
         {
             return ValidationError.Create(
                 "cli.rename.invalidFormat",
-                $"Invalid table rename '{token}'. Expected format schema.table=OverrideName.");
+                $"Invalid table rename '{token}'. Expected format source=OverrideName.");
         }
 
         var source = assignment[0];
@@ -1097,23 +1097,60 @@ static Result<NamingOverrideOptions> ResolveNamingOverrides(
         {
             return ValidationError.Create(
                 "cli.rename.missingValue",
-                "Table rename overrides must include both source and replacement values.");
+                "Naming overrides must include both source and replacement values.");
         }
 
         string? schema = null;
-        string tableName;
-        var sourceParts = source.Split('.', 2, StringSplitOptions.TrimEntries);
-        if (sourceParts.Length == 2)
+        string? tableName = null;
+        string? module = null;
+        string? entity = null;
+
+        var segments = source.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
         {
-            schema = sourceParts[0];
-            tableName = sourceParts[1];
-        }
-        else
-        {
-            tableName = sourceParts[0];
+            segments = new[] { source };
         }
 
-        var overrideResult = TableNamingOverride.Create(schema, tableName, replacement);
+        foreach (var segment in segments)
+        {
+            if (string.IsNullOrWhiteSpace(segment))
+            {
+                continue;
+            }
+
+            if (segment.Contains("::", StringComparison.Ordinal))
+            {
+                var logicalParts = segment.Split("::", 2, StringSplitOptions.TrimEntries);
+                if (logicalParts.Length != 2 || string.IsNullOrWhiteSpace(logicalParts[1]))
+                {
+                    return ValidationError.Create(
+                        "cli.rename.invalidLogical",
+                        $"Invalid logical source '{segment}'. Expected format Module::Entity.");
+                }
+
+                module = string.IsNullOrWhiteSpace(logicalParts[0]) ? null : logicalParts[0];
+                entity = logicalParts[1];
+            }
+            else if (segment.Contains('.', StringComparison.Ordinal))
+            {
+                var physicalParts = segment.Split('.', 2, StringSplitOptions.TrimEntries);
+                if (physicalParts.Length != 2 || string.IsNullOrWhiteSpace(physicalParts[1]))
+                {
+                    return ValidationError.Create(
+                        "cli.rename.invalidTable",
+                        $"Invalid table source '{segment}'. Expected schema.table or table.");
+                }
+
+                schema = physicalParts[0];
+                tableName = physicalParts[1];
+            }
+            else
+            {
+                tableName = segment;
+            }
+        }
+
+        var overrideResult = NamingOverrideRule.Create(schema, tableName, module, entity, replacement);
         if (overrideResult.IsFailure)
         {
             return Result<NamingOverrideOptions>.Failure(overrideResult.Errors);

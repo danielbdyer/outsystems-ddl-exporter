@@ -123,7 +123,7 @@ public sealed class CliConfigurationLoaderTests
                 includePlatformAutoIndexes = false,
                 sanitizeModuleNames = true,
                 emitConcatenatedConstraints = false,
-                namingOverrides = new { tables = Array.Empty<object>() }
+                namingOverrides = new { rules = Array.Empty<object>() }
             },
             mocking = new { useProfileMockFolder = false, profileMockFolder = (string?)null }
         });

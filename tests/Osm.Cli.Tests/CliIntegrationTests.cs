@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Tests.Support;
 
@@ -130,6 +131,66 @@ public class CliIntegrationTests
         Assert.EndsWith("dbo.CUSTOMER_PORTAL.sql", renamedEntry.GetProperty("TableFile").GetString(), StringComparison.OrdinalIgnoreCase);
 
         DirectorySnapshot.AssertMatches(expectedRoot, output.Path);
+    }
+
+    [Fact]
+    public async Task BuildSsdt_honors_entity_override_from_configuration()
+    {
+        var repoRoot = FixtureFile.RepositoryRoot;
+        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
+
+        using var workspace = new TempDirectory();
+        var tighteningPath = Path.Combine(workspace.Path, "tightening.json");
+        var defaultTighteningPath = Path.Combine(repoRoot, "config", "default-tightening.json");
+        var tighteningJson = await File.ReadAllTextAsync(defaultTighteningPath);
+        var tighteningNode = JsonNode.Parse(tighteningJson)!;
+        var emissionNode = tighteningNode["emission"] as JsonObject ?? new JsonObject();
+        tighteningNode["emission"] = emissionNode;
+        var namingOverridesNode = emissionNode["namingOverrides"] as JsonObject ?? new JsonObject();
+        emissionNode["namingOverrides"] = namingOverridesNode;
+        var rules = namingOverridesNode["rules"] as JsonArray ?? new JsonArray();
+        rules.Clear();
+        rules.Add(new JsonObject
+        {
+            ["entity"] = "Customer",
+            ["override"] = "CUSTOMER_STATIC"
+        });
+        namingOverridesNode["rules"] = rules;
+        await File.WriteAllTextAsync(
+            tighteningPath,
+            tighteningNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var configPath = Path.Combine(workspace.Path, "appsettings.json");
+        var outputPath = Path.Combine(workspace.Path, "out");
+
+        var config = new
+        {
+            tighteningPath,
+            model = new { path = FixtureFile.GetPath("model.edge-case.json") },
+            profile = new { path = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json")) }
+        };
+
+        await File.WriteAllTextAsync(
+            configPath,
+            JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+
+        var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
+        var exit = await RunCliAsync(repoRoot, command);
+        Assert.Equal(0, exit);
+
+        var renamedTable = Directory.GetFiles(outputPath, "dbo.CUSTOMER_STATIC.sql", SearchOption.AllDirectories);
+        var logicalTable = Directory.GetFiles(outputPath, "dbo.Customer.sql", SearchOption.AllDirectories);
+
+        Assert.Single(renamedTable);
+        Assert.Empty(logicalTable);
+
+        var scripts = Directory.GetFiles(outputPath, "*.sql", SearchOption.AllDirectories)
+            .Select(path => File.ReadAllText(path));
+
+        foreach (var script in scripts)
+        {
+            Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", script, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     [Fact]

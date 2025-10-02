@@ -2,6 +2,7 @@ using System;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
@@ -192,7 +193,7 @@ public class SsdtEmitterTests
         var decisions = policy.Decide(model, snapshot, options);
         var report = PolicyDecisionReporter.Create(decisions);
 
-        var overrideResult = TableNamingOverride.Create("dbo", "OSUSR_ABC_CUSTOMER", "CUSTOMER_PORTAL");
+        var overrideResult = NamingOverrideRule.Create("dbo", "OSUSR_ABC_CUSTOMER", null, null, "CUSTOMER_PORTAL");
         Assert.True(overrideResult.IsSuccess);
         var overrides = NamingOverrideOptions.Create(new[] { overrideResult.Value });
         Assert.True(overrides.IsSuccess);
@@ -248,9 +249,9 @@ public class SsdtEmitterTests
         var decisions = policy.Decide(model, snapshot, options);
         var report = PolicyDecisionReporter.Create(decisions);
 
-        var overrideResult = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_EXTERNAL");
+        var overrideResult = NamingOverrideRule.Create(null, null, null, "Customer", "CUSTOMER_EXTERNAL");
         Assert.True(overrideResult.IsSuccess);
-        var overrides = NamingOverrideOptions.Create(null, new[] { overrideResult.Value });
+        var overrides = NamingOverrideOptions.Create(new[] { overrideResult.Value });
         Assert.True(overrides.IsSuccess);
 
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission).WithNamingOverrides(overrides.Value);
@@ -308,9 +309,9 @@ public class SsdtEmitterTests
         var decisions = policy.Decide(mutatedModel, snapshot, options);
         var report = PolicyDecisionReporter.Create(decisions);
 
-        var overrideResult = EntityNamingOverride.Create("App Core", "Customer", "CUSTOMER_EXTERNAL");
+        var overrideResult = NamingOverrideRule.Create(null, null, "App Core", "Customer", "CUSTOMER_EXTERNAL");
         Assert.True(overrideResult.IsSuccess);
-        var overrides = NamingOverrideOptions.Create(null, new[] { overrideResult.Value });
+        var overrides = NamingOverrideOptions.Create(new[] { overrideResult.Value });
         Assert.True(overrides.IsSuccess);
 
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission).WithNamingOverrides(overrides.Value);
@@ -329,6 +330,97 @@ public class SsdtEmitterTests
         var tableScript = await File.ReadAllTextAsync(tablePath);
         Assert.Contains("CREATE TABLE dbo.CUSTOMER_EXTERNAL", tableScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", tableScript, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task EmitAsync_applies_module_scoped_override_without_affecting_other_entities()
+    {
+        var categoryColumns = ImmutableArray.Create(
+            new SmoColumnDefinition("Id", "Id", DataType.Int, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1));
+        var categoryIndexes = ImmutableArray.Create(
+            new SmoIndexDefinition("PK_Category", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1))));
+        var categoryForeignKeys = ImmutableArray<SmoForeignKeyDefinition>.Empty;
+
+        var inventoryCategory = new SmoTableDefinition(
+            "Inventory",
+            "Inventory",
+            "OSUSR_INV_CATEGORY",
+            "dbo",
+            "OutSystems",
+            "Category",
+            categoryColumns,
+            categoryIndexes,
+            categoryForeignKeys);
+
+        var catalogCategory = new SmoTableDefinition(
+            "Catalog",
+            "Catalog",
+            "OSUSR_CAT_CATEGORY",
+            "dbo",
+            "OutSystems",
+            "Category",
+            categoryColumns,
+            categoryIndexes,
+            categoryForeignKeys);
+
+        var productColumns = ImmutableArray.Create(
+            new SmoColumnDefinition("Id", "Id", DataType.Int, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1),
+            new SmoColumnDefinition("CategoryId", "CategoryId", DataType.Int, Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0));
+        var productIndexes = ImmutableArray.Create(
+            new SmoIndexDefinition("PK_Product", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1))));
+        var productForeignKeys = ImmutableArray.Create(
+            new SmoForeignKeyDefinition(
+                "FK_Product_CategoryId",
+                "CategoryId",
+                "Inventory",
+                "OSUSR_INV_CATEGORY",
+                "dbo",
+                "Id",
+                "Category",
+                ForeignKeyAction.NoAction));
+
+        var productTable = new SmoTableDefinition(
+            "Catalog",
+            "Catalog",
+            "OSUSR_CAT_PRODUCT",
+            "dbo",
+            "OutSystems",
+            "Product",
+            productColumns,
+            productIndexes,
+            productForeignKeys);
+
+        var smoModel = SmoModel.Create(ImmutableArray.Create(inventoryCategory, catalogCategory, productTable));
+
+        var overrideResult = NamingOverrideRule.Create(null, null, "Inventory", "Category", "CATEGORY_STATIC");
+        Assert.True(overrideResult.IsSuccess);
+        var overrides = NamingOverrideOptions.Create(new[] { overrideResult.Value });
+        Assert.True(overrides.IsSuccess);
+
+        var options = new SmoBuildOptions(
+            "OutSystems",
+            IncludePlatformAutoIndexes: false,
+            EmitConcatenatedConstraints: false,
+            SanitizeModuleNames: true,
+            NamingOverrides: overrides.Value);
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        await emitter.EmitAsync(smoModel, temp.Path, options);
+
+        var renamedTable = Directory.GetFiles(temp.Path, "dbo.CATEGORY_STATIC.sql", SearchOption.AllDirectories).Single();
+        var otherTable = Directory.GetFiles(temp.Path, "dbo.Category.sql", SearchOption.AllDirectories).Single();
+
+        var renamedScript = await File.ReadAllTextAsync(renamedTable);
+        Assert.Contains("CATEGORY_STATIC", renamedScript, StringComparison.OrdinalIgnoreCase);
+
+        var foreignKeyScriptPath = Directory.GetFiles(temp.Path, "*FK_Product_CategoryId.sql", SearchOption.AllDirectories).Single();
+        var foreignKeyScript = await File.ReadAllTextAsync(foreignKeyScriptPath);
+        Assert.Contains("CATEGORY_STATIC", foreignKeyScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("OSUSR_INV_CATEGORY", foreignKeyScript, StringComparison.OrdinalIgnoreCase);
+
+        var otherScript = await File.ReadAllTextAsync(otherTable);
+        Assert.Contains("CREATE TABLE dbo.Category", otherScript, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class TempDirectory : IDisposable

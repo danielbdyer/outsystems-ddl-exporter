@@ -32,11 +32,7 @@ public sealed class SmoModelFactory
         {
             foreach (var entity in module.Entities)
             {
-                if (!contexts.TryGetValue(entity.LogicalName, out var context))
-                {
-                    continue;
-                }
-
+                var context = contexts.GetContext(entity);
                 tablesBuilder.Add(BuildTable(context, decisions, options, contexts));
             }
         }
@@ -44,27 +40,36 @@ public sealed class SmoModelFactory
         return SmoModel.Create(tablesBuilder.ToImmutable());
     }
 
-    private static Dictionary<EntityName, EntityEmissionContext> BuildEntityContexts(OsmModel model)
+    private static EntityEmissionIndex BuildEntityContexts(OsmModel model)
     {
-        var lookup = new Dictionary<EntityName, EntityEmissionContext>();
+        var bySchemaAndTable = new Dictionary<string, EntityEmissionContext>(StringComparer.OrdinalIgnoreCase);
+        var byPhysicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
+        var byLogicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var module in model.Modules)
         {
             foreach (var entity in module.Entities)
             {
                 var context = EntityEmissionContext.Create(module.Name.Value, entity);
-                lookup[entity.LogicalName] = context;
+                var schemaKey = SchemaTableKey(entity.Schema.Value, entity.PhysicalName.Value);
+                bySchemaAndTable[schemaKey] = context;
+
+                AddContext(byPhysicalName, entity.PhysicalName.Value, context);
+                AddContext(byLogicalName, entity.LogicalName.Value, context);
             }
         }
 
-        return lookup;
+        return new EntityEmissionIndex(
+            bySchemaAndTable,
+            ToImmutable(byPhysicalName),
+            ToImmutable(byLogicalName));
     }
 
     private static SmoTableDefinition BuildTable(
         EntityEmissionContext context,
         PolicyDecisionSet decisions,
         SmoBuildOptions options,
-        IReadOnlyDictionary<EntityName, EntityEmissionContext> entityLookup)
+        EntityEmissionIndex entityLookup)
     {
         var columns = BuildColumns(context, decisions);
         var indexes = BuildIndexes(context, decisions, options.IncludePlatformAutoIndexes);
@@ -240,7 +245,7 @@ public sealed class SmoModelFactory
     private static ImmutableArray<SmoForeignKeyDefinition> BuildForeignKeys(
         EntityEmissionContext context,
         PolicyDecisionSet decisions,
-        IReadOnlyDictionary<EntityName, EntityEmissionContext> entityLookup)
+        EntityEmissionIndex entityLookup)
     {
         var builder = ImmutableArray.CreateBuilder<SmoForeignKeyDefinition>();
 
@@ -257,15 +262,10 @@ public sealed class SmoModelFactory
                 continue;
             }
 
-            if (attribute.Reference.TargetEntity is null)
+            if (!entityLookup.TryResolveReference(attribute.Reference, context, out var targetEntity))
             {
-                continue;
-            }
-
-            var targetEntityName = attribute.Reference.TargetEntity.Value;
-            if (!entityLookup.TryGetValue(targetEntityName, out var targetEntity))
-            {
-                throw new InvalidOperationException($"Target entity '{targetEntityName.Value}' not found for foreign key on '{context.Entity.PhysicalName.Value}.{attribute.ColumnName.Value}'.");
+                var targetName = attribute.Reference.TargetEntity?.Value ?? attribute.Reference.TargetPhysicalName?.Value ?? "<unknown>";
+                throw new InvalidOperationException($"Target entity '{targetName}' not found for foreign key on '{context.Entity.PhysicalName.Value}.{attribute.ColumnName.Value}'.");
             }
 
             var referencedColumn = targetEntity.GetPreferredIdentifier();
@@ -390,6 +390,35 @@ public sealed class SmoModelFactory
 
         return builder.ToString();
     }
+
+    private static void AddContext(
+        IDictionary<string, List<EntityEmissionContext>> lookup,
+        string key,
+        EntityEmissionContext context)
+    {
+        if (!lookup.TryGetValue(key, out var list))
+        {
+            list = new List<EntityEmissionContext>();
+            lookup[key] = list;
+        }
+
+        list.Add(context);
+    }
+
+    private static IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> ToImmutable(
+        IDictionary<string, List<EntityEmissionContext>> lookup)
+    {
+        var builder = new Dictionary<string, ImmutableArray<EntityEmissionContext>>(lookup.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in lookup)
+        {
+            builder[pair.Key] = pair.Value.ToImmutableArray();
+        }
+
+        return builder;
+    }
+
+    private static string SchemaTableKey(string schema, string table)
+        => $"{schema}.{table}";
     private sealed record EntityEmissionContext(
         string ModuleName,
         EntityModel Entity,
@@ -452,5 +481,130 @@ public sealed class SmoModelFactory
         }
 
         public AttributeModel? GetPreferredIdentifier() => ActiveIdentifier ?? FallbackIdentifier;
+    }
+
+    private sealed class EntityEmissionIndex
+    {
+        private readonly IReadOnlyDictionary<string, EntityEmissionContext> _bySchemaAndTable;
+        private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _byPhysicalName;
+        private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _byLogicalName;
+
+        public EntityEmissionIndex(
+            IReadOnlyDictionary<string, EntityEmissionContext> bySchemaAndTable,
+            IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> byPhysicalName,
+            IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> byLogicalName)
+        {
+            _bySchemaAndTable = bySchemaAndTable ?? throw new ArgumentNullException(nameof(bySchemaAndTable));
+            _byPhysicalName = byPhysicalName ?? throw new ArgumentNullException(nameof(byPhysicalName));
+            _byLogicalName = byLogicalName ?? throw new ArgumentNullException(nameof(byLogicalName));
+        }
+
+        public int Count => _bySchemaAndTable.Count;
+
+        public EntityEmissionContext GetContext(EntityModel entity)
+        {
+            if (entity is null)
+            {
+                throw new ArgumentNullException(nameof(entity));
+            }
+
+            var key = SchemaTableKey(entity.Schema.Value, entity.PhysicalName.Value);
+            if (_bySchemaAndTable.TryGetValue(key, out var context))
+            {
+                return context;
+            }
+
+            throw new InvalidOperationException($"Emission context not found for entity '{entity.Module.Value}.{entity.LogicalName.Value}'.");
+        }
+
+        public bool TryResolveReference(AttributeReference reference, EntityEmissionContext source, out EntityEmissionContext context)
+        {
+            if (reference is null)
+            {
+                context = default!;
+                return false;
+            }
+
+            if (reference.TargetPhysicalName is not null &&
+                TryGetByPhysical(reference.TargetPhysicalName.Value.Value, source.Entity.Schema.Value, out context))
+            {
+                return true;
+            }
+
+            if (reference.TargetEntity is not null &&
+                TryGetByLogical(reference.TargetEntity.Value.Value, source.ModuleName, source.Entity.Schema.Value, out context))
+            {
+                return true;
+            }
+
+            context = default!;
+            return false;
+        }
+
+        private bool TryGetByPhysical(string tableName, string preferredSchema, out EntityEmissionContext context)
+        {
+            if (_byPhysicalName.TryGetValue(tableName, out var contexts))
+            {
+                if (contexts.Length == 1)
+                {
+                    context = contexts[0];
+                    return true;
+                }
+
+                var schemaMatch = contexts.FirstOrDefault(c =>
+                    string.Equals(c.Entity.Schema.Value, preferredSchema, StringComparison.OrdinalIgnoreCase));
+                if (schemaMatch is not null)
+                {
+                    context = schemaMatch;
+                    return true;
+                }
+
+                context = contexts[0];
+                return true;
+            }
+
+            var schemaKey = SchemaTableKey(preferredSchema, tableName);
+            if (_bySchemaAndTable.TryGetValue(schemaKey, out context))
+            {
+                return true;
+            }
+
+            context = default!;
+            return false;
+        }
+
+        private bool TryGetByLogical(string logicalName, string moduleName, string preferredSchema, out EntityEmissionContext context)
+        {
+            if (_byLogicalName.TryGetValue(logicalName, out var contexts))
+            {
+                if (contexts.Length == 1)
+                {
+                    context = contexts[0];
+                    return true;
+                }
+
+                var moduleMatch = contexts.FirstOrDefault(c =>
+                    string.Equals(c.ModuleName, moduleName, StringComparison.OrdinalIgnoreCase));
+                if (moduleMatch is not null)
+                {
+                    context = moduleMatch;
+                    return true;
+                }
+
+                var schemaMatch = contexts.FirstOrDefault(c =>
+                    string.Equals(c.Entity.Schema.Value, preferredSchema, StringComparison.OrdinalIgnoreCase));
+                if (schemaMatch is not null)
+                {
+                    context = schemaMatch;
+                    return true;
+                }
+
+                context = contexts[0];
+                return true;
+            }
+
+            context = default!;
+            return false;
+        }
     }
 }

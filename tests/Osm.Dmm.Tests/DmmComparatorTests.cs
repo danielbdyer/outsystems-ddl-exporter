@@ -164,9 +164,9 @@ public class DmmComparatorTests
     [Fact]
     public void Compare_honors_entity_name_overrides()
     {
-        var overrideResult = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_EXTERNAL");
+        var overrideResult = NamingOverrideRule.Create(null, null, null, "Customer", "CUSTOMER_EXTERNAL");
         Assert.True(overrideResult.IsSuccess);
-        var namingOverrides = NamingOverrideOptions.Create(null, new[] { overrideResult.Value });
+        var namingOverrides = NamingOverrideOptions.Create(new[] { overrideResult.Value });
         Assert.True(namingOverrides.IsSuccess);
 
         var renamedScript = EdgeCaseScript.Replace("OSUSR_ABC_CUSTOMER", "CUSTOMER_EXTERNAL");
@@ -199,9 +199,9 @@ public class DmmComparatorTests
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
         var smoModel = new SmoModelFactory().Create(mutatedModel, decisions, smoOptions);
 
-        var overrideResult = EntityNamingOverride.Create("App Core", "Customer", "CUSTOMER_EXTERNAL");
+        var overrideResult = NamingOverrideRule.Create(null, null, "App Core", "Customer", "CUSTOMER_EXTERNAL");
         Assert.True(overrideResult.IsSuccess);
-        var namingOverrides = NamingOverrideOptions.Create(null, new[] { overrideResult.Value });
+        var namingOverrides = NamingOverrideOptions.Create(new[] { overrideResult.Value });
         Assert.True(namingOverrides.IsSuccess);
 
         var renamedScript = EdgeCaseScript.Replace("OSUSR_ABC_CUSTOMER", "CUSTOMER_EXTERNAL");

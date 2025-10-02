@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -129,34 +130,49 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
         }
 
         NamingOverrideOptions namingOverrides = NamingOverrideOptions.Empty;
-        IReadOnlyCollection<TableNamingOverride>? tableOverrideValues = null;
-        IReadOnlyCollection<EntityNamingOverride>? entityOverrideValues = null;
+        List<NamingOverrideRule>? namingOverrideRules = null;
 
-        if (document.Emission.NamingOverrides?.Tables is { Length: > 0 } tableDocuments)
+        if (document.Emission.NamingOverrides is { } namingDocument)
         {
-            var overrides = Result.Collect(tableDocuments.Select(o => TableNamingOverride.Create(o.Schema, o.Table, o.Override)));
-            if (overrides.IsFailure)
+            namingOverrideRules = new List<NamingOverrideRule>();
+
+            if (namingDocument.Rules is { Length: > 0 } ruleDocuments)
             {
-                return Result<TighteningOptions>.Failure(overrides.Errors);
+                var overrides = Result.Collect(ruleDocuments.Select(o => NamingOverrideRule.Create(o.Schema, o.Table, o.Module, o.Entity, o.Override)));
+                if (overrides.IsFailure)
+                {
+                    return Result<TighteningOptions>.Failure(overrides.Errors);
+                }
+
+                namingOverrideRules.AddRange(overrides.Value);
             }
 
-            tableOverrideValues = overrides.Value.ToArray();
-        }
-
-        if (document.Emission.NamingOverrides?.Entities is { Length: > 0 } entityDocuments)
-        {
-            var overrides = Result.Collect(entityDocuments.Select(o => EntityNamingOverride.Create(o.Module, o.Entity, o.Override)));
-            if (overrides.IsFailure)
+            if (namingDocument.Tables is { Length: > 0 } tableDocuments)
             {
-                return Result<TighteningOptions>.Failure(overrides.Errors);
+                var overrides = Result.Collect(tableDocuments.Select(o => NamingOverrideRule.Create(o.Schema, o.Table, null, null, o.Override)));
+                if (overrides.IsFailure)
+                {
+                    return Result<TighteningOptions>.Failure(overrides.Errors);
+                }
+
+                namingOverrideRules.AddRange(overrides.Value);
             }
 
-            entityOverrideValues = overrides.Value.ToArray();
+            if (namingDocument.Entities is { Length: > 0 } entityDocuments)
+            {
+                var overrides = Result.Collect(entityDocuments.Select(o => NamingOverrideRule.Create(null, null, o.Module, o.Entity, o.Override)));
+                if (overrides.IsFailure)
+                {
+                    return Result<TighteningOptions>.Failure(overrides.Errors);
+                }
+
+                namingOverrideRules.AddRange(overrides.Value);
+            }
         }
 
-        if (tableOverrideValues is not null || entityOverrideValues is not null)
+        if (namingOverrideRules is { Count: > 0 })
         {
-            var namingOverrideResult = NamingOverrideOptions.Create(tableOverrideValues, entityOverrideValues);
+            var namingOverrideResult = NamingOverrideOptions.Create(namingOverrideRules);
             if (namingOverrideResult.IsFailure)
             {
                 return Result<TighteningOptions>.Failure(namingOverrideResult.Errors);
@@ -295,11 +311,32 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
 
     private sealed record NamingOverridesDocument
     {
+        [JsonPropertyName("rules")]
+        public NamingOverrideRuleDocument[]? Rules { get; init; }
+
         [JsonPropertyName("tables")]
         public TableOverrideDocument[]? Tables { get; init; }
 
         [JsonPropertyName("entities")]
         public EntityOverrideDocument[]? Entities { get; init; }
+    }
+
+    private sealed record NamingOverrideRuleDocument
+    {
+        [JsonPropertyName("schema")]
+        public string? Schema { get; init; }
+
+        [JsonPropertyName("table")]
+        public string? Table { get; init; }
+
+        [JsonPropertyName("module")]
+        public string? Module { get; init; }
+
+        [JsonPropertyName("entity")]
+        public string? Entity { get; init; }
+
+        [JsonPropertyName("override")]
+        public string? Override { get; init; }
     }
 
     private sealed record TableOverrideDocument

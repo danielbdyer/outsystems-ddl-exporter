@@ -30,60 +30,56 @@ public sealed record NamingOverrideOptions
 
     public IReadOnlyDictionary<string, TableName> TableOverrides => _tableOverrides;
 
-    public static Result<NamingOverrideOptions> Create(
-        IEnumerable<TableNamingOverride>? tableOverrides,
-        IEnumerable<EntityNamingOverride>? entityOverrides = null)
+    public static Result<NamingOverrideOptions> Create(IEnumerable<NamingOverrideRule>? overrides)
     {
-        var tableDictionary = new Dictionary<string, TableName>(Comparer);
-        if (tableOverrides is not null)
+        if (overrides is null)
         {
-            foreach (var tableOverride in tableOverrides)
-            {
-                if (tableOverride is null)
-                {
-                    return ValidationError.Create("namingOverride.null", "Table override cannot be null.");
-                }
+            return Empty;
+        }
 
-                var key = TableKey(tableOverride.Schema.Value, tableOverride.Source.Value);
-                if (tableDictionary.TryGetValue(key, out var existing) &&
-                    !Comparer.Equals(existing.Value, tableOverride.Target.Value))
+        var tableDictionary = new Dictionary<string, TableName>(Comparer);
+        var entityDictionary = new Dictionary<string, TableName>(Comparer);
+
+        foreach (var rule in overrides)
+        {
+            if (rule is null)
+            {
+                return ValidationError.Create("namingOverride.rule.null", "Naming override rule cannot be null.");
+            }
+
+            if (rule.PhysicalName is not null)
+            {
+                var tableKey = TableKey(rule.Schema!.Value.Value, rule.PhysicalName.Value.Value);
+                if (tableDictionary.TryGetValue(tableKey, out var existing) &&
+                    !Comparer.Equals(existing.Value, rule.Target.Value))
                 {
                     return ValidationError.Create(
                         "namingOverride.duplicate",
-                        $"Multiple overrides provided for {tableOverride.Schema.Value}.{tableOverride.Source.Value}.");
+                        $"Multiple overrides provided for {tableKey}.");
                 }
 
-                tableDictionary[key] = tableOverride.Target;
+                tableDictionary[tableKey] = rule.Target;
             }
-        }
 
-        var entityDictionary = new Dictionary<string, TableName>(Comparer);
-        if (entityOverrides is not null)
-        {
-            foreach (var entityOverride in entityOverrides)
+            if (rule.LogicalName is not null)
             {
-                if (entityOverride is null)
-                {
-                    return ValidationError.Create("namingOverride.entity.null", "Entity override cannot be null.");
-                }
-
-                var key = EntityKey(entityOverride.Module?.Value, entityOverride.LogicalName.Value);
-                if (entityDictionary.TryGetValue(key, out var existing) &&
-                    !Comparer.Equals(existing.Value, entityOverride.Target.Value))
+                var entityKey = EntityKey(rule.Module?.Value, rule.LogicalName.Value.Value);
+                if (entityDictionary.TryGetValue(entityKey, out var existing) &&
+                    !Comparer.Equals(existing.Value, rule.Target.Value))
                 {
                     return ValidationError.Create(
                         "namingOverride.entity.duplicate",
-                        $"Multiple overrides provided for logical entity {entityOverride.LogicalName.Value}.");
+                        $"Multiple overrides provided for logical entity {rule.LogicalName.Value}.");
                 }
 
-                entityDictionary[key] = entityOverride.Target;
+                entityDictionary[entityKey] = rule.Target;
             }
         }
 
         return new NamingOverrideOptions(tableDictionary, entityDictionary);
     }
 
-    public NamingOverrideOptions MergeWith(IEnumerable<TableNamingOverride> overrides)
+    public NamingOverrideOptions MergeWith(IEnumerable<NamingOverrideRule> overrides)
     {
         if (overrides is null)
         {
@@ -95,19 +91,30 @@ public sealed record NamingOverrideOptions
             return this;
         }
 
-        var merged = new Dictionary<string, TableName>(_tableOverrides, Comparer);
-        foreach (var tableOverride in overrides)
+        var mergedTables = new Dictionary<string, TableName>(_tableOverrides, Comparer);
+        var mergedEntities = new Dictionary<string, TableName>(_entityOverrides, Comparer);
+
+        foreach (var rule in overrides)
         {
-            if (tableOverride is null)
+            if (rule is null)
             {
                 continue;
             }
 
-            var key = TableKey(tableOverride.Schema.Value, tableOverride.Source.Value);
-            merged[key] = tableOverride.Target;
+            if (rule.PhysicalName is not null)
+            {
+                var tableKey = TableKey(rule.Schema!.Value.Value, rule.PhysicalName.Value.Value);
+                mergedTables[tableKey] = rule.Target;
+            }
+
+            if (rule.LogicalName is not null)
+            {
+                var entityKey = EntityKey(rule.Module?.Value, rule.LogicalName.Value.Value);
+                mergedEntities[entityKey] = rule.Target;
+            }
         }
 
-        return new NamingOverrideOptions(merged, _entityOverrides);
+        return new NamingOverrideOptions(mergedTables, mergedEntities);
     }
 
     public bool TryGetTableOverride(string schema, string table, out string overrideName)
@@ -190,48 +197,60 @@ public sealed record NamingOverrideOptions
     }
 }
 
-public sealed record TableNamingOverride(SchemaName Schema, TableName Source, TableName Target)
+public sealed record NamingOverrideRule(
+    SchemaName? Schema,
+    TableName? PhysicalName,
+    ModuleName? Module,
+    EntityName? LogicalName,
+    TableName Target)
 {
-    public static Result<TableNamingOverride> Create(string? schema, string? source, string? target)
+    public static Result<NamingOverrideRule> Create(
+        string? schema,
+        string? table,
+        string? module,
+        string? logicalName,
+        string? target)
     {
         var errors = ImmutableArray.CreateBuilder<ValidationError>();
 
-        var schemaValue = string.IsNullOrWhiteSpace(schema) ? "dbo" : schema!.Trim();
-
-        var schemaResult = SchemaName.Create(schemaValue);
-        if (schemaResult.IsFailure)
-        {
-            errors.AddRange(schemaResult.Errors);
-        }
-
-        var sourceResult = TableName.Create(source);
-        if (sourceResult.IsFailure)
-        {
-            errors.AddRange(sourceResult.Errors);
-        }
-
-        var targetResult = TableName.Create(target);
-        if (targetResult.IsFailure)
-        {
-            errors.AddRange(targetResult.Errors);
-        }
-
-        if (errors.Count > 0)
-        {
-            return Result<TableNamingOverride>.Failure(errors.ToImmutable());
-        }
-
-        return new TableNamingOverride(schemaResult.Value, sourceResult.Value, targetResult.Value);
-    }
-}
-
-public sealed record EntityNamingOverride(ModuleName? Module, EntityName LogicalName, TableName Target)
-{
-    public static Result<EntityNamingOverride> Create(string? module, string? logicalName, string? target)
-    {
-        var errors = ImmutableArray.CreateBuilder<ValidationError>();
-
+        SchemaName? schemaName = null;
+        TableName? physicalName = null;
         ModuleName? moduleName = null;
+        EntityName? entityName = null;
+
+        if (!string.IsNullOrWhiteSpace(table) || !string.IsNullOrWhiteSpace(schema))
+        {
+            if (string.IsNullOrWhiteSpace(table))
+            {
+                errors.Add(ValidationError.Create(
+                    "namingOverride.rule.table.missing",
+                    "Physical overrides must include a table name."));
+            }
+            else
+            {
+                var tableResult = TableName.Create(table);
+                if (tableResult.IsFailure)
+                {
+                    errors.AddRange(tableResult.Errors);
+                }
+                else
+                {
+                    physicalName = tableResult.Value;
+                }
+            }
+
+            var schemaValue = string.IsNullOrWhiteSpace(schema) ? "dbo" : schema!.Trim();
+            var schemaResult = SchemaName.Create(schemaValue);
+            if (schemaResult.IsFailure)
+            {
+                errors.AddRange(schemaResult.Errors);
+            }
+            else
+            {
+                schemaName = schemaResult.Value;
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(module))
         {
             var moduleResult = ModuleName.Create(module!.Trim());
@@ -245,10 +264,31 @@ public sealed record EntityNamingOverride(ModuleName? Module, EntityName Logical
             }
         }
 
-        var logicalResult = EntityName.Create(logicalName);
-        if (logicalResult.IsFailure)
+        if (!string.IsNullOrWhiteSpace(logicalName))
         {
-            errors.AddRange(logicalResult.Errors);
+            var logicalResult = EntityName.Create(logicalName);
+            if (logicalResult.IsFailure)
+            {
+                errors.AddRange(logicalResult.Errors);
+            }
+            else
+            {
+                entityName = logicalResult.Value;
+            }
+        }
+
+        if (moduleName is not null && entityName is null)
+        {
+            errors.Add(ValidationError.Create(
+                "namingOverride.rule.entity.missing",
+                "Module-scoped overrides must include an entity name."));
+        }
+
+        if (physicalName is null && entityName is null)
+        {
+            errors.Add(ValidationError.Create(
+                "namingOverride.rule.scope.missing",
+                "Naming overrides must target a physical table, a logical entity, or both."));
         }
 
         var targetResult = TableName.Create(target);
@@ -259,9 +299,15 @@ public sealed record EntityNamingOverride(ModuleName? Module, EntityName Logical
 
         if (errors.Count > 0)
         {
-            return Result<EntityNamingOverride>.Failure(errors.ToImmutable());
+            return Result<NamingOverrideRule>.Failure(errors.ToImmutable());
         }
 
-        return new EntityNamingOverride(moduleName, logicalResult.Value, targetResult.Value);
+        if (physicalName is not null && schemaName is null)
+        {
+            // Ensure schema defaulting is applied when only a table name was supplied.
+            schemaName = SchemaName.Create("dbo").Value;
+        }
+
+        return new NamingOverrideRule(schemaName, physicalName, moduleName, entityName, targetResult.Value);
     }
 }

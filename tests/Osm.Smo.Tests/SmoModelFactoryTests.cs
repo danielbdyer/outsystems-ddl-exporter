@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
@@ -146,5 +149,150 @@ public class SmoModelFactoryTests
         var userTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
         var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
         Assert.True(uniqueIndex.IsUnique);
+    }
+
+    [Fact]
+    public void Build_handles_duplicate_logical_entity_names_across_modules()
+    {
+        var inventoryCategory = CreateCategoryEntity("Inventory", "OSUSR_INV_CATEGORY");
+        var supportCategory = inventoryCategory with
+        {
+            Module = ModuleName.Create("Support").Value,
+            PhysicalName = TableName.Create("OSUSR_SUP_CATEGORY").Value
+        };
+
+        var productEntity = CreateProductEntity(inventoryCategory);
+
+        var inventoryModule = ModuleModel.Create(
+            ModuleName.Create("Inventory").Value,
+            isSystemModule: false,
+            isActive: true,
+            new[] { inventoryCategory }).Value;
+        var supportModule = ModuleModel.Create(
+            ModuleName.Create("Support").Value,
+            isSystemModule: false,
+            isActive: true,
+            new[] { supportCategory }).Value;
+        var catalogModule = ModuleModel.Create(
+            ModuleName.Create("Catalog").Value,
+            isSystemModule: false,
+            isActive: true,
+            new[] { productEntity }).Value;
+
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { inventoryModule, supportModule, catalogModule }).Value;
+
+        var fkCoordinate = new ColumnCoordinate(
+            productEntity.Schema,
+            productEntity.PhysicalName,
+            ColumnName.Create("CATEGORYID").Value);
+        var foreignKeyDecision = ForeignKeyDecision.Create(fkCoordinate, createConstraint: true, ImmutableArray<string>.Empty);
+
+        var decisions = PolicyDecisionSet.Create(
+            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(fkCoordinate, foreignKeyDecision),
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty);
+
+        var factory = new SmoModelFactory();
+        var smoOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+
+        var smoModel = factory.Create(model, decisions, smoOptions);
+
+        var categoryTables = smoModel.Tables
+            .Where(t => t.LogicalName.Equals("Category", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        Assert.Equal(2, categoryTables.Length);
+
+        var productTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_CAT_PRODUCT", StringComparison.OrdinalIgnoreCase));
+        Assert.Single(productTable.ForeignKeys);
+        var foreignKey = productTable.ForeignKeys[0];
+        Assert.Equal("OSUSR_INV_CATEGORY", foreignKey.ReferencedTable);
+        Assert.Equal("Category", foreignKey.ReferencedLogicalTable);
+    }
+
+    private static EntityModel CreateCategoryEntity(string moduleName, string physicalName)
+    {
+        var module = ModuleName.Create(moduleName).Value;
+        var logical = EntityName.Create("Category").Value;
+        var schema = SchemaName.Create("dbo").Value;
+        var table = TableName.Create(physicalName).Value;
+
+        var id = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true,
+            reference: AttributeReference.None).Value;
+
+        var name = AttributeModel.Create(
+            AttributeName.Create("Name").Value,
+            ColumnName.Create("NAME").Value,
+            dataType: "Text",
+            isMandatory: true,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            reference: AttributeReference.None,
+            length: 50).Value;
+
+        return EntityModel.Create(
+            module,
+            logical,
+            table,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { id, name }).Value;
+    }
+
+    private static EntityModel CreateProductEntity(EntityModel category)
+    {
+        var module = ModuleName.Create("Catalog").Value;
+        var logical = EntityName.Create("Product").Value;
+        var schema = SchemaName.Create("dbo").Value;
+        var table = TableName.Create("OSUSR_CAT_PRODUCT").Value;
+
+        var id = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true,
+            reference: AttributeReference.None).Value;
+
+        var reference = AttributeReference.Create(
+            isReference: true,
+            targetEntityId: 1,
+            targetEntity: category.LogicalName,
+            targetPhysicalName: category.PhysicalName,
+            deleteRuleCode: "Protect",
+            hasDatabaseConstraint: true).Value;
+
+        var categoryId = AttributeModel.Create(
+            AttributeName.Create("CategoryId").Value,
+            ColumnName.Create("CATEGORYID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            reference: reference).Value;
+
+        return EntityModel.Create(
+            module,
+            logical,
+            table,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { id, categoryId }).Value;
     }
 }

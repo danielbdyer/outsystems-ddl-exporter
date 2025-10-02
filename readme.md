@@ -529,14 +529,41 @@ The repository ships with `config/default-tightening.json`, which the configurat
   "sanitizeModuleNames": true,
   "emitConcatenatedConstraints": false,
   "namingOverrides": {
-    "tables": [
-      { "schema": "dbo", "table": "OSUSR_ABC_CUSTOMER", "override": "CUSTOMER_PORTAL" }
+    "rules": [
+      {
+        "schema": "dbo",
+        "table": "OSUSR_RTJ_CATEGORY",
+        "module": "Inventory",
+        "entity": "Category",
+        "override": "CATEGORY_STATIC"
+      },
+      {
+        "module": "SupportPortal",
+        "entity": "Case",
+        "override": "CASE_BACKOFFICE"
+      }
     ]
   }
 }
 ```
 
-The `namingOverrides.tables` collection remaps the emitted table name (and derived PK/FK/manifest identifiers) without mutating the original OutSystems metadata. CLI callers can layer ad-hoc renames with `--rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL`, separating multiple overrides with `;` or `,`.
+### Naming override rules
+
+`namingOverrides.rules` is a single, unified collection that understands both the *physical* table (`schema` + `table`) and the *logical* entity (`module` + `entity`). Every rule must supply an `override`, and you can include whichever coordinates you know:
+
+* **Physical only** – provide `schema` + `table` (module/entity omitted). The emitted table script plus every constraint (PK, FK, IX) and manifest entry uses the replacement while the logical name remains untouched.
+* **Logical only** – provide `entity` and, optionally, `module`. This resolves duplicate logical names across modules; all derived identifiers (including FK targets) adopt the override even if multiple physical tables share the logical name.
+* **Hybrid** – provide both physical and logical coordinates (as in the example). This is the safest approach when you are stitching models from multiple modules: the factory first rewrites the raw SMO table keyed by schema/table and then re-checks the logical entity so every downstream lookup (`GetEffectiveTableName`) returns the same override for tables, foreign keys, and manifest payloads.
+
+The CLI mirrors this behavior with `--rename-table`. You can keep the legacy syntax (`dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL`) for quick physical renames or supply a combined descriptor:
+
+```
+--rename-table dbo.OSUSR_RTJ_CATEGORY|Inventory::Category=Category_StaticEntity
+```
+
+Segments separated by `|` describe the physical (`schema.table`) and logical (`Module::Entity`) facets that feed the same rule. The parser trims whitespace, defaults the schema to `dbo` when omitted, and allows multiple overrides separated by `,` or `;`. Under the covers the CLI merges these rules with any configuration-derived rules before invoking the SMO factory, so ad-hoc fixes and declarative configuration stay in sync.
+
+Older configuration files that still expose `tables`/`entities` arrays continue to deserialize, but the unified `rules` section should be preferred going forward because it guarantees the override flows through SSDT emission, FK lookups, DMM comparison, and manifest generation identically.
 
 **CLI configuration file**
 
@@ -612,7 +639,7 @@ When resolving inputs, the CLI honours the following order: CLI flag ➝ environ
 * **Cross-catalog FKs**: metamodel can show logical refs that DB can’t enforce; policy won’t create FK when catalogs/schemas differ (or when orphans exist).
 * **Inactive attributes**: columns flagged `isActive = false` or `physical.isPresentButInactive = 1` are omitted from emission by default while remaining in the decision log for audit trails.
 * **Constraint casing**: emitted PK/IX/FK identifiers are regenerated using PascalCase table/column names; table rename overrides propagate across every constraint artifact.
-* **Name collisions**: sanitized module names keep paths safe; use `emission.namingOverrides.tables` or `--rename-table` when downstream tooling requires human-friendly table/constraint names.
+* **Name collisions**: sanitized module names keep paths safe; use `emission.namingOverrides.rules` or `--rename-table` when downstream tooling requires human-friendly table/constraint names.
 * **ScriptDom parsing errors**: DMM DDL must be valid T-SQL; errors list file & line.
 
 ---
