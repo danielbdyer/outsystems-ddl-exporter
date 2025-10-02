@@ -57,7 +57,7 @@ public class EmissionPipelineTests
         var model = await LoadModelAsync(modelPath);
         var profile = await LoadProfileAsync(profilePath);
 
-        var overrideResult = TableNamingOverride.Create("dbo", "OSUSR_ABC_CUSTOMER", "CUSTOMER_PORTAL");
+        var overrideResult = NamingOverrideRule.Create("dbo", "OSUSR_ABC_CUSTOMER", null, null, "CUSTOMER_PORTAL");
         Assert.True(overrideResult.IsSuccess, string.Join(Environment.NewLine, overrideResult.Errors.Select(e => e.Message)));
 
         var overrideOptions = NamingOverrideOptions.Create(new[] { overrideResult.Value });

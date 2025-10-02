@@ -48,21 +48,21 @@ public class TighteningOptionsTests
     }
 
     [Fact]
-    public void TableNamingOverride_Should_Default_Schema_When_Omitted()
+    public void NamingOverrideRule_Should_Default_Schema_When_Only_Table()
     {
-        var result = TableNamingOverride.Create(null, "OSUSR_ABC_CUSTOMER", "CUSTOMER_PORTAL");
+        var result = NamingOverrideRule.Create(null, "OSUSR_ABC_CUSTOMER", null, null, "CUSTOMER_PORTAL");
 
         Assert.True(result.IsSuccess);
-        Assert.Equal("dbo", result.Value.Schema.Value);
-        Assert.Equal("OSUSR_ABC_CUSTOMER", result.Value.Source.Value);
+        Assert.Equal("dbo", result.Value.Schema?.Value);
+        Assert.Equal("OSUSR_ABC_CUSTOMER", result.Value.PhysicalName?.Value);
         Assert.Equal("CUSTOMER_PORTAL", result.Value.Target.Value);
     }
 
     [Fact]
-    public void NamingOverrideOptions_Should_Fail_On_Conflicting_Duplicate()
+    public void NamingOverrideOptions_Should_Fail_On_Conflicting_Physical_Override()
     {
-        var first = TableNamingOverride.Create("dbo", "OSUSR_ABC_CUSTOMER", "CUSTOMER_PORTAL").Value;
-        var second = TableNamingOverride.Create("dbo", "OSUSR_ABC_CUSTOMER", "CUSTOMER_BACKOFFICE").Value;
+        var first = NamingOverrideRule.Create("dbo", "OSUSR_ABC_CUSTOMER", null, null, "CUSTOMER_PORTAL").Value;
+        var second = NamingOverrideRule.Create("dbo", "OSUSR_ABC_CUSTOMER", null, null, "CUSTOMER_BACKOFFICE").Value;
 
         var result = NamingOverrideOptions.Create(new[] { first, second });
 
@@ -71,23 +71,23 @@ public class TighteningOptionsTests
     }
 
     [Fact]
-    public void EntityNamingOverride_Should_Create_With_Optional_Module()
+    public void NamingOverrideRule_Should_Create_Module_Scoped_Logical_Override()
     {
-        var result = EntityNamingOverride.Create("Sales", "Customer", "CUSTOMER_EXTERNAL");
+        var result = NamingOverrideRule.Create(null, null, "Sales", "Customer", "CUSTOMER_EXTERNAL");
 
         Assert.True(result.IsSuccess);
         Assert.Equal("Sales", result.Value.Module?.Value);
-        Assert.Equal("Customer", result.Value.LogicalName.Value);
+        Assert.Equal("Customer", result.Value.LogicalName?.Value);
         Assert.Equal("CUSTOMER_EXTERNAL", result.Value.Target.Value);
     }
 
     [Fact]
     public void NamingOverrideOptions_Should_Apply_Entity_Override_By_Logical_Name()
     {
-        var overrideResult = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_EXTERNAL");
+        var overrideResult = NamingOverrideRule.Create(null, null, null, "Customer", "CUSTOMER_EXTERNAL");
         Assert.True(overrideResult.IsSuccess);
 
-        var optionsResult = NamingOverrideOptions.Create(null, new[] { overrideResult.Value });
+        var optionsResult = NamingOverrideOptions.Create(new[] { overrideResult.Value });
         Assert.True(optionsResult.IsSuccess);
 
         var effective = optionsResult.Value.GetEffectiveTableName("dbo", "OSUSR_ABC_CUSTOMER", "Customer");
@@ -97,12 +97,12 @@ public class TighteningOptionsTests
     [Fact]
     public void NamingOverrideOptions_Should_Prefer_Module_Specific_Entity_Override()
     {
-        var globalOverride = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_GLOBAL");
-        var moduleOverride = EntityNamingOverride.Create("Sales", "Customer", "CUSTOMER_SALES");
+        var globalOverride = NamingOverrideRule.Create(null, null, null, "Customer", "CUSTOMER_GLOBAL");
+        var moduleOverride = NamingOverrideRule.Create(null, null, "Sales", "Customer", "CUSTOMER_SALES");
         Assert.True(globalOverride.IsSuccess);
         Assert.True(moduleOverride.IsSuccess);
 
-        var optionsResult = NamingOverrideOptions.Create(null, new[] { globalOverride.Value, moduleOverride.Value });
+        var optionsResult = NamingOverrideOptions.Create(new[] { globalOverride.Value, moduleOverride.Value });
         Assert.True(optionsResult.IsSuccess);
 
         var moduleEffective = optionsResult.Value.GetEffectiveTableName("dbo", "OSUSR_SAL_CUSTOMER", "Customer", "Sales");
@@ -115,14 +115,30 @@ public class TighteningOptionsTests
     [Fact]
     public void NamingOverrideOptions_Should_Fail_On_Conflicting_Entity_Overrides()
     {
-        var first = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_EXTERNAL");
-        var second = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_ALT");
+        var first = NamingOverrideRule.Create(null, null, null, "Customer", "CUSTOMER_EXTERNAL");
+        var second = NamingOverrideRule.Create(null, null, null, "Customer", "CUSTOMER_ALT");
         Assert.True(first.IsSuccess);
         Assert.True(second.IsSuccess);
 
-        var result = NamingOverrideOptions.Create(null, new[] { first.Value, second.Value });
+        var result = NamingOverrideOptions.Create(new[] { first.Value, second.Value });
 
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, e => e.Code == "namingOverride.entity.duplicate");
+    }
+
+    [Fact]
+    public void NamingOverrideOptions_Should_Apply_Physical_And_Logical_From_Single_Rule()
+    {
+        var rule = NamingOverrideRule.Create("dbo", "OSUSR_RTJ_CATEGORY", "Inventory", "Category", "CATEGORY_STATIC");
+        Assert.True(rule.IsSuccess);
+
+        var optionsResult = NamingOverrideOptions.Create(new[] { rule.Value });
+        Assert.True(optionsResult.IsSuccess);
+
+        var effective = optionsResult.Value.GetEffectiveTableName("dbo", "OSUSR_RTJ_CATEGORY", "Category", "Inventory");
+        Assert.Equal("CATEGORY_STATIC", effective);
+
+        var fallback = optionsResult.Value.GetEffectiveTableName("dbo", "OSUSR_RTJ_CATEGORY", null);
+        Assert.Equal("CATEGORY_STATIC", fallback);
     }
 }
