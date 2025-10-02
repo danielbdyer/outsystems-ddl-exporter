@@ -59,7 +59,11 @@ public sealed class SsdtEmitter
             var indexesRoot = modulePaths.IndexesRoot;
             var foreignKeysRoot = modulePaths.ForeignKeysRoot;
 
-            var effectiveTableName = options.NamingOverrides.GetEffectiveTableName(table.Schema, table.Name, table.LogicalName);
+            var effectiveTableName = options.NamingOverrides.GetEffectiveTableName(
+                table.Schema,
+                table.Name,
+                table.LogicalName,
+                table.OriginalModule);
             var tableStatement = BuildCreateTableStatement(table, effectiveTableName);
             var tableScript = Script(tableStatement);
             var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.sql");
@@ -104,7 +108,8 @@ public sealed class SsdtEmitter
                 var referencedTableName = options.NamingOverrides.GetEffectiveTableName(
                     foreignKey.ReferencedSchema,
                     foreignKey.ReferencedTable,
-                    foreignKey.ReferencedLogicalTable);
+                    foreignKey.ReferencedLogicalTable,
+                    foreignKey.ReferencedModule);
                 var foreignKeyName = ResolveConstraintName(foreignKey.Name, table.Name, table.LogicalName, effectiveTableName);
                 var fkStatement = BuildForeignKeyStatement(
                     table,

@@ -75,6 +75,7 @@ public sealed class SmoModelFactory
 
         return new SmoTableDefinition(
             moduleName,
+            context.ModuleName,
             context.Entity.PhysicalName.Value,
             context.Entity.Schema.Value,
             catalog,
@@ -278,6 +279,7 @@ public sealed class SmoModelFactory
             builder.Add(new SmoForeignKeyDefinition(
                 name,
                 attribute.LogicalName.Value,
+                targetEntity.ModuleName,
                 targetEntity.Entity.PhysicalName.Value,
                 targetEntity.Entity.Schema.Value,
                 referencedColumn.LogicalName.Value,

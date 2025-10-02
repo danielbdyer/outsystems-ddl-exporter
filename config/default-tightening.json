@@ -27,7 +27,8 @@
     "sanitizeModuleNames": true,
     "emitConcatenatedConstraints": false,
     "namingOverrides": {
-      "tables": []
+      "tables": [],
+      "entities": []
     }
   },
   "mocking": {

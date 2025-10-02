@@ -409,7 +409,7 @@ static async Task<int> RunDmmCompareAsync(string[] args)
     }
 
     var comparator = new DmmComparator();
-    var comparison = comparator.Compare(smoModel, parseResult.Value);
+    var comparison = comparator.Compare(smoModel, parseResult.Value, tighteningOptions.Emission.NamingOverrides);
 
     string diffArtifactPath;
     try

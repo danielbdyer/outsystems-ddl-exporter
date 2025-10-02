@@ -20,6 +20,7 @@ public sealed record SmoModel(ImmutableArray<SmoTableDefinition> Tables)
 
 public sealed record SmoTableDefinition(
     string Module,
+    string OriginalModule,
     string Name,
     string Schema,
     string Catalog,
@@ -49,6 +50,7 @@ public sealed record SmoIndexColumnDefinition(string Name, int Ordinal);
 public sealed record SmoForeignKeyDefinition(
     string Name,
     string Column,
+    string ReferencedModule,
     string ReferencedTable,
     string ReferencedSchema,
     string ReferencedColumn,

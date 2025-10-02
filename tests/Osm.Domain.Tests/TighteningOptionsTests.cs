@@ -69,4 +69,60 @@ public class TighteningOptionsTests
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, e => e.Code == "namingOverride.duplicate");
     }
+
+    [Fact]
+    public void EntityNamingOverride_Should_Create_With_Optional_Module()
+    {
+        var result = EntityNamingOverride.Create("Sales", "Customer", "CUSTOMER_EXTERNAL");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Sales", result.Value.Module?.Value);
+        Assert.Equal("Customer", result.Value.LogicalName.Value);
+        Assert.Equal("CUSTOMER_EXTERNAL", result.Value.Target.Value);
+    }
+
+    [Fact]
+    public void NamingOverrideOptions_Should_Apply_Entity_Override_By_Logical_Name()
+    {
+        var overrideResult = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_EXTERNAL");
+        Assert.True(overrideResult.IsSuccess);
+
+        var optionsResult = NamingOverrideOptions.Create(null, new[] { overrideResult.Value });
+        Assert.True(optionsResult.IsSuccess);
+
+        var effective = optionsResult.Value.GetEffectiveTableName("dbo", "OSUSR_ABC_CUSTOMER", "Customer");
+        Assert.Equal("CUSTOMER_EXTERNAL", effective);
+    }
+
+    [Fact]
+    public void NamingOverrideOptions_Should_Prefer_Module_Specific_Entity_Override()
+    {
+        var globalOverride = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_GLOBAL");
+        var moduleOverride = EntityNamingOverride.Create("Sales", "Customer", "CUSTOMER_SALES");
+        Assert.True(globalOverride.IsSuccess);
+        Assert.True(moduleOverride.IsSuccess);
+
+        var optionsResult = NamingOverrideOptions.Create(null, new[] { globalOverride.Value, moduleOverride.Value });
+        Assert.True(optionsResult.IsSuccess);
+
+        var moduleEffective = optionsResult.Value.GetEffectiveTableName("dbo", "OSUSR_SAL_CUSTOMER", "Customer", "Sales");
+        Assert.Equal("CUSTOMER_SALES", moduleEffective);
+
+        var fallbackEffective = optionsResult.Value.GetEffectiveTableName("dbo", "OSUSR_FIN_CUSTOMER", "Customer", "Finance");
+        Assert.Equal("CUSTOMER_GLOBAL", fallbackEffective);
+    }
+
+    [Fact]
+    public void NamingOverrideOptions_Should_Fail_On_Conflicting_Entity_Overrides()
+    {
+        var first = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_EXTERNAL");
+        var second = EntityNamingOverride.Create(null, "Customer", "CUSTOMER_ALT");
+        Assert.True(first.IsSuccess);
+        Assert.True(second.IsSuccess);
+
+        var result = NamingOverrideOptions.Create(null, new[] { first.Value, second.Value });
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "namingOverride.entity.duplicate");
+    }
 }
