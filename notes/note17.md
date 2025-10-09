@@ -1,3 +1,36 @@
+Short answer: usually just the modules that **directly consume** the external entities. Upstream (transitive) modules only need a republish if a **public contract they consume changed** and Service Studio flags them with *Outdated References*.
+
+Here’s the decision rule you can apply:
+
+1. **You refreshed & published the Extension in Integration Studio**
+   → Next, in Service Studio, open each **Data/Core** module that **references that Extension** → *Manage Dependencies → Refresh* → fix any compile warnings/errors → **Publish**.
+
+2. **Do higher layers (Services/API/UI) need publish?**
+
+* **No**, if the Data/Core module’s **public interface did not change** (e.g., you only added a new column the upper layer doesn’t use).
+* **Yes**, **only if** Service Studio marks them as having **Outdated References** (because the Data/Core module’s **public entities/structures/actions changed** in a way that bubbles up).
+
+Rule-of-thumb matrix
+
+| Change in External Entity (Extension)                   | Must republish Extension? |                           Must republish direct consumer (Data/Core) modules? |                                           Must republish transitive consumers (Services/UI)? |
+| ------------------------------------------------------- | ------------------------: | ----------------------------------------------------------------------------: | -------------------------------------------------------------------------------------------: |
+| Add new entity/column (non-breaking)                    |                       Yes |                   Only those that start **using** it (need refresh to see it) |                                             No, unless they consume changed public contracts |
+| Change attribute datatype/length/nullability (breaking) |                       Yes |                                            **Yes** (refresh deps, fix usages) | **Only if** the Data/Core module’s **public signature** changed and they’re flagged Outdated |
+| Rename entity/attribute (breaking)                      |                       Yes |                                                          **Yes** (fix usages) |                                           Same as above (only if signatures changed/flagged) |
+| PK change / key semantics (breaking)                    |                       Yes |                                                                       **Yes** |                                        Possibly, if public contracts changed and are flagged |
+| Indexes only                                            |                       Yes | Usually **No** publish needed unless you expose anything that depends on them |                                                                                           No |
+| Add/modify Extension Action/Structure used by Data/Core |                       Yes |                                                               **Yes** if used |                                        Only if public interface of Data/Core changed/flagged |
+
+Practical workflow (safe & fast)
+
+* **Publish the Extension** (Integration Studio).
+* In **Service Center**, on the Extension page, use **Refresh Consumers** to bulk mark direct consumers, or in **Service Studio** use *Manage Dependencies → Refresh* in each Data/Core module. **Publish** those modules.
+* Open your **Applications** (Service Center) and scan for **Outdated References**; republish only what’s flagged.
+* If you keep a strict layering (Extension → Data/Core → Services → UI), you’ll usually stop after the **Data/Core** layer unless you intentionally changed public signatures.
+
+So, to your question: **it’s not “every level,” it’s the consuming layer** (the modules that **directly** depend on the Extension). Then **only** propagate upward where *Outdated References* appear because a **public contract changed**.
+
+
 Great question. The short version: updating **External Entities** (via Integration Studio) isn’t fundamentally “worse” than normal entity updates, but it **adds one extra producer step** (publish the Extension) and **amplifies the blast radius** if you expose those entities widely. With the right layering, you don’t have to republish “everything all the time.” ([OutSystems Success][1])
 
 # What’s different vs. “normal” entity updates?
