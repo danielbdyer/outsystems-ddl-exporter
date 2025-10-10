@@ -11,7 +11,7 @@ namespace Osm.Json;
 
 public interface IModelJsonDeserializer
 {
-    Result<OsmModel> Deserialize(Stream jsonStream);
+    Result<OsmModel> Deserialize(Stream jsonStream, ICollection<string>? warnings = null);
 }
 
 public sealed class ModelJsonDeserializer : IModelJsonDeserializer
@@ -24,7 +24,7 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public Result<OsmModel> Deserialize(Stream jsonStream)
+    public Result<OsmModel> Deserialize(Stream jsonStream, ICollection<string>? warnings = null)
     {
         if (jsonStream is null)
         {
@@ -55,24 +55,27 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
                 continue;
             }
 
-            var moduleResult = MapModule(module);
+            var moduleResult = MapModule(module, warnings);
             if (moduleResult.IsFailure)
             {
                 return Result<OsmModel>.Failure(moduleResult.Errors);
             }
 
-            moduleResults.Add(moduleResult.Value);
+            if (moduleResult.Value is { } mappedModule)
+            {
+                moduleResults.Add(mappedModule);
+            }
         }
 
         return OsmModel.Create(document.ExportedAtUtc, moduleResults);
     }
 
-    private static Result<ModuleModel> MapModule(ModuleDocument doc)
+    private static Result<ModuleModel?> MapModule(ModuleDocument doc, ICollection<string>? warnings)
     {
         var moduleNameResult = ModuleName.Create(doc.Name);
         if (moduleNameResult.IsFailure)
         {
-            return Result<ModuleModel>.Failure(moduleNameResult.Errors);
+            return Result<ModuleModel?>.Failure(moduleNameResult.Errors);
         }
 
         var entities = doc.Entities ?? Array.Empty<EntityDocument>();
@@ -87,13 +90,25 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
             var entityResult = MapEntity(moduleNameResult.Value, entity);
             if (entityResult.IsFailure)
             {
-                return Result<ModuleModel>.Failure(entityResult.Errors);
+                return Result<ModuleModel?>.Failure(entityResult.Errors);
             }
 
             entityResults.Add(entityResult.Value);
         }
 
-        return ModuleModel.Create(moduleNameResult.Value, doc.IsSystem, doc.IsActive, entityResults);
+        if (entityResults.Count == 0)
+        {
+            warnings?.Add($"Module '{moduleNameResult.Value.Value}' contains no entities and will be skipped.");
+            return Result<ModuleModel?>.Success(null);
+        }
+
+        var moduleResult = ModuleModel.Create(moduleNameResult.Value, doc.IsSystem, doc.IsActive, entityResults);
+        if (moduleResult.IsFailure)
+        {
+            return Result<ModuleModel?>.Failure(moduleResult.Errors);
+        }
+
+        return Result<ModuleModel?>.Success(moduleResult.Value);
     }
 
     private static bool ShouldSkipInactiveModule(ModuleDocument doc)

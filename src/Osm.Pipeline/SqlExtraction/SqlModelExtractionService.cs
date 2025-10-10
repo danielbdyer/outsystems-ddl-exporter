@@ -47,24 +47,26 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         }
 
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-        var modelResult = _deserializer.Deserialize(stream);
+        var warnings = new List<string>();
+        var modelResult = _deserializer.Deserialize(stream, warnings);
         if (modelResult.IsFailure)
         {
             return Result<ModelExtractionResult>.Failure(modelResult.Errors.ToArray());
         }
 
-        var result = new ModelExtractionResult(modelResult.Value, json, DateTimeOffset.UtcNow);
+        var result = new ModelExtractionResult(modelResult.Value, json, DateTimeOffset.UtcNow, warnings);
         return Result<ModelExtractionResult>.Success(result);
     }
 }
 
 public sealed class ModelExtractionResult
 {
-    public ModelExtractionResult(OsmModel model, string json, DateTimeOffset extractedAtUtc)
+    public ModelExtractionResult(OsmModel model, string json, DateTimeOffset extractedAtUtc, IReadOnlyList<string> warnings)
     {
         Model = model ?? throw new ArgumentNullException(nameof(model));
         Json = json ?? throw new ArgumentNullException(nameof(json));
         ExtractedAtUtc = extractedAtUtc;
+        Warnings = warnings ?? throw new ArgumentNullException(nameof(warnings));
     }
 
     public OsmModel Model { get; }
@@ -72,6 +74,8 @@ public sealed class ModelExtractionResult
     public string Json { get; }
 
     public DateTimeOffset ExtractedAtUtc { get; }
+
+    public IReadOnlyList<string> Warnings { get; }
 }
 
 public sealed class ModelExtractionCommand
