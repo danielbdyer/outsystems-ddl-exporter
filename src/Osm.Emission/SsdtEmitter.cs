@@ -695,54 +695,38 @@ public sealed class SsdtEmitter
             trailingComma = ExtractTrailingComma(ref references);
         }
 
-        const int ClauseReferences = 1;
-        const int ClauseOnDelete = 2;
-        const int ClauseOnUpdate = 3;
+        var formattedLines = new List<string>(lines.Length + 3)
+        {
+            lines[0],
+            indent + prefix
+        };
+        var trailingIndex = formattedLines.Count - 1;
 
-        var trailingClause = 0;
-        if (!string.IsNullOrEmpty(onUpdate))
+        if (!string.IsNullOrEmpty(predicate))
         {
-            trailingClause = ClauseOnUpdate;
-        }
-        else if (!string.IsNullOrEmpty(onDelete))
-        {
-            trailingClause = ClauseOnDelete;
-        }
-        else if (!string.IsNullOrEmpty(references))
-        {
-            trailingClause = ClauseReferences;
+            formattedLines.Add(predicateIndent + predicate);
+            trailingIndex = formattedLines.Count - 1;
         }
 
-        var formattedLines = new List<string>(lines.Length + 3);
-
-        void AppendClause(string? clause, string indentValue, int clauseKind)
+        void AppendClause(string? clause)
         {
             if (string.IsNullOrEmpty(clause))
             {
                 return;
             }
 
-            var line = indentValue + clause;
-            if (clauseKind == trailingClause && trailingComma.Length > 0)
-            {
-                line += trailingComma;
-                trailingComma = string.Empty;
-            }
-
-            formattedLines.Add(line);
+            formattedLines.Add(referentIndent + clause);
+            trailingIndex = formattedLines.Count - 1;
         }
 
-        formattedLines.Add(lines[0]);
-        formattedLines.Add(indent + prefix);
+        AppendClause(references);
+        AppendClause(onDelete);
+        AppendClause(onUpdate);
 
-        if (!string.IsNullOrEmpty(predicate))
+        if (trailingComma.Length > 0)
         {
-            formattedLines.Add(predicateIndent + predicate);
+            formattedLines[trailingIndex] += trailingComma;
         }
-
-        AppendClause(references, referentIndent, ClauseReferences);
-        AppendClause(onDelete, referentIndent, ClauseOnDelete);
-        AppendClause(onUpdate, referentIndent, ClauseOnUpdate);
 
         for (var i = 2; i < lines.Length; i++)
         {
