@@ -11,7 +11,11 @@ namespace Osm.Smo;
 
 public sealed class SmoModelFactory
 {
-    public SmoModel Create(OsmModel model, PolicyDecisionSet decisions, SmoBuildOptions? options = null)
+    public SmoModel Create(
+        OsmModel model,
+        PolicyDecisionSet decisions,
+        SmoBuildOptions? options = null,
+        IEnumerable<EntityModel>? supplementalEntities = null)
     {
         if (model is null)
         {
@@ -25,8 +29,8 @@ public sealed class SmoModelFactory
 
         options ??= SmoBuildOptions.Default;
 
-        var contexts = BuildEntityContexts(model);
-        var tablesBuilder = ImmutableArray.CreateBuilder<SmoTableDefinition>(contexts.Count);
+        var contexts = BuildEntityContexts(model, supplementalEntities);
+        var tablesBuilder = ImmutableArray.CreateBuilder<SmoTableDefinition>(model.Modules.Sum(static m => m.Entities.Length));
 
         foreach (var module in model.Modules)
         {
@@ -40,11 +44,13 @@ public sealed class SmoModelFactory
         return SmoModel.Create(tablesBuilder.ToImmutable());
     }
 
-    private static EntityEmissionIndex BuildEntityContexts(OsmModel model)
+    private static EntityEmissionIndex BuildEntityContexts(
+        OsmModel model,
+        IEnumerable<EntityModel>? supplementalEntities)
     {
-        var bySchemaAndTable = new Dictionary<string, EntityEmissionContext>(StringComparer.OrdinalIgnoreCase);
-        var byPhysicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
-        var byLogicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
+        var primaryBySchemaAndTable = new Dictionary<string, EntityEmissionContext>(StringComparer.OrdinalIgnoreCase);
+        var primaryByPhysicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
+        var primaryByLogicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var module in model.Modules)
         {
@@ -52,17 +58,46 @@ public sealed class SmoModelFactory
             {
                 var context = EntityEmissionContext.Create(module.Name.Value, entity);
                 var schemaKey = SchemaTableKey(entity.Schema.Value, entity.PhysicalName.Value);
-                bySchemaAndTable[schemaKey] = context;
+                primaryBySchemaAndTable[schemaKey] = context;
 
-                AddContext(byPhysicalName, entity.PhysicalName.Value, context);
-                AddContext(byLogicalName, entity.LogicalName.Value, context);
+                AddContext(primaryByPhysicalName, entity.PhysicalName.Value, context);
+                AddContext(primaryByLogicalName, entity.LogicalName.Value, context);
+            }
+        }
+
+        var supplementalBySchemaAndTable = new Dictionary<string, EntityEmissionContext>(StringComparer.OrdinalIgnoreCase);
+        var supplementalByPhysicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
+        var supplementalByLogicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
+
+        if (supplementalEntities is not null)
+        {
+            foreach (var entity in supplementalEntities)
+            {
+                if (entity is null)
+                {
+                    continue;
+                }
+
+                var schemaKey = SchemaTableKey(entity.Schema.Value, entity.PhysicalName.Value);
+                if (primaryBySchemaAndTable.ContainsKey(schemaKey) || supplementalBySchemaAndTable.ContainsKey(schemaKey))
+                {
+                    continue;
+                }
+
+                var context = EntityEmissionContext.Create(entity.Module.Value, entity);
+                supplementalBySchemaAndTable[schemaKey] = context;
+                AddContext(supplementalByPhysicalName, entity.PhysicalName.Value, context);
+                AddContext(supplementalByLogicalName, entity.LogicalName.Value, context);
             }
         }
 
         return new EntityEmissionIndex(
-            bySchemaAndTable,
-            ToImmutable(byPhysicalName),
-            ToImmutable(byLogicalName));
+            primaryBySchemaAndTable,
+            ToImmutable(primaryByPhysicalName),
+            ToImmutable(primaryByLogicalName),
+            supplementalBySchemaAndTable,
+            ToImmutable(supplementalByPhysicalName),
+            ToImmutable(supplementalByLogicalName));
     }
 
     private static SmoTableDefinition BuildTable(
@@ -485,21 +520,30 @@ public sealed class SmoModelFactory
 
     private sealed class EntityEmissionIndex
     {
-        private readonly IReadOnlyDictionary<string, EntityEmissionContext> _bySchemaAndTable;
-        private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _byPhysicalName;
-        private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _byLogicalName;
+        private readonly IReadOnlyDictionary<string, EntityEmissionContext> _primaryBySchemaAndTable;
+        private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _primaryByPhysicalName;
+        private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _primaryByLogicalName;
+        private readonly IReadOnlyDictionary<string, EntityEmissionContext> _supplementalBySchemaAndTable;
+        private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _supplementalByPhysicalName;
+        private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _supplementalByLogicalName;
 
         public EntityEmissionIndex(
-            IReadOnlyDictionary<string, EntityEmissionContext> bySchemaAndTable,
-            IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> byPhysicalName,
-            IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> byLogicalName)
+            IReadOnlyDictionary<string, EntityEmissionContext> primaryBySchemaAndTable,
+            IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> primaryByPhysicalName,
+            IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> primaryByLogicalName,
+            IReadOnlyDictionary<string, EntityEmissionContext> supplementalBySchemaAndTable,
+            IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> supplementalByPhysicalName,
+            IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> supplementalByLogicalName)
         {
-            _bySchemaAndTable = bySchemaAndTable ?? throw new ArgumentNullException(nameof(bySchemaAndTable));
-            _byPhysicalName = byPhysicalName ?? throw new ArgumentNullException(nameof(byPhysicalName));
-            _byLogicalName = byLogicalName ?? throw new ArgumentNullException(nameof(byLogicalName));
+            _primaryBySchemaAndTable = primaryBySchemaAndTable ?? throw new ArgumentNullException(nameof(primaryBySchemaAndTable));
+            _primaryByPhysicalName = primaryByPhysicalName ?? throw new ArgumentNullException(nameof(primaryByPhysicalName));
+            _primaryByLogicalName = primaryByLogicalName ?? throw new ArgumentNullException(nameof(primaryByLogicalName));
+            _supplementalBySchemaAndTable = supplementalBySchemaAndTable ?? throw new ArgumentNullException(nameof(supplementalBySchemaAndTable));
+            _supplementalByPhysicalName = supplementalByPhysicalName ?? throw new ArgumentNullException(nameof(supplementalByPhysicalName));
+            _supplementalByLogicalName = supplementalByLogicalName ?? throw new ArgumentNullException(nameof(supplementalByLogicalName));
         }
 
-        public int Count => _bySchemaAndTable.Count;
+        public int Count => _primaryBySchemaAndTable.Count;
 
         public EntityEmissionContext GetContext(EntityModel entity)
         {
@@ -509,7 +553,7 @@ public sealed class SmoModelFactory
             }
 
             var key = SchemaTableKey(entity.Schema.Value, entity.PhysicalName.Value);
-            if (_bySchemaAndTable.TryGetValue(key, out var context))
+            if (_primaryBySchemaAndTable.TryGetValue(key, out var context))
             {
                 return context;
             }
@@ -543,7 +587,44 @@ public sealed class SmoModelFactory
 
         private bool TryGetByPhysical(string tableName, string preferredSchema, out EntityEmissionContext context)
         {
-            if (_byPhysicalName.TryGetValue(tableName, out var contexts))
+            if (TryGetByPhysical(tableName, preferredSchema, _primaryByPhysicalName, _primaryBySchemaAndTable, out context))
+            {
+                return true;
+            }
+
+            if (TryGetByPhysical(tableName, preferredSchema, _supplementalByPhysicalName, _supplementalBySchemaAndTable, out context))
+            {
+                return true;
+            }
+
+            context = default!;
+            return false;
+        }
+
+        private bool TryGetByLogical(string logicalName, string moduleName, string preferredSchema, out EntityEmissionContext context)
+        {
+            if (TryGetByLogical(logicalName, moduleName, preferredSchema, _primaryByLogicalName, out context))
+            {
+                return true;
+            }
+
+            if (TryGetByLogical(logicalName, moduleName, preferredSchema, _supplementalByLogicalName, out context))
+            {
+                return true;
+            }
+
+            context = default!;
+            return false;
+        }
+
+        private static bool TryGetByPhysical(
+            string tableName,
+            string preferredSchema,
+            IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> lookup,
+            IReadOnlyDictionary<string, EntityEmissionContext> schemaLookup,
+            out EntityEmissionContext context)
+        {
+            if (lookup.TryGetValue(tableName, out var contexts) && !contexts.IsDefaultOrEmpty)
             {
                 if (contexts.Length == 1)
                 {
@@ -564,8 +645,9 @@ public sealed class SmoModelFactory
             }
 
             var schemaKey = SchemaTableKey(preferredSchema, tableName);
-            if (_bySchemaAndTable.TryGetValue(schemaKey, out context))
+            if (schemaLookup.TryGetValue(schemaKey, out var candidate) && candidate is not null)
             {
+                context = candidate;
                 return true;
             }
 
@@ -573,9 +655,14 @@ public sealed class SmoModelFactory
             return false;
         }
 
-        private bool TryGetByLogical(string logicalName, string moduleName, string preferredSchema, out EntityEmissionContext context)
+        private static bool TryGetByLogical(
+            string logicalName,
+            string moduleName,
+            string preferredSchema,
+            IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> lookup,
+            out EntityEmissionContext context)
         {
-            if (_byLogicalName.TryGetValue(logicalName, out var contexts))
+            if (lookup.TryGetValue(logicalName, out var contexts) && !contexts.IsDefaultOrEmpty)
             {
                 if (contexts.Length == 1)
                 {

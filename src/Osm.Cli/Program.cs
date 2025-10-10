@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -261,6 +262,15 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
 
     var model = filteredModelResult.Value;
 
+    var supplementalResult = await LoadSupplementalEntitiesAsync(configuration.SupplementalModels);
+    if (supplementalResult.IsFailure)
+    {
+        WriteErrors(supplementalResult.Errors);
+        return 1;
+    }
+
+    var supplementalEntities = supplementalResult.Value;
+
     var profileResult = await CaptureProfileAsync(profilerProvider, profilePath, sqlOptions, model);
     if (profileResult.IsFailure)
     {
@@ -301,7 +311,7 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
     }
 
     smoOptions = smoOptions.WithNamingOverrides(namingOverrideResult.Value);
-    var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+    var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions, supplementalEntities);
 
     var emitter = new SsdtEmitter();
     var manifest = await emitter.EmitAsync(smoModel, outputPath!, smoOptions, decisionReport);
@@ -378,6 +388,15 @@ static async Task<int> RunDmmCompareAsync(string[] args)
 
     var model = filteredModelResult.Value;
 
+    var supplementalResult = await LoadSupplementalEntitiesAsync(configuration.SupplementalModels);
+    if (supplementalResult.IsFailure)
+    {
+        WriteErrors(supplementalResult.Errors);
+        return 1;
+    }
+
+    var supplementalEntities = supplementalResult.Value;
+
     var profileResult = await new FixtureDataProfiler(profilePath, new ProfileSnapshotDeserializer()).CaptureAsync();
     if (profileResult.IsFailure)
     {
@@ -409,7 +428,7 @@ static async Task<int> RunDmmCompareAsync(string[] args)
     var policy = new TighteningPolicy();
     var decisions = policy.Decide(model, profileResult.Value, tighteningOptions);
     var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission, applyNamingOverrides: false);
-    var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+    var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions, supplementalEntities);
 
     var parser = new DmmParser();
     using var reader = File.OpenText(dmmPath);
@@ -680,6 +699,50 @@ static string ComputeSha256(string value)
     using var sha = SHA256.Create();
     var bytes = Encoding.UTF8.GetBytes(value);
     return Convert.ToHexString(sha.ComputeHash(bytes));
+}
+
+static async Task<Result<ImmutableArray<EntityModel>>> LoadSupplementalEntitiesAsync(
+    SupplementalModelConfiguration configuration)
+{
+    configuration ??= SupplementalModelConfiguration.Empty;
+    var builder = ImmutableArray.CreateBuilder<EntityModel>();
+
+    var includeUsers = configuration.IncludeUsers ?? true;
+    if (includeUsers)
+    {
+        builder.Add(OutSystemsInternalModel.Users);
+    }
+
+    if (configuration.Paths.Count == 0)
+    {
+        return builder.ToImmutable();
+    }
+
+    var deserializer = new ModelJsonDeserializer();
+
+    foreach (var path in configuration.Paths)
+    {
+        if (!File.Exists(path))
+        {
+            return Result<ImmutableArray<EntityModel>>.Failure(ValidationError.Create(
+                "cli.supplemental.path.missing",
+                $"Supplemental model '{path}' was not found."));
+        }
+
+        await using var stream = File.OpenRead(path);
+        var modelResult = deserializer.Deserialize(stream);
+        if (modelResult.IsFailure)
+        {
+            return Result<ImmutableArray<EntityModel>>.Failure(modelResult.Errors);
+        }
+
+        foreach (var module in modelResult.Value.Modules)
+        {
+            builder.AddRange(module.Entities);
+        }
+    }
+
+    return builder.ToImmutable();
 }
 
 static async Task<string> WriteDecisionLogAsync(string outputDirectory, PolicyDecisionReport report)
