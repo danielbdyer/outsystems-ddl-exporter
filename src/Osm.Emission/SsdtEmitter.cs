@@ -754,23 +754,51 @@ ELSE
                 builder.Append(indent);
                 builder.Append(new string(' ', 4));
                 builder.AppendLine(ownerSegment);
-                builder.Append(indent);
-                builder.Append(new string(' ', 8));
-                builder.Append(referencesSegment);
-                builder.AppendLine(trailingComma);
+                var clauseIndent = indent + new string(' ', 8);
+                var hasOnDelete = !string.IsNullOrWhiteSpace(onDeleteSegment);
+                var hasOnUpdate = !string.IsNullOrWhiteSpace(onUpdateSegment);
+                var hasOnClauses = hasOnDelete || hasOnUpdate;
 
-                if (!string.IsNullOrWhiteSpace(onDeleteSegment))
+                builder.Append(clauseIndent);
+                builder.Append(referencesSegment);
+                if (hasOnClauses)
                 {
-                    builder.Append(indent);
-                    builder.Append(new string(' ', 8));
-                    builder.AppendLine(onDeleteSegment);
+                    builder.AppendLine();
+                }
+                else
+                {
+                    builder.AppendLine(trailingComma);
                 }
 
-                if (!string.IsNullOrWhiteSpace(onUpdateSegment))
+                if (hasOnClauses)
                 {
-                    builder.Append(indent);
-                    builder.Append(new string(' ', 8));
-                    builder.AppendLine(onUpdateSegment);
+                    var segments = new List<string>(capacity: 2);
+                    if (hasOnDelete)
+                    {
+                        segments.Add(onDeleteSegment!);
+                    }
+
+                    if (hasOnUpdate)
+                    {
+                        segments.Add(onUpdateSegment!);
+                    }
+
+                    for (var segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
+                    {
+                        var segment = segments[segmentIndex];
+                        var isLastSegment = segmentIndex == segments.Count - 1;
+
+                        builder.Append(clauseIndent);
+                        if (isLastSegment && !string.IsNullOrEmpty(trailingComma))
+                        {
+                            builder.Append(segment);
+                            builder.AppendLine(trailingComma);
+                        }
+                        else
+                        {
+                            builder.AppendLine(segment);
+                        }
+                    }
                 }
 
                 continue;
