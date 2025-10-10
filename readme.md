@@ -132,20 +132,30 @@ tests/
 The full query now lives in [`src/AdvancedSql/outsystems_model_export.sql`](src/AdvancedSql/outsystems_model_export.sql) so that IDEs and linters can reason about it. The opening excerpt below shows the documented inputs and module filter:
 
 ```sql
-/* OutSystems Advanced SQL: One-shot model → JSON */
-WITH ModuleNames AS (
-  SELECT LTRIM(RTRIM(value)) AS ModuleName
-  FROM STRING_SPLIT(@ModuleNamesCsv, ',')
-  WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL
-),
-E AS (
-  SELECT e.[Id] EspaceId, e.[Name] EspaceName,
-         ISNULL(e.[Is_System],0) IsSystemModule, ISNULL(e.[Is_Active],1) ModuleIsActive
-  FROM {Espace} e
-  WHERE (@IncludeSystem = 1 OR ISNULL(e.[Is_System],0) = 0)
-    AND (NOT EXISTS (SELECT 1 FROM ModuleNames) OR e.[Name] IN (SELECT ModuleName FROM ModuleNames))
-)
+/* ============================================================================
+   OutSystems → JSON (Two-phase, CTE-free)
+   GOAL #1: emit 100% of module/entity/attribute/index fields in README schema,
+   GOAL #2: reconcile ossys intent with sys.* physical reality.
+*/
+
+SET NOCOUNT ON;
+SET TEXTSIZE -1; -- unlimited for (n)varchar(max) in this session
+
+-- 1) #ModuleNames (handles optional @ModuleNamesCsv filter)
+IF OBJECT_ID('tempdb..#ModuleNames') IS NOT NULL DROP TABLE #ModuleNames;
+CREATE TABLE #ModuleNames ( ModuleName NVARCHAR(200) COLLATE DATABASE_DEFAULT NOT NULL );
+INSERT INTO #ModuleNames(ModuleName)
+SELECT LTRIM(RTRIM(value))
+FROM STRING_SPLIT(@ModuleNamesCsv, ',')
+WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL;
 ```
+
+Key metadata surfaced by the reconciled extractor:
+
+* **Logical attribute provenance** — emits `originalName`, logical `dataType`, and the external connector’s `external_dbType` straight from `ossys_Entity_Attr` so renames and passthrough mappings stay traceable.
+* **Physical drift hints** — `physical_isPresentButInactive` lights up when `sys.columns` still contains an inactive attribute, making cleanup candidates obvious.
+* **Real FK detection** — `reference_hasDbConstraint` and relationship `hasDbConstraint` only flip to `1` when the logical reference is backed by a matching `sys.foreign_keys` entry.
+* **External catalog/schema discovery** — external entities reuse the catalog/owner metadata on `ossys_Entity` when a physical table is absent in the current database, preserving parity across linked servers.
 
 > 💡 **Sample output row**: the fixtures under `tests/Fixtures/model.edge-case.json` mirror the JSON payload produced by the SQL. The first module entry expands to:
 
