@@ -132,19 +132,22 @@ tests/
 The full query now lives in [`src/AdvancedSql/outsystems_model_export.sql`](src/AdvancedSql/outsystems_model_export.sql) so that IDEs and linters can reason about it. The opening excerpt below shows the documented inputs and module filter:
 
 ```sql
-/* OutSystems Advanced SQL: One-shot model → JSON */
-WITH ModuleNames AS (
-  SELECT LTRIM(RTRIM(value)) AS ModuleName
-  FROM STRING_SPLIT(@ModuleNamesCsv, ',')
-  WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL
-),
-E AS (
-  SELECT e.[Id] EspaceId, e.[Name] EspaceName,
-         ISNULL(e.[Is_System],0) IsSystemModule, ISNULL(e.[Is_Active],1) ModuleIsActive
-  FROM {Espace} e
-  WHERE (@IncludeSystem = 1 OR ISNULL(e.[Is_System],0) = 0)
-    AND (NOT EXISTS (SELECT 1 FROM ModuleNames) OR e.[Name] IN (SELECT ModuleName FROM ModuleNames))
-)
+/* ============================================================================
+   OutSystems → JSON (Two-phase, CTE-free)
+   GOAL #1: emit 100% of module/entity/attribute/index fields in README schema,
+   GOAL #2: reconcile ossys intent with sys.* physical reality.
+*/
+
+SET NOCOUNT ON;
+SET TEXTSIZE -1; -- unlimited for (n)varchar(max) in this session
+
+-- 1) #ModuleNames (handles optional @ModuleNamesCsv filter)
+IF OBJECT_ID('tempdb..#ModuleNames') IS NOT NULL DROP TABLE #ModuleNames;
+CREATE TABLE #ModuleNames ( ModuleName NVARCHAR(200) COLLATE DATABASE_DEFAULT NOT NULL );
+INSERT INTO #ModuleNames(ModuleName)
+SELECT LTRIM(RTRIM(value))
+FROM STRING_SPLIT(@ModuleNamesCsv, ',')
+WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL;
 ```
 
 > 💡 **Sample output row**: the fixtures under `tests/Fixtures/model.edge-case.json` mirror the JSON payload produced by the SQL. The first module entry expands to:
@@ -200,6 +203,9 @@ E AS (
   "isActive": true,
   "db_catalog": null,
   "db_schema": "dbo",
+  "meta": {
+    "description": "End-user profile data captured from Service Center"
+  },
   "attributes": [ /* attributes[] below */ ],
   "relationships": [ /* derived references */ ],
   "indexes": [ /* modeled indexes */ ]
@@ -226,9 +232,24 @@ E AS (
   "refEntity_name": null,
   "refEntity_physicalName": null,
   "reference_deleteRuleCode": null,
-  "reference_hasDbConstraint": 0,
+  "hasDbConstraint": 0,
   "external_dbType": null,
-  "physical_isPresentButInactive": 0
+  "physical_isPresentButInactive": 0,
+  "onDisk": {
+    "isNullable": 0,
+    "sqlType": "nvarchar",
+    "maxLength": 255,
+    "precision": 0,
+    "scale": 0,
+    "collation": "Latin1_General_CI_AI",
+    "isIdentity": 0,
+    "isComputed": 0,
+    "computedDefinition": null,
+    "defaultDefinition": "DEFAULT ('')"
+  },
+  "meta": {
+    "description": "Primary email address"
+  }
 }
 ```
 
@@ -241,7 +262,23 @@ E AS (
   "toEntity_name": "City",
   "toEntity_physicalName": "OSUSR_DEF_CITY",
   "deleteRuleCode": "Protect",
-  "hasDbConstraint": 1
+  "hasDbConstraint": 1,
+  "actualConstraints": [
+    {
+      "name": "FK_OSUSR_ABC_CUSTOMER_CITY",
+      "onDelete": "NO_ACTION",
+      "onUpdate": "NO_ACTION",
+      "referencedSchema": "dbo",
+      "referencedTable": "OSUSR_DEF_CITY",
+      "columns": [
+        {
+          "ordinal": 1,
+          "owner": { "attribute": "CityId", "physical": "CITYID" },
+          "referenced": { "attribute": "Id", "physical": "ID" }
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -253,11 +290,41 @@ E AS (
   "isUnique": true,
   "isPlatformAuto": 0,
   "columns": [
-    { "attribute": "Email", "physicalColumn": "EMAIL", "ordinal": 1 }
+    {
+      "attribute": "Email",
+      "physicalColumn": "EMAIL",
+      "ordinal": 1,
+      "isIncluded": false,
+      "direction": "ASC"
+    }
   ]
 }
 ```
 
+>
+> **Extended descriptions → `MS_Description`**
+>
+> The `meta.description` payload for entities and attributes comes straight from the OutSystems metadata. To round-trip these notes into SQL Server or SSDT projects, iterate the JSON and call `sp_addextendedproperty`/`sp_updateextendedproperty` as shown below:
+>
+> ```sql
+> -- Table description (entity-level)
+> EXEC sys.sp_addextendedproperty
+>      @name = N'MS_Description',
+>      @value = @EntityDescription,
+>      @level0type = N'SCHEMA', @level0name = @SchemaName,
+>      @level1type = N'TABLE',  @level1name = @TableName;
+>
+> -- Column description (attribute-level)
+> EXEC sys.sp_addextendedproperty
+>      @name = N'MS_Description',
+>      @value = @AttrDescription,
+>      @level0type = N'SCHEMA', @level0name = @SchemaName,
+>      @level1type = N'TABLE',  @level1name = @TableName,
+>      @level2type = N'COLUMN', @level2name = @ColumnName;
+> ```
+>
+> Use `sp_updateextendedproperty` when the description already exists. Because the exporter surfaces trimmed descriptions and physical column names, you can drive these stored procedures directly from the JSON.
+>
 **JSON schema** (optional) — validate with `NJsonSchema` or `JsonSchema.Net` before mapping.
 
 ---
