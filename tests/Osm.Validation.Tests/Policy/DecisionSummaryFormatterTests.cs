@@ -80,6 +80,6 @@ public class DecisionSummaryFormatterTests
         => new(
             new ColumnCoordinate(new SchemaName(schema), new TableName(table), new ColumnName(column)),
             makeNotNull,
-            requiresRemediation: false,
+            RequiresRemediation: false,
             rationales.Length == 0 ? ImmutableArray<string>.Empty : ImmutableArray.CreateRange(rationales));
 }

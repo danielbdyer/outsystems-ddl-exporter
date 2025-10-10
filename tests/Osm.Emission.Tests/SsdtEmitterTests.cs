@@ -173,6 +173,41 @@ public class SsdtEmitterTests
     }
 
     [Fact]
+    public void FormatForeignKeyConstraints_moves_trailing_comma_after_on_clauses()
+    {
+        var method = typeof(SsdtEmitter)
+            .GetMethod("FormatForeignKeyConstraints", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var script = string.Join(Environment.NewLine, new[]
+        {
+            "CREATE TABLE dbo.Sample (",
+            "    Id INT NOT NULL,",
+            "    CONSTRAINT FK_Sample_Primary FOREIGN KEY (PrimaryId) REFERENCES dbo.Primary (Id) ON DELETE CASCADE,",
+            "    CONSTRAINT FK_Sample_Secondary FOREIGN KEY (SecondaryId) REFERENCES dbo.Secondary (Id)",
+            ")"
+        });
+
+        var formatted = (string)method!.Invoke(null, new object[] { script })!;
+
+        var expected = string.Join(Environment.NewLine, new[]
+        {
+            "CREATE TABLE dbo.Sample (",
+            "    Id INT NOT NULL,",
+            "    CONSTRAINT FK_Sample_Primary",
+            "        FOREIGN KEY (PrimaryId)",
+            "            REFERENCES dbo.Primary (Id)",
+            "            ON DELETE CASCADE,",
+            "    CONSTRAINT FK_Sample_Secondary",
+            "        FOREIGN KEY (SecondaryId)",
+            "            REFERENCES dbo.Secondary (Id)",
+            ")"
+        });
+
+        Assert.Equal(expected, formatted);
+    }
+
+    [Fact]
     public async Task EmitAsync_skips_platform_auto_indexes_when_option_disabled()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
