@@ -273,34 +273,55 @@ ELSE
         SmoBuildOptions options)
     {
         var definition = new TableDefinition();
+        var columnLookup = new Dictionary<string, ColumnDefinition>(table.Columns.Length, StringComparer.OrdinalIgnoreCase);
         foreach (var column in table.Columns)
         {
-            definition.ColumnDefinitions.Add(BuildColumnDefinition(column, options));
+            var columnDefinition = BuildColumnDefinition(column, options);
+            definition.ColumnDefinitions.Add(columnDefinition);
+            if (!string.IsNullOrWhiteSpace(column.Name))
+            {
+                columnLookup[column.Name] = columnDefinition;
+            }
         }
 
         var primaryKey = table.Indexes.FirstOrDefault(i => i.IsPrimaryKey);
         if (primaryKey is not null)
         {
-            var constraint = new UniqueConstraintDefinition
-            {
-                IsPrimaryKey = true,
-                Clustered = true,
-                ConstraintIdentifier = new Identifier
-                {
-                    Value = ResolveConstraintName(primaryKey.Name, table.Name, table.LogicalName, effectiveTableName),
-                },
-            };
+            var sortedColumns = primaryKey.Columns.OrderBy(c => c.Ordinal).ToImmutableArray();
+            var constraintName = ResolveConstraintName(primaryKey.Name, table.Name, table.LogicalName, effectiveTableName);
 
-            foreach (var column in primaryKey.Columns.OrderBy(c => c.Ordinal))
+            if (sortedColumns.Length == 1 &&
+                columnLookup.TryGetValue(sortedColumns[0].Name, out var primaryKeyColumn))
             {
-                constraint.Columns.Add(new ColumnWithSortOrder
+                var inlineConstraint = new UniqueConstraintDefinition
                 {
-                    Column = BuildColumnReference(column.Name),
-                    SortOrder = SortOrder.NotSpecified,
-                });
+                    IsPrimaryKey = true,
+                    Clustered = true,
+                    ConstraintIdentifier = new Identifier { Value = constraintName },
+                };
+
+                primaryKeyColumn.Constraints.Add(inlineConstraint);
             }
+            else
+            {
+                var tableConstraint = new UniqueConstraintDefinition
+                {
+                    IsPrimaryKey = true,
+                    Clustered = true,
+                    ConstraintIdentifier = new Identifier { Value = constraintName },
+                };
 
-            definition.TableConstraints.Add(constraint);
+                foreach (var column in sortedColumns)
+                {
+                    tableConstraint.Columns.Add(new ColumnWithSortOrder
+                    {
+                        Column = BuildColumnReference(column.Name),
+                        SortOrder = SortOrder.NotSpecified,
+                    });
+                }
+
+                definition.TableConstraints.Add(tableConstraint);
+            }
         }
 
         return new CreateTableStatement
@@ -438,12 +459,39 @@ ELSE
                 UpdateAction = DeleteUpdateAction.NoAction,
             };
 
-            constraint.Columns.Add(new Identifier { Value = foreignKey.Column });
             constraint.ReferencedTableColumns.Add(new Identifier { Value = foreignKey.ReferencedColumn });
-            statement.Definition.TableConstraints.Add(constraint);
+
+            var inlineColumn = FindColumnDefinition(statement.Definition, foreignKey.Column);
+            if (inlineColumn is not null)
+            {
+                inlineColumn.Constraints.Add(constraint);
+            }
+            else
+            {
+                constraint.Columns.Add(new Identifier { Value = foreignKey.Column });
+                statement.Definition.TableConstraints.Add(constraint);
+            }
         }
 
         return builder.ToImmutable();
+    }
+
+    private static ColumnDefinition? FindColumnDefinition(TableDefinition definition, string columnName)
+    {
+        foreach (var column in definition.ColumnDefinitions)
+        {
+            if (column?.ColumnIdentifier?.Value is null)
+            {
+                continue;
+            }
+
+            if (string.Equals(column.ColumnIdentifier.Value, columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return column;
+            }
+        }
+
+        return null;
     }
 
     private static string ResolveConstraintName(
@@ -581,8 +629,7 @@ ELSE
     private static string FormatCreateTableScript(string script, CreateTableStatement statement)
     {
         if (statement?.Definition?.ColumnDefinitions is null ||
-            statement.Definition.ColumnDefinitions.Count == 0 ||
-            !script.Contains("DEFAULT", StringComparison.OrdinalIgnoreCase))
+            statement.Definition.ColumnDefinitions.Count == 0)
         {
             return script;
         }
@@ -619,18 +666,30 @@ ELSE
                 continue;
             }
 
-            if (!trimmedLine.Contains("DEFAULT", StringComparison.OrdinalIgnoreCase) ||
-                trimmedLine.StartsWith("CONSTRAINT", StringComparison.OrdinalIgnoreCase))
+            if (trimmedLine.Contains("DEFAULT", StringComparison.OrdinalIgnoreCase) &&
+                !trimmedLine.StartsWith("CONSTRAINT", StringComparison.OrdinalIgnoreCase))
+            {
+                builder.Append(FormatInlineDefault(line));
+                continue;
+            }
+
+            if (trimmedLine.Contains("CONSTRAINT", StringComparison.OrdinalIgnoreCase) &&
+                !trimmedLine.StartsWith("CONSTRAINT", StringComparison.OrdinalIgnoreCase))
+            {
+                builder.Append(FormatInlineConstraint(line));
+                continue;
+            }
+
+            if (!trimmedLine.Contains("DEFAULT", StringComparison.OrdinalIgnoreCase))
             {
                 builder.Append(line);
                 continue;
             }
-
-            builder.Append(FormatInlineDefault(line));
         }
 
         var withDefaults = builder.ToString();
-        return FormatForeignKeyConstraints(withDefaults);
+        var withForeignKeys = FormatForeignKeyConstraints(withDefaults);
+        return FormatPrimaryKeyConstraints(withForeignKeys);
     }
 
     private static string FormatInlineDefault(string line)
@@ -680,6 +739,42 @@ ELSE
         }
 
         builder.Append(defaultSegment);
+        builder.Append(trailingComma);
+
+        return builder.ToString();
+    }
+
+    private static string FormatInlineConstraint(string line)
+    {
+        var trimmedLine = line.TrimStart();
+        var indentLength = line.Length - trimmedLine.Length;
+        var indent = line[..indentLength];
+
+        var working = trimmedLine.TrimEnd();
+        var trailingComma = string.Empty;
+
+        if (working.EndsWith(",", StringComparison.Ordinal))
+        {
+            trailingComma = ",";
+            working = working[..^1];
+        }
+
+        var constraintIndex = working.IndexOf(" CONSTRAINT ", StringComparison.OrdinalIgnoreCase);
+        if (constraintIndex < 0)
+        {
+            return line;
+        }
+
+        var columnSegment = working[..constraintIndex].TrimEnd();
+        var constraintSegment = working[constraintIndex..].Trim();
+
+        var builder = new StringBuilder(line.Length + 16);
+        builder.Append(indent);
+        builder.Append(columnSegment);
+        builder.AppendLine();
+        builder.Append(indent);
+        builder.Append(new string(' ', 4));
+        builder.Append(constraintSegment);
         builder.Append(trailingComma);
 
         return builder.ToString();
@@ -751,15 +846,15 @@ ELSE
 
                 builder.Append(indent);
                 builder.AppendLine(constraintSegment);
-                builder.Append(indent);
-                builder.Append(new string(' ', 4));
-                builder.AppendLine(ownerSegment);
-                var clauseIndent = indent + new string(' ', 8);
+                var ownerIndent = indent + new string(' ', 4);
+                var clauseIndent = ownerIndent + new string(' ', 4);
                 var hasOnDelete = !string.IsNullOrWhiteSpace(onDeleteSegment);
                 var hasOnUpdate = !string.IsNullOrWhiteSpace(onUpdateSegment);
                 var hasOnClauses = hasOnDelete || hasOnUpdate;
 
-                builder.Append(clauseIndent);
+                builder.Append(ownerIndent);
+                builder.Append(ownerSegment);
+                builder.Append(' ');
                 builder.Append(referencesSegment);
                 if (hasOnClauses)
                 {
@@ -802,6 +897,52 @@ ELSE
                 }
 
                 continue;
+            }
+
+            builder.AppendLine(line);
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static string FormatPrimaryKeyConstraints(string script)
+    {
+        var lines = script.Split(Environment.NewLine);
+        var builder = new StringBuilder(script.Length + 32);
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var trimmed = line.TrimStart();
+
+            if (trimmed.StartsWith("CONSTRAINT", StringComparison.OrdinalIgnoreCase) &&
+                trimmed.Contains("PRIMARY KEY", StringComparison.OrdinalIgnoreCase))
+            {
+                var indentLength = line.Length - trimmed.Length;
+                var indent = line[..indentLength];
+                var trailingComma = string.Empty;
+                var working = trimmed;
+
+                if (working.EndsWith(",", StringComparison.Ordinal))
+                {
+                    trailingComma = ",";
+                    working = working[..^1].TrimEnd();
+                }
+
+                var primaryIndex = working.IndexOf("PRIMARY KEY", StringComparison.OrdinalIgnoreCase);
+                if (primaryIndex > 0)
+                {
+                    var constraintSegment = working[..primaryIndex].TrimEnd();
+                    var primarySegment = working[primaryIndex..].Trim();
+
+                    builder.Append(indent);
+                    builder.AppendLine(constraintSegment);
+                    builder.Append(indent);
+                    builder.Append(new string(' ', 4));
+                    builder.Append(primarySegment);
+                    builder.AppendLine(trailingComma);
+                    continue;
+                }
             }
 
             builder.AppendLine(line);

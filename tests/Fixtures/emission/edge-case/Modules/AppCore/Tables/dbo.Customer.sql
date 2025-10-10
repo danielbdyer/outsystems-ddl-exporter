@@ -1,17 +1,17 @@
 CREATE TABLE dbo.Customer (
-    Id        INT            IDENTITY (1, 1) NOT NULL,
+    Id        INT            IDENTITY (1, 1) NOT NULL
+        CONSTRAINT PK_Customer
+            PRIMARY KEY CLUSTERED,
     Email     NVARCHAR (255) COLLATE Latin1_General_CI_AI NOT NULL,
     FirstName NVARCHAR (100)
         DEFAULT (''),
     LastName  NVARCHAR (100)
         DEFAULT (''),
-    CityId    INT            NOT NULL,
-    CONSTRAINT PK_Customer PRIMARY KEY CLUSTERED (Id),
-    CONSTRAINT FK_Customer_CityId
-        FOREIGN KEY (CityId)
-            REFERENCES dbo.City (Id)
-            ON DELETE NO ACTION
-            ON UPDATE NO ACTION
+    CityId    INT            NOT NULL
+        CONSTRAINT FK_Customer_CityId
+            FOREIGN KEY REFERENCES dbo.City (Id)
+                ON DELETE NO ACTION
+                ON UPDATE NO ACTION
 )
 
 GO
