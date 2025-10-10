@@ -150,6 +150,13 @@ FROM STRING_SPLIT(@ModuleNamesCsv, ',')
 WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL;
 ```
 
+Key metadata surfaced by the reconciled extractor:
+
+* **Logical attribute provenance** — emits `originalName`, logical `dataType`, and the external connector’s `external_dbType` straight from `ossys_Entity_Attr` so renames and passthrough mappings stay traceable.
+* **Physical drift hints** — `physical_isPresentButInactive` lights up when `sys.columns` still contains an inactive attribute, making cleanup candidates obvious.
+* **Real FK detection** — `reference_hasDbConstraint` and relationship `hasDbConstraint` only flip to `1` when the logical reference is backed by a matching `sys.foreign_keys` entry.
+* **External catalog/schema discovery** — external entities reuse the catalog/owner metadata on `ossys_Entity` when a physical table is absent in the current database, preserving parity across linked servers.
+
 > 💡 **Sample output row**: the fixtures under `tests/Fixtures/model.edge-case.json` mirror the JSON payload produced by the SQL. The first module entry expands to:
 
 ```json
