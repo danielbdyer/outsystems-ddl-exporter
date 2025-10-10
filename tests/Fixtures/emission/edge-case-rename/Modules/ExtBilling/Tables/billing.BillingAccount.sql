@@ -1,5 +1,5 @@
 CREATE TABLE billing.BillingAccount (
-    Id            INT          NOT NULL
+    Id            BIGINT       NOT NULL
         CONSTRAINT PK_BillingAccount
             PRIMARY KEY CLUSTERED,
     AccountNumber VARCHAR (50) NOT NULL,

@@ -34,7 +34,11 @@ public class EmissionPipelineTests
         var decisionReport = PolicyDecisionReporter.Create(decisions);
 
         var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission);
-        var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+        var smoModel = new SmoModelFactory().Create(
+            model,
+            decisions,
+            profile: profile,
+            options: smoOptions);
 
         using var output = new TempDirectory();
         var emitter = new Osm.Emission.SsdtEmitter();
@@ -70,7 +74,11 @@ public class EmissionPipelineTests
         var smoOptions = SmoBuildOptions
             .FromEmission(tighteningOptions.Emission)
             .WithNamingOverrides(overrideOptions.Value);
-        var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+        var smoModel = new SmoModelFactory().Create(
+            model,
+            decisions,
+            profile: profile,
+            options: smoOptions);
 
         using var output = new TempDirectory();
         var emitter = new Osm.Emission.SsdtEmitter();

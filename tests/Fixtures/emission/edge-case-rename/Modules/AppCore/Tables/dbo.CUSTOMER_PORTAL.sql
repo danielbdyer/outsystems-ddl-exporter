@@ -1,5 +1,5 @@
 CREATE TABLE dbo.CUSTOMER_PORTAL (
-    Id        INT            IDENTITY (1, 1) NOT NULL
+    Id        BIGINT         IDENTITY (1, 1) NOT NULL
         CONSTRAINT PK_CUSTOMER_PORTAL
             PRIMARY KEY CLUSTERED,
     Email     NVARCHAR (255) COLLATE Latin1_General_CI_AI NOT NULL,
@@ -7,7 +7,7 @@ CREATE TABLE dbo.CUSTOMER_PORTAL (
         DEFAULT (''),
     LastName  NVARCHAR (100)
         DEFAULT (''),
-    CityId    INT            NOT NULL
+    CityId    BIGINT         NOT NULL
         CONSTRAINT FK_CUSTOMER_PORTAL_CityId
             FOREIGN KEY REFERENCES dbo.City (Id)
                 ON DELETE NO ACTION

@@ -15,7 +15,7 @@ internal static class SqlDataTypeMapper
             throw new ArgumentNullException(nameof(attribute));
         }
 
-        if (TryResolveFromOnDisk(attribute.OnDisk, out var onDiskType))
+        if (TryResolveFromOnDisk(attribute, attribute.OnDisk, out var onDiskType))
         {
             return onDiskType;
         }
@@ -39,7 +39,7 @@ internal static class SqlDataTypeMapper
         };
     }
 
-    private static bool TryResolveFromOnDisk(AttributeOnDiskMetadata onDisk, out DataType dataType)
+    private static bool TryResolveFromOnDisk(AttributeModel attribute, AttributeOnDiskMetadata onDisk, out DataType dataType)
     {
         dataType = DataType.NVarCharMax;
         if (onDisk is null || string.IsNullOrWhiteSpace(onDisk.SqlType))
@@ -51,28 +51,28 @@ internal static class SqlDataTypeMapper
         switch (type)
         {
             case "nvarchar":
-                dataType = ResolveUnicodeText(onDisk.MaxLength);
+                dataType = ResolveUnicodeText(onDisk.MaxLength ?? attribute.Length);
                 return true;
             case "nchar":
-                dataType = DataType.NChar(Math.Max(1, onDisk.MaxLength ?? 1));
+                dataType = DataType.NChar(Math.Max(1, (onDisk.MaxLength ?? attribute.Length) ?? 1));
                 return true;
             case "varchar":
-                dataType = ResolveVarChar(onDisk.MaxLength);
+                dataType = ResolveVarChar(onDisk.MaxLength ?? attribute.Length);
                 return true;
             case "char":
-                dataType = DataType.Char(Math.Max(1, onDisk.MaxLength ?? 1));
+                dataType = DataType.Char(Math.Max(1, (onDisk.MaxLength ?? attribute.Length) ?? 1));
                 return true;
             case "varbinary":
-                dataType = ResolveVarBinary(onDisk.MaxLength);
+                dataType = ResolveVarBinary(onDisk.MaxLength ?? attribute.Length);
                 return true;
             case "binary":
-                dataType = DataType.Binary(Math.Max(1, onDisk.MaxLength ?? 1));
+                dataType = DataType.Binary(Math.Max(1, (onDisk.MaxLength ?? attribute.Length) ?? 1));
                 return true;
             case "decimal":
             case "numeric":
                 dataType = DataType.Decimal(
-                    onDisk.Precision is null or <= 0 ? 18 : onDisk.Precision.Value,
-                    onDisk.Scale is null or < 0 ? 0 : onDisk.Scale.Value);
+                    ResolvePrecision(onDisk.Precision, attribute.Precision),
+                    ResolveScale(onDisk.Scale, attribute.Scale));
                 return true;
             case "money":
                 dataType = DataType.Money;
@@ -102,16 +102,16 @@ internal static class SqlDataTypeMapper
                 dataType = DataType.SmallDateTime;
                 return true;
             case "datetime2":
-                dataType = DataType.DateTime2(onDisk.Scale is null or < 0 ? 7 : onDisk.Scale.Value);
+                dataType = DataType.DateTime2(ResolveScale(onDisk.Scale, attribute.Scale, 7));
                 return true;
             case "datetimeoffset":
-                dataType = DataType.DateTimeOffset(onDisk.Scale is null or < 0 ? 7 : onDisk.Scale.Value);
+                dataType = DataType.DateTimeOffset(ResolveScale(onDisk.Scale, attribute.Scale, 7));
                 return true;
             case "date":
                 dataType = DataType.Date;
                 return true;
             case "time":
-                dataType = DataType.Time(onDisk.Scale is null or < 0 ? 7 : onDisk.Scale.Value);
+                dataType = DataType.Time(ResolveScale(onDisk.Scale, attribute.Scale, 7));
                 return true;
             case "uniqueidentifier":
                 dataType = DataType.UniqueIdentifier;
@@ -184,6 +184,36 @@ internal static class SqlDataTypeMapper
         var resolvedPrecision = precision is null or <= 0 ? 18 : precision.Value;
         var resolvedScale = scale is null or < 0 ? 0 : scale.Value;
         return DataType.Decimal(resolvedPrecision, resolvedScale);
+    }
+
+    private static int ResolvePrecision(int? onDisk, int? attribute, int defaultValue = 18)
+    {
+        if (onDisk is not null && onDisk > 0)
+        {
+            return onDisk.Value;
+        }
+
+        if (attribute is not null && attribute > 0)
+        {
+            return attribute.Value;
+        }
+
+        return defaultValue;
+    }
+
+    private static int ResolveScale(int? onDisk, int? attribute, int defaultValue = 0)
+    {
+        if (onDisk is not null && onDisk >= 0)
+        {
+            return onDisk.Value;
+        }
+
+        if (attribute is not null && attribute >= 0)
+        {
+            return attribute.Value;
+        }
+
+        return defaultValue;
     }
 
     private static DataType ResolveExternal(string externalType)

@@ -311,7 +311,12 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
     }
 
     smoOptions = smoOptions.WithNamingOverrides(namingOverrideResult.Value);
-    var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions, supplementalEntities);
+    var smoModel = new SmoModelFactory().Create(
+        model,
+        decisions,
+        profile: profileResult.Value,
+        options: smoOptions,
+        supplementalEntities: supplementalEntities);
 
     var emitter = new SsdtEmitter();
     var manifest = await emitter.EmitAsync(smoModel, outputPath!, smoOptions, decisionReport);
@@ -432,7 +437,12 @@ static async Task<int> RunDmmCompareAsync(string[] args)
     var policy = new TighteningPolicy();
     var decisions = policy.Decide(model, profileResult.Value, tighteningOptions);
     var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission, applyNamingOverrides: false);
-    var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions, supplementalEntities);
+    var smoModel = new SmoModelFactory().Create(
+        model,
+        decisions,
+        profile: profileResult.Value,
+        options: smoOptions,
+        supplementalEntities: supplementalEntities);
 
     var parser = new DmmParser();
     using var reader = File.OpenText(dmmPath);

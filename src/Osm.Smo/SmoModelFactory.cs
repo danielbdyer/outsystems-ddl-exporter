@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Model;
+using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
 
@@ -14,6 +15,7 @@ public sealed class SmoModelFactory
     public SmoModel Create(
         OsmModel model,
         PolicyDecisionSet decisions,
+        ProfileSnapshot? profile = null,
         SmoBuildOptions? options = null,
         IEnumerable<EntityModel>? supplementalEntities = null)
     {
@@ -29,6 +31,8 @@ public sealed class SmoModelFactory
 
         options ??= SmoBuildOptions.Default;
 
+        var profileDefaults = BuildProfileDefaults(profile);
+
         var contexts = BuildEntityContexts(model, supplementalEntities);
         var tablesBuilder = ImmutableArray.CreateBuilder<SmoTableDefinition>(model.Modules.Sum(static m => m.Entities.Length));
 
@@ -37,7 +41,7 @@ public sealed class SmoModelFactory
             foreach (var entity in module.Entities)
             {
                 var context = contexts.GetContext(entity);
-                tablesBuilder.Add(BuildTable(context, decisions, options, contexts));
+                tablesBuilder.Add(BuildTable(context, decisions, options, contexts, profileDefaults));
             }
         }
 
@@ -104,9 +108,10 @@ public sealed class SmoModelFactory
         EntityEmissionContext context,
         PolicyDecisionSet decisions,
         SmoBuildOptions options,
-        EntityEmissionIndex entityLookup)
+        EntityEmissionIndex entityLookup,
+        IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults)
     {
-        var columns = BuildColumns(context, decisions);
+        var columns = BuildColumns(context, decisions, profileDefaults);
         var indexes = BuildIndexes(context, decisions, options.IncludePlatformAutoIndexes);
         var foreignKeys = BuildForeignKeys(context, decisions, entityLookup);
         var catalog = string.IsNullOrWhiteSpace(context.Entity.Catalog) ? options.DefaultCatalogName : context.Entity.Catalog!;
@@ -124,6 +129,27 @@ public sealed class SmoModelFactory
             columns,
             indexes,
             foreignKeys);
+    }
+
+    private static IReadOnlyDictionary<ColumnCoordinate, string> BuildProfileDefaults(ProfileSnapshot? profile)
+    {
+        if (profile is null || profile.Columns.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<ColumnCoordinate, string>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, string>();
+        foreach (var column in profile.Columns)
+        {
+            if (string.IsNullOrWhiteSpace(column.DefaultDefinition))
+            {
+                continue;
+            }
+
+            builder[ColumnCoordinate.From(column)] = column.DefaultDefinition!;
+        }
+
+        return builder.ToImmutable();
     }
 
     private static bool IsEmittableAttribute(AttributeModel attribute)
@@ -158,13 +184,23 @@ public sealed class SmoModelFactory
 
     private static ImmutableArray<SmoColumnDefinition> BuildColumns(
         EntityEmissionContext context,
-        PolicyDecisionSet decisions)
+        PolicyDecisionSet decisions,
+        IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults)
     {
         var builder = ImmutableArray.CreateBuilder<SmoColumnDefinition>();
 
         foreach (var attribute in context.EmittableAttributes)
         {
             var dataType = SqlDataTypeMapper.Resolve(attribute);
+            if (attribute.IsIdentifier)
+            {
+                dataType = DataType.BigInt;
+            }
+            else if (attribute.Reference.IsReference &&
+                     string.Equals(attribute.DataType, "Identifier", StringComparison.OrdinalIgnoreCase))
+            {
+                dataType = DataType.BigInt;
+            }
             var nullable = !ShouldEnforceNotNull(context.Entity, attribute, decisions);
             var onDisk = attribute.OnDisk;
             var isIdentity = onDisk.IsIdentity ?? attribute.IsAutoNumber;
@@ -172,7 +208,8 @@ public sealed class SmoModelFactory
             var identityIncrement = isIdentity ? 1 : 0;
             var isComputed = onDisk.IsComputed ?? false;
             var computed = isComputed ? onDisk.ComputedDefinition : null;
-            var defaultExpression = onDisk.DefaultDefinition;
+            var coordinate = new ColumnCoordinate(context.Entity.Schema, context.Entity.PhysicalName, attribute.ColumnName);
+            var defaultExpression = ResolveDefaultExpression(onDisk.DefaultDefinition, profileDefaults, coordinate, attribute);
             var collation = onDisk.Collation;
             var description = attribute.Metadata.Description;
 
@@ -192,6 +229,26 @@ public sealed class SmoModelFactory
         }
 
         return builder.ToImmutable();
+    }
+
+    private static string? ResolveDefaultExpression(
+        string? onDiskDefault,
+        IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults,
+        ColumnCoordinate coordinate,
+        AttributeModel attribute)
+    {
+        if (!string.IsNullOrWhiteSpace(onDiskDefault))
+        {
+            return onDiskDefault;
+        }
+
+        if (profileDefaults.TryGetValue(coordinate, out var profileDefault) &&
+            !string.IsNullOrWhiteSpace(profileDefault))
+        {
+            return profileDefault;
+        }
+
+        return string.IsNullOrWhiteSpace(attribute.DefaultValue) ? null : attribute.DefaultValue;
     }
 
     private static bool ShouldEnforceNotNull(EntityModel entity, AttributeModel attribute, PolicyDecisionSet decisions)
@@ -240,7 +297,7 @@ public sealed class SmoModelFactory
                 continue;
             }
 
-            if (!includePlatformAuto && index.IsPlatformAuto)
+            if (!includePlatformAuto && index.IsPlatformAuto && !index.IsUnique)
             {
                 continue;
             }

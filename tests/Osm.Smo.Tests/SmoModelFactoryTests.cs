@@ -4,6 +4,7 @@ using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -13,28 +14,36 @@ namespace Osm.Smo.Tests;
 
 public class SmoModelFactoryTests
 {
-    private static (Osm.Domain.Model.OsmModel model, PolicyDecisionSet decisions) LoadEdgeCaseDecisions()
+    private static (Osm.Domain.Model.OsmModel model, PolicyDecisionSet decisions, ProfileSnapshot snapshot) LoadEdgeCaseDecisions()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, snapshot, options);
-        return (model, decisions);
+        return (model, decisions, snapshot);
     }
 
     [Fact]
     public void Build_creates_tables_with_policy_driven_nullability_and_foreign_keys()
     {
-        var (model, decisions) = LoadEdgeCaseDecisions();
+        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
         var factory = new SmoModelFactory();
-        var smoModel = factory.Create(model, decisions, SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission));
+        var smoModel = factory.Create(
+            model,
+            decisions,
+            profile: snapshot,
+            options: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission));
 
         var customerTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
+        var idColumn = customerTable.Columns.Single(c => c.Name.Equals("Id", StringComparison.Ordinal));
         var emailColumn = customerTable.Columns.Single(c => c.Name.Equals("Email", StringComparison.Ordinal));
         var cityColumn = customerTable.Columns.Single(c => c.Name.Equals("CityId", StringComparison.Ordinal));
+        Assert.Equal(SqlDataType.BigInt, idColumn.DataType.SqlDataType);
+        Assert.True(idColumn.IsIdentity);
         Assert.False(emailColumn.Nullable);
         Assert.False(cityColumn.Nullable);
+        Assert.Equal(SqlDataType.BigInt, cityColumn.DataType.SqlDataType);
         Assert.Equal(SqlDataType.NVarChar, emailColumn.DataType.SqlDataType);
         Assert.Equal(255, emailColumn.DataType.MaximumLength);
         Assert.DoesNotContain(customerTable.Columns, c => c.Name.Equals("LegacyCode", StringComparison.Ordinal));
@@ -69,11 +78,11 @@ public class SmoModelFactoryTests
     [Fact]
     public void Build_excludes_platform_auto_indexes_when_disabled()
     {
-        var (model, decisions) = LoadEdgeCaseDecisions();
+        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
         var factory = new SmoModelFactory();
         var smoOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
 
-        var smoModel = factory.Create(model, decisions, smoOptions);
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: smoOptions);
 
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
 
@@ -85,7 +94,7 @@ public class SmoModelFactoryTests
     [Fact]
     public void Build_respects_platform_auto_index_toggle()
     {
-        var (model, decisions) = LoadEdgeCaseDecisions();
+        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
         var factory = new SmoModelFactory();
         var options = new SmoBuildOptions(
             "OutSystems",
@@ -93,7 +102,7 @@ public class SmoModelFactoryTests
             EmitBareTableOnly: false,
             SanitizeModuleNames: true,
             NamingOverrides: NamingOverrideOptions.Empty);
-        var smoModel = factory.Create(model, decisions, options);
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
 
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
         var hasPlatformIndex = jobRunTable.Indexes.Any(i => i.Name.Equals("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
@@ -110,7 +119,7 @@ public class SmoModelFactoryTests
         var factory = new SmoModelFactory();
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
 
-        var smoModel = factory.Create(model, decisions, smoOptions);
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: smoOptions);
 
         var userTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
         var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
@@ -144,7 +153,7 @@ public class SmoModelFactoryTests
 
         var factory = new SmoModelFactory();
         var smoOptions = SmoBuildOptions.FromEmission(aggressiveOptions.Emission);
-        var smoModel = factory.Create(model, decisions, smoOptions);
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: smoOptions);
 
         var userTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
         var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
@@ -196,7 +205,7 @@ public class SmoModelFactoryTests
         var factory = new SmoModelFactory();
         var smoOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
 
-        var smoModel = factory.Create(model, decisions, smoOptions);
+        var smoModel = factory.Create(model, decisions, options: smoOptions);
 
         var categoryTables = smoModel.Tables
             .Where(t => t.LogicalName.Equals("Category", StringComparison.OrdinalIgnoreCase))
@@ -272,7 +281,11 @@ public class SmoModelFactoryTests
         var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
         var supplemental = ImmutableArray.Create(OutSystemsInternalModel.Users);
 
-        var smoModel = factory.Create(model, decisions, options, supplemental);
+        var smoModel = factory.Create(
+            model,
+            decisions,
+            options: options,
+            supplementalEntities: supplemental);
 
         var tableDefinition = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_AUDIT_LOG", StringComparison.OrdinalIgnoreCase));
         var foreignKey = Assert.Single(tableDefinition.ForeignKeys);
