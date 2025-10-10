@@ -36,7 +36,7 @@ SELECT
     CAST(ISNULL(e.[Is_System],0) AS bit)  AS IsSystemModule,
     CAST(ISNULL(e.[Is_Active],1) AS bit)  AS ModuleIsActive,
     e.[EspaceKind],
-    e.[SS_Key]                            AS EspaceSSKey
+    TRY_CONVERT(uniqueidentifier, e.[SS_Key]) AS EspaceSSKey
 INTO #E
 FROM dbo.ossys_Espace AS e
 WHERE (@IncludeSystem = 1 OR ISNULL(e.[Is_System],0) = 0)
@@ -60,14 +60,14 @@ SELECT
     CAST(ISNULL(en.[Is_External],0)AS bit) AS IsExternalEntity,
     en.[Data_Kind]                         AS DataKind,
     en.[PrimaryKey_SS_Key]                 AS PrimaryKeySSKey,
-    en.[SS_Key]                            AS EntitySSKey,
+    TRY_CONVERT(uniqueidentifier, en.[SS_Key]) AS EntitySSKey,
     CAST(NULL AS NVARCHAR(MAX))            AS EntityDescription
 INTO #Ent
 FROM dbo.ossys_Entity en
 JOIN #E ON #E.EspaceId = en.[Espace_Id]
 WHERE (@IncludeSystem = 1 OR ISNULL(en.[Is_System],0) = 0);
 CREATE CLUSTERED INDEX IX_Ent ON #Ent(EntityId);
-CREATE NONCLUSTERED INDEX IX_Ent_Espace ON #Ent(EspaceId, PhysicalTableName);
+CREATE NONCLUSTERED INDEX IX_Ent_Espace ON #Ent(EspaceId) INCLUDE (PhysicalTableName);
 
 DECLARE @EntityDescriptionColumn SYSNAME =
     CASE
@@ -204,8 +204,14 @@ WITH ParsedRef AS
 (
   SELECT
     a.AttrId,
-    CASE WHEN a.LegacyType LIKE 'bt*%' THEN SUBSTRING(a.LegacyType, 3, 36) END AS RefEspaceSSKey,
-    CASE WHEN a.LegacyType LIKE 'bt*%' THEN SUBSTRING(a.LegacyType, CHARINDEX('*', a.LegacyType)+1, 36) END AS RefEntitySSKey
+    TRY_CONVERT(uniqueidentifier,
+                CASE WHEN a.LegacyType LIKE 'bt*%'
+                     THEN SUBSTRING(a.LegacyType, 3, 36)
+                END) AS RefEspaceSSKey,
+    TRY_CONVERT(uniqueidentifier,
+                CASE WHEN a.LegacyType LIKE 'bt*%'
+                     THEN SUBSTRING(a.LegacyType, CHARINDEX('*', a.LegacyType) + 1, 36)
+                END) AS RefEntitySSKey
   FROM #Attr a
 )
 SELECT
