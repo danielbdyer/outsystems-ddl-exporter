@@ -49,6 +49,7 @@ public class SqlModelExtractionServiceTests
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Value.Model);
         Assert.Equal(json, result.Value.Json);
+        Assert.Empty(result.Value.Warnings);
     }
 
     [Fact]
@@ -76,6 +77,64 @@ public class SqlModelExtractionServiceTests
         Assert.True(result.IsFailure);
         var error = Assert.Single(result.Errors);
         Assert.Equal("extraction.sql.emptyJson", error.Code);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldSurfaceWarningsForModulesWithoutEntities()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "EmptyModule",
+              "isSystem": false,
+              "isActive": true,
+              "entities": []
+            },
+            {
+              "name": "Inventory",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Product",
+                  "physicalName": "OSUSR_INV_PRODUCT",
+                  "db_schema": "dbo",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ],
+                  "indexes": [],
+                  "relationships": []
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var executor = new StubExecutor(Result<string>.Success(json));
+        var service = new SqlModelExtractionService(executor, new ModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+
+        var result = await service.ExtractAsync(command);
+
+        Assert.True(result.IsSuccess);
+        var warning = Assert.Single(result.Value.Warnings);
+        Assert.Contains("EmptyModule", warning);
+        var module = Assert.Single(result.Value.Model.Modules);
+        Assert.Equal("Inventory", module.Name.Value);
     }
 
     private sealed class StubExecutor : IAdvancedSqlExecutor

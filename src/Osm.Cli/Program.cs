@@ -128,6 +128,13 @@ static async Task<int> RunExtractModelAsync(string[] args)
     }
 
     var result = extractionResult.Value;
+    if (result.Warnings.Count > 0)
+    {
+        foreach (var warning in result.Warnings)
+        {
+            Console.Error.WriteLine($"Warning: {warning}");
+        }
+    }
     Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath)) ?? Directory.GetCurrentDirectory());
     await File.WriteAllTextAsync(outputPath, result.Json);
 

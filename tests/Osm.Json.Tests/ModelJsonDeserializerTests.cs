@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Osm.Json;
@@ -194,6 +195,63 @@ public class ModelJsonDeserializerTests
 
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, e => e.Code == "column.name.invalid");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldWarnAndSkipModulesWithoutEntities()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "EmptyModule",
+              "isSystem": false,
+              "isActive": true,
+              "entities": []
+            },
+            {
+              "name": "Orders",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Order",
+                  "physicalName": "OSUSR_ORD_ORDER",
+                  "db_schema": "dbo",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ],
+                  "indexes": [],
+                  "relationships": []
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+        var warnings = new List<string>();
+
+        var result = deserializer.Deserialize(stream, warnings);
+
+        Assert.True(result.IsSuccess);
+        var module = Assert.Single(result.Value.Modules);
+        Assert.Equal("Orders", module.Name.Value);
+        Assert.Collection(warnings, warning => Assert.Contains("EmptyModule", warning));
     }
 
     [Fact]
