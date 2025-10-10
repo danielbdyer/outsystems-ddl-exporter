@@ -278,6 +278,13 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
         return 1;
     }
 
+    var profileSnapshot = profileResult.Value;
+
+    if (IsSqlProfiler(profilerProvider))
+    {
+        EmitSqlProfilerSnapshot(profileSnapshot);
+    }
+
     if (!await TryCacheEvidenceAsync(
             cacheRoot,
             refreshCache,
@@ -294,7 +301,7 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
     }
 
     var policy = new TighteningPolicy();
-    var decisions = policy.Decide(model, profileResult.Value, tighteningOptions);
+    var decisions = policy.Decide(model, profileSnapshot, tighteningOptions);
     var decisionReport = PolicyDecisionReporter.Create(decisions);
 
     foreach (var diagnostic in decisionReport.Diagnostics.Where(d => d.Severity == TighteningDiagnosticSeverity.Warning))
@@ -314,7 +321,7 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
     var smoModel = new SmoModelFactory().Create(
         model,
         decisions,
-        profile: profileResult.Value,
+        profile: profileSnapshot,
         options: smoOptions,
         supplementalEntities: supplementalEntities);
 
@@ -1163,6 +1170,15 @@ static async Task<Result<ProfileSnapshot>> CaptureProfileAsync(
 
     var fixtureProfiler = new FixtureDataProfiler(profilePath!, new ProfileSnapshotDeserializer());
     return await fixtureProfiler.CaptureAsync().ConfigureAwait(false);
+}
+
+static bool IsSqlProfiler(string provider)
+    => string.Equals(provider, "sql", StringComparison.OrdinalIgnoreCase);
+
+static void EmitSqlProfilerSnapshot(ProfileSnapshot snapshot)
+{
+    Console.WriteLine("SQL profiler snapshot:");
+    Console.WriteLine(Osm.Cli.ProfileSnapshotDebugFormatter.ToJson(snapshot));
 }
 
 static Result<NamingOverrideOptions> ResolveNamingOverrides(
