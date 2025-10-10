@@ -120,7 +120,7 @@ public class CliIntegrationTests
         Assert.Empty(originalTable);
 
         var script = await File.ReadAllTextAsync(renamedTable[0]);
-        Assert.Contains("CREATE TABLE dbo.CUSTOMER_PORTAL", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE [dbo].[CUSTOMER_PORTAL]", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", script, StringComparison.OrdinalIgnoreCase);
 
         var manifestPath = Path.Combine(output.Path, "manifest.json");

@@ -42,7 +42,7 @@ internal static class SqlDataTypeMapper
             "double" => DataType.Float,
             "float" => DataType.Float,
             "real" => DataType.Real,
-            "currency" => ResolveDecimal(attribute.Precision, attribute.Scale, 19, 4),
+            "currency" => ResolveDecimal(attribute.Precision, attribute.Scale, 37, 8),
             "binarydata" => ResolveVarBinary(attribute.Length),
             "binary" => ResolveVarBinary(attribute.Length),
             "varbinary" => ResolveVarBinary(attribute.Length),
@@ -50,9 +50,9 @@ internal static class SqlDataTypeMapper
             "image" => DataType.Image,
             "longtext" => DataType.NVarCharMax,
             "text" => ResolveUnicodeText(attribute.Length),
-            "email" => ResolveUnicodeText(attribute.Length, 254),
-            "phonenumber" => ResolveUnicodeText(attribute.Length, 50),
-            "phone" => ResolveUnicodeText(attribute.Length, 50),
+            "email" => ResolveVarCharText(attribute.Length, 250),
+            "phonenumber" => ResolveVarCharText(attribute.Length, 20),
+            "phone" => ResolveVarCharText(attribute.Length, 20),
             "url" => ResolveUnicodeText(attribute.Length),
             "password" => ResolveUnicodeText(attribute.Length),
             "username" => ResolveUnicodeText(attribute.Length),
@@ -171,7 +171,12 @@ internal static class SqlDataTypeMapper
             return DataType.NVarCharMax;
         }
 
-        return effectiveLength == -1 ? DataType.NVarCharMax : DataType.NVarChar(effectiveLength.Value);
+        if (effectiveLength == -1 || effectiveLength > 2000)
+        {
+            return DataType.NVarCharMax;
+        }
+
+        return DataType.NVarChar(effectiveLength.Value);
     }
 
     private static DataType ResolveVarChar(int? length)
@@ -182,6 +187,17 @@ internal static class SqlDataTypeMapper
         }
 
         return length == -1 ? DataType.VarCharMax : DataType.VarChar(length.Value);
+    }
+
+    private static DataType ResolveVarCharText(int? length, int fallbackLength)
+    {
+        var effectiveLength = length;
+        if (effectiveLength is null or <= 0)
+        {
+            effectiveLength = fallbackLength;
+        }
+
+        return ResolveVarChar(effectiveLength);
     }
 
     private static DataType ResolveVarBinary(int? length)

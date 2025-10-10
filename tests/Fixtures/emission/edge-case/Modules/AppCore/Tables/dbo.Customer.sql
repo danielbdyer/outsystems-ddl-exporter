@@ -1,28 +1,28 @@
-CREATE TABLE dbo.Customer (
-    Id        BIGINT         IDENTITY (1, 1) NOT NULL
-        CONSTRAINT PK_Customer
+CREATE TABLE [dbo].[Customer] (
+    [Id]        BIGINT         IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_Customer]
             PRIMARY KEY CLUSTERED,
-    Email     NVARCHAR (255) COLLATE Latin1_General_CI_AI NOT NULL,
-    FirstName NVARCHAR (100)
+    [Email]     NVARCHAR (255) COLLATE Latin1_General_CI_AI NOT NULL,
+    [FirstName] NVARCHAR (100)
         DEFAULT (''),
-    LastName  NVARCHAR (100)
+    [LastName]  NVARCHAR (100)
         DEFAULT (''),
-    CityId    BIGINT         NOT NULL
-        CONSTRAINT FK_Customer_CityId
-            FOREIGN KEY REFERENCES dbo.City (Id)
-                ON DELETE NO ACTION
-                ON UPDATE NO ACTION
+    [CityId]    BIGINT         NOT NULL,
+    CONSTRAINT [FK_Customer_CityId]
+        FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])
+            ON DELETE NO ACTION
+            ON UPDATE NO ACTION
 )
 
 GO
 
-CREATE UNIQUE INDEX IDX_Customer_Email
-    ON dbo.Customer(Email ASC)
+CREATE UNIQUE INDEX [IDX_Customer_Email]
+    ON [dbo].[Customer]([Email] ASC)
 
 GO
 
-CREATE INDEX IDX_Customer_Name
-    ON dbo.Customer(LastName ASC, FirstName ASC)
+CREATE INDEX [IDX_Customer_Name]
+    ON [dbo].[Customer]([LastName] ASC, [FirstName] ASC)
 
 GO
 
