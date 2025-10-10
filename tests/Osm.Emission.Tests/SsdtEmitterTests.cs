@@ -27,7 +27,11 @@ public class SsdtEmitterTests
         var report = PolicyDecisionReporter.Create(decisions);
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
         var factory = new SmoModelFactory();
-        var smoModel = factory.Create(model, decisions, smoOptions);
+        var smoModel = factory.Create(
+            model,
+            decisions,
+            profile: snapshot,
+            options: smoOptions);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
@@ -216,7 +220,11 @@ public class SsdtEmitterTests
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, snapshot, options);
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
-        var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+        var smoModel = new SmoModelFactory().Create(
+            model,
+            decisions,
+            profile: snapshot,
+            options: smoOptions);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
@@ -238,7 +246,11 @@ public class SsdtEmitterTests
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, snapshot, options);
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
-        var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+        var smoModel = new SmoModelFactory().Create(
+            model,
+            decisions,
+            profile: snapshot,
+            options: smoOptions);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
@@ -274,7 +286,11 @@ public class SsdtEmitterTests
         var decisions = policy.Decide(model, snapshot, bareOptions);
         var smoOptions = SmoBuildOptions.FromEmission(bareOptions.Emission);
         var factory = new SmoModelFactory();
-        var smoModel = factory.Create(model, decisions, smoOptions);
+        var smoModel = factory.Create(
+            model,
+            decisions,
+            profile: snapshot,
+            options: smoOptions);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
@@ -310,7 +326,11 @@ public class SsdtEmitterTests
         var cleanDecisions = policy.Decide(model, cleanSnapshot, defaults);
         var cleanOut = Path.Combine(temp.Path, "clean");
         Directory.CreateDirectory(cleanOut);
-        var cleanModel = factory.Create(model, cleanDecisions, smoOptions);
+        var cleanModel = factory.Create(
+            model,
+            cleanDecisions,
+            profile: cleanSnapshot,
+            options: smoOptions);
         var cleanManifest = await emitter.EmitAsync(cleanModel, cleanOut, smoOptions, null);
         var cleanEntry = cleanManifest.Tables.Single(t => t.Table.Equals("User", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(cleanEntry.Indexes, name => name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
@@ -321,7 +341,11 @@ public class SsdtEmitterTests
         var duplicateDecisions = policy.Decide(model, duplicateSnapshot, defaults);
         var duplicateOut = Path.Combine(temp.Path, "duplicates");
         Directory.CreateDirectory(duplicateOut);
-        var duplicateModel = factory.Create(model, duplicateDecisions, smoOptions);
+        var duplicateModel = factory.Create(
+            model,
+            duplicateDecisions,
+            profile: duplicateSnapshot,
+            options: smoOptions);
         var duplicateManifest = await emitter.EmitAsync(duplicateModel, duplicateOut, smoOptions, null);
         var duplicateEntry = duplicateManifest.Tables.Single(t => t.Table.Equals("User", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(duplicateEntry.Indexes, name => name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
@@ -346,7 +370,11 @@ public class SsdtEmitterTests
         Assert.True(overrides.IsSuccess);
 
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission).WithNamingOverrides(overrides.Value);
-        var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+        var smoModel = new SmoModelFactory().Create(
+            model,
+            decisions,
+            profile: snapshot,
+            options: smoOptions);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
@@ -395,7 +423,11 @@ public class SsdtEmitterTests
         Assert.True(overrides.IsSuccess);
 
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission).WithNamingOverrides(overrides.Value);
-        var smoModel = new SmoModelFactory().Create(model, decisions, smoOptions);
+        var smoModel = new SmoModelFactory().Create(
+            model,
+            decisions,
+            profile: snapshot,
+            options: smoOptions);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
@@ -448,7 +480,11 @@ public class SsdtEmitterTests
         Assert.True(overrides.IsSuccess);
 
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission).WithNamingOverrides(overrides.Value);
-        var smoModel = new SmoModelFactory().Create(mutatedModel, decisions, smoOptions);
+        var smoModel = new SmoModelFactory().Create(
+            mutatedModel,
+            decisions,
+            profile: snapshot,
+            options: smoOptions);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
@@ -469,7 +505,7 @@ public class SsdtEmitterTests
     public async Task EmitAsync_applies_module_scoped_override_without_affecting_other_entities()
     {
         var categoryColumns = ImmutableArray.Create(
-            new SmoColumnDefinition("Id", "Id", DataType.Int, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
+            new SmoColumnDefinition("Id", "Id", DataType.BigInt, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
         var categoryIndexes = ImmutableArray.Create(
             new SmoIndexDefinition("PK_Category", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1, IsIncluded: false, IsDescending: false))));
         var categoryForeignKeys = ImmutableArray<SmoForeignKeyDefinition>.Empty;
@@ -499,8 +535,8 @@ public class SsdtEmitterTests
             categoryForeignKeys);
 
         var productColumns = ImmutableArray.Create(
-            new SmoColumnDefinition("Id", "Id", DataType.Int, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null),
-            new SmoColumnDefinition("CategoryId", "CategoryId", DataType.Int, Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
+            new SmoColumnDefinition("Id", "Id", DataType.BigInt, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null),
+            new SmoColumnDefinition("CategoryId", "CategoryId", DataType.BigInt, Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
         var productIndexes = ImmutableArray.Create(
             new SmoIndexDefinition("PK_Product", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1, IsIncluded: false, IsDescending: false))));
         var productForeignKeys = ImmutableArray.Create(

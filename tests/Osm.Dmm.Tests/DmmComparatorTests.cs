@@ -24,7 +24,11 @@ public class DmmComparatorTests
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, snapshot, options);
         var factory = new SmoModelFactory();
-        _smoModel = factory.Create(model, decisions, SmoBuildOptions.FromEmission(options.Emission));
+        _smoModel = factory.Create(
+            model,
+            decisions,
+            profile: snapshot,
+            options: SmoBuildOptions.FromEmission(options.Emission));
     }
 
     [Fact]
@@ -56,8 +60,8 @@ public class DmmComparatorTests
     public void Compare_detects_column_order_difference()
     {
         var reorderedScript = EdgeCaseScript.Replace(
-            "[ID] INT NOT NULL,\n    [EMAIL] NVARCHAR(255) NOT NULL,",
-            "[EMAIL] NVARCHAR(255) NOT NULL,\n    [ID] INT NOT NULL,");
+            "[ID] BIGINT NOT NULL,\n    [EMAIL] NVARCHAR(255) NOT NULL,",
+            "[EMAIL] NVARCHAR(255) NOT NULL,\n    [ID] BIGINT NOT NULL,");
 
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(_smoModel, ParseScript(reorderedScript), NamingOverrideOptions.Empty);
@@ -71,7 +75,7 @@ public class DmmComparatorTests
     public void Compare_detects_missing_table()
     {
         var script = EdgeCaseScript.Replace(
-            "CREATE TABLE [dbo].[OSUSR_DEF_CITY](\n    [ID] INT NOT NULL,\n    [NAME] NVARCHAR(200) NOT NULL,\n    [ISACTIVE] BIT NOT NULL,\n    CONSTRAINT [PK_City] PRIMARY KEY ([ID])\n);\n",
+            "CREATE TABLE [dbo].[OSUSR_DEF_CITY](\n    [ID] BIGINT NOT NULL,\n    [NAME] NVARCHAR(200) NOT NULL,\n    [ISACTIVE] BIT NOT NULL,\n    CONSTRAINT [PK_City] PRIMARY KEY ([ID])\n);\n",
             string.Empty);
 
         var comparator = new DmmComparator();
@@ -85,7 +89,7 @@ public class DmmComparatorTests
     [Fact]
     public void Compare_detects_unexpected_table()
     {
-        var script = EdgeCaseScript + "CREATE TABLE [dbo].[EXTRA](\n    [ID] INT NOT NULL,\n    CONSTRAINT [PK_EXTRA] PRIMARY KEY ([ID])\n);";
+        var script = EdgeCaseScript + "CREATE TABLE [dbo].[EXTRA](\n    [ID] BIGINT NOT NULL,\n    CONSTRAINT [PK_EXTRA] PRIMARY KEY ([ID])\n);";
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
 
@@ -197,7 +201,11 @@ public class DmmComparatorTests
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(mutatedModel, snapshot, options);
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
-        var smoModel = new SmoModelFactory().Create(mutatedModel, decisions, smoOptions);
+        var smoModel = new SmoModelFactory().Create(
+            mutatedModel,
+            decisions,
+            profile: snapshot,
+            options: smoOptions);
 
         var overrideResult = NamingOverrideRule.Create(null, null, "App Core", "Customer", "CUSTOMER_EXTERNAL");
         Assert.True(overrideResult.IsSuccess);
@@ -216,7 +224,7 @@ public class DmmComparatorTests
     public void Parser_captures_primary_keys_added_via_alter_table()
     {
         const string script = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
-    [ID] INT NOT NULL,
+    [ID] BIGINT NOT NULL,
     [EMAIL] NVARCHAR(255) NOT NULL
 );
 ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
@@ -237,28 +245,28 @@ ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
-    [ID] INT NOT NULL,
+    [ID] BIGINT NOT NULL,
     [EMAIL] NVARCHAR(255) NOT NULL,
     [FIRSTNAME] NVARCHAR(100) NULL,
     [LASTNAME] NVARCHAR(100) NULL,
-    [CITYID] INT NOT NULL,
+    [CITYID] BIGINT NOT NULL,
     CONSTRAINT [PK_Customer] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_DEF_CITY](
-    [ID] INT NOT NULL,
+    [ID] BIGINT NOT NULL,
     [NAME] NVARCHAR(200) NOT NULL,
     [ISACTIVE] BIT NOT NULL,
     CONSTRAINT [PK_City] PRIMARY KEY ([ID])
 );
 CREATE TABLE [billing].[BILLING_ACCOUNT](
-    [ID] INT NOT NULL,
+    [ID] BIGINT NOT NULL,
     [ACCOUNTNUMBER] VARCHAR(50) NOT NULL,
     [EXTREF] VARCHAR(50) NULL,
     CONSTRAINT [PK_BillingAccount] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
-    [ID] INT NOT NULL,
-    [TRIGGEREDBYUSERID] INT NULL,
+    [ID] BIGINT NOT NULL,
+    [TRIGGEREDBYUSERID] BIGINT NULL,
     [CREATEDON] DATETIME NOT NULL,
     CONSTRAINT [PK_JobRun] PRIMARY KEY ([ID])
 );";

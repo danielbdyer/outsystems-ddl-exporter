@@ -8,25 +8,25 @@
   "ForeignKeyCount": 2,
   "ForeignKeysCreatedCount": 1,
   "ColumnRationales": {
+    "DELETE_RULE_IGNORE": 1,
+    "FK_ENFORCED": 1,
     "PK": 4,
-    "PHYSICAL_NOT_NULL": 4,
     "DATA_HAS_ORPHANS": 1,
     "MANDATORY": 10,
-    "PROFILE_MISSING": 1,
     "DEFAULT_PRESENT": 2,
-    "FK_ENFORCED": 1,
+    "DATA_NO_NULLS": 10,
     "UNIQUE_NO_NULLS": 2,
-    "DELETE_RULE_IGNORE": 1,
-    "DATA_NO_NULLS": 10
+    "PROFILE_MISSING": 1,
+    "PHYSICAL_NOT_NULL": 4
   },
   "UniqueIndexRationales": {
-    "PHYSICAL_UNIQUE_KEY": 2,
-    "UNIQUE_NO_NULLS": 2
+    "UNIQUE_NO_NULLS": 2,
+    "PHYSICAL_UNIQUE_KEY": 2
   },
   "ForeignKeyRationales": {
+    "DELETE_RULE_IGNORE": 1,
     "DATA_HAS_ORPHANS": 1,
-    "DB_CONSTRAINT_PRESENT": 1,
-    "DELETE_RULE_IGNORE": 1
+    "DB_CONSTRAINT_PRESENT": 1
   },
   "Columns": [
     {

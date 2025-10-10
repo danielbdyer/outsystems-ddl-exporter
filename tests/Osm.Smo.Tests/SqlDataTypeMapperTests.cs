@@ -69,6 +69,29 @@ public sealed class SqlDataTypeMapperTests
         Assert.Equal(12, result.NumericScale);
     }
 
+    [Fact]
+    public void Resolve_FallsBackToAttributeLengthWhenOnDiskMissing()
+    {
+        var attribute = CreateAttribute(AttributeOnDiskMetadata.Create(
+            isNullable: true,
+            sqlType: "nvarchar",
+            maxLength: null,
+            precision: null,
+            scale: null,
+            collation: null,
+            isIdentity: false,
+            isComputed: false,
+            computedDefinition: null,
+            defaultDefinition: null));
+
+        attribute = attribute with { Length = 80 };
+
+        var result = SqlDataTypeMapper.Resolve(attribute);
+
+        Assert.Equal(SqlDataType.NVarChar, result.SqlDataType);
+        Assert.Equal(80, result.MaximumLength);
+    }
+
     private static AttributeModel CreateAttribute(AttributeOnDiskMetadata onDisk)
         => new(
             new AttributeName("Attr"),
