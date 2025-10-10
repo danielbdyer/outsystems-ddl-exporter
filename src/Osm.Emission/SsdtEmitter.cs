@@ -297,7 +297,11 @@ ELSE
                 {
                     IsPrimaryKey = true,
                     Clustered = true,
-                    ConstraintIdentifier = new Identifier { Value = constraintName },
+                    ConstraintIdentifier = new Identifier
+                    {
+                        Value = constraintName,
+                        QuoteType = QuoteType.SquareBracket,
+                    },
                 };
 
                 primaryKeyColumn.Constraints.Add(inlineConstraint);
@@ -308,7 +312,11 @@ ELSE
                 {
                     IsPrimaryKey = true,
                     Clustered = true,
-                    ConstraintIdentifier = new Identifier { Value = constraintName },
+                    ConstraintIdentifier = new Identifier
+                    {
+                        Value = constraintName,
+                        QuoteType = QuoteType.SquareBracket,
+                    },
                 };
 
                 foreach (var column in sortedColumns)
@@ -335,7 +343,11 @@ ELSE
     {
         var definition = new ColumnDefinition
         {
-            ColumnIdentifier = new Identifier { Value = column.Name },
+            ColumnIdentifier = new Identifier
+            {
+                Value = column.Name,
+                QuoteType = QuoteType.SquareBracket,
+            },
             DataType = column.IsComputed ? null : TranslateDataType(column.DataType),
         };
 
@@ -405,7 +417,11 @@ ELSE
     {
         var statement = new CreateIndexStatement
         {
-            Name = new Identifier { Value = indexName },
+            Name = new Identifier
+            {
+                Value = indexName,
+                QuoteType = QuoteType.SquareBracket,
+            },
             OnName = BuildSchemaObjectName(table.Schema, effectiveTableName),
             Unique = index.IsUnique,
         };
@@ -453,45 +469,32 @@ ELSE
 
             var constraint = new ForeignKeyConstraintDefinition
             {
-                ConstraintIdentifier = new Identifier { Value = foreignKeyName },
+                ConstraintIdentifier = new Identifier
+                {
+                    Value = foreignKeyName,
+                    QuoteType = QuoteType.SquareBracket,
+                },
                 ReferenceTableName = BuildSchemaObjectName(foreignKey.ReferencedSchema, referencedTableName),
                 DeleteAction = MapDeleteAction(foreignKey.DeleteAction),
                 UpdateAction = DeleteUpdateAction.NoAction,
             };
 
-            constraint.ReferencedTableColumns.Add(new Identifier { Value = foreignKey.ReferencedColumn });
+            constraint.Columns.Add(new Identifier
+            {
+                Value = foreignKey.Column,
+                QuoteType = QuoteType.SquareBracket,
+            });
 
-            var inlineColumn = FindColumnDefinition(statement.Definition, foreignKey.Column);
-            if (inlineColumn is not null)
+            constraint.ReferencedTableColumns.Add(new Identifier
             {
-                inlineColumn.Constraints.Add(constraint);
-            }
-            else
-            {
-                constraint.Columns.Add(new Identifier { Value = foreignKey.Column });
-                statement.Definition.TableConstraints.Add(constraint);
-            }
+                Value = foreignKey.ReferencedColumn,
+                QuoteType = QuoteType.SquareBracket,
+            });
+
+            statement.Definition.TableConstraints.Add(constraint);
         }
 
         return builder.ToImmutable();
-    }
-
-    private static ColumnDefinition? FindColumnDefinition(TableDefinition definition, string columnName)
-    {
-        foreach (var column in definition.ColumnDefinitions)
-        {
-            if (column?.ColumnIdentifier?.Value is null)
-            {
-                continue;
-            }
-
-            if (string.Equals(column.ColumnIdentifier.Value, columnName, StringComparison.OrdinalIgnoreCase))
-            {
-                return column;
-            }
-        }
-
-        return null;
     }
 
     private static string ResolveConstraintName(
@@ -545,8 +548,16 @@ ELSE
         {
             Identifiers =
             {
-                new Identifier { Value = schema },
-                new Identifier { Value = name },
+                new Identifier
+                {
+                    Value = schema,
+                    QuoteType = QuoteType.SquareBracket,
+                },
+                new Identifier
+                {
+                    Value = name,
+                    QuoteType = QuoteType.SquareBracket,
+                },
             }
         };
     }
@@ -557,7 +568,14 @@ ELSE
         {
             MultiPartIdentifier = new MultiPartIdentifier
             {
-                Identifiers = { new Identifier { Value = columnName } }
+                Identifiers =
+                {
+                    new Identifier
+                    {
+                        Value = columnName,
+                        QuoteType = QuoteType.SquareBracket,
+                    }
+                }
             }
         };
     }
@@ -682,7 +700,7 @@ ELSE
 
             if (!trimmedLine.Contains("DEFAULT", StringComparison.OrdinalIgnoreCase))
             {
-                builder.Append(line);
+                builder.Append(FormatTrailingComma(line));
                 continue;
             }
         }
@@ -690,6 +708,22 @@ ELSE
         var withDefaults = builder.ToString();
         var withForeignKeys = FormatForeignKeyConstraints(withDefaults);
         return FormatPrimaryKeyConstraints(withForeignKeys);
+    }
+
+    private static string FormatTrailingComma(string line)
+    {
+        var trimmed = line.TrimEnd();
+        if (!trimmed.EndsWith(",", StringComparison.Ordinal))
+        {
+            return line;
+        }
+
+        var indentLength = line.Length - line.TrimStart().Length;
+        var indent = line[..indentLength];
+        var content = trimmed[..^1].TrimEnd();
+        var withoutIndent = content.TrimStart();
+
+        return indent + withoutIndent + ',';
     }
 
     private static string FormatInlineDefault(string line)
@@ -735,7 +769,7 @@ ELSE
         if (!string.IsNullOrEmpty(constraintSegment))
         {
             builder.Append(constraintSegment);
-            builder.Append(' ');
+            builder.Append(" ");
         }
 
         builder.Append(defaultSegment);
@@ -854,7 +888,7 @@ ELSE
 
                 builder.Append(ownerIndent);
                 builder.Append(ownerSegment);
-                builder.Append(' ');
+                builder.Append(" ");
                 builder.Append(referencesSegment);
                 if (hasOnClauses)
                 {

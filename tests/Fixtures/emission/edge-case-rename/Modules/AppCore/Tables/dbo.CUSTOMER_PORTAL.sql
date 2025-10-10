@@ -1,28 +1,28 @@
-CREATE TABLE dbo.CUSTOMER_PORTAL (
-    Id        BIGINT         IDENTITY (1, 1) NOT NULL
-        CONSTRAINT PK_CUSTOMER_PORTAL
+CREATE TABLE [dbo].[CUSTOMER_PORTAL] (
+    [Id]        BIGINT         IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_CUSTOMER_PORTAL]
             PRIMARY KEY CLUSTERED,
-    Email     NVARCHAR (255) COLLATE Latin1_General_CI_AI NOT NULL,
-    FirstName NVARCHAR (100)
+    [Email]     NVARCHAR (255) COLLATE Latin1_General_CI_AI NOT NULL,
+    [FirstName] NVARCHAR (100)
         DEFAULT (''),
-    LastName  NVARCHAR (100)
+    [LastName]  NVARCHAR (100)
         DEFAULT (''),
-    CityId    BIGINT         NOT NULL
-        CONSTRAINT FK_CUSTOMER_PORTAL_CityId
-            FOREIGN KEY REFERENCES dbo.City (Id)
-                ON DELETE NO ACTION
-                ON UPDATE NO ACTION
+    [CityId]    BIGINT         NOT NULL,
+    CONSTRAINT [FK_CUSTOMER_PORTAL_CityId]
+        FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])
+            ON DELETE NO ACTION
+            ON UPDATE NO ACTION
 )
 
 GO
 
-CREATE UNIQUE INDEX IDX_CUSTOMER_PORTAL_Email
-    ON dbo.CUSTOMER_PORTAL(Email ASC)
+CREATE UNIQUE INDEX [IDX_CUSTOMER_PORTAL_Email]
+    ON [dbo].[CUSTOMER_PORTAL]([Email] ASC)
 
 GO
 
-CREATE INDEX IDX_CUSTOMER_PORTAL_Name
-    ON dbo.CUSTOMER_PORTAL(LastName ASC, FirstName ASC)
+CREATE INDEX [IDX_CUSTOMER_PORTAL_Name]
+    ON [dbo].[CUSTOMER_PORTAL]([LastName] ASC, [FirstName] ASC)
 
 GO
 

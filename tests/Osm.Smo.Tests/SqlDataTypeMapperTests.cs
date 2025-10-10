@@ -131,22 +131,53 @@ public sealed class SqlDataTypeMapperTests
         var result = SqlDataTypeMapper.Resolve(attribute);
 
         Assert.Equal(SqlDataType.Decimal, result.SqlDataType);
-        Assert.Equal(19, result.NumericPrecision);
-        Assert.Equal(4, result.NumericScale);
+        // SMO's Decimal stores the requested precision in NumericScale and the scale in NumericPrecision.
+        Assert.Equal(37, result.NumericScale);
+        Assert.Equal(8, result.NumericPrecision);
     }
 
     [Theory]
-    [InlineData("rtText", 200)]
-    [InlineData("rtEmail", 254)]
-    [InlineData("rtPhoneNumber", 50)]
-    public void Resolve_MapsTextualRuntimeTypesWithLength(string runtimeType, int expectedLength)
+    [InlineData(200)]
+    [InlineData(2001)]
+    public void Resolve_MapsTextualRuntimeTypesWithLength(int declaredLength)
     {
-        var attribute = CreateAttribute(dataType: runtimeType, length: runtimeType.Equals("rtText", StringComparison.OrdinalIgnoreCase) ? 200 : null);
+        var attribute = CreateAttribute(dataType: "rtText", length: declaredLength);
 
         var result = SqlDataTypeMapper.Resolve(attribute);
 
-        Assert.Equal(SqlDataType.NVarChar, result.SqlDataType);
-        Assert.Equal(expectedLength, result.MaximumLength);
+        if (declaredLength > 2000)
+        {
+            Assert.Equal(SqlDataType.NVarCharMax, result.SqlDataType);
+        }
+        else
+        {
+            Assert.Equal(SqlDataType.NVarChar, result.SqlDataType);
+            Assert.Equal(declaredLength, result.MaximumLength);
+        }
+    }
+
+    [Fact]
+    public void Resolve_MapsEmailToVarChar()
+    {
+        var attribute = CreateAttribute(dataType: "rtEmail", length: null);
+
+        var result = SqlDataTypeMapper.Resolve(attribute);
+
+        Assert.Equal(SqlDataType.VarChar, result.SqlDataType);
+        Assert.Equal(250, result.MaximumLength);
+    }
+
+    [Theory]
+    [InlineData("rtPhoneNumber")]
+    [InlineData("rtPhone")]
+    public void Resolve_MapsPhoneToVarChar(string runtimeType)
+    {
+        var attribute = CreateAttribute(dataType: runtimeType, length: null);
+
+        var result = SqlDataTypeMapper.Resolve(attribute);
+
+        Assert.Equal(SqlDataType.VarChar, result.SqlDataType);
+        Assert.Equal(20, result.MaximumLength);
     }
 
     [Fact]

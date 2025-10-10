@@ -49,15 +49,15 @@ public class SsdtEmitterTests
         var customerPath = Path.Combine(temp.Path, customerTable.TableFile);
         Assert.True(File.Exists(customerPath));
         var customerScript = await File.ReadAllTextAsync(customerPath);
-        Assert.Contains("CREATE TABLE dbo.Customer", customerScript);
-        Assert.Contains("CONSTRAINT PK_Customer", customerScript, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("CONSTRAINT FK_Customer_CityId", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE [dbo].[Customer]", customerScript);
+        Assert.Contains("CONSTRAINT [PK_Customer]", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CONSTRAINT [FK_Customer_CityId]", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(Environment.NewLine + "            PRIMARY KEY CLUSTERED,", customerScript);
-        Assert.Contains(Environment.NewLine + "            FOREIGN KEY REFERENCES dbo.City (Id)", customerScript);
-        Assert.Contains(Environment.NewLine + "                ON DELETE NO ACTION", customerScript);
-        Assert.Contains(Environment.NewLine + "                ON UPDATE NO ACTION", customerScript);
+        Assert.Contains("FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ON DELETE NO ACTION", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ON UPDATE NO ACTION", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("DEFAULT ('')", customerScript, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("CREATE UNIQUE INDEX IDX_Customer_Email", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE UNIQUE INDEX [IDX_Customer_Email]", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("EXEC sys.sp_addextendedproperty", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("LegacyCode", customerScript, StringComparison.Ordinal);
 
@@ -98,8 +98,8 @@ public class SsdtEmitterTests
 
         var script = string.Join(Environment.NewLine, new[]
         {
-            "CREATE TABLE dbo.Sample (",
-            "    Flag BIT NOT NULL DEFAULT ((0))",
+            "CREATE TABLE [dbo].[Sample] (",
+            "    [Flag] BIT NOT NULL DEFAULT ((0))",
             ")"
         });
 
@@ -107,8 +107,8 @@ public class SsdtEmitterTests
 
         var expected = string.Join(Environment.NewLine, new[]
         {
-            "CREATE TABLE dbo.Sample (",
-            "    Flag BIT NOT NULL",
+            "CREATE TABLE [dbo].[Sample] (",
+            "    [Flag] BIT NOT NULL",
             "        DEFAULT ((0))",
             ")"
         });
@@ -132,9 +132,9 @@ public class SsdtEmitterTests
 
         var script = string.Join(Environment.NewLine, new[]
         {
-            "CREATE TABLE dbo.Sample (",
-            "    Id INT NOT NULL,",
-            "    CreatedOn DATETIME2 NOT NULL CONSTRAINT DF_Sample_CreatedOn DEFAULT (SYSUTCDATETIME()),",
+            "CREATE TABLE [dbo].[Sample] (",
+            "    [Id] INT NOT NULL,",
+            "    [CreatedOn] DATETIME2 NOT NULL CONSTRAINT DF_Sample_CreatedOn DEFAULT (SYSUTCDATETIME()),",
             ")"
         });
 
@@ -142,9 +142,9 @@ public class SsdtEmitterTests
 
         var expected = string.Join(Environment.NewLine, new[]
         {
-            "CREATE TABLE dbo.Sample (",
-            "    Id INT NOT NULL,",
-            "    CreatedOn DATETIME2 NOT NULL",
+            "CREATE TABLE [dbo].[Sample] (",
+            "    [Id] INT NOT NULL,",
+            "    [CreatedOn] DATETIME2 NOT NULL",
             "        CONSTRAINT DF_Sample_CreatedOn DEFAULT (SYSUTCDATETIME()),",
             ")"
         });
@@ -167,9 +167,9 @@ public class SsdtEmitterTests
 
         var script = string.Join(Environment.NewLine, new[]
         {
-            "CREATE TABLE dbo.Sample (",
-            "    Value INT NOT NULL,",
-            "    CONSTRAINT CK_Sample_Value CHECK (Value > 0)",
+            "CREATE TABLE [dbo].[Sample] (",
+            "    [Value] INT NOT NULL,",
+            "    CONSTRAINT CK_Sample_Value CHECK ([Value] > 0)",
             ")"
         });
 
@@ -187,10 +187,10 @@ public class SsdtEmitterTests
 
         var script = string.Join(Environment.NewLine, new[]
         {
-            "CREATE TABLE dbo.Sample (",
-            "    Id INT NOT NULL,",
-            "    CONSTRAINT FK_Sample_Primary FOREIGN KEY (PrimaryId) REFERENCES dbo.Primary (Id) ON DELETE CASCADE,",
-            "    CONSTRAINT FK_Sample_Secondary FOREIGN KEY (SecondaryId) REFERENCES dbo.Secondary (Id)",
+            "CREATE TABLE [dbo].[Sample] (",
+            "    [Id] INT NOT NULL,",
+            "    CONSTRAINT FK_Sample_Primary FOREIGN KEY ([PrimaryId]) REFERENCES [dbo].[Primary] ([Id]) ON DELETE CASCADE,",
+            "    CONSTRAINT FK_Sample_Secondary FOREIGN KEY ([SecondaryId]) REFERENCES [dbo].[Secondary] ([Id])",
             ")"
         });
 
@@ -198,13 +198,13 @@ public class SsdtEmitterTests
 
         var expected = string.Join(Environment.NewLine, new[]
         {
-            "CREATE TABLE dbo.Sample (",
-            "    Id INT NOT NULL,",
+            "CREATE TABLE [dbo].[Sample] (",
+            "    [Id] INT NOT NULL,",
             "    CONSTRAINT FK_Sample_Primary",
-            "        FOREIGN KEY (PrimaryId) REFERENCES dbo.Primary (Id)",
+            "        FOREIGN KEY ([PrimaryId]) REFERENCES [dbo].[Primary] ([Id])",
             "            ON DELETE CASCADE,",
             "    CONSTRAINT FK_Sample_Secondary",
-            "        FOREIGN KEY (SecondaryId) REFERENCES dbo.Secondary (Id)",
+            "        FOREIGN KEY ([SecondaryId]) REFERENCES [dbo].[Secondary] ([Id])",
             ")"
         });
 
@@ -260,7 +260,7 @@ public class SsdtEmitterTests
         Assert.Contains(jobRun.Indexes, name => name.Equals("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
 
         var script = await File.ReadAllTextAsync(Path.Combine(temp.Path, jobRun.TableFile));
-        Assert.Contains("CREATE INDEX OSIDX_JobRun_CreatedOn", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE INDEX [OSIDX_JobRun_CreatedOn]", script, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -303,7 +303,7 @@ public class SsdtEmitterTests
         Assert.False(customerEntry.IncludesExtendedProperties);
 
         var script = await File.ReadAllTextAsync(Path.Combine(temp.Path, customerEntry.TableFile));
-        Assert.Contains("CREATE TABLE dbo.Customer", script);
+        Assert.Contains("CREATE TABLE [dbo].[Customer]", script);
         Assert.DoesNotContain("DEFAULT", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("FOREIGN KEY", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("CREATE INDEX", script, StringComparison.OrdinalIgnoreCase);
@@ -335,7 +335,7 @@ public class SsdtEmitterTests
         var cleanEntry = cleanManifest.Tables.Single(t => t.Table.Equals("User", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(cleanEntry.Indexes, name => name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
         var cleanScript = await File.ReadAllTextAsync(Path.Combine(cleanOut, cleanEntry.TableFile));
-        Assert.Contains("CREATE UNIQUE INDEX UX_User_Email", cleanScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE UNIQUE INDEX [UX_User_Email]", cleanScript, StringComparison.OrdinalIgnoreCase);
 
         var duplicateSnapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUniqueWithDuplicates);
         var duplicateDecisions = policy.Decide(model, duplicateSnapshot, defaults);
@@ -350,8 +350,8 @@ public class SsdtEmitterTests
         var duplicateEntry = duplicateManifest.Tables.Single(t => t.Table.Equals("User", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(duplicateEntry.Indexes, name => name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
         var duplicateScript = await File.ReadAllTextAsync(Path.Combine(duplicateOut, duplicateEntry.TableFile));
-        Assert.Contains("CREATE INDEX UX_User_Email", duplicateScript, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("CREATE UNIQUE INDEX UX_User_Email", duplicateScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE INDEX [UX_User_Email]", duplicateScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CREATE UNIQUE INDEX [UX_User_Email]", duplicateScript, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -386,7 +386,7 @@ public class SsdtEmitterTests
 
         var tablePath = Path.Combine(temp.Path, renamedEntry.TableFile);
         var tableScript = await File.ReadAllTextAsync(tablePath);
-        Assert.Contains("CREATE TABLE dbo.CUSTOMER_PORTAL", tableScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE [dbo].[CUSTOMER_PORTAL]", tableScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", tableScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("PK_CUSTOMER_PORTAL", tableScript, StringComparison.OrdinalIgnoreCase);
 
@@ -439,7 +439,7 @@ public class SsdtEmitterTests
 
         var tablePath = Path.Combine(temp.Path, renamedEntry.TableFile);
         var tableScript = await File.ReadAllTextAsync(tablePath);
-        Assert.Contains("CREATE TABLE dbo.CUSTOMER_EXTERNAL", tableScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE [dbo].[CUSTOMER_EXTERNAL]", tableScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", tableScript, StringComparison.OrdinalIgnoreCase);
 
         Assert.All(renamedEntry.Indexes, name => Assert.Contains("CUSTOMER_EXTERNAL", name, StringComparison.OrdinalIgnoreCase));
@@ -497,7 +497,7 @@ public class SsdtEmitterTests
 
         var tablePath = Path.Combine(temp.Path, renamedEntry.TableFile);
         var tableScript = await File.ReadAllTextAsync(tablePath);
-        Assert.Contains("CREATE TABLE dbo.CUSTOMER_EXTERNAL", tableScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE [dbo].[CUSTOMER_EXTERNAL]", tableScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", tableScript, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -591,11 +591,11 @@ public class SsdtEmitterTests
             t.TableFile.Contains("Product", StringComparison.OrdinalIgnoreCase));
         var productTablePath = Path.Combine(temp.Path, productEntry.TableFile);
         var productScript = await File.ReadAllTextAsync(productTablePath);
-        Assert.Contains("REFERENCES dbo.CATEGORY_STATIC", productScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("REFERENCES [dbo].[CATEGORY_STATIC]", productScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OSUSR_INV_CATEGORY", productScript, StringComparison.OrdinalIgnoreCase);
 
         var otherScript = await File.ReadAllTextAsync(otherTable);
-        Assert.Contains("CREATE TABLE dbo.Category", otherScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE [dbo].[Category]", otherScript, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class TempDirectory : IDisposable
