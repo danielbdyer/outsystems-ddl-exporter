@@ -684,31 +684,65 @@ public sealed class SsdtEmitter
             }
         }
 
-        var formattedLines = new List<string>(lines.Length + 3)
+        var trailingComma = ExtractTrailingComma(ref onUpdate);
+        if (string.IsNullOrEmpty(trailingComma))
         {
-            lines[0],
-            indent + prefix
-        };
+            trailingComma = ExtractTrailingComma(ref onDelete);
+        }
+
+        if (string.IsNullOrEmpty(trailingComma))
+        {
+            trailingComma = ExtractTrailingComma(ref references);
+        }
+
+        const int ClauseReferences = 1;
+        const int ClauseOnDelete = 2;
+        const int ClauseOnUpdate = 3;
+
+        var trailingClause = 0;
+        if (!string.IsNullOrEmpty(onUpdate))
+        {
+            trailingClause = ClauseOnUpdate;
+        }
+        else if (!string.IsNullOrEmpty(onDelete))
+        {
+            trailingClause = ClauseOnDelete;
+        }
+        else if (!string.IsNullOrEmpty(references))
+        {
+            trailingClause = ClauseReferences;
+        }
+
+        var formattedLines = new List<string>(lines.Length + 3);
+
+        void AppendClause(string? clause, string indentValue, int clauseKind)
+        {
+            if (string.IsNullOrEmpty(clause))
+            {
+                return;
+            }
+
+            var line = indentValue + clause;
+            if (clauseKind == trailingClause && trailingComma.Length > 0)
+            {
+                line += trailingComma;
+                trailingComma = string.Empty;
+            }
+
+            formattedLines.Add(line);
+        }
+
+        formattedLines.Add(lines[0]);
+        formattedLines.Add(indent + prefix);
 
         if (!string.IsNullOrEmpty(predicate))
         {
             formattedLines.Add(predicateIndent + predicate);
         }
 
-        if (!string.IsNullOrEmpty(references))
-        {
-            formattedLines.Add(referentIndent + references);
-        }
-
-        if (!string.IsNullOrEmpty(onDelete))
-        {
-            formattedLines.Add(referentIndent + onDelete);
-        }
-
-        if (!string.IsNullOrEmpty(onUpdate))
-        {
-            formattedLines.Add(referentIndent + onUpdate);
-        }
+        AppendClause(references, referentIndent, ClauseReferences);
+        AppendClause(onDelete, referentIndent, ClauseOnDelete);
+        AppendClause(onUpdate, referentIndent, ClauseOnUpdate);
 
         for (var i = 2; i < lines.Length; i++)
         {
@@ -716,6 +750,24 @@ public sealed class SsdtEmitter
         }
 
         return string.Join(Environment.NewLine, formattedLines);
+    }
+
+    private static string ExtractTrailingComma(ref string? segment)
+    {
+        if (string.IsNullOrEmpty(segment))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = segment.TrimEnd();
+        if (!trimmed.EndsWith(",", StringComparison.Ordinal))
+        {
+            segment = trimmed;
+            return string.Empty;
+        }
+
+        segment = trimmed[..^1].TrimEnd();
+        return ",";
     }
 
     private static async Task WriteAsync(string path, string contents, CancellationToken cancellationToken)
