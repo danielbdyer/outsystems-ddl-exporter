@@ -476,7 +476,246 @@ public sealed class SsdtEmitter
     private string Script(TSqlStatement statement)
     {
         _scriptGenerator.GenerateScript(statement, out var script);
-        return script.Trim();
+        var trimmed = script.Trim();
+
+        return statement switch
+        {
+            CreateTableStatement createTable => FormatCreateTableScript(trimmed, createTable),
+            AlterTableAddTableElementStatement alterStatement => FormatAlterTableAddScript(trimmed, alterStatement),
+            _ => trimmed,
+        };
+    }
+
+    private static string FormatCreateTableScript(string script, CreateTableStatement statement)
+    {
+        if (statement?.Definition?.ColumnDefinitions is null ||
+            statement.Definition.ColumnDefinitions.Count == 0 ||
+            !script.Contains("DEFAULT", StringComparison.OrdinalIgnoreCase))
+        {
+            return script;
+        }
+
+        var lines = script.Split(Environment.NewLine);
+        var builder = new StringBuilder(script.Length + 32);
+        var insideColumnBlock = false;
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.AppendLine();
+            }
+
+            var line = lines[i];
+            var trimmedLine = line.TrimStart();
+
+            if (!insideColumnBlock)
+            {
+                builder.Append(line);
+                if (trimmedLine.EndsWith("(", StringComparison.Ordinal))
+                {
+                    insideColumnBlock = true;
+                }
+
+                continue;
+            }
+
+            if (trimmedLine.StartsWith(")", StringComparison.Ordinal))
+            {
+                insideColumnBlock = false;
+                builder.Append(line);
+                continue;
+            }
+
+            if (!trimmedLine.Contains("DEFAULT", StringComparison.OrdinalIgnoreCase) ||
+                trimmedLine.StartsWith("CONSTRAINT", StringComparison.OrdinalIgnoreCase))
+            {
+                builder.Append(line);
+                continue;
+            }
+
+            builder.Append(FormatInlineDefault(line));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string FormatInlineDefault(string line)
+    {
+        var trimmedLine = line.TrimStart();
+        var indentLength = line.Length - trimmedLine.Length;
+        var indent = line[..indentLength];
+        var extraIndent = indent + new string(' ', 4);
+
+        var working = trimmedLine;
+        var trailingComma = string.Empty;
+
+        var trimmedWorking = working.TrimEnd();
+        if (trimmedWorking.EndsWith(",", StringComparison.Ordinal))
+        {
+            trailingComma = ",";
+            trimmedWorking = trimmedWorking[..^1];
+        }
+
+        working = trimmedWorking;
+        var defaultIndex = working.IndexOf(" DEFAULT", StringComparison.OrdinalIgnoreCase);
+        if (defaultIndex < 0)
+        {
+            return line;
+        }
+
+        var beforeDefault = working[..defaultIndex].TrimEnd();
+        var defaultSegment = working[defaultIndex..].TrimStart();
+
+        string? constraintSegment = null;
+        var constraintIndex = beforeDefault.IndexOf(" CONSTRAINT ", StringComparison.OrdinalIgnoreCase);
+        if (constraintIndex >= 0)
+        {
+            constraintSegment = beforeDefault[constraintIndex..].TrimStart();
+            beforeDefault = beforeDefault[..constraintIndex].TrimEnd();
+        }
+
+        var builder = new StringBuilder(line.Length + 16);
+        builder.Append(indent);
+        builder.Append(beforeDefault);
+        builder.Append(Environment.NewLine);
+        builder.Append(extraIndent);
+        if (!string.IsNullOrEmpty(constraintSegment))
+        {
+            builder.Append(constraintSegment);
+            builder.Append(' ');
+        }
+
+        builder.Append(defaultSegment);
+        builder.Append(trailingComma);
+
+        return builder.ToString();
+    }
+
+    private static string FormatAlterTableAddScript(string script, AlterTableAddTableElementStatement statement)
+    {
+        if (statement.Definition?.TableConstraints.Count != 1 ||
+            statement.Definition.TableConstraints[0] is not ForeignKeyConstraintDefinition)
+        {
+            return script;
+        }
+
+        var lines = script.Split(Environment.NewLine);
+        if (lines.Length < 2)
+        {
+            return script;
+        }
+
+        var secondLine = lines[1];
+        var trimmed = secondLine.TrimStart();
+        if (!trimmed.StartsWith("ADD CONSTRAINT", StringComparison.OrdinalIgnoreCase) ||
+            !trimmed.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase))
+        {
+            return script;
+        }
+
+        var indentLength = secondLine.Length - trimmed.Length;
+        var indent = secondLine[..indentLength];
+        var predicateIndent = indent + new string(' ', 4);
+        var referentIndent = predicateIndent + new string(' ', 4);
+
+        var foreignKeyIndex = trimmed.IndexOf(" FOREIGN KEY", StringComparison.OrdinalIgnoreCase);
+        if (foreignKeyIndex < 0)
+        {
+            return script;
+        }
+
+        var prefix = trimmed[..foreignKeyIndex].TrimEnd();
+        var remainder = trimmed[foreignKeyIndex..].TrimStart();
+
+        var referencesIndex = remainder.IndexOf(" REFERENCES ", StringComparison.OrdinalIgnoreCase);
+        var predicate = referencesIndex >= 0
+            ? remainder[..referencesIndex].TrimEnd()
+            : remainder.TrimEnd();
+
+        remainder = referencesIndex >= 0
+            ? remainder[referencesIndex..].TrimStart()
+            : string.Empty;
+
+        string? references = null;
+        string? onDelete = null;
+        string? onUpdate = null;
+
+        if (!string.IsNullOrEmpty(remainder))
+        {
+            var onDeleteIndex = remainder.IndexOf(" ON DELETE ", StringComparison.OrdinalIgnoreCase);
+            var onUpdateIndex = remainder.IndexOf(" ON UPDATE ", StringComparison.OrdinalIgnoreCase);
+
+            if (onDeleteIndex >= 0)
+            {
+                references = remainder[..onDeleteIndex].TrimEnd();
+                remainder = remainder[onDeleteIndex..].TrimStart();
+            }
+            else if (onUpdateIndex >= 0)
+            {
+                references = remainder[..onUpdateIndex].TrimEnd();
+                remainder = remainder[onUpdateIndex..].TrimStart();
+            }
+            else
+            {
+                references = remainder.TrimEnd();
+                remainder = string.Empty;
+            }
+
+            if (!string.IsNullOrEmpty(remainder))
+            {
+                onUpdateIndex = remainder.IndexOf(" ON UPDATE ", StringComparison.OrdinalIgnoreCase);
+
+                if (onUpdateIndex >= 0)
+                {
+                    onDelete = remainder[..onUpdateIndex].TrimEnd();
+                    remainder = remainder[onUpdateIndex..].TrimStart();
+                }
+                else
+                {
+                    onDelete = remainder.TrimEnd();
+                    remainder = string.Empty;
+                }
+
+                if (!string.IsNullOrEmpty(remainder))
+                {
+                    onUpdate = remainder.TrimEnd();
+                }
+            }
+        }
+
+        var formattedLines = new List<string>(lines.Length + 3)
+        {
+            lines[0],
+            indent + prefix
+        };
+
+        if (!string.IsNullOrEmpty(predicate))
+        {
+            formattedLines.Add(predicateIndent + predicate);
+        }
+
+        if (!string.IsNullOrEmpty(references))
+        {
+            formattedLines.Add(referentIndent + references);
+        }
+
+        if (!string.IsNullOrEmpty(onDelete))
+        {
+            formattedLines.Add(referentIndent + onDelete);
+        }
+
+        if (!string.IsNullOrEmpty(onUpdate))
+        {
+            formattedLines.Add(referentIndent + onUpdate);
+        }
+
+        for (var i = 2; i < lines.Length; i++)
+        {
+            formattedLines.Add(lines[i]);
+        }
+
+        return string.Join(Environment.NewLine, formattedLines);
     }
 
     private static async Task WriteAsync(string path, string contents, CancellationToken cancellationToken)

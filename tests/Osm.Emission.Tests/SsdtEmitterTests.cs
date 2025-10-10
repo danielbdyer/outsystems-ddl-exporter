@@ -2,7 +2,9 @@ using System;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Microsoft.SqlServer.Management.Smo;
+using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Osm.Domain.Configuration;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
@@ -69,6 +71,169 @@ public class SsdtEmitterTests
         Assert.True(File.Exists(manifestJsonPath));
         var manifestJson = await File.ReadAllTextAsync(manifestJsonPath);
         Assert.Contains("Customer", manifestJson);
+    }
+
+    [Fact]
+    public void FormatCreateTableScript_places_default_on_indented_line()
+    {
+        var method = typeof(SsdtEmitter)
+            .GetMethod("FormatCreateTableScript", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var statement = new CreateTableStatement
+        {
+            Definition = new TableDefinition()
+        };
+        statement.Definition!.ColumnDefinitions.Add(new ColumnDefinition());
+
+        var script = string.Join(Environment.NewLine, new[]
+        {
+            "CREATE TABLE dbo.Sample (",
+            "    Flag BIT NOT NULL DEFAULT ((0))",
+            ")"
+        });
+
+        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
+
+        var expected = string.Join(Environment.NewLine, new[]
+        {
+            "CREATE TABLE dbo.Sample (",
+            "    Flag BIT NOT NULL",
+            "        DEFAULT ((0))",
+            ")"
+        });
+
+        Assert.Equal(expected, formatted);
+    }
+
+    [Fact]
+    public void FormatCreateTableScript_indents_named_default_constraint_with_trailing_comma()
+    {
+        var method = typeof(SsdtEmitter)
+            .GetMethod("FormatCreateTableScript", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var statement = new CreateTableStatement
+        {
+            Definition = new TableDefinition()
+        };
+        statement.Definition!.ColumnDefinitions.Add(new ColumnDefinition());
+        statement.Definition.ColumnDefinitions.Add(new ColumnDefinition());
+
+        var script = string.Join(Environment.NewLine, new[]
+        {
+            "CREATE TABLE dbo.Sample (",
+            "    Id INT NOT NULL,",
+            "    CreatedOn DATETIME2 NOT NULL CONSTRAINT DF_Sample_CreatedOn DEFAULT (SYSUTCDATETIME()),",
+            ")"
+        });
+
+        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
+
+        var expected = string.Join(Environment.NewLine, new[]
+        {
+            "CREATE TABLE dbo.Sample (",
+            "    Id INT NOT NULL,",
+            "    CreatedOn DATETIME2 NOT NULL",
+            "        CONSTRAINT DF_Sample_CreatedOn DEFAULT (SYSUTCDATETIME()),",
+            ")"
+        });
+
+        Assert.Equal(expected, formatted);
+    }
+
+    [Fact]
+    public void FormatCreateTableScript_does_not_modify_table_constraints()
+    {
+        var method = typeof(SsdtEmitter)
+            .GetMethod("FormatCreateTableScript", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var statement = new CreateTableStatement
+        {
+            Definition = new TableDefinition()
+        };
+        statement.Definition!.ColumnDefinitions.Add(new ColumnDefinition());
+
+        var script = string.Join(Environment.NewLine, new[]
+        {
+            "CREATE TABLE dbo.Sample (",
+            "    Value INT NOT NULL,",
+            "    CONSTRAINT CK_Sample_Value CHECK (Value > 0)",
+            ")"
+        });
+
+        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
+
+        Assert.Equal(script, formatted);
+    }
+
+    [Fact]
+    public void FormatAlterTableAddScript_indents_foreign_key_components()
+    {
+        var method = typeof(SsdtEmitter)
+            .GetMethod("FormatAlterTableAddScript", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var definition = new TableDefinition();
+        definition.TableConstraints.Add(new ForeignKeyConstraintDefinition());
+        var statement = new AlterTableAddTableElementStatement
+        {
+            Definition = definition,
+        };
+
+        var script = string.Join(Environment.NewLine, new[]
+        {
+            "ALTER TABLE dbo.Customer",
+            "    ADD CONSTRAINT FK_Customer FOREIGN KEY (CityId) REFERENCES dbo.City (Id) ON DELETE NO ACTION ON UPDATE NO ACTION"
+        });
+
+        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
+
+        var expected = string.Join(Environment.NewLine, new[]
+        {
+            "ALTER TABLE dbo.Customer",
+            "    ADD CONSTRAINT FK_Customer",
+            "        FOREIGN KEY (CityId)",
+            "            REFERENCES dbo.City (Id)",
+            "            ON DELETE NO ACTION",
+            "            ON UPDATE NO ACTION"
+        });
+
+        Assert.Equal(expected, formatted);
+    }
+
+    [Fact]
+    public void FormatAlterTableAddScript_handles_foreign_key_without_actions()
+    {
+        var method = typeof(SsdtEmitter)
+            .GetMethod("FormatAlterTableAddScript", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var definition = new TableDefinition();
+        definition.TableConstraints.Add(new ForeignKeyConstraintDefinition());
+        var statement = new AlterTableAddTableElementStatement
+        {
+            Definition = definition,
+        };
+
+        var script = string.Join(Environment.NewLine, new[]
+        {
+            "ALTER TABLE dbo.Customer",
+            "    ADD CONSTRAINT FK_Customer FOREIGN KEY (CityId) REFERENCES dbo.City (Id)"
+        });
+
+        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
+
+        var expected = string.Join(Environment.NewLine, new[]
+        {
+            "ALTER TABLE dbo.Customer",
+            "    ADD CONSTRAINT FK_Customer",
+            "        FOREIGN KEY (CityId)",
+            "            REFERENCES dbo.City (Id)"
+        });
+
+        Assert.Equal(expected, formatted);
     }
 
     [Fact]
