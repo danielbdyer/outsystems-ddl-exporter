@@ -237,6 +237,43 @@ public class SsdtEmitterTests
     }
 
     [Fact]
+    public void FormatAlterTableAddScript_places_trailing_comma_after_actions()
+    {
+        var method = typeof(SsdtEmitter)
+            .GetMethod("FormatAlterTableAddScript", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var definition = new TableDefinition();
+        definition.TableConstraints.Add(new ForeignKeyConstraintDefinition());
+        var statement = new AlterTableAddTableElementStatement
+        {
+            Definition = definition,
+        };
+
+        var script = string.Join(Environment.NewLine, new[]
+        {
+            "ALTER TABLE dbo.Customer",
+            "    ADD CONSTRAINT FK_Customer FOREIGN KEY (CityId) REFERENCES dbo.City (Id) ON DELETE CASCADE ON UPDATE NO ACTION,",
+            "    CONSTRAINT FK_Other FOREIGN KEY (OtherId) REFERENCES dbo.Other (Id)"
+        });
+
+        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
+
+        var expected = string.Join(Environment.NewLine, new[]
+        {
+            "ALTER TABLE dbo.Customer",
+            "    ADD CONSTRAINT FK_Customer",
+            "        FOREIGN KEY (CityId)",
+            "            REFERENCES dbo.City (Id)",
+            "            ON DELETE CASCADE",
+            "            ON UPDATE NO ACTION,",
+            "    CONSTRAINT FK_Other FOREIGN KEY (OtherId) REFERENCES dbo.Other (Id)"
+        });
+
+        Assert.Equal(expected, formatted);
+    }
+
+    [Fact]
     public async Task EmitAsync_includes_concatenated_file_when_enabled()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
