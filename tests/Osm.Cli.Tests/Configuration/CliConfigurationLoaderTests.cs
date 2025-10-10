@@ -104,6 +104,34 @@ public sealed class CliConfigurationLoaderTests
         Assert.Equal(false, result.Value.ModuleFilter.IncludeInactiveModules);
     }
 
+    [Fact]
+    public async Task LoadAsync_ReadsSupplementalModelConfiguration()
+    {
+        using var directory = new TempDirectory();
+        var configPath = Path.Combine(directory.Path, "appsettings.json");
+        var supplementalPath = Path.Combine(directory.Path, "supplemental.json");
+
+        await File.WriteAllTextAsync(supplementalPath, "{}");
+
+        var config = new
+        {
+            supplementalModels = new
+            {
+                includeUsers = false,
+                paths = new[] { "supplemental.json" }
+            }
+        };
+
+        await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
+
+        var loader = new CliConfigurationLoader();
+        var result = await loader.LoadAsync(configPath);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(result.Value.SupplementalModels.IncludeUsers);
+        Assert.Single(result.Value.SupplementalModels.Paths, Path.GetFullPath(supplementalPath));
+    }
+
     private static string CreateLegacyTighteningJson()
     {
         return JsonSerializer.Serialize(new

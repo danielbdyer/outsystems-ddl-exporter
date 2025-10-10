@@ -134,6 +134,11 @@ public sealed class CliConfigurationLoader
         }
         configuration = configuration with { Sql = sql };
 
+        if (TryReadSupplementalModels(root, baseDirectory, out var supplementalModels))
+        {
+            configuration = configuration with { SupplementalModels = supplementalModels };
+        }
+
         return configuration;
     }
 
@@ -261,6 +266,54 @@ public sealed class CliConfigurationLoader
         }
 
         profiler = new ProfilerConfiguration(provider, profilePath, mockFolder);
+        return true;
+    }
+
+    private static bool TryReadSupplementalModels(
+        JsonElement root,
+        string baseDirectory,
+        out SupplementalModelConfiguration configuration)
+    {
+        configuration = SupplementalModelConfiguration.Empty;
+        if (!root.TryGetProperty("supplementalModels", out var element) || element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        bool? includeUsers = null;
+        var paths = new List<string>();
+
+        if (element.TryGetProperty("includeUsers", out var includeUsersElement))
+        {
+            includeUsers = includeUsersElement.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.String when bool.TryParse(includeUsersElement.GetString(), out var parsed) => parsed,
+                _ => includeUsers
+            };
+        }
+
+        if (element.TryGetProperty("paths", out var pathsElement) && pathsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var pathElement in pathsElement.EnumerateArray())
+            {
+                if (pathElement.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var raw = pathElement.GetString();
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    continue;
+                }
+
+                paths.Add(ResolveRelativePath(baseDirectory, raw!));
+            }
+        }
+
+        configuration = new SupplementalModelConfiguration(includeUsers, paths);
         return true;
     }
 

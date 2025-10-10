@@ -210,6 +210,76 @@ public class SmoModelFactoryTests
         Assert.Equal("Category", foreignKey.ReferencedLogicalTable);
     }
 
+    [Fact]
+    public void Build_uses_supplemental_entities_for_missing_foreign_key_targets()
+    {
+        var module = ModuleName.Create("Audit").Value;
+        var logical = EntityName.Create("AuditLog").Value;
+        var schema = SchemaName.Create("dbo").Value;
+        var table = TableName.Create("OSUSR_AUDIT_LOG").Value;
+
+        var idAttribute = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true).Value;
+
+        var reference = AttributeReference.Create(
+            isReference: true,
+            targetEntityId: null,
+            targetEntity: EntityName.Create("User").Value,
+            targetPhysicalName: TableName.Create("OSUSR_U_USER").Value,
+            deleteRuleCode: "Protect",
+            hasDatabaseConstraint: true).Value;
+
+        var userIdAttribute = AttributeModel.Create(
+            AttributeName.Create("UserId").Value,
+            ColumnName.Create("USERID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            reference: reference).Value;
+
+        var auditEntity = EntityModel.Create(
+            module,
+            logical,
+            table,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { idAttribute, userIdAttribute }).Value;
+
+        var auditModule = ModuleModel.Create(module, isSystemModule: false, isActive: true, new[] { auditEntity }).Value;
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { auditModule }).Value;
+
+        var columnCoordinate = new ColumnCoordinate(schema, table, userIdAttribute.ColumnName);
+        var fkDecision = ForeignKeyDecision.Create(columnCoordinate, createConstraint: true, ImmutableArray<string>.Empty);
+
+        var decisions = PolicyDecisionSet.Create(
+            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(columnCoordinate, fkDecision),
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty);
+
+        var factory = new SmoModelFactory();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var supplemental = ImmutableArray.Create(OutSystemsInternalModel.Users);
+
+        var smoModel = factory.Create(model, decisions, options, supplemental);
+
+        var tableDefinition = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_AUDIT_LOG", StringComparison.OrdinalIgnoreCase));
+        var foreignKey = Assert.Single(tableDefinition.ForeignKeys);
+        Assert.Equal("OSUSR_U_USER", foreignKey.ReferencedTable);
+        Assert.Equal("User", foreignKey.ReferencedLogicalTable);
+    }
+
     private static EntityModel CreateCategoryEntity(string moduleName, string physicalName)
     {
         var module = ModuleName.Create(moduleName).Value;

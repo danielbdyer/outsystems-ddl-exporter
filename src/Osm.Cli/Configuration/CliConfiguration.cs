@@ -13,7 +13,8 @@ public sealed record CliConfiguration(
     CacheConfiguration Cache,
     ProfilerConfiguration Profiler,
     SqlConfiguration Sql,
-    ModuleFilterConfiguration ModuleFilter)
+    ModuleFilterConfiguration ModuleFilter,
+    SupplementalModelConfiguration SupplementalModels)
 {
     public static CliConfiguration Empty { get; } = new(
         TighteningOptions.Default,
@@ -23,7 +24,8 @@ public sealed record CliConfiguration(
         CacheConfiguration.Empty,
         ProfilerConfiguration.Empty,
         SqlConfiguration.Empty,
-        ModuleFilterConfiguration.Empty);
+        ModuleFilterConfiguration.Empty,
+        SupplementalModelConfiguration.Empty);
 }
 
 public sealed record CacheConfiguration(string? Root, bool? Refresh)
@@ -66,4 +68,12 @@ public sealed record ModuleFilterConfiguration(
 {
     public static ModuleFilterConfiguration Empty { get; }
         = new ModuleFilterConfiguration(Array.Empty<string>(), null, null);
+}
+
+public sealed record SupplementalModelConfiguration(
+    bool? IncludeUsers,
+    IReadOnlyList<string> Paths)
+{
+    public static SupplementalModelConfiguration Empty { get; }
+        = new SupplementalModelConfiguration(true, Array.Empty<string>());
 }
