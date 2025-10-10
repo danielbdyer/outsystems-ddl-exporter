@@ -322,6 +322,10 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
     Console.WriteLine($"Columns tightened: {decisionReport.TightenedColumnCount}/{decisionReport.ColumnCount}");
     Console.WriteLine($"Unique indexes enforced: {decisionReport.UniqueIndexesEnforcedCount}/{decisionReport.UniqueIndexCount}");
     Console.WriteLine($"Foreign keys created: {decisionReport.ForeignKeysCreatedCount}/{decisionReport.ForeignKeyCount}");
+    foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(decisionReport))
+    {
+        Console.WriteLine(summary);
+    }
     Console.WriteLine($"Decision log written to {decisionLogPath}");
     return 0;
 }
