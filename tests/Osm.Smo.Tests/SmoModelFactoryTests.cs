@@ -64,6 +64,14 @@ public class SmoModelFactoryTests
         var accountNumberColumn = billingTable.Columns.Single(c => c.Name.Equals("AccountNumber", StringComparison.Ordinal));
         Assert.Equal(SqlDataType.VarChar, accountNumberColumn.DataType.SqlDataType);
         Assert.Equal(50, accountNumberColumn.DataType.MaximumLength);
+
+        var firstNameColumn = customerTable.Columns.Single(c => c.Name.Equals("FirstName", StringComparison.Ordinal));
+        Assert.Equal("''", firstNameColumn.DefaultExpression);
+        Assert.Equal("DF_Customer_FirstName", firstNameColumn.DefaultConstraintName);
+
+        var createdOnColumn = jobRunTable.Columns.Single(c => c.Name.Equals("CreatedOn", StringComparison.Ordinal));
+        Assert.Equal("getutcdate()", createdOnColumn.DefaultExpression);
+        Assert.Equal("DF_JobRun_CreatedOn", createdOnColumn.DefaultConstraintName);
     }
 
     [Fact]

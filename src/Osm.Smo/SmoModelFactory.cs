@@ -133,6 +133,16 @@ public sealed class SmoModelFactory
             var isIdentity = attribute.IsAutoNumber;
             var identitySeed = isIdentity ? 1 : 0;
             var identityIncrement = isIdentity ? 1 : 0;
+            var defaultExpression = attribute.DefaultValue;
+            string? defaultConstraintName = null;
+
+            if (!string.IsNullOrWhiteSpace(defaultExpression))
+            {
+                defaultConstraintName = NormalizeConstraintName(
+                    $"DF_{context.Entity.PhysicalName.Value}_{attribute.ColumnName.Value}",
+                    context.Entity,
+                    new[] { attribute });
+            }
 
             builder.Add(new SmoColumnDefinition(
                 attribute.LogicalName.Value,
@@ -141,7 +151,9 @@ public sealed class SmoModelFactory
                 nullable,
                 isIdentity,
                 identitySeed,
-                identityIncrement));
+                identityIncrement,
+                defaultExpression,
+                defaultConstraintName));
         }
 
         return builder.ToImmutable();

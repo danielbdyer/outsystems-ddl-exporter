@@ -1,4 +1,4 @@
-﻿CREATE TABLE billing.BillingAccount (
+CREATE TABLE billing.BillingAccount (
     Id            INT          NOT NULL,
     AccountNumber VARCHAR (50) NOT NULL,
     ExtRef        VARCHAR (50),

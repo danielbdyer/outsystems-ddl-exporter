@@ -44,8 +44,14 @@ public class SsdtEmitterTests
         var customerScript = await File.ReadAllTextAsync(customerPath);
         Assert.Contains("CREATE TABLE dbo.Customer", customerScript);
         Assert.Contains("PRIMARY KEY", customerScript);
+        Assert.Contains("DEFAULT ''", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("CREATE INDEX", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("LegacyCode", customerScript, StringComparison.Ordinal);
+
+        var jobRunEntry = manifest.Tables.Single(t => t.Table.Equals("JobRun", StringComparison.Ordinal));
+        var jobRunPath = Path.Combine(temp.Path, jobRunEntry.TableFile);
+        var jobRunScript = await File.ReadAllTextAsync(jobRunPath);
+        Assert.Contains("DEFAULT getutcdate()", jobRunScript, StringComparison.OrdinalIgnoreCase);
 
         foreach (var entry in manifest.Tables)
         {
@@ -336,7 +342,16 @@ public class SsdtEmitterTests
     public async Task EmitAsync_applies_module_scoped_override_without_affecting_other_entities()
     {
         var categoryColumns = ImmutableArray.Create(
-            new SmoColumnDefinition("Id", "Id", DataType.Int, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1));
+            new SmoColumnDefinition(
+                "Id",
+                "Id",
+                DataType.Int,
+                Nullable: false,
+                IsIdentity: true,
+                IdentitySeed: 1,
+                IdentityIncrement: 1,
+                DefaultExpression: null,
+                DefaultConstraintName: null));
         var categoryIndexes = ImmutableArray.Create(
             new SmoIndexDefinition("PK_Category", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1))));
         var categoryForeignKeys = ImmutableArray<SmoForeignKeyDefinition>.Empty;
@@ -364,8 +379,26 @@ public class SsdtEmitterTests
             categoryForeignKeys);
 
         var productColumns = ImmutableArray.Create(
-            new SmoColumnDefinition("Id", "Id", DataType.Int, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1),
-            new SmoColumnDefinition("CategoryId", "CategoryId", DataType.Int, Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0));
+            new SmoColumnDefinition(
+                "Id",
+                "Id",
+                DataType.Int,
+                Nullable: false,
+                IsIdentity: true,
+                IdentitySeed: 1,
+                IdentityIncrement: 1,
+                DefaultExpression: null,
+                DefaultConstraintName: null),
+            new SmoColumnDefinition(
+                "CategoryId",
+                "CategoryId",
+                DataType.Int,
+                Nullable: false,
+                IsIdentity: false,
+                IdentitySeed: 0,
+                IdentityIncrement: 0,
+                DefaultExpression: null,
+                DefaultConstraintName: null));
         var productIndexes = ImmutableArray.Create(
             new SmoIndexDefinition("PK_Product", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1))));
         var productForeignKeys = ImmutableArray.Create(

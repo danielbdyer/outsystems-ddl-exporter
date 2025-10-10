@@ -36,7 +36,9 @@ public sealed record SmoColumnDefinition(
     bool Nullable,
     bool IsIdentity,
     int IdentitySeed,
-    int IdentityIncrement);
+    int IdentityIncrement,
+    string? DefaultExpression,
+    string? DefaultConstraintName);
 
 public sealed record SmoIndexDefinition(
     string Name,

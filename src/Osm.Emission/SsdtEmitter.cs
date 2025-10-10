@@ -297,8 +297,136 @@ public sealed class SsdtEmitter
             };
         }
 
+        if (!string.IsNullOrWhiteSpace(column.DefaultExpression))
+        {
+            var defaultConstraint = new DefaultConstraintDefinition
+            {
+                Expression = BuildDefaultExpression(column.DefaultExpression!),
+            };
+
+            if (!string.IsNullOrWhiteSpace(column.DefaultConstraintName))
+            {
+                defaultConstraint.ConstraintIdentifier = new Identifier
+                {
+                    Value = column.DefaultConstraintName!,
+                };
+            }
+
+            definition.DefaultConstraint = defaultConstraint;
+        }
+
         return definition;
     }
+
+    private static ScalarExpression BuildDefaultExpression(string expression)
+    {
+        var parser = new TSql150Parser(initialQuotedIdentifiers: false);
+        var trimmed = expression?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return new NullLiteral();
+        }
+
+        var fragment = ParseExpression(parser, trimmed);
+
+        if (fragment is null && TryStripParentheses(trimmed, out var inner))
+        {
+            fragment = ParseExpression(parser, inner);
+        }
+
+        if (fragment is null)
+        {
+            if (TryCreateLiteral(trimmed, out var literal))
+            {
+                return literal;
+            }
+
+            throw new InvalidOperationException($"Failed to parse default expression '{expression}'.");
+        }
+
+        return fragment;
+    }
+
+    private static ScalarExpression? ParseExpression(TSql150Parser parser, string text)
+    {
+        using var reader = new StringReader(text);
+        var fragment = parser.ParseExpression(reader, out var errors);
+        if (fragment is null || HasErrors(errors))
+        {
+            return null;
+        }
+
+        return fragment;
+    }
+
+    private static bool HasErrors(IList<ParseError>? errors)
+    {
+        return errors is { Count: > 0 };
+    }
+
+    private static bool TryStripParentheses(string expression, out string inner)
+    {
+        if (expression.Length >= 2 && expression[0] == '(' && expression[^1] == ')')
+        {
+            var depth = 0;
+            for (var i = 0; i < expression.Length; i++)
+            {
+                if (expression[i] == '(')
+                {
+                    depth++;
+                }
+                else if (expression[i] == ')')
+                {
+                    depth--;
+                    if (depth == 0 && i < expression.Length - 1)
+                    {
+                        inner = expression;
+                        return false;
+                    }
+                }
+            }
+
+            inner = expression[1..^1].Trim();
+            return true;
+        }
+
+        inner = expression;
+        return false;
+    }
+
+    private static bool TryCreateLiteral(string expression, out ScalarExpression literal)
+    {
+        if (string.Equals(expression, "NULL", StringComparison.OrdinalIgnoreCase))
+        {
+            literal = new NullLiteral();
+            return true;
+        }
+
+        if (IsQuotedString(expression))
+        {
+            var content = expression[1..^1].Replace("''", "'");
+            literal = new StringLiteral { Value = content };
+            return true;
+        }
+
+        if (int.TryParse(expression, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+        {
+            literal = new IntegerLiteral { Value = intValue.ToString(CultureInfo.InvariantCulture) };
+            return true;
+        }
+
+        if (decimal.TryParse(expression, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var decimalValue))
+        {
+            literal = new NumericLiteral { Value = decimalValue.ToString(CultureInfo.InvariantCulture) };
+            return true;
+        }
+
+        literal = null!;
+        return false;
+    }
+
+    private static bool IsQuotedString(string expression)
+        => expression.Length >= 2 && expression[0] == '\'' && expression[^1] == '\'';
 
     private CreateIndexStatement BuildCreateIndexStatement(
         SmoTableDefinition table,
