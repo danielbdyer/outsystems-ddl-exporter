@@ -48,8 +48,10 @@ public class SsdtEmitterTests
         Assert.Contains("CREATE TABLE dbo.Customer", customerScript);
         Assert.Contains("CONSTRAINT PK_Customer", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("CONSTRAINT FK_Customer_CityId", customerScript, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(Environment.NewLine + "        FOREIGN KEY (CityId)", customerScript);
-        Assert.Contains(Environment.NewLine + "            REFERENCES dbo.City (Id)", customerScript);
+        Assert.Contains(Environment.NewLine + "            PRIMARY KEY CLUSTERED,", customerScript);
+        Assert.Contains(Environment.NewLine + "            FOREIGN KEY REFERENCES dbo.City (Id)", customerScript);
+        Assert.Contains(Environment.NewLine + "                ON DELETE NO ACTION", customerScript);
+        Assert.Contains(Environment.NewLine + "                ON UPDATE NO ACTION", customerScript);
         Assert.Contains("DEFAULT ('')", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("CREATE UNIQUE INDEX IDX_Customer_Email", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("EXEC sys.sp_addextendedproperty", customerScript, StringComparison.OrdinalIgnoreCase);
@@ -195,12 +197,10 @@ public class SsdtEmitterTests
             "CREATE TABLE dbo.Sample (",
             "    Id INT NOT NULL,",
             "    CONSTRAINT FK_Sample_Primary",
-            "        FOREIGN KEY (PrimaryId)",
-            "            REFERENCES dbo.Primary (Id)",
+            "        FOREIGN KEY (PrimaryId) REFERENCES dbo.Primary (Id)",
             "            ON DELETE CASCADE,",
             "    CONSTRAINT FK_Sample_Secondary",
-            "        FOREIGN KEY (SecondaryId)",
-            "            REFERENCES dbo.Secondary (Id)",
+            "        FOREIGN KEY (SecondaryId) REFERENCES dbo.Secondary (Id)",
             ")"
         });
 
