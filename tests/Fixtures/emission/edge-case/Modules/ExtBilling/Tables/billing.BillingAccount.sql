@@ -4,3 +4,9 @@ CREATE TABLE billing.BillingAccount (
     ExtRef        VARCHAR (50),
     CONSTRAINT PK_BillingAccount PRIMARY KEY CLUSTERED (Id)
 )
+
+GO
+
+CREATE UNIQUE INDEX IDX_BillingAccount_Acctnum
+    ON billing.BillingAccount(AccountNumber ASC)
+

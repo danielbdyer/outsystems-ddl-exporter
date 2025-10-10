@@ -51,7 +51,7 @@ public sealed record TighteningOptions
             perTableFiles: true,
             includePlatformAutoIndexes: false,
             sanitizeModuleNames: true,
-            emitConcatenatedConstraints: false).Value,
+            emitBareTableOnly: false).Value,
         MockingOptions.Create(useProfileMockFolder: false, profileMockFolder: null).Value).Value;
 
     public static Result<TighteningOptions> Create(
@@ -236,13 +236,13 @@ public sealed record EmissionOptions
         bool perTableFiles,
         bool includePlatformAutoIndexes,
         bool sanitizeModuleNames,
-        bool emitConcatenatedConstraints,
+        bool emitBareTableOnly,
         NamingOverrideOptions namingOverrides)
     {
         PerTableFiles = perTableFiles;
         IncludePlatformAutoIndexes = includePlatformAutoIndexes;
         SanitizeModuleNames = sanitizeModuleNames;
-        EmitConcatenatedConstraints = emitConcatenatedConstraints;
+        EmitBareTableOnly = emitBareTableOnly;
         NamingOverrides = namingOverrides;
     }
 
@@ -252,7 +252,7 @@ public sealed record EmissionOptions
 
     public bool SanitizeModuleNames { get; }
 
-    public bool EmitConcatenatedConstraints { get; }
+    public bool EmitBareTableOnly { get; }
 
     public NamingOverrideOptions NamingOverrides { get; }
 
@@ -260,14 +260,14 @@ public sealed record EmissionOptions
         bool perTableFiles,
         bool includePlatformAutoIndexes,
         bool sanitizeModuleNames,
-        bool emitConcatenatedConstraints,
+        bool emitBareTableOnly,
         NamingOverrideOptions? namingOverrides = null)
     {
         return new EmissionOptions(
             perTableFiles,
             includePlatformAutoIndexes,
             sanitizeModuleNames,
-            emitConcatenatedConstraints,
+            emitBareTableOnly,
             namingOverrides ?? NamingOverrideOptions.Empty);
     }
 }

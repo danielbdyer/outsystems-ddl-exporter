@@ -25,7 +25,7 @@
     "perTableFiles": true,
     "includePlatformAutoIndexes": false,
     "sanitizeModuleNames": true,
-    "emitConcatenatedConstraints": false,
+    "emitBareTableOnly": false,
     "namingOverrides": {
       "rules": []
     }

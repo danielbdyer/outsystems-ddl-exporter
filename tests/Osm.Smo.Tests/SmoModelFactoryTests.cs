@@ -90,7 +90,7 @@ public class SmoModelFactoryTests
         var options = new SmoBuildOptions(
             "OutSystems",
             IncludePlatformAutoIndexes: true,
-            EmitConcatenatedConstraints: false,
+            EmitBareTableOnly: false,
             SanitizeModuleNames: true,
             NamingOverrides: NamingOverrideOptions.Empty);
         var smoModel = factory.Create(model, decisions, options);

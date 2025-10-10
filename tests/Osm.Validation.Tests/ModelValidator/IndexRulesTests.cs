@@ -20,7 +20,9 @@ public class IndexRulesTests
         var missingColumn = new IndexColumnModel(
             AttributeName.Create("MissingAttribute").Value,
             ColumnName.Create("MISSING_COLUMN").Value,
-            1);
+            1,
+            IsIncluded: false,
+            IndexColumnDirection.Ascending);
         var mutatedIndex = index with { Columns = index.Columns.Replace(index.Columns[0], missingColumn) };
         var indexes = entity.Indexes.Replace(index, mutatedIndex);
         var mutatedEntity = entity with { Indexes = indexes };

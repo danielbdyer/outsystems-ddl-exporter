@@ -150,7 +150,7 @@ public sealed class CliConfigurationLoaderTests
                 perTableFiles = true,
                 includePlatformAutoIndexes = false,
                 sanitizeModuleNames = true,
-                emitConcatenatedConstraints = false,
+                emitBareTableOnly = false,
                 namingOverrides = new { rules = Array.Empty<object>() }
             },
             mocking = new { useProfileMockFolder = false, profileMockFolder = (string?)null }

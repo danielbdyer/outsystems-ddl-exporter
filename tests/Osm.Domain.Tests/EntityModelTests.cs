@@ -192,7 +192,9 @@ public class EntityModelTests
                 IndexColumnModel.Create(
                     AttributeName.Create("Id").Value,
                     ColumnName.Create("ID").Value,
-                    ordinal: 1).Value
+                    ordinal: 1,
+                    isIncluded: false,
+                    IndexColumnDirection.Ascending).Value
             });
         Assert.True(indexResult.IsSuccess);
         var index = indexResult.Value;

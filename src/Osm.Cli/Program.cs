@@ -892,7 +892,7 @@ static IReadOnlyDictionary<string, string?> BuildCacheMetadata(
         ["emission.perTableFiles"] = options.Emission.PerTableFiles.ToString(),
         ["emission.includePlatformAutoIndexes"] = options.Emission.IncludePlatformAutoIndexes.ToString(),
         ["emission.sanitizeModuleNames"] = options.Emission.SanitizeModuleNames.ToString(),
-        ["emission.concatenatedConstraints"] = options.Emission.EmitConcatenatedConstraints.ToString(),
+        ["emission.bareTableOnly"] = options.Emission.EmitBareTableOnly.ToString(),
         ["mocking.useProfileMockFolder"] = options.Mocking.UseProfileMockFolder.ToString(),
     };
 

@@ -51,20 +51,17 @@ CREATE CLUSTERED INDEX IX_E ON #E(EspaceId);
 -- 3) #Ent (Entity)
 IF OBJECT_ID('tempdb..#Ent') IS NOT NULL DROP TABLE #Ent;
 SELECT
-    en.[Id]                                 AS EntityId,
-    en.[Name]                               AS EntityName,
-    en.[Physical_Table_Name]                AS PhysicalTableName,
-    en.[Espace_Id]                          AS EspaceId,
-    CAST(ISNULL(en.[Is_Active],1)   AS bit) AS EntityIsActive,
-    CAST(ISNULL(en.[Is_System],0)   AS bit) AS IsSystemEntity,
-    CAST(ISNULL(en.[Is_External],0) AS bit) AS IsExternalEntity,
-    en.[Data_Kind]                          AS DataKind,
-    NULLIF(en.[Db_Catalog],'')              AS DbCatalog,
-    NULLIF(en.[Db_Schema],'')               AS DbSchema,
-    NULLIF(en.[External_Db_Name],'')        AS ExternalDbCatalog,
-    NULLIF(en.[External_Db_Owner],'')       AS ExternalDbSchema,
-    en.[PrimaryKey_SS_Key]                  AS PrimaryKeySSKey,
-    en.[SS_Key]                             AS EntitySSKey
+    en.[Id]                                AS EntityId,
+    en.[Name]                              AS EntityName,
+    en.[Physical_Table_Name]               AS PhysicalTableName,
+    en.[Espace_Id]                         AS EspaceId,
+    CAST(ISNULL(en.[Is_Active],1)  AS bit) AS EntityIsActive,
+    CAST(ISNULL(en.[Is_System],0)  AS bit) AS IsSystemEntity,
+    CAST(ISNULL(en.[Is_External],0)AS bit) AS IsExternalEntity,
+    en.[Data_Kind]                         AS DataKind,
+    en.[PrimaryKey_SS_Key]                 AS PrimaryKeySSKey,
+    en.[SS_Key]                            AS EntitySSKey,
+    CAST(NULL AS NVARCHAR(MAX))            AS EntityDescription
 INTO #Ent
 FROM dbo.ossys_Entity en
 JOIN #E ON #E.EspaceId = en.[Espace_Id]
@@ -72,59 +69,160 @@ WHERE (@IncludeSystem = 1 OR ISNULL(en.[Is_System],0) = 0);
 CREATE CLUSTERED INDEX IX_Ent ON #Ent(EntityId);
 CREATE NONCLUSTERED INDEX IX_Ent_Espace ON #Ent(EspaceId, PhysicalTableName);
 
+DECLARE @EntityDescriptionColumn SYSNAME =
+    CASE
+        WHEN COL_LENGTH(N'dbo.ossys_Entity', 'Description') IS NOT NULL THEN N'Description'
+        WHEN COL_LENGTH(N'dbo.ossys_Entity', 'Description_Translation') IS NOT NULL THEN N'Description_Translation'
+        ELSE NULL
+    END;
+
+IF @EntityDescriptionColumn IS NOT NULL
+BEGIN
+    DECLARE @EntityDescriptionSql NVARCHAR(MAX) =
+        N'UPDATE en
+          SET en.EntityDescription = NULLIF(LTRIM(RTRIM(src.' + QUOTENAME(@EntityDescriptionColumn) + N')), '''')
+          FROM #Ent en
+          JOIN dbo.ossys_Entity src ON src.[Id] = en.EntityId;';
+
+    EXEC sys.sp_executesql @EntityDescriptionSql;
+END;
+
 -- 4) #Attr (Entity_Attr)
 IF OBJECT_ID('tempdb..#Attr') IS NOT NULL DROP TABLE #Attr;
-SELECT
-    a.[Id]                                   AS AttrId,
-    a.[Entity_Id]                            AS EntityId,
-    a.[Name]                                 AS AttrName,
-    a.[SS_Key]                               AS AttrSSKey,
-    a.[Type]                                 AS [Type],
-    a.[Data_Type]                            AS DataType,
-    a.[Length]                               AS [Length],
-    a.[Precision]                            AS [Precision],
-    a.[Scale]                                AS [Scale],
-    a.[Decimals]                             AS [Decimals],
-    a.[Default_Value]                        AS DefaultValue,
-    CAST(ISNULL(a.[Is_Mandatory],0)   AS bit) AS IsMandatory,
-    CAST(ISNULL(a.[Is_Active],1)     AS bit) AS AttrIsActive,
-    CAST(ISNULL(a.[Is_Identifier],0) AS bit) AS IsIdentifier,
-    CAST(ISNULL(a.[Is_AutoNumber],0) AS bit) AS IsAutoNumber,
-    CAST(a.[Delete_Rule] AS NVARCHAR(20))    AS DeleteRule,
-    NULLIF(a.[Original_Name],'')             AS OriginalName,
-    NULLIF(a.[Physical_Column_Name],'')      AS PhysicalColumnName,
-    NULLIF(a.[External_Db_Type],'')          AS ExternalDbType,
-    a.[Referenced_Entity_Id]                 AS ReferencedEntityId,
-    a.[Original_Type]                        AS OriginalType
-INTO #Attr
-FROM dbo.ossys_Entity_Attr a
-JOIN #Ent ON #Ent.EntityId = a.[Entity_Id]
-WHERE (@OnlyActiveAttributes = 0 OR ISNULL(a.[Is_Active],1) = 1);
+CREATE TABLE #Attr
+(
+    AttrId               INT            NOT NULL,
+    EntityId             INT            NOT NULL,
+    AttrName             NVARCHAR(200)  NOT NULL,
+    AttrSSKey            UNIQUEIDENTIFIER NULL,
+    DataType             NVARCHAR(200)  NULL,
+    [Length]             INT            NULL,
+    [Precision]          INT            NULL,
+    [Scale]              INT            NULL,
+    DefaultValue         NVARCHAR(MAX)  NULL,
+    IsMandatory          BIT            NOT NULL,
+    AttrIsActive         BIT            NOT NULL,
+    IsAutoNumber         BIT            NULL,
+    IsIdentifier         BIT            NULL,
+    RefEntityId          INT            NULL,
+    OriginalName         NVARCHAR(200)  NULL,
+    ExternalColumnType   NVARCHAR(200)  NULL,
+    DeleteRule           NVARCHAR(50)   NULL,
+    PhysicalColumnName   NVARCHAR(200)  NULL,
+    DatabaseColumnName   NVARCHAR(200)  NULL,
+    LegacyType           NVARCHAR(400)  NULL,
+    Decimals             INT            NULL,
+    OriginalType         NVARCHAR(200)  NULL,
+    AttrDescription      NVARCHAR(MAX)  NULL
+);
+
+DECLARE
+    @AttrObjectId INT = OBJECT_ID(N'dbo.ossys_Entity_Attr'),
+    @AttrSchema SYSNAME = OBJECT_SCHEMA_NAME(OBJECT_ID(N'dbo.ossys_Entity_Attr')),
+    @AttrName SYSNAME = OBJECT_NAME(OBJECT_ID(N'dbo.ossys_Entity_Attr')),
+    @HasDataType BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Data_Type') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasType BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Type') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasPrecision BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Precision') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasScale BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Scale') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasDecimals BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Decimals') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasOriginalName BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Original_Name') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasExternalColumnType BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'External_Column_Type') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasPhysicalColumnName BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Physical_Column_Name') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasDatabaseName BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Database_Name') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasIsIdentifier BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Is_Identifier') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasRefEntityId BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Referenced_Entity_Id') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasIsAutoNumber BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Is_AutoNumber') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasDefaultValue BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Default_Value') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasDeleteRule BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Delete_Rule') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasOriginalType BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Original_Type') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasSSKey BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'SS_Key') IS NOT NULL THEN 1 ELSE 0 END,
+    @HasLength BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Length') IS NOT NULL THEN 1 ELSE 0 END,
+    @AttrDescriptionExpr NVARCHAR(MAX),
+    @InsertAttr NVARCHAR(MAX);
+
+IF @AttrObjectId IS NULL
+BEGIN
+    THROW 50000, 'ossys_Entity_Attr table not found in current catalog.', 1;
+END;
+
+SET @AttrDescriptionExpr =
+    CASE
+        WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Description') IS NOT NULL
+            THEN N'NULLIF(LTRIM(RTRIM(a.[Description])),'''')'
+        WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Description_Translation') IS NOT NULL
+            THEN N'NULLIF(LTRIM(RTRIM(a.[Description_Translation])),'''')'
+        ELSE N'NULL'
+    END;
+
+SET @InsertAttr = N'INSERT INTO #Attr (
+      AttrId, EntityId, AttrName, AttrSSKey, DataType, [Length], [Precision], [Scale],
+      DefaultValue, IsMandatory, AttrIsActive, IsAutoNumber, IsIdentifier, RefEntityId,
+      OriginalName, ExternalColumnType, DeleteRule, PhysicalColumnName, DatabaseColumnName,
+      LegacyType, Decimals, OriginalType, AttrDescription)
+    SELECT
+      a.[Id],
+      a.[Entity_Id],
+      a.[Name],
+      ' + CASE WHEN @HasSSKey = 1 THEN N'a.[SS_Key]' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasDataType = 1 THEN N'a.[Data_Type]' ELSE CASE WHEN @HasType = 1 THEN N'a.[Type]' ELSE N'NULL' END END + N',
+      ' + CASE WHEN @HasLength = 1 THEN N'a.[Length]' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasPrecision = 1 THEN N'a.[Precision]' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasScale = 1 THEN N'a.[Scale]' ELSE CASE WHEN @HasDecimals = 1 THEN N'a.[Decimals]' ELSE N'NULL' END END + N',
+      ' + CASE WHEN @HasDefaultValue = 1 THEN N'a.[Default_Value]' ELSE N'NULL' END + N',
+      CAST(ISNULL(a.[Is_Mandatory],0) AS bit),
+      CAST(ISNULL(a.[Is_Active],1) AS bit),
+      ' + CASE WHEN @HasIsAutoNumber = 1 THEN N'CAST(ISNULL(a.[Is_AutoNumber],0) AS bit)' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasIsIdentifier = 1 THEN N'CAST(ISNULL(a.[Is_Identifier],0) AS bit)' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasRefEntityId = 1 THEN N'a.[Referenced_Entity_Id]' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasOriginalName = 1 THEN N'a.[Original_Name]' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasExternalColumnType = 1 THEN N'a.[External_Column_Type]' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasDeleteRule = 1 THEN N'a.[Delete_Rule]' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasPhysicalColumnName = 1 THEN N'NULLIF(a.[Physical_Column_Name],'''')' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasDatabaseName = 1 THEN N'NULLIF(a.[Database_Name],'''')' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasType = 1 THEN N'a.[Type]' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasDecimals = 1 THEN N'a.[Decimals]' ELSE N'NULL' END + N',
+      ' + CASE WHEN @HasOriginalType = 1 THEN N'a.[Original_Type]' ELSE N'NULL' END + N',
+      ' + @AttrDescriptionExpr + N'
+    FROM ' + QUOTENAME(@AttrSchema) + N'.' + QUOTENAME(@AttrName) + N' AS a
+    JOIN #Ent ON #Ent.EntityId = a.[Entity_Id]
+    WHERE (@OnlyActiveAttributes = 0 OR ISNULL(a.[Is_Active],1) = 1);';
+
+EXEC sys.sp_executesql @InsertAttr, N'@OnlyActiveAttributes bit', @OnlyActiveAttributes = @OnlyActiveAttributes;
+
 CREATE CLUSTERED INDEX IX_Attr ON #Attr(EntityId, AttrId);
 CREATE NONCLUSTERED INDEX IX_Attr_Name ON #Attr(AttrName);
 
--- 5) Resolve references: parse TYPE = 'bt*' + <Espace_SS_Key> + '*' + <Entity_SS_Key>
+-- 4b) Normalize stored physical names with any explicit database overrides
+UPDATE a
+SET a.PhysicalColumnName = COALESCE(NULLIF(a.PhysicalColumnName, ''), a.DatabaseColumnName)
+FROM #Attr a
+WHERE (a.PhysicalColumnName IS NULL OR a.PhysicalColumnName = '')
+  AND a.DatabaseColumnName IS NOT NULL;
+
 IF OBJECT_ID('tempdb..#RefResolved') IS NOT NULL DROP TABLE #RefResolved;
 WITH ParsedRef AS
 (
   SELECT
     a.AttrId,
-    CASE WHEN a.[Type] LIKE 'bt*%' THEN SUBSTRING(a.[Type], 3, 36) END                 AS RefEspaceSSKey,
-    CASE WHEN a.[Type] LIKE 'bt*%' THEN SUBSTRING(a.[Type], CHARINDEX('*', a.[Type])+1, 36) END AS RefEntitySSKey
+    CASE WHEN a.LegacyType LIKE 'bt*%' THEN SUBSTRING(a.LegacyType, 3, 36) END AS RefEspaceSSKey,
+    CASE WHEN a.LegacyType LIKE 'bt*%' THEN SUBSTRING(a.LegacyType, CHARINDEX('*', a.LegacyType)+1, 36) END AS RefEntitySSKey
   FROM #Attr a
 )
 SELECT
     a.AttrId,
-    eTarget.EntityId         AS RefEntityId,
-    eTarget.EntityName       AS RefEntityName,
-    eTarget.PhysicalTableName AS RefPhysicalName
+    COALESCE(eById.EntityId, eByKey.EntityId)              AS RefEntityId,
+    COALESCE(eById.EntityName, eByKey.EntityName)          AS RefEntityName,
+    COALESCE(eById.PhysicalTableName, eByKey.PhysicalTableName) AS RefPhysicalName
 INTO #RefResolved
-FROM ParsedRef a
-JOIN #Ent eTarget
-  ON eTarget.EntitySSKey = a.RefEntitySSKey
-JOIN #E eTargetModule
-  ON eTargetModule.EspaceId   = eTarget.EspaceId
- AND eTargetModule.EspaceSSKey = a.RefEspaceSSKey;  -- ensure uniqueness across modules/clones
+FROM #Attr a
+LEFT JOIN #Ent eById ON eById.EntityId = a.RefEntityId
+LEFT JOIN ParsedRef pr ON pr.AttrId = a.AttrId
+LEFT JOIN #Ent eByKey
+  ON eByKey.EntitySSKey = pr.RefEntitySSKey
+LEFT JOIN #E eByKeyModule
+  ON eByKeyModule.EspaceId = eByKey.EspaceId
+ AND eByKeyModule.EspaceSSKey = pr.RefEspaceSSKey
+WHERE COALESCE(eById.EntityId, eByKey.EntityId) IS NOT NULL;
 CREATE CLUSTERED INDEX IX_RefResolved ON #RefResolved(AttrId);
 
 -- 6) Physical tables (resolve schema)
@@ -142,24 +240,52 @@ JOIN sys.schemas s
   ON s.schema_id = t.schema_id;
 CREATE CLUSTERED INDEX IX_PhysTbls ON #PhysTbls(EntityId);
 
--- 7) Physical column presence (prefer physical name, fallback to logical)
-IF OBJECT_ID('tempdb..#PhysColsPresent') IS NOT NULL DROP TABLE #PhysColsPresent;
-SELECT DISTINCT a.AttrId
-INTO #PhysColsPresent
-FROM #Attr a
-JOIN #PhysTbls pt       ON pt.EntityId = a.EntityId
-JOIN sys.columns c      ON c.object_id = pt.object_id
-AND c.[name] COLLATE DATABASE_DEFAULT = COALESCE(a.PhysicalColumnName, a.AttrName) COLLATE DATABASE_DEFAULT;
-CREATE CLUSTERED INDEX IX_PhysColsPresent ON #PhysColsPresent(AttrId);
-
--- 8) Backfill #Attr.PhysicalColumnName if blank/NULL using sys.columns
-UPDATE a
-SET a.PhysicalColumnName = c.[name]
+-- 7) Column reality (nullability, SQL type, identity, defaults)
+IF OBJECT_ID('tempdb..#ColumnReality') IS NOT NULL DROP TABLE #ColumnReality;
+SELECT
+    a.AttrId,
+    CAST(c.is_nullable AS bit) AS IsNullable,
+    t.[name] AS SqlType,
+    CASE
+        WHEN c.max_length = -1 THEN -1
+        WHEN t.[name] IN (N'nchar', N'nvarchar', N'ntext') THEN c.max_length / 2
+        ELSE c.max_length
+    END AS MaxLength,
+    c.precision AS [Precision],
+    c.scale AS [Scale],
+    c.collation_name AS CollationName,
+    CAST(c.is_identity AS bit) AS IsIdentity,
+    CAST(COLUMNPROPERTY(c.object_id, c.[name], 'IsComputed') AS bit) AS IsComputed,
+    cc.definition AS ComputedDefinition,
+    dc.definition AS DefaultDefinition,
+    c.[name] AS PhysicalColumn
+INTO #ColumnReality
 FROM #Attr a
 JOIN #PhysTbls pt ON pt.EntityId = a.EntityId
-JOIN sys.columns c ON c.object_id = pt.object_id
-WHERE (a.PhysicalColumnName IS NULL OR a.PhysicalColumnName = '')
-  AND (c.[name] COLLATE Latin1_General_CI_AI = a.AttrName COLLATE Latin1_General_CI_AI);
+JOIN sys.columns c
+  ON c.object_id = pt.object_id
+ AND c.[name] COLLATE Latin1_General_CI_AI = COALESCE(NULLIF(a.PhysicalColumnName, ''), NULLIF(a.DatabaseColumnName, ''), a.AttrName) COLLATE Latin1_General_CI_AI
+JOIN sys.types t
+  ON t.user_type_id = c.user_type_id AND t.system_type_id = c.system_type_id
+LEFT JOIN sys.computed_columns cc
+  ON cc.object_id = c.object_id AND cc.column_id = c.column_id
+LEFT JOIN sys.default_constraints dc
+  ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id;
+CREATE CLUSTERED INDEX IX_ColumnReality ON #ColumnReality(AttrId);
+
+-- 8) Record which logical attributes still exist physically
+IF OBJECT_ID('tempdb..#PhysColsPresent') IS NOT NULL DROP TABLE #PhysColsPresent;
+SELECT DISTINCT AttrId
+INTO #PhysColsPresent
+FROM #ColumnReality;
+CREATE CLUSTERED INDEX IX_PhysColsPresent ON #PhysColsPresent(AttrId);
+
+-- 9) Backfill #Attr.PhysicalColumnName when catalog evidence disagrees
+UPDATE a
+SET a.PhysicalColumnName = cr.PhysicalColumn
+FROM #Attr a
+JOIN #ColumnReality cr ON cr.AttrId = a.AttrId
+WHERE (a.PhysicalColumnName IS NULL OR a.PhysicalColumnName = '');
 
 -- 9) Index catalog (IX + UQ + PK)
 IF OBJECT_ID('tempdb..#AllIdx') IS NOT NULL DROP TABLE #AllIdx;
@@ -197,7 +323,9 @@ CREATE CLUSTERED INDEX IX_AllIdx ON #AllIdx(EntityId, IndexName);
 IF OBJECT_ID('tempdb..#IdxColsMapped') IS NOT NULL DROP TABLE #IdxColsMapped;
 WITH IdxColsKeys AS
 (
-  SELECT ai.EntityId, ai.IndexName, ic.key_ordinal AS Ordinal, c.[name] AS PhysicalColumn
+  SELECT ai.EntityId, ai.IndexName, ic.key_ordinal AS Ordinal, c.[name] AS PhysicalColumn,
+         CAST(0 AS bit) AS IsIncluded,
+         CASE WHEN ic.is_descending_key = 1 THEN N'DESC' ELSE N'ASC' END AS Direction
   FROM #AllIdx ai
   JOIN sys.index_columns ic ON ic.object_id = ai.object_id AND ic.index_id = ai.index_id
   JOIN sys.columns c        ON c.object_id = ai.object_id AND c.column_id = ic.column_id
@@ -207,7 +335,9 @@ IdxColsIncl AS
 (
   SELECT ai.EntityId, ai.IndexName,
          100000 + ROW_NUMBER() OVER (PARTITION BY ai.object_id, ai.index_id ORDER BY ic.column_id) AS Ordinal,
-         c.[name] AS PhysicalColumn
+         c.[name] AS PhysicalColumn,
+         CAST(1 AS bit) AS IsIncluded,
+         NULL AS Direction
   FROM #AllIdx ai
   JOIN sys.index_columns ic ON ic.object_id = ai.object_id AND ic.index_id = ai.index_id
   JOIN sys.columns c        ON c.object_id = ai.object_id AND c.column_id = ic.column_id
@@ -224,12 +354,14 @@ SELECT
     i.IndexName,
     i.Ordinal,
     i.PhysicalColumn,
-    COALESCE(a.PhysicalColumnName, a.AttrName) AS HumanAttr
+    i.IsIncluded,
+    i.Direction,
+    COALESCE(NULLIF(a.PhysicalColumnName, ''), NULLIF(a.DatabaseColumnName, ''), a.AttrName) AS HumanAttr
 INTO #IdxColsMapped
 FROM IdxColsAll i
 LEFT JOIN #Attr a
   ON a.EntityId = i.EntityId
- AND COALESCE(a.PhysicalColumnName, a.AttrName) COLLATE Latin1_General_CI_AI
+ AND COALESCE(NULLIF(a.PhysicalColumnName, ''), NULLIF(a.DatabaseColumnName, ''), a.AttrName) COLLATE Latin1_General_CI_AI
      = i.PhysicalColumn COLLATE Latin1_General_CI_AI;
 CREATE CLUSTERED INDEX IX_IdxColsMapped ON #IdxColsMapped(EntityId, IndexName, Ordinal);
 
@@ -239,41 +371,133 @@ SET a.PhysicalColumnName = m.PhysicalColumn
 FROM #Attr a
 JOIN #IdxColsMapped m  ON m.EntityId = a.EntityId
 WHERE (a.PhysicalColumnName IS NULL OR a.PhysicalColumnName = '')
-  AND (m.HumanAttr COLLATE Latin1_General_CI_AI = a.AttrName COLLATE Latin1_General_CI_AI
-       OR m.PhysicalColumn COLLATE Latin1_General_CI_AI = a.AttrName COLLATE Latin1_General_CI_AI);
+  AND (
+        m.HumanAttr COLLATE Latin1_General_CI_AI = a.AttrName COLLATE Latin1_General_CI_AI
+        OR m.PhysicalColumn COLLATE Latin1_General_CI_AI = a.AttrName COLLATE Latin1_General_CI_AI
+        OR m.PhysicalColumn COLLATE Latin1_General_CI_AI = COALESCE(NULLIF(a.DatabaseColumnName, ''), a.AttrName) COLLATE Latin1_General_CI_AI
+      );
 
--- 11) FK map & attribute-level FK existence
-IF OBJECT_ID('tempdb..#FkMap') IS NOT NULL DROP TABLE #FkMap;
+-- 11) Foreign key reality (id-based evidence)
+IF OBJECT_ID('tempdb..#FkReality') IS NOT NULL DROP TABLE #FkReality;
 SELECT
-    en.EntityId,
+    pt.EntityId,
     fk.object_id AS FkObjectId,
-    STUFF(
-      (SELECT ', ' + QUOTENAME(c1.[name])
-       FROM sys.foreign_key_columns fkc2
-       JOIN sys.columns c1 ON c1.object_id = fkc2.parent_object_id AND c1.column_id = fkc2.parent_column_id
-       WHERE fkc2.constraint_object_id = fk.object_id
-       ORDER BY fkc2.constraint_column_id
-       FOR XML PATH(''), TYPE).value('.', 'nvarchar(max)')
-    ,1,2,'') AS OwnerCols,
-    t2.[name] AS RefTable
-INTO #FkMap
+    fk.[name] AS FkName,
+    fk.delete_referential_action_desc AS DeleteAction,
+    fk.update_referential_action_desc AS UpdateAction,
+    fk.referenced_object_id AS ReferencedObjectId,
+    refPt.EntityId AS ReferencedEntityId,
+    sRef.[name] AS ReferencedSchema,
+    tRef.[name] AS ReferencedTable
+INTO #FkReality
 FROM #PhysTbls pt
-JOIN #Ent en ON en.EntityId = pt.EntityId
 JOIN sys.foreign_keys fk ON fk.parent_object_id = pt.object_id
-JOIN sys.tables t2       ON t2.object_id = fk.referenced_object_id;
-CREATE CLUSTERED INDEX IX_FkMap ON #FkMap(EntityId);
+JOIN sys.tables tRef ON tRef.object_id = fk.referenced_object_id
+JOIN sys.schemas sRef ON sRef.schema_id = tRef.schema_id
+LEFT JOIN #PhysTbls refPt ON refPt.object_id = fk.referenced_object_id;
+CREATE CLUSTERED INDEX IX_FkReality ON #FkReality(EntityId, FkObjectId);
 
--- 11b) Attribute-level actual FK existence
+-- 11b) Foreign key column mapping
+IF OBJECT_ID('tempdb..#FkColumns') IS NOT NULL DROP TABLE #FkColumns;
+SELECT
+    fk.EntityId,
+    fk.FkObjectId,
+    fkc.constraint_column_id AS Ordinal,
+    cParent.[name] AS ParentColumn,
+    cRef.[name] AS ReferencedColumn,
+    ap.AttrId AS ParentAttrId,
+    ap.AttrName AS ParentAttrName,
+    ar.AttrId AS ReferencedAttrId,
+    ar.AttrName AS ReferencedAttrName
+INTO #FkColumns
+FROM #FkReality fk
+JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.FkObjectId
+JOIN sys.columns cParent ON cParent.object_id = fkc.parent_object_id AND cParent.column_id = fkc.parent_column_id
+JOIN sys.columns cRef ON cRef.object_id = fkc.referenced_object_id AND cRef.column_id = fkc.referenced_column_id
+OUTER APPLY (
+    SELECT TOP (1) aParent.AttrId, aParent.AttrName
+    FROM #Attr aParent
+    WHERE aParent.EntityId = fk.EntityId
+      AND cParent.[name] COLLATE Latin1_General_CI_AI =
+          COALESCE(NULLIF(aParent.PhysicalColumnName, ''), NULLIF(aParent.DatabaseColumnName, ''), aParent.AttrName) COLLATE Latin1_General_CI_AI
+    ORDER BY aParent.AttrId
+) ap
+OUTER APPLY (
+    SELECT TOP (1) aRef.AttrId, aRef.AttrName
+    FROM #Attr aRef
+    WHERE fk.ReferencedEntityId IS NOT NULL
+      AND aRef.EntityId = fk.ReferencedEntityId
+      AND cRef.[name] COLLATE Latin1_General_CI_AI =
+          COALESCE(NULLIF(aRef.PhysicalColumnName, ''), NULLIF(aRef.DatabaseColumnName, ''), aRef.AttrName) COLLATE Latin1_General_CI_AI
+    ORDER BY aRef.AttrId
+) ar;
+CREATE CLUSTERED INDEX IX_FkColumns ON #FkColumns(FkObjectId, Ordinal);
+
+-- 11c) Attribute-to-FK map
+IF OBJECT_ID('tempdb..#FkAttrMap') IS NOT NULL DROP TABLE #FkAttrMap;
+SELECT DISTINCT fc.ParentAttrId AS AttrId, fk.FkObjectId
+INTO #FkAttrMap
+FROM #FkColumns fc
+JOIN #FkReality fk ON fk.FkObjectId = fc.FkObjectId
+WHERE fc.ParentAttrId IS NOT NULL;
+CREATE CLUSTERED INDEX IX_FkAttrMap ON #FkAttrMap(AttrId, FkObjectId);
+
+-- 11d) Attribute-level actual FK existence
 IF OBJECT_ID('tempdb..#AttrHasFK') IS NOT NULL DROP TABLE #AttrHasFK;
-SELECT DISTINCT a.AttrId, CAST(1 AS bit) AS HasFK
+SELECT DISTINCT fam.AttrId, CAST(1 AS bit) AS HasFK
 INTO #AttrHasFK
-FROM #Attr a
-JOIN #RefResolved r ON r.AttrId = a.AttrId
-JOIN #FkMap fk
-  ON fk.OwnerCols COLLATE DATABASE_DEFAULT LIKE ('%[' + COALESCE(a.PhysicalColumnName, a.AttrName) + ']%')
- COLLATE DATABASE_DEFAULT
- AND fk.RefTable  COLLATE DATABASE_DEFAULT = r.RefPhysicalName COLLATE DATABASE_DEFAULT;
+FROM #FkAttrMap fam
+JOIN #FkReality fk ON fk.FkObjectId = fam.FkObjectId
+LEFT JOIN #RefResolved r ON r.AttrId = fam.AttrId
+LEFT JOIN #PhysTbls refPt ON refPt.EntityId = r.RefEntityId
+WHERE r.AttrId IS NULL
+   OR fk.ReferencedEntityId = r.RefEntityId
+   OR (refPt.object_id IS NOT NULL AND refPt.object_id = fk.ReferencedObjectId)
+   OR (r.RefPhysicalName IS NOT NULL AND r.RefPhysicalName COLLATE DATABASE_DEFAULT = fk.ReferencedTable COLLATE DATABASE_DEFAULT);
 CREATE CLUSTERED INDEX IX_AttrHasFK ON #AttrHasFK(AttrId);
+
+-- 11e) FK column JSON per constraint
+IF OBJECT_ID('tempdb..#FkColumnsJson') IS NOT NULL DROP TABLE #FkColumnsJson;
+SELECT
+  fc.FkObjectId,
+  (
+    SELECT
+      fc2.Ordinal AS [ordinal],
+      fc2.ParentColumn AS [owner.physical],
+      fc2.ParentAttrName AS [owner.attribute],
+      fc2.ReferencedColumn AS [referenced.physical],
+      fc2.ReferencedAttrName AS [referenced.attribute]
+    FROM #FkColumns fc2
+    WHERE fc2.FkObjectId = fc.FkObjectId
+    ORDER BY fc2.Ordinal
+    FOR JSON PATH
+  ) AS ColumnsJson
+INTO #FkColumnsJson
+FROM #FkColumns fc
+GROUP BY fc.FkObjectId;
+CREATE CLUSTERED INDEX IX_FkColumnsJson ON #FkColumnsJson(FkObjectId);
+
+-- 11f) Attribute-to-FK JSON
+IF OBJECT_ID('tempdb..#FkAttrJson') IS NOT NULL DROP TABLE #FkAttrJson;
+SELECT
+  fam.AttrId,
+  (
+    SELECT
+      fk.FkName AS [name],
+      fk.DeleteAction AS [onDelete],
+      fk.UpdateAction AS [onUpdate],
+      fk.ReferencedSchema AS [referencedSchema],
+      fk.ReferencedTable AS [referencedTable],
+      JSON_QUERY(fkc.ColumnsJson) AS [columns]
+    FROM #FkReality fk
+    LEFT JOIN #FkColumnsJson fkc ON fkc.FkObjectId = fk.FkObjectId
+    WHERE EXISTS (SELECT 1 FROM #FkAttrMap fam2 WHERE fam2.AttrId = fam.AttrId AND fam2.FkObjectId = fk.FkObjectId)
+    FOR JSON PATH
+  ) AS ConstraintJson
+INTO #FkAttrJson
+FROM #FkAttrMap fam
+GROUP BY fam.AttrId;
+CREATE CLUSTERED INDEX IX_FkAttrJson ON #FkAttrJson(AttrId);
 
 /* --------------------------------------------------------------------------
    Phase 2: Pre-aggregate JSON blobs
@@ -285,31 +509,51 @@ SELECT
   en.EntityId,
   (
     SELECT
-      a.AttrName                               AS [name],
-      COALESCE(a.PhysicalColumnName, a.AttrName) AS [physicalName],
-      a.OriginalName                           AS [originalName],
-      a.DataType                               AS [dataType],
-      a.[Length]                               AS [length],
-      a.[Precision]                            AS [precision],
-      a.[Scale]                                AS [scale],
-      a.[DefaultValue]                         AS [default],
-      a.IsMandatory                            AS [isMandatory],
-      a.AttrIsActive                           AS [isActive],
-      a.IsIdentifier                           AS [isIdentifier],
-      CAST(CASE WHEN r.AttrId IS NOT NULL THEN 1 ELSE 0 END AS int) AS [isReference],
-      r.RefEntityId                            AS [refEntityId],
-      r.RefEntityName                          AS [refEntity_name],
-      r.RefPhysicalName                        AS [refEntity_physicalName],
-      a.DeleteRule                             AS [reference_deleteRuleCode],
-      CAST(CASE WHEN fk.HasFK = 1 THEN 1 ELSE 0 END AS int) AS [reference_hasDbConstraint],
-      a.ExternalDbType                         AS [external_dbType],
-      CAST(CASE WHEN a.AttrIsActive = 0 AND pc.AttrId IS NOT NULL THEN 1 ELSE 0 END AS int) AS [physical_isPresentButInactive]
+      a.AttrName AS [name],
+      COALESCE(NULLIF(a.PhysicalColumnName, ''), NULLIF(a.DatabaseColumnName, ''), a.AttrName) AS [physicalName],
+      NULLIF(LTRIM(RTRIM(a.OriginalName)), '') AS [originalName],
+      COALESCE(a.DataType, a.OriginalType, a.LegacyType) AS [dataType],
+      a.[Length] AS [length],
+      a.[Precision] AS [precision],
+      COALESCE(a.[Scale], a.Decimals) AS [scale],
+      a.DefaultValue AS [default],
+      a.IsMandatory AS [isMandatory],
+      a.AttrIsActive AS [isActive],
+      CAST(CASE WHEN COALESCE(a.IsIdentifier, CASE WHEN a.AttrSSKey = en.PrimaryKeySSKey THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END AS bit) AS [isIdentifier],
+      CAST(CASE WHEN COALESCE(a.RefEntityId, r.RefEntityId) IS NOT NULL THEN 1 ELSE 0 END AS int) AS [isReference],
+      COALESCE(a.RefEntityId, r.RefEntityId) AS [refEntityId],
+      r.RefEntityName AS [refEntity_name],
+      r.RefPhysicalName AS [refEntity_physicalName],
+      a.DeleteRule AS [reference_deleteRuleCode],
+      CAST(ISNULL(h.HasFK, 0) AS int) AS [hasDbConstraint],
+      a.ExternalColumnType AS [external_dbType],
+      CAST(CASE WHEN a.AttrIsActive = 0 AND pc.AttrId IS NOT NULL THEN 1 ELSE 0 END AS bit) AS [physical_isPresentButInactive],
+      CASE WHEN cr.AttrId IS NOT NULL THEN JSON_QUERY(
+        (SELECT
+            CAST(cr.IsNullable AS bit) AS [isNullable],
+            cr.SqlType AS [sqlType],
+            cr.MaxLength AS [maxLength],
+            cr.[Precision] AS [precision],
+            cr.[Scale] AS [scale],
+            cr.CollationName AS [collation],
+            CAST(cr.IsIdentity AS bit) AS [isIdentity],
+            CAST(cr.IsComputed AS bit) AS [isComputed],
+            cr.ComputedDefinition AS [computedDefinition],
+            cr.DefaultDefinition AS [defaultDefinition]
+         FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
+      ) END AS [onDisk],
+      CASE WHEN NULLIF(LTRIM(RTRIM(a.AttrDescription)), '') IS NOT NULL THEN JSON_QUERY(
+        (SELECT NULLIF(LTRIM(RTRIM(a.AttrDescription)), '') AS [description]
+         FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
+      ) END AS [meta]
     FROM #Attr a
     LEFT JOIN #RefResolved r ON r.AttrId = a.AttrId
-    LEFT JOIN #AttrHasFK fk ON fk.AttrId = a.AttrId
+    LEFT JOIN #AttrHasFK h ON h.AttrId = a.AttrId
     LEFT JOIN #PhysColsPresent pc ON pc.AttrId = a.AttrId
+    LEFT JOIN #ColumnReality cr ON cr.AttrId = a.AttrId
     WHERE a.EntityId = en.EntityId
-    ORDER BY CASE WHEN a.IsIdentifier = 1 THEN 0 ELSE 1 END, a.AttrName
+    ORDER BY CASE WHEN COALESCE(a.IsIdentifier, CASE WHEN a.AttrSSKey = en.PrimaryKeySSKey THEN 1 ELSE 0 END) = 1 THEN 0 ELSE 1 END,
+             a.AttrName
     FOR JSON PATH
   ) AS AttributesJson
 INTO #AttrJson
@@ -327,10 +571,12 @@ SELECT
       r.RefEntityName                    AS [toEntity_name],
       r.RefPhysicalName                  AS [toEntity_physicalName],
       a.DeleteRule                       AS [deleteRuleCode],
-      CAST(CASE WHEN fk.HasFK = 1 THEN 1 ELSE 0 END AS int) AS [hasDbConstraint]
+      CAST(ISNULL(h.HasFK, 0) AS int)    AS [hasDbConstraint],
+      JSON_QUERY(faj.ConstraintJson)     AS [actualConstraints]
     FROM #Attr a
     JOIN #RefResolved r ON r.AttrId = a.AttrId
-    LEFT JOIN #AttrHasFK fk ON fk.AttrId = a.AttrId
+    LEFT JOIN #AttrHasFK h ON h.AttrId = a.AttrId
+    LEFT JOIN #FkAttrJson faj ON faj.AttrId = a.AttrId
     WHERE a.EntityId = en.EntityId
     ORDER BY a.AttrName
     FOR JSON PATH
@@ -345,7 +591,9 @@ SELECT
   m.EntityId,
   m.IndexName,
   (
-    SELECT m2.HumanAttr AS [attribute], m2.PhysicalColumn AS [physicalColumn], m2.Ordinal AS [ordinal]
+    SELECT m2.HumanAttr AS [attribute], m2.PhysicalColumn AS [physicalColumn], m2.Ordinal AS [ordinal],
+           CAST(m2.IsIncluded AS bit) AS [isIncluded],
+           m2.Direction AS [direction]
     FROM #IdxColsMapped m2
     WHERE m2.EntityId = m.EntityId AND m2.IndexName = m.IndexName
     ORDER BY m2.Ordinal
@@ -390,16 +638,18 @@ SELECT
       CAST(CASE WHEN en.Data_Kind = 'staticEntity' THEN 1 ELSE 0 END AS bit) AS [isStatic],
       en.IsExternalEntity             AS [isExternal],
       en.EntityIsActive               AS [isActive],
-      COALESCE(en.DbCatalog, CASE WHEN en.IsExternalEntity = 1 THEN en.ExternalDbCatalog ELSE DB_NAME() END) AS [db_catalog],
-      CASE WHEN en.IsExternalEntity = 1
-           THEN COALESCE(en.DbSchema, en.ExternalDbSchema)
-           ELSE COALESCE(pt.SchemaName, en.DbSchema, 'dbo')
-      END                             AS [db_schema],
+      DB_NAME()                       AS [db_catalog],
+      s.[name]                        AS [db_schema],
+      CASE WHEN NULLIF(LTRIM(RTRIM(en.EntityDescription)), '') IS NOT NULL THEN JSON_QUERY(
+        (SELECT NULLIF(LTRIM(RTRIM(en.EntityDescription)), '') AS [description]
+         FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
+      ) END                           AS [meta],
       JSON_QUERY(aj.AttributesJson)   AS [attributes],
       JSON_QUERY(rj.RelationshipsJson)AS [relationships],
       JSON_QUERY(ij.IndexesJson)      AS [indexes]
     FROM #Ent en
     LEFT JOIN #PhysTbls pt  ON pt.EntityId = en.EntityId
+    LEFT JOIN sys.schemas s ON s.schema_id = OBJECT_SCHEMA_NAME(pt.object_id, DB_ID())
     LEFT JOIN #AttrJson aj  ON aj.EntityId = en.EntityId
     LEFT JOIN #RelJson  rj  ON rj.EntityId = en.EntityId
     LEFT JOIN #IdxJson  ij  ON ij.EntityId = en.EntityId

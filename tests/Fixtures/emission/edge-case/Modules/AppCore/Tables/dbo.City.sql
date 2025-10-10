@@ -4,3 +4,4 @@ CREATE TABLE dbo.City (
     IsActive BIT            NOT NULL,
     CONSTRAINT PK_City PRIMARY KEY CLUSTERED (Id)
 )
+
