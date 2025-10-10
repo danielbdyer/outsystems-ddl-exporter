@@ -256,7 +256,7 @@ public sealed class TighteningPolicyTests
             defaults.Emission.PerTableFiles,
             defaults.Emission.IncludePlatformAutoIndexes,
             defaults.Emission.SanitizeModuleNames,
-            defaults.Emission.EmitConcatenatedConstraints,
+            defaults.Emission.EmitBareTableOnly,
             overridesResult.Value);
         Assert.True(emissionResult.IsSuccess, string.Join(Environment.NewLine, emissionResult.Errors.Select(e => e.Message)));
 

@@ -43,15 +43,15 @@ This appendix complements `architecture-guardrails.md` by describing the executa
   - Platform auto-indexes (OSIDX_*) are excluded unless the toggle is explicitly enabled.
   - The builder does not access the filesystem or mutate SMO servers; it only produces detached object graphs for testing.
 - **Failures**: Throwing is reserved for programming errors (null arguments). Option validation should occur before invocation.
-- **Telemetry hooks**: table/index/foreign-key counts and whether concatenated constraint mode is active.
+- **Telemetry hooks**: table/index/foreign-key counts and whether bare-table mode is active.
 
 ## SSDT emission (`SsdtEmitter` / `SsdtManifest`)
 - **Input**: `SmoModel`, emission directory, `SmoBuildOptions`, and `PolicyDecisionReport`.
-- **Output**: Per-table SSDT artifacts (Tables/Indexes/ForeignKeys), optional concatenated scripts, `manifest.json`, and `policy-decisions.json`.
+- **Output**: Single-file SSDT artifacts per table (CREATE TABLE + inline defaults/FKs/indexes + extended properties), `manifest.json`, and `policy-decisions.json`.
 - **Invariants**:
   - Emission is idempotent: running twice with identical inputs overwrites existing files without side effects.
   - File names are derived from logical identifiers unless a naming override is present.
-  - Manifest snapshots include toggle states (`IncludePlatformAutoIndexes`, `EmitConcatenatedConstraints`) plus policy telemetry to support PR automation.
+  - Manifest snapshots include toggle states (`IncludePlatformAutoIndexes`, `EmitBareTableOnly`) plus policy telemetry to support PR automation.
 - **Failures**: Raise `IOException` derivatives only when the target path is unreachable; callers should surface user-friendly messages in the CLI.
 - **Telemetry hooks**: counts of written files per module, output directory, and elapsed emission time.
 

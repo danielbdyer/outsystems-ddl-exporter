@@ -13,6 +13,9 @@
           "isActive": true,
           "db_catalog": null,
           "db_schema": "dbo",
+          "meta": {
+            "description": "Stores customer records for AppCore"
+          },
           "attributes": [
             {
               "name": "Id",
@@ -33,7 +36,17 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "meta": {
+                "description": "Customer identifier"
+              },
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "int",
+                "precision": 10,
+                "scale": 0,
+                "isIdentity": true
+              }
             },
             {
               "name": "Email",
@@ -54,7 +67,16 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "meta": {
+                "description": "Customer email"
+              },
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "nvarchar",
+                "maxLength": 255,
+                "collation": "Latin1_General_CI_AI"
+              }
             },
             {
               "name": "FirstName",
@@ -75,7 +97,16 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "meta": {
+                "description": "Customer first name"
+              },
+              "onDisk": {
+                "isNullable": true,
+                "sqlType": "nvarchar",
+                "maxLength": 100,
+                "defaultDefinition": "('')"
+              }
             },
             {
               "name": "LastName",
@@ -96,7 +127,16 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "meta": {
+                "description": "Customer last name"
+              },
+              "onDisk": {
+                "isNullable": true,
+                "sqlType": "nvarchar",
+                "maxLength": 100,
+                "defaultDefinition": "('')"
+              }
             },
             {
               "name": "CityId",
@@ -117,7 +157,16 @@
               "reference_deleteRuleCode": "Protect",
               "reference_hasDbConstraint": 1,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "meta": {
+                "description": "FK to City"
+              },
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "int",
+                "precision": 10,
+                "scale": 0
+              }
             },
             {
               "name": "LegacyCode",
@@ -148,7 +197,25 @@
               "toEntity_name": "City",
               "toEntity_physicalName": "OSUSR_DEF_CITY",
               "deleteRuleCode": "Protect",
-              "hasDbConstraint": 1
+              "hasDbConstraint": 1,
+              "actualConstraints": [
+                {
+                  "name": "FK_OSUSR_ABC_CUSTOMER_OSUSR_DEF_CITY",
+                  "referencedSchema": "dbo",
+                  "referencedTable": "OSUSR_DEF_CITY",
+                  "onDelete": "NO_ACTION",
+                  "onUpdate": "NO_ACTION",
+                  "columns": [
+                    {
+                      "ordinal": 1,
+                      "owner.physical": "CITYID",
+                      "owner.attribute": "CityId",
+                      "referenced.physical": "ID",
+                      "referenced.attribute": "Id"
+                    }
+                  ]
+                }
+              ]
             }
           ],
           "indexes": [
@@ -157,7 +224,13 @@
               "isUnique": true,
               "isPlatformAuto": 0,
               "columns": [
-                { "attribute": "Email", "physicalColumn": "EMAIL", "ordinal": 1 }
+                {
+                  "attribute": "Email",
+                  "physicalColumn": "EMAIL",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                }
               ]
             },
             {
@@ -165,8 +238,20 @@
               "isUnique": false,
               "isPlatformAuto": 0,
               "columns": [
-                { "attribute": "LastName", "physicalColumn": "LASTNAME", "ordinal": 1 },
-                { "attribute": "FirstName", "physicalColumn": "FIRSTNAME", "ordinal": 2 }
+                {
+                  "attribute": "LastName",
+                  "physicalColumn": "LASTNAME",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                },
+                {
+                  "attribute": "FirstName",
+                  "physicalColumn": "FIRSTNAME",
+                  "ordinal": 2,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                }
               ]
             }
           ]
@@ -251,7 +336,13 @@
               "isUnique": false,
               "isPlatformAuto": 1,
               "columns": [
-                { "attribute": "Name", "physicalColumn": "NAME", "ordinal": 1 }
+                {
+                  "attribute": "Name",
+                  "physicalColumn": "NAME",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                }
               ]
             }
           ]
@@ -343,7 +434,13 @@
               "isUnique": true,
               "isPlatformAuto": 0,
               "columns": [
-                { "attribute": "AccountNumber", "physicalColumn": "ACCOUNTNUMBER", "ordinal": 1 }
+                {
+                  "attribute": "AccountNumber",
+                  "physicalColumn": "ACCOUNTNUMBER",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                }
               ]
             }
           ]
@@ -444,7 +541,13 @@
               "isUnique": false,
               "isPlatformAuto": 1,
               "columns": [
-                { "attribute": "CreatedOn", "physicalColumn": "CREATEDON", "ordinal": 1 }
+                {
+                  "attribute": "CreatedOn",
+                  "physicalColumn": "CREATEDON",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Descending"
+                }
               ]
             }
           ]

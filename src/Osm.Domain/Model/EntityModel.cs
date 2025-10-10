@@ -17,7 +17,8 @@ public sealed record EntityModel(
     bool IsActive,
     ImmutableArray<AttributeModel> Attributes,
     ImmutableArray<IndexModel> Indexes,
-    ImmutableArray<RelationshipModel> Relationships)
+    ImmutableArray<RelationshipModel> Relationships,
+    EntityMetadata Metadata)
 {
     public static Result<EntityModel> Create(
         ModuleName module,
@@ -30,7 +31,8 @@ public sealed record EntityModel(
         bool isActive,
         IEnumerable<AttributeModel> attributes,
         IEnumerable<IndexModel>? indexes = null,
-        IEnumerable<RelationshipModel>? relationships = null)
+        IEnumerable<RelationshipModel>? relationships = null,
+        EntityMetadata? metadata = null)
     {
         if (attributes is null)
         {
@@ -73,7 +75,8 @@ public sealed record EntityModel(
             isActive,
             attributeArray,
             indexArray,
-            relationshipArray));
+            relationshipArray,
+            metadata ?? EntityMetadata.Empty));
     }
 
     private static bool HasDuplicates(IEnumerable<string> values, IEqualityComparer<string>? comparer = null)

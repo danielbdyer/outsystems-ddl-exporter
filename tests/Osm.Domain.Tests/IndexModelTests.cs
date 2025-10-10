@@ -10,7 +10,7 @@ public sealed class IndexModelTests
     {
         var attributeName = AttributeName.Create(attribute).Value;
         var columnName = ColumnName.Create(column).Value;
-        return IndexColumnModel.Create(attributeName, columnName, ordinal).Value;
+        return IndexColumnModel.Create(attributeName, columnName, ordinal, isIncluded: false, IndexColumnDirection.Ascending).Value;
     }
 
     [Fact]

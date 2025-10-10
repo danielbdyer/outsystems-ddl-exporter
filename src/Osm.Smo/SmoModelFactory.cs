@@ -120,6 +120,7 @@ public sealed class SmoModelFactory
             context.Entity.Schema.Value,
             catalog,
             context.Entity.LogicalName.Value,
+            context.Entity.Metadata.Description,
             columns,
             indexes,
             foreignKeys);
@@ -165,9 +166,15 @@ public sealed class SmoModelFactory
         {
             var dataType = SqlDataTypeMapper.Resolve(attribute);
             var nullable = !ShouldEnforceNotNull(context.Entity, attribute, decisions);
-            var isIdentity = attribute.IsAutoNumber;
+            var onDisk = attribute.OnDisk;
+            var isIdentity = onDisk.IsIdentity ?? attribute.IsAutoNumber;
             var identitySeed = isIdentity ? 1 : 0;
             var identityIncrement = isIdentity ? 1 : 0;
+            var isComputed = onDisk.IsComputed ?? false;
+            var computed = isComputed ? onDisk.ComputedDefinition : null;
+            var defaultExpression = onDisk.DefaultDefinition;
+            var collation = onDisk.Collation;
+            var description = attribute.Metadata.Description;
 
             builder.Add(new SmoColumnDefinition(
                 attribute.LogicalName.Value,
@@ -176,7 +183,12 @@ public sealed class SmoModelFactory
                 nullable,
                 isIdentity,
                 identitySeed,
-                identityIncrement));
+                identityIncrement,
+                isComputed,
+                computed,
+                defaultExpression,
+                collation,
+                description));
         }
 
         return builder.ToImmutable();
@@ -207,7 +219,7 @@ public sealed class SmoModelFactory
             for (var i = 0; i < context.IdentifierAttributes.Length; i++)
             {
                 var attribute = context.IdentifierAttributes[i];
-                pkColumns.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, i + 1));
+                pkColumns.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, i + 1, IsIncluded: false, IsDescending: false));
             }
 
             var pkName = NormalizeConstraintName($"PK_{context.Entity.PhysicalName.Value}", context.Entity, context.IdentifierAttributes);
@@ -247,8 +259,12 @@ public sealed class SmoModelFactory
                     break;
                 }
 
-                referencedAttributes.Add(attribute);
-                columnsBuilder.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, column.Ordinal));
+                if (!column.IsIncluded)
+                {
+                    referencedAttributes.Add(attribute);
+                }
+                var isDescending = column.Direction == IndexColumnDirection.Descending;
+                columnsBuilder.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, column.Ordinal, column.IsIncluded, isDescending));
             }
 
             if (columnsBuilder.Count == 0)
@@ -257,6 +273,10 @@ public sealed class SmoModelFactory
             }
 
             var columns = columnsBuilder.ToImmutable();
+            if (!columns.Any(c => !c.IsIncluded))
+            {
+                continue;
+            }
             var normalizedName = NormalizeConstraintName(index.Name.Value, context.Entity, referencedAttributes);
 
             var indexCoordinate = new IndexCoordinate(context.Entity.Schema, context.Entity.PhysicalName, index.Name);

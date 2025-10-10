@@ -5,48 +5,48 @@
       "Schema": "dbo",
       "Table": "Customer",
       "TableFile": "Modules/AppCore/Tables/dbo.Customer.sql",
-      "IndexFiles": [
-        "Modules/AppCore/Indexes/dbo.Customer.IDX_Customer_Email.sql",
-        "Modules/AppCore/Indexes/dbo.Customer.IDX_Customer_Name.sql"
+      "Indexes": [
+        "IDX_Customer_Email",
+        "IDX_Customer_Name"
       ],
-      "ForeignKeyFiles": [
-        "Modules/AppCore/ForeignKeys/dbo.Customer.FK_Customer_CityId.sql"
+      "ForeignKeys": [
+        "FK_Customer_CityId"
       ],
-      "ConcatenatedFile": null
+      "IncludesExtendedProperties": true
     },
     {
       "Module": "AppCore",
       "Schema": "dbo",
       "Table": "City",
       "TableFile": "Modules/AppCore/Tables/dbo.City.sql",
-      "IndexFiles": [],
-      "ForeignKeyFiles": [],
-      "ConcatenatedFile": null
+      "Indexes": [],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false
     },
     {
       "Module": "ExtBilling",
       "Schema": "billing",
       "Table": "BillingAccount",
       "TableFile": "Modules/ExtBilling/Tables/billing.BillingAccount.sql",
-      "IndexFiles": [
-        "Modules/ExtBilling/Indexes/billing.BillingAccount.IDX_BillingAccount_Acctnum.sql"
+      "Indexes": [
+        "IDX_BillingAccount_Acctnum"
       ],
-      "ForeignKeyFiles": [],
-      "ConcatenatedFile": null
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false
     },
     {
       "Module": "Ops",
       "Schema": "dbo",
       "Table": "JobRun",
       "TableFile": "Modules/Ops/Tables/dbo.JobRun.sql",
-      "IndexFiles": [],
-      "ForeignKeyFiles": [],
-      "ConcatenatedFile": null
+      "Indexes": [],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false
     }
   ],
   "Options": {
     "IncludePlatformAutoIndexes": false,
-    "EmitConcatenatedConstraints": false
+    "EmitBareTableOnly": false
   },
   "PolicySummary": {
     "ColumnCount": 15,
@@ -58,16 +58,16 @@
     "ForeignKeyCount": 2,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
-      "DEFAULT_PRESENT": 2,
+      "PROFILE_MISSING": 1,
       "DATA_NO_NULLS": 10,
       "UNIQUE_NO_NULLS": 2,
-      "FK_ENFORCED": 1,
-      "PROFILE_MISSING": 1,
-      "PK": 4,
-      "DATA_HAS_ORPHANS": 1,
-      "PHYSICAL_NOT_NULL": 4,
       "DELETE_RULE_IGNORE": 1,
-      "MANDATORY": 10
+      "DEFAULT_PRESENT": 2,
+      "PK": 4,
+      "FK_ENFORCED": 1,
+      "PHYSICAL_NOT_NULL": 4,
+      "MANDATORY": 10,
+      "DATA_HAS_ORPHANS": 1
     },
     "UniqueIndexRationales": {
       "PHYSICAL_UNIQUE_KEY": 2,
@@ -75,8 +75,8 @@
     },
     "ForeignKeyRationales": {
       "DB_CONSTRAINT_PRESENT": 1,
-      "DATA_HAS_ORPHANS": 1,
-      "DELETE_RULE_IGNORE": 1
+      "DELETE_RULE_IGNORE": 1,
+      "DATA_HAS_ORPHANS": 1
     }
   }
 }

@@ -18,7 +18,9 @@ public sealed record AttributeModel(
     bool IsActive,
     AttributeReference Reference,
     string? ExternalDatabaseType,
-    AttributeReality Reality)
+    AttributeReality Reality,
+    AttributeMetadata Metadata,
+    AttributeOnDiskMetadata OnDisk)
 {
     public static Result<AttributeModel> Create(
         AttributeName logicalName,
@@ -35,7 +37,9 @@ public sealed record AttributeModel(
         int? scale = null,
         string? defaultValue = null,
         string? externalDatabaseType = null,
-        AttributeReality? reality = null)
+        AttributeReality? reality = null,
+        AttributeMetadata? metadata = null,
+        AttributeOnDiskMetadata? onDisk = null)
     {
         if (string.IsNullOrWhiteSpace(dataType))
         {
@@ -78,6 +82,8 @@ public sealed record AttributeModel(
             isActive,
             referenceResult,
             trimmedExternal,
-            reality ?? AttributeReality.Unknown));
+            reality ?? AttributeReality.Unknown,
+            metadata ?? AttributeMetadata.Empty,
+            onDisk ?? AttributeOnDiskMetadata.Empty));
     }
 }

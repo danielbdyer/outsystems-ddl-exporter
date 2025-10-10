@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -191,6 +192,8 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
             return Result<EntityModel>.Failure(relationshipsResult.Errors);
         }
 
+        var metadata = EntityMetadata.Create(doc.Meta?.Description);
+
         return EntityModel.Create(
             moduleName,
             logicalNameResult.Value,
@@ -202,7 +205,8 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
             doc.IsActive,
             attributesResult.Value,
             indexesResult.Value,
-            relationshipsResult.Value);
+            relationshipsResult.Value,
+            metadata);
     }
 
     private static Result<ImmutableArray<AttributeModel>> MapAttributes(AttributeDocument[]? docs)
@@ -235,22 +239,27 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
 
             var reality = BuildReality(doc);
 
-            var attributeResult = AttributeModel.Create(
-                logicalNameResult.Value,
-                columnResult.Value,
-                doc.DataType ?? string.Empty,
-                doc.IsMandatory,
-                doc.IsIdentifier,
-                doc.IsAutoNumber,
-                doc.IsActive,
-                referenceResult.Value,
-                doc.OriginalName,
-                doc.Length,
-                doc.Precision,
-                doc.Scale,
-                doc.Default,
-                doc.ExternalDbType,
-                reality);
+        var metadata = AttributeMetadata.Create(doc.Meta?.Description);
+        var onDisk = doc.OnDisk?.ToDomain() ?? AttributeOnDiskMetadata.Empty;
+
+        var attributeResult = AttributeModel.Create(
+            logicalNameResult.Value,
+            columnResult.Value,
+            doc.DataType ?? string.Empty,
+            doc.IsMandatory,
+            doc.IsIdentifier,
+            doc.IsAutoNumber,
+            doc.IsActive,
+            referenceResult.Value,
+            doc.OriginalName,
+            doc.Length,
+            doc.Precision,
+            doc.Scale,
+            doc.Default,
+            doc.ExternalDbType,
+            reality,
+            metadata,
+            onDisk);
 
             if (attributeResult.IsFailure)
             {
@@ -374,7 +383,13 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
                 return Result<ImmutableArray<IndexColumnModel>>.Failure(columnResult.Errors);
             }
 
-            var columnModelResult = IndexColumnModel.Create(attributeResult.Value, columnResult.Value, doc.Ordinal);
+            var direction = ParseIndexDirection(doc.Direction);
+            var columnModelResult = IndexColumnModel.Create(
+                attributeResult.Value,
+                columnResult.Value,
+                doc.Ordinal,
+                doc.IsIncluded,
+                direction);
             if (columnModelResult.IsFailure)
             {
                 return Result<ImmutableArray<IndexColumnModel>>.Failure(columnModelResult.Errors);
@@ -426,7 +441,8 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
                 entityResult.Value,
                 tableResult.Value,
                 doc.DeleteRuleCode,
-                hasConstraint);
+                hasConstraint,
+                MapActualConstraints(doc));
 
             if (relationshipResult.IsFailure)
             {
@@ -437,6 +453,60 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         }
 
         return Result<ImmutableArray<RelationshipModel>>.Success(builder.ToImmutable());
+    }
+
+    private static IEnumerable<RelationshipActualConstraint> MapActualConstraints(RelationshipDocument doc)
+    {
+        if (doc.ActualConstraints is null || doc.ActualConstraints.Length == 0)
+        {
+            return Array.Empty<RelationshipActualConstraint>();
+        }
+
+        var constraints = new List<RelationshipActualConstraint>(doc.ActualConstraints.Length);
+        foreach (var constraint in doc.ActualConstraints)
+        {
+            var columns = constraint.Columns is null || constraint.Columns.Length == 0
+                ? ImmutableArray<RelationshipActualConstraintColumn>.Empty
+                : constraint.Columns
+                    .Select(c => RelationshipActualConstraintColumn.Create(
+                        c.OwnerPhysical,
+                        c.OwnerAttribute,
+                        c.ReferencedPhysical,
+                        c.ReferencedAttribute,
+                        c.Ordinal))
+                    .ToImmutableArray();
+
+            constraints.Add(RelationshipActualConstraint.Create(
+                constraint.Name ?? string.Empty,
+                constraint.ReferencedSchema,
+                constraint.ReferencedTable,
+                constraint.OnDelete,
+                constraint.OnUpdate,
+                columns));
+        }
+
+        return constraints;
+    }
+
+    private static IndexColumnDirection ParseIndexDirection(string? direction)
+    {
+        if (string.IsNullOrWhiteSpace(direction))
+        {
+            return IndexColumnDirection.Unspecified;
+        }
+
+        var normalized = direction.Trim();
+        if (string.Equals(normalized, "DESC", StringComparison.OrdinalIgnoreCase))
+        {
+            return IndexColumnDirection.Descending;
+        }
+
+        if (string.Equals(normalized, "ASC", StringComparison.OrdinalIgnoreCase))
+        {
+            return IndexColumnDirection.Ascending;
+        }
+
+        return IndexColumnDirection.Unspecified;
     }
 
     private sealed record ModelDocument
@@ -494,6 +564,9 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("relationships")]
         public RelationshipDocument[]? Relationships { get; init; }
+
+        [JsonPropertyName("meta")]
+        public EntityMetaDocument? Meta { get; init; }
     }
 
     private sealed record AttributeDocument
@@ -558,6 +631,12 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         [JsonPropertyName("physical_isPresentButInactive")]
         public int PhysicalIsPresentButInactive { get; init; }
 
+        [JsonPropertyName("onDisk")]
+        public AttributeOnDiskDocument? OnDisk { get; init; }
+
+        [JsonPropertyName("meta")]
+        public AttributeMetaDocument? Meta { get; init; }
+
         [JsonPropertyName("reality")]
         public AttributeRealityDocument? Reality { get; init; }
     }
@@ -607,6 +686,12 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("ordinal")]
         public int Ordinal { get; init; }
+
+        [JsonPropertyName("isIncluded")]
+        public bool IsIncluded { get; init; }
+
+        [JsonPropertyName("direction")]
+        public string? Direction { get; init; }
     }
 
     private sealed record RelationshipDocument
@@ -625,5 +710,104 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("hasDbConstraint")]
         public int? HasDbConstraint { get; init; }
+
+        [JsonPropertyName("actualConstraints")]
+        public RelationshipConstraintDocument[]? ActualConstraints { get; init; }
+    }
+
+    private sealed record EntityMetaDocument
+    {
+        [JsonPropertyName("description")]
+        public string? Description { get; init; }
+    }
+
+    private sealed record AttributeMetaDocument
+    {
+        [JsonPropertyName("description")]
+        public string? Description { get; init; }
+    }
+
+    private sealed record AttributeOnDiskDocument
+    {
+        [JsonPropertyName("isNullable")]
+        public bool? IsNullable { get; init; }
+
+        [JsonPropertyName("sqlType")]
+        public string? SqlType { get; init; }
+
+        [JsonPropertyName("maxLength")]
+        public int? MaxLength { get; init; }
+
+        [JsonPropertyName("precision")]
+        public int? Precision { get; init; }
+
+        [JsonPropertyName("scale")]
+        public int? Scale { get; init; }
+
+        [JsonPropertyName("collation")]
+        public string? Collation { get; init; }
+
+        [JsonPropertyName("isIdentity")]
+        public bool? IsIdentity { get; init; }
+
+        [JsonPropertyName("isComputed")]
+        public bool? IsComputed { get; init; }
+
+        [JsonPropertyName("computedDefinition")]
+        public string? ComputedDefinition { get; init; }
+
+        [JsonPropertyName("defaultDefinition")]
+        public string? DefaultDefinition { get; init; }
+
+        public AttributeOnDiskMetadata ToDomain() => AttributeOnDiskMetadata.Create(
+            IsNullable,
+            SqlType,
+            MaxLength,
+            Precision,
+            Scale,
+            Collation,
+            IsIdentity,
+            IsComputed,
+            ComputedDefinition,
+            DefaultDefinition);
+    }
+
+    private sealed record RelationshipConstraintDocument
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+
+        [JsonPropertyName("referencedSchema")]
+        public string? ReferencedSchema { get; init; }
+
+        [JsonPropertyName("referencedTable")]
+        public string? ReferencedTable { get; init; }
+
+        [JsonPropertyName("onDelete")]
+        public string? OnDelete { get; init; }
+
+        [JsonPropertyName("onUpdate")]
+        public string? OnUpdate { get; init; }
+
+        [JsonPropertyName("columns")]
+        public RelationshipConstraintColumnDocument[]? Columns { get; init; }
+    }
+
+    private sealed record RelationshipConstraintColumnDocument
+    {
+        [JsonPropertyName("ordinal")]
+        public int Ordinal { get; init; }
+
+        [JsonPropertyName("owner.physical")]
+        public string? OwnerPhysical { get; init; }
+
+        [JsonPropertyName("owner.attribute")]
+        public string? OwnerAttribute { get; init; }
+
+        [JsonPropertyName("referenced.physical")]
+        public string? ReferencedPhysical { get; init; }
+
+        [JsonPropertyName("referenced.attribute")]
+        public string? ReferencedAttribute { get; init; }
     }
 }

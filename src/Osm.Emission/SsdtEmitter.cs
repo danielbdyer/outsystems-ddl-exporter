@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.Text;
@@ -56,97 +57,56 @@ public sealed class SsdtEmitter
 
             var modulePaths = EnsureModuleDirectories(moduleDirectories, outputDirectory, table.Module);
             var tablesRoot = modulePaths.TablesRoot;
-            var indexesRoot = modulePaths.IndexesRoot;
-            var foreignKeysRoot = modulePaths.ForeignKeysRoot;
 
             var effectiveTableName = options.NamingOverrides.GetEffectiveTableName(
                 table.Schema,
                 table.Name,
                 table.LogicalName,
                 table.OriginalModule);
-            var tableStatement = BuildCreateTableStatement(table, effectiveTableName);
+
+            var tableStatement = BuildCreateTableStatement(table, effectiveTableName, options);
+            var inlineForeignKeys = AddForeignKeys(tableStatement, table, effectiveTableName, options);
             var tableScript = Script(tableStatement);
+
+            var scriptBuilder = new StringBuilder(tableScript.Length + 512);
+            AppendStatement(scriptBuilder, tableScript);
+
+            var indexNames = new List<string>();
+            if (!options.EmitBareTableOnly)
+            {
+                foreach (var index in table.Indexes)
+                {
+                    if (index.IsPrimaryKey)
+                    {
+                        continue;
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var indexName = ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
+                    var indexStatement = BuildCreateIndexStatement(table, index, effectiveTableName, indexName);
+                    var script = Script(indexStatement);
+                    AppendStatement(scriptBuilder, script);
+                    indexNames.Add(indexName);
+                }
+            }
+
+            var extendedPropertiesEmitted = false;
+            if (!options.EmitBareTableOnly)
+            {
+                extendedPropertiesEmitted = AppendExtendedProperties(scriptBuilder, table, effectiveTableName);
+            }
+
             var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.sql");
-            await WriteAsync(tableFilePath, tableScript, cancellationToken);
-
-            var indexCapacity = CountNonPrimaryIndexes(table);
-            var indexFiles = new List<string>(indexCapacity);
-            StringBuilder? concatenatedBuilder = null;
-            var concatenatedFirst = true;
-
-            if (options.EmitConcatenatedConstraints)
-            {
-                concatenatedBuilder = new StringBuilder(tableScript.Length + 256);
-                AppendConcatenatedStatement(concatenatedBuilder, tableScript, ref concatenatedFirst);
-            }
-
-            foreach (var index in table.Indexes)
-            {
-                if (index.IsPrimaryKey)
-                {
-                    continue;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                var indexName = ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
-                var indexStatement = BuildCreateIndexStatement(table, index, effectiveTableName, indexName);
-                var script = Script(indexStatement);
-                var indexFilePath = Path.Combine(indexesRoot, $"{table.Schema}.{effectiveTableName}.{indexName}.sql");
-                await WriteAsync(indexFilePath, script, cancellationToken);
-                indexFiles.Add(Relativize(indexFilePath, outputDirectory));
-
-                if (concatenatedBuilder is not null)
-                {
-                    AppendConcatenatedStatement(concatenatedBuilder, script, ref concatenatedFirst);
-                }
-            }
-
-            var foreignKeyFiles = new List<string>(table.ForeignKeys.Length);
-            foreach (var foreignKey in table.ForeignKeys)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var referencedTableName = options.NamingOverrides.GetEffectiveTableName(
-                    foreignKey.ReferencedSchema,
-                    foreignKey.ReferencedTable,
-                    foreignKey.ReferencedLogicalTable,
-                    foreignKey.ReferencedModule);
-                var foreignKeyName = ResolveConstraintName(foreignKey.Name, table.Name, table.LogicalName, effectiveTableName);
-                var fkStatement = BuildForeignKeyStatement(
-                    table,
-                    foreignKey,
-                    effectiveTableName,
-                    foreignKeyName,
-                    referencedTableName);
-                var script = Script(fkStatement);
-                var fkFilePath = Path.Combine(foreignKeysRoot, $"{table.Schema}.{effectiveTableName}.{foreignKeyName}.sql");
-                await WriteAsync(fkFilePath, script, cancellationToken);
-                foreignKeyFiles.Add(Relativize(fkFilePath, outputDirectory));
-
-                if (concatenatedBuilder is not null)
-                {
-                    AppendConcatenatedStatement(concatenatedBuilder, script, ref concatenatedFirst);
-                }
-            }
-
-            string? concatenatedFile = null;
-            if (options.EmitConcatenatedConstraints)
-            {
-                if (concatenatedBuilder is not null)
-                {
-                    var combinedPath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.full.sql");
-                    await WriteAsync(combinedPath, concatenatedBuilder.ToString(), cancellationToken);
-                    concatenatedFile = Relativize(combinedPath, outputDirectory);
-                }
-            }
+            await WriteAsync(tableFilePath, scriptBuilder.ToString(), cancellationToken);
 
             manifestEntries.Add(new TableManifestEntry(
                 table.Module,
                 table.Schema,
                 effectiveTableName,
                 Relativize(tableFilePath, outputDirectory),
-                indexFiles,
-                foreignKeyFiles,
-                concatenatedFile));
+                indexNames,
+                inlineForeignKeys,
+                extendedPropertiesEmitted));
         }
 
         SsdtPolicySummary? summary = null;
@@ -168,7 +128,7 @@ public sealed class SsdtEmitter
 
         var manifest = new SsdtManifest(
             manifestEntries,
-            new SsdtManifestOptions(options.IncludePlatformAutoIndexes, options.EmitConcatenatedConstraints),
+            new SsdtManifestOptions(options.IncludePlatformAutoIndexes, options.EmitBareTableOnly),
             summary);
 
         var manifestPath = Path.Combine(outputDirectory, "manifest.json");
@@ -187,60 +147,135 @@ public sealed class SsdtEmitter
         {
             var moduleRoot = Path.Combine(outputDirectory, "Modules", module);
             var tablesRoot = Path.Combine(moduleRoot, "Tables");
-            var indexesRoot = Path.Combine(moduleRoot, "Indexes");
-            var foreignKeysRoot = Path.Combine(moduleRoot, "ForeignKeys");
-
             Directory.CreateDirectory(tablesRoot);
-            Directory.CreateDirectory(indexesRoot);
-            Directory.CreateDirectory(foreignKeysRoot);
 
-            paths = new ModuleDirectoryPaths(tablesRoot, indexesRoot, foreignKeysRoot);
+            paths = new ModuleDirectoryPaths(tablesRoot);
             cache[module] = paths;
         }
 
         return paths;
     }
 
-    private static int CountNonPrimaryIndexes(SmoTableDefinition table)
-    {
-        var count = 0;
-        foreach (var index in table.Indexes)
-        {
-            if (!index.IsPrimaryKey)
-            {
-                count++;
-            }
-        }
-
-        return count;
-    }
-
-    private static void AppendConcatenatedStatement(StringBuilder builder, string statement, ref bool isFirst)
+    private static void AppendStatement(StringBuilder builder, string statement)
     {
         if (string.IsNullOrWhiteSpace(statement))
         {
             return;
         }
 
-        if (!isFirst)
+        if (builder.Length > 0)
         {
             builder.AppendLine();
-            builder.Append("GO");
+            builder.AppendLine("GO");
             builder.AppendLine();
         }
 
-        builder.Append(statement);
-        isFirst = false;
+        builder.AppendLine(statement.TrimEnd());
+    }
+
+    private bool AppendExtendedProperties(StringBuilder builder, SmoTableDefinition table, string effectiveTableName)
+    {
+        var emitted = false;
+
+        if (!string.IsNullOrWhiteSpace(table.Description))
+        {
+            var script = BuildTableExtendedPropertyScript(table.Schema, effectiveTableName, table.Description!);
+            AppendStatement(builder, script);
+            emitted = true;
+        }
+
+        foreach (var column in table.Columns)
+        {
+            if (string.IsNullOrWhiteSpace(column.Description))
+            {
+                continue;
+            }
+
+            var script = BuildColumnExtendedPropertyScript(table.Schema, effectiveTableName, column.Name, column.Description!);
+            AppendStatement(builder, script);
+            emitted = true;
+        }
+
+        return emitted;
+    }
+
+    private static string BuildTableExtendedPropertyScript(string schema, string table, string description)
+    {
+        var schemaIdentifier = QuoteIdentifier(schema);
+        var tableIdentifier = QuoteIdentifier(table);
+        var escapedDescription = EscapeSqlLiteral(description);
+        var schemaLiteral = EscapeSqlLiteral(schema);
+        var tableLiteral = EscapeSqlLiteral(table);
+
+        return $"""
+IF EXISTS (
+    SELECT 1 FROM sys.extended_properties
+    WHERE class = 1 AND name = N'MS_Description'
+      AND major_id = OBJECT_ID(N'{schemaIdentifier}.{tableIdentifier}')
+      AND minor_id = 0
+)
+    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'{escapedDescription}',
+        @level0type=N'SCHEMA',@level0name=N'{schemaLiteral}',
+        @level1type=N'TABLE',@level1name=N'{tableLiteral}';
+ELSE
+    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'{escapedDescription}',
+        @level0type=N'SCHEMA',@level0name=N'{schemaLiteral}',
+        @level1type=N'TABLE',@level1name=N'{tableLiteral}';
+""";
+    }
+
+    private static string BuildColumnExtendedPropertyScript(string schema, string table, string column, string description)
+    {
+        var schemaIdentifier = QuoteIdentifier(schema);
+        var tableIdentifier = QuoteIdentifier(table);
+        var columnLiteral = EscapeSqlLiteral(column);
+        var descriptionLiteral = EscapeSqlLiteral(description);
+        var schemaLiteral = EscapeSqlLiteral(schema);
+        var tableLiteral = EscapeSqlLiteral(table);
+
+        return $"""
+IF EXISTS (
+    SELECT 1 FROM sys.extended_properties
+    WHERE class = 1 AND name = N'MS_Description'
+      AND major_id = OBJECT_ID(N'{schemaIdentifier}.{tableIdentifier}')
+      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'{schemaIdentifier}.{tableIdentifier}'), N'{columnLiteral}', 'ColumnId')
+)
+    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'{descriptionLiteral}',
+        @level0type=N'SCHEMA',@level0name=N'{schemaLiteral}',
+        @level1type=N'TABLE',@level1name=N'{tableLiteral}',
+        @level2type=N'COLUMN',@level2name=N'{columnLiteral}';
+ELSE
+    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'{descriptionLiteral}',
+        @level0type=N'SCHEMA',@level0name=N'{schemaLiteral}',
+        @level1type=N'TABLE',@level1name=N'{tableLiteral}',
+        @level2type=N'COLUMN',@level2name=N'{columnLiteral}';
+""";
+    }
+
+    private static string QuoteIdentifier(string identifier)
+    {
+        if (string.IsNullOrEmpty(identifier))
+        {
+            return "[]";
+        }
+
+        return $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
+    }
+
+    private static string EscapeSqlLiteral(string value)
+    {
+        return value.Replace("'", "''", StringComparison.Ordinal);
     }
 
     private CreateTableStatement BuildCreateTableStatement(
         SmoTableDefinition table,
-        string effectiveTableName)
+        string effectiveTableName,
+        SmoBuildOptions options)
     {
         var definition = new TableDefinition();
         foreach (var column in table.Columns)
         {
-            definition.ColumnDefinitions.Add(BuildColumnDefinition(column));
+            definition.ColumnDefinitions.Add(BuildColumnDefinition(column, options));
         }
 
         var primaryKey = table.Indexes.FirstOrDefault(i => i.IsPrimaryKey);
@@ -275,12 +310,12 @@ public sealed class SsdtEmitter
         };
     }
 
-    private ColumnDefinition BuildColumnDefinition(SmoColumnDefinition column)
+    private ColumnDefinition BuildColumnDefinition(SmoColumnDefinition column, SmoBuildOptions options)
     {
         var definition = new ColumnDefinition
         {
             ColumnIdentifier = new Identifier { Value = column.Name },
-            DataType = TranslateDataType(column.DataType),
+            DataType = column.IsComputed ? null : TranslateDataType(column.DataType),
         };
 
         if (!column.Nullable)
@@ -288,7 +323,7 @@ public sealed class SsdtEmitter
             definition.Constraints.Add(new NullableConstraintDefinition { Nullable = false });
         }
 
-        if (column.IsIdentity)
+        if (column.IsIdentity && !column.IsComputed)
         {
             definition.IdentityOptions = new IdentityOptions
             {
@@ -297,7 +332,48 @@ public sealed class SsdtEmitter
             };
         }
 
+        if (!string.IsNullOrWhiteSpace(column.Collation))
+        {
+            definition.Collation = new Identifier { Value = column.Collation };
+        }
+
+        if (!options.EmitBareTableOnly)
+        {
+            var defaultExpression = ParseExpression(column.DefaultExpression);
+            if (defaultExpression is not null)
+            {
+                definition.Constraints.Add(new DefaultConstraintDefinition { Expression = defaultExpression });
+            }
+        }
+
+        if (column.IsComputed)
+        {
+            var computedExpression = ParseExpression(column.ComputedExpression);
+            if (computedExpression is not null)
+            {
+                definition.ComputedColumnExpression = computedExpression;
+            }
+        }
+
         return definition;
+    }
+
+    private static ScalarExpression? ParseExpression(string? expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return null;
+        }
+
+        var parser = new TSql150Parser(initialQuotedIdentifiers: false);
+        using var reader = new StringReader(expression);
+        var result = parser.ParseExpression(reader, out var errors);
+        if (result is null || (errors is not null && errors.Count > 0))
+        {
+            return null;
+        }
+
+        return result;
     }
 
     private CreateIndexStatement BuildCreateIndexStatement(
@@ -315,42 +391,59 @@ public sealed class SsdtEmitter
 
         foreach (var column in index.Columns.OrderBy(c => c.Ordinal))
         {
+            if (column.IsIncluded)
+            {
+                statement.IncludeColumns.Add(BuildColumnReference(column.Name));
+                continue;
+            }
+
             statement.Columns.Add(new ColumnWithSortOrder
             {
                 Column = BuildColumnReference(column.Name),
-                SortOrder = SortOrder.NotSpecified,
+                SortOrder = column.IsDescending ? SortOrder.Descending : SortOrder.Ascending,
             });
         }
 
         return statement;
     }
 
-    private AlterTableAddTableElementStatement BuildForeignKeyStatement(
+    private ImmutableArray<string> AddForeignKeys(
+        CreateTableStatement statement,
         SmoTableDefinition table,
-        SmoForeignKeyDefinition foreignKey,
         string effectiveTableName,
-        string foreignKeyName,
-        string referencedTableName)
+        SmoBuildOptions options)
     {
-        var constraint = new ForeignKeyConstraintDefinition
+        if (options.EmitBareTableOnly || table.ForeignKeys.Length == 0 || statement.Definition is null)
         {
-            ConstraintIdentifier = new Identifier { Value = foreignKeyName },
-            ReferenceTableName = BuildSchemaObjectName(foreignKey.ReferencedSchema, referencedTableName),
-            DeleteAction = MapDeleteAction(foreignKey.DeleteAction),
-            UpdateAction = DeleteUpdateAction.NoAction,
-        };
+            return ImmutableArray<string>.Empty;
+        }
 
-        constraint.Columns.Add(new Identifier { Value = foreignKey.Column });
-        constraint.ReferencedTableColumns.Add(new Identifier { Value = foreignKey.ReferencedColumn });
-
-        var definition = new TableDefinition();
-        definition.TableConstraints.Add(constraint);
-
-        return new AlterTableAddTableElementStatement
+        var builder = ImmutableArray.CreateBuilder<string>(table.ForeignKeys.Length);
+        foreach (var foreignKey in table.ForeignKeys)
         {
-            SchemaObjectName = BuildSchemaObjectName(table.Schema, effectiveTableName),
-            Definition = definition,
-        };
+            var referencedTableName = options.NamingOverrides.GetEffectiveTableName(
+                foreignKey.ReferencedSchema,
+                foreignKey.ReferencedTable,
+                foreignKey.ReferencedLogicalTable,
+                foreignKey.ReferencedModule);
+
+            var foreignKeyName = ResolveConstraintName(foreignKey.Name, table.Name, table.LogicalName, effectiveTableName);
+            builder.Add(foreignKeyName);
+
+            var constraint = new ForeignKeyConstraintDefinition
+            {
+                ConstraintIdentifier = new Identifier { Value = foreignKeyName },
+                ReferenceTableName = BuildSchemaObjectName(foreignKey.ReferencedSchema, referencedTableName),
+                DeleteAction = MapDeleteAction(foreignKey.DeleteAction),
+                UpdateAction = DeleteUpdateAction.NoAction,
+            };
+
+            constraint.Columns.Add(new Identifier { Value = foreignKey.Column });
+            constraint.ReferencedTableColumns.Add(new Identifier { Value = foreignKey.ReferencedColumn });
+            statement.Definition.TableConstraints.Add(constraint);
+        }
+
+        return builder.ToImmutable();
     }
 
     private static string ResolveConstraintName(
@@ -481,7 +574,6 @@ public sealed class SsdtEmitter
         return statement switch
         {
             CreateTableStatement createTable => FormatCreateTableScript(trimmed, createTable),
-            AlterTableAddTableElementStatement alterStatement => FormatAlterTableAddScript(trimmed, alterStatement),
             _ => trimmed,
         };
     }
@@ -537,7 +629,8 @@ public sealed class SsdtEmitter
             builder.Append(FormatInlineDefault(line));
         }
 
-        return builder.ToString();
+        var withDefaults = builder.ToString();
+        return FormatForeignKeyConstraints(withDefaults);
     }
 
     private static string FormatInlineDefault(string line)
@@ -592,130 +685,101 @@ public sealed class SsdtEmitter
         return builder.ToString();
     }
 
-    private static string FormatAlterTableAddScript(string script, AlterTableAddTableElementStatement statement)
+    private static string FormatForeignKeyConstraints(string script)
     {
-        if (statement.Definition?.TableConstraints.Count != 1 ||
-            statement.Definition.TableConstraints[0] is not ForeignKeyConstraintDefinition)
-        {
-            return script;
-        }
-
         var lines = script.Split(Environment.NewLine);
-        if (lines.Length < 2)
+        var builder = new StringBuilder(script.Length + 64);
+
+        for (var i = 0; i < lines.Length; i++)
         {
-            return script;
-        }
+            var line = lines[i];
+            var trimmed = line.TrimStart();
 
-        var secondLine = lines[1];
-        var trimmed = secondLine.TrimStart();
-        if (!trimmed.StartsWith("ADD CONSTRAINT", StringComparison.OrdinalIgnoreCase) ||
-            !trimmed.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase))
-        {
-            return script;
-        }
-
-        var indentLength = secondLine.Length - trimmed.Length;
-        var indent = secondLine[..indentLength];
-        var predicateIndent = indent + new string(' ', 4);
-        var referentIndent = predicateIndent + new string(' ', 4);
-
-        var foreignKeyIndex = trimmed.IndexOf(" FOREIGN KEY", StringComparison.OrdinalIgnoreCase);
-        if (foreignKeyIndex < 0)
-        {
-            return script;
-        }
-
-        var prefix = trimmed[..foreignKeyIndex].TrimEnd();
-        var remainder = trimmed[foreignKeyIndex..].TrimStart();
-
-        var referencesIndex = remainder.IndexOf(" REFERENCES ", StringComparison.OrdinalIgnoreCase);
-        var predicate = referencesIndex >= 0
-            ? remainder[..referencesIndex].TrimEnd()
-            : remainder.TrimEnd();
-
-        remainder = referencesIndex >= 0
-            ? remainder[referencesIndex..].TrimStart()
-            : string.Empty;
-
-        string? references = null;
-        string? onDelete = null;
-        string? onUpdate = null;
-
-        if (!string.IsNullOrEmpty(remainder))
-        {
-            var onDeleteIndex = remainder.IndexOf(" ON DELETE ", StringComparison.OrdinalIgnoreCase);
-            var onUpdateIndex = remainder.IndexOf(" ON UPDATE ", StringComparison.OrdinalIgnoreCase);
-
-            if (onDeleteIndex >= 0)
+            if (trimmed.StartsWith("CONSTRAINT", StringComparison.OrdinalIgnoreCase) &&
+                trimmed.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) &&
+                trimmed.Contains("REFERENCES", StringComparison.OrdinalIgnoreCase))
             {
-                references = remainder[..onDeleteIndex].TrimEnd();
-                remainder = remainder[onDeleteIndex..].TrimStart();
-            }
-            else if (onUpdateIndex >= 0)
-            {
-                references = remainder[..onUpdateIndex].TrimEnd();
-                remainder = remainder[onUpdateIndex..].TrimStart();
-            }
-            else
-            {
-                references = remainder.TrimEnd();
-                remainder = string.Empty;
-            }
+                var indentLength = line.Length - trimmed.Length;
+                var indent = line[..indentLength];
+                var trailingComma = string.Empty;
 
-            if (!string.IsNullOrEmpty(remainder))
-            {
-                onUpdateIndex = remainder.IndexOf(" ON UPDATE ", StringComparison.OrdinalIgnoreCase);
+                if (trimmed.EndsWith(",", StringComparison.Ordinal))
+                {
+                    trailingComma = ",";
+                    trimmed = trimmed[..^1].TrimEnd();
+                }
+
+                var foreignKeyIndex = trimmed.IndexOf("FOREIGN KEY", StringComparison.OrdinalIgnoreCase);
+                var referencesIndex = trimmed.IndexOf("REFERENCES", StringComparison.OrdinalIgnoreCase);
+
+                if (foreignKeyIndex <= 0 || referencesIndex <= foreignKeyIndex)
+                {
+                    builder.AppendLine(line);
+                    continue;
+                }
+
+                var constraintSegment = trimmed[..foreignKeyIndex].TrimEnd();
+                var ownerSegment = trimmed[foreignKeyIndex..referencesIndex].Trim();
+
+                var onDeleteIndex = trimmed.IndexOf(" ON DELETE", StringComparison.OrdinalIgnoreCase);
+                var onUpdateIndex = trimmed.IndexOf(" ON UPDATE", StringComparison.OrdinalIgnoreCase);
+
+                var referencesEnd = trimmed.Length;
+                if (onDeleteIndex >= 0 && onDeleteIndex < referencesEnd)
+                {
+                    referencesEnd = onDeleteIndex;
+                }
+                if (onUpdateIndex >= 0 && onUpdateIndex < referencesEnd)
+                {
+                    referencesEnd = onUpdateIndex;
+                }
+
+                var referencesSegment = trimmed[referencesIndex..referencesEnd].Trim();
+                string? onDeleteSegment = null;
+                string? onUpdateSegment = null;
+
+                if (onDeleteIndex >= 0)
+                {
+                    var end = onUpdateIndex > onDeleteIndex ? onUpdateIndex : trimmed.Length;
+                    onDeleteSegment = trimmed[onDeleteIndex..end].Trim();
+                }
 
                 if (onUpdateIndex >= 0)
                 {
-                    onDelete = remainder[..onUpdateIndex].TrimEnd();
-                    remainder = remainder[onUpdateIndex..].TrimStart();
-                }
-                else
-                {
-                    onDelete = remainder.TrimEnd();
-                    remainder = string.Empty;
+                    onUpdateSegment = trimmed[onUpdateIndex..].Trim();
                 }
 
-                if (!string.IsNullOrEmpty(remainder))
+                builder.Append(indent);
+                builder.AppendLine(constraintSegment);
+                builder.Append(indent);
+                builder.Append(new string(' ', 4));
+                builder.AppendLine(ownerSegment);
+                builder.Append(indent);
+                builder.Append(new string(' ', 8));
+                builder.Append(referencesSegment);
+                builder.AppendLine(trailingComma);
+
+                if (!string.IsNullOrWhiteSpace(onDeleteSegment))
                 {
-                    onUpdate = remainder.TrimEnd();
+                    builder.Append(indent);
+                    builder.Append(new string(' ', 8));
+                    builder.AppendLine(onDeleteSegment);
                 }
+
+                if (!string.IsNullOrWhiteSpace(onUpdateSegment))
+                {
+                    builder.Append(indent);
+                    builder.Append(new string(' ', 8));
+                    builder.AppendLine(onUpdateSegment);
+                }
+
+                continue;
             }
+
+            builder.AppendLine(line);
         }
 
-        var formattedLines = new List<string>(lines.Length + 3)
-        {
-            lines[0],
-            indent + prefix
-        };
-
-        if (!string.IsNullOrEmpty(predicate))
-        {
-            formattedLines.Add(predicateIndent + predicate);
-        }
-
-        if (!string.IsNullOrEmpty(references))
-        {
-            formattedLines.Add(referentIndent + references);
-        }
-
-        if (!string.IsNullOrEmpty(onDelete))
-        {
-            formattedLines.Add(referentIndent + onDelete);
-        }
-
-        if (!string.IsNullOrEmpty(onUpdate))
-        {
-            formattedLines.Add(referentIndent + onUpdate);
-        }
-
-        for (var i = 2; i < lines.Length; i++)
-        {
-            formattedLines.Add(lines[i]);
-        }
-
-        return string.Join(Environment.NewLine, formattedLines);
+        return builder.ToString().TrimEnd();
     }
 
     private static async Task WriteAsync(string path, string contents, CancellationToken cancellationToken)
@@ -728,5 +792,5 @@ public sealed class SsdtEmitter
         return Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
     }
 
-    private sealed record ModuleDirectoryPaths(string TablesRoot, string IndexesRoot, string ForeignKeysRoot);
+    private sealed record ModuleDirectoryPaths(string TablesRoot);
 }

@@ -6,21 +6,21 @@ using Osm.Domain.Configuration;
 public sealed record SmoBuildOptions(
     string DefaultCatalogName,
     bool IncludePlatformAutoIndexes,
-    bool EmitConcatenatedConstraints,
+    bool EmitBareTableOnly,
     bool SanitizeModuleNames,
     NamingOverrideOptions NamingOverrides)
 {
     public static SmoBuildOptions Default { get; } = new(
         DefaultCatalogName: "OutSystems",
         IncludePlatformAutoIndexes: false,
-        EmitConcatenatedConstraints: false,
+        EmitBareTableOnly: false,
         SanitizeModuleNames: true,
         NamingOverrides: NamingOverrideOptions.Empty);
 
     public static SmoBuildOptions FromEmission(EmissionOptions emission, bool applyNamingOverrides = true) => new(
         DefaultCatalogName: "OutSystems",
         emission.IncludePlatformAutoIndexes,
-        emission.EmitConcatenatedConstraints,
+        emission.EmitBareTableOnly,
         emission.SanitizeModuleNames,
         applyNamingOverrides ? emission.NamingOverrides : NamingOverrideOptions.Empty);
 

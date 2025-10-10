@@ -11,13 +11,13 @@ public sealed record TableManifestEntry(
     string Schema,
     string Table,
     string TableFile,
-    IReadOnlyList<string> IndexFiles,
-    IReadOnlyList<string> ForeignKeyFiles,
-    string? ConcatenatedFile);
+    IReadOnlyList<string> Indexes,
+    IReadOnlyList<string> ForeignKeys,
+    bool IncludesExtendedProperties);
 
 public sealed record SsdtManifestOptions(
     bool IncludePlatformAutoIndexes,
-    bool EmitConcatenatedConstraints);
+    bool EmitBareTableOnly);
 
 public sealed record SsdtPolicySummary(
     int ColumnCount,

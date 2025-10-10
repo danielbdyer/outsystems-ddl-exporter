@@ -12,7 +12,7 @@ public sealed class IndexColumnModelTests
         var attribute = AttributeName.Create("Name").Value;
         var column = ColumnName.Create("NAME").Value;
 
-        var result = IndexColumnModel.Create(attribute, column, 0);
+        var result = IndexColumnModel.Create(attribute, column, 0, isIncluded: false, IndexColumnDirection.Ascending);
 
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, e => e.Code == "index.column.ordinal.invalid");
@@ -24,7 +24,7 @@ public sealed class IndexColumnModelTests
         var attribute = AttributeName.Create("Name").Value;
         var column = ColumnName.Create("NAME").Value;
 
-        var result = IndexColumnModel.Create(attribute, column, 2);
+        var result = IndexColumnModel.Create(attribute, column, 2, isIncluded: true, IndexColumnDirection.Descending);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(2, result.Value.Ordinal);

@@ -35,6 +35,7 @@ public class SsdtEmitterTests
 
         Assert.Equal(4, manifest.Tables.Count);
         Assert.Equal(options.Emission.IncludePlatformAutoIndexes, manifest.Options.IncludePlatformAutoIndexes);
+        Assert.False(manifest.Options.EmitBareTableOnly);
         Assert.NotNull(manifest.PolicySummary);
         Assert.Equal(report.TightenedColumnCount, manifest.PolicySummary!.TightenedColumnCount);
         Assert.Equal(report.UniqueIndexCount, manifest.PolicySummary!.UniqueIndexCount);
@@ -45,26 +46,29 @@ public class SsdtEmitterTests
         Assert.True(File.Exists(customerPath));
         var customerScript = await File.ReadAllTextAsync(customerPath);
         Assert.Contains("CREATE TABLE dbo.Customer", customerScript);
-        Assert.Contains("PRIMARY KEY", customerScript);
-        Assert.DoesNotContain("CREATE INDEX", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CONSTRAINT PK_Customer", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CONSTRAINT FK_Customer_CityId", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(Environment.NewLine + "        FOREIGN KEY (CityId)", customerScript);
+        Assert.Contains(Environment.NewLine + "            REFERENCES dbo.City (Id)", customerScript);
+        Assert.Contains("DEFAULT ('')", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE UNIQUE INDEX IDX_Customer_Email", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("EXEC sys.sp_addextendedproperty", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("LegacyCode", customerScript, StringComparison.Ordinal);
+
+        Assert.Contains(customerTable.Indexes, name => name.Equals("IDX_Customer_Email", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(customerTable.Indexes, name => name.Equals("IDX_Customer_Name", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(customerTable.ForeignKeys, name => name.Equals("FK_Customer_CityId", StringComparison.OrdinalIgnoreCase));
+        Assert.True(customerTable.IncludesExtendedProperties);
 
         foreach (var entry in manifest.Tables)
         {
-            Assert.True(File.Exists(Path.Combine(temp.Path, entry.TableFile)));
-            foreach (var index in entry.IndexFiles)
+            var tablePath = Path.Combine(temp.Path, entry.TableFile);
+            Assert.True(File.Exists(tablePath));
+            var script = await File.ReadAllTextAsync(tablePath);
+            if (entry.Indexes.Count == 0)
             {
-                var indexPath = Path.Combine(temp.Path, index);
-                Assert.True(File.Exists(indexPath));
-                var indexScript = await File.ReadAllTextAsync(indexPath);
-                Assert.Contains("CREATE", indexScript, StringComparison.OrdinalIgnoreCase);
-                Assert.Contains("INDEX", indexScript, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("CREATE INDEX", script, StringComparison.OrdinalIgnoreCase);
             }
-            foreach (var fk in entry.ForeignKeyFiles)
-            {
-                Assert.True(File.Exists(Path.Combine(temp.Path, fk)));
-            }
-            Assert.Null(entry.ConcatenatedFile);
         }
 
         var manifestJsonPath = Path.Combine(temp.Path, "manifest.json");
@@ -169,100 +173,6 @@ public class SsdtEmitterTests
     }
 
     [Fact]
-    public void FormatAlterTableAddScript_indents_foreign_key_components()
-    {
-        var method = typeof(SsdtEmitter)
-            .GetMethod("FormatAlterTableAddScript", BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(method);
-
-        var definition = new TableDefinition();
-        definition.TableConstraints.Add(new ForeignKeyConstraintDefinition());
-        var statement = new AlterTableAddTableElementStatement
-        {
-            Definition = definition,
-        };
-
-        var script = string.Join(Environment.NewLine, new[]
-        {
-            "ALTER TABLE dbo.Customer",
-            "    ADD CONSTRAINT FK_Customer FOREIGN KEY (CityId) REFERENCES dbo.City (Id) ON DELETE NO ACTION ON UPDATE NO ACTION"
-        });
-
-        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
-
-        var expected = string.Join(Environment.NewLine, new[]
-        {
-            "ALTER TABLE dbo.Customer",
-            "    ADD CONSTRAINT FK_Customer",
-            "        FOREIGN KEY (CityId)",
-            "            REFERENCES dbo.City (Id)",
-            "            ON DELETE NO ACTION",
-            "            ON UPDATE NO ACTION"
-        });
-
-        Assert.Equal(expected, formatted);
-    }
-
-    [Fact]
-    public void FormatAlterTableAddScript_handles_foreign_key_without_actions()
-    {
-        var method = typeof(SsdtEmitter)
-            .GetMethod("FormatAlterTableAddScript", BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(method);
-
-        var definition = new TableDefinition();
-        definition.TableConstraints.Add(new ForeignKeyConstraintDefinition());
-        var statement = new AlterTableAddTableElementStatement
-        {
-            Definition = definition,
-        };
-
-        var script = string.Join(Environment.NewLine, new[]
-        {
-            "ALTER TABLE dbo.Customer",
-            "    ADD CONSTRAINT FK_Customer FOREIGN KEY (CityId) REFERENCES dbo.City (Id)"
-        });
-
-        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
-
-        var expected = string.Join(Environment.NewLine, new[]
-        {
-            "ALTER TABLE dbo.Customer",
-            "    ADD CONSTRAINT FK_Customer",
-            "        FOREIGN KEY (CityId)",
-            "            REFERENCES dbo.City (Id)"
-        });
-
-        Assert.Equal(expected, formatted);
-    }
-
-    [Fact]
-    public async Task EmitAsync_includes_concatenated_file_when_enabled()
-    {
-        var model = ModelFixtures.LoadModel("model.edge-case.json");
-        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
-        var options = TighteningOptions.Default;
-        var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, options);
-        var report = PolicyDecisionReporter.Create(decisions);
-        var smoOptions = SmoBuildOptions.FromEmission(options.Emission) with { EmitConcatenatedConstraints = true };
-        var factory = new SmoModelFactory();
-        var smoModel = factory.Create(model, decisions, smoOptions);
-
-        using var temp = new TempDirectory();
-        var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, report);
-
-        var customerTable = manifest.Tables.Single(t => t.Table.Equals("Customer", StringComparison.Ordinal));
-        Assert.NotNull(customerTable.ConcatenatedFile);
-        var concatenatedPath = Path.Combine(temp.Path, customerTable.ConcatenatedFile!);
-        Assert.True(File.Exists(concatenatedPath));
-        var concatenated = await File.ReadAllTextAsync(concatenatedPath);
-        Assert.Contains("CREATE TABLE", concatenated);
-        Assert.Contains("GO", concatenated);
-    }
-
-    [Fact]
     public async Task EmitAsync_skips_platform_auto_indexes_when_option_disabled()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
@@ -278,10 +188,10 @@ public class SsdtEmitterTests
         var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, null);
 
         var jobRun = manifest.Tables.Single(t => t.Table.Equals("JobRun", StringComparison.Ordinal));
-        Assert.DoesNotContain(jobRun.IndexFiles, path => path.Contains("OSIDX", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(jobRun.Indexes, name => name.Contains("OSIDX", StringComparison.OrdinalIgnoreCase));
 
-        var emittedOsidx = Directory.GetFiles(temp.Path, "*OSIDX*.sql", SearchOption.AllDirectories);
-        Assert.Empty(emittedOsidx);
+        var jobRunScript = await File.ReadAllTextAsync(Path.Combine(temp.Path, jobRun.TableFile));
+        Assert.DoesNotContain("OSIDX", jobRunScript, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -300,12 +210,53 @@ public class SsdtEmitterTests
         var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, null);
 
         var jobRun = manifest.Tables.Single(t => t.Table.Equals("JobRun", StringComparison.Ordinal));
-        var osidxPath = jobRun.IndexFiles.Single(path => path.Contains("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(jobRun.Indexes, name => name.Equals("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
 
-        var fullPath = Path.Combine(temp.Path, osidxPath);
-        Assert.True(File.Exists(fullPath));
-        var script = await File.ReadAllTextAsync(fullPath);
-        Assert.Contains("CREATE INDEX", script, StringComparison.OrdinalIgnoreCase);
+        var script = await File.ReadAllTextAsync(Path.Combine(temp.Path, jobRun.TableFile));
+        Assert.Contains("CREATE INDEX OSIDX_JobRun_CreatedOn", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task EmitAsync_emitBareTableOnly_suppresses_inline_extras()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var defaults = TighteningOptions.Default;
+        var bareEmission = EmissionOptions.Create(
+            defaults.Emission.PerTableFiles,
+            defaults.Emission.IncludePlatformAutoIndexes,
+            defaults.Emission.SanitizeModuleNames,
+            emitBareTableOnly: true,
+            defaults.Emission.NamingOverrides).Value;
+        var bareOptions = TighteningOptions.Create(
+            defaults.Policy,
+            defaults.ForeignKeys,
+            defaults.Uniqueness,
+            defaults.Remediation,
+            bareEmission,
+            defaults.Mocking).Value;
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(model, snapshot, bareOptions);
+        var smoOptions = SmoBuildOptions.FromEmission(bareOptions.Emission);
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(model, decisions, smoOptions);
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, null);
+
+        Assert.True(manifest.Options.EmitBareTableOnly);
+        var customerEntry = manifest.Tables.Single(t => t.Table.Equals("Customer", StringComparison.Ordinal));
+        Assert.Empty(customerEntry.Indexes);
+        Assert.Empty(customerEntry.ForeignKeys);
+        Assert.False(customerEntry.IncludesExtendedProperties);
+
+        var script = await File.ReadAllTextAsync(Path.Combine(temp.Path, customerEntry.TableFile));
+        Assert.Contains("CREATE TABLE dbo.Customer", script);
+        Assert.DoesNotContain("DEFAULT", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("FOREIGN KEY", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CREATE INDEX", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sp_addextendedproperty", script, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -326,12 +277,10 @@ public class SsdtEmitterTests
         Directory.CreateDirectory(cleanOut);
         var cleanModel = factory.Create(model, cleanDecisions, smoOptions);
         var cleanManifest = await emitter.EmitAsync(cleanModel, cleanOut, smoOptions, null);
-        var cleanIndexRelative = cleanManifest.Tables
-            .SelectMany(t => t.IndexFiles)
-            .Single(path => path.EndsWith("UX_User_Email.sql", StringComparison.OrdinalIgnoreCase));
-        var cleanIndexPath = Path.Combine(cleanOut, cleanIndexRelative);
-        var cleanScript = await File.ReadAllTextAsync(cleanIndexPath);
-        Assert.Contains("CREATE UNIQUE INDEX", cleanScript, StringComparison.OrdinalIgnoreCase);
+        var cleanEntry = cleanManifest.Tables.Single(t => t.Table.Equals("User", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(cleanEntry.Indexes, name => name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
+        var cleanScript = await File.ReadAllTextAsync(Path.Combine(cleanOut, cleanEntry.TableFile));
+        Assert.Contains("CREATE UNIQUE INDEX UX_User_Email", cleanScript, StringComparison.OrdinalIgnoreCase);
 
         var duplicateSnapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUniqueWithDuplicates);
         var duplicateDecisions = policy.Decide(model, duplicateSnapshot, defaults);
@@ -339,13 +288,11 @@ public class SsdtEmitterTests
         Directory.CreateDirectory(duplicateOut);
         var duplicateModel = factory.Create(model, duplicateDecisions, smoOptions);
         var duplicateManifest = await emitter.EmitAsync(duplicateModel, duplicateOut, smoOptions, null);
-        var duplicateIndexRelative = duplicateManifest.Tables
-            .SelectMany(t => t.IndexFiles)
-            .Single(path => path.EndsWith("UX_User_Email.sql", StringComparison.OrdinalIgnoreCase));
-        var duplicateIndexPath = Path.Combine(duplicateOut, duplicateIndexRelative);
-        var duplicateScript = await File.ReadAllTextAsync(duplicateIndexPath);
-        Assert.Contains("CREATE INDEX", duplicateScript, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("CREATE UNIQUE INDEX", duplicateScript, StringComparison.OrdinalIgnoreCase);
+        var duplicateEntry = duplicateManifest.Tables.Single(t => t.Table.Equals("User", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(duplicateEntry.Indexes, name => name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
+        var duplicateScript = await File.ReadAllTextAsync(Path.Combine(duplicateOut, duplicateEntry.TableFile));
+        Assert.Contains("CREATE INDEX UX_User_Email", duplicateScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CREATE UNIQUE INDEX UX_User_Email", duplicateScript, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -380,15 +327,8 @@ public class SsdtEmitterTests
         Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", tableScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("PK_CUSTOMER_PORTAL", tableScript, StringComparison.OrdinalIgnoreCase);
 
-        foreach (var indexFile in renamedEntry.IndexFiles)
-        {
-            Assert.Contains("CUSTOMER_PORTAL", indexFile, StringComparison.OrdinalIgnoreCase);
-        }
-
-        foreach (var fkFile in renamedEntry.ForeignKeyFiles)
-        {
-            Assert.Contains("CUSTOMER_PORTAL", fkFile, StringComparison.OrdinalIgnoreCase);
-        }
+        Assert.All(renamedEntry.Indexes, name => Assert.Contains("CUSTOMER_PORTAL", name, StringComparison.OrdinalIgnoreCase));
+        Assert.All(renamedEntry.ForeignKeys, name => Assert.Contains("CUSTOMER_PORTAL", name, StringComparison.OrdinalIgnoreCase));
 
         var allSqlFiles = Directory.GetFiles(temp.Path, "*.sql", SearchOption.AllDirectories);
         Assert.Contains(allSqlFiles, path =>
@@ -435,15 +375,8 @@ public class SsdtEmitterTests
         Assert.Contains("CREATE TABLE dbo.CUSTOMER_EXTERNAL", tableScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", tableScript, StringComparison.OrdinalIgnoreCase);
 
-        foreach (var indexFile in renamedEntry.IndexFiles)
-        {
-            Assert.Contains("CUSTOMER_EXTERNAL", indexFile, StringComparison.OrdinalIgnoreCase);
-        }
-
-        foreach (var fkFile in renamedEntry.ForeignKeyFiles)
-        {
-            Assert.Contains("CUSTOMER_EXTERNAL", fkFile, StringComparison.OrdinalIgnoreCase);
-        }
+        Assert.All(renamedEntry.Indexes, name => Assert.Contains("CUSTOMER_EXTERNAL", name, StringComparison.OrdinalIgnoreCase));
+        Assert.All(renamedEntry.ForeignKeys, name => Assert.Contains("CUSTOMER_EXTERNAL", name, StringComparison.OrdinalIgnoreCase));
 
         var allSqlFiles = Directory.GetFiles(temp.Path, "*.sql", SearchOption.AllDirectories);
         foreach (var sqlPath in allSqlFiles)
@@ -501,9 +434,9 @@ public class SsdtEmitterTests
     public async Task EmitAsync_applies_module_scoped_override_without_affecting_other_entities()
     {
         var categoryColumns = ImmutableArray.Create(
-            new SmoColumnDefinition("Id", "Id", DataType.Int, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1));
+            new SmoColumnDefinition("Id", "Id", DataType.Int, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
         var categoryIndexes = ImmutableArray.Create(
-            new SmoIndexDefinition("PK_Category", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1))));
+            new SmoIndexDefinition("PK_Category", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1, IsIncluded: false, IsDescending: false))));
         var categoryForeignKeys = ImmutableArray<SmoForeignKeyDefinition>.Empty;
 
         var inventoryCategory = new SmoTableDefinition(
@@ -513,6 +446,7 @@ public class SsdtEmitterTests
             "dbo",
             "OutSystems",
             "Category",
+            Description: null,
             categoryColumns,
             categoryIndexes,
             categoryForeignKeys);
@@ -524,15 +458,16 @@ public class SsdtEmitterTests
             "dbo",
             "OutSystems",
             "Category",
+            Description: null,
             categoryColumns,
             categoryIndexes,
             categoryForeignKeys);
 
         var productColumns = ImmutableArray.Create(
-            new SmoColumnDefinition("Id", "Id", DataType.Int, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1),
-            new SmoColumnDefinition("CategoryId", "CategoryId", DataType.Int, Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0));
+            new SmoColumnDefinition("Id", "Id", DataType.Int, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null),
+            new SmoColumnDefinition("CategoryId", "CategoryId", DataType.Int, Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
         var productIndexes = ImmutableArray.Create(
-            new SmoIndexDefinition("PK_Product", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1))));
+            new SmoIndexDefinition("PK_Product", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1, IsIncluded: false, IsDescending: false))));
         var productForeignKeys = ImmutableArray.Create(
             new SmoForeignKeyDefinition(
                 "FK_Product_CategoryId",
@@ -551,6 +486,7 @@ public class SsdtEmitterTests
             "dbo",
             "OutSystems",
             "Product",
+            Description: null,
             productColumns,
             productIndexes,
             productForeignKeys);
@@ -565,13 +501,13 @@ public class SsdtEmitterTests
         var options = new SmoBuildOptions(
             "OutSystems",
             IncludePlatformAutoIndexes: false,
-            EmitConcatenatedConstraints: false,
+            EmitBareTableOnly: false,
             SanitizeModuleNames: true,
             NamingOverrides: overrides.Value);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        await emitter.EmitAsync(smoModel, temp.Path, options);
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, options);
 
         var renamedTable = Directory.GetFiles(temp.Path, "dbo.CATEGORY_STATIC.sql", SearchOption.AllDirectories).Single();
         var otherTable = Directory.GetFiles(temp.Path, "dbo.Category.sql", SearchOption.AllDirectories).Single();
@@ -579,10 +515,13 @@ public class SsdtEmitterTests
         var renamedScript = await File.ReadAllTextAsync(renamedTable);
         Assert.Contains("CATEGORY_STATIC", renamedScript, StringComparison.OrdinalIgnoreCase);
 
-        var foreignKeyScriptPath = Directory.GetFiles(temp.Path, "*FK_Product_CategoryId.sql", SearchOption.AllDirectories).Single();
-        var foreignKeyScript = await File.ReadAllTextAsync(foreignKeyScriptPath);
-        Assert.Contains("CATEGORY_STATIC", foreignKeyScript, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("OSUSR_INV_CATEGORY", foreignKeyScript, StringComparison.OrdinalIgnoreCase);
+        var productEntry = manifest.Tables.First(t =>
+            t.Module.Equals("Catalog", StringComparison.OrdinalIgnoreCase) &&
+            t.TableFile.Contains("Product", StringComparison.OrdinalIgnoreCase));
+        var productTablePath = Path.Combine(temp.Path, productEntry.TableFile);
+        var productScript = await File.ReadAllTextAsync(productTablePath);
+        Assert.Contains("REFERENCES dbo.CATEGORY_STATIC", productScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("OSUSR_INV_CATEGORY", productScript, StringComparison.OrdinalIgnoreCase);
 
         var otherScript = await File.ReadAllTextAsync(otherTable);
         Assert.Contains("CREATE TABLE dbo.Category", otherScript, StringComparison.OrdinalIgnoreCase);
@@ -614,7 +553,7 @@ public class SsdtEmitterTests
             defaults.Emission.PerTableFiles,
             includePlatformAutoIndexes: true,
             defaults.Emission.SanitizeModuleNames,
-            defaults.Emission.EmitConcatenatedConstraints,
+            defaults.Emission.EmitBareTableOnly,
             defaults.Emission.NamingOverrides);
 
         Assert.True(emissionResult.IsSuccess);

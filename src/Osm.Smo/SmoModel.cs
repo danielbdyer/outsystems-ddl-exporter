@@ -25,6 +25,7 @@ public sealed record SmoTableDefinition(
     string Schema,
     string Catalog,
     string LogicalName,
+    string? Description,
     ImmutableArray<SmoColumnDefinition> Columns,
     ImmutableArray<SmoIndexDefinition> Indexes,
     ImmutableArray<SmoForeignKeyDefinition> ForeignKeys);
@@ -36,7 +37,12 @@ public sealed record SmoColumnDefinition(
     bool Nullable,
     bool IsIdentity,
     int IdentitySeed,
-    int IdentityIncrement);
+    int IdentityIncrement,
+    bool IsComputed,
+    string? ComputedExpression,
+    string? DefaultExpression,
+    string? Collation,
+    string? Description);
 
 public sealed record SmoIndexDefinition(
     string Name,
@@ -45,7 +51,7 @@ public sealed record SmoIndexDefinition(
     bool IsPlatformAuto,
     ImmutableArray<SmoIndexColumnDefinition> Columns);
 
-public sealed record SmoIndexColumnDefinition(string Name, int Ordinal);
+public sealed record SmoIndexColumnDefinition(string Name, int Ordinal, bool IsIncluded, bool IsDescending);
 
 public sealed record SmoForeignKeyDefinition(
     string Name,

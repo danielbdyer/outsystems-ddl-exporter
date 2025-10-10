@@ -1,2 +1,0 @@
-﻿CREATE INDEX IDX_CUSTOMER_PORTAL_Name
-    ON dbo.CUSTOMER_PORTAL(LastName, FirstName)

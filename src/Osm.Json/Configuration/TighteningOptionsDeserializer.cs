@@ -185,7 +185,7 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
             document.Emission.PerTableFiles,
             document.Emission.IncludePlatformAutoIndexes,
             document.Emission.SanitizeModuleNames,
-            document.Emission.EmitConcatenatedConstraints,
+            document.Emission.EmitBareTableOnly,
             namingOverrides);
 
         if (emissionResult.IsFailure)
@@ -302,8 +302,8 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
         [JsonPropertyName("sanitizeModuleNames")]
         public bool SanitizeModuleNames { get; init; }
 
-        [JsonPropertyName("emitConcatenatedConstraints")]
-        public bool EmitConcatenatedConstraints { get; init; }
+        [JsonPropertyName("emitBareTableOnly")]
+        public bool EmitBareTableOnly { get; init; }
 
         [JsonPropertyName("namingOverrides")]
         public NamingOverridesDocument? NamingOverrides { get; init; }
