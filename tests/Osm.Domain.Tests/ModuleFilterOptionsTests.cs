@@ -28,6 +28,15 @@ public sealed class ModuleFilterOptionsTests
     }
 
     [Fact]
+    public void Create_RejectsWhitespaceModuleName()
+    {
+        var result = ModuleFilterOptions.Create(new[] { "AppCore", "   " }, includeSystemModules: true, includeInactiveModules: true);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "moduleFilter.modules.empty");
+    }
+
+    [Fact]
     public void Create_SortsAndDeduplicatesModules()
     {
         var result = ModuleFilterOptions.Create(new[] { "Ops", "AppCore", "ops" }, includeSystemModules: false, includeInactiveModules: true);
@@ -48,5 +57,41 @@ public sealed class ModuleFilterOptionsTests
         Assert.Equal(new[] { "AppCore", "ExtBilling", "Ops" }, merged.Modules);
         Assert.True(merged.IncludeSystemModules);
         Assert.True(merged.IncludeInactiveModules);
+    }
+
+    [Fact]
+    public void Merge_IgnoresNullOrWhitespaceModules()
+    {
+        var options = ModuleFilterOptions.Create(new[] { "AppCore" }, includeSystemModules: false, includeInactiveModules: false).Value;
+
+        var merged = options.Merge(new[] { "  ", null!, "Ops" });
+
+        Assert.Equal(new[] { "AppCore", "Ops" }, merged.Modules);
+        Assert.False(merged.IncludeSystemModules);
+        Assert.False(merged.IncludeInactiveModules);
+    }
+
+    [Fact]
+    public void WithIncludeSystemModules_ShouldUpdateFlag()
+    {
+        var options = ModuleFilterOptions.Create(new[] { "AppCore" }, includeSystemModules: false, includeInactiveModules: true).Value;
+
+        var updated = options.WithIncludeSystemModules(include: true);
+
+        Assert.Equal(options.Modules, updated.Modules);
+        Assert.True(updated.IncludeSystemModules);
+        Assert.True(updated.IncludeInactiveModules);
+    }
+
+    [Fact]
+    public void WithIncludeInactiveModules_ShouldUpdateFlag()
+    {
+        var options = ModuleFilterOptions.Create(new[] { "AppCore" }, includeSystemModules: true, includeInactiveModules: false).Value;
+
+        var updated = options.WithIncludeInactiveModules(include: true);
+
+        Assert.Equal(options.Modules, updated.Modules);
+        Assert.True(updated.IncludeSystemModules);
+        Assert.True(updated.IncludeInactiveModules);
     }
 }
