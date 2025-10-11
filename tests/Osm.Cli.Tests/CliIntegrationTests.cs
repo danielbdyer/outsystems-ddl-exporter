@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -26,7 +27,7 @@ public class CliIntegrationTests
         using var comparisonWorkspace = new TempDirectory();
         var diffPath = Path.Combine(output.Path, "dmm-diff.json");
 
-        var buildResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --static-data {staticDataPath} --out {output.Path}");
+        var buildResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --static-data {staticDataPath} --max-degree-of-parallelism 2 --out {output.Path}");
         AssertExitCode(buildResult, 0);
 
         var manifestPath = Path.Combine(output.Path, "manifest.json");
@@ -49,7 +50,7 @@ public class CliIntegrationTests
         var dmmScriptPath = Path.Combine(comparisonWorkspace.Path, "edge-case.dmm.sql");
         await File.WriteAllTextAsync(dmmScriptPath, EdgeCaseScript);
 
-        var compareResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {output.Path}");
+        var compareResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --max-degree-of-parallelism 2 --out {output.Path}");
         AssertExitCode(compareResult, 0);
 
         Assert.True(File.Exists(diffPath));
@@ -112,7 +113,7 @@ public class CliIntegrationTests
         using var output = new TempDirectory();
         var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case-rename");
 
-        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --static-data \"{staticDataPath}\" --out \"{output.Path}\" --rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL";
+        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --static-data \"{staticDataPath}\" --max-degree-of-parallelism 2 --out \"{output.Path}\" --rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL";
         var result = await RunCliAsync(repoRoot, command);
         AssertExitCode(result, 0);
 
@@ -386,7 +387,20 @@ public class CliIntegrationTests
 
     private static async Task<CommandResult> RunCliAsync(string workingDirectory, string arguments)
     {
-        return await DotNetCli.RunAsync(workingDirectory, arguments);
+        var startInfo = DotNetCli.CreateStartInfo(workingDirectory, arguments);
+        startInfo.Environment["DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE"] = "false";
+
+        using var process = new Process { StartInfo = startInfo };
+        if (!process.Start())
+        {
+            throw new InvalidOperationException("Failed to launch dotnet process.");
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await Task.WhenAll(process.WaitForExitAsync(), stdoutTask, stderrTask).ConfigureAwait(false);
+
+        return new CommandResult(process.ExitCode, stdoutTask.Result, stderrTask.Result);
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
