@@ -399,6 +399,48 @@ FROM [dbo].[MyTable];
 
 **Sampling:** when `sql.sampling.rowThreshold` is exceeded the profiler automatically samples `sql.sampling.sampleSize` rows per table to keep scans predictable. NULL/duplicate/orphan counts are scaled back to estimated totals so decisions remain comparable to full-table sweeps.
 
+### Feeding profiles into `build-ssdt`
+
+The CLI defaults to the **fixture** profiler so local or CI runs can replay deterministic JSON snapshots. Point `--profile` to an on-disk snapshot (or configure `profile.path` / `profiler.profilePath` in `appsettings.json`) and the pipeline will hydrate `ProfileSnapshot` before policy evaluation and SMO emission.【F:src/Osm.Cli/Program.cs†L203-L286】【F:src/Osm.Cli/Program.cs†L1142-L1171】
+
+#### Fixture-first loops
+
+```bash
+dotnet run --project src/Osm.Cli -- build-ssdt \
+  --model tests/Fixtures/model.edge-case.json \
+  --profile tests/Fixtures/profiling/profile.edge-case.json \
+  --out ./out
+```
+
+* Keep reusable snapshots under version control (for example the repository fixtures) and point to them via `--profile` or the CLI configuration file.
+* `profiler.provider=Fixture` and `profiler.profilePath=<path>` in `appsettings.json` remove the need to pass flags on every invocation; environment variables such as `OSM_CLI_PROFILE_PATH` offer another override when automating builds.【F:src/Osm.Cli/Configuration/CliConfigurationLoader.cs†L98-L158】【F:readme.md†L626-L671】
+
+#### Live SQL capture
+
+```bash
+dotnet run --project src/Osm.Cli -- build-ssdt \
+  --model ./cache/model.json \
+  --profiler-provider sql \
+  --connection-string "Server=sql.local;Database=OutSystems;Integrated Security=true" \
+  --sampling-threshold 250000 \
+  --sampling-size 75000 \
+  --out ./out-live
+```
+
+* Supplying `--profiler-provider sql` switches to the live profiler, requiring a connection string (via CLI flag, configuration, or `OSM_CLI_CONNECTION_STRING`). Optional authentication and sampling knobs mirror the `sql.*` configuration section so you can pin timeouts, Azure AD credentials, or table sampling thresholds without editing secrets into source control.【F:src/Osm.Cli/Program.cs†L1127-L1171】【F:src/Osm.Cli/Configuration/CliConfigurationLoader.cs†L215-L360】
+* When a live run completes the CLI emits the captured snapshot to STDOUT (`SQL profiler snapshot:` …). Redirect the output to persist the JSON and reuse it for later fixture-style runs:
+
+  ```bash
+  dotnet run --project src/Osm.Cli -- build-ssdt --profiler-provider sql ... \
+    | tee profile.latest.json
+  ```
+
+#### How the profile influences emission
+
+* Policy decisions (`NOT NULL`, UNIQUE, FK) always read from the hydrated snapshot before tightening, ensuring that live evidence gates schema changes even when you replay fixtures later.【F:src/Osm.Cli/Program.cs†L273-L323】
+* Default expressions captured by the profiler flow into emission; the SMO factory cross-references each column’s default definition so `DEFAULT (getutcdate())` and similar metadata survive into the generated SSDT scripts.【F:src/Osm.Smo/SmoModelFactory.cs†L15-L118】
+* The emitted `policy-decisions.json` and `manifest.json` capture the exact profile path/provider that produced the run, helping reviewers correlate schema changes back to their evidence snapshot.【F:src/Osm.Cli/Program.cs†L285-L323】
+
 ---
 
 ## 7. Tightening Policy (NOT NULL / UNIQUE / FK Decisions)
@@ -652,6 +694,58 @@ Copy `config/appsettings.example.json` to an environment-specific location (e.g.
 Module filters declared in configuration act as defaults—`--modules`, `--exclude-system-modules`, and `--only-active-modules` override them on the command line. The evidence cache key incorporates the resolved module list and toggles so cached payloads stay aligned when you swap module selections between runs.
 
 `sql.sampling` tunes when the profiler switches to sampling and how many rows it inspects; `sql.authentication` plugs in Azure AD / managed identity authentication or per-connection ADO.NET overrides (e.g., application name, certificate trust) without polluting the connection string.
+
+### Supplemental models (entity overrides)
+
+OutSystems modules frequently reference **system** or **external** tables (for example `OSSYS_User`) that the Advanced SQL export does not include. The CLI’s supplemental model loader lets you bring those table definitions along so the SMO factory can materialize them and allow foreign keys to resolve cleanly in the emitted SSDT project.
+
+* In configuration, declare the `supplementalModels` section:
+
+  ```jsonc
+  "supplementalModels": {
+    "includeUsers": true,
+    "paths": ["config/supplemental/ossys-user.json"]
+  }
+  ```
+
+  * `includeUsers` controls whether the built-in `OSUSR_U_USER` definition ships with every run. It is `true` by default so FKs targeting `Users` always bind, and you can disable it when you maintain a richer override file yourself.【F:src/Osm.Cli/Configuration/CliConfiguration.cs†L73-L80】【F:src/Osm.Domain/Model/OutSystemsInternalModel.cs†L9-L44】
+  * `paths` accepts any number of additional JSON payloads that follow the same shape as the Advanced SQL export (`modules` → `entities` → attributes/indexes/relationships). Each file can describe one or more tables—even outside of OutSystems—so long as the schema/table names align with the foreign keys you expect to emit.【F:src/Osm.Cli/Program.cs†L720-L786】
+
+* The loader merges these supplemental entities ahead of SMO construction. During emission the factory first prefers modules/entities from the primary model, but it can fall back to supplemental definitions when resolving FK targets or when you want to ship an external table alongside OutSystems entities.【F:src/Osm.Smo/SmoModelFactory.cs†L15-L118】【F:src/Osm.Smo/SmoModelFactory.cs†L659-L746】
+* Because supplemental tables run through the same `build-ssdt` pipeline, they appear in `manifest.json`, honor naming overrides, and participate in DMM comparisons exactly like native entities.【F:src/Osm.Cli/Program.cs†L285-L323】【F:src/Osm.Dmm/DmmComparator.cs†L15-L50】
+
+**Sample supplemental file** (`config/supplemental/ossys-user.json`):
+
+```json
+{
+  "modules": [
+    {
+      "name": "OutSystems.System",
+      "isSystem": true,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "User",
+          "physicalName": "OSUSR_U_USER",
+          "schema": "dbo",
+          "isActive": true,
+          "isExternal": false,
+          "isStatic": false,
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "dataType": "Identifier", "isMandatory": true, "isIdentifier": true },
+            { "name": "Username", "physicalName": "USERNAME", "dataType": "Text", "isMandatory": true, "length": 50 },
+            { "name": "Email", "physicalName": "EMAIL", "dataType": "Text", "isMandatory": true, "length": 255 }
+          ],
+          "indexes": [],
+          "relationships": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+Store these JSON files in your repo (for example under `config/supplemental/`) so every team member and CI run resolves the same definitions.
 
 **Precedence**
 
