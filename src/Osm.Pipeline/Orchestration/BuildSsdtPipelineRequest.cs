@@ -2,6 +2,7 @@ using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+using Osm.Pipeline.Mediation;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -17,4 +18,4 @@ public sealed record BuildSsdtPipelineRequest(
     SmoBuildOptions SmoOptions,
     EvidenceCachePipelineOptions? EvidenceCache,
     IStaticEntityDataProvider? StaticDataProvider,
-    string? SeedScriptPathHint);
+    string? SeedScriptPathHint) : ICommand<BuildSsdtPipelineResult>;

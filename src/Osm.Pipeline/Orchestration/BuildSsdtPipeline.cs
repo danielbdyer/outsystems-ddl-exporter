@@ -14,19 +14,13 @@ using Osm.Pipeline.Evidence;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
+using Osm.Pipeline.Mediation;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
-public interface IBuildSsdtPipeline
-{
-    Task<Result<BuildSsdtPipelineResult>> ExecuteAsync(
-        BuildSsdtPipelineRequest request,
-        CancellationToken cancellationToken = default);
-}
-
-public sealed class BuildSsdtPipeline : IBuildSsdtPipeline
+public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>
 {
     private readonly IModelIngestionService _modelIngestionService;
     private readonly ModuleFilter _moduleFilter;
@@ -69,7 +63,7 @@ public sealed class BuildSsdtPipeline : IBuildSsdtPipeline
         _fingerprintCalculator = fingerprintCalculator ?? new EmissionFingerprintCalculator();
     }
 
-    public async Task<Result<BuildSsdtPipelineResult>> ExecuteAsync(
+    public async Task<Result<BuildSsdtPipelineResult>> HandleAsync(
         BuildSsdtPipelineRequest request,
         CancellationToken cancellationToken = default)
     {

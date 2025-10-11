@@ -8,6 +8,7 @@ using Osm.Domain.Configuration;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
 using Osm.Smo;
+using Osm.Pipeline.Mediation;
 
 namespace Osm.App.UseCases;
 
@@ -24,11 +25,11 @@ public sealed record CompareWithDmmUseCaseResult(
 
 public sealed class CompareWithDmmUseCase
 {
-    private readonly IDmmComparePipeline _pipeline;
+    private readonly ICommandDispatcher _dispatcher;
 
-    public CompareWithDmmUseCase(IDmmComparePipeline pipeline)
+    public CompareWithDmmUseCase(ICommandDispatcher dispatcher)
     {
-        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
     }
 
     public async Task<Result<CompareWithDmmUseCaseResult>> RunAsync(CompareWithDmmUseCaseInput input, CancellationToken cancellationToken = default)
@@ -116,7 +117,9 @@ public sealed class CompareWithDmmUseCase
             diffPath,
             cacheOptions);
 
-        var pipelineResult = await _pipeline.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+        var pipelineResult = await _dispatcher.DispatchAsync<DmmComparePipelineRequest, DmmComparePipelineResult>(
+            request,
+            cancellationToken).ConfigureAwait(false);
         if (pipelineResult.IsFailure)
         {
             return Result<CompareWithDmmUseCaseResult>.Failure(pipelineResult.Errors);

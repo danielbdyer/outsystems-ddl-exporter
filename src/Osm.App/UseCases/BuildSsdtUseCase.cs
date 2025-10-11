@@ -12,6 +12,7 @@ using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+using Osm.Pipeline.Mediation;
 
 namespace Osm.App.UseCases;
 
@@ -30,11 +31,11 @@ public sealed record BuildSsdtUseCaseResult(
 
 public sealed class BuildSsdtUseCase
 {
-    private readonly IBuildSsdtPipeline _pipeline;
-    public BuildSsdtUseCase(
-        IBuildSsdtPipeline pipeline)
+    private readonly ICommandDispatcher _dispatcher;
+
+    public BuildSsdtUseCase(ICommandDispatcher dispatcher)
     {
-        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
     }
 
     public async Task<Result<BuildSsdtUseCaseResult>> RunAsync(BuildSsdtUseCaseInput input, CancellationToken cancellationToken = default)
@@ -115,7 +116,9 @@ public sealed class BuildSsdtUseCase
             staticDataProvider,
             Path.Combine(outputDirectory, "Seeds", "StaticEntities.seed.sql"));
 
-        var pipelineResult = await _pipeline.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+        var pipelineResult = await _dispatcher.DispatchAsync<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>(
+            request,
+            cancellationToken).ConfigureAwait(false);
         if (pipelineResult.IsFailure)
         {
             return Result<BuildSsdtUseCaseResult>.Failure(pipelineResult.Errors);
