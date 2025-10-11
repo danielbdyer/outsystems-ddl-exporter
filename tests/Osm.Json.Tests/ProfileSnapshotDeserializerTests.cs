@@ -30,6 +30,7 @@ public sealed class ProfileSnapshotDeserializerTests
         var fk = snapshot.ForeignKeys.Single(f => f.Reference.FromTable.Value == "OSUSR_XYZ_JOBRUN");
         Assert.True(fk.HasOrphan);
         Assert.False(fk.Reference.HasDatabaseConstraint);
+        Assert.True(fk.IsNoCheck);
 
         var accountNumber = snapshot.UniqueCandidates.Single(u => u.Table.Value == "BILLING_ACCOUNT");
         Assert.False(accountNumber.HasDuplicate);

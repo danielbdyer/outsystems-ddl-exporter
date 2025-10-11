@@ -32,6 +32,7 @@ public sealed class SmoModelFactory
         options ??= SmoBuildOptions.Default;
 
         var profileDefaults = BuildProfileDefaults(profile);
+        var foreignKeyReality = BuildForeignKeyReality(profile);
 
         var contexts = BuildEntityContexts(model, supplementalEntities);
         var tablesBuilder = ImmutableArray.CreateBuilder<SmoTableDefinition>(model.Modules.Sum(static m => m.Entities.Length));
@@ -41,7 +42,7 @@ public sealed class SmoModelFactory
             foreach (var entity in module.Entities)
             {
                 var context = contexts.GetContext(entity);
-                tablesBuilder.Add(BuildTable(context, decisions, options, contexts, profileDefaults));
+                tablesBuilder.Add(BuildTable(context, decisions, options, contexts, profileDefaults, foreignKeyReality));
             }
         }
 
@@ -109,11 +110,13 @@ public sealed class SmoModelFactory
         PolicyDecisionSet decisions,
         SmoBuildOptions options,
         EntityEmissionIndex entityLookup,
-        IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults)
+        IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults,
+        IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality)
     {
         var columns = BuildColumns(context, decisions, profileDefaults);
         var indexes = BuildIndexes(context, decisions, options.IncludePlatformAutoIndexes);
-        var foreignKeys = BuildForeignKeys(context, decisions, entityLookup);
+        var foreignKeys = BuildForeignKeys(context, decisions, entityLookup, foreignKeyReality);
+        var triggers = BuildTriggers(context);
         var catalog = string.IsNullOrWhiteSpace(context.Entity.Catalog) ? options.DefaultCatalogName : context.Entity.Catalog!;
 
         var moduleName = options.SanitizeModuleNames ? SanitizeModuleName(context.ModuleName) : context.ModuleName;
@@ -128,7 +131,8 @@ public sealed class SmoModelFactory
             context.Entity.Metadata.Description,
             columns,
             indexes,
-            foreignKeys);
+            foreignKeys,
+            triggers);
     }
 
     private static IReadOnlyDictionary<ColumnCoordinate, string> BuildProfileDefaults(ProfileSnapshot? profile)
@@ -147,6 +151,22 @@ public sealed class SmoModelFactory
             }
 
             builder[ColumnCoordinate.From(column)] = column.DefaultDefinition!;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> BuildForeignKeyReality(ProfileSnapshot? profile)
+    {
+        if (profile is null || profile.ForeignKeys.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<ColumnCoordinate, ForeignKeyReality>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ForeignKeyReality>();
+        foreach (var foreignKey in profile.ForeignKeys)
+        {
+            builder[ColumnCoordinate.From(foreignKey.Reference)] = foreignKey;
         }
 
         return builder.ToImmutable();
@@ -413,7 +433,8 @@ public sealed class SmoModelFactory
     private static ImmutableArray<SmoForeignKeyDefinition> BuildForeignKeys(
         EntityEmissionContext context,
         PolicyDecisionSet decisions,
-        EntityEmissionIndex entityLookup)
+        EntityEmissionIndex entityLookup,
+        IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality)
     {
         var builder = ImmutableArray.CreateBuilder<SmoForeignKeyDefinition>();
 
@@ -442,6 +463,7 @@ public sealed class SmoModelFactory
                 throw new InvalidOperationException($"Target entity '{targetEntity.Entity.PhysicalName.Value}' is missing an identifier column for foreign key creation.");
             }
 
+            var isNoCheck = foreignKeyReality.TryGetValue(coordinate, out var reality) && reality.IsNoCheck;
             var referencedAttributes = new[] { attribute };
             var name = NormalizeConstraintName($"FK_{context.Entity.PhysicalName.Value}_{attribute.ColumnName.Value}", context.Entity, referencedAttributes);
             builder.Add(new SmoForeignKeyDefinition(
@@ -452,7 +474,29 @@ public sealed class SmoModelFactory
                 targetEntity.Entity.Schema.Value,
                 referencedColumn.LogicalName.Value,
                 targetEntity.Entity.LogicalName.Value,
-                MapDeleteRule(attribute.Reference.DeleteRuleCode)));
+                MapDeleteRule(attribute.Reference.DeleteRuleCode),
+                isNoCheck));
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static ImmutableArray<SmoTriggerDefinition> BuildTriggers(EntityEmissionContext context)
+    {
+        if (context.Entity.Triggers.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<SmoTriggerDefinition>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<SmoTriggerDefinition>(context.Entity.Triggers.Length);
+        foreach (var trigger in context.Entity.Triggers)
+        {
+            builder.Add(new SmoTriggerDefinition(
+                trigger.Name.Value,
+                context.Entity.Schema.Value,
+                context.Entity.PhysicalName.Value,
+                trigger.IsDisabled,
+                trigger.Definition));
         }
 
         return builder.ToImmutable();

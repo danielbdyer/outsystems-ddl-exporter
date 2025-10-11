@@ -179,7 +179,7 @@ public sealed class SqlDataProfiler : IDataProfiler
                         continue;
                     }
 
-                    var realityResult = ForeignKeyReality.Create(referenceResult.Value, hasOrphans);
+                    var realityResult = ForeignKeyReality.Create(referenceResult.Value, hasOrphans, isNoCheck: false);
                     if (realityResult.IsSuccess)
                     {
                         foreignKeys.Add(realityResult.Value);

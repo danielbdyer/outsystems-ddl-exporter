@@ -50,7 +50,8 @@ internal static class ProfileSnapshotDebugFormatter
                 foreignKey.Reference.ToTable.Value,
                 foreignKey.Reference.ToColumn.Value,
                 foreignKey.Reference.HasDatabaseConstraint,
-                foreignKey.HasOrphan)).ToArray());
+                foreignKey.HasOrphan,
+                foreignKey.IsNoCheck)).ToArray());
 
         return JsonSerializer.Serialize(document, JsonOptions);
     }
@@ -93,5 +94,6 @@ internal static class ProfileSnapshotDebugFormatter
         string ToTable,
         string ToColumn,
         bool HasDatabaseConstraint,
-        bool HasOrphan);
+        bool HasOrphan,
+        bool IsNoCheck);
 }

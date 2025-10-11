@@ -103,6 +103,13 @@ public class ModelJsonDeserializerTests
                         { "attribute": "Id", "physicalColumn": "ID", "ordinal": 1 }
                       ]
                     }
+                  ],
+                  "triggers": [
+                    {
+                      "name": "TR_OSUSR_FIN_INVOICE_AUDIT",
+                      "isDisabled": false,
+                      "definition": "CREATE TRIGGER [dbo].[TR_OSUSR_FIN_INVOICE_AUDIT] ON [dbo].[OSUSR_FIN_INVOICE] AFTER INSERT AS BEGIN SET NOCOUNT ON; END"
+                    }
                   ]
                 }
               ]
@@ -162,6 +169,11 @@ public class ModelJsonDeserializerTests
         Assert.Equal("BILLINGDATE", partitionColumn.Column.Value);
         Assert.Contains(index.OnDisk.DataCompression, c => c.PartitionNumber == 1 && c.Compression == "PAGE");
         Assert.Contains(index.OnDisk.DataCompression, c => c.PartitionNumber == 2 && c.Compression == "ROW");
+
+        var trigger = Assert.Single(entity.Triggers);
+        Assert.Equal("TR_OSUSR_FIN_INVOICE_AUDIT", trigger.Name.Value);
+        Assert.False(trigger.IsDisabled);
+        Assert.Contains("CREATE TRIGGER", trigger.Definition);
 
         var relationship = Assert.Single(entity.Relationships);
         Assert.Equal("Customer", relationship.TargetEntity.Value);

@@ -103,6 +103,7 @@ public static class ProfileFixtures
             toColumn,
             hasDbConstraint).Value;
         var hasOrphan = element.GetProperty("HasOrphan").GetBoolean();
-        return ForeignKeyReality.Create(reference, hasOrphan).Value;
+        var isNoCheck = element.TryGetProperty("IsNoCheck", out var isNoCheckProperty) && isNoCheckProperty.GetBoolean();
+        return ForeignKeyReality.Create(reference, hasOrphan, isNoCheck).Value;
     }
 }

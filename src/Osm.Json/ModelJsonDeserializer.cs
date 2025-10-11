@@ -192,6 +192,12 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
             return Result<EntityModel>.Failure(relationshipsResult.Errors);
         }
 
+        var triggersResult = MapTriggers(doc.Triggers);
+        if (triggersResult.IsFailure)
+        {
+            return Result<EntityModel>.Failure(triggersResult.Errors);
+        }
+
         var metadata = EntityMetadata.Create(doc.Meta?.Description);
 
         return EntityModel.Create(
@@ -206,6 +212,7 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
             attributesResult.Value,
             indexesResult.Value,
             relationshipsResult.Value,
+            triggersResult.Value,
             metadata);
     }
 
@@ -367,6 +374,34 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         }
 
         return Result<ImmutableArray<IndexModel>>.Success(builder.ToImmutable());
+    }
+
+    private static Result<ImmutableArray<TriggerModel>> MapTriggers(TriggerDocument[]? docs)
+    {
+        if (docs is null || docs.Length == 0)
+        {
+            return Result<ImmutableArray<TriggerModel>>.Success(ImmutableArray<TriggerModel>.Empty);
+        }
+
+        var builder = ImmutableArray.CreateBuilder<TriggerModel>(docs.Length);
+        foreach (var doc in docs)
+        {
+            var nameResult = TriggerName.Create(doc.Name);
+            if (nameResult.IsFailure)
+            {
+                return Result<ImmutableArray<TriggerModel>>.Failure(nameResult.Errors);
+            }
+
+            var triggerResult = TriggerModel.Create(nameResult.Value, doc.IsDisabled, doc.Definition);
+            if (triggerResult.IsFailure)
+            {
+                return Result<ImmutableArray<TriggerModel>>.Failure(triggerResult.Errors);
+            }
+
+            builder.Add(triggerResult.Value);
+        }
+
+        return Result<ImmutableArray<TriggerModel>>.Success(builder.ToImmutable());
     }
 
     private static Result<ImmutableArray<IndexColumnModel>> MapIndexColumns(IndexColumnDocument[]? docs)
@@ -664,6 +699,9 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         [JsonPropertyName("relationships")]
         public RelationshipDocument[]? Relationships { get; init; }
 
+        [JsonPropertyName("triggers")]
+        public TriggerDocument[]? Triggers { get; init; }
+
         [JsonPropertyName("meta")]
         public EntityMetaDocument? Meta { get; init; }
     }
@@ -738,6 +776,18 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("reality")]
         public AttributeRealityDocument? Reality { get; init; }
+    }
+
+    private sealed record TriggerDocument
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+
+        [JsonPropertyName("isDisabled")]
+        public bool IsDisabled { get; init; }
+
+        [JsonPropertyName("definition")]
+        public string? Definition { get; init; }
     }
 
     private sealed record AttributeRealityDocument

@@ -188,7 +188,7 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
             return Result<ForeignKeyReality>.Failure(referenceResult.Errors);
         }
 
-        return ForeignKeyReality.Create(referenceResult.Value, doc.HasOrphan);
+        return ForeignKeyReality.Create(referenceResult.Value, doc.HasOrphan, doc.IsNoCheck);
     }
 
     private static Result<CompositeUniqueCandidateProfile> MapCompositeUnique(CompositeUniqueCandidateDocument doc)
@@ -305,6 +305,9 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
         [JsonPropertyName("HasOrphan")]
         public bool HasOrphan { get; init; }
+
+        [JsonPropertyName("IsNoCheck")]
+        public bool IsNoCheck { get; init; }
     }
 
     private sealed record ForeignKeyReferenceDocument

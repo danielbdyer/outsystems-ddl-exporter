@@ -66,8 +66,13 @@ public sealed class SsdtEmitter
                 table.OriginalModule);
 
             var tableStatement = BuildCreateTableStatement(table, effectiveTableName, options);
-            var inlineForeignKeys = AddForeignKeys(tableStatement, table, effectiveTableName, options);
-            var tableScript = Script(tableStatement);
+            var inlineForeignKeys = AddForeignKeys(
+                tableStatement,
+                table,
+                effectiveTableName,
+                options,
+                out var foreignKeyTrustLookup);
+            var tableScript = Script(tableStatement, foreignKeyTrustLookup);
 
             var scriptBuilder = new StringBuilder(tableScript.Length + 512);
             AppendStatement(scriptBuilder, tableScript);
@@ -102,6 +107,10 @@ public sealed class SsdtEmitter
             if (!options.EmitBareTableOnly)
             {
                 extendedPropertiesEmitted = AppendExtendedProperties(scriptBuilder, table, effectiveTableName);
+                if (table.Triggers.Length > 0)
+                {
+                    AppendTriggers(scriptBuilder, table, effectiveTableName);
+                }
             }
 
             var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.sql");
@@ -205,6 +214,29 @@ public sealed class SsdtEmitter
         }
 
         return emitted;
+    }
+
+    private void AppendTriggers(StringBuilder builder, SmoTableDefinition table, string effectiveTableName)
+    {
+        foreach (var trigger in table.Triggers)
+        {
+            builder.AppendLine();
+            builder.AppendLine($"-- Trigger: {trigger.Name} (disabled: {trigger.IsDisabled.ToString().ToLowerInvariant()})");
+
+            if (!string.IsNullOrWhiteSpace(trigger.Definition))
+            {
+                var trimmed = trigger.Definition.Trim();
+                builder.AppendLine(trimmed);
+            }
+
+            if (trigger.IsDisabled)
+            {
+                var schemaIdentifier = QuoteIdentifier(trigger.Schema);
+                var tableIdentifier = QuoteIdentifier(effectiveTableName);
+                var triggerIdentifier = QuoteIdentifier(trigger.Name);
+                builder.AppendLine($"ALTER TABLE {schemaIdentifier}.{tableIdentifier} DISABLE TRIGGER {triggerIdentifier};");
+            }
+        }
     }
 
     private static string BuildTableExtendedPropertyScript(string schema, string table, string description)
@@ -733,14 +765,17 @@ ELSE
         CreateTableStatement statement,
         SmoTableDefinition table,
         string effectiveTableName,
-        SmoBuildOptions options)
+        SmoBuildOptions options,
+        out ImmutableDictionary<string, bool> foreignKeyTrustLookup)
     {
         if (options.EmitBareTableOnly || table.ForeignKeys.Length == 0 || statement.Definition is null)
         {
+            foreignKeyTrustLookup = ImmutableDictionary<string, bool>.Empty;
             return ImmutableArray<string>.Empty;
         }
 
         var builder = ImmutableArray.CreateBuilder<string>(table.ForeignKeys.Length);
+        var trustBuilder = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
         foreach (var foreignKey in table.ForeignKeys)
         {
             var referencedTableName = options.NamingOverrides.GetEffectiveTableName(
@@ -751,6 +786,7 @@ ELSE
 
             var foreignKeyName = ResolveConstraintName(foreignKey.Name, table.Name, table.LogicalName, effectiveTableName);
             builder.Add(foreignKeyName);
+            trustBuilder[foreignKeyName] = foreignKey.IsNoCheck;
 
             var constraint = new ForeignKeyConstraintDefinition
             {
@@ -779,6 +815,7 @@ ELSE
             statement.Definition.TableConstraints.Add(constraint);
         }
 
+        foreignKeyTrustLookup = trustBuilder.ToImmutable();
         return builder.ToImmutable();
     }
 
@@ -917,19 +954,22 @@ ELSE
         _ => DeleteUpdateAction.NoAction,
     };
 
-    private string Script(TSqlStatement statement)
+    private string Script(TSqlStatement statement, IReadOnlyDictionary<string, bool>? foreignKeyTrustLookup = null)
     {
         _scriptGenerator.GenerateScript(statement, out var script);
         var trimmed = script.Trim();
 
         return statement switch
         {
-            CreateTableStatement createTable => FormatCreateTableScript(trimmed, createTable),
+            CreateTableStatement createTable => FormatCreateTableScript(trimmed, createTable, foreignKeyTrustLookup),
             _ => trimmed,
         };
     }
 
-    private static string FormatCreateTableScript(string script, CreateTableStatement statement)
+    private static string FormatCreateTableScript(
+        string script,
+        CreateTableStatement statement,
+        IReadOnlyDictionary<string, bool>? foreignKeyTrustLookup)
     {
         if (statement?.Definition?.ColumnDefinitions is null ||
             statement.Definition.ColumnDefinitions.Count == 0)
@@ -991,7 +1031,7 @@ ELSE
         }
 
         var withDefaults = builder.ToString();
-        var withForeignKeys = FormatForeignKeyConstraints(withDefaults);
+        var withForeignKeys = FormatForeignKeyConstraints(withDefaults, foreignKeyTrustLookup);
         return FormatPrimaryKeyConstraints(withForeignKeys);
     }
 
@@ -1099,7 +1139,9 @@ ELSE
         return builder.ToString();
     }
 
-    private static string FormatForeignKeyConstraints(string script)
+    private static string FormatForeignKeyConstraints(
+        string script,
+        IReadOnlyDictionary<string, bool>? foreignKeyTrustLookup)
     {
         var lines = script.Split(Environment.NewLine);
         var builder = new StringBuilder(script.Length + 64);
@@ -1215,6 +1257,18 @@ ELSE
                     }
                 }
 
+                if (foreignKeyTrustLookup is not null)
+                {
+                    var constraintName = ExtractConstraintName(constraintSegment);
+                    if (!string.IsNullOrEmpty(constraintName) &&
+                        foreignKeyTrustLookup.TryGetValue(constraintName, out var isNoCheck) &&
+                        isNoCheck)
+                    {
+                        builder.Append(ownerIndent);
+                        builder.AppendLine("-- Source constraint was not trusted (WITH NOCHECK)");
+                    }
+                }
+
                 continue;
             }
 
@@ -1222,6 +1276,36 @@ ELSE
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    private static string ExtractConstraintName(string constraintSegment)
+    {
+        if (string.IsNullOrWhiteSpace(constraintSegment))
+        {
+            return string.Empty;
+        }
+
+        var working = constraintSegment.Trim();
+        if (working.StartsWith("CONSTRAINT", StringComparison.OrdinalIgnoreCase))
+        {
+            working = working["CONSTRAINT".Length..].Trim();
+        }
+
+        if (working.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        if (working.StartsWith("[", StringComparison.Ordinal) && working.EndsWith("]", StringComparison.Ordinal) && working.Length > 2)
+        {
+            working = working[1..^1];
+        }
+        else if (working.StartsWith("\"", StringComparison.Ordinal) && working.EndsWith("\"", StringComparison.Ordinal) && working.Length > 2)
+        {
+            working = working[1..^1];
+        }
+
+        return working;
     }
 
     private static string FormatPrimaryKeyConstraints(string script)

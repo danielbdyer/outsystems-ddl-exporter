@@ -73,11 +73,16 @@ public class SmoModelFactoryTests
         Assert.Equal("dbo", cityForeignKey.ReferencedSchema);
         Assert.Equal(ForeignKeyAction.NoAction, cityForeignKey.DeleteAction);
         Assert.Equal("City", cityForeignKey.ReferencedLogicalTable);
+        Assert.False(cityForeignKey.IsNoCheck);
 
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
         var jobRunTriggeredByColumn = jobRunTable.Columns.Single(c => c.Name.Equals("TriggeredByUserId", StringComparison.Ordinal));
         Assert.True(jobRunTriggeredByColumn.Nullable);
         Assert.Empty(jobRunTable.ForeignKeys);
+        var triggerDefinition = Assert.Single(jobRunTable.Triggers);
+        Assert.Equal("TR_OSUSR_XYZ_JOBRUN_AUDIT", triggerDefinition.Name);
+        Assert.True(triggerDefinition.IsDisabled);
+        Assert.Contains("CREATE TRIGGER", triggerDefinition.Definition);
 
         var billingTable = smoModel.Tables.Single(t => t.Name.Equals("BILLING_ACCOUNT", StringComparison.OrdinalIgnoreCase));
         Assert.Equal("billing", billingTable.Schema);

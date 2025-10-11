@@ -29,6 +29,7 @@ public sealed class FixtureDataProfilerTests
 
         var fk = snapshot.ForeignKeys.Single(f => f.Reference.FromTable.Value == "OSUSR_XYZ_JOBRUN");
         Assert.True(fk.HasOrphan);
+        Assert.True(fk.IsNoCheck);
     }
 
     [Fact]
@@ -72,6 +73,7 @@ public sealed class FixtureDataProfilerTests
 
         Assert.False(ignoreReference.Reference.HasDatabaseConstraint);
         Assert.True(ignoreReference.HasOrphan);
+        Assert.True(ignoreReference.IsNoCheck);
     }
 
     [Fact]

@@ -50,7 +50,8 @@ public class ProfileSnapshotDebugFormatterTests
 
         var foreignKeyReality = ForeignKeyReality.Create(
             foreignKeyReference,
-            hasOrphan: false).Value;
+            hasOrphan: false,
+            isNoCheck: true).Value;
 
         var snapshot = ProfileSnapshot.Create(
             new[] { columnProfile },
@@ -80,5 +81,6 @@ public class ProfileSnapshotDebugFormatterTests
         var foreignKeys = root.GetProperty("ForeignKeys");
         Assert.Equal("Tenant", foreignKeys[0].GetProperty("ToTable").GetString());
         Assert.True(foreignKeys[0].GetProperty("HasDatabaseConstraint").GetBoolean());
+        Assert.True(foreignKeys[0].GetProperty("IsNoCheck").GetBoolean());
     }
 }
