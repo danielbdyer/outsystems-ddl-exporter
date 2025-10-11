@@ -14,16 +14,16 @@ namespace Osm.Smo;
 
 public sealed class PerTableWriter
 {
-    private readonly Sql150ScriptGenerator _scriptGenerator;
+    private readonly SmoContext _context;
 
     public PerTableWriter()
+        : this(new SmoContext())
     {
-        _scriptGenerator = new Sql150ScriptGenerator(new SqlScriptGeneratorOptions
-        {
-            KeywordCasing = KeywordCasing.Uppercase,
-            IncludeSemicolons = true,
-            SqlVersion = SqlVersion.Sql150,
-        });
+    }
+
+    public PerTableWriter(SmoContext context)
+    {
+        _context = context ?? throw new ArgumentNullException(nameof(context));
     }
 
     public PerTableWriteResult Generate(
@@ -743,7 +743,7 @@ public sealed class PerTableWriter
         IReadOnlyDictionary<string, bool>? foreignKeyTrustLookup = null,
         SmoFormatOptions? format = null)
     {
-        _scriptGenerator.GenerateScript(statement, out var script);
+        _context.ScriptGenerator.GenerateScript(statement, out var script);
         var trimmed = script.Trim();
 
         return statement switch
