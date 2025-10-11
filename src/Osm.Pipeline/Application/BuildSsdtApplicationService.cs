@@ -126,7 +126,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             smoOptions,
             cacheOptions,
             staticDataProvider,
-            Path.Combine(outputDirectory, "Seeds", "StaticEntities.seed.sql"));
+            Path.Combine(outputDirectory, "Seeds"));
 
         var pipelineResult = await _dispatcher.DispatchAsync<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>(
             request,

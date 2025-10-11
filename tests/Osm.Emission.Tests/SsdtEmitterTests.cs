@@ -273,7 +273,8 @@ public class SsdtEmitterTests
             emitBareTableOnly: true,
             defaults.Emission.EmitTableHeaders,
             defaults.Emission.ModuleParallelism,
-            defaults.Emission.NamingOverrides).Value;
+            defaults.Emission.NamingOverrides,
+            defaults.Emission.StaticSeeds).Value;
         var bareOptions = TighteningOptions.Create(
             defaults.Policy,
             defaults.ForeignKeys,
@@ -862,7 +863,8 @@ public class SsdtEmitterTests
             defaults.Emission.EmitBareTableOnly,
             defaults.Emission.EmitTableHeaders,
             defaults.Emission.ModuleParallelism,
-            defaults.Emission.NamingOverrides);
+            defaults.Emission.NamingOverrides,
+            defaults.Emission.StaticSeeds);
 
         Assert.True(emissionResult.IsSuccess);
 

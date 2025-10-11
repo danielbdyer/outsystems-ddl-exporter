@@ -50,7 +50,7 @@ public class BuildSsdtPipelineTests
                 ConfigPath: null,
                 Metadata: new Dictionary<string, string?>()),
             new EmptyStaticEntityDataProvider(),
-            Path.Combine(output.Path, "Seeds", "StaticEntities.seed.sql"));
+            Path.Combine(output.Path, "Seeds"));
 
         var pipeline = new BuildSsdtPipeline();
         var result = await pipeline.HandleAsync(request);
@@ -61,8 +61,12 @@ public class BuildSsdtPipelineTests
         Assert.NotNull(value.Manifest);
         Assert.True(File.Exists(Path.Combine(output.Path, "manifest.json")));
         Assert.True(File.Exists(value.DecisionLogPath));
-        Assert.NotNull(value.StaticSeedScriptPath);
-        Assert.True(File.Exists(value.StaticSeedScriptPath!));
+        Assert.False(value.StaticSeedScriptPaths.IsDefaultOrEmpty);
+        Assert.NotEmpty(value.StaticSeedScriptPaths);
+        foreach (var path in value.StaticSeedScriptPaths)
+        {
+            Assert.True(File.Exists(path));
+        }
         Assert.True(File.Exists(Path.Combine(output.Path, "policy-decisions.json")));
         Assert.NotNull(value.ExecutionLog);
         Assert.True(value.ExecutionLog.Entries.Count > 0);

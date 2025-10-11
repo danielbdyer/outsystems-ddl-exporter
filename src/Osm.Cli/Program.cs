@@ -195,9 +195,12 @@ Command CreateBuildCommand()
             WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");
         }
 
-        if (!string.IsNullOrWhiteSpace(pipelineResult.StaticSeedScriptPath))
+        if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty && pipelineResult.StaticSeedScriptPaths.Length > 0)
         {
-            WriteLine(context.Console, $"Static entity seed script written to {pipelineResult.StaticSeedScriptPath}");
+            foreach (var seedPath in pipelineResult.StaticSeedScriptPaths)
+            {
+                WriteLine(context.Console, $"Static entity seed script written to {seedPath}");
+            }
         }
 
         WriteLine(context.Console, $"Emitted {pipelineResult.Manifest.Tables.Count} tables to {applicationResult.OutputDirectory}.");

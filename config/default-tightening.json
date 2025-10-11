@@ -30,6 +30,10 @@
     "moduleParallelism": 1,
     "namingOverrides": {
       "rules": []
+    },
+    "staticSeeds": {
+      "groupByModule": true,
+      "mode": "NonDestructive"
     }
   },
   "mocking": {

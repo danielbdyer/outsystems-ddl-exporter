@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Osm.Domain.Profiling;
 using Osm.Emission;
 using Osm.Pipeline.Evidence;
@@ -10,6 +11,6 @@ public sealed record BuildSsdtPipelineResult(
     PolicyDecisionReport DecisionReport,
     SsdtManifest Manifest,
     string DecisionLogPath,
-    string? StaticSeedScriptPath,
+    ImmutableArray<string> StaticSeedScriptPaths,
     EvidenceCacheResult? EvidenceCache,
     PipelineExecutionLog ExecutionLog);

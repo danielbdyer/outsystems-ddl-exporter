@@ -1,3 +1,4 @@
+using System;
 using Osm.Domain.Abstractions;
 
 namespace Osm.Domain.Configuration;
@@ -53,7 +54,8 @@ public sealed record TighteningOptions
             sanitizeModuleNames: true,
             emitBareTableOnly: false,
             emitTableHeaders: false,
-            moduleParallelism: 1).Value,
+            moduleParallelism: 1,
+            staticSeeds: StaticSeedOptions.Default).Value,
         MockingOptions.Create(useProfileMockFolder: false, profileMockFolder: null).Value).Value;
 
     public static Result<TighteningOptions> Create(
@@ -241,7 +243,8 @@ public sealed record EmissionOptions
         bool emitBareTableOnly,
         bool emitTableHeaders,
         int moduleParallelism,
-        NamingOverrideOptions namingOverrides)
+        NamingOverrideOptions namingOverrides,
+        StaticSeedOptions staticSeeds)
     {
         PerTableFiles = perTableFiles;
         IncludePlatformAutoIndexes = includePlatformAutoIndexes;
@@ -250,6 +253,7 @@ public sealed record EmissionOptions
         EmitTableHeaders = emitTableHeaders;
         ModuleParallelism = moduleParallelism;
         NamingOverrides = namingOverrides;
+        StaticSeeds = staticSeeds;
     }
 
     public bool PerTableFiles { get; }
@@ -266,6 +270,8 @@ public sealed record EmissionOptions
 
     public NamingOverrideOptions NamingOverrides { get; }
 
+    public StaticSeedOptions StaticSeeds { get; }
+
     public static Result<EmissionOptions> Create(
         bool perTableFiles,
         bool includePlatformAutoIndexes,
@@ -273,7 +279,8 @@ public sealed record EmissionOptions
         bool emitBareTableOnly,
         bool emitTableHeaders,
         int moduleParallelism,
-        NamingOverrideOptions? namingOverrides = null)
+        NamingOverrideOptions? namingOverrides = null,
+        StaticSeedOptions? staticSeeds = null)
     {
         if (moduleParallelism < 1)
         {
@@ -289,7 +296,41 @@ public sealed record EmissionOptions
             emitBareTableOnly,
             emitTableHeaders,
             moduleParallelism,
-            namingOverrides ?? NamingOverrideOptions.Empty);
+            namingOverrides ?? NamingOverrideOptions.Empty,
+            staticSeeds ?? StaticSeedOptions.Default);
+    }
+}
+
+public enum StaticSeedSynchronizationMode
+{
+    NonDestructive,
+    Authoritative
+}
+
+public sealed record StaticSeedOptions
+{
+    private StaticSeedOptions(bool groupByModule, StaticSeedSynchronizationMode synchronizationMode)
+    {
+        GroupByModule = groupByModule;
+        SynchronizationMode = synchronizationMode;
+    }
+
+    public bool GroupByModule { get; }
+
+    public StaticSeedSynchronizationMode SynchronizationMode { get; }
+
+    public static StaticSeedOptions Default { get; } = Create(groupByModule: true, StaticSeedSynchronizationMode.NonDestructive).Value;
+
+    public static Result<StaticSeedOptions> Create(bool groupByModule, StaticSeedSynchronizationMode synchronizationMode)
+    {
+        if (!Enum.IsDefined(typeof(StaticSeedSynchronizationMode), synchronizationMode))
+        {
+            return ValidationError.Create(
+                "options.staticSeeds.mode.invalid",
+                $"Unrecognized static seed synchronization mode '{synchronizationMode}'.");
+        }
+
+        return new StaticSeedOptions(groupByModule, synchronizationMode);
     }
 }
 
