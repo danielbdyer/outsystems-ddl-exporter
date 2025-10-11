@@ -10,4 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Osm.Smo\Osm.Smo.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Templates\StaticEntitySeedTemplate.sql" />
+  </ItemGroup>
 </Project>

@@ -27,5 +27,6 @@
     <ProjectReference Include="..\..\src\Osm.Smo\Osm.Smo.csproj" />
     <ProjectReference Include="..\..\src\Osm.Emission\Osm.Emission.csproj" />
     <ProjectReference Include="..\..\src\Osm.Pipeline\Osm.Pipeline.csproj" />
+    <ProjectReference Include="..\..\src\Osm.Cli\Osm.Cli.csproj" />
   </ItemGroup>
 </Project>

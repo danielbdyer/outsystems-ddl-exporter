@@ -3,6 +3,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Osm.Json\Osm.Json.csproj" />
     <ProjectReference Include="..\Osm.Domain\Osm.Domain.csproj" />
+    <ProjectReference Include="..\Osm.Validation\Osm.Validation.csproj" />
+    <ProjectReference Include="..\Osm.Smo\Osm.Smo.csproj" />
+    <ProjectReference Include="..\Osm.Emission\Osm.Emission.csproj" />
+    <ProjectReference Include="..\Osm.Dmm\Osm.Dmm.csproj" />
   </ItemGroup>
 
   <ItemGroup>

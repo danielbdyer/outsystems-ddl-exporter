@@ -7,4 +7,6 @@ public enum IndexKind
     UniqueConstraint,
     UniqueIndex,
     NonUniqueIndex,
+    ClusteredIndex,
+    NonClusteredIndex,
 }

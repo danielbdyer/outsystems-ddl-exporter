@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -8,22 +7,26 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Osm.Cli.Configuration;
+using Osm.Cli.StaticData;
 using Osm.Domain.Configuration;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Dmm;
-using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Json.Configuration;
-using Osm.Pipeline.Evidence;
 using Osm.Pipeline.ModelIngestion;
-using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Microsoft.Data.SqlClient;
+
+using PipelineResolvedSqlOptions = Osm.Pipeline.Orchestration.ResolvedSqlOptions;
+using PipelineSqlSamplingSettings = Osm.Pipeline.Orchestration.SqlSamplingSettings;
+using PipelineSqlAuthenticationSettings = Osm.Pipeline.Orchestration.SqlAuthenticationSettings;
 
 const string EnvConfigPath = "OSM_CLI_CONFIG_PATH";
 const string EnvModelPath = "OSM_CLI_MODEL_PATH";
@@ -246,69 +249,6 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
     var refreshCache = ResolveRefreshCache(options, configuration);
     var tighteningOptions = configuration.Tightening;
 
-    var modelResult = await new ModelIngestionService(new ModelJsonDeserializer()).LoadFromFileAsync(modelPath);
-    if (modelResult.IsFailure)
-    {
-        WriteErrors(modelResult.Errors);
-        return 1;
-    }
-
-    var filteredModelResult = new ModuleFilter().Apply(modelResult.Value, moduleFilter);
-    if (filteredModelResult.IsFailure)
-    {
-        WriteErrors(filteredModelResult.Errors);
-        return 1;
-    }
-
-    var model = filteredModelResult.Value;
-
-    var supplementalResult = await LoadSupplementalEntitiesAsync(configuration.SupplementalModels);
-    if (supplementalResult.IsFailure)
-    {
-        WriteErrors(supplementalResult.Errors);
-        return 1;
-    }
-
-    var supplementalEntities = supplementalResult.Value;
-
-    var profileResult = await CaptureProfileAsync(profilerProvider, profilePath, sqlOptions, model);
-    if (profileResult.IsFailure)
-    {
-        WriteErrors(profileResult.Errors);
-        return 1;
-    }
-
-    var profileSnapshot = profileResult.Value;
-
-    if (IsSqlProfiler(profilerProvider))
-    {
-        EmitSqlProfilerSnapshot(profileSnapshot);
-    }
-
-    if (!await TryCacheEvidenceAsync(
-            cacheRoot,
-            refreshCache,
-            command: "build-ssdt",
-            modelPath,
-            profilePath,
-            dmmPath: null,
-            configPath,
-            tighteningOptions,
-            moduleFilter,
-            configuration))
-    {
-        return 1;
-    }
-
-    var policy = new TighteningPolicy();
-    var decisions = policy.Decide(model, profileSnapshot, tighteningOptions);
-    var decisionReport = PolicyDecisionReporter.Create(decisions);
-
-    foreach (var diagnostic in decisionReport.Diagnostics.Where(d => d.Severity == TighteningDiagnosticSeverity.Warning))
-    {
-        Console.Error.WriteLine($"[warning] {diagnostic.Message}");
-    }
-
     var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission);
     var namingOverrideResult = ResolveNamingOverrides(options, smoOptions.NamingOverrides);
     if (namingOverrideResult.IsFailure)
@@ -318,27 +258,88 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
     }
 
     smoOptions = smoOptions.WithNamingOverrides(namingOverrideResult.Value);
-    var smoModel = new SmoModelFactory().Create(
-        model,
-        decisions,
-        profile: profileSnapshot,
-        options: smoOptions,
-        supplementalEntities: supplementalEntities);
 
-    var emitter = new SsdtEmitter();
-    var manifest = await emitter.EmitAsync(smoModel, outputPath!, smoOptions, decisionReport);
-    var decisionLogPath = await WriteDecisionLogAsync(outputPath!, decisionReport);
+    var staticDataProvider = ResolveStaticEntityDataProvider(options, sqlOptions);
+    var pipelineSqlOptions = ToPipelineSqlOptions(sqlOptions);
 
-    Console.WriteLine($"Emitted {manifest.Tables.Count} tables to {outputPath}.");
+    var cacheMetadata = BuildCacheMetadata(
+        tighteningOptions,
+        moduleFilter,
+        configuration,
+        modelPath,
+        profilePath,
+        resolvedDmmPath: null);
+
+    EvidenceCachePipelineOptions? cacheOptions = null;
+    if (!string.IsNullOrWhiteSpace(cacheRoot))
+    {
+        cacheOptions = new EvidenceCachePipelineOptions(
+            cacheRoot!,
+            refreshCache,
+            "build-ssdt",
+            modelPath,
+            profilePath,
+            null,
+            configPath,
+            cacheMetadata);
+    }
+
+    var supplementalOptions = ResolveSupplementalOptions(configuration.SupplementalModels);
+
+    var request = new BuildSsdtPipelineRequest(
+        modelPath,
+        moduleFilter,
+        outputPath!,
+        tighteningOptions,
+        supplementalOptions,
+        profilerProvider,
+        profilePath,
+        pipelineSqlOptions,
+        smoOptions,
+        cacheOptions,
+        staticDataProvider,
+        Path.Combine(outputPath!, "Seeds", "StaticEntities.seed.sql"));
+
+    var pipeline = new BuildSsdtPipeline();
+    var pipelineResult = await pipeline.ExecuteAsync(request);
+    if (pipelineResult.IsFailure)
+    {
+        WriteErrors(pipelineResult.Errors);
+        return 1;
+    }
+
+    var result = pipelineResult.Value;
+
+    if (IsSqlProfiler(profilerProvider))
+    {
+        EmitSqlProfilerSnapshot(result.Profile);
+    }
+
+    foreach (var diagnostic in result.DecisionReport.Diagnostics.Where(d => d.Severity == TighteningDiagnosticSeverity.Warning))
+    {
+        Console.Error.WriteLine($"[warning] {diagnostic.Message}");
+    }
+
+    if (result.EvidenceCache is { } cache)
+    {
+        Console.WriteLine($"Cached inputs to {cache.CacheDirectory} (key {cache.Manifest.Key}).");
+    }
+
+    if (!string.IsNullOrWhiteSpace(result.StaticSeedScriptPath))
+    {
+        Console.WriteLine($"Static entity seed script written to {result.StaticSeedScriptPath}");
+    }
+
+    Console.WriteLine($"Emitted {result.Manifest.Tables.Count} tables to {outputPath}.");
     Console.WriteLine($"Manifest written to {Path.Combine(outputPath!, "manifest.json")}");
-    Console.WriteLine($"Columns tightened: {decisionReport.TightenedColumnCount}/{decisionReport.ColumnCount}");
-    Console.WriteLine($"Unique indexes enforced: {decisionReport.UniqueIndexesEnforcedCount}/{decisionReport.UniqueIndexCount}");
-    Console.WriteLine($"Foreign keys created: {decisionReport.ForeignKeysCreatedCount}/{decisionReport.ForeignKeyCount}");
-    foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(decisionReport))
+    Console.WriteLine($"Columns tightened: {result.DecisionReport.TightenedColumnCount}/{result.DecisionReport.ColumnCount}");
+    Console.WriteLine($"Unique indexes enforced: {result.DecisionReport.UniqueIndexesEnforcedCount}/{result.DecisionReport.UniqueIndexCount}");
+    Console.WriteLine($"Foreign keys created: {result.DecisionReport.ForeignKeysCreatedCount}/{result.DecisionReport.ForeignKeyCount}");
+    foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(result.DecisionReport))
     {
         Console.WriteLine(summary);
     }
-    Console.WriteLine($"Decision log written to {decisionLogPath}");
+    Console.WriteLine($"Decision log written to {result.DecisionLogPath}");
     return 0;
 }
 
@@ -365,6 +366,15 @@ static async Task<int> RunDmmCompareAsync(string[] args)
 
     var moduleFilter = moduleFilterResult.Value;
 
+    var sqlOptionsResult = ResolveSqlOptions(options, configuration.Sql);
+    if (sqlOptionsResult.IsFailure)
+    {
+        WriteErrors(sqlOptionsResult.Errors);
+        return 1;
+    }
+
+    var sqlOptions = sqlOptionsResult.Value;
+
     if (!TryResolveRequiredPath(options, "--model", EnvModelPath, configuration.ModelPath, "model path", out var modelPath))
     {
         return 1;
@@ -388,122 +398,85 @@ static async Task<int> RunDmmCompareAsync(string[] args)
     var refreshCache = ResolveRefreshCache(options, configuration);
     var tighteningOptions = configuration.Tightening;
 
-    var modelResult = await new ModelIngestionService(new ModelJsonDeserializer()).LoadFromFileAsync(modelPath);
-    if (modelResult.IsFailure)
+    var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission, applyNamingOverrides: false);
+
+    var cacheMetadata = BuildCacheMetadata(
+        tighteningOptions,
+        moduleFilter,
+        configuration,
+        modelPath,
+        profilePath,
+        dmmPath);
+
+    EvidenceCachePipelineOptions? cacheOptions = null;
+    if (!string.IsNullOrWhiteSpace(cacheRoot))
     {
-        WriteErrors(modelResult.Errors);
-        return 1;
-    }
-
-    var filteredModelResult = new ModuleFilter().Apply(modelResult.Value, moduleFilter);
-    if (filteredModelResult.IsFailure)
-    {
-        WriteErrors(filteredModelResult.Errors);
-        return 1;
-    }
-
-    var model = filteredModelResult.Value;
-
-    var supplementalResult = await LoadSupplementalEntitiesAsync(configuration.SupplementalModels);
-    if (supplementalResult.IsFailure)
-    {
-        WriteErrors(supplementalResult.Errors);
-        return 1;
-    }
-
-    var supplementalEntities = supplementalResult.Value;
-
-    var profileResult = await new FixtureDataProfiler(profilePath, new ProfileSnapshotDeserializer()).CaptureAsync();
-    if (profileResult.IsFailure)
-    {
-        WriteErrors(profileResult.Errors);
-        return 1;
-    }
-
-    if (!File.Exists(dmmPath))
-    {
-        Console.Error.WriteLine($"DMM script '{dmmPath}' not found.");
-        return 1;
-    }
-
-    if (!await TryCacheEvidenceAsync(
-            cacheRoot,
+        cacheOptions = new EvidenceCachePipelineOptions(
+            cacheRoot!,
             refreshCache,
-            command: "dmm-compare",
+            "dmm-compare",
             modelPath,
             profilePath,
             dmmPath,
             configPath,
-            tighteningOptions,
-            moduleFilter,
-            configuration))
+            cacheMetadata);
+    }
+
+    var pipelineSqlOptions = ToPipelineSqlOptions(sqlOptions);
+    var supplementalOptions = ResolveSupplementalOptions(configuration.SupplementalModels);
+
+    var request = new DmmComparePipelineRequest(
+        modelPath,
+        moduleFilter,
+        profilePath,
+        dmmPath,
+        tighteningOptions,
+        supplementalOptions,
+        pipelineSqlOptions,
+        smoOptions,
+        diffPath!,
+        cacheOptions);
+
+    var pipeline = new DmmComparePipeline();
+    var pipelineResult = await pipeline.ExecuteAsync(request);
+    if (pipelineResult.IsFailure)
     {
+        WriteErrors(pipelineResult.Errors);
         return 1;
     }
 
-    var policy = new TighteningPolicy();
-    var decisions = policy.Decide(model, profileResult.Value, tighteningOptions);
-    var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission, applyNamingOverrides: false);
-    var smoModel = new SmoModelFactory().Create(
-        model,
-        decisions,
-        profile: profileResult.Value,
-        options: smoOptions,
-        supplementalEntities: supplementalEntities);
+    var result = pipelineResult.Value;
 
-    var parser = new DmmParser();
-    using var reader = File.OpenText(dmmPath);
-    var parseResult = parser.Parse(reader);
-    if (parseResult.IsFailure)
+    if (result.EvidenceCache is { } cache)
     {
-        WriteErrors(parseResult.Errors);
-        return 1;
+        Console.WriteLine($"Cached inputs to {cache.CacheDirectory} (key {cache.Manifest.Key}).");
     }
 
-    var comparator = new DmmComparator();
-    var comparison = comparator.Compare(smoModel, parseResult.Value, tighteningOptions.Emission.NamingOverrides);
-
-    string diffArtifactPath;
-    try
+    if (result.Comparison.IsMatch)
     {
-        diffArtifactPath = await WriteDmmDiffAsync(
-            diffPath,
-            modelPath,
-            profilePath,
-            dmmPath,
-            comparison);
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"Failed to write diff artifact to '{diffPath}': {ex.Message}");
-        return 1;
-    }
-
-    if (comparison.IsMatch)
-    {
-        Console.WriteLine($"DMM parity confirmed. Diff artifact written to {diffArtifactPath}.");
+        Console.WriteLine($"DMM parity confirmed. Diff artifact written to {result.DiffArtifactPath}.");
         return 0;
     }
 
-    if (comparison.ModelDifferences.Count > 0)
+    if (result.Comparison.ModelDifferences.Count > 0)
     {
         Console.Error.WriteLine("Model requires additional SSDT coverage:");
-        foreach (var difference in comparison.ModelDifferences)
+        foreach (var difference in result.Comparison.ModelDifferences)
         {
             Console.Error.WriteLine($" - {difference}");
         }
     }
 
-    if (comparison.SsdtDifferences.Count > 0)
+    if (result.Comparison.SsdtDifferences.Count > 0)
     {
         Console.Error.WriteLine("SSDT scripts drift from OutSystems model:");
-        foreach (var difference in comparison.SsdtDifferences)
+        foreach (var difference in result.Comparison.SsdtDifferences)
         {
             Console.Error.WriteLine($" - {difference}");
         }
     }
 
-    Console.Error.WriteLine($"Diff artifact written to {diffArtifactPath}.");
+    Console.Error.WriteLine($"Diff artifact written to {result.DiffArtifactPath}.");
     return 2;
 }
 
@@ -722,178 +695,13 @@ static string ComputeSha256(string value)
     return Convert.ToHexString(sha.ComputeHash(bytes));
 }
 
-static async Task<Result<ImmutableArray<EntityModel>>> LoadSupplementalEntitiesAsync(
-    SupplementalModelConfiguration configuration)
-{
-    configuration ??= SupplementalModelConfiguration.Empty;
-    var builder = ImmutableArray.CreateBuilder<EntityModel>();
-
-    var includeUsers = configuration.IncludeUsers ?? true;
-    if (includeUsers)
-    {
-        builder.Add(OutSystemsInternalModel.Users);
-    }
-
-    if (configuration.Paths.Count == 0)
-    {
-        return builder.ToImmutable();
-    }
-
-    var deserializer = new ModelJsonDeserializer();
-
-    foreach (var path in configuration.Paths)
-    {
-        if (!File.Exists(path))
-        {
-            return Result<ImmutableArray<EntityModel>>.Failure(ValidationError.Create(
-                "cli.supplemental.path.missing",
-                $"Supplemental model '{path}' was not found."));
-        }
-
-        await using var stream = File.OpenRead(path);
-        var modelResult = deserializer.Deserialize(stream);
-        if (modelResult.IsFailure)
-        {
-            return Result<ImmutableArray<EntityModel>>.Failure(modelResult.Errors);
-        }
-
-        foreach (var module in modelResult.Value.Modules)
-        {
-            builder.AddRange(module.Entities);
-        }
-    }
-
-    return builder.ToImmutable();
-}
-
-static async Task<string> WriteDecisionLogAsync(string outputDirectory, PolicyDecisionReport report)
-{
-    var log = new PolicyDecisionLog(
-        report.ColumnCount,
-        report.TightenedColumnCount,
-        report.RemediationColumnCount,
-        report.UniqueIndexCount,
-        report.UniqueIndexesEnforcedCount,
-        report.UniqueIndexesRequireRemediationCount,
-        report.ForeignKeyCount,
-        report.ForeignKeysCreatedCount,
-        report.ColumnRationaleCounts,
-        report.UniqueIndexRationaleCounts,
-        report.ForeignKeyRationaleCounts,
-        report.Columns.Select(static c => new PolicyDecisionLogColumn(
-            c.Column.Schema.Value,
-            c.Column.Table.Value,
-            c.Column.Column.Value,
-            c.MakeNotNull,
-            c.RequiresRemediation,
-            c.Rationales.ToArray())).ToArray(),
-        report.UniqueIndexes.Select(static u => new PolicyDecisionLogUniqueIndex(
-            u.Index.Schema.Value,
-            u.Index.Table.Value,
-            u.Index.Index.Value,
-            u.EnforceUnique,
-            u.RequiresRemediation,
-            u.Rationales.ToArray())).ToArray(),
-        report.ForeignKeys.Select(static f => new PolicyDecisionLogForeignKey(
-            f.Column.Schema.Value,
-            f.Column.Table.Value,
-            f.Column.Column.Value,
-            f.CreateConstraint,
-            f.Rationales.ToArray())).ToArray(),
-        report.Diagnostics.Select(static d => new PolicyDecisionLogDiagnostic(
-            d.LogicalName,
-            d.CanonicalModule,
-            d.CanonicalSchema,
-            d.CanonicalPhysicalName,
-            d.Code,
-            d.Message,
-            d.Severity.ToString(),
-            d.ResolvedByOverride,
-            d.Candidates.Select(static c => new PolicyDecisionLogDuplicateCandidate(
-                c.Module,
-                c.Schema,
-                c.PhysicalName)).ToArray())).ToArray());
-
-    var path = Path.Combine(outputDirectory, "policy-decisions.json");
-    var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
-    await File.WriteAllTextAsync(path, json);
-    return path;
-}
-
-static async Task<string> WriteDmmDiffAsync(
-    string outputPath,
-    string modelPath,
-    string profilePath,
-    string dmmPath,
-    DmmComparisonResult comparison)
-{
-    var fullPath = Path.GetFullPath(outputPath);
-    var directory = Path.GetDirectoryName(fullPath);
-    if (!string.IsNullOrEmpty(directory))
-    {
-        Directory.CreateDirectory(directory);
-    }
-
-    var log = new DmmDiffLog(
-        comparison.IsMatch,
-        modelPath,
-        profilePath,
-        dmmPath,
-        DateTimeOffset.UtcNow,
-        comparison.ModelDifferences.ToArray(),
-        comparison.SsdtDifferences.ToArray());
-
-    var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
-    await File.WriteAllTextAsync(fullPath, json);
-    return fullPath;
-}
-
-static async Task<bool> TryCacheEvidenceAsync(
-    string? cacheRoot,
-    bool refreshCache,
-    string command,
-    string modelPath,
-    string? profilePath,
-    string? dmmPath,
-    string? configPath,
-    TighteningOptions tighteningOptions,
-    ModuleFilterOptions moduleFilter,
-    CliConfiguration configuration)
-{
-    if (string.IsNullOrWhiteSpace(cacheRoot))
-    {
-        return true;
-    }
-
-    var root = cacheRoot.Trim();
-
-    var metadata = BuildCacheMetadata(tighteningOptions, moduleFilter, configuration);
-    var request = new EvidenceCacheRequest(
-        root,
-        command,
-        modelPath,
-        profilePath,
-        dmmPath,
-        configPath,
-        metadata,
-        refreshCache);
-
-    var cacheResult = await new EvidenceCacheService().CacheAsync(request).ConfigureAwait(false);
-    if (cacheResult.IsFailure)
-    {
-        WriteErrors(cacheResult.Errors);
-        return false;
-    }
-
-    var cache = cacheResult.Value;
-    Console.WriteLine($"Cached inputs to {cache.CacheDirectory} (key {cache.Manifest.Key}).");
-    return true;
-}
-
 static IReadOnlyDictionary<string, string?> BuildCacheMetadata(
     TighteningOptions options,
     ModuleFilterOptions moduleFilter,
-    CliConfiguration configuration)
+    CliConfiguration configuration,
+    string? resolvedModelPath,
+    string? resolvedProfilePath,
+    string? resolvedDmmPath)
 {
     var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
     {
@@ -926,17 +734,29 @@ static IReadOnlyDictionary<string, string?> BuildCacheMetadata(
         metadata["mocking.profileMockFolder"] = options.Mocking.ProfileMockFolder;
     }
 
-    if (!string.IsNullOrWhiteSpace(configuration.ModelPath))
+    if (!string.IsNullOrWhiteSpace(resolvedModelPath))
+    {
+        metadata["inputs.model"] = Path.GetFullPath(resolvedModelPath);
+    }
+    else if (!string.IsNullOrWhiteSpace(configuration.ModelPath))
     {
         metadata["inputs.model"] = Path.GetFullPath(configuration.ModelPath);
     }
 
-    if (!string.IsNullOrWhiteSpace(configuration.ProfilePath))
+    if (!string.IsNullOrWhiteSpace(resolvedProfilePath))
+    {
+        metadata["inputs.profile"] = Path.GetFullPath(resolvedProfilePath);
+    }
+    else if (!string.IsNullOrWhiteSpace(configuration.ProfilePath))
     {
         metadata["inputs.profile"] = Path.GetFullPath(configuration.ProfilePath);
     }
 
-    if (!string.IsNullOrWhiteSpace(configuration.DmmPath))
+    if (!string.IsNullOrWhiteSpace(resolvedDmmPath))
+    {
+        metadata["inputs.dmm"] = Path.GetFullPath(resolvedDmmPath);
+    }
+    else if (!string.IsNullOrWhiteSpace(configuration.DmmPath))
     {
         metadata["inputs.dmm"] = Path.GetFullPath(configuration.DmmPath);
     }
@@ -1108,6 +928,48 @@ static Result<ResolvedSqlOptions> ResolveSqlOptions(Dictionary<string, string?> 
     return new ResolvedSqlOptions(connection?.Trim(), timeout, sampling, authentication);
 }
 
+static PipelineResolvedSqlOptions ToPipelineSqlOptions(ResolvedSqlOptions options)
+{
+    if (options is null)
+    {
+        throw new ArgumentNullException(nameof(options));
+    }
+
+    var sampling = new PipelineSqlSamplingSettings(
+        options.Sampling.RowSamplingThreshold,
+        options.Sampling.SampleSize);
+    var authentication = new PipelineSqlAuthenticationSettings(
+        options.Authentication.Method,
+        options.Authentication.TrustServerCertificate,
+        options.Authentication.ApplicationName,
+        options.Authentication.AccessToken);
+
+    return new PipelineResolvedSqlOptions(
+        options.ConnectionString,
+        options.CommandTimeoutSeconds,
+        sampling,
+        authentication);
+}
+
+static IStaticEntityDataProvider? ResolveStaticEntityDataProvider(
+    Dictionary<string, string?> options,
+    ResolvedSqlOptions sqlOptions)
+{
+    if (options.TryGetValue("--static-data", out var fixturePath) && !string.IsNullOrWhiteSpace(fixturePath))
+    {
+        return new FixtureStaticEntityDataProvider(fixturePath!);
+    }
+
+    if (!string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
+    {
+        var connectionOptions = CreateConnectionOptions(sqlOptions.Authentication);
+        var factory = new SqlConnectionFactory(sqlOptions.ConnectionString!, connectionOptions);
+        return new SqlStaticEntityDataProvider(factory, sqlOptions.CommandTimeoutSeconds);
+    }
+
+    return null;
+}
+
 static SqlSamplingOptions CreateSamplingOptions(SqlSamplingConfiguration configuration)
 {
     var threshold = configuration.RowSamplingThreshold ?? SqlSamplingOptions.Default.RowCountSamplingThreshold;
@@ -1137,39 +999,6 @@ static string ResolveProfilerProvider(Dictionary<string, string?> options, Profi
     }
 
     return "fixture";
-}
-
-static async Task<Result<ProfileSnapshot>> CaptureProfileAsync(
-    string provider,
-    string? profilePath,
-    ResolvedSqlOptions sqlOptions,
-    OsmModel model)
-{
-    if (string.Equals(provider, "sql", StringComparison.OrdinalIgnoreCase))
-    {
-        if (string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
-        {
-            return Result<ProfileSnapshot>.Failure(ValidationError.Create(
-                "cli.sql.connectionString.missing",
-                "Connection string is required when using the sql profiler."));
-        }
-
-        var samplingOptions = CreateSamplingOptions(sqlOptions.Sampling);
-        var connectionOptions = CreateConnectionOptions(sqlOptions.Authentication);
-        var profilerOptions = new SqlProfilerOptions(sqlOptions.CommandTimeoutSeconds, samplingOptions);
-        var profiler = new SqlDataProfiler(new SqlConnectionFactory(sqlOptions.ConnectionString!, connectionOptions), model, profilerOptions);
-        return await profiler.CaptureAsync().ConfigureAwait(false);
-    }
-
-    if (string.IsNullOrWhiteSpace(profilePath))
-    {
-        return Result<ProfileSnapshot>.Failure(ValidationError.Create(
-            "cli.profile.path.missing",
-            "Profile path is required when using the fixture profiler."));
-    }
-
-    var fixtureProfiler = new FixtureDataProfiler(profilePath!, new ProfileSnapshotDeserializer());
-    return await fixtureProfiler.CaptureAsync().ConfigureAwait(false);
 }
 
 static bool IsSqlProfiler(string provider)
@@ -1328,6 +1157,14 @@ static Result<ModuleFilterOptions> ResolveModuleFilterOptions(
     return ModuleFilterOptions.Create(configuredModules, includeSystemModules, includeInactiveModules);
 }
 
+static SupplementalModelOptions ResolveSupplementalOptions(SupplementalModelConfiguration configuration)
+{
+    configuration ??= SupplementalModelConfiguration.Empty;
+    var includeUsers = configuration.IncludeUsers ?? true;
+    var paths = configuration.Paths ?? Array.Empty<string>();
+    return new SupplementalModelOptions(includeUsers, paths.ToArray());
+}
+
 static IReadOnlyList<string> ResolveModuleArguments(Dictionary<string, string?> options)
 {
     if (options.TryGetValue("--modules", out var modulesValue) && !string.IsNullOrWhiteSpace(modulesValue))
@@ -1375,7 +1212,7 @@ static void PrintRootUsage()
     Console.WriteLine("Commands:");
     Console.WriteLine("  inspect --model <model.json>");
     Console.WriteLine("  extract-model [--connection-string <value>] [--command-timeout <seconds>] [--sql-authentication <method>] [--sql-access-token <token>] [--sql-trust-server-certificate [true|false]] [--sql-application-name <name>] [--sampling-threshold <rows>] [--sampling-size <rows>] [--mock-advanced-sql <manifest.json>] [--modules <csv>] [--include-system-modules] [--only-active-attributes] [--out <path>] [--config <path>]");
-    Console.WriteLine("  build-ssdt --model <model.json> [--profile <profile.json>] [--profiler-provider <fixture|sql>] [--connection-string <value>] [--command-timeout <seconds>] [--sql-authentication <method>] [--sql-access-token <token>] [--sql-trust-server-certificate [true|false]] [--sql-application-name <name>] [--sampling-threshold <rows>] [--sampling-size <rows>] [--modules <csv>] [--exclude-system-modules] [--only-active-modules] [--out <dir>] [--config <path>] [--cache-root <dir>] [--refresh-cache] [--rename-table schema.table=Override]");
+    Console.WriteLine("  build-ssdt --model <model.json> [--profile <profile.json>] [--static-data <seed.json>] [--profiler-provider <fixture|sql>] [--connection-string <value>] [--command-timeout <seconds>] [--sql-authentication <method>] [--sql-access-token <token>] [--sql-trust-server-certificate [true|false]] [--sql-application-name <name>] [--sampling-threshold <rows>] [--sampling-size <rows>] [--modules <csv>] [--exclude-system-modules] [--only-active-modules] [--out <dir>] [--config <path>] [--cache-root <dir>] [--refresh-cache] [--rename-table schema.table=Override]");
     Console.WriteLine("  dmm-compare --model <model.json> --profile <profile.json> --dmm <dmm.sql> [--modules <csv>] [--exclude-system-modules] [--only-active-modules] [--config <path>] [--out <path>] [--cache-root <dir>] [--refresh-cache]");
 }
 
@@ -1386,71 +1223,10 @@ static int UnknownCommand(string command)
     return 1;
 }
 
+file sealed record CliConfigurationContext(CliConfiguration Configuration, string? ConfigPath);
+
 file sealed record ResolvedSqlOptions(
     string? ConnectionString,
     int? CommandTimeoutSeconds,
     SqlSamplingConfiguration Sampling,
     SqlAuthenticationConfiguration Authentication);
-file sealed record CliConfigurationContext(CliConfiguration Configuration, string? ConfigPath);
-
-file sealed record PolicyDecisionLog(
-    int ColumnCount,
-    int TightenedColumnCount,
-    int RemediationColumnCount,
-    int UniqueIndexCount,
-    int UniqueIndexesEnforcedCount,
-    int UniqueIndexesRequireRemediationCount,
-    int ForeignKeyCount,
-    int ForeignKeysCreatedCount,
-    IReadOnlyDictionary<string, int> ColumnRationales,
-    IReadOnlyDictionary<string, int> UniqueIndexRationales,
-    IReadOnlyDictionary<string, int> ForeignKeyRationales,
-    IReadOnlyList<PolicyDecisionLogColumn> Columns,
-    IReadOnlyList<PolicyDecisionLogUniqueIndex> UniqueIndexes,
-    IReadOnlyList<PolicyDecisionLogForeignKey> ForeignKeys,
-    IReadOnlyList<PolicyDecisionLogDiagnostic> Diagnostics);
-
-file sealed record PolicyDecisionLogColumn(
-    string Schema,
-    string Table,
-    string Column,
-    bool MakeNotNull,
-    bool RequiresRemediation,
-    IReadOnlyList<string> Rationales);
-
-file sealed record PolicyDecisionLogUniqueIndex(
-    string Schema,
-    string Table,
-    string Index,
-    bool EnforceUnique,
-    bool RequiresRemediation,
-    IReadOnlyList<string> Rationales);
-
-file sealed record PolicyDecisionLogForeignKey(
-    string Schema,
-    string Table,
-    string Column,
-    bool CreateConstraint,
-    IReadOnlyList<string> Rationales);
-
-file sealed record PolicyDecisionLogDiagnostic(
-    string LogicalName,
-    string CanonicalModule,
-    string CanonicalSchema,
-    string CanonicalPhysicalName,
-    string Code,
-    string Message,
-    string Severity,
-    bool ResolvedByOverride,
-    IReadOnlyList<PolicyDecisionLogDuplicateCandidate> Candidates);
-
-file sealed record PolicyDecisionLogDuplicateCandidate(string Module, string Schema, string PhysicalName);
-
-file sealed record DmmDiffLog(
-    bool IsMatch,
-    string ModelPath,
-    string ProfilePath,
-    string DmmPath,
-    DateTimeOffset GeneratedAtUtc,
-    IReadOnlyList<string> ModelDifferences,
-    IReadOnlyList<string> SsdtDifferences);
