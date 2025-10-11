@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -384,17 +383,7 @@ public class CliIntegrationTests
     
     private static async Task<int> RunCliAsync(string workingDirectory, string arguments)
     {
-        var adjustedArguments = DotNetCli.EnsureNoBuildAndConfiguration(arguments);
-        var startInfo = new ProcessStartInfo("dotnet", adjustedArguments)
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-
-        using var process = Process.Start(startInfo)!;
-        await process.WaitForExitAsync();
-        return process.ExitCode;
+        return await DotNetCli.RunAsync(workingDirectory, arguments);
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
