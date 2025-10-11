@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Osm.App.Configuration;
@@ -43,7 +44,7 @@ internal static class CacheMetadataBuilder
 
         if (!moduleFilter.Modules.IsDefaultOrEmpty)
         {
-            metadata["moduleFilter.modules"] = string.Join(",", moduleFilter.Modules);
+            metadata["moduleFilter.modules"] = string.Join(",", moduleFilter.Modules.Select(static module => module.Value));
         }
 
         if (!string.IsNullOrWhiteSpace(options.Mocking.ProfileMockFolder))
