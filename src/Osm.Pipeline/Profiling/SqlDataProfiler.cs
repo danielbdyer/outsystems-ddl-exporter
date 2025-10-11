@@ -39,6 +39,16 @@ public sealed class SqlDataProfiler : IDataProfiler
 
             var metadata = await LoadColumnMetadataAsync(connection, tables, cancellationToken).ConfigureAwait(false);
             var rowCounts = await LoadRowCountsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
+            var plans = BuildProfilingPlans(metadata, rowCounts);
+            var resultsLookup = new Dictionary<(string Schema, string Table), TableProfilingResults>(plans.Count, TableKeyComparer.Instance);
+
+            foreach (var plan in plans.Values)
+            {
+                var nullCounts = await ComputeNullCountsAsync(connection, plan, cancellationToken).ConfigureAwait(false);
+                var duplicateFlags = await ComputeDuplicateCandidatesAsync(connection, plan, cancellationToken).ConfigureAwait(false);
+                var orphanFlags = await ComputeForeignKeyRealityAsync(connection, plan, cancellationToken).ConfigureAwait(false);
+                resultsLookup[(plan.Schema, plan.Table)] = new TableProfilingResults(nullCounts, duplicateFlags, orphanFlags);
+            }
 
             var columnProfiles = new List<ColumnProfile>();
             var uniqueProfiles = new List<UniqueCandidateProfile>();
@@ -49,32 +59,31 @@ public sealed class SqlDataProfiler : IDataProfiler
             {
                 var schema = entity.Schema.Value;
                 var table = entity.PhysicalName.Value;
-                rowCounts.TryGetValue((schema, table), out var tableRowCount);
+                var tableKey = (schema, table);
+                rowCounts.TryGetValue(tableKey, out var tableRowCount);
+                var tableResults = resultsLookup.TryGetValue(tableKey, out var computed)
+                    ? computed
+                    : TableProfilingResults.Empty;
 
                 foreach (var attribute in entity.Attributes)
                 {
-                    var columnKey = (schema, table, attribute.ColumnName.Value);
+                    var columnName = attribute.ColumnName.Value;
+                    var columnKey = (schema, table, columnName);
                     if (!metadata.TryGetValue(columnKey, out var meta))
                     {
                         continue;
                     }
 
-                    var (nullCount, _) = await ComputeNullCountAsync(
-                        connection,
-                        schema,
-                        table,
-                        attribute.ColumnName.Value,
-                        tableRowCount,
-                        cancellationToken).ConfigureAwait(false);
+                    var nullCount = tableResults.NullCounts.TryGetValue(columnName, out var value) ? value : 0L;
 
                     var columnProfileResult = ColumnProfile.Create(
                         SchemaName.Create(schema).Value,
                         TableName.Create(table).Value,
-                        ColumnName.Create(attribute.ColumnName.Value).Value,
+                        ColumnName.Create(columnName).Value,
                         meta.IsNullable,
                         meta.IsComputed,
                         meta.IsPrimaryKey,
-                        IsSingleColumnUnique(entity, attribute.ColumnName.Value),
+                        IsSingleColumnUnique(entity, columnName),
                         meta.DefaultDefinition,
                         tableRowCount,
                         nullCount);
@@ -97,13 +106,8 @@ public sealed class SqlDataProfiler : IDataProfiler
                         continue;
                     }
 
-                    var hasDuplicates = await HasDuplicateValuesAsync(
-                        connection,
-                        schema,
-                        table,
-                        orderedColumns,
-                        rowCounts.GetValueOrDefault((schema, table)),
-                        cancellationToken).ConfigureAwait(false);
+                    var candidateKey = BuildUniqueKey(orderedColumns);
+                    var hasDuplicates = tableResults.UniqueDuplicates.TryGetValue(candidateKey, out var duplicate) && duplicate;
 
                     if (orderedColumns.Length == 1)
                     {
@@ -128,6 +132,7 @@ public sealed class SqlDataProfiler : IDataProfiler
                             TableName.Create(table).Value,
                             columns,
                             hasDuplicates);
+
                         if (profileResult.IsSuccess)
                         {
                             compositeProfiles.Add(profileResult.Value);
@@ -154,16 +159,13 @@ public sealed class SqlDataProfiler : IDataProfiler
                         continue;
                     }
 
-                    var hasOrphans = await HasOrphansAsync(
-                        connection,
-                        schema,
-                        table,
+                    var foreignKeyKey = BuildForeignKeyKey(
                         attribute.ColumnName.Value,
                         targetEntity.Schema.Value,
                         targetEntity.PhysicalName.Value,
-                        targetIdentifier.ColumnName.Value,
-                        rowCounts.GetValueOrDefault((schema, table)),
-                        cancellationToken).ConfigureAwait(false);
+                        targetIdentifier.ColumnName.Value);
+
+                    var hasOrphans = tableResults.ForeignKeys.TryGetValue(foreignKeyKey, out var orphaned) && orphaned;
 
                     var referenceResult = ForeignKeyReference.Create(
                         SchemaName.Create(schema).Value,
@@ -326,132 +328,179 @@ GROUP BY s.name, t.name;";
         return rowCount > sampling.RowCountSamplingThreshold;
     }
 
-    private async Task<(long NullCount, bool UsedSampling)> ComputeNullCountAsync(
+    private async Task<IReadOnlyDictionary<string, long>> ComputeNullCountsAsync(
         DbConnection connection,
-        string schema,
-        string table,
-        string column,
-        long rowCount,
+        TableProfilingPlan plan,
         CancellationToken cancellationToken)
     {
-        var useSampling = ShouldSample(rowCount);
-        var qualified = QualifyIdentifier(schema, table);
-        var quotedColumn = QuoteIdentifier(column);
-        var sql = useSampling
-            ? $"SELECT CAST(COUNT_BIG(*) AS BIGINT) AS SampleCount, CAST(SUM(CASE WHEN {quotedColumn} IS NULL THEN 1 ELSE 0 END) AS BIGINT) AS NullCount FROM (SELECT TOP (@SampleSize) {quotedColumn} FROM {qualified} WITH (NOLOCK) ORDER BY (SELECT NULL)) AS sample;"
-            : $"SELECT CAST(COUNT_BIG(*) AS BIGINT) AS SampleCount, CAST(SUM(CASE WHEN {quotedColumn} IS NULL THEN 1 ELSE 0 END) AS BIGINT) AS NullCount FROM {qualified} WITH (NOLOCK);";
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        if (_options.CommandTimeoutSeconds.HasValue)
+        if (plan.Columns.IsDefaultOrEmpty)
         {
-            command.CommandTimeout = _options.CommandTimeoutSeconds.Value;
+            return ImmutableDictionary<string, long>.Empty;
         }
 
-        if (useSampling)
+        if (plan.RowCount <= 0)
         {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@SampleSize";
-            parameter.DbType = DbType.Int32;
-            parameter.Value = _options.Sampling.SampleSize;
-            command.Parameters.Add(parameter);
-        }
-
-        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var sampleCount = reader.IsDBNull(0) ? 0L : reader.GetInt64(0);
-            var nullCount = reader.IsDBNull(1) ? 0L : reader.GetInt64(1);
-            if (useSampling && sampleCount > 0)
+            var zeroBuilder = ImmutableDictionary.CreateBuilder<string, long>(StringComparer.OrdinalIgnoreCase);
+            foreach (var column in plan.Columns)
             {
-                var estimated = (long)Math.Round(nullCount * (rowCount / (double)sampleCount), MidpointRounding.AwayFromZero);
-                var clamped = Math.Min(rowCount, Math.Max(0, estimated));
-                return (clamped, true);
+                zeroBuilder[column] = 0L;
             }
 
-            return (nullCount, useSampling);
+            return zeroBuilder.ToImmutable();
         }
 
-        return (0, useSampling);
+        var useSampling = ShouldSample(plan.RowCount);
+        await using var command = connection.CreateCommand();
+        var columnList = plan.Columns.Select(QuoteIdentifier).ToArray();
+        var aliasNames = plan.Columns.Select((_, index) => $"NullCount{index}").ToArray();
+        command.CommandText = BuildNullCountSql(plan.Schema, plan.Table, columnList, aliasNames, useSampling);
+
+        if (_options.CommandTimeoutSeconds.HasValue)
+        {
+            command.CommandTimeout = _options.CommandTimeoutSeconds.Value;
+        }
+
+        if (useSampling)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@SampleSize";
+            parameter.DbType = DbType.Int32;
+            parameter.Value = _options.Sampling.SampleSize;
+            command.Parameters.Add(parameter);
+        }
+
+        for (var i = 0; i < plan.Columns.Length; i++)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = $"@column{i}";
+            parameter.DbType = DbType.String;
+            parameter.Value = plan.Columns[i];
+            command.Parameters.Add(parameter);
+        }
+
+        var results = ImmutableDictionary.CreateBuilder<string, long>(StringComparer.OrdinalIgnoreCase);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var columnName = reader.GetString(0);
+            var nullCount = reader.IsDBNull(1) ? 0L : reader.GetInt64(1);
+            var sampleCount = reader.IsDBNull(2) ? 0L : reader.GetInt64(2);
+
+            if (useSampling && sampleCount > 0 && sampleCount < plan.RowCount)
+            {
+                var estimated = (long)Math.Round(nullCount * (plan.RowCount / (double)sampleCount), MidpointRounding.AwayFromZero);
+                nullCount = Math.Min(plan.RowCount, Math.Max(0, estimated));
+            }
+            else if (useSampling && sampleCount == 0)
+            {
+                nullCount = 0;
+            }
+
+            results[columnName] = nullCount;
+        }
+
+        foreach (var column in plan.Columns)
+        {
+            if (!results.ContainsKey(column))
+            {
+                results[column] = 0L;
+            }
+        }
+
+        return results.ToImmutable();
     }
 
-    private async Task<bool> HasDuplicateValuesAsync(
-        DbConnection connection,
+    private static string BuildNullCountSql(
         string schema,
         string table,
-        IReadOnlyList<string> columns,
-        long rowCount,
-        CancellationToken cancellationToken)
+        IReadOnlyList<string> quotedColumns,
+        IReadOnlyList<string> aliases,
+        bool useSampling)
     {
-        if (columns.Count == 0)
-        {
-            return false;
-        }
-
-        var qualified = QualifyIdentifier(schema, table);
-        var columnList = string.Join(", ", columns.Select(QuoteIdentifier));
-        var useSampling = ShouldSample(rowCount);
-
-        var sb = new StringBuilder();
-        sb.Append("SELECT TOP 1 1 FROM ");
+        var builder = new StringBuilder();
+        builder.AppendLine("WITH Source AS (");
+        builder.Append("    SELECT ");
         if (useSampling)
         {
-            sb.Append("(SELECT TOP (@SampleSize) ").Append(columnList).Append(" FROM ").Append(qualified).Append(" WITH (NOLOCK) ORDER BY (SELECT NULL)) AS sample ");
-            sb.Append("GROUP BY ").Append(columnList).Append(" HAVING COUNT(*) > 1;");
-        }
-        else
-        {
-            sb.Append(qualified).Append(" WITH (NOLOCK) GROUP BY ").Append(columnList).Append(" HAVING COUNT(*) > 1;");
+            builder.Append("TOP (@SampleSize) ");
         }
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = sb.ToString();
-        if (_options.CommandTimeoutSeconds.HasValue)
-        {
-            command.CommandTimeout = _options.CommandTimeoutSeconds.Value;
-        }
-
+        builder.Append(string.Join(", ", quotedColumns));
+        builder.AppendLine();
+        builder.Append("    FROM ").Append(QualifyIdentifier(schema, table)).Append(" WITH (NOLOCK)");
         if (useSampling)
         {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@SampleSize";
-            parameter.DbType = DbType.Int32;
-            parameter.Value = _options.Sampling.SampleSize;
-            command.Parameters.Add(parameter);
+            builder.AppendLine();
+            builder.AppendLine("    ORDER BY (SELECT NULL)");
         }
 
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is not null && result is not DBNull;
+        builder.AppendLine(")");
+        builder.AppendLine("SELECT v.ColumnName, v.NullCount, a.SampleCount");
+        builder.AppendLine("FROM (");
+        builder.Append("    SELECT ");
+        for (var i = 0; i < aliases.Count; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append("SUM(CASE WHEN ").Append(quotedColumns[i]).Append(" IS NULL THEN 1 ELSE 0 END) AS ").Append(aliases[i]);
+        }
+
+        if (aliases.Count > 0)
+        {
+            builder.Append(", ");
+        }
+
+        builder.AppendLine("COUNT_BIG(*) AS SampleCount");
+        builder.AppendLine("    FROM Source");
+        builder.AppendLine(") AS a");
+        builder.Append("CROSS APPLY (VALUES ");
+        for (var i = 0; i < aliases.Count; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append($"(@column{i}, a.{aliases[i]})");
+        }
+
+        builder.AppendLine(") AS v(ColumnName, NullCount);");
+        return builder.ToString();
     }
 
-    private async Task<bool> HasOrphansAsync(
+    private async Task<IReadOnlyDictionary<string, bool>> ComputeDuplicateCandidatesAsync(
         DbConnection connection,
-        string fromSchema,
-        string fromTable,
-        string fromColumn,
-        string toSchema,
-        string toTable,
-        string toColumn,
-        long rowCount,
+        TableProfilingPlan plan,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(toColumn))
+        if (plan.UniqueCandidates.IsDefaultOrEmpty)
         {
-            return false;
+            return ImmutableDictionary<string, bool>.Empty;
         }
 
-        var fromQualified = QualifyIdentifier(fromSchema, fromTable);
-        var toQualified = QualifyIdentifier(toSchema, toTable);
-        var fromColumnQuoted = QuoteIdentifier(fromColumn);
-        var toColumnQuoted = QuoteIdentifier(toColumn);
-        var useSampling = ShouldSample(rowCount);
+        var candidates = plan.UniqueCandidates.Where(static candidate => !candidate.Columns.IsDefaultOrEmpty).ToImmutableArray();
+        if (candidates.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<string, bool>.Empty;
+        }
 
-        var sql = useSampling
-            ? $"SELECT TOP 1 1 FROM (SELECT TOP (@SampleSize) {fromColumnQuoted} FROM {fromQualified} WITH (NOLOCK) WHERE {fromColumnQuoted} IS NOT NULL ORDER BY (SELECT NULL)) AS sample LEFT JOIN {toQualified} AS target WITH (NOLOCK) ON sample.{fromColumnQuoted} = target.{toColumnQuoted} WHERE target.{toColumnQuoted} IS NULL;"
-            : $"SELECT TOP 1 1 FROM {fromQualified} AS source WITH (NOLOCK) LEFT JOIN {toQualified} AS target WITH (NOLOCK) ON source.{fromColumnQuoted} = target.{toColumnQuoted} WHERE source.{fromColumnQuoted} IS NOT NULL AND target.{toColumnQuoted} IS NULL;";
+        var columnSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in candidates)
+        {
+            foreach (var column in candidate.Columns)
+            {
+                columnSet.Add(column);
+            }
+        }
 
+        var useSampling = ShouldSample(plan.RowCount);
         await using var command = connection.CreateCommand();
-        command.CommandText = sql;
+        command.CommandText = BuildUniqueCandidatesSql(plan.Schema, plan.Table, columnSet, candidates, useSampling, command);
+
         if (_options.CommandTimeoutSeconds.HasValue)
         {
             command.CommandTimeout = _options.CommandTimeoutSeconds.Value;
@@ -466,8 +515,363 @@ GROUP BY s.name, t.name;";
             command.Parameters.Add(parameter);
         }
 
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is not null && result is not DBNull;
+        var results = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var key = reader.GetString(0);
+            var hasDuplicates = !reader.IsDBNull(1) && reader.GetBoolean(1);
+            results[key] = hasDuplicates;
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (!results.ContainsKey(candidate.Key))
+            {
+                results[candidate.Key] = false;
+            }
+        }
+
+        return results.ToImmutable();
+    }
+
+    private static string BuildUniqueCandidatesSql(
+        string schema,
+        string table,
+        IEnumerable<string> columnSet,
+        ImmutableArray<UniqueCandidatePlan> candidates,
+        bool useSampling,
+        DbCommand command)
+    {
+        var builder = new StringBuilder();
+        var projectedColumns = columnSet.Select(QuoteIdentifier).ToArray();
+        builder.AppendLine("WITH Source AS (");
+        builder.Append("    SELECT ");
+        if (useSampling)
+        {
+            builder.Append("TOP (@SampleSize) ");
+        }
+
+        builder.Append(string.Join(", ", projectedColumns));
+        builder.AppendLine();
+        builder.Append("    FROM ").Append(QualifyIdentifier(schema, table)).Append(" WITH (NOLOCK)");
+        if (useSampling)
+        {
+            builder.AppendLine();
+            builder.AppendLine("    ORDER BY (SELECT NULL)");
+        }
+
+        builder.AppendLine(")");
+        builder.AppendLine("SELECT CandidateId, HasDuplicates");
+        builder.AppendLine("FROM (");
+        for (var i = 0; i < candidates.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.AppendLine("    UNION ALL");
+            }
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = $"@candidate{i}";
+            parameter.DbType = DbType.String;
+            parameter.Value = candidates[i].Key;
+            command.Parameters.Add(parameter);
+
+            builder.Append("    SELECT ");
+            builder.Append(parameter.ParameterName);
+            builder.Append(" AS CandidateId, CASE WHEN EXISTS (SELECT 1 FROM Source GROUP BY ");
+            builder.Append(string.Join(", ", candidates[i].Columns.Select(QuoteIdentifier)));
+            builder.Append(" HAVING COUNT(*) > 1) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasDuplicates");
+            builder.AppendLine();
+        }
+
+        builder.AppendLine(") AS results;");
+        return builder.ToString();
+    }
+
+    private async Task<IReadOnlyDictionary<string, bool>> ComputeForeignKeyRealityAsync(
+        DbConnection connection,
+        TableProfilingPlan plan,
+        CancellationToken cancellationToken)
+    {
+        if (plan.ForeignKeys.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<string, bool>.Empty;
+        }
+
+        var useSampling = ShouldSample(plan.RowCount);
+        await using var command = connection.CreateCommand();
+        var columnSet = plan.ForeignKeys.Select(static fk => fk.Column).Distinct(StringComparer.OrdinalIgnoreCase).Select(QuoteIdentifier).ToArray();
+        command.CommandText = BuildForeignKeySql(plan.Schema, plan.Table, columnSet, plan.ForeignKeys, useSampling, command);
+
+        if (_options.CommandTimeoutSeconds.HasValue)
+        {
+            command.CommandTimeout = _options.CommandTimeoutSeconds.Value;
+        }
+
+        if (useSampling)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@SampleSize";
+            parameter.DbType = DbType.Int32;
+            parameter.Value = _options.Sampling.SampleSize;
+            command.Parameters.Add(parameter);
+        }
+
+        var results = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var key = reader.GetString(0);
+            var hasOrphans = !reader.IsDBNull(1) && reader.GetBoolean(1);
+            results[key] = hasOrphans;
+        }
+
+        foreach (var candidate in plan.ForeignKeys)
+        {
+            if (!results.ContainsKey(candidate.Key))
+            {
+                results[candidate.Key] = false;
+            }
+        }
+
+        return results.ToImmutable();
+    }
+
+    private static string BuildForeignKeySql(
+        string schema,
+        string table,
+        IReadOnlyCollection<string> sourceColumns,
+        ImmutableArray<ForeignKeyPlan> candidates,
+        bool useSampling,
+        DbCommand command)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("WITH Source AS (");
+        builder.Append("    SELECT ");
+        if (useSampling)
+        {
+            builder.Append("TOP (@SampleSize) ");
+        }
+
+        builder.Append(string.Join(", ", sourceColumns));
+        builder.AppendLine();
+        builder.Append("    FROM ").Append(QualifyIdentifier(schema, table)).Append(" WITH (NOLOCK)");
+        if (useSampling)
+        {
+            builder.AppendLine();
+            builder.AppendLine("    ORDER BY (SELECT NULL)");
+        }
+
+        builder.AppendLine(")");
+        builder.AppendLine("SELECT CandidateId, HasOrphans");
+        builder.AppendLine("FROM (");
+        for (var i = 0; i < candidates.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.AppendLine("    UNION ALL");
+            }
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = $"@fk{i}";
+            parameter.DbType = DbType.String;
+            parameter.Value = candidates[i].Key;
+            command.Parameters.Add(parameter);
+
+            builder.Append("    SELECT ");
+            builder.Append(parameter.ParameterName);
+            builder.Append(" AS CandidateId, CASE WHEN EXISTS (SELECT 1 FROM Source AS source LEFT JOIN ");
+            builder.Append(QualifyIdentifier(candidates[i].TargetSchema, candidates[i].TargetTable));
+            builder.Append(" AS target WITH (NOLOCK) ON source.");
+            builder.Append(QuoteIdentifier(candidates[i].Column));
+            builder.Append(" = target.");
+            builder.Append(QuoteIdentifier(candidates[i].TargetColumn));
+            builder.Append(" WHERE source.");
+            builder.Append(QuoteIdentifier(candidates[i].Column));
+            builder.Append(" IS NOT NULL AND target.");
+            builder.Append(QuoteIdentifier(candidates[i].TargetColumn));
+            builder.Append(" IS NULL) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasOrphans");
+            builder.AppendLine();
+        }
+
+        builder.AppendLine(") AS results;");
+        return builder.ToString();
+    }
+
+    private Dictionary<(string Schema, string Table), TableProfilingPlan> BuildProfilingPlans(
+        IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
+        IReadOnlyDictionary<(string Schema, string Table), long> rowCounts)
+    {
+        var builders = new Dictionary<(string Schema, string Table), TableProfilingPlanBuilder>(TableKeyComparer.Instance);
+
+        foreach (var entity in _model.Modules.SelectMany(static module => module.Entities))
+        {
+            var schema = entity.Schema.Value;
+            var table = entity.PhysicalName.Value;
+            var key = (schema, table);
+
+            if (!builders.TryGetValue(key, out var builder))
+            {
+                builder = new TableProfilingPlanBuilder(schema, table);
+                builders[key] = builder;
+            }
+
+            foreach (var attribute in entity.Attributes)
+            {
+                var columnName = attribute.ColumnName.Value;
+                if (metadata.ContainsKey((schema, table, columnName)))
+                {
+                    builder.AddColumn(columnName);
+                }
+
+                if (attribute.Reference.IsReference && attribute.Reference.TargetEntity is not null)
+                {
+                    var targetName = attribute.Reference.TargetEntity.Value;
+                    if (TryFindEntity(targetName, out var targetEntity))
+                    {
+                        var targetIdentifier = GetPreferredIdentifier(targetEntity);
+                        if (targetIdentifier is not null)
+                        {
+                            builder.AddForeignKey(
+                                columnName,
+                                targetEntity.Schema.Value,
+                                targetEntity.PhysicalName.Value,
+                                targetIdentifier.ColumnName.Value);
+                        }
+                    }
+                }
+            }
+
+            foreach (var index in entity.Indexes.Where(static idx => idx.IsUnique))
+            {
+                var orderedColumns = index.Columns
+                    .OrderBy(static column => column.Ordinal)
+                    .Select(static column => column.Column.Value)
+                    .ToArray();
+
+                if (orderedColumns.Length == 0)
+                {
+                    continue;
+                }
+
+                builder.AddUniqueCandidate(orderedColumns);
+            }
+        }
+
+        var plans = new Dictionary<(string Schema, string Table), TableProfilingPlan>(builders.Count, TableKeyComparer.Instance);
+        foreach (var kvp in builders)
+        {
+            var key = kvp.Key;
+            rowCounts.TryGetValue(key, out var rowCount);
+            plans[key] = kvp.Value.Build(rowCount);
+        }
+
+        return plans;
+    }
+
+    private static string BuildUniqueKey(IEnumerable<string> columns)
+    {
+        return string.Join("|", columns.Select(static column => column.ToLowerInvariant()));
+    }
+
+    private static string BuildForeignKeyKey(string column, string targetSchema, string targetTable, string targetColumn)
+    {
+        return string.Join("|", new[] { column, targetSchema, targetTable, targetColumn }.Select(static value => value.ToLowerInvariant()));
+    }
+
+    private sealed record TableProfilingPlan(
+        string Schema,
+        string Table,
+        long RowCount,
+        ImmutableArray<string> Columns,
+        ImmutableArray<UniqueCandidatePlan> UniqueCandidates,
+        ImmutableArray<ForeignKeyPlan> ForeignKeys);
+
+    private sealed record UniqueCandidatePlan(string Key, ImmutableArray<string> Columns);
+
+    private sealed record ForeignKeyPlan(string Key, string Column, string TargetSchema, string TargetTable, string TargetColumn);
+
+    private sealed record TableProfilingResults(
+        IReadOnlyDictionary<string, long> NullCounts,
+        IReadOnlyDictionary<string, bool> UniqueDuplicates,
+        IReadOnlyDictionary<string, bool> ForeignKeys)
+    {
+        public static TableProfilingResults Empty { get; } = new(
+            ImmutableDictionary<string, long>.Empty,
+            ImmutableDictionary<string, bool>.Empty,
+            ImmutableDictionary<string, bool>.Empty);
+    }
+
+    private sealed class TableProfilingPlanBuilder
+    {
+        private readonly HashSet<string> _columns = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _uniqueKeys = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<UniqueCandidatePlan> _uniqueCandidates = new();
+        private readonly HashSet<string> _foreignKeyKeys = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<ForeignKeyPlan> _foreignKeys = new();
+
+        public TableProfilingPlanBuilder(string schema, string table)
+        {
+            Schema = schema;
+            Table = table;
+        }
+
+        public string Schema { get; }
+
+        public string Table { get; }
+
+        public void AddColumn(string column)
+        {
+            if (!string.IsNullOrWhiteSpace(column))
+            {
+                _columns.Add(column);
+            }
+        }
+
+        public void AddUniqueCandidate(IReadOnlyList<string> columns)
+        {
+            if (columns is null || columns.Count == 0)
+            {
+                return;
+            }
+
+            var normalized = columns.Select(static c => c).ToImmutableArray();
+            var key = BuildUniqueKey(normalized);
+            if (_uniqueKeys.Add(key))
+            {
+                _uniqueCandidates.Add(new UniqueCandidatePlan(key, normalized));
+            }
+        }
+
+        public void AddForeignKey(string column, string targetSchema, string targetTable, string targetColumn)
+        {
+            if (string.IsNullOrWhiteSpace(column) ||
+                string.IsNullOrWhiteSpace(targetSchema) ||
+                string.IsNullOrWhiteSpace(targetTable) ||
+                string.IsNullOrWhiteSpace(targetColumn))
+            {
+                return;
+            }
+
+            var key = BuildForeignKeyKey(column, targetSchema, targetTable, targetColumn);
+            if (_foreignKeyKeys.Add(key))
+            {
+                _foreignKeys.Add(new ForeignKeyPlan(key, column, targetSchema, targetTable, targetColumn));
+            }
+        }
+
+        public TableProfilingPlan Build(long rowCount)
+        {
+            var columns = _columns
+                .OrderBy(static value => value, StringComparer.OrdinalIgnoreCase)
+                .ToImmutableArray();
+            var uniqueCandidates = _uniqueCandidates.ToImmutableArray();
+            var foreignKeys = _foreignKeys.ToImmutableArray();
+            return new TableProfilingPlan(Schema, Table, rowCount, columns, uniqueCandidates, foreignKeys);
+        }
     }
 
     private bool TryFindEntity(EntityName logicalName, out EntityModel entity)
