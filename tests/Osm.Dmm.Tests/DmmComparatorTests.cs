@@ -32,13 +32,16 @@ public class DmmComparatorTests
             profile: snapshot,
             options: SmoBuildOptions.FromEmission(options.Emission));
 
-        var projection = new SmoDmmLens().Project(new SmoDmmLensRequest(_smoModel, NamingOverrideOptions.Empty));
+        var projection = new SmoDmmLens()
+            .ProjectAsync(new SmoDmmLensRequest(_smoModel, NamingOverrideOptions.Empty))
+            .GetAwaiter()
+            .GetResult();
         if (!projection.IsSuccess)
         {
             throw new InvalidOperationException("Unable to project SMO model into DMM comparison tables for test setup.");
         }
 
-        _baselineTables = projection.Value;
+        _baselineTables = Collect(projection.Value);
     }
 
     [Fact]
@@ -252,16 +255,38 @@ ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
     {
         var lens = new ScriptDomDmmLens();
         using var reader = new StringReader(script);
-        var result = lens.Project(reader);
+        var result = lens.ProjectAsync(reader).GetAwaiter().GetResult();
         Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(e => $"{e.Code}:{e.Message}")));
-        return result.Value;
+        return Collect(result.Value);
     }
 
     private static IReadOnlyList<DmmTable> ProjectSmo(SmoModel model, NamingOverrideOptions overrides)
     {
-        var result = new SmoDmmLens().Project(new SmoDmmLensRequest(model, overrides));
+        var result = new SmoDmmLens()
+            .ProjectAsync(new SmoDmmLensRequest(model, overrides))
+            .GetAwaiter()
+            .GetResult();
         Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(e => $"{e.Code}:{e.Message}")));
-        return result.Value;
+        return Collect(result.Value);
+    }
+
+    private static IReadOnlyList<DmmTable> Collect(IAsyncEnumerable<DmmTable> tables)
+    {
+        var list = new List<DmmTable>();
+        var enumerator = tables.GetAsyncEnumerator();
+        try
+        {
+            while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+            {
+                list.Add(enumerator.Current);
+            }
+        }
+        finally
+        {
+            enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
+        return list;
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](

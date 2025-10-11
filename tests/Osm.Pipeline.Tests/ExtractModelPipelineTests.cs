@@ -19,7 +19,8 @@ public class ExtractModelPipelineTests
             ConnectionString: null,
             CommandTimeoutSeconds: null,
             Sampling: new SqlSamplingSettings(null, null),
-            Authentication: new SqlAuthenticationSettings(null, null, null, null));
+            Authentication: new SqlAuthenticationSettings(null, null, null, null),
+            ProfilerExecution: SqlProfilerExecutionSettings.Default);
         var manifestPath = FixtureFile.GetPath(Path.Combine("extraction", "advanced-sql.manifest.json"));
         var request = new ExtractModelPipelineRequest(command, sqlOptions, manifestPath);
 
@@ -39,7 +40,8 @@ public class ExtractModelPipelineTests
             ConnectionString: null,
             CommandTimeoutSeconds: 30,
             Sampling: new SqlSamplingSettings(null, null),
-            Authentication: new SqlAuthenticationSettings(null, null, null, null));
+            Authentication: new SqlAuthenticationSettings(null, null, null, null),
+            ProfilerExecution: SqlProfilerExecutionSettings.Default);
         var request = new ExtractModelPipelineRequest(command, sqlOptions, AdvancedSqlFixtureManifestPath: null);
 
         var result = await pipeline.HandleAsync(request);

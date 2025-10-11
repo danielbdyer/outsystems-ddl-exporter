@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Osm.Domain.Abstractions;
 
@@ -10,7 +13,9 @@ namespace Osm.Dmm;
 
 public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
 {
-    public Result<IReadOnlyList<DmmTable>> Project(TextReader reader)
+    public Task<Result<IAsyncEnumerable<DmmTable>>> ProjectAsync(
+        TextReader reader,
+        CancellationToken cancellationToken = default)
     {
         if (reader is null)
         {
@@ -22,12 +27,25 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
         if (errors is { Count: > 0 })
         {
             var message = string.Join(Environment.NewLine, errors.Select(e => $"{e.Line}:{e.Column} {e.Message}"));
-            return Result<IReadOnlyList<DmmTable>>.Failure(ValidationError.Create("dmm.parse.failed", message));
+            return Task.FromResult(Result<IAsyncEnumerable<DmmTable>>.Failure(ValidationError.Create("dmm.parse.failed", message)));
         }
 
         var builder = new TableModelBuilder();
         fragment.Accept(builder);
-        return Result<IReadOnlyList<DmmTable>>.Success(builder.Build());
+        var tables = builder.Build();
+        return Task.FromResult(Result<IAsyncEnumerable<DmmTable>>.Success(EnumerateTables(tables, cancellationToken)));
+    }
+
+    private static async IAsyncEnumerable<DmmTable> EnumerateTables(
+        IReadOnlyList<DmmTable> tables,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var table in tables)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return table;
+            await Task.Yield();
+        }
     }
 
     private sealed class TableModelBuilder : TSqlFragmentVisitor

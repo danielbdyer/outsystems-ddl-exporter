@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -263,13 +265,15 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 ["foreignKeys"] = smoForeignKeyCount.ToString(CultureInfo.InvariantCulture)
             });
 
-        var projectedResult = _smoLens.Project(new SmoDmmLensRequest(smoModel, request.SmoOptions.NamingOverrides));
+        var projectedResult = await _smoLens
+            .ProjectAsync(new SmoDmmLensRequest(smoModel, request.SmoOptions.NamingOverrides), cancellationToken)
+            .ConfigureAwait(false);
         if (projectedResult.IsFailure)
         {
             return Result<DmmComparePipelineResult>.Failure(projectedResult.Errors);
         }
 
-        var modelTables = projectedResult.Value;
+        var modelTables = await CollectTablesAsync(projectedResult.Value, cancellationToken).ConfigureAwait(false);
         log.Record(
             "smo.model.projected",
             "Projected SMO model into DMM comparison shape.",
@@ -279,13 +283,13 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             });
 
         using var reader = File.OpenText(request.DmmPath);
-        var parseResult = _dmmScriptLens.Project(reader);
+        var parseResult = await _dmmScriptLens.ProjectAsync(reader, cancellationToken).ConfigureAwait(false);
         if (parseResult.IsFailure)
         {
             return Result<DmmComparePipelineResult>.Failure(parseResult.Errors);
         }
 
-        var dmmTables = parseResult.Value;
+        var dmmTables = await CollectTablesAsync(parseResult.Value, cancellationToken).ConfigureAwait(false);
         log.Record(
             "dmm.script.parsed",
             "Parsed DMM baseline script.",
@@ -330,5 +334,18 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             });
 
         return new DmmComparePipelineResult(profile, comparison, diffPath, cacheResult, log.Build());
+    }
+
+    private static async Task<IReadOnlyList<DmmTable>> CollectTablesAsync(
+        IAsyncEnumerable<DmmTable> source,
+        CancellationToken cancellationToken)
+    {
+        var tables = new List<DmmTable>();
+        await foreach (var table in source.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            tables.Add(table);
+        }
+
+        return tables;
     }
 }

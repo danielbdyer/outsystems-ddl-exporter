@@ -132,6 +132,40 @@ public sealed class CliConfigurationLoaderTests
         Assert.Single(result.Value.SupplementalModels.Paths, Path.GetFullPath(supplementalPath));
     }
 
+    [Fact]
+    public async Task LoadAsync_ReadsProfilerExecutionConfiguration()
+    {
+        using var directory = new TempDirectory();
+        var configPath = Path.Combine(directory.Path, "appsettings.json");
+
+        var config = new
+        {
+            sql = new
+            {
+                profilerExecution = new
+                {
+                    maxDegreeOfParallelism = 8,
+                    tablesPerBatch = 16,
+                    retryCount = 5,
+                    retryBaseDelaySeconds = 1.5,
+                    retryJitterSeconds = 0.75
+                }
+            }
+        };
+
+        await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
+
+        var loader = new CliConfigurationLoader();
+        var result = await loader.LoadAsync(configPath);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(8, result.Value.Sql.ProfilerExecution.MaxDegreeOfParallelism);
+        Assert.Equal(16, result.Value.Sql.ProfilerExecution.TablesPerBatch);
+        Assert.Equal(5, result.Value.Sql.ProfilerExecution.RetryCount);
+        Assert.Equal(1.5, result.Value.Sql.ProfilerExecution.RetryBaseDelaySeconds);
+        Assert.Equal(0.75, result.Value.Sql.ProfilerExecution.RetryJitterSeconds);
+    }
+
     private static string CreateLegacyTighteningJson()
     {
         return JsonSerializer.Serialize(new

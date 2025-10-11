@@ -23,6 +23,7 @@
 - [x] Implement profiler abstraction returning `ProfileSnapshot`; wire mock implementation that reads from fixture JSON/CSV for test runs.
 - [x] Build translators from raw profiler rows → domain profiling DTOs with guard rails (e.g., normalized schema/table casing).
 - [x] Cover scenarios: clean unique column, NULL drift, FK with orphans, Ignore delete rule, external entity pass-through. *(Regression: `tests/Osm.Pipeline.Tests/FixtureDataProfilerTests.cs`)*
+- [ ] Emit structured telemetry when retry attempts occur in the SQL profiler so transient failures can be correlated in diagnostics.
 - 🔗 **Checklist**: enables §2.1–§2.5, §12.1, and performance scenarios in §10.
 
 ## 3. Tightening Policy Engine
@@ -64,6 +65,7 @@
 - [x] Fail `dmm-compare` with a non-zero exit code and persisted diff artifact when parity gaps exist. *(Integration · P0 · [tests/Osm.Cli.Tests/CliIntegrationTests.cs](tests/Osm.Cli.Tests/CliIntegrationTests.cs))*
 - [x] Honor CLI/environment overrides for tightening toggles, profiler selection, and cache configuration. *(Test Plan §7.3 · Guardrail §2 · [tests/Osm.Cli.Tests/CliIntegrationTests.cs](tests/Osm.Cli.Tests/CliIntegrationTests.cs))*
 - [x] Support `--config` plus environment variable overrides for connection strings, profiler selection, and cache roots; document precedence and add a template `config/appsettings.example.json`. *(Test Plan §7.5 · [tests/Osm.Cli.Tests/CliIntegrationTests.cs](tests/Osm.Cli.Tests/CliIntegrationTests.cs); [tests/Osm.Cli.Tests/Configuration/CliConfigurationLoaderTests.cs](tests/Osm.Cli.Tests/Configuration/CliConfigurationLoaderTests.cs))*
+- [ ] Author integration coverage for the new `--profiler-*` overrides to ensure execution settings propagate end-to-end.
 - 🔗 **Checklist**: required for §7.1–§7.4, §9.3, §12.1, and §14.1.
 
 ## 8. Quality Gates & CI Enablement
@@ -74,6 +76,7 @@
 - [ ] Author a GitHub Actions pipeline (Windows + Linux matrix) that runs restore/build/test and publishes CLI fixture artifacts; wire in CI badges once green. *(Test Plan §17.3)*
 - [ ] Enable CodeQL scanning and Dependabot (NuGet + GitHub Actions) to keep SMO/ScriptDom dependencies current.
 - [ ] Add OSS hygiene files: `LICENSE`, `CONTRIBUTING.md`, `CODEOWNERS`, and link them from the README onboarding section.
+- [ ] Backfill focused unit tests for `SqlDataProfiler.ExecutePlansAsync` batching and concurrency behavior to guard against regressions on large module graphs.
 - 🔗 **Checklist**: underpins automated execution of §§1–17.
 
 ## 9. Operations & Extensibility Follow-ups

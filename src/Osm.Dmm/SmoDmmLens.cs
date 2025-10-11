@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Abstractions;
@@ -12,7 +15,9 @@ public sealed record SmoDmmLensRequest(SmoModel Model, NamingOverrideOptions Nam
 
 public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
 {
-    public Result<IReadOnlyList<DmmTable>> Project(SmoDmmLensRequest request)
+    public Task<Result<IAsyncEnumerable<DmmTable>>> ProjectAsync(
+        SmoDmmLensRequest request,
+        CancellationToken cancellationToken = default)
     {
         if (request is null)
         {
@@ -25,10 +30,23 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
         }
 
         var namingOverrides = request.NamingOverrides ?? NamingOverrideOptions.Empty;
-        var tables = new List<DmmTable>(request.Model.Tables.Length);
+        return Task.FromResult(Result<IAsyncEnumerable<DmmTable>>.Success(
+            EnumerateTables(request.Model, namingOverrides, cancellationToken)));
+    }
 
-        foreach (var table in request.Model.Tables)
+    private static async IAsyncEnumerable<DmmTable> EnumerateTables(
+        SmoModel model,
+        NamingOverrideOptions namingOverrides,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var orderedTables = model.Tables
+            .OrderBy(t => t.Schema, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var table in orderedTables)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var effectiveName = table.Name;
             if (namingOverrides.TryGetTableOverride(table.Schema, table.Name, out var tableOverride))
             {
@@ -54,15 +72,9 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
                     .Select(column => column.Name)
                     .ToArray();
 
-            tables.Add(new DmmTable(table.Schema, effectiveName, columns, primaryKeyColumns));
+            yield return new DmmTable(table.Schema, effectiveName, columns, primaryKeyColumns);
+            await Task.Yield();
         }
-
-        var orderedTables = tables
-            .OrderBy(t => t.Schema, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        return Result<IReadOnlyList<DmmTable>>.Success(orderedTables);
     }
 
     private static string Canonicalize(DataType dataType)
