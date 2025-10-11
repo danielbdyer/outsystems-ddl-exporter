@@ -257,6 +257,7 @@ public sealed class TighteningPolicyTests
             defaults.Emission.IncludePlatformAutoIndexes,
             defaults.Emission.SanitizeModuleNames,
             defaults.Emission.EmitBareTableOnly,
+            defaults.Emission.EmitTableHeaders,
             defaults.Emission.ModuleParallelism,
             overridesResult.Value);
         Assert.True(emissionResult.IsSuccess, string.Join(Environment.NewLine, emissionResult.Errors.Select(e => e.Message)));

@@ -54,8 +54,25 @@ public sealed class SsdtEmitter
         var moduleDirectories = new ConcurrentDictionary<string, ModuleDirectoryPaths>(StringComparer.Ordinal);
         var manifestEntries = new List<TableManifestEntry>(tableCount);
 
+        var renameLookup = ImmutableDictionary<string, SmoRenameMapping>.Empty;
         if (!model.Tables.IsDefaultOrEmpty)
         {
+            if (options.Header.Enabled)
+            {
+                var renameLens = new SmoRenameLens();
+                var renameEntries = renameLens.Project(new SmoRenameLensRequest(model, options.NamingOverrides));
+                if (!renameEntries.IsDefaultOrEmpty)
+                {
+                    var lookupBuilder = ImmutableDictionary.CreateBuilder<string, SmoRenameMapping>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var entry in renameEntries)
+                    {
+                        lookupBuilder[SchemaTableKey(entry.Schema, entry.PhysicalName)] = entry;
+                    }
+
+                    renameLookup = lookupBuilder.ToImmutable();
+                }
+            }
+
             var results = new TableManifestEntry[tableCount];
 
             if (options.ModuleParallelism <= 1)
@@ -67,6 +84,7 @@ public sealed class SsdtEmitter
                         outputDirectory,
                         options,
                         moduleDirectories,
+                        renameLookup,
                         cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -88,6 +106,7 @@ public sealed class SsdtEmitter
                             outputDirectory,
                             options,
                             moduleDirectories,
+                            renameLookup,
                             ct).ConfigureAwait(false);
                     }).ConfigureAwait(false);
             }
@@ -137,12 +156,38 @@ public sealed class SsdtEmitter
         string outputDirectory,
         SmoBuildOptions options,
         ConcurrentDictionary<string, ModuleDirectoryPaths> moduleDirectories,
+        ImmutableDictionary<string, SmoRenameMapping> renameLookup,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         var modulePaths = EnsureModuleDirectories(moduleDirectories, outputDirectory, table.Module);
-        var result = _perTableWriter.Generate(table, options, cancellationToken);
+        IReadOnlyList<PerTableHeaderItem>? headerItems = null;
+        if (options.Header.Enabled)
+        {
+            var builder = ImmutableArray.CreateBuilder<PerTableHeaderItem>();
+            builder.Add(PerTableHeaderItem.Create("LogicalName", table.LogicalName));
+            builder.Add(PerTableHeaderItem.Create("Module", table.Module));
+
+            if (!renameLookup.IsEmpty &&
+                renameLookup.TryGetValue(SchemaTableKey(table.Schema, table.Name), out var mapping))
+            {
+                if (!string.Equals(mapping.EffectiveName, table.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Add(PerTableHeaderItem.Create("RenamedFrom", $"{table.Schema}.{table.Name}"));
+                    builder.Add(PerTableHeaderItem.Create("EffectiveName", mapping.EffectiveName));
+                }
+
+                if (!string.Equals(mapping.OriginalModule, mapping.Module, StringComparison.Ordinal))
+                {
+                    builder.Add(PerTableHeaderItem.Create("OriginalModule", mapping.OriginalModule));
+                }
+            }
+
+            headerItems = builder.ToImmutable();
+        }
+
+        var result = _perTableWriter.Generate(table, options, headerItems, cancellationToken);
 
         var tablesRoot = modulePaths.TablesRoot;
         var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{result.EffectiveTableName}.sql");
@@ -198,6 +243,9 @@ public sealed class SsdtEmitter
 
         await File.WriteAllTextAsync(path, content, Utf8NoBom, cancellationToken).ConfigureAwait(false);
     }
+
+    private static string SchemaTableKey(string schema, string table)
+        => $"{schema}.{table}";
 
     private static string Relativize(string path, string root)
     {

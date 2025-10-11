@@ -10,7 +10,8 @@ public sealed record SmoBuildOptions(
     bool SanitizeModuleNames,
     int ModuleParallelism,
     NamingOverrideOptions NamingOverrides,
-    SmoFormatOptions Format)
+    SmoFormatOptions Format,
+    PerTableHeaderOptions Header)
 {
     public static SmoBuildOptions Default { get; } = new(
         DefaultCatalogName: "OutSystems",
@@ -19,7 +20,8 @@ public sealed record SmoBuildOptions(
         SanitizeModuleNames: true,
         ModuleParallelism: 1,
         NamingOverrides: NamingOverrideOptions.Empty,
-        Format: SmoFormatOptions.Default);
+        Format: SmoFormatOptions.Default,
+        Header: PerTableHeaderOptions.Disabled);
 
     public static SmoBuildOptions FromEmission(EmissionOptions emission, bool applyNamingOverrides = true) => new(
         DefaultCatalogName: "OutSystems",
@@ -28,7 +30,10 @@ public sealed record SmoBuildOptions(
         emission.SanitizeModuleNames,
         emission.ModuleParallelism,
         applyNamingOverrides ? emission.NamingOverrides : NamingOverrideOptions.Empty,
-        SmoFormatOptions.Default);
+        SmoFormatOptions.Default,
+        emission.EmitTableHeaders
+            ? PerTableHeaderOptions.EnabledTemplate
+            : PerTableHeaderOptions.Disabled);
 
     public SmoBuildOptions WithCatalog(string catalogName)
     {
@@ -58,5 +63,15 @@ public sealed record SmoBuildOptions(
         }
 
         return this with { Format = format };
+    }
+
+    public SmoBuildOptions WithHeaderOptions(PerTableHeaderOptions header)
+    {
+        if (header is null)
+        {
+            throw new ArgumentNullException(nameof(header));
+        }
+
+        return this with { Header = header.Normalize() };
     }
 }

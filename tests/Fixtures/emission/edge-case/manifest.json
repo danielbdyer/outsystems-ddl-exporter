@@ -60,16 +60,16 @@
     "ForeignKeyCount": 2,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
-      "DELETE_RULE_IGNORE": 1,
-      "MANDATORY": 10,
-      "DATA_HAS_ORPHANS": 1,
-      "UNIQUE_NO_NULLS": 2,
       "DATA_NO_NULLS": 10,
-      "PROFILE_MISSING": 1,
+      "MANDATORY": 10,
+      "DELETE_RULE_IGNORE": 1,
       "PHYSICAL_NOT_NULL": 4,
-      "DEFAULT_PRESENT": 2,
+      "DATA_HAS_ORPHANS": 1,
+      "PROFILE_MISSING": 1,
       "PK": 4,
-      "FK_ENFORCED": 1
+      "DEFAULT_PRESENT": 2,
+      "FK_ENFORCED": 1,
+      "UNIQUE_NO_NULLS": 2
     },
     "UniqueIndexRationales": {
       "PHYSICAL_UNIQUE_KEY": 2,

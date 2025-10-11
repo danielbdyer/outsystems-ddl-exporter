@@ -1,11 +1,14 @@
-CREATE TABLE [dbo].[JobRun] (
-    [CreatedOn]         DATETIME NOT NULL
-        DEFAULT (getutcdate()),
-    [Id]                BIGINT   NOT NULL
-        CONSTRAINT [PK_JobRun]
-            PRIMARY KEY CLUSTERED,
-    [TriggeredByUserId] BIGINT
-)
+IF OBJECT_ID(N'[dbo].[JobRun]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[JobRun] (
+        [CreatedOn]         DATETIME NOT NULL
+            DEFAULT (getutcdate()),
+        [Id]                BIGINT   NOT NULL
+            CONSTRAINT [PK_JobRun]
+                PRIMARY KEY CLUSTERED,
+        [TriggeredByUserId] BIGINT
+    )
+END
 
 GO
 

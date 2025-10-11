@@ -52,6 +52,7 @@ public sealed record TighteningOptions
             includePlatformAutoIndexes: false,
             sanitizeModuleNames: true,
             emitBareTableOnly: false,
+            emitTableHeaders: false,
             moduleParallelism: 1).Value,
         MockingOptions.Create(useProfileMockFolder: false, profileMockFolder: null).Value).Value;
 
@@ -238,6 +239,7 @@ public sealed record EmissionOptions
         bool includePlatformAutoIndexes,
         bool sanitizeModuleNames,
         bool emitBareTableOnly,
+        bool emitTableHeaders,
         int moduleParallelism,
         NamingOverrideOptions namingOverrides)
     {
@@ -245,6 +247,7 @@ public sealed record EmissionOptions
         IncludePlatformAutoIndexes = includePlatformAutoIndexes;
         SanitizeModuleNames = sanitizeModuleNames;
         EmitBareTableOnly = emitBareTableOnly;
+        EmitTableHeaders = emitTableHeaders;
         ModuleParallelism = moduleParallelism;
         NamingOverrides = namingOverrides;
     }
@@ -257,6 +260,8 @@ public sealed record EmissionOptions
 
     public bool EmitBareTableOnly { get; }
 
+    public bool EmitTableHeaders { get; }
+
     public int ModuleParallelism { get; }
 
     public NamingOverrideOptions NamingOverrides { get; }
@@ -266,6 +271,7 @@ public sealed record EmissionOptions
         bool includePlatformAutoIndexes,
         bool sanitizeModuleNames,
         bool emitBareTableOnly,
+        bool emitTableHeaders,
         int moduleParallelism,
         NamingOverrideOptions? namingOverrides = null)
     {
@@ -281,6 +287,7 @@ public sealed record EmissionOptions
             includePlatformAutoIndexes,
             sanitizeModuleNames,
             emitBareTableOnly,
+            emitTableHeaders,
             moduleParallelism,
             namingOverrides ?? NamingOverrideOptions.Empty);
     }
