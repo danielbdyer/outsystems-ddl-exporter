@@ -257,7 +257,7 @@ internal static class PipelineReportLauncher
             return;
         }
 
-        console.Error.WriteLine(message);
+        console.Error.Write(message + Environment.NewLine);
     }
 
     private sealed record ModuleSummary(string Module, int Tables, int Indexes, int ForeignKeys);
