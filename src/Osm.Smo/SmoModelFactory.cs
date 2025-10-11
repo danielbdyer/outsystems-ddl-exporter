@@ -37,9 +37,17 @@ public sealed class SmoModelFactory
         var contexts = BuildEntityContexts(model, supplementalEntities);
         var tablesBuilder = ImmutableArray.CreateBuilder<SmoTableDefinition>(model.Modules.Sum(static m => m.Entities.Length));
 
-        foreach (var module in model.Modules)
+        var orderedModules = model.Modules
+            .OrderBy(static module => module.Name.Value, StringComparer.Ordinal);
+
+        foreach (var module in orderedModules)
         {
-            foreach (var entity in module.Entities)
+            var orderedEntities = module.Entities
+                .OrderBy(static entity => entity.Schema.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static entity => entity.PhysicalName.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static entity => entity.LogicalName.Value, StringComparer.Ordinal);
+
+            foreach (var entity in orderedEntities)
             {
                 var context = contexts.GetContext(entity);
                 tablesBuilder.Add(BuildTable(context, decisions, options, contexts, profileDefaults, foreignKeyReality));
@@ -353,6 +361,65 @@ public sealed class SmoModelFactory
         return attribute.IsMandatory;
     }
 
+    private static ImmutableArray<SmoIndexColumnDefinition> BuildPrimaryKeyColumns(
+        EntityEmissionContext context,
+        IndexModel? domainPrimaryIndex,
+        out ImmutableArray<AttributeModel> referencedAttributes)
+    {
+        if (domainPrimaryIndex is not null && !domainPrimaryIndex.Columns.IsDefaultOrEmpty)
+        {
+            var orderedColumns = domainPrimaryIndex.Columns
+                .Where(static column => !column.IsIncluded)
+                .OrderBy(static column => column.Ordinal)
+                .ToImmutableArray();
+
+            if (!orderedColumns.IsDefaultOrEmpty)
+            {
+                var columnBuilder = ImmutableArray.CreateBuilder<SmoIndexColumnDefinition>(orderedColumns.Length);
+                var attributeBuilder = ImmutableArray.CreateBuilder<AttributeModel>(orderedColumns.Length);
+                var ordinal = 1;
+                var missingAttribute = false;
+
+                foreach (var column in orderedColumns)
+                {
+                    if (!context.AttributeLookup.TryGetValue(column.Column.Value, out var attribute))
+                    {
+                        missingAttribute = true;
+                        break;
+                    }
+
+                    var isDescending = column.Direction == IndexColumnDirection.Descending;
+                    columnBuilder.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, ordinal++, IsIncluded: false, isDescending));
+                    attributeBuilder.Add(attribute);
+                }
+
+                if (!missingAttribute && columnBuilder.Count > 0)
+                {
+                    referencedAttributes = attributeBuilder.ToImmutable();
+                    return columnBuilder.ToImmutable();
+                }
+            }
+        }
+
+        referencedAttributes = context.IdentifierAttributes.IsDefaultOrEmpty
+            ? ImmutableArray<AttributeModel>.Empty
+            : context.IdentifierAttributes;
+
+        if (referencedAttributes.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<SmoIndexColumnDefinition>.Empty;
+        }
+
+        var fallback = ImmutableArray.CreateBuilder<SmoIndexColumnDefinition>(referencedAttributes.Length);
+        for (var i = 0; i < referencedAttributes.Length; i++)
+        {
+            var attribute = referencedAttributes[i];
+            fallback.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, i + 1, IsIncluded: false, IsDescending: false));
+        }
+
+        return fallback.ToImmutable();
+    }
+
     private static ImmutableArray<SmoIndexDefinition> BuildIndexes(
         EntityEmissionContext context,
         PolicyDecisionSet decisions,
@@ -367,29 +434,22 @@ public sealed class SmoModelFactory
             ? MapIndexMetadata(domainPrimaryIndex)
             : SmoIndexMetadata.Empty;
 
-        if (!context.IdentifierAttributes.IsDefaultOrEmpty)
+        var primaryColumns = BuildPrimaryKeyColumns(context, domainPrimaryIndex, out var primaryAttributes);
+        if (!primaryColumns.IsDefaultOrEmpty)
         {
-            var pkColumns = ImmutableArray.CreateBuilder<SmoIndexColumnDefinition>(context.IdentifierAttributes.Length);
-            for (var i = 0; i < context.IdentifierAttributes.Length; i++)
-            {
-                var attribute = context.IdentifierAttributes[i];
-                pkColumns.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, i + 1, IsIncluded: false, IsDescending: false));
-            }
-
             var pkName = NormalizeConstraintName(
                 $"PK_{context.Entity.PhysicalName.Value}",
                 context.Entity,
-                context.IdentifierAttributes,
+                primaryAttributes.IsDefaultOrEmpty ? context.IdentifierAttributes : primaryAttributes,
                 ConstraintNameKind.PrimaryKey,
                 format);
-            var pkColumnArray = pkColumns.ToImmutable();
 
             builder.Add(new SmoIndexDefinition(
                 pkName,
                 IsUnique: true,
                 IsPrimaryKey: true,
                 IsPlatformAuto: false,
-                pkColumnArray,
+                primaryColumns,
                 primaryMetadata));
         }
 
@@ -962,8 +1022,10 @@ public sealed class SmoModelFactory
                 }
             }
 
+            var orderedAttributes = emittableBuilder.ToImmutable();
+
             var identifierBuilder = ImmutableArray.CreateBuilder<AttributeModel>();
-            foreach (var attribute in emittableBuilder)
+            foreach (var attribute in orderedAttributes)
             {
                 if (attribute.IsIdentifier)
                 {
@@ -974,7 +1036,7 @@ public sealed class SmoModelFactory
             return new EntityEmissionContext(
                 moduleName,
                 entity,
-                emittableBuilder.ToImmutable(),
+                orderedAttributes,
                 identifierBuilder.ToImmutable(),
                 attributeLookup,
                 activeIdentifier,

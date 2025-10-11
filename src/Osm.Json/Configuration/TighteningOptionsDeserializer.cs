@@ -186,6 +186,7 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
             document.Emission.IncludePlatformAutoIndexes,
             document.Emission.SanitizeModuleNames,
             document.Emission.EmitBareTableOnly,
+            document.Emission.EmitTableHeaders,
             document.Emission.ModuleParallelism,
             namingOverrides);
 
@@ -305,6 +306,9 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
 
         [JsonPropertyName("emitBareTableOnly")]
         public bool EmitBareTableOnly { get; init; }
+
+        [JsonPropertyName("emitTableHeaders")]
+        public bool EmitTableHeaders { get; init; }
 
         [JsonPropertyName("moduleParallelism")]
         public int ModuleParallelism { get; init; } = 1;

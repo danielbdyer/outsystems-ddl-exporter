@@ -271,6 +271,7 @@ public class SsdtEmitterTests
             defaults.Emission.IncludePlatformAutoIndexes,
             defaults.Emission.SanitizeModuleNames,
             emitBareTableOnly: true,
+            defaults.Emission.EmitTableHeaders,
             defaults.Emission.ModuleParallelism,
             defaults.Emission.NamingOverrides).Value;
         var bareOptions = TighteningOptions.Create(
@@ -632,7 +633,8 @@ public class SsdtEmitterTests
             SanitizeModuleNames: true,
             ModuleParallelism: 1,
             NamingOverrides: overrides.Value,
-            Format: SmoFormatOptions.Default);
+            Format: SmoFormatOptions.Default,
+            Header: PerTableHeaderOptions.Disabled);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
@@ -858,6 +860,7 @@ public class SsdtEmitterTests
             includePlatformAutoIndexes: true,
             defaults.Emission.SanitizeModuleNames,
             defaults.Emission.EmitBareTableOnly,
+            defaults.Emission.EmitTableHeaders,
             defaults.Emission.ModuleParallelism,
             defaults.Emission.NamingOverrides);
 

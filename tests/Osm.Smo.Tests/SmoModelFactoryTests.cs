@@ -186,7 +186,8 @@ public class SmoModelFactoryTests
             SanitizeModuleNames: true,
             ModuleParallelism: 1,
             NamingOverrides: NamingOverrideOptions.Empty,
-            Format: SmoFormatOptions.Default);
+            Format: SmoFormatOptions.Default,
+            Header: PerTableHeaderOptions.Disabled);
         var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
 
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));

@@ -29,6 +29,7 @@ public sealed class PerTableWriter
     public PerTableWriteResult Generate(
         SmoTableDefinition table,
         SmoBuildOptions options,
+        IReadOnlyList<PerTableHeaderItem>? tableHeaderItems = null,
         CancellationToken cancellationToken = default)
     {
         if (table is null)
@@ -52,8 +53,9 @@ public sealed class PerTableWriter
         var statement = BuildCreateTableStatement(table, effectiveTableName, options);
         var inlineForeignKeys = AddForeignKeys(statement, table, effectiveTableName, options, out var foreignKeyTrustLookup);
         var tableScript = Script(statement, foreignKeyTrustLookup, options.Format);
+        var guardedTable = WrapWithTableGuard(tableScript, table.Schema, effectiveTableName, options.Format);
 
-        var statements = new List<string> { tableScript };
+        var statements = new List<string> { guardedTable };
         var indexNames = ImmutableArray.CreateBuilder<string>();
 
         if (!options.EmitBareTableOnly)
@@ -68,13 +70,15 @@ public sealed class PerTableWriter
                 cancellationToken.ThrowIfCancellationRequested();
                 var indexName = ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
                 var indexStatement = BuildCreateIndexStatement(table, index, effectiveTableName, indexName, options.Format);
-                statements.Add(Script(indexStatement, format: options.Format));
+                var indexScript = Script(indexStatement, format: options.Format);
+                statements.Add(WrapWithIndexGuard(indexScript, table.Schema, effectiveTableName, indexName, options.Format));
                 indexNames.Add(indexName);
 
                 if (index.Metadata.IsDisabled)
                 {
                     var disableStatement = BuildDisableIndexStatement(table, effectiveTableName, indexName, options.Format);
-                    statements.Add(Script(disableStatement, format: options.Format));
+                    var disableScript = Script(disableStatement, format: options.Format);
+                    statements.Add(WrapWithIndexExistsGuard(disableScript, table.Schema, effectiveTableName, indexName, options.Format));
                 }
             }
         }
@@ -109,6 +113,11 @@ public sealed class PerTableWriter
         }
 
         var script = JoinStatements(statements, options.Format);
+        var header = BuildHeader(options.Header, tableHeaderItems);
+        if (!string.IsNullOrEmpty(header))
+        {
+            script = string.Concat(header, Environment.NewLine, Environment.NewLine, script);
+        }
 
         return new PerTableWriteResult(
             effectiveTableName,
@@ -152,6 +161,188 @@ public sealed class PerTableWriter
             builder.Append(lines[i].TrimEnd());
         }
 
+        return builder.ToString();
+    }
+
+    private string WrapWithTableGuard(string script, string schema, string table, SmoFormatOptions format)
+    {
+        var schemaIdentifier = QuoteIdentifier(schema, format);
+        var tableIdentifier = QuoteIdentifier(table, format);
+        var objectLiteral = EscapeSqlLiteral($"{schemaIdentifier}.{tableIdentifier}");
+
+        var builder = new StringBuilder(script.Length + 128);
+        builder.Append("IF OBJECT_ID(N'");
+        builder.Append(objectLiteral);
+        builder.AppendLine("', N'U') IS NULL");
+        builder.AppendLine("BEGIN");
+        builder.AppendLine(IndentBlock(script, 4));
+        builder.Append("END");
+        return builder.ToString();
+    }
+
+    private string WrapWithIndexGuard(
+        string script,
+        string schema,
+        string table,
+        string indexName,
+        SmoFormatOptions format)
+    {
+        var schemaIdentifier = QuoteIdentifier(schema, format);
+        var tableIdentifier = QuoteIdentifier(table, format);
+        var objectLiteral = EscapeSqlLiteral($"{schemaIdentifier}.{tableIdentifier}");
+        var indexLiteral = EscapeSqlLiteral(indexName);
+
+        var builder = new StringBuilder(script.Length + 192);
+        builder.AppendLine("IF NOT EXISTS (");
+        builder.AppendLine("    SELECT 1");
+        builder.AppendLine("    FROM sys.indexes");
+        builder.Append("    WHERE name = N'");
+        builder.Append(indexLiteral);
+        builder.AppendLine("'");
+        builder.Append("      AND object_id = OBJECT_ID(N'");
+        builder.Append(objectLiteral);
+        builder.AppendLine("', N'U')");
+        builder.AppendLine(")");
+        builder.AppendLine("BEGIN");
+        builder.AppendLine(IndentBlock(script, 4));
+        builder.Append("END");
+        return builder.ToString();
+    }
+
+    private string WrapWithIndexExistsGuard(
+        string script,
+        string schema,
+        string table,
+        string indexName,
+        SmoFormatOptions format)
+    {
+        var schemaIdentifier = QuoteIdentifier(schema, format);
+        var tableIdentifier = QuoteIdentifier(table, format);
+        var objectLiteral = EscapeSqlLiteral($"{schemaIdentifier}.{tableIdentifier}");
+        var indexLiteral = EscapeSqlLiteral(indexName);
+
+        var builder = new StringBuilder(script.Length + 192);
+        builder.AppendLine("IF EXISTS (");
+        builder.AppendLine("    SELECT 1");
+        builder.AppendLine("    FROM sys.indexes");
+        builder.Append("    WHERE name = N'");
+        builder.Append(indexLiteral);
+        builder.AppendLine("'");
+        builder.Append("      AND object_id = OBJECT_ID(N'");
+        builder.Append(objectLiteral);
+        builder.AppendLine("', N'U')");
+        builder.AppendLine(")");
+        builder.AppendLine("BEGIN");
+        builder.AppendLine(IndentBlock(script, 4));
+        builder.Append("END");
+        return builder.ToString();
+    }
+
+    private static string IndentBlock(string script, int spaces)
+    {
+        var indent = new string(' ', spaces);
+        var lines = script.Split(Environment.NewLine);
+        var builder = new StringBuilder(script.Length + spaces * lines.Length);
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.AppendLine();
+            }
+
+            var line = lines[i];
+            if (string.IsNullOrEmpty(line))
+            {
+                continue;
+            }
+
+            builder.Append(indent);
+            builder.Append(line);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string? BuildHeader(PerTableHeaderOptions headerOptions, IReadOnlyList<PerTableHeaderItem>? tableItems)
+    {
+        if (headerOptions is null || !headerOptions.Enabled)
+        {
+            return null;
+        }
+
+        var items = new List<PerTableHeaderItem>();
+
+        void Add(string label, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(label) || string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            items.Add(PerTableHeaderItem.Create(label, value));
+        }
+
+        Add("Source", headerOptions.Source);
+        Add("Profile", headerOptions.Profile);
+        Add("Decisions", headerOptions.Decisions);
+
+        if (!string.IsNullOrWhiteSpace(headerOptions.FingerprintHash))
+        {
+            var label = string.IsNullOrWhiteSpace(headerOptions.FingerprintAlgorithm)
+                ? "Fingerprint"
+                : $"{headerOptions.FingerprintAlgorithm} Fingerprint";
+            Add(label, headerOptions.FingerprintHash);
+        }
+
+        if (!headerOptions.AdditionalItems.IsDefaultOrEmpty)
+        {
+            foreach (var item in headerOptions.AdditionalItems)
+            {
+                if (string.IsNullOrEmpty(item.Label) || string.IsNullOrEmpty(item.Value))
+                {
+                    continue;
+                }
+
+                items.Add(item);
+            }
+        }
+
+        if (tableItems is { Count: > 0 })
+        {
+            foreach (var item in tableItems)
+            {
+                if (item is null || string.IsNullOrEmpty(item.Label) || string.IsNullOrEmpty(item.Value))
+                {
+                    continue;
+                }
+
+                items.Add(item.Normalize());
+            }
+        }
+
+        if (items.Count == 0)
+        {
+            return null;
+        }
+
+        var ordered = items
+            .Select(static item => item.Normalize())
+            .OrderBy(static item => item.Label, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static item => item.Value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var builder = new StringBuilder();
+        builder.AppendLine("/*");
+        foreach (var item in ordered)
+        {
+            builder.Append("    ");
+            builder.Append(item.Label);
+            builder.Append(": ");
+            builder.AppendLine(item.Value);
+        }
+
+        builder.Append("*/");
         return builder.ToString();
     }
 

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Emission;
@@ -280,10 +281,26 @@ public sealed class BuildSsdtPipeline : IBuildSsdtPipeline
 
         var emissionMetadata = _fingerprintCalculator.Compute(smoModel, decisions, request.SmoOptions);
 
+        var emissionSmoOptions = request.SmoOptions;
+        if (emissionSmoOptions.Header.Enabled)
+        {
+            var headerOptions = emissionSmoOptions.Header with
+            {
+                Source = request.ModelPath,
+                Profile = request.ProfilePath ?? request.ProfilerProvider,
+                Decisions = BuildDecisionSummary(request.TighteningOptions, decisionReport),
+                FingerprintAlgorithm = emissionMetadata.Algorithm,
+                FingerprintHash = emissionMetadata.Hash,
+                AdditionalItems = emissionSmoOptions.Header.AdditionalItems,
+            };
+
+            emissionSmoOptions = emissionSmoOptions.WithHeaderOptions(headerOptions);
+        }
+
         var manifest = await _ssdtEmitter.EmitAsync(
             smoModel,
             request.OutputDirectory,
-            request.SmoOptions,
+            emissionSmoOptions,
             emissionMetadata,
             decisionReport,
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -311,7 +328,7 @@ public sealed class BuildSsdtPipeline : IBuildSsdtPipeline
             });
 
         string? seedPath = null;
-        var seedDefinitions = StaticEntitySeedDefinitionBuilder.Build(filteredModel, request.SmoOptions.NamingOverrides);
+        var seedDefinitions = StaticEntitySeedDefinitionBuilder.Build(filteredModel, emissionSmoOptions.NamingOverrides);
         if (!seedDefinitions.IsDefaultOrEmpty)
         {
             if (request.StaticDataProvider is null)
@@ -415,5 +432,21 @@ public sealed class BuildSsdtPipeline : IBuildSsdtPipeline
             configuration.TrustServerCertificate,
             configuration.ApplicationName,
             configuration.AccessToken);
+    }
+
+    private static string BuildDecisionSummary(TighteningOptions options, PolicyDecisionReport report)
+    {
+        var parts = new List<string>(7)
+        {
+            $"Mode={options.Policy.Mode}",
+            $"NullBudget={options.Policy.NullBudget.ToString("0.###", CultureInfo.InvariantCulture)}",
+            $"Columns={report.ColumnCount}",
+            $"Tightened={report.TightenedColumnCount}",
+            $"Unique={report.UniqueIndexCount}",
+            $"FK={report.ForeignKeyCount}",
+            $"FKEnabled={options.ForeignKeys.EnableCreation}",
+        };
+
+        return string.Join("; ", parts);
     }
 }
