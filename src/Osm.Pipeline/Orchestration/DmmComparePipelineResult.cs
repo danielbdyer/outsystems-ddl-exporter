@@ -8,4 +8,5 @@ public sealed record DmmComparePipelineResult(
     ProfileSnapshot Profile,
     DmmComparisonResult Comparison,
     string DiffArtifactPath,
-    EvidenceCacheResult? EvidenceCache);
+    EvidenceCacheResult? EvidenceCache,
+    PipelineExecutionLog ExecutionLog);

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Orchestration;
@@ -58,6 +59,9 @@ public class DmmComparePipelineTests
         Assert.True(File.Exists(diffPath));
         Assert.NotNull(value.EvidenceCache);
         Assert.True(Directory.Exists(value.EvidenceCache!.CacheDirectory));
+        Assert.NotNull(value.ExecutionLog);
+        Assert.True(value.ExecutionLog.Entries.Count > 0);
+        Assert.Contains(value.ExecutionLog.Entries, entry => entry.Step == "pipeline.completed");
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
