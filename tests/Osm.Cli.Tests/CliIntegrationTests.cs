@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Tests.Support;
+using Xunit;
+using CommandResult = Osm.Cli.Tests.DotNetCli.CommandResult;
 
 namespace Osm.Cli.Tests;
 
@@ -24,8 +26,8 @@ public class CliIntegrationTests
         using var comparisonWorkspace = new TempDirectory();
         var diffPath = Path.Combine(comparisonWorkspace.Path, "dmm-diff.json");
 
-        var buildExit = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --static-data {staticDataPath} --out {output.Path}");
-        Assert.Equal(0, buildExit);
+        var buildResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --static-data {staticDataPath} --out {output.Path}");
+        AssertExitCode(buildResult, 0);
 
         var manifestPath = Path.Combine(output.Path, "manifest.json");
         Assert.True(File.Exists(manifestPath));
@@ -47,8 +49,8 @@ public class CliIntegrationTests
         var dmmScriptPath = Path.Combine(comparisonWorkspace.Path, "edge-case.dmm.sql");
         await File.WriteAllTextAsync(dmmScriptPath, EdgeCaseScript);
 
-        var compareExit = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {diffPath}");
-        Assert.Equal(0, compareExit);
+        var compareResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {diffPath}");
+        AssertExitCode(compareResult, 0);
 
         Assert.True(File.Exists(diffPath));
         using (var diffStream = File.OpenRead(diffPath))
@@ -78,8 +80,8 @@ public class CliIntegrationTests
         var dmmScriptPath = Path.Combine(output.Path, "edge-case.dmm.sql");
         await File.WriteAllTextAsync(dmmScriptPath, MismatchedScript);
 
-        var compareExit = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {diffPath}");
-        Assert.Equal(2, compareExit);
+        var compareResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {diffPath}");
+        AssertExitCode(compareResult, 2);
 
         Assert.True(File.Exists(diffPath));
         using var diffStream = File.OpenRead(diffPath);
@@ -111,8 +113,8 @@ public class CliIntegrationTests
         var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case-rename");
 
         var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --static-data \"{staticDataPath}\" --out \"{output.Path}\" --rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL";
-        var exit = await RunCliAsync(repoRoot, command);
-        Assert.Equal(0, exit);
+        var result = await RunCliAsync(repoRoot, command);
+        AssertExitCode(result, 0);
 
         var renamedTable = Directory.GetFiles(output.Path, "dbo.CUSTOMER_PORTAL.sql", SearchOption.AllDirectories);
         var originalTable = Directory.GetFiles(output.Path, "dbo.Customer.sql", SearchOption.AllDirectories);
@@ -177,8 +179,8 @@ public class CliIntegrationTests
 
         var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
         var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --static-data \"{staticDataPath}\" --out \"{outputPath}\"";
-        var exit = await RunCliAsync(repoRoot, command);
-        Assert.Equal(0, exit);
+        var result = await RunCliAsync(repoRoot, command);
+        AssertExitCode(result, 0);
 
         var renamedTable = Directory.GetFiles(outputPath, "dbo.CUSTOMER_STATIC.sql", SearchOption.AllDirectories);
         var logicalTable = Directory.GetFiles(outputPath, "dbo.Customer.sql", SearchOption.AllDirectories);
@@ -207,9 +209,8 @@ public class CliIntegrationTests
         using var output = new TempDirectory();
 
         var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --static-data \"{staticDataPath}\" --modules AppCore --out \"{output.Path}\"";
-        var exit = await RunCliAsync(repoRoot, command);
-
-        Assert.Equal(0, exit);
+        var result = await RunCliAsync(repoRoot, command);
+        AssertExitCode(result, 0);
 
         var manifestPath = Path.Combine(output.Path, "manifest.json");
         using var manifestStream = File.OpenRead(manifestPath);
@@ -251,9 +252,8 @@ public class CliIntegrationTests
 
         var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
         var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --static-data \"{staticDataPath}\" --out \"{outputPath}\"";
-        var exit = await RunCliAsync(repoRoot, command);
-
-        Assert.Equal(0, exit);
+        var result = await RunCliAsync(repoRoot, command);
+        AssertExitCode(result, 0);
 
         var manifestPath = Path.Combine(outputPath, "manifest.json");
         using var manifestStream = File.OpenRead(manifestPath);
@@ -281,8 +281,8 @@ public class CliIntegrationTests
         using var cacheRoot = new TempDirectory();
 
         var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --static-data \"{staticDataPath}\" --out \"{output.Path}\" --cache-root \"{cacheRoot.Path}\" --refresh-cache";
-        var exit = await RunCliAsync(repoRoot, command);
-        Assert.Equal(0, exit);
+        var result = await RunCliAsync(repoRoot, command);
+        AssertExitCode(result, 0);
 
         var entries = Directory.GetDirectories(cacheRoot.Path);
         var cacheEntry = Assert.Single(entries);
@@ -324,9 +324,8 @@ public class CliIntegrationTests
 
         var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
         var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --static-data \"{staticDataPath}\" --out \"{outputPath}\"";
-        var exit = await RunCliAsync(repoRoot, command);
-
-        Assert.Equal(0, exit);
+        var result = await RunCliAsync(repoRoot, command);
+        AssertExitCode(result, 0);
         Assert.True(File.Exists(Path.Combine(outputPath, "manifest.json")));
 
         var cacheEntries = Directory.GetDirectories(cacheRoot);
@@ -367,9 +366,8 @@ public class CliIntegrationTests
             Environment.SetEnvironmentVariable("OSM_CLI_PROFILE_PATH", profilePath);
 
             var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --static-data \"{staticDataPath}\" --out \"{outputPath}\"";
-            var exit = await RunCliAsync(repoRoot, command);
-
-            Assert.Equal(0, exit);
+            var result = await RunCliAsync(repoRoot, command);
+            AssertExitCode(result, 0);
             Assert.True(File.Exists(Path.Combine(outputPath, "manifest.json")));
         }
         finally
@@ -379,9 +377,14 @@ public class CliIntegrationTests
         }
     }
 
-    
-    
-    private static async Task<int> RunCliAsync(string workingDirectory, string arguments)
+
+
+    private static void AssertExitCode(CommandResult result, int expectedExitCode)
+    {
+        Assert.True(result.ExitCode == expectedExitCode, result.FormatFailureMessage(expectedExitCode));
+    }
+
+    private static async Task<CommandResult> RunCliAsync(string workingDirectory, string arguments)
     {
         return await DotNetCli.RunAsync(workingDirectory, arguments);
     }

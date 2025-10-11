@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Osm.Cli.Tests;
@@ -19,7 +20,9 @@ internal static class DotNetCli
             .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration
         ?? "Debug";
 
-    public static async Task<int> RunAsync(string workingDirectory, string arguments)
+    private static readonly SemaphoreSlim InProcessLock = new(1, 1);
+
+    public static async Task<CommandResult> RunAsync(string workingDirectory, string arguments)
     {
         var invocation = TryCreateInvocation(arguments);
         if (invocation.Success)
@@ -28,9 +31,7 @@ internal static class DotNetCli
         }
 
         var startInfo = CreateStartInfo(workingDirectory, arguments);
-        using var process = Process.Start(startInfo)!;
-        await process.WaitForExitAsync().ConfigureAwait(false);
-        return process.ExitCode;
+        return await RunExternalAsync(startInfo).ConfigureAwait(false);
     }
 
     public static ProcessStartInfo CreateStartInfo(string workingDirectory, string arguments)
@@ -45,6 +46,9 @@ internal static class DotNetCli
             WorkingDirectory = workingDirectory,
             RedirectStandardError = true,
             RedirectStandardOutput = true,
+            RedirectStandardInput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
         };
     }
 
@@ -182,17 +186,37 @@ internal static class DotNetCli
         return path.IndexOf(' ') >= 0 ? $"\"{path}\"" : path;
     }
 
-    private static async Task<int> RunInProcessAsync(string workingDirectory, IReadOnlyList<string> cliArguments)
+    private static async Task<CommandResult> RunInProcessAsync(string workingDirectory, IReadOnlyList<string> cliArguments)
     {
-        var originalDirectory = Directory.GetCurrentDirectory();
+        await InProcessLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            Directory.SetCurrentDirectory(workingDirectory);
-            return await InvokeEntryPointAsync(cliArguments).ConfigureAwait(false);
+            var originalDirectory = Directory.GetCurrentDirectory();
+            var originalOut = Console.Out;
+            var originalError = Console.Error;
+
+            using var stdout = new StringWriter();
+            using var stderr = new StringWriter();
+
+            try
+            {
+                Directory.SetCurrentDirectory(workingDirectory);
+                Console.SetOut(stdout);
+                Console.SetError(stderr);
+
+                var exitCode = await InvokeEntryPointAsync(cliArguments).ConfigureAwait(false);
+                return new CommandResult(exitCode, stdout.ToString(), stderr.ToString());
+            }
+            finally
+            {
+                Console.SetOut(originalOut);
+                Console.SetError(originalError);
+                Directory.SetCurrentDirectory(originalDirectory);
+            }
         }
         finally
         {
-            Directory.SetCurrentDirectory(originalDirectory);
+            InProcessLock.Release();
         }
     }
 
@@ -273,8 +297,47 @@ internal static class DotNetCli
         });
     }
 
+    private static async Task<CommandResult> RunExternalAsync(ProcessStartInfo startInfo)
+    {
+        using var process = new Process { StartInfo = startInfo };
+        if (!process.Start())
+        {
+            throw new InvalidOperationException("Failed to start dotnet process.");
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        await Task.WhenAll(process.WaitForExitAsync(), stdoutTask, stderrTask).ConfigureAwait(false);
+
+        return new CommandResult(process.ExitCode, stdoutTask.Result, stderrTask.Result);
+    }
+
     private readonly record struct CliInvocation(bool Success, string ProcessArguments, string[] CliArguments)
     {
         public static CliInvocation Unavailable { get; } = new(false, string.Empty, Array.Empty<string>());
+    }
+
+    internal readonly record struct CommandResult(int ExitCode, string StandardOutput, string StandardError)
+    {
+        public string FormatFailureMessage(int expectedExitCode)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine($"Expected exit code {expectedExitCode}, but received {ExitCode}.");
+
+            if (!string.IsNullOrWhiteSpace(StandardOutput))
+            {
+                builder.AppendLine("stdout:");
+                builder.AppendLine(StandardOutput.TrimEnd());
+            }
+
+            if (!string.IsNullOrWhiteSpace(StandardError))
+            {
+                builder.AppendLine("stderr:");
+                builder.AppendLine(StandardError.TrimEnd());
+            }
+
+            return builder.ToString();
+        }
     }
 }

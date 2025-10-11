@@ -3,6 +3,8 @@ using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Tests.Support;
+using Xunit;
+using CommandResult = Osm.Cli.Tests.DotNetCli.CommandResult;
 
 namespace Osm.Cli.Tests.Extraction;
 
@@ -20,8 +22,8 @@ public class ConfigurableConnectionTests
 
         var modules = "AppCore,ExtBilling,Ops";
         var command = $"run --project \"{cliProject}\" -- extract-model --mock-advanced-sql \"{manifestPath}\" --modules \"{modules}\" --out \"{outputFile}\"";
-        var exit = await RunCliAsync(repoRoot, command);
-        Assert.Equal(0, exit);
+        var result = await RunCliAsync(repoRoot, command);
+        Assert.True(result.ExitCode == 0, result.FormatFailureMessage(0));
 
         Assert.True(File.Exists(outputFile));
         using var stream = File.OpenRead(outputFile);
@@ -31,14 +33,8 @@ public class ConfigurableConnectionTests
         Assert.True(modulesElement.GetArrayLength() >= 1);
     }
 
-    private static async Task<int> RunCliAsync(string workingDirectory, string arguments)
+    private static async Task<CommandResult> RunCliAsync(string workingDirectory, string arguments)
     {
-        var exitCode = await DotNetCli.RunAsync(workingDirectory, arguments);
-        if (exitCode != 0)
-        {
-            throw new InvalidOperationException($"CLI exited with code {exitCode}.");
-        }
-
-        return exitCode;
+        return await DotNetCli.RunAsync(workingDirectory, arguments);
     }
 }
