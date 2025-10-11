@@ -12,15 +12,8 @@ public interface IProfileSnapshotDeserializer
     Result<ProfileSnapshot> Deserialize(Stream jsonStream);
 }
 
-public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
+public sealed partial class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true
-    };
-
     public Result<ProfileSnapshot> Deserialize(Stream jsonStream)
     {
         if (jsonStream is null)
@@ -31,7 +24,9 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         ProfileSnapshotDocument? document;
         try
         {
-            document = JsonSerializer.Deserialize<ProfileSnapshotDocument>(jsonStream, SerializerOptions);
+            document = JsonSerializer.Deserialize(
+                jsonStream,
+                ProfileSnapshotSerializerContext.Default.ProfileSnapshotDocument);
         }
         catch (JsonException ex)
         {
@@ -332,5 +327,16 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
         [JsonPropertyName("HasDbConstraint")]
         public bool HasDbConstraint { get; init; }
+    }
+
+    [JsonSourceGenerationOptions(
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        GenerationMode = JsonSourceGenerationMode.Metadata)]
+    [JsonSerializable(typeof(ProfileSnapshotDocument))]
+    private sealed partial class ProfileSnapshotSerializerContext : JsonSerializerContext
+    {
     }
 }

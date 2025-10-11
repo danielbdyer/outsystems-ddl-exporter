@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -26,6 +28,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
     private readonly SmoModelFactory _smoModelFactory;
     private readonly IDmmLens<TextReader> _dmmScriptLens;
     private readonly IDmmLens<SmoDmmLensRequest> _smoLens;
+    private readonly IDmmLens<string> _ssdtLens;
     private readonly DmmComparator _dmmComparator;
     private readonly DmmDiffLogWriter _diffLogWriter;
     private readonly IEvidenceCacheService _evidenceCacheService;
@@ -39,6 +42,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         SmoModelFactory? smoModelFactory = null,
         IDmmLens<TextReader>? dmmScriptLens = null,
         IDmmLens<SmoDmmLensRequest>? smoLens = null,
+        IDmmLens<string>? ssdtLens = null,
         DmmComparator? dmmComparator = null,
         DmmDiffLogWriter? diffLogWriter = null,
         IEvidenceCacheService? evidenceCacheService = null,
@@ -51,6 +55,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         _smoModelFactory = smoModelFactory ?? new SmoModelFactory();
         _dmmScriptLens = dmmScriptLens ?? new ScriptDomDmmLens();
         _smoLens = smoLens ?? new SmoDmmLens();
+        _ssdtLens = ssdtLens ?? new SsdtProjectDmmLens();
         _dmmComparator = dmmComparator ?? new DmmComparator();
         _diffLogWriter = diffLogWriter ?? new DmmDiffLogWriter();
         _evidenceCacheService = evidenceCacheService ?? new EvidenceCacheService();
@@ -87,11 +92,14 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 "DMM script path must be provided for comparison.");
         }
 
-        if (!File.Exists(request.DmmPath))
+        var isSsdtProject = Directory.Exists(request.DmmPath);
+        var isDmmScript = File.Exists(request.DmmPath);
+
+        if (!isSsdtProject && !isDmmScript)
         {
             return ValidationError.Create(
                 "pipeline.dmm.script.notFound",
-                $"DMM script '{request.DmmPath}' was not found.");
+                $"DMM script or SSDT directory '{request.DmmPath}' was not found.");
         }
 
         var log = new PipelineExecutionLogBuilder();
@@ -103,6 +111,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 ["modelPath"] = request.ModelPath,
                 ["profilePath"] = request.ProfilePath,
                 ["dmmPath"] = request.DmmPath,
+                ["baseline.type"] = isSsdtProject ? "ssdt" : "dmm",
                 ["moduleFilter.hasFilter"] = request.ModuleFilter.HasFilter ? "true" : "false",
                 ["moduleFilter.moduleCount"] = request.ModuleFilter.Modules.Length.ToString(CultureInfo.InvariantCulture),
                 ["tightening.mode"] = request.TighteningOptions.Policy.Mode.ToString(),
@@ -263,13 +272,15 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 ["foreignKeys"] = smoForeignKeyCount.ToString(CultureInfo.InvariantCulture)
             });
 
-        var projectedResult = _smoLens.Project(new SmoDmmLensRequest(smoModel, request.SmoOptions.NamingOverrides));
+        var projectedResult = await _smoLens
+            .ProjectAsync(new SmoDmmLensRequest(smoModel, request.SmoOptions.NamingOverrides), cancellationToken)
+            .ConfigureAwait(false);
         if (projectedResult.IsFailure)
         {
             return Result<DmmComparePipelineResult>.Failure(projectedResult.Errors);
         }
 
-        var modelTables = projectedResult.Value;
+        var modelTables = await CollectTablesAsync(projectedResult.Value, cancellationToken).ConfigureAwait(false);
         log.Record(
             "smo.model.projected",
             "Projected SMO model into DMM comparison shape.",
@@ -278,23 +289,51 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 ["tableCount"] = modelTables.Count.ToString(CultureInfo.InvariantCulture)
             });
 
-        using var reader = File.OpenText(request.DmmPath);
-        var parseResult = _dmmScriptLens.Project(reader);
-        if (parseResult.IsFailure)
+        DmmComparisonFeatures comparisonFeatures;
+        IReadOnlyList<DmmTable> dmmTables;
+        if (isSsdtProject)
         {
-            return Result<DmmComparePipelineResult>.Failure(parseResult.Errors);
+            var parseResult = await _ssdtLens.ProjectAsync(request.DmmPath, cancellationToken).ConfigureAwait(false);
+            if (parseResult.IsFailure)
+            {
+                return Result<DmmComparePipelineResult>.Failure(parseResult.Errors);
+            }
+
+            dmmTables = await CollectTablesAsync(parseResult.Value, cancellationToken).ConfigureAwait(false);
+            comparisonFeatures = DmmComparisonFeatures.Columns
+                | DmmComparisonFeatures.PrimaryKeys
+                | DmmComparisonFeatures.Indexes
+                | DmmComparisonFeatures.ForeignKeys
+                | DmmComparisonFeatures.ExtendedProperties;
+            log.Record(
+                "dmm.ssdt.parsed",
+                "Parsed SSDT project baseline.",
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["tableCount"] = dmmTables.Count.ToString(CultureInfo.InvariantCulture)
+                });
+        }
+        else
+        {
+            using var reader = File.OpenText(request.DmmPath);
+            var parseResult = await _dmmScriptLens.ProjectAsync(reader, cancellationToken).ConfigureAwait(false);
+            if (parseResult.IsFailure)
+            {
+                return Result<DmmComparePipelineResult>.Failure(parseResult.Errors);
+            }
+
+            dmmTables = await CollectTablesAsync(parseResult.Value, cancellationToken).ConfigureAwait(false);
+            comparisonFeatures = DmmComparisonFeatures.Columns | DmmComparisonFeatures.PrimaryKeys;
+            log.Record(
+                "dmm.script.parsed",
+                "Parsed DMM baseline script.",
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["tableCount"] = dmmTables.Count.ToString(CultureInfo.InvariantCulture)
+                });
         }
 
-        var dmmTables = parseResult.Value;
-        log.Record(
-            "dmm.script.parsed",
-            "Parsed DMM baseline script.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["tableCount"] = dmmTables.Count.ToString(CultureInfo.InvariantCulture)
-            });
-
-        var comparison = _dmmComparator.Compare(modelTables, dmmTables);
+        var comparison = _dmmComparator.Compare(modelTables, dmmTables, comparisonFeatures);
         log.Record(
             "dmm.comparison.completed",
             "Compared SMO output against DMM baseline.",
@@ -330,5 +369,18 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             });
 
         return new DmmComparePipelineResult(profile, comparison, diffPath, cacheResult, log.Build());
+    }
+
+    private static async Task<IReadOnlyList<DmmTable>> CollectTablesAsync(
+        IAsyncEnumerable<DmmTable> source,
+        CancellationToken cancellationToken)
+    {
+        var tables = new List<DmmTable>();
+        await foreach (var table in source.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            tables.Add(table);
+        }
+
+        return tables;
     }
 }

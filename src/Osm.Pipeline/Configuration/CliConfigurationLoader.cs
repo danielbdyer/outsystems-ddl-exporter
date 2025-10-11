@@ -344,7 +344,58 @@ public sealed class CliConfigurationLoader
             authentication = new SqlAuthenticationConfiguration(method, trustServerCertificate, applicationName, accessToken);
         }
 
-        configuration = new SqlConfiguration(connectionString, commandTimeout, sampling, authentication);
+        var profilerExecution = SqlProfilerExecutionConfiguration.Empty;
+        if (element.TryGetProperty("profilerExecution", out var profilerElement) && profilerElement.ValueKind == JsonValueKind.Object)
+        {
+            int? maxDegree = null;
+            if (profilerElement.TryGetProperty("maxDegreeOfParallelism", out var dopElement) && dopElement.ValueKind == JsonValueKind.Number)
+            {
+                if (dopElement.TryGetInt32(out var parsedDop))
+                {
+                    maxDegree = parsedDop;
+                }
+            }
+
+            int? batchSize = null;
+            if (profilerElement.TryGetProperty("tablesPerBatch", out var batchElement) && batchElement.ValueKind == JsonValueKind.Number)
+            {
+                if (batchElement.TryGetInt32(out var parsedBatch))
+                {
+                    batchSize = parsedBatch;
+                }
+            }
+
+            int? retryCount = null;
+            if (profilerElement.TryGetProperty("retryCount", out var retryElement) && retryElement.ValueKind == JsonValueKind.Number)
+            {
+                if (retryElement.TryGetInt32(out var parsedRetry))
+                {
+                    retryCount = parsedRetry;
+                }
+            }
+
+            double? baseDelay = null;
+            if (profilerElement.TryGetProperty("retryBaseDelaySeconds", out var baseDelayElement) && baseDelayElement.ValueKind == JsonValueKind.Number)
+            {
+                if (baseDelayElement.TryGetDouble(out var parsedBase))
+                {
+                    baseDelay = parsedBase;
+                }
+            }
+
+            double? jitter = null;
+            if (profilerElement.TryGetProperty("retryJitterSeconds", out var jitterElement) && jitterElement.ValueKind == JsonValueKind.Number)
+            {
+                if (jitterElement.TryGetDouble(out var parsedJitter))
+                {
+                    jitter = parsedJitter;
+                }
+            }
+
+            profilerExecution = new SqlProfilerExecutionConfiguration(maxDegree, batchSize, retryCount, baseDelay, jitter);
+        }
+
+        configuration = new SqlConfiguration(connectionString, commandTimeout, sampling, authentication, profilerExecution);
         return true;
     }
 

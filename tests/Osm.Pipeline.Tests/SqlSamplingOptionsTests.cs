@@ -49,5 +49,8 @@ public sealed class SqlSamplingOptionsTests
 
         Assert.Null(options.CommandTimeoutSeconds);
         Assert.Equal(SqlSamplingOptions.Default, options.Sampling);
+        Assert.Equal(4, options.MaxDegreeOfParallelism);
+        Assert.Equal(32, options.TablesPerBatch);
+        Assert.Equal(SqlRetryPolicyOptions.Default, options.RetryPolicy);
     }
 }

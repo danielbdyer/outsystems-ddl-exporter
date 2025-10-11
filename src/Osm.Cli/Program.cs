@@ -195,9 +195,12 @@ Command CreateBuildCommand()
             WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");
         }
 
-        if (!string.IsNullOrWhiteSpace(pipelineResult.StaticSeedScriptPath))
+        if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty && pipelineResult.StaticSeedScriptPaths.Length > 0)
         {
-            WriteLine(context.Console, $"Static entity seed script written to {pipelineResult.StaticSeedScriptPath}");
+            foreach (var seedPath in pipelineResult.StaticSeedScriptPaths)
+            {
+                WriteLine(context.Console, $"Static entity seed script written to {seedPath}");
+            }
         }
 
         WriteLine(context.Console, $"Emitted {pipelineResult.Manifest.Tables.Count} tables to {applicationResult.OutputDirectory}.");
@@ -474,6 +477,11 @@ static void AddSqlOptions(Command command, SqlOptionSet optionSet)
     command.AddOption(optionSet.TrustServerCertificate);
     command.AddOption(optionSet.ApplicationName);
     command.AddOption(optionSet.AccessToken);
+    command.AddOption(optionSet.ProfilerMaxDegreeOfParallelism);
+    command.AddOption(optionSet.ProfilerBatchSize);
+    command.AddOption(optionSet.ProfilerRetryCount);
+    command.AddOption(optionSet.ProfilerRetryBaseDelay);
+    command.AddOption(optionSet.ProfilerRetryJitter);
 }
 
 static SqlOptionsOverrides CreateSqlOverrides(ParseResult parseResult, SqlOptionSet optionSet)
@@ -485,7 +493,12 @@ static SqlOptionsOverrides CreateSqlOverrides(ParseResult parseResult, SqlOption
         parseResult.GetValueForOption(optionSet.AuthenticationMethod),
         parseResult.GetValueForOption(optionSet.TrustServerCertificate),
         parseResult.GetValueForOption(optionSet.ApplicationName),
-        parseResult.GetValueForOption(optionSet.AccessToken));
+        parseResult.GetValueForOption(optionSet.AccessToken),
+        parseResult.GetValueForOption(optionSet.ProfilerMaxDegreeOfParallelism),
+        parseResult.GetValueForOption(optionSet.ProfilerBatchSize),
+        parseResult.GetValueForOption(optionSet.ProfilerRetryCount),
+        parseResult.GetValueForOption(optionSet.ProfilerRetryBaseDelay),
+        parseResult.GetValueForOption(optionSet.ProfilerRetryJitter));
 
 static void WriteLine(IConsole console, string message)
     => console.Out.Write(message + Environment.NewLine);
@@ -600,8 +613,26 @@ static SqlOptionSet CreateSqlOptionSet()
     };
     var applicationName = new Option<string?>("--sql-application-name", "Application name for SQL connections.");
     var accessToken = new Option<string?>("--sql-access-token", "Access token for SQL authentication.");
+    var profilerMaxDop = new Option<int?>("--profiler-max-dop", "Maximum degree of parallelism for SQL profiling.");
+    var profilerBatchSize = new Option<int?>("--profiler-batch-size", "Number of tables to include in each profiling batch.");
+    var profilerRetryCount = new Option<int?>("--profiler-retry-count", "Retry attempts for transient SQL profiling errors.");
+    var profilerRetryBaseDelay = new Option<double?>("--profiler-retry-base-delay", "Base delay in seconds before retrying profiling queries.");
+    var profilerRetryJitter = new Option<double?>("--profiler-retry-jitter", "Maximum jitter in seconds to randomize profiling retries.");
 
-    return new SqlOptionSet(connectionString, commandTimeout, samplingThreshold, samplingSize, authenticationMethod, trustServerCertificate, applicationName, accessToken);
+    return new SqlOptionSet(
+        connectionString,
+        commandTimeout,
+        samplingThreshold,
+        samplingSize,
+        authenticationMethod,
+        trustServerCertificate,
+        applicationName,
+        accessToken,
+        profilerMaxDop,
+        profilerBatchSize,
+        profilerRetryCount,
+        profilerRetryBaseDelay,
+        profilerRetryJitter);
 }
 
 readonly record struct SqlOptionSet(
@@ -612,4 +643,9 @@ readonly record struct SqlOptionSet(
     Option<SqlAuthenticationMethod?> AuthenticationMethod,
     Option<bool?> TrustServerCertificate,
     Option<string?> ApplicationName,
-    Option<string?> AccessToken);
+    Option<string?> AccessToken,
+    Option<int?> ProfilerMaxDegreeOfParallelism,
+    Option<int?> ProfilerBatchSize,
+    Option<int?> ProfilerRetryCount,
+    Option<double?> ProfilerRetryBaseDelay,
+    Option<double?> ProfilerRetryJitter);

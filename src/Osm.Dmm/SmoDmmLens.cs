@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
@@ -12,7 +16,9 @@ public sealed record SmoDmmLensRequest(SmoModel Model, NamingOverrideOptions Nam
 
 public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
 {
-    public Result<IReadOnlyList<DmmTable>> Project(SmoDmmLensRequest request)
+    public Task<Result<IAsyncEnumerable<DmmTable>>> ProjectAsync(
+        SmoDmmLensRequest request,
+        CancellationToken cancellationToken = default)
     {
         if (request is null)
         {
@@ -25,10 +31,23 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
         }
 
         var namingOverrides = request.NamingOverrides ?? NamingOverrideOptions.Empty;
-        var tables = new List<DmmTable>(request.Model.Tables.Length);
+        return Task.FromResult(Result<IAsyncEnumerable<DmmTable>>.Success(
+            EnumerateTables(request.Model, namingOverrides, cancellationToken)));
+    }
 
-        foreach (var table in request.Model.Tables)
+    private static async IAsyncEnumerable<DmmTable> EnumerateTables(
+        SmoModel model,
+        NamingOverrideOptions namingOverrides,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var orderedTables = model.Tables
+            .OrderBy(t => t.Schema, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var table in orderedTables)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var effectiveName = table.Name;
             if (namingOverrides.TryGetTableOverride(table.Schema, table.Name, out var tableOverride))
             {
@@ -43,7 +62,8 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
                 .Select(column => new DmmColumn(
                     column.Name,
                     Canonicalize(column.DataType),
-                    column.Nullable))
+                    column.Nullable,
+                    column.Description))
                 .ToArray();
 
             var primaryKey = table.Indexes.FirstOrDefault(index => index.IsPrimaryKey);
@@ -54,15 +74,72 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
                     .Select(column => column.Name)
                     .ToArray();
 
-            tables.Add(new DmmTable(table.Schema, effectiveName, columns, primaryKeyColumns));
-        }
+            var indexes = table.Indexes
+                .Where(static index => !index.IsPrimaryKey)
+                .Select(MapIndex)
+                .OrderBy(index => index.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 
-        var orderedTables = tables
-            .OrderBy(t => t.Schema, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+            var foreignKeys = table.ForeignKeys
+                .Select(MapForeignKey)
+                .OrderBy(fk => fk.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            var dmmTable = new DmmTable(
+                table.Schema,
+                effectiveName,
+                columns,
+                primaryKeyColumns,
+                indexes,
+                foreignKeys,
+                table.Description);
+
+            yield return dmmTable;
+            await Task.Yield();
+        }
+    }
+
+    private static DmmIndex MapIndex(SmoIndexDefinition index)
+    {
+        var keyColumns = index.Columns
+            .Where(static column => !column.IsIncluded)
+            .OrderBy(static column => column.Ordinal)
+            .Select(column => new DmmIndexColumn(column.Name, column.IsDescending))
             .ToArray();
 
-        return Result<IReadOnlyList<DmmTable>>.Success(orderedTables);
+        var includedColumns = index.Columns
+            .Where(static column => column.IsIncluded)
+            .OrderBy(static column => column.Ordinal)
+            .Select(column => new DmmIndexColumn(column.Name, column.IsDescending))
+            .ToArray();
+
+        var metadata = index.Metadata;
+        return new DmmIndex(
+            index.Name,
+            index.IsUnique,
+            keyColumns,
+            includedColumns,
+            CanonicalizeFilter(metadata.FilterDefinition),
+            metadata.IsDisabled,
+            new DmmIndexOptions(
+                metadata.IsPadded,
+                metadata.FillFactor,
+                metadata.IgnoreDuplicateKey,
+                metadata.AllowRowLocks,
+                metadata.AllowPageLocks,
+                metadata.StatisticsNoRecompute));
+    }
+
+    private static DmmForeignKey MapForeignKey(SmoForeignKeyDefinition foreignKey)
+    {
+        return new DmmForeignKey(
+            foreignKey.Name,
+            foreignKey.Column,
+            foreignKey.ReferencedSchema,
+            foreignKey.ReferencedTable,
+            foreignKey.ReferencedColumn,
+            foreignKey.DeleteAction.ToString(),
+            foreignKey.IsNoCheck);
     }
 
     private static string Canonicalize(DataType dataType)
@@ -94,6 +171,18 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
             SqlDataType.Image => "image",
             _ => dataType.SqlDataType.ToString().ToLowerInvariant(),
         };
+    }
+
+    private static string? CanonicalizeFilter(string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+        {
+            return null;
+        }
+
+        var trimmed = filter.Trim();
+        trimmed = Regex.Replace(trimmed, "\\s+", " ");
+        return trimmed;
     }
 
     private static string FormatDecimal(int numericPrecision, int numericScale, string baseName)

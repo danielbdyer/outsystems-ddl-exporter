@@ -32,13 +32,16 @@ public class DmmComparatorTests
             profile: snapshot,
             options: SmoBuildOptions.FromEmission(options.Emission));
 
-        var projection = new SmoDmmLens().Project(new SmoDmmLensRequest(_smoModel, NamingOverrideOptions.Empty));
+        var projection = new SmoDmmLens()
+            .ProjectAsync(new SmoDmmLensRequest(_smoModel, NamingOverrideOptions.Empty))
+            .GetAwaiter()
+            .GetResult();
         if (!projection.IsSuccess)
         {
             throw new InvalidOperationException("Unable to project SMO model into DMM comparison tables for test setup.");
         }
 
-        _baselineTables = projection.Value;
+        _baselineTables = Collect(projection.Value);
     }
 
     [Fact]
@@ -160,6 +163,83 @@ public class DmmComparatorTests
     }
 
     [Fact]
+    public void Compare_detects_missing_index_when_feature_enabled()
+    {
+        var comparator = new DmmComparator(DmmComparisonFeatures.Columns | DmmComparisonFeatures.PrimaryKeys | DmmComparisonFeatures.Indexes);
+        var expectedTable = new DmmTable(
+            "dbo",
+            "Example",
+            new[] { new DmmColumn("Id", "int", false, null) },
+            new[] { "Id" },
+            new[]
+            {
+                new DmmIndex(
+                    "IX_Example",
+                    true,
+                    new[] { new DmmIndexColumn("Id", false) },
+                    Array.Empty<DmmIndexColumn>(),
+                    null,
+                    false,
+                    new DmmIndexOptions(null, null, null, null, null, null))
+            },
+            Array.Empty<DmmForeignKey>(),
+            null);
+        var actualTable = expectedTable with { Indexes = Array.Empty<DmmIndex>() };
+
+        var comparison = comparator.Compare(new[] { expectedTable }, new[] { actualTable });
+
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(comparison.ModelDifferences, diff => diff.Contains("missing index", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Compare_detects_foreign_key_drift_when_feature_enabled()
+    {
+        var comparator = new DmmComparator(DmmComparisonFeatures.Columns | DmmComparisonFeatures.PrimaryKeys | DmmComparisonFeatures.ForeignKeys);
+        var expectedTable = new DmmTable(
+            "dbo",
+            "Orders",
+            new[] { new DmmColumn("CustomerId", "int", false, null) },
+            new[] { "CustomerId" },
+            Array.Empty<DmmIndex>(),
+            new[]
+            {
+                new DmmForeignKey("FK_Orders_Customers", "CustomerId", "dbo", "Customers", "Id", "NoAction", false)
+            },
+            null);
+        var actualTable = expectedTable with { ForeignKeys = new[] { expectedTable.ForeignKeys[0] with { ReferencedTable = "Customers_Archive" } } };
+
+        var comparison = comparator.Compare(new[] { expectedTable }, new[] { actualTable });
+
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("foreign key table mismatch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Compare_detects_extended_property_drift_when_feature_enabled()
+    {
+        var comparator = new DmmComparator(DmmComparisonFeatures.Columns | DmmComparisonFeatures.PrimaryKeys | DmmComparisonFeatures.ExtendedProperties);
+        var expectedTable = new DmmTable(
+            "dbo",
+            "Customers",
+            new[] { new DmmColumn("Email", "nvarchar(255)", false, "Customer email") },
+            new[] { "Email" },
+            Array.Empty<DmmIndex>(),
+            Array.Empty<DmmForeignKey>(),
+            "Customer table");
+        var actualTable = expectedTable with
+        {
+            Columns = new[] { expectedTable.Columns[0] with { Description = "Updated email" } },
+            Description = "Changed description"
+        };
+
+        var comparison = comparator.Compare(new[] { expectedTable }, new[] { actualTable });
+
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("extended property mismatch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Compare_accepts_equivalent_type_spacing_and_casing()
     {
         var script = EdgeCaseScript
@@ -252,16 +332,38 @@ ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
     {
         var lens = new ScriptDomDmmLens();
         using var reader = new StringReader(script);
-        var result = lens.Project(reader);
+        var result = lens.ProjectAsync(reader).GetAwaiter().GetResult();
         Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(e => $"{e.Code}:{e.Message}")));
-        return result.Value;
+        return Collect(result.Value);
     }
 
     private static IReadOnlyList<DmmTable> ProjectSmo(SmoModel model, NamingOverrideOptions overrides)
     {
-        var result = new SmoDmmLens().Project(new SmoDmmLensRequest(model, overrides));
+        var result = new SmoDmmLens()
+            .ProjectAsync(new SmoDmmLensRequest(model, overrides))
+            .GetAwaiter()
+            .GetResult();
         Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(e => $"{e.Code}:{e.Message}")));
-        return result.Value;
+        return Collect(result.Value);
+    }
+
+    private static IReadOnlyList<DmmTable> Collect(IAsyncEnumerable<DmmTable> tables)
+    {
+        var list = new List<DmmTable>();
+        var enumerator = tables.GetAsyncEnumerator();
+        try
+        {
+            while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+            {
+                list.Add(enumerator.Current);
+            }
+        }
+        finally
+        {
+            enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
+        return list;
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](

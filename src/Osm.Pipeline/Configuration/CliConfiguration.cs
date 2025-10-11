@@ -42,9 +42,10 @@ public sealed record SqlConfiguration(
     string? ConnectionString,
     int? CommandTimeoutSeconds,
     SqlSamplingConfiguration Sampling,
-    SqlAuthenticationConfiguration Authentication)
+    SqlAuthenticationConfiguration Authentication,
+    SqlProfilerExecutionConfiguration ProfilerExecution)
 {
-    public static SqlConfiguration Empty { get; } = new(null, null, SqlSamplingConfiguration.Empty, SqlAuthenticationConfiguration.Empty);
+    public static SqlConfiguration Empty { get; } = new(null, null, SqlSamplingConfiguration.Empty, SqlAuthenticationConfiguration.Empty, SqlProfilerExecutionConfiguration.Empty);
 }
 
 public sealed record SqlSamplingConfiguration(long? RowSamplingThreshold, int? SampleSize)
@@ -59,6 +60,16 @@ public sealed record SqlAuthenticationConfiguration(
     string? AccessToken)
 {
     public static SqlAuthenticationConfiguration Empty { get; } = new(null, null, null, null);
+}
+
+public sealed record SqlProfilerExecutionConfiguration(
+    int? MaxDegreeOfParallelism,
+    int? TablesPerBatch,
+    int? RetryCount,
+    double? RetryBaseDelaySeconds,
+    double? RetryJitterSeconds)
+{
+    public static SqlProfilerExecutionConfiguration Empty { get; } = new(null, null, null, null, null);
 }
 
 public sealed record ModuleFilterConfiguration(

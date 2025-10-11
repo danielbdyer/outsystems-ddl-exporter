@@ -7,6 +7,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Channels;
+using System.Runtime.CompilerServices;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -42,12 +44,9 @@ public sealed class SqlDataProfiler : IDataProfiler
             var plans = BuildProfilingPlans(metadata, rowCounts);
             var resultsLookup = new Dictionary<(string Schema, string Table), TableProfilingResults>(plans.Count, TableKeyComparer.Instance);
 
-            foreach (var plan in plans.Values)
+            await foreach (var (plan, results) in ExecutePlansAsync(plans.Values, cancellationToken).ConfigureAwait(false))
             {
-                var nullCounts = await ComputeNullCountsAsync(connection, plan, cancellationToken).ConfigureAwait(false);
-                var duplicateFlags = await ComputeDuplicateCandidatesAsync(connection, plan, cancellationToken).ConfigureAwait(false);
-                var orphanFlags = await ComputeForeignKeyRealityAsync(connection, plan, cancellationToken).ConfigureAwait(false);
-                resultsLookup[(plan.Schema, plan.Table)] = new TableProfilingResults(nullCounts, duplicateFlags, orphanFlags);
+                resultsLookup[(plan.Schema, plan.Table)] = results;
             }
 
             var columnProfiles = new List<ColumnProfile>();
@@ -222,9 +221,16 @@ public sealed class SqlDataProfiler : IDataProfiler
             return metadata;
         }
 
-        var command = connection.CreateCommand();
-        var filterClause = BuildTableFilterClause(command, tables, "s.name", "t.name");
-        command.CommandText = @$"SELECT
+        var chunkSize = Math.Max(1, _options.TablesPerBatch);
+        foreach (var batch in tables.Chunk(chunkSize))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var batchList = batch.ToArray();
+            await ExecuteWithRetryAsync(async ct =>
+            {
+                using var command = connection.CreateCommand();
+                var filterClause = BuildTableFilterClause(command, batchList, "s.name", "t.name");
+                command.CommandText = @$"SELECT
     s.name AS SchemaName,
     t.name AS TableName,
     c.name AS ColumnName,
@@ -244,28 +250,32 @@ LEFT JOIN (
 ) AS pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
 WHERE t.is_ms_shipped = 0 AND {filterClause};";
 
-        if (_options.CommandTimeoutSeconds.HasValue)
-        {
-            command.CommandTimeout = _options.CommandTimeoutSeconds.Value;
-        }
+                if (_options.CommandTimeoutSeconds.HasValue)
+                {
+                    command.CommandTimeout = _options.CommandTimeoutSeconds.Value;
+                }
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var schema = reader.GetString(0);
-            var table = reader.GetString(1);
-            if (!tables.Contains((schema, table)))
-            {
-                continue;
-            }
+                await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    var schema = reader.GetString(0);
+                    var table = reader.GetString(1);
+                    if (!tables.Contains((schema, table)))
+                    {
+                        continue;
+                    }
 
-            var column = reader.GetString(2);
-            var isNullable = reader.GetBoolean(3);
-            var isComputed = reader.GetBoolean(4);
-            var isPrimaryKey = reader.GetInt32(5) == 1;
-            var defaultDefinition = reader.IsDBNull(6) ? null : reader.GetString(6);
+                    var column = reader.GetString(2);
+                    var isNullable = reader.GetBoolean(3);
+                    var isComputed = reader.GetBoolean(4);
+                    var isPrimaryKey = reader.GetInt32(5) == 1;
+                    var defaultDefinition = reader.IsDBNull(6) ? null : reader.GetString(6);
 
-            metadata[(schema, table, column)] = new ColumnMetadata(isNullable, isComputed, isPrimaryKey, defaultDefinition);
+                    metadata[(schema, table, column)] = new ColumnMetadata(isNullable, isComputed, isPrimaryKey, defaultDefinition);
+                }
+
+                return true;
+            }, cancellationToken).ConfigureAwait(false);
         }
 
         return metadata;
@@ -283,9 +293,16 @@ WHERE t.is_ms_shipped = 0 AND {filterClause};";
             return counts;
         }
 
-        var command = connection.CreateCommand();
-        var filterClause = BuildTableFilterClause(command, tables, "s.name", "t.name");
-        command.CommandText = @$"SELECT
+        var chunkSize = Math.Max(1, _options.TablesPerBatch);
+        foreach (var batch in tables.Chunk(chunkSize))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var batchList = batch.ToArray();
+            await ExecuteWithRetryAsync(async ct =>
+            {
+                using var command = connection.CreateCommand();
+                var filterClause = BuildTableFilterClause(command, batchList, "s.name", "t.name");
+                command.CommandText = @$"SELECT
     s.name AS SchemaName,
     t.name AS TableName,
     SUM(p.rows) AS [RowCount]
@@ -295,23 +312,27 @@ JOIN sys.dm_db_partition_stats AS p ON t.object_id = p.object_id
 WHERE p.index_id IN (0,1) AND {filterClause}
 GROUP BY s.name, t.name;";
 
-        if (_options.CommandTimeoutSeconds.HasValue)
-        {
-            command.CommandTimeout = _options.CommandTimeoutSeconds.Value;
-        }
+                if (_options.CommandTimeoutSeconds.HasValue)
+                {
+                    command.CommandTimeout = _options.CommandTimeoutSeconds.Value;
+                }
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var schema = reader.GetString(0);
-            var table = reader.GetString(1);
-            if (!tables.Contains((schema, table)))
-            {
-                continue;
-            }
+                await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    var schema = reader.GetString(0);
+                    var table = reader.GetString(1);
+                    if (!tables.Contains((schema, table)))
+                    {
+                        continue;
+                    }
 
-            var count = reader.GetInt64(2);
-            counts[(schema, table)] = count;
+                    var count = reader.GetInt64(2);
+                    counts[(schema, table)] = count;
+                }
+
+                return true;
+            }, cancellationToken).ConfigureAwait(false);
         }
 
         return counts;
@@ -780,6 +801,168 @@ GROUP BY s.name, t.name;";
     private static string BuildForeignKeyKey(string column, string targetSchema, string targetTable, string targetColumn)
     {
         return string.Join("|", new[] { column, targetSchema, targetTable, targetColumn }.Select(static value => value.ToLowerInvariant()));
+    }
+
+    private async IAsyncEnumerable<(TableProfilingPlan Plan, TableProfilingResults Results)> ExecutePlansAsync(
+        IEnumerable<TableProfilingPlan> plans,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (plans is null)
+        {
+            yield break;
+        }
+
+        var planArray = plans as TableProfilingPlan[] ?? plans.ToArray();
+        if (planArray.Length == 0)
+        {
+            yield break;
+        }
+
+        var channelOptions = new BoundedChannelOptions(Math.Max(1, _options.MaxDegreeOfParallelism))
+        {
+            SingleReader = false,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
+        };
+
+        var planChannel = Channel.CreateBounded<TableProfilingPlan>(channelOptions);
+        var resultChannel = Channel.CreateUnbounded<(TableProfilingPlan Plan, TableProfilingResults Results)>();
+
+        var writerTask = Task.Run(async () =>
+        {
+            try
+            {
+                var batchSize = Math.Max(1, _options.TablesPerBatch);
+                foreach (var batch in planArray.Chunk(batchSize))
+                {
+                    foreach (var plan in batch)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await planChannel.Writer.WriteAsync(plan, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                planChannel.Writer.TryComplete(ex);
+                resultChannel.Writer.TryComplete(ex);
+                return;
+            }
+
+            planChannel.Writer.TryComplete();
+        }, cancellationToken);
+
+        var workers = new List<Task>();
+        for (var i = 0; i < Math.Max(1, _options.MaxDegreeOfParallelism); i++)
+        {
+            workers.Add(Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var plan in planChannel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+                    {
+                        var result = await ExecuteWithRetryAsync(
+                            ct => CaptureTableAsync(plan, ct),
+                            cancellationToken).ConfigureAwait(false);
+
+                        await resultChannel.Writer.WriteAsync((plan, result), cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    resultChannel.Writer.TryComplete(ex);
+                    throw;
+                }
+            }, cancellationToken));
+        }
+
+        var completionTask = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.WhenAll(workers).ConfigureAwait(false);
+                resultChannel.Writer.TryComplete();
+            }
+            catch (Exception ex)
+            {
+                resultChannel.Writer.TryComplete(ex);
+                throw;
+            }
+        }, cancellationToken);
+
+        await foreach (var item in resultChannel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            yield return item;
+        }
+
+        await writerTask.ConfigureAwait(false);
+        await completionTask.ConfigureAwait(false);
+    }
+
+    private async Task<TableProfilingResults> CaptureTableAsync(TableProfilingPlan plan, CancellationToken cancellationToken)
+    {
+        await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var nullCounts = await ComputeNullCountsAsync(connection, plan, cancellationToken).ConfigureAwait(false);
+        var duplicateFlags = await ComputeDuplicateCandidatesAsync(connection, plan, cancellationToken).ConfigureAwait(false);
+        var orphanFlags = await ComputeForeignKeyRealityAsync(connection, plan, cancellationToken).ConfigureAwait(false);
+        return new TableProfilingResults(nullCounts, duplicateFlags, orphanFlags);
+    }
+
+    private async Task<T> ExecuteWithRetryAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
+    {
+        if (operation is null)
+        {
+            throw new ArgumentNullException(nameof(operation));
+        }
+
+        var attempts = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                return await operation(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsTransient(ex) && attempts < _options.RetryPolicy.RetryCount)
+            {
+                attempts++;
+                var delay = CalculateRetryDelay();
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex) when (IsTransient(ex))
+            {
+                throw;
+            }
+        }
+    }
+
+    private TimeSpan CalculateRetryDelay()
+    {
+        var policy = _options.RetryPolicy;
+        if (policy.BaseDelay <= TimeSpan.Zero && policy.Jitter <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var jitter = policy.Jitter > TimeSpan.Zero
+            ? TimeSpan.FromMilliseconds(Random.Shared.NextDouble() * policy.Jitter.TotalMilliseconds)
+            : TimeSpan.Zero;
+
+        return policy.BaseDelay + jitter;
+    }
+
+    private static bool IsTransient(Exception exception)
+    {
+        return exception switch
+        {
+            TimeoutException => true,
+            DbException => true,
+            _ => false,
+        };
     }
 
     private sealed record TableProfilingPlan(
