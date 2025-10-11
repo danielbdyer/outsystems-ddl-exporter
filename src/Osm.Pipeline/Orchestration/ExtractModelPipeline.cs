@@ -5,17 +5,11 @@ using Osm.Domain.Abstractions;
 using Osm.Json;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.Mediation;
 
 namespace Osm.Pipeline.Orchestration;
 
-public interface IExtractModelPipeline
-{
-    Task<Result<ModelExtractionResult>> ExecuteAsync(
-        ExtractModelPipelineRequest request,
-        CancellationToken cancellationToken = default);
-}
-
-public sealed class ExtractModelPipeline : IExtractModelPipeline
+public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>
 {
     private readonly IModelJsonDeserializer _deserializer;
 
@@ -24,7 +18,7 @@ public sealed class ExtractModelPipeline : IExtractModelPipeline
         _deserializer = deserializer ?? new ModelJsonDeserializer();
     }
 
-    public async Task<Result<ModelExtractionResult>> ExecuteAsync(
+    public async Task<Result<ModelExtractionResult>> HandleAsync(
         ExtractModelPipelineRequest request,
         CancellationToken cancellationToken = default)
     {

@@ -11,7 +11,7 @@ namespace Osm.Pipeline.Tests;
 public class ExtractModelPipelineTests
 {
     [Fact]
-    public async Task ExecuteAsync_ShouldUseFixtureExecutorWhenManifestProvided()
+    public async Task HandleAsync_ShouldUseFixtureExecutorWhenManifestProvided()
     {
         var pipeline = new ExtractModelPipeline();
         var command = ModelExtractionCommand.Create(new[] { "AppCore", "ExtBilling", "Ops" }, includeSystemModules: false, onlyActiveAttributes: false).Value;
@@ -23,7 +23,7 @@ public class ExtractModelPipelineTests
         var manifestPath = FixtureFile.GetPath(Path.Combine("extraction", "advanced-sql.manifest.json"));
         var request = new ExtractModelPipelineRequest(command, sqlOptions, manifestPath);
 
-        var result = await pipeline.ExecuteAsync(request);
+        var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Value.Json);
@@ -31,7 +31,7 @@ public class ExtractModelPipelineTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_ShouldFailWhenConnectionStringMissingForLiveExtraction()
+    public async Task HandleAsync_ShouldFailWhenConnectionStringMissingForLiveExtraction()
     {
         var pipeline = new ExtractModelPipeline();
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
@@ -42,7 +42,7 @@ public class ExtractModelPipelineTests
             Authentication: new SqlAuthenticationSettings(null, null, null, null));
         var request = new ExtractModelPipelineRequest(command, sqlOptions, AdvancedSqlFixtureManifestPath: null);
 
-        var result = await pipeline.ExecuteAsync(request);
+        var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsFailure);
         var error = Assert.Single(result.Errors);

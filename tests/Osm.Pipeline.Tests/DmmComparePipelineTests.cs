@@ -14,7 +14,7 @@ namespace Osm.Pipeline.Tests;
 public class DmmComparePipelineTests
 {
     [Fact]
-    public async Task ExecuteAsync_confirms_parity_and_writes_diff()
+    public async Task HandleAsync_confirms_parity_and_writes_diff()
     {
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
@@ -51,7 +51,7 @@ public class DmmComparePipelineTests
                 Metadata: new Dictionary<string, string?>()));
 
         var pipeline = new DmmComparePipeline();
-        var result = await pipeline.ExecuteAsync(request);
+        var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsSuccess);
         var value = result.Value;

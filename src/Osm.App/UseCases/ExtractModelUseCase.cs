@@ -6,6 +6,7 @@ using Osm.Domain.Abstractions;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.Mediation;
 
 namespace Osm.App.UseCases;
 
@@ -20,11 +21,11 @@ public sealed record ExtractModelUseCaseResult(
 
 public sealed class ExtractModelUseCase
 {
-    private readonly IExtractModelPipeline _pipeline;
+    private readonly ICommandDispatcher _dispatcher;
 
-    public ExtractModelUseCase(IExtractModelPipeline pipeline)
+    public ExtractModelUseCase(ICommandDispatcher dispatcher)
     {
-        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
     }
 
     public async Task<Result<ExtractModelUseCaseResult>> RunAsync(ExtractModelUseCaseInput input, CancellationToken cancellationToken = default)
@@ -56,7 +57,9 @@ public sealed class ExtractModelUseCase
             sqlOptionsResult.Value,
             input.Overrides.MockAdvancedSqlManifest);
 
-        var extractionResult = await _pipeline.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+        var extractionResult = await _dispatcher.DispatchAsync<ExtractModelPipelineRequest, ModelExtractionResult>(
+            request,
+            cancellationToken).ConfigureAwait(false);
         if (extractionResult.IsFailure)
         {
             return Result<ExtractModelUseCaseResult>.Failure(extractionResult.Errors);

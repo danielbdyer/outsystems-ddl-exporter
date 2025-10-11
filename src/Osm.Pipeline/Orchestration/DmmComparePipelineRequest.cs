@@ -1,6 +1,7 @@
 using Osm.Domain.Configuration;
 using Osm.Validation.Tightening;
 using Osm.Smo;
+using Osm.Pipeline.Mediation;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -14,4 +15,4 @@ public sealed record DmmComparePipelineRequest(
     ResolvedSqlOptions SqlOptions,
     SmoBuildOptions SmoOptions,
     string DiffOutputPath,
-    EvidenceCachePipelineOptions? EvidenceCache);
+    EvidenceCachePipelineOptions? EvidenceCache) : ICommand<DmmComparePipelineResult>;

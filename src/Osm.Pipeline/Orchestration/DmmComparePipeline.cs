@@ -13,17 +13,11 @@ using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Profiling;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+using Osm.Pipeline.Mediation;
 
 namespace Osm.Pipeline.Orchestration;
 
-public interface IDmmComparePipeline
-{
-    Task<Result<DmmComparePipelineResult>> ExecuteAsync(
-        DmmComparePipelineRequest request,
-        CancellationToken cancellationToken = default);
-}
-
-public sealed class DmmComparePipeline : IDmmComparePipeline
+public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>
 {
     private readonly IModelIngestionService _modelIngestionService;
     private readonly ModuleFilter _moduleFilter;
@@ -63,7 +57,7 @@ public sealed class DmmComparePipeline : IDmmComparePipeline
         _profileSnapshotDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
     }
 
-    public async Task<Result<DmmComparePipelineResult>> ExecuteAsync(
+    public async Task<Result<DmmComparePipelineResult>> HandleAsync(
         DmmComparePipelineRequest request,
         CancellationToken cancellationToken = default)
     {

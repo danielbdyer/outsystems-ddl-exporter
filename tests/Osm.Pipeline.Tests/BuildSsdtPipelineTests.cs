@@ -53,7 +53,7 @@ public class BuildSsdtPipelineTests
             Path.Combine(output.Path, "Seeds", "StaticEntities.seed.sql"));
 
         var pipeline = new BuildSsdtPipeline();
-        var result = await pipeline.ExecuteAsync(request);
+        var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsSuccess);
         var value = result.Value;
