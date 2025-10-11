@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
@@ -43,7 +44,8 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
                 .Select(column => new DmmColumn(
                     column.Name,
                     Canonicalize(column.DataType),
-                    column.Nullable))
+                    column.Nullable,
+                    column.Description))
                 .ToArray();
 
             var primaryKey = table.Indexes.FirstOrDefault(index => index.IsPrimaryKey);
@@ -54,7 +56,25 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
                     .Select(column => column.Name)
                     .ToArray();
 
-            tables.Add(new DmmTable(table.Schema, effectiveName, columns, primaryKeyColumns));
+            var indexes = table.Indexes
+                .Where(static index => !index.IsPrimaryKey)
+                .Select(MapIndex)
+                .OrderBy(index => index.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            var foreignKeys = table.ForeignKeys
+                .Select(MapForeignKey)
+                .OrderBy(fk => fk.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            tables.Add(new DmmTable(
+                table.Schema,
+                effectiveName,
+                columns,
+                primaryKeyColumns,
+                indexes,
+                foreignKeys,
+                table.Description));
         }
 
         var orderedTables = tables
@@ -63,6 +83,49 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
             .ToArray();
 
         return Result<IReadOnlyList<DmmTable>>.Success(orderedTables);
+    }
+
+    private static DmmIndex MapIndex(SmoIndexDefinition index)
+    {
+        var keyColumns = index.Columns
+            .Where(static column => !column.IsIncluded)
+            .OrderBy(static column => column.Ordinal)
+            .Select(column => new DmmIndexColumn(column.Name, column.IsDescending))
+            .ToArray();
+
+        var includedColumns = index.Columns
+            .Where(static column => column.IsIncluded)
+            .OrderBy(static column => column.Ordinal)
+            .Select(column => new DmmIndexColumn(column.Name, column.IsDescending))
+            .ToArray();
+
+        var metadata = index.Metadata;
+        return new DmmIndex(
+            index.Name,
+            index.IsUnique,
+            keyColumns,
+            includedColumns,
+            CanonicalizeFilter(metadata.FilterDefinition),
+            metadata.IsDisabled,
+            new DmmIndexOptions(
+                metadata.IsPadded,
+                metadata.FillFactor,
+                metadata.IgnoreDuplicateKey,
+                metadata.AllowRowLocks,
+                metadata.AllowPageLocks,
+                metadata.StatisticsNoRecompute));
+    }
+
+    private static DmmForeignKey MapForeignKey(SmoForeignKeyDefinition foreignKey)
+    {
+        return new DmmForeignKey(
+            foreignKey.Name,
+            foreignKey.Column,
+            foreignKey.ReferencedSchema,
+            foreignKey.ReferencedTable,
+            foreignKey.ReferencedColumn,
+            foreignKey.DeleteAction.ToString(),
+            foreignKey.IsNoCheck);
     }
 
     private static string Canonicalize(DataType dataType)
@@ -94,6 +157,18 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
             SqlDataType.Image => "image",
             _ => dataType.SqlDataType.ToString().ToLowerInvariant(),
         };
+    }
+
+    private static string? CanonicalizeFilter(string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+        {
+            return null;
+        }
+
+        var trimmed = filter.Trim();
+        trimmed = Regex.Replace(trimmed, "\\s+", " ");
+        return trimmed;
     }
 
     private static string FormatDecimal(int numericPrecision, int numericScale, string baseName)
