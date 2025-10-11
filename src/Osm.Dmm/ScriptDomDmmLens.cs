@@ -8,9 +8,9 @@ using Osm.Domain.Abstractions;
 
 namespace Osm.Dmm;
 
-public sealed class DmmParser
+public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
 {
-    public Result<IReadOnlyList<DmmTable>> Parse(TextReader reader)
+    public Result<IReadOnlyList<DmmTable>> Project(TextReader reader)
     {
         if (reader is null)
         {

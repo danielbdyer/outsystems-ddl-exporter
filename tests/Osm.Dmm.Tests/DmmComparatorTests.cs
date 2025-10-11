@@ -9,12 +9,14 @@ using Osm.Dmm;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
+using Xunit;
 
 namespace Osm.Dmm.Tests;
 
 public class DmmComparatorTests
 {
     private readonly SmoModel _smoModel;
+    private readonly IReadOnlyList<DmmTable> _baselineTables;
 
     public DmmComparatorTests()
     {
@@ -29,13 +31,21 @@ public class DmmComparatorTests
             decisions,
             profile: snapshot,
             options: SmoBuildOptions.FromEmission(options.Emission));
+
+        var projection = new SmoDmmLens().Project(new SmoDmmLensRequest(_smoModel, NamingOverrideOptions.Empty));
+        if (!projection.IsSuccess)
+        {
+            throw new InvalidOperationException("Unable to project SMO model into DMM comparison tables for test setup.");
+        }
+
+        _baselineTables = projection.Value;
     }
 
     [Fact]
     public void Compare_returns_match_for_equivalent_dmm_script()
     {
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(EdgeCaseScript), NamingOverrideOptions.Empty);
+        var comparison = comparator.Compare(_baselineTables, ParseScript(EdgeCaseScript));
 
         Assert.True(comparison.IsMatch);
         Assert.Empty(comparison.ModelDifferences);
@@ -47,9 +57,8 @@ public class DmmComparatorTests
     {
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(
-            _smoModel,
-            ParseScript(EdgeCaseScript.Replace("[EMAIL] NVARCHAR(255) NOT NULL", "[EMAIL] NVARCHAR(255) NULL")),
-            NamingOverrideOptions.Empty);
+            _baselineTables,
+            ParseScript(EdgeCaseScript.Replace("[EMAIL] NVARCHAR(255) NOT NULL", "[EMAIL] NVARCHAR(255) NULL")));
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("nullability mismatch", StringComparison.OrdinalIgnoreCase));
@@ -64,7 +73,7 @@ public class DmmComparatorTests
             "[EMAIL] NVARCHAR(255) NOT NULL,\n    [ID] BIGINT NOT NULL,");
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(reorderedScript), NamingOverrideOptions.Empty);
+        var comparison = comparator.Compare(_baselineTables, ParseScript(reorderedScript));
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("column order mismatch", StringComparison.OrdinalIgnoreCase));
@@ -79,7 +88,7 @@ public class DmmComparatorTests
             string.Empty);
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
+        var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.ModelDifferences, diff => diff.Equals("missing table dbo.OSUSR_DEF_CITY", StringComparison.OrdinalIgnoreCase));
@@ -91,7 +100,7 @@ public class DmmComparatorTests
     {
         var script = EdgeCaseScript + "CREATE TABLE [dbo].[EXTRA](\n    [ID] BIGINT NOT NULL,\n    CONSTRAINT [PK_EXTRA] PRIMARY KEY ([ID])\n);";
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
+        var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Equals("unexpected table dbo.EXTRA", StringComparison.OrdinalIgnoreCase));
@@ -103,7 +112,7 @@ public class DmmComparatorTests
     {
         var script = EdgeCaseScript.Replace("    [EMAIL] NVARCHAR(255) NOT NULL,\n", string.Empty);
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
+        var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.ModelDifferences, diff => diff.Contains("missing columns", StringComparison.OrdinalIgnoreCase));
@@ -118,7 +127,7 @@ public class DmmComparatorTests
             "    [EMAIL] NVARCHAR(255) NOT NULL,\n    [EXTRA] INT NULL,\n");
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
+        var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("unexpected columns", StringComparison.OrdinalIgnoreCase));
@@ -133,7 +142,7 @@ public class DmmComparatorTests
             "CONSTRAINT [PK_Customer] PRIMARY KEY ([EMAIL])");
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
+        var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("primary key mismatch", StringComparison.OrdinalIgnoreCase));
@@ -144,7 +153,7 @@ public class DmmComparatorTests
     {
         var script = EdgeCaseScript.Replace("[EMAIL] NVARCHAR(255) NOT NULL", "[EMAIL] NVARCHAR(200) NOT NULL");
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
+        var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
         Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("data type mismatch", StringComparison.OrdinalIgnoreCase));
@@ -158,7 +167,7 @@ public class DmmComparatorTests
             .Replace("[ACCOUNTNUMBER] VARCHAR(50) NOT NULL", "[ACCOUNTNUMBER] varchar ( 50 ) NOT NULL");
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(script), NamingOverrideOptions.Empty);
+        var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.True(comparison.IsMatch);
         Assert.Empty(comparison.ModelDifferences);
@@ -176,7 +185,9 @@ public class DmmComparatorTests
         var renamedScript = EdgeCaseScript.Replace("OSUSR_ABC_CUSTOMER", "CUSTOMER_EXTERNAL");
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_smoModel, ParseScript(renamedScript), namingOverrides.Value);
+        var comparison = comparator.Compare(
+            ProjectSmo(_smoModel, namingOverrides.Value),
+            ParseScript(renamedScript));
 
         Assert.True(comparison.IsMatch);
     }
@@ -215,7 +226,9 @@ public class DmmComparatorTests
         var renamedScript = EdgeCaseScript.Replace("OSUSR_ABC_CUSTOMER", "CUSTOMER_EXTERNAL");
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(smoModel, ParseScript(renamedScript), namingOverrides.Value);
+        var comparison = comparator.Compare(
+            ProjectSmo(smoModel, namingOverrides.Value),
+            ParseScript(renamedScript));
 
         Assert.True(comparison.IsMatch);
     }
@@ -237,9 +250,16 @@ ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
 
     private static IReadOnlyList<DmmTable> ParseScript(string script)
     {
-        var parser = new DmmParser();
+        var lens = new ScriptDomDmmLens();
         using var reader = new StringReader(script);
-        var result = parser.Parse(reader);
+        var result = lens.Project(reader);
+        Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(e => $"{e.Code}:{e.Message}")));
+        return result.Value;
+    }
+
+    private static IReadOnlyList<DmmTable> ProjectSmo(SmoModel model, NamingOverrideOptions overrides)
+    {
+        var result = new SmoDmmLens().Project(new SmoDmmLensRequest(model, overrides));
         Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(e => $"{e.Code}:{e.Message}")));
         return result.Value;
     }

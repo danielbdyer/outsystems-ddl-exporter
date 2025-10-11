@@ -23,7 +23,8 @@ public sealed class DmmComparePipeline
     private readonly SupplementalEntityLoader _supplementalLoader;
     private readonly TighteningPolicy _tighteningPolicy;
     private readonly SmoModelFactory _smoModelFactory;
-    private readonly DmmParser _dmmParser;
+    private readonly IDmmLens<TextReader> _dmmScriptLens;
+    private readonly IDmmLens<SmoDmmLensRequest> _smoLens;
     private readonly DmmComparator _dmmComparator;
     private readonly DmmDiffLogWriter _diffLogWriter;
     private readonly IEvidenceCacheService _evidenceCacheService;
@@ -35,7 +36,8 @@ public sealed class DmmComparePipeline
         SupplementalEntityLoader? supplementalLoader = null,
         TighteningPolicy? tighteningPolicy = null,
         SmoModelFactory? smoModelFactory = null,
-        DmmParser? dmmParser = null,
+        IDmmLens<TextReader>? dmmScriptLens = null,
+        IDmmLens<SmoDmmLensRequest>? smoLens = null,
         DmmComparator? dmmComparator = null,
         DmmDiffLogWriter? diffLogWriter = null,
         IEvidenceCacheService? evidenceCacheService = null,
@@ -46,7 +48,8 @@ public sealed class DmmComparePipeline
         _supplementalLoader = supplementalLoader ?? new SupplementalEntityLoader();
         _tighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
         _smoModelFactory = smoModelFactory ?? new SmoModelFactory();
-        _dmmParser = dmmParser ?? new DmmParser();
+        _dmmScriptLens = dmmScriptLens ?? new ScriptDomDmmLens();
+        _smoLens = smoLens ?? new SmoDmmLens();
         _dmmComparator = dmmComparator ?? new DmmComparator();
         _diffLogWriter = diffLogWriter ?? new DmmDiffLogWriter();
         _evidenceCacheService = evidenceCacheService ?? new EvidenceCacheService();
@@ -259,8 +262,23 @@ public sealed class DmmComparePipeline
                 ["foreignKeys"] = smoForeignKeyCount.ToString(CultureInfo.InvariantCulture)
             });
 
+        var projectedResult = _smoLens.Project(new SmoDmmLensRequest(smoModel, request.SmoOptions.NamingOverrides));
+        if (projectedResult.IsFailure)
+        {
+            return Result<DmmComparePipelineResult>.Failure(projectedResult.Errors);
+        }
+
+        var modelTables = projectedResult.Value;
+        log.Record(
+            "smo.model.projected",
+            "Projected SMO model into DMM comparison shape.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["tableCount"] = modelTables.Count.ToString(CultureInfo.InvariantCulture)
+            });
+
         using var reader = File.OpenText(request.DmmPath);
-        var parseResult = _dmmParser.Parse(reader);
+        var parseResult = _dmmScriptLens.Project(reader);
         if (parseResult.IsFailure)
         {
             return Result<DmmComparePipelineResult>.Failure(parseResult.Errors);
@@ -275,7 +293,7 @@ public sealed class DmmComparePipeline
                 ["tableCount"] = dmmTables.Count.ToString(CultureInfo.InvariantCulture)
             });
 
-        var comparison = _dmmComparator.Compare(smoModel, dmmTables, request.SmoOptions.NamingOverrides);
+        var comparison = _dmmComparator.Compare(modelTables, dmmTables);
         log.Record(
             "dmm.comparison.completed",
             "Compared SMO output against DMM baseline.",
