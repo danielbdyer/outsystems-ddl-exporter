@@ -35,7 +35,7 @@ public sealed record CompareWithDmmOverrides(
     string? ModelPath,
     string? ProfilePath,
     string? DmmPath,
-    string? DiffOutputPath);
+    string? OutputDirectory);
 
 public sealed record ExtractModelOverrides(
     IReadOnlyList<string> Modules,

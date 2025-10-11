@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.App.Configuration;
@@ -87,9 +88,9 @@ public sealed class CompareWithDmmUseCase
             return Result<CompareWithDmmUseCaseResult>.Failure(dmmPathResult.Errors);
         }
 
-        var diffPath = string.IsNullOrWhiteSpace(input.Overrides.DiffOutputPath)
-            ? "dmm-diff.json"
-            : input.Overrides.DiffOutputPath!;
+        var outputDirectory = ResolveOutputDirectory(input.Overrides.OutputDirectory);
+        Directory.CreateDirectory(outputDirectory);
+        var diffPath = Path.Combine(outputDirectory, "dmm-diff.json");
 
         var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission, applyNamingOverrides: false);
 
@@ -121,7 +122,8 @@ public sealed class CompareWithDmmUseCase
             return Result<CompareWithDmmUseCaseResult>.Failure(pipelineResult.Errors);
         }
 
-        return new CompareWithDmmUseCaseResult(pipelineResult.Value, diffPath);
+        var resolvedDiffPath = pipelineResult.Value.DiffArtifactPath;
+        return new CompareWithDmmUseCaseResult(pipelineResult.Value, resolvedDiffPath);
     }
 
     private static Result<string> ResolveRequiredPath(string? overridePath, string? fallbackPath, string errorCode, string errorMessage)
@@ -178,4 +180,7 @@ public sealed class CompareWithDmmUseCase
             configPath,
             metadata);
     }
+
+    private static string ResolveOutputDirectory(string? overridePath)
+        => string.IsNullOrWhiteSpace(overridePath) ? "out" : overridePath!;
 }

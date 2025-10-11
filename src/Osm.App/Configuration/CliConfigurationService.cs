@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
@@ -63,7 +64,31 @@ public sealed class CliConfigurationService : ICliConfigurationService
         }
 
         var envPath = Environment.GetEnvironmentVariable(EnvConfigPath);
-        return string.IsNullOrWhiteSpace(envPath) ? null : envPath;
+        if (!string.IsNullOrWhiteSpace(envPath))
+        {
+            return envPath;
+        }
+
+        var currentDirectory = Directory.GetCurrentDirectory();
+        var candidates = new[]
+        {
+            "pipeline.yaml",
+            "pipeline.yml",
+            "pipeline.json",
+            "config.json",
+            "appsettings.json"
+        };
+
+        foreach (var candidate in candidates)
+        {
+            var path = Path.Combine(currentDirectory, candidate);
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        return null;
     }
 
     private static CliConfiguration ApplyEnvironmentOverrides(CliConfiguration configuration)

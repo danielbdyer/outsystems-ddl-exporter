@@ -24,7 +24,7 @@ public class CliIntegrationTests
 
         using var output = new TempDirectory();
         using var comparisonWorkspace = new TempDirectory();
-        var diffPath = Path.Combine(comparisonWorkspace.Path, "dmm-diff.json");
+        var diffPath = Path.Combine(output.Path, "dmm-diff.json");
 
         var buildResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --static-data {staticDataPath} --out {output.Path}");
         AssertExitCode(buildResult, 0);
@@ -49,7 +49,7 @@ public class CliIntegrationTests
         var dmmScriptPath = Path.Combine(comparisonWorkspace.Path, "edge-case.dmm.sql");
         await File.WriteAllTextAsync(dmmScriptPath, EdgeCaseScript);
 
-        var compareResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {diffPath}");
+        var compareResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {output.Path}");
         AssertExitCode(compareResult, 0);
 
         Assert.True(File.Exists(diffPath));
@@ -80,7 +80,7 @@ public class CliIntegrationTests
         var dmmScriptPath = Path.Combine(output.Path, "edge-case.dmm.sql");
         await File.WriteAllTextAsync(dmmScriptPath, MismatchedScript);
 
-        var compareResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {diffPath}");
+        var compareResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {output.Path}");
         AssertExitCode(compareResult, 2);
 
         Assert.True(File.Exists(diffPath));

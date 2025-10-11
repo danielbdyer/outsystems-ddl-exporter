@@ -72,6 +72,7 @@ compareCommand.AddOption(includeInactiveModulesOption);
 compareCommand.AddOption(onlyActiveModulesOption);
 compareCommand.AddOption(cacheRootOption);
 compareCommand.AddOption(refreshCacheOption);
+compareCommand.AddOption(outputOption);
 
 var rootCommand = new RootCommand("OutSystems DDL Exporter CLI")
 {
@@ -100,6 +101,7 @@ Command CreateBuildCommand()
     var staticDataOption = new Option<string?>("--static-data", "Path to static data fixture.");
     var outputOption = new Option<string?>("--out", () => "out", "Output directory for SSDT artifacts.");
     var renameOption = new Option<string?>("--rename-table", "Rename tables using source=Override syntax.");
+    var openReportOption = new Option<bool>("--open-report", "Generate and open an HTML report for this run.");
 
     var command = new Command("build-ssdt", "Emit SSDT artifacts from an OutSystems model.")
     {
@@ -108,7 +110,8 @@ Command CreateBuildCommand()
         profilerProviderOption,
         staticDataOption,
         outputOption,
-        renameOption
+        renameOption,
+        openReportOption
     };
 
     command.SetHandler(async context =>
@@ -120,7 +123,9 @@ Command CreateBuildCommand()
         var useCase = services.GetRequiredService<BuildSsdtUseCase>();
 
         var configPath = context.ParseResult.GetValueForOption(configOption);
-        var configurationResult = await configurationService.LoadAsync(configPath, context.GetCancellationToken());
+        var cancellationToken = context.GetCancellationToken();
+
+        var configurationResult = await configurationService.LoadAsync(configPath, cancellationToken);
         if (configurationResult.IsFailure)
         {
             WriteErrors(context, configurationResult.Errors);
@@ -153,7 +158,7 @@ Command CreateBuildCommand()
             CreateSqlOverrides(context.ParseResult, sqlOptions),
             cache);
 
-        var result = await useCase.RunAsync(input, context.GetCancellationToken());
+        var result = await useCase.RunAsync(input, cancellationToken);
         if (result.IsFailure)
         {
             WriteErrors(context, result.Errors);
@@ -201,6 +206,25 @@ Command CreateBuildCommand()
         }
 
         WriteLine(context.Console, $"Decision log written to {pipelineResult.DecisionLogPath}");
+
+        if (context.ParseResult.GetValueForOption(openReportOption))
+        {
+            try
+            {
+                var reportPath = await PipelineReportLauncher.GenerateAsync(useCaseResult, cancellationToken).ConfigureAwait(false);
+                WriteLine(context.Console, $"Report written to {reportPath}");
+                PipelineReportLauncher.TryOpen(reportPath, context.Console);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                WriteErrorLine(context.Console, $"[warning] Failed to open report: {ex.Message}");
+            }
+        }
+
         context.ExitCode = 0;
     });
 
@@ -295,14 +319,14 @@ Command CreateCompareCommand()
     var modelOption = new Option<string?>("--model", "Path to the model JSON file.");
     var profileOption = new Option<string?>("--profile", "Path to the profiling snapshot.");
     var dmmOption = new Option<string?>("--dmm", "Path to the baseline DMM script.");
-    var diffOption = new Option<string?>("--out", () => "dmm-diff.json", "Output path for diff artifact.");
+    var outputOption = new Option<string?>("--out", () => "out", "Output directory for comparison artifacts.");
 
     var command = new Command("dmm-compare", "Compare the emitted SSDT artifacts with a DMM baseline.")
     {
         modelOption,
         profileOption,
         dmmOption,
-        diffOption
+        outputOption
     };
 
     command.SetHandler(async context =>
@@ -336,7 +360,7 @@ Command CreateCompareCommand()
             context.ParseResult.GetValueForOption(modelOption),
             context.ParseResult.GetValueForOption(profileOption),
             context.ParseResult.GetValueForOption(dmmOption),
-            context.ParseResult.GetValueForOption(diffOption));
+            context.ParseResult.GetValueForOption(outputOption));
 
         var input = new CompareWithDmmUseCaseInput(
             configurationResult.Value,

@@ -50,6 +50,7 @@ public sealed class SsdtEmitter
         cancellationToken.ThrowIfCancellationRequested();
 
         Directory.CreateDirectory(outputDirectory);
+        Directory.CreateDirectory(Path.Combine(outputDirectory, "Modules"));
         var tableCount = model.Tables.Length;
         var moduleDirectories = new ConcurrentDictionary<string, ModuleDirectoryPaths>(StringComparer.Ordinal);
         var manifestEntries = new List<TableManifestEntry>(tableCount);
