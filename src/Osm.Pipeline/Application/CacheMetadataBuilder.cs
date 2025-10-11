@@ -5,11 +5,11 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using Osm.App.Configuration;
 using Osm.Domain.Configuration;
+using Osm.Pipeline.Configuration;
 using Osm.Pipeline.ModelIngestion;
 
-namespace Osm.App.UseCases;
+namespace Osm.Pipeline.Application;
 
 internal static class CacheMetadataBuilder
 {

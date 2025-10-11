@@ -8,7 +8,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Osm.App.UseCases;
+using Osm.Pipeline.Application;
 using Osm.Emission;
 
 namespace Osm.Cli;
@@ -17,17 +17,17 @@ internal static class PipelineReportLauncher
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-    public static async Task<string> GenerateAsync(BuildSsdtUseCaseResult useCaseResult, CancellationToken cancellationToken)
+    public static async Task<string> GenerateAsync(BuildSsdtApplicationResult applicationResult, CancellationToken cancellationToken)
     {
-        if (useCaseResult is null)
+        if (applicationResult is null)
         {
-            throw new ArgumentNullException(nameof(useCaseResult));
+            throw new ArgumentNullException(nameof(applicationResult));
         }
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var outputDirectory = useCaseResult.OutputDirectory;
-        var pipelineResult = useCaseResult.PipelineResult;
+        var outputDirectory = applicationResult.OutputDirectory;
+        var pipelineResult = applicationResult.PipelineResult;
         var manifest = pipelineResult.Manifest ?? throw new InvalidOperationException("Manifest not available for report generation.");
         var decisionReport = pipelineResult.DecisionReport ?? throw new InvalidOperationException("Decision report not available for report generation.");
 
@@ -47,11 +47,11 @@ internal static class PipelineReportLauncher
         var diffPath = Path.Combine(outputDirectory, "dmm-diff.json");
         var hasDiff = File.Exists(diffPath);
 
-        var staticSeedPath = useCaseResult.PipelineResult.StaticSeedScriptPath;
+        var staticSeedPath = applicationResult.PipelineResult.StaticSeedScriptPath;
         var hasStaticSeed = !string.IsNullOrWhiteSpace(staticSeedPath) && File.Exists(staticSeedPath);
 
         var html = BuildHtml(
-            useCaseResult,
+            applicationResult,
             manifest,
             decisionReport,
             moduleSummaries,
@@ -110,7 +110,7 @@ internal static class PipelineReportLauncher
     }
 
     private static string BuildHtml(
-        BuildSsdtUseCaseResult useCaseResult,
+        BuildSsdtApplicationResult applicationResult,
         SsdtManifest manifest,
         Osm.Validation.Tightening.PolicyDecisionReport decisionReport,
         ModuleSummary[] moduleSummaries,
@@ -121,7 +121,7 @@ internal static class PipelineReportLauncher
         string? staticSeedPath)
     {
         var builder = new StringBuilder();
-        var outputDirectory = useCaseResult.OutputDirectory;
+        var outputDirectory = applicationResult.OutputDirectory;
         builder.AppendLine("<!DOCTYPE html>");
         builder.AppendLine("<html lang=\"en\">");
         builder.AppendLine("<head>");
@@ -196,10 +196,10 @@ internal static class PipelineReportLauncher
         builder.AppendLine("  <section>");
         builder.AppendLine("    <h2>Execution context</h2>");
         builder.AppendLine("    <dl>");
-        builder.AppendLine($"      <dt>Profiler</dt><dd>{HtmlEncode(useCaseResult.ProfilerProvider)}</dd>");
-        if (!string.IsNullOrWhiteSpace(useCaseResult.ProfilePath))
+        builder.AppendLine($"      <dt>Profiler</dt><dd>{HtmlEncode(applicationResult.ProfilerProvider)}</dd>");
+        if (!string.IsNullOrWhiteSpace(applicationResult.ProfilePath))
         {
-            builder.AppendLine($"      <dt>Profile snapshot</dt><dd>{HtmlEncode(Relativize(outputDirectory, useCaseResult.ProfilePath))}</dd>");
+            builder.AppendLine($"      <dt>Profile snapshot</dt><dd>{HtmlEncode(Relativize(outputDirectory, applicationResult.ProfilePath))}</dd>");
         }
         builder.AppendLine($"      <dt>Emission hash</dt><dd>{HtmlEncode(manifest.Emission.Hash)}</dd>");
         builder.AppendLine($"      <dt>Manifest algorithm</dt><dd>{HtmlEncode(manifest.Emission.Algorithm)}</dd>");

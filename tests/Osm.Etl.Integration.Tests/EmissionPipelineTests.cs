@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Osm.App.StaticData;
+using Osm.Pipeline.StaticData;
 using Osm.Domain.Configuration;
 using Osm.Json;
 using Osm.Json.Configuration;

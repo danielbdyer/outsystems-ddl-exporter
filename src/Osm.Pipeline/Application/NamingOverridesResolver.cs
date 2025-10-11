@@ -4,7 +4,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Smo;
 
-namespace Osm.App.UseCases;
+namespace Osm.Pipeline.Application;
 
 internal static class NamingOverridesResolver
 {
