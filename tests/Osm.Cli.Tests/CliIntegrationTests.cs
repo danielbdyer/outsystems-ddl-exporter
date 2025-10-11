@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -15,7 +14,6 @@ public class CliIntegrationTests
     public async Task BuildSsdt_and_dmm_compare_complete_successfully()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
-        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
         var expectedEmissionRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case");
@@ -24,8 +22,8 @@ public class CliIntegrationTests
         using var comparisonWorkspace = new TempDirectory();
         var diffPath = Path.Combine(comparisonWorkspace.Path, "dmm-diff.json");
 
-        var buildExit = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --out {output.Path}");
-        Assert.Equal(0, buildExit);
+        var buildResult = await CliTestHost.RunAsync(repoRoot, $"build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --out \"{output.Path}\"");
+        buildResult.EnsureSuccess();
 
         var manifestPath = Path.Combine(output.Path, "manifest.json");
         Assert.True(File.Exists(manifestPath));
@@ -47,8 +45,8 @@ public class CliIntegrationTests
         var dmmScriptPath = Path.Combine(comparisonWorkspace.Path, "edge-case.dmm.sql");
         await File.WriteAllTextAsync(dmmScriptPath, EdgeCaseScript);
 
-        var compareExit = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {diffPath}");
-        Assert.Equal(0, compareExit);
+        var compareResult = await CliTestHost.RunAsync(repoRoot, $"dmm-compare --model \"{modelPath}\" --profile \"{profilePath}\" --dmm \"{dmmScriptPath}\" --out \"{diffPath}\"");
+        compareResult.EnsureSuccess();
 
         Assert.True(File.Exists(diffPath));
         using (var diffStream = File.OpenRead(diffPath))
@@ -68,7 +66,6 @@ public class CliIntegrationTests
     public async Task DmmCompare_writes_diff_artifact_when_drift_detected()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
-        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
 
@@ -78,8 +75,8 @@ public class CliIntegrationTests
         var dmmScriptPath = Path.Combine(output.Path, "edge-case.dmm.sql");
         await File.WriteAllTextAsync(dmmScriptPath, MismatchedScript);
 
-        var compareExit = await RunCliAsync(repoRoot, $"run --project {cliProject} -- dmm-compare --model {modelPath} --profile {profilePath} --dmm {dmmScriptPath} --out {diffPath}");
-        Assert.Equal(2, compareExit);
+        var compareResult = await CliTestHost.RunAsync(repoRoot, $"dmm-compare --model \"{modelPath}\" --profile \"{profilePath}\" --dmm \"{dmmScriptPath}\" --out \"{diffPath}\"");
+        Assert.Equal(2, compareResult.ExitCode);
 
         Assert.True(File.Exists(diffPath));
         using var diffStream = File.OpenRead(diffPath);
@@ -102,16 +99,15 @@ public class CliIntegrationTests
     public async Task BuildSsdt_honors_rename_table_overrides()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
-        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
 
         using var output = new TempDirectory();
         var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case-rename");
 
-        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --out \"{output.Path}\" --rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL";
-        var exit = await RunCliAsync(repoRoot, command);
-        Assert.Equal(0, exit);
+        var command = $"build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --out \"{output.Path}\" --rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL";
+        var result = await CliTestHost.RunAsync(repoRoot, command);
+        result.EnsureSuccess();
 
         var renamedTable = Directory.GetFiles(output.Path, "dbo.CUSTOMER_PORTAL.sql", SearchOption.AllDirectories);
         var originalTable = Directory.GetFiles(output.Path, "dbo.Customer.sql", SearchOption.AllDirectories);
@@ -137,7 +133,6 @@ public class CliIntegrationTests
     public async Task BuildSsdt_honors_entity_override_from_configuration()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
-        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
 
         using var workspace = new TempDirectory();
         var tighteningPath = Path.Combine(workspace.Path, "tightening.json");
@@ -174,9 +169,9 @@ public class CliIntegrationTests
             configPath,
             JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
 
-        var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
-        var exit = await RunCliAsync(repoRoot, command);
-        Assert.Equal(0, exit);
+        var command = $"build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
+        var result = await CliTestHost.RunAsync(repoRoot, command);
+        result.EnsureSuccess();
 
         var renamedTable = Directory.GetFiles(outputPath, "dbo.CUSTOMER_STATIC.sql", SearchOption.AllDirectories);
         var logicalTable = Directory.GetFiles(outputPath, "dbo.Customer.sql", SearchOption.AllDirectories);
@@ -197,16 +192,15 @@ public class CliIntegrationTests
     public async Task BuildSsdt_AppliesModuleFilterFromCli()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
-        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
 
         using var output = new TempDirectory();
 
-        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --modules AppCore --out \"{output.Path}\"";
-        var exit = await RunCliAsync(repoRoot, command);
+        var command = $"build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --modules AppCore --out \"{output.Path}\"";
+        var result = await CliTestHost.RunAsync(repoRoot, command);
 
-        Assert.Equal(0, exit);
+        result.EnsureSuccess();
 
         var manifestPath = Path.Combine(output.Path, "manifest.json");
         using var manifestStream = File.OpenRead(manifestPath);
@@ -225,7 +219,6 @@ public class CliIntegrationTests
     public async Task BuildSsdt_AppliesModuleFilterFromConfiguration()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
-        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         using var workspace = new TempDirectory();
 
         var configPath = Path.Combine(workspace.Path, "appsettings.json");
@@ -246,10 +239,10 @@ public class CliIntegrationTests
             configPath,
             JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
 
-        var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
-        var exit = await RunCliAsync(repoRoot, command);
+        var command = $"build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
+        var result = await CliTestHost.RunAsync(repoRoot, command);
 
-        Assert.Equal(0, exit);
+        result.EnsureSuccess();
 
         var manifestPath = Path.Combine(outputPath, "manifest.json");
         using var manifestStream = File.OpenRead(manifestPath);
@@ -268,16 +261,15 @@ public class CliIntegrationTests
     public async Task BuildSsdt_ShouldWriteEvidenceCacheManifest()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
-        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
 
         using var output = new TempDirectory();
         using var cacheRoot = new TempDirectory();
 
-        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --out \"{output.Path}\" --cache-root \"{cacheRoot.Path}\" --refresh-cache";
-        var exit = await RunCliAsync(repoRoot, command);
-        Assert.Equal(0, exit);
+        var command = $"build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --out \"{output.Path}\" --cache-root \"{cacheRoot.Path}\" --refresh-cache";
+        var result = await CliTestHost.RunAsync(repoRoot, command);
+        result.EnsureSuccess();
 
         var entries = Directory.GetDirectories(cacheRoot.Path);
         var cacheEntry = Assert.Single(entries);
@@ -298,7 +290,6 @@ public class CliIntegrationTests
     public async Task BuildSsdt_UsesCliConfigurationDefaults()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
-        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         using var workspace = new TempDirectory();
 
         var configPath = Path.Combine(workspace.Path, "appsettings.json");
@@ -317,10 +308,10 @@ public class CliIntegrationTests
             configPath,
             JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
 
-        var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
-        var exit = await RunCliAsync(repoRoot, command);
+        var command = $"build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
+        var result = await CliTestHost.RunAsync(repoRoot, command);
 
-        Assert.Equal(0, exit);
+        result.EnsureSuccess();
         Assert.True(File.Exists(Path.Combine(outputPath, "manifest.json")));
 
         var cacheEntries = Directory.GetDirectories(cacheRoot);
@@ -331,7 +322,6 @@ public class CliIntegrationTests
     public async Task BuildSsdt_AllowsEnvironmentOverrides()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
-        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         using var workspace = new TempDirectory();
 
         var configPath = Path.Combine(workspace.Path, "appsettings.json");
@@ -359,10 +349,10 @@ public class CliIntegrationTests
             Environment.SetEnvironmentVariable("OSM_CLI_MODEL_PATH", modelPath);
             Environment.SetEnvironmentVariable("OSM_CLI_PROFILE_PATH", profilePath);
 
-            var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
-            var exit = await RunCliAsync(repoRoot, command);
+            var command = $"build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
+            var result = await CliTestHost.RunAsync(repoRoot, command);
 
-            Assert.Equal(0, exit);
+            result.EnsureSuccess();
             Assert.True(File.Exists(Path.Combine(outputPath, "manifest.json")));
         }
         finally
@@ -373,21 +363,6 @@ public class CliIntegrationTests
     }
 
     
-    
-    private static async Task<int> RunCliAsync(string workingDirectory, string arguments)
-    {
-        var startInfo = new ProcessStartInfo("dotnet", arguments)
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-
-        using var process = Process.Start(startInfo)!;
-        await process.WaitForExitAsync();
-        return process.ExitCode;
-    }
-
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
     [ID] BIGINT NOT NULL,
     [EMAIL] NVARCHAR(255) NOT NULL,
