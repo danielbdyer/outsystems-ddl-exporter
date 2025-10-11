@@ -287,6 +287,13 @@ public sealed class CliConfigurationLoader
                     threshold = parsedThreshold;
                 }
             }
+            else if (samplingElement.TryGetProperty("rowThreshold", out var legacyThresholdElement) && legacyThresholdElement.ValueKind == JsonValueKind.Number)
+            {
+                if (legacyThresholdElement.TryGetInt64(out var parsedThreshold))
+                {
+                    threshold = parsedThreshold;
+                }
+            }
 
             int? size = null;
             if (samplingElement.TryGetProperty("sampleSize", out var sizeElement) && sizeElement.ValueKind == JsonValueKind.Number)

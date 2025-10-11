@@ -105,6 +105,32 @@ public sealed class CliConfigurationLoaderTests
     }
 
     [Fact]
+    public async Task LoadAsync_ReadsLegacySqlSamplingRowThreshold()
+    {
+        using var directory = new TempDirectory();
+        var configPath = Path.Combine(directory.Path, "appsettings.json");
+
+        var config = new
+        {
+            sql = new
+            {
+                sampling = new
+                {
+                    rowThreshold = 12345
+                }
+            }
+        };
+
+        await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
+
+        var loader = new CliConfigurationLoader();
+        var result = await loader.LoadAsync(configPath);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(12345L, result.Value.Sql.Sampling.RowSamplingThreshold);
+    }
+
+    [Fact]
     public async Task LoadAsync_ReadsSupplementalModelConfiguration()
     {
         using var directory = new TempDirectory();
