@@ -376,7 +376,8 @@ public class CliIntegrationTests
     
     private static async Task<int> RunCliAsync(string workingDirectory, string arguments)
     {
-        var startInfo = new ProcessStartInfo("dotnet", arguments)
+        var adjustedArguments = DotNetCli.EnsureNoBuildAndConfiguration(arguments);
+        var startInfo = new ProcessStartInfo("dotnet", adjustedArguments)
         {
             WorkingDirectory = workingDirectory,
             RedirectStandardOutput = true,
