@@ -14,6 +14,7 @@
 - [x] **1.4 Reference sanity** — references require known targets and metadata. *(Unit · P0 · [tests/Osm.Validation.Tests/ModelValidator/ReferenceRulesTests.cs](tests/Osm.Validation.Tests/ModelValidator/ReferenceRulesTests.cs))*
 - [x] **1.5 Index integrity** — verify index columns exist and ordinals are contiguous. *(Unit · P1 · [tests/Osm.Validation.Tests/ModelValidator/IndexRulesTests.cs](tests/Osm.Validation.Tests/ModelValidator/IndexRulesTests.cs))*
 - [x] **1.6 Schema/cross-catalog coherence** — downgrade or warn on constrained cross-schema FKs by default. *(Unit · P1 · [tests/Osm.Validation.Tests/ModelValidator/ReferenceRulesTests.cs](tests/Osm.Validation.Tests/ModelValidator/ReferenceRulesTests.cs))*
+- [x] **1.7 Model root invariants** — OutSystems model requires at least one module and disallows duplicate module names (case-insensitive). *(Unit · P0 · [tests/Osm.Domain.Tests/OsmModelTests.cs](tests/Osm.Domain.Tests/OsmModelTests.cs))*
 
 ## 2. Profiler (Catalog & Data Reality) (`Osm.Pipeline` / `Osm.Domain` Profiling)
 - [x] **2.1 Null counts per table** — per-table pivot yields deterministic `NullCount`. *(Unit · P0 · [tests/Osm.Json.Tests/ProfileSnapshotDeserializerTests.cs](tests/Osm.Json.Tests/ProfileSnapshotDeserializerTests.cs), [tests/Osm.Pipeline.Tests/FixtureDataProfilerTests.cs](tests/Osm.Pipeline.Tests/FixtureDataProfilerTests.cs))*
