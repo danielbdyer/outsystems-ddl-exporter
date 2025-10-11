@@ -295,33 +295,100 @@ WHERE (a.PhysicalColumnName IS NULL OR a.PhysicalColumnName = '');
 
 -- 9) Index catalog (IX + UQ + PK)
 IF OBJECT_ID('tempdb..#AllIdx') IS NOT NULL DROP TABLE #AllIdx;
+WITH IndexSource AS
+(
+  SELECT
+      en.EntityId,
+      i.object_id,
+      i.index_id,
+      COALESCE(kc.[name], i.[name])                 AS IndexName,
+      CAST(i.is_unique AS bit)                      AS IsUnique,
+      CAST(i.is_primary_key AS bit)                 AS IsPrimary,
+      CASE
+          WHEN i.is_primary_key = 1 THEN N'PK'
+          WHEN i.is_unique_constraint = 1 THEN N'UQ'
+          WHEN i.is_unique = 1 THEN N'UIX'
+          ELSE N'IX'
+      END                                           AS Kind,
+      i.filter_definition                           AS FilterDefinition,
+      CAST(i.is_disabled AS bit)                    AS IsDisabled,
+      CAST(i.is_padded AS bit)                      AS IsPadded,
+      i.fill_factor                                 AS FillFactor,
+      CAST(i.ignore_dup_key AS bit)                 AS IgnoreDupKey,
+      CAST(i.allow_row_locks AS bit)                AS AllowRowLocks,
+      CAST(i.allow_page_locks AS bit)               AS AllowPageLocks,
+      CAST(st.no_recompute AS bit)                  AS NoRecompute,
+      ds.[name]                                     AS DataSpaceName,
+      ds.type_desc                                  AS DataSpaceType,
+      pc.PartitionColumnsJson,
+      dc.DataCompressionJson
+  FROM #PhysTbls pt
+  JOIN #Ent en ON en.EntityId = pt.EntityId
+  JOIN sys.indexes i ON i.object_id = pt.object_id
+  LEFT JOIN sys.key_constraints kc
+    ON kc.parent_object_id = i.object_id
+   AND kc.unique_index_id = i.index_id
+   AND kc.[type] IN ('PK', 'UQ')
+  LEFT JOIN sys.stats st
+    ON st.object_id = i.object_id AND st.stats_id = i.index_id
+  LEFT JOIN sys.data_spaces ds
+    ON ds.data_space_id = i.data_space_id
+  OUTER APPLY (
+    SELECT NULLIF(JSON_QUERY(
+      (
+        SELECT
+            ic.partition_ordinal AS [ordinal],
+            c.[name]              AS [name]
+        FROM sys.index_columns ic
+        JOIN sys.columns c
+          ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+        WHERE ic.object_id = i.object_id
+          AND ic.index_id   = i.index_id
+          AND ic.partition_ordinal > 0
+        ORDER BY ic.partition_ordinal
+        FOR JSON PATH
+      )
+    ), N'[]') AS PartitionColumnsJson
+  ) pc
+  OUTER APPLY (
+    SELECT JSON_QUERY(
+      (
+        SELECT
+            p.partition_number      AS [partition],
+            p.data_compression_desc AS [compression]
+        FROM sys.partitions p
+        WHERE p.object_id = i.object_id
+          AND p.index_id  = i.index_id
+        ORDER BY p.partition_number
+        FOR JSON PATH
+      )
+    ) AS DataCompressionJson
+  ) dc
+  WHERE i.[type_desc] <> 'HEAP'
+    AND i.is_hypothetical = 0
+)
 SELECT
-    en.EntityId,
-    i.object_id,
-    i.index_id,
-    i.[name] AS IndexName,
-    CAST(i.is_unique AS bit) AS IsUnique
+    EntityId,
+    object_id,
+    index_id,
+    IndexName,
+    IsUnique,
+    IsPrimary,
+    Kind,
+    FilterDefinition,
+    IsDisabled,
+    IsPadded,
+    FillFactor,
+    IgnoreDupKey,
+    AllowRowLocks,
+    AllowPageLocks,
+    NoRecompute,
+    DataSpaceName,
+    DataSpaceType,
+    PartitionColumnsJson,
+    DataCompressionJson
 INTO #AllIdx
-FROM #PhysTbls pt
-JOIN #Ent en ON en.EntityId = pt.EntityId
-JOIN sys.indexes i ON i.object_id = pt.object_id
-WHERE i.[type_desc] <> 'HEAP' AND i.is_primary_key = 0 AND i.is_unique_constraint = 0;
-
-INSERT INTO #AllIdx(EntityId, object_id, index_id, IndexName, IsUnique)
-SELECT en.EntityId, i.object_id, i.index_id, kc.[name], CAST(1 AS bit)
-FROM #PhysTbls pt
-JOIN #Ent en ON en.EntityId = pt.EntityId
-JOIN sys.key_constraints kc
-  ON kc.parent_object_id = pt.object_id AND kc.[type] = 'UQ';
-
-INSERT INTO #AllIdx(EntityId, object_id, index_id, IndexName, IsUnique)
-SELECT en.EntityId, i.object_id, i.index_id, kc.[name], CAST(1 AS bit)
-FROM #PhysTbls pt
-JOIN #Ent en ON en.EntityId = pt.EntityId
-JOIN sys.key_constraints kc
-  ON kc.parent_object_id = pt.object_id AND kc.[type] = 'PK'
-JOIN sys.indexes i
-  ON i.object_id = kc.parent_object_id AND i.index_id = kc.unique_index_id;
+FROM IndexSource;
 
 CREATE CLUSTERED INDEX IX_AllIdx ON #AllIdx(EntityId, IndexName);
 
@@ -617,8 +684,26 @@ SELECT
   (
     SELECT
       ai2.IndexName                         AS [name],
+      CAST(ai2.IsPrimary AS bit)            AS [isPrimary],
+      ai2.Kind                              AS [kind],
       CAST(ai2.IsUnique AS bit)             AS [isUnique],
       CAST(CASE WHEN ai2.IndexName LIKE 'OSIDX\_%' ESCAPE '\\' THEN 1 ELSE 0 END AS int) AS [isPlatformAuto],
+      CAST(ai2.IsDisabled AS bit)           AS [isDisabled],
+      CAST(ai2.IsPadded AS bit)             AS [isPadded],
+      ai2.FillFactor                        AS [fillFactor],
+      CAST(ai2.IgnoreDupKey AS bit)         AS [ignoreDupKey],
+      CAST(ai2.AllowRowLocks AS bit)        AS [allowRowLocks],
+      CAST(ai2.AllowPageLocks AS bit)       AS [allowPageLocks],
+      CAST(ai2.NoRecompute AS bit)          AS [noRecompute],
+      ai2.FilterDefinition                  AS [filterDefinition],
+      CASE WHEN ai2.DataSpaceName IS NOT NULL OR ai2.DataSpaceType IS NOT NULL THEN JSON_QUERY(
+        (
+          SELECT ai2.DataSpaceName AS [name], ai2.DataSpaceType AS [type]
+          FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+        )
+      ) END                                 AS [dataSpace],
+      JSON_QUERY(COALESCE(ai2.PartitionColumnsJson, N'[]')) AS [partitionColumns],
+      JSON_QUERY(COALESCE(ai2.DataCompressionJson, N'[]'))  AS [dataCompression],
       JSON_QUERY(icj.ColumnsJson)           AS [columns]
     FROM #AllIdx ai2
     LEFT JOIN #IdxColsJson icj ON icj.EntityId = ai2.EntityId AND icj.IndexName = ai2.IndexName

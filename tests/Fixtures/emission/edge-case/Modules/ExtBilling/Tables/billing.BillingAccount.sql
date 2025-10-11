@@ -9,5 +9,5 @@ CREATE TABLE [billing].[BillingAccount] (
 GO
 
 CREATE UNIQUE INDEX [IDX_BillingAccount_Acctnum]
-    ON [billing].[BillingAccount]([AccountNumber] ASC)
+    ON [billing].[BillingAccount]([AccountNumber] ASC) WITH (PAD_INDEX = OFF, IGNORE_DUP_KEY = OFF, STATISTICS_NORECOMPUTE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
 

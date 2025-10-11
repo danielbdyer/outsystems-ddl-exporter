@@ -49,9 +49,43 @@ public sealed record SmoIndexDefinition(
     bool IsUnique,
     bool IsPrimaryKey,
     bool IsPlatformAuto,
-    ImmutableArray<SmoIndexColumnDefinition> Columns);
+    ImmutableArray<SmoIndexColumnDefinition> Columns,
+    SmoIndexMetadata Metadata);
 
 public sealed record SmoIndexColumnDefinition(string Name, int Ordinal, bool IsIncluded, bool IsDescending);
+
+public sealed record SmoIndexMetadata(
+    bool IsDisabled,
+    bool IsPadded,
+    int? FillFactor,
+    bool IgnoreDuplicateKey,
+    bool AllowRowLocks,
+    bool AllowPageLocks,
+    bool StatisticsNoRecompute,
+    string? FilterDefinition,
+    SmoIndexDataSpace? DataSpace,
+    ImmutableArray<SmoIndexPartitionColumn> PartitionColumns,
+    ImmutableArray<SmoIndexCompressionSetting> DataCompression)
+{
+    public static readonly SmoIndexMetadata Empty = new(
+        IsDisabled: false,
+        IsPadded: false,
+        FillFactor: null,
+        IgnoreDuplicateKey: false,
+        AllowRowLocks: true,
+        AllowPageLocks: true,
+        StatisticsNoRecompute: false,
+        FilterDefinition: null,
+        DataSpace: null,
+        ImmutableArray<SmoIndexPartitionColumn>.Empty,
+        ImmutableArray<SmoIndexCompressionSetting>.Empty);
+}
+
+public sealed record SmoIndexDataSpace(string Name, string Type);
+
+public sealed record SmoIndexPartitionColumn(string Name, int Ordinal);
+
+public sealed record SmoIndexCompressionSetting(int PartitionNumber, string Compression);
 
 public sealed record SmoForeignKeyDefinition(
     string Name,

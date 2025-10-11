@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using SortOrder = Microsoft.SqlServer.TransactSql.ScriptDom.SortOrder;
@@ -87,6 +88,13 @@ public sealed class SsdtEmitter
                     var script = Script(indexStatement);
                     AppendStatement(scriptBuilder, script);
                     indexNames.Add(indexName);
+
+                    if (index.Metadata.IsDisabled)
+                    {
+                        var disableStatement = BuildDisableIndexStatement(table, effectiveTableName, indexName);
+                        var disableScript = Script(disableStatement);
+                        AppendStatement(scriptBuilder, disableScript);
+                    }
                 }
             }
 
@@ -409,6 +417,210 @@ ELSE
         return result;
     }
 
+    private static BooleanExpression? ParsePredicate(string? predicate)
+    {
+        if (string.IsNullOrWhiteSpace(predicate))
+        {
+            return null;
+        }
+
+        var parser = new TSql150Parser(initialQuotedIdentifiers: false);
+        using var reader = new StringReader(predicate);
+        var result = parser.ParseBooleanExpression(reader, out var errors);
+        if (result is null || (errors is not null && errors.Count > 0))
+        {
+            return null;
+        }
+
+        return result;
+    }
+
+    private static IEnumerable<IndexOption> BuildIndexOptions(SmoIndexMetadata metadata)
+    {
+        var options = new List<IndexOption>();
+
+        if (metadata.FillFactor is int fillFactor)
+        {
+            options.Add(new IndexExpressionOption
+            {
+                OptionKind = IndexOptionKind.FillFactor,
+                Expression = new IntegerLiteral { Value = fillFactor.ToString(CultureInfo.InvariantCulture) },
+            });
+        }
+
+        options.Add(new IndexStateOption
+        {
+            OptionKind = IndexOptionKind.PadIndex,
+            OptionState = metadata.IsPadded ? OptionState.On : OptionState.Off,
+        });
+
+        options.Add(new IgnoreDupKeyIndexOption
+        {
+            OptionKind = IndexOptionKind.IgnoreDupKey,
+            OptionState = metadata.IgnoreDuplicateKey ? OptionState.On : OptionState.Off,
+        });
+
+        options.Add(new IndexStateOption
+        {
+            OptionKind = IndexOptionKind.StatisticsNoRecompute,
+            OptionState = metadata.StatisticsNoRecompute ? OptionState.On : OptionState.Off,
+        });
+
+        options.Add(new IndexStateOption
+        {
+            OptionKind = IndexOptionKind.AllowRowLocks,
+            OptionState = metadata.AllowRowLocks ? OptionState.On : OptionState.Off,
+        });
+
+        options.Add(new IndexStateOption
+        {
+            OptionKind = IndexOptionKind.AllowPageLocks,
+            OptionState = metadata.AllowPageLocks ? OptionState.On : OptionState.Off,
+        });
+
+        foreach (var compression in BuildCompressionOptions(metadata.DataCompression))
+        {
+            options.Add(compression);
+        }
+
+        return options;
+    }
+
+    private static IEnumerable<DataCompressionOption> BuildCompressionOptions(ImmutableArray<SmoIndexCompressionSetting> settings)
+    {
+        if (settings.IsDefaultOrEmpty)
+        {
+            yield break;
+        }
+
+        foreach (var group in settings.GroupBy(s => s.Compression, StringComparer.OrdinalIgnoreCase))
+        {
+            var level = MapCompressionLevel(group.Key);
+            if (level is null)
+            {
+                continue;
+            }
+
+            var option = new DataCompressionOption
+            {
+                OptionKind = IndexOptionKind.DataCompression,
+                CompressionLevel = level.Value,
+            };
+
+            foreach (var range in CollapseRanges(group.Select(s => s.PartitionNumber).OrderBy(n => n)))
+            {
+                var partitionRange = new CompressionPartitionRange
+                {
+                    From = new IntegerLiteral { Value = range.Start.ToString(CultureInfo.InvariantCulture) },
+                };
+
+                if (range.End > range.Start)
+                {
+                    partitionRange.To = new IntegerLiteral { Value = range.End.ToString(CultureInfo.InvariantCulture) };
+                }
+
+                option.PartitionRanges.Add(partitionRange);
+            }
+
+            yield return option;
+        }
+    }
+
+    private static IEnumerable<(int Start, int End)> CollapseRanges(IEnumerable<int> numbers)
+    {
+        using var enumerator = numbers.GetEnumerator();
+        if (!enumerator.MoveNext())
+        {
+            yield break;
+        }
+
+        var start = enumerator.Current;
+        var previous = start;
+
+        while (enumerator.MoveNext())
+        {
+            var current = enumerator.Current;
+            if (current == previous + 1)
+            {
+                previous = current;
+                continue;
+            }
+
+            yield return (start, previous);
+            start = previous = current;
+        }
+
+        yield return (start, previous);
+    }
+
+    private static DataCompressionLevel? MapCompressionLevel(string compression)
+    {
+        if (string.IsNullOrWhiteSpace(compression))
+        {
+            return null;
+        }
+
+        return compression.Trim().ToUpperInvariant() switch
+        {
+            "NONE" => DataCompressionLevel.None,
+            "ROW" => DataCompressionLevel.Row,
+            "PAGE" => DataCompressionLevel.Page,
+            "COLUMNSTORE" => DataCompressionLevel.ColumnStore,
+            "COLUMNSTORE_ARCHIVE" => DataCompressionLevel.ColumnStoreArchive,
+            _ => null,
+        };
+    }
+
+    private static FileGroupOrPartitionScheme? BuildFileGroupOrPartitionScheme(SmoIndexMetadata metadata)
+    {
+        if (metadata.DataSpace is null)
+        {
+            return null;
+        }
+
+        var name = new IdentifierOrValueExpression
+        {
+            Identifier = new Identifier
+            {
+                Value = metadata.DataSpace.Name,
+                QuoteType = QuoteType.SquareBracket,
+            }
+        };
+
+        var clause = new FileGroupOrPartitionScheme { Name = name };
+
+        if (string.Equals(metadata.DataSpace.Type, "PARTITION_SCHEME", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var column in metadata.PartitionColumns.OrderBy(static c => c.Ordinal))
+            {
+                clause.PartitionSchemeColumns.Add(new Identifier
+                {
+                    Value = column.Name,
+                    QuoteType = QuoteType.SquareBracket,
+                });
+            }
+        }
+
+        return clause;
+    }
+
+    private AlterIndexStatement BuildDisableIndexStatement(
+        SmoTableDefinition table,
+        string effectiveTableName,
+        string indexName)
+    {
+        return new AlterIndexStatement
+        {
+            AlterIndexType = AlterIndexType.Disable,
+            Name = new Identifier
+            {
+                Value = indexName,
+                QuoteType = QuoteType.SquareBracket,
+            },
+            OnName = BuildSchemaObjectName(table.Schema, effectiveTableName),
+        };
+    }
+
     private CreateIndexStatement BuildCreateIndexStatement(
         SmoTableDefinition table,
         SmoIndexDefinition index,
@@ -441,7 +653,38 @@ ELSE
             });
         }
 
+        ApplyIndexMetadata(statement, index.Metadata);
+
         return statement;
+    }
+
+    private void ApplyIndexMetadata(CreateIndexStatement statement, SmoIndexMetadata metadata)
+    {
+        if (!string.IsNullOrWhiteSpace(metadata.FilterDefinition))
+        {
+            var predicate = ParsePredicate(metadata.FilterDefinition);
+            if (predicate is not null)
+            {
+                BooleanExpression filter = predicate;
+                if (filter is not BooleanParenthesisExpression)
+                {
+                    filter = new BooleanParenthesisExpression { Expression = filter };
+                }
+
+                statement.FilterPredicate = filter;
+            }
+        }
+
+        foreach (var option in BuildIndexOptions(metadata))
+        {
+            statement.IndexOptions.Add(option);
+        }
+
+        var clause = BuildFileGroupOrPartitionScheme(metadata);
+        if (clause is not null)
+        {
+            statement.OnFileGroupOrPartitionScheme = clause;
+        }
     }
 
     private ImmutableArray<string> AddForeignKeys(

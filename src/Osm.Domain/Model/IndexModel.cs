@@ -10,14 +10,16 @@ public sealed record IndexModel(
     bool IsUnique,
     bool IsPrimary,
     bool IsPlatformAuto,
-    ImmutableArray<IndexColumnModel> Columns)
+    ImmutableArray<IndexColumnModel> Columns,
+    IndexOnDiskMetadata OnDisk)
 {
     public static Result<IndexModel> Create(
         IndexName name,
         bool isUnique,
         bool isPrimary,
         bool isPlatformAuto,
-        IEnumerable<IndexColumnModel> columns)
+        IEnumerable<IndexColumnModel> columns,
+        IndexOnDiskMetadata? onDisk = null)
     {
         if (columns is null)
         {
@@ -35,7 +37,13 @@ public sealed record IndexModel(
             return Result<IndexModel>.Failure(ValidationError.Create("index.columns.duplicateOrdinal", "Index columns must have unique ordinals."));
         }
 
-        return Result<IndexModel>.Success(new IndexModel(name, isUnique, isPrimary, isPlatformAuto, materialized));
+        return Result<IndexModel>.Success(new IndexModel(
+            name,
+            isUnique,
+            isPrimary,
+            isPlatformAuto,
+            materialized,
+            onDisk ?? IndexOnDiskMetadata.Empty));
     }
 
     private static bool HasDuplicateOrdinals(ImmutableArray<IndexColumnModel> columns)

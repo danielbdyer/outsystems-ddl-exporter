@@ -270,6 +270,11 @@ public sealed class SmoModelFactory
         var builder = ImmutableArray.CreateBuilder<SmoIndexDefinition>();
         var uniqueDecisions = decisions.UniqueIndexes;
 
+        var domainPrimaryIndex = context.Entity.Indexes.FirstOrDefault(i => i.IsPrimary);
+        var primaryMetadata = domainPrimaryIndex is not null
+            ? MapIndexMetadata(domainPrimaryIndex)
+            : SmoIndexMetadata.Empty;
+
         if (!context.IdentifierAttributes.IsDefaultOrEmpty)
         {
             var pkColumns = ImmutableArray.CreateBuilder<SmoIndexColumnDefinition>(context.IdentifierAttributes.Length);
@@ -287,7 +292,8 @@ public sealed class SmoModelFactory
                 IsUnique: true,
                 IsPrimaryKey: true,
                 IsPlatformAuto: false,
-                pkColumnArray));
+                pkColumnArray,
+                primaryMetadata));
         }
 
         foreach (var index in context.Entity.Indexes)
@@ -343,15 +349,54 @@ public sealed class SmoModelFactory
                 enforceUnique = decision.EnforceUnique;
             }
 
+            var metadata = MapIndexMetadata(index);
             builder.Add(new SmoIndexDefinition(
                 normalizedName,
                 enforceUnique,
                 IsPrimaryKey: false,
                 index.IsPlatformAuto,
-                columns));
+                columns,
+                metadata));
         }
 
         return builder.ToImmutable();
+    }
+
+    private static SmoIndexMetadata MapIndexMetadata(IndexModel index)
+    {
+        var onDisk = index.OnDisk;
+        var partitionColumns = onDisk.PartitionColumns.IsDefaultOrEmpty
+            ? ImmutableArray<SmoIndexPartitionColumn>.Empty
+            : onDisk.PartitionColumns
+                .OrderBy(static c => c.Ordinal)
+                .Select(c => new SmoIndexPartitionColumn(c.Column.Value, c.Ordinal))
+                .ToImmutableArray();
+
+        var compression = onDisk.DataCompression.IsDefaultOrEmpty
+            ? ImmutableArray<SmoIndexCompressionSetting>.Empty
+            : onDisk.DataCompression
+                .OrderBy(static c => c.PartitionNumber)
+                .Select(c => new SmoIndexCompressionSetting(c.PartitionNumber, c.Compression))
+                .ToImmutableArray();
+
+        SmoIndexDataSpace? dataSpace = null;
+        if (onDisk.DataSpace is not null)
+        {
+            dataSpace = new SmoIndexDataSpace(onDisk.DataSpace.Name, onDisk.DataSpace.Type);
+        }
+
+        return new SmoIndexMetadata(
+            onDisk.IsDisabled,
+            onDisk.IsPadded,
+            onDisk.FillFactor,
+            onDisk.IgnoreDuplicateKey,
+            onDisk.AllowRowLocks,
+            onDisk.AllowPageLocks,
+            onDisk.NoRecomputeStatistics,
+            onDisk.FilterDefinition,
+            dataSpace,
+            partitionColumns,
+            compression);
     }
 
     private static ImmutableArray<SmoForeignKeyDefinition> BuildForeignKeys(
