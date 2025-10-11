@@ -383,7 +383,49 @@ ELSE
             var defaultExpression = ParseExpression(column.DefaultExpression);
             if (defaultExpression is not null)
             {
-                definition.Constraints.Add(new DefaultConstraintDefinition { Expression = defaultExpression });
+                var defaultConstraintDefinition = new DefaultConstraintDefinition
+                {
+                    Expression = defaultExpression,
+                };
+
+                if (column.DefaultConstraint is { Name: { Length: > 0 } name })
+                {
+                    defaultConstraintDefinition.ConstraintIdentifier = new Identifier
+                    {
+                        Value = name,
+                        QuoteType = QuoteType.SquareBracket,
+                    };
+                }
+
+                definition.Constraints.Add(defaultConstraintDefinition);
+            }
+
+            if (!column.CheckConstraints.IsDefaultOrEmpty)
+            {
+                foreach (var checkConstraint in column.CheckConstraints)
+                {
+                    var predicate = ParsePredicate(checkConstraint.Expression);
+                    if (predicate is null)
+                    {
+                        continue;
+                    }
+
+                    var checkDefinition = new CheckConstraintDefinition
+                    {
+                        CheckCondition = predicate,
+                    };
+
+                    if (!string.IsNullOrWhiteSpace(checkConstraint.Name))
+                    {
+                        checkDefinition.ConstraintIdentifier = new Identifier
+                        {
+                            Value = checkConstraint.Name,
+                            QuoteType = QuoteType.SquareBracket,
+                        };
+                    }
+
+                    definition.Constraints.Add(checkDefinition);
+                }
             }
         }
 

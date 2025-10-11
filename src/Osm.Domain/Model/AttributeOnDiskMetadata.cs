@@ -1,3 +1,7 @@
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
+
 namespace Osm.Domain.Model;
 
 public sealed record AttributeOnDiskMetadata(
@@ -10,9 +14,11 @@ public sealed record AttributeOnDiskMetadata(
     bool? IsIdentity,
     bool? IsComputed,
     string? ComputedDefinition,
-    string? DefaultDefinition)
+    string? DefaultDefinition,
+    AttributeOnDiskDefaultConstraint? DefaultConstraint,
+    ImmutableArray<AttributeOnDiskCheckConstraint> CheckConstraints)
 {
-    public static readonly AttributeOnDiskMetadata Empty = new(null, null, null, null, null, null, null, null, null, null);
+    public static readonly AttributeOnDiskMetadata Empty = new(null, null, null, null, null, null, null, null, null, null, null, ImmutableArray<AttributeOnDiskCheckConstraint>.Empty);
 
     public static AttributeOnDiskMetadata Create(
         bool? isNullable,
@@ -24,12 +30,23 @@ public sealed record AttributeOnDiskMetadata(
         bool? isIdentity,
         bool? isComputed,
         string? computedDefinition,
-        string? defaultDefinition)
+        string? defaultDefinition,
+        AttributeOnDiskDefaultConstraint? defaultConstraint = null,
+        IEnumerable<AttributeOnDiskCheckConstraint>? checkConstraints = null)
     {
         var normalizedType = string.IsNullOrWhiteSpace(sqlType) ? null : sqlType!.Trim();
         var normalizedCollation = string.IsNullOrWhiteSpace(collation) ? null : collation!.Trim();
         var normalizedComputed = string.IsNullOrWhiteSpace(computedDefinition) ? null : computedDefinition;
         var normalizedDefault = string.IsNullOrWhiteSpace(defaultDefinition) ? null : defaultDefinition;
+        var resolvedDefaultConstraint = defaultConstraint ?? AttributeOnDiskDefaultConstraint.Create(null, normalizedDefault);
+        var normalizedChecks = (checkConstraints ?? Enumerable.Empty<AttributeOnDiskCheckConstraint>())
+            .Where(static constraint => constraint is not null)
+            .Select(static constraint => constraint!)
+            .ToImmutableArray();
+        if (normalizedChecks.IsDefault)
+        {
+            normalizedChecks = ImmutableArray<AttributeOnDiskCheckConstraint>.Empty;
+        }
 
         return new AttributeOnDiskMetadata(
             isNullable,
@@ -41,6 +58,8 @@ public sealed record AttributeOnDiskMetadata(
             isIdentity,
             isComputed,
             normalizedComputed,
-            normalizedDefault);
+            resolvedDefaultConstraint?.Definition ?? normalizedDefault,
+            resolvedDefaultConstraint,
+            normalizedChecks);
     }
 }

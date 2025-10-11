@@ -212,6 +212,15 @@ public sealed class SmoModelFactory
             var defaultExpression = ResolveDefaultExpression(onDisk.DefaultDefinition, profileDefaults, coordinate, attribute);
             var collation = onDisk.Collation;
             var description = attribute.Metadata.Description;
+            var defaultConstraint = attribute.OnDisk.DefaultConstraint is { Definition: not null } onDiskDefault
+                ? new SmoDefaultConstraintDefinition(onDiskDefault.Name, onDiskDefault.Definition, onDiskDefault.IsNotTrusted)
+                : null;
+            var checkConstraints = attribute.OnDisk.CheckConstraints.IsDefaultOrEmpty
+                ? ImmutableArray<SmoCheckConstraintDefinition>.Empty
+                : attribute.OnDisk.CheckConstraints
+                    .Where(static constraint => !string.IsNullOrWhiteSpace(constraint.Definition))
+                    .Select(static constraint => new SmoCheckConstraintDefinition(constraint.Name, constraint.Definition, constraint.IsNotTrusted))
+                    .ToImmutableArray();
 
             builder.Add(new SmoColumnDefinition(
                 attribute.LogicalName.Value,
@@ -225,7 +234,9 @@ public sealed class SmoModelFactory
                 computed,
                 defaultExpression,
                 collation,
-                description));
+                description,
+                defaultConstraint,
+                checkConstraints.IsDefaultOrEmpty ? ImmutableArray<SmoCheckConstraintDefinition>.Empty : checkConstraints));
         }
 
         return builder.ToImmutable();

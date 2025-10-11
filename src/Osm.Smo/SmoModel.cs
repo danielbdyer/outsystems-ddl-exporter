@@ -42,7 +42,13 @@ public sealed record SmoColumnDefinition(
     string? ComputedExpression,
     string? DefaultExpression,
     string? Collation,
-    string? Description);
+    string? Description,
+    SmoDefaultConstraintDefinition? DefaultConstraint,
+    ImmutableArray<SmoCheckConstraintDefinition> CheckConstraints);
+
+public sealed record SmoDefaultConstraintDefinition(string? Name, string Expression, bool IsNotTrusted);
+
+public sealed record SmoCheckConstraintDefinition(string? Name, string Expression, bool IsNotTrusted);
 
 public sealed record SmoIndexDefinition(
     string Name,

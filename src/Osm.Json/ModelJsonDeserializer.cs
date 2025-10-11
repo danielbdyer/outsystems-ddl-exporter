@@ -921,17 +921,63 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         [JsonPropertyName("defaultDefinition")]
         public string? DefaultDefinition { get; init; }
 
-        public AttributeOnDiskMetadata ToDomain() => AttributeOnDiskMetadata.Create(
-            IsNullable,
-            SqlType,
-            MaxLength,
-            Precision,
-            Scale,
-            Collation,
-            IsIdentity,
-            IsComputed,
-            ComputedDefinition,
-            DefaultDefinition);
+        [JsonPropertyName("defaultConstraint")]
+        public AttributeDefaultConstraintDocument? DefaultConstraint { get; init; }
+
+        [JsonPropertyName("checkConstraints")]
+        public AttributeCheckConstraintDocument[]? CheckConstraints { get; init; }
+
+        public AttributeOnDiskMetadata ToDomain()
+        {
+            var checks = CheckConstraints is null
+                ? Enumerable.Empty<AttributeOnDiskCheckConstraint>()
+                : CheckConstraints
+                    .Select(static constraint => constraint.ToDomain())
+                    .Where(static constraint => constraint is not null)
+                    .Select(static constraint => constraint!);
+
+            return AttributeOnDiskMetadata.Create(
+                IsNullable,
+                SqlType,
+                MaxLength,
+                Precision,
+                Scale,
+                Collation,
+                IsIdentity,
+                IsComputed,
+                ComputedDefinition,
+                DefaultDefinition,
+                DefaultConstraint?.ToDomain(),
+                checks);
+        }
+    }
+
+    private sealed record AttributeDefaultConstraintDocument
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+
+        [JsonPropertyName("definition")]
+        public string? Definition { get; init; }
+
+        [JsonPropertyName("isNotTrusted")]
+        public bool? IsNotTrusted { get; init; }
+
+        public AttributeOnDiskDefaultConstraint? ToDomain() => AttributeOnDiskDefaultConstraint.Create(Name, Definition, IsNotTrusted);
+    }
+
+    private sealed record AttributeCheckConstraintDocument
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+
+        [JsonPropertyName("definition")]
+        public string? Definition { get; init; }
+
+        [JsonPropertyName("isNotTrusted")]
+        public bool? IsNotTrusted { get; init; }
+
+        public AttributeOnDiskCheckConstraint? ToDomain() => AttributeOnDiskCheckConstraint.Create(Name, Definition, IsNotTrusted);
     }
 
     private sealed record RelationshipConstraintDocument
