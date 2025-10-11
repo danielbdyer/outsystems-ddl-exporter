@@ -507,7 +507,13 @@ public class SsdtEmitterTests
         var categoryColumns = ImmutableArray.Create(
             new SmoColumnDefinition("Id", "Id", DataType.BigInt, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
         var categoryIndexes = ImmutableArray.Create(
-            new SmoIndexDefinition("PK_Category", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1, IsIncluded: false, IsDescending: false))));
+            new SmoIndexDefinition(
+                "PK_Category",
+                IsUnique: true,
+                IsPrimaryKey: true,
+                IsPlatformAuto: false,
+                ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1, IsIncluded: false, IsDescending: false)),
+                SmoIndexMetadata.Empty));
         var categoryForeignKeys = ImmutableArray<SmoForeignKeyDefinition>.Empty;
 
         var inventoryCategory = new SmoTableDefinition(
@@ -538,7 +544,13 @@ public class SsdtEmitterTests
             new SmoColumnDefinition("Id", "Id", DataType.BigInt, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null),
             new SmoColumnDefinition("CategoryId", "CategoryId", DataType.BigInt, Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
         var productIndexes = ImmutableArray.Create(
-            new SmoIndexDefinition("PK_Product", IsUnique: true, IsPrimaryKey: true, IsPlatformAuto: false, ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1, IsIncluded: false, IsDescending: false))));
+            new SmoIndexDefinition(
+                "PK_Product",
+                IsUnique: true,
+                IsPrimaryKey: true,
+                IsPlatformAuto: false,
+                ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1, IsIncluded: false, IsDescending: false)),
+                SmoIndexMetadata.Empty));
         var productForeignKeys = ImmutableArray.Create(
             new SmoForeignKeyDefinition(
                 "FK_Product_CategoryId",
@@ -596,6 +608,80 @@ public class SsdtEmitterTests
 
         var otherScript = await File.ReadAllTextAsync(otherTable);
         Assert.Contains("CREATE TABLE [dbo].[Category]", otherScript, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task EmitAsync_applies_index_metadata_options()
+    {
+        var columns = ImmutableArray.Create(
+            new SmoColumnDefinition("Id", "Id", DataType.BigInt, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null),
+            new SmoColumnDefinition("Name", "Name", DataType.NVarChar(100), Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null),
+            new SmoColumnDefinition("PartitionCol", "PartitionCol", DataType.Int, Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
+
+        var pk = new SmoIndexDefinition(
+            "PK_Sample",
+            IsUnique: true,
+            IsPrimaryKey: true,
+            IsPlatformAuto: false,
+            ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 1, IsIncluded: false, IsDescending: false)),
+            SmoIndexMetadata.Empty);
+
+        var metadataIndex = new SmoIndexDefinition(
+            "IDX_Metadata",
+            IsUnique: true,
+            IsPrimaryKey: false,
+            IsPlatformAuto: false,
+            ImmutableArray.Create(new SmoIndexColumnDefinition("Name", 1, IsIncluded: false, IsDescending: false)),
+            new SmoIndexMetadata(
+                IsDisabled: true,
+                IsPadded: true,
+                FillFactor: 70,
+                IgnoreDuplicateKey: false,
+                AllowRowLocks: true,
+                AllowPageLocks: false,
+                StatisticsNoRecompute: true,
+                FilterDefinition: "[Name] IS NOT NULL",
+                DataSpace: new SmoIndexDataSpace("PS_Metadata", "PARTITION_SCHEME"),
+                PartitionColumns: ImmutableArray.Create(new SmoIndexPartitionColumn("PartitionCol", 1)),
+                DataCompression: ImmutableArray.Create(
+                    new SmoIndexCompressionSetting(1, "PAGE"),
+                    new SmoIndexCompressionSetting(2, "PAGE"),
+                    new SmoIndexCompressionSetting(3, "ROW"))));
+
+        var table = new SmoTableDefinition(
+            "Metadata",
+            "Metadata",
+            "OSUSR_MD_SAMPLE",
+            "dbo",
+            "OutSystems",
+            "Sample",
+            Description: null,
+            columns,
+            ImmutableArray.Create(pk, metadataIndex),
+            ImmutableArray<SmoForeignKeyDefinition>.Empty);
+
+        var smoModel = new SmoModel(ImmutableArray.Create(table));
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, SmoBuildOptions.Default);
+
+        var entry = Assert.Single(manifest.Tables);
+        var tablePath = Path.Combine(temp.Path, entry.TableFile);
+        var script = await File.ReadAllTextAsync(tablePath);
+
+        Assert.Contains("CREATE UNIQUE INDEX [IDX_Metadata]", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("WHERE ([Name] IS NOT NULL)", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("WITH (FILLFACTOR = 70", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PAD_INDEX = ON", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("IGNORE_DUP_KEY = OFF", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("STATISTICS_NORECOMPUTE = ON", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ALLOW_ROW_LOCKS = ON", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ALLOW_PAGE_LOCKS = OFF", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DATA_COMPRESSION = PAGE ON PARTITIONS (1 TO 2)", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DATA_COMPRESSION = ROW ON PARTITIONS (3)", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ON [PS_Metadata] ([PartitionCol])", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ALTER INDEX [IDX_Metadata]", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ON [dbo].[Sample] DISABLE", script, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class TempDirectory : IDisposable

@@ -343,12 +343,20 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
                 return Result<ImmutableArray<IndexModel>>.Failure(columnResult.Errors);
             }
 
+            var onDiskResult = MapIndexOnDiskMetadata(doc);
+            if (onDiskResult.IsFailure)
+            {
+                return Result<ImmutableArray<IndexModel>>.Failure(onDiskResult.Errors);
+            }
+
+            var isPrimary = doc.IsPrimary || onDiskResult.Value.Kind == IndexKind.PrimaryKey;
             var indexResult = IndexModel.Create(
                 nameResult.Value,
                 doc.IsUnique,
-                doc.IsPrimary,
+                isPrimary,
                 doc.IsPlatformAuto != 0,
-                columnResult.Value);
+                columnResult.Value,
+                onDiskResult.Value);
 
             if (indexResult.IsFailure)
             {
@@ -399,6 +407,97 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         }
 
         return Result<ImmutableArray<IndexColumnModel>>.Success(builder.ToImmutable());
+    }
+
+    private static Result<IndexOnDiskMetadata> MapIndexOnDiskMetadata(IndexDocument doc)
+    {
+        var kind = ParseIndexKind(doc.Kind);
+        IndexDataSpace? dataSpace = null;
+        if (doc.DataSpace is not null &&
+            !string.IsNullOrWhiteSpace(doc.DataSpace.Name) &&
+            !string.IsNullOrWhiteSpace(doc.DataSpace.Type))
+        {
+            dataSpace = IndexDataSpace.Create(doc.DataSpace.Name, doc.DataSpace.Type);
+        }
+
+        var partitionColumns = ImmutableArray.CreateBuilder<IndexPartitionColumn>();
+        if (doc.PartitionColumns is not null)
+        {
+            foreach (var column in doc.PartitionColumns)
+            {
+                if (column is null)
+                {
+                    continue;
+                }
+
+                var columnNameResult = ColumnName.Create(column.Name);
+                if (columnNameResult.IsFailure)
+                {
+                    return Result<IndexOnDiskMetadata>.Failure(columnNameResult.Errors);
+                }
+
+                var partitionColumnResult = IndexPartitionColumn.Create(columnNameResult.Value, column.Ordinal);
+                if (partitionColumnResult.IsFailure)
+                {
+                    return Result<IndexOnDiskMetadata>.Failure(partitionColumnResult.Errors);
+                }
+
+                partitionColumns.Add(partitionColumnResult.Value);
+            }
+        }
+
+        var compressionSettings = ImmutableArray.CreateBuilder<IndexPartitionCompression>();
+        if (doc.DataCompression is not null)
+        {
+            foreach (var compression in doc.DataCompression)
+            {
+                if (compression is null)
+                {
+                    continue;
+                }
+
+                var settingResult = IndexPartitionCompression.Create(compression.Partition, compression.Compression);
+                if (settingResult.IsFailure)
+                {
+                    return Result<IndexOnDiskMetadata>.Failure(settingResult.Errors);
+                }
+
+                compressionSettings.Add(settingResult.Value);
+            }
+        }
+
+        var metadata = IndexOnDiskMetadata.Create(
+            kind,
+            doc.IsDisabled ?? false,
+            doc.IsPadded ?? false,
+            doc.FillFactor,
+            doc.IgnoreDupKey ?? false,
+            doc.AllowRowLocks ?? true,
+            doc.AllowPageLocks ?? true,
+            doc.NoRecompute ?? false,
+            doc.FilterDefinition,
+            dataSpace,
+            partitionColumns.ToImmutable(),
+            compressionSettings.ToImmutable());
+
+        return Result<IndexOnDiskMetadata>.Success(metadata);
+    }
+
+    private static IndexKind ParseIndexKind(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return IndexKind.Unknown;
+        }
+
+        return value.Trim().ToUpperInvariant() switch
+        {
+            "PK" => IndexKind.PrimaryKey,
+            "UQ" => IndexKind.UniqueConstraint,
+            "UIX" => IndexKind.UniqueIndex,
+            "IX" => IndexKind.NonUniqueIndex,
+            _ => IndexKind.Unknown,
+        };
     }
 
     private static Result<ImmutableArray<RelationshipModel>> MapRelationships(RelationshipDocument[]? docs)
@@ -672,6 +771,42 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
         [JsonPropertyName("isPlatformAuto")]
         public int IsPlatformAuto { get; init; }
 
+        [JsonPropertyName("kind")]
+        public string? Kind { get; init; }
+
+        [JsonPropertyName("isDisabled")]
+        public bool? IsDisabled { get; init; }
+
+        [JsonPropertyName("isPadded")]
+        public bool? IsPadded { get; init; }
+
+        [JsonPropertyName("fillFactor")]
+        public int? FillFactor { get; init; }
+
+        [JsonPropertyName("ignoreDupKey")]
+        public bool? IgnoreDupKey { get; init; }
+
+        [JsonPropertyName("allowRowLocks")]
+        public bool? AllowRowLocks { get; init; }
+
+        [JsonPropertyName("allowPageLocks")]
+        public bool? AllowPageLocks { get; init; }
+
+        [JsonPropertyName("noRecompute")]
+        public bool? NoRecompute { get; init; }
+
+        [JsonPropertyName("filterDefinition")]
+        public string? FilterDefinition { get; init; }
+
+        [JsonPropertyName("dataSpace")]
+        public IndexDataSpaceDocument? DataSpace { get; init; }
+
+        [JsonPropertyName("partitionColumns")]
+        public IndexPartitionColumnDocument[]? PartitionColumns { get; init; }
+
+        [JsonPropertyName("dataCompression")]
+        public IndexPartitionCompressionDocument[]? DataCompression { get; init; }
+
         [JsonPropertyName("columns")]
         public IndexColumnDocument[]? Columns { get; init; }
     }
@@ -692,6 +827,33 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("direction")]
         public string? Direction { get; init; }
+    }
+
+    private sealed record IndexDataSpaceDocument
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+
+        [JsonPropertyName("type")]
+        public string? Type { get; init; }
+    }
+
+    private sealed record IndexPartitionColumnDocument
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+
+        [JsonPropertyName("ordinal")]
+        public int Ordinal { get; init; }
+    }
+
+    private sealed record IndexPartitionCompressionDocument
+    {
+        [JsonPropertyName("partition")]
+        public int Partition { get; init; }
+
+        [JsonPropertyName("compression")]
+        public string? Compression { get; init; }
     }
 
     private sealed record RelationshipDocument

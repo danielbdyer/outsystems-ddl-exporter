@@ -222,7 +222,20 @@
             {
               "name": "IDX_CUSTOMER_EMAIL",
               "isUnique": true,
+              "isPrimary": false,
               "isPlatformAuto": 0,
+              "kind": "UIX",
+              "isDisabled": false,
+              "isPadded": false,
+              "fillFactor": 85,
+              "ignoreDupKey": true,
+              "allowRowLocks": true,
+              "allowPageLocks": true,
+              "noRecompute": false,
+              "filterDefinition": "[EMAIL] IS NOT NULL",
+              "dataSpace": { "name": "FG_Customers", "type": "ROWS_FILEGROUP" },
+              "partitionColumns": [],
+              "dataCompression": [],
               "columns": [
                 {
                   "attribute": "Email",
@@ -236,7 +249,20 @@
             {
               "name": "IDX_CUSTOMER_NAME",
               "isUnique": false,
+              "isPrimary": false,
               "isPlatformAuto": 0,
+              "kind": "IX",
+              "isDisabled": true,
+              "isPadded": false,
+              "fillFactor": null,
+              "ignoreDupKey": false,
+              "allowRowLocks": true,
+              "allowPageLocks": true,
+              "noRecompute": true,
+              "filterDefinition": null,
+              "dataSpace": { "name": "FG_Customers", "type": "ROWS_FILEGROUP" },
+              "partitionColumns": [],
+              "dataCompression": [],
               "columns": [
                 {
                   "attribute": "LastName",
@@ -539,7 +565,25 @@
             {
               "name": "OSIDX_JOBRUN_CREATEDON",
               "isUnique": false,
+              "isPrimary": false,
               "isPlatformAuto": 1,
+              "kind": "IX",
+              "isDisabled": false,
+              "isPadded": false,
+              "fillFactor": null,
+              "ignoreDupKey": false,
+              "allowRowLocks": false,
+              "allowPageLocks": true,
+              "noRecompute": false,
+              "filterDefinition": null,
+              "dataSpace": { "name": "PS_JobRun", "type": "PARTITION_SCHEME" },
+              "partitionColumns": [
+                { "ordinal": 1, "name": "CREATEDON" }
+              ],
+              "dataCompression": [
+                { "partition": 1, "compression": "PAGE" },
+                { "partition": 2, "compression": "ROW" }
+              ],
               "columns": [
                 {
                   "attribute": "CreatedOn",

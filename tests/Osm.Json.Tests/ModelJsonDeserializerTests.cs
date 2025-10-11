@@ -80,7 +80,25 @@ public class ModelJsonDeserializerTests
                     {
                       "name": "IDX_INVOICE_NUMBER",
                       "isUnique": true,
+                      "isPrimary": false,
                       "isPlatformAuto": 0,
+                      "kind": "IX",
+                      "isDisabled": false,
+                      "isPadded": true,
+                      "fillFactor": 90,
+                      "ignoreDupKey": true,
+                      "allowRowLocks": true,
+                      "allowPageLocks": false,
+                      "noRecompute": false,
+                      "filterDefinition": "[ID] IS NOT NULL",
+                      "dataSpace": { "name": "PS_Invoices", "type": "PARTITION_SCHEME" },
+                      "partitionColumns": [
+                        { "ordinal": 1, "name": "BILLINGDATE" }
+                      ],
+                      "dataCompression": [
+                        { "partition": 1, "compression": "PAGE" },
+                        { "partition": 2, "compression": "ROW" }
+                      ],
                       "columns": [
                         { "attribute": "Id", "physicalColumn": "ID", "ordinal": 1 }
                       ]
@@ -130,6 +148,20 @@ public class ModelJsonDeserializerTests
         Assert.False(index.IsPlatformAuto);
         var indexColumn = Assert.Single(index.Columns);
         Assert.Equal(1, indexColumn.Ordinal);
+        Assert.True(index.OnDisk.IsPadded);
+        Assert.Equal(90, index.OnDisk.FillFactor);
+        Assert.True(index.OnDisk.IgnoreDuplicateKey);
+        Assert.True(index.OnDisk.AllowRowLocks);
+        Assert.False(index.OnDisk.AllowPageLocks);
+        Assert.Equal("[ID] IS NOT NULL", index.OnDisk.FilterDefinition);
+        var dataSpace = index.OnDisk.DataSpace;
+        Assert.NotNull(dataSpace);
+        Assert.Equal("PS_Invoices", dataSpace!.Name);
+        Assert.Equal("PARTITION_SCHEME", dataSpace.Type);
+        var partitionColumn = Assert.Single(index.OnDisk.PartitionColumns);
+        Assert.Equal("BILLINGDATE", partitionColumn.Column.Value);
+        Assert.Contains(index.OnDisk.DataCompression, c => c.PartitionNumber == 1 && c.Compression == "PAGE");
+        Assert.Contains(index.OnDisk.DataCompression, c => c.PartitionNumber == 2 && c.Compression == "ROW");
 
         var relationship = Assert.Single(entity.Relationships);
         Assert.Equal("Customer", relationship.TargetEntity.Value);

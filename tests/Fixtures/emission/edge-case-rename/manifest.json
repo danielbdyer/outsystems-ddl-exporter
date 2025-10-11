@@ -61,17 +61,17 @@
       "DELETE_RULE_IGNORE": 1,
       "FK_ENFORCED": 1,
       "PK": 4,
-      "DATA_HAS_ORPHANS": 1,
-      "MANDATORY": 10,
-      "DEFAULT_PRESENT": 2,
-      "DATA_NO_NULLS": 10,
+      "PHYSICAL_NOT_NULL": 4,
       "UNIQUE_NO_NULLS": 2,
+      "DATA_HAS_ORPHANS": 1,
+      "DEFAULT_PRESENT": 2,
+      "MANDATORY": 10,
       "PROFILE_MISSING": 1,
-      "PHYSICAL_NOT_NULL": 4
+      "DATA_NO_NULLS": 10
     },
     "UniqueIndexRationales": {
-      "UNIQUE_NO_NULLS": 2,
-      "PHYSICAL_UNIQUE_KEY": 2
+      "PHYSICAL_UNIQUE_KEY": 2,
+      "UNIQUE_NO_NULLS": 2
     },
     "ForeignKeyRationales": {
       "DELETE_RULE_IGNORE": 1,

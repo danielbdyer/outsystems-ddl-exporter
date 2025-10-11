@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
 using Xunit;
@@ -49,5 +50,37 @@ public sealed class IndexModelTests
         Assert.True(result.IsSuccess);
         Assert.Equal(2, result.Value.Columns.Length);
         Assert.True(result.Value.IsPlatformAuto);
+    }
+
+    [Fact]
+    public void Create_ShouldAttach_OnDiskMetadata()
+    {
+        var name = IndexName.Create("IDX_ENTITY").Value;
+        var column = Column("First", "FIRST", 1);
+        var metadata = IndexOnDiskMetadata.Create(
+            IndexKind.UniqueIndex,
+            isDisabled: true,
+            isPadded: true,
+            fillFactor: 75,
+            ignoreDuplicateKey: false,
+            allowRowLocks: true,
+            allowPageLocks: false,
+            noRecomputeStatistics: true,
+            filterDefinition: "[FIRST] IS NOT NULL",
+            dataSpace: IndexDataSpace.Create("PRIMARY", "ROWS_FILEGROUP"),
+            ImmutableArray<IndexPartitionColumn>.Empty,
+            ImmutableArray<IndexPartitionCompression>.Empty);
+
+        var result = IndexModel.Create(
+            name,
+            isUnique: true,
+            isPrimary: false,
+            isPlatformAuto: false,
+            new[] { column },
+            metadata);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(metadata, result.Value.OnDisk);
+        Assert.Equal(IndexKind.UniqueIndex, result.Value.OnDisk.Kind);
     }
 }

@@ -17,12 +17,19 @@ CREATE TABLE [dbo].[Customer] (
 GO
 
 CREATE UNIQUE INDEX [IDX_Customer_Email]
-    ON [dbo].[Customer]([Email] ASC)
+    ON [dbo].[Customer]([Email] ASC) WHERE ([EMAIL] IS NOT NULL) WITH (FILLFACTOR = 85, PAD_INDEX = OFF, IGNORE_DUP_KEY = ON, STATISTICS_NORECOMPUTE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
+    ON [FG_Customers]
 
 GO
 
 CREATE INDEX [IDX_Customer_Name]
-    ON [dbo].[Customer]([LastName] ASC, [FirstName] ASC)
+    ON [dbo].[Customer]([LastName] ASC, [FirstName] ASC) WITH (PAD_INDEX = OFF, IGNORE_DUP_KEY = OFF, STATISTICS_NORECOMPUTE = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
+    ON [FG_Customers]
+
+GO
+
+ALTER INDEX [IDX_Customer_Name]
+    ON [dbo].[Customer] DISABLE
 
 GO
 

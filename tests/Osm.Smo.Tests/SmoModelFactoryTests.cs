@@ -55,6 +55,17 @@ public class SmoModelFactoryTests
 
         var emailIndex = customerTable.Indexes.Single(i => i.Name.Equals("IDX_Customer_Email", StringComparison.OrdinalIgnoreCase));
         Assert.True(emailIndex.IsUnique);
+        Assert.Equal(85, emailIndex.Metadata.FillFactor);
+        Assert.True(emailIndex.Metadata.IgnoreDuplicateKey);
+        Assert.Equal("[EMAIL] IS NOT NULL", emailIndex.Metadata.FilterDefinition);
+        var emailDataSpace = emailIndex.Metadata.DataSpace;
+        Assert.NotNull(emailDataSpace);
+        Assert.Equal("FG_Customers", emailDataSpace!.Name);
+        Assert.Equal("ROWS_FILEGROUP", emailDataSpace.Type);
+
+        var nameIndex = customerTable.Indexes.Single(i => i.Name.Equals("IDX_Customer_Name", StringComparison.OrdinalIgnoreCase));
+        Assert.True(nameIndex.Metadata.IsDisabled);
+        Assert.True(nameIndex.Metadata.StatisticsNoRecompute);
 
         var cityForeignKey = customerTable.ForeignKeys.Single();
         Assert.Equal("FK_Customer_CityId", cityForeignKey.Name);
@@ -107,6 +118,16 @@ public class SmoModelFactoryTests
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
         var hasPlatformIndex = jobRunTable.Indexes.Any(i => i.Name.Equals("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
         Assert.True(hasPlatformIndex);
+
+        var platformIndex = jobRunTable.Indexes.Single(i => i.Name.Equals("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
+        Assert.False(platformIndex.Metadata.AllowRowLocks);
+        var jobRunDataSpace = platformIndex.Metadata.DataSpace;
+        Assert.NotNull(jobRunDataSpace);
+        Assert.Equal("PS_JobRun", jobRunDataSpace!.Name);
+        Assert.Equal("PARTITION_SCHEME", jobRunDataSpace.Type);
+        var partition = Assert.Single(platformIndex.Metadata.PartitionColumns);
+        Assert.Equal("CREATEDON", partition.Name);
+        Assert.Contains(platformIndex.Metadata.DataCompression, c => c.PartitionNumber == 1 && c.Compression == "PAGE");
     }
 
     [Fact]
