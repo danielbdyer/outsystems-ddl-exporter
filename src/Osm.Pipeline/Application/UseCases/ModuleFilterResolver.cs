@@ -1,11 +1,11 @@
 using System;
 using System.Linq;
 using Osm.Domain.Abstractions;
-using Osm.App.Configuration;
+using Osm.Pipeline.Application.Configuration;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.ModelIngestion;
 
-namespace Osm.App.UseCases;
+namespace Osm.Pipeline.Application;
 
 internal static class ModuleFilterResolver
 {

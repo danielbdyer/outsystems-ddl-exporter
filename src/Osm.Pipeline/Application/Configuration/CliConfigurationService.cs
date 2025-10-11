@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
 
-namespace Osm.App.Configuration;
+namespace Osm.Pipeline.Application.Configuration;
 
 public interface ICliConfigurationService
 {

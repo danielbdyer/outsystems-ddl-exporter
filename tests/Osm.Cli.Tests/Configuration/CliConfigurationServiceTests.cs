@@ -1,6 +1,6 @@
 using System.IO;
 using System.Threading.Tasks;
-using Osm.App.Configuration;
+using Osm.Pipeline.Application.Configuration;
 using Xunit;
 using Tests.Support;
 

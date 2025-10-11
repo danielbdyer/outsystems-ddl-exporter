@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
 
-namespace Osm.App.Configuration;
+namespace Osm.Pipeline.Application.Configuration;
 
 public sealed record CliConfiguration(
     TighteningOptions Tightening,

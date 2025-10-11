@@ -9,7 +9,7 @@ using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
 using Osm.Json.Configuration;
 
-namespace Osm.App.Configuration;
+namespace Osm.Pipeline.Application.Configuration;
 
 public sealed class CliConfigurationLoader
 {

@@ -11,8 +11,8 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Osm.App.Configuration;
-using Osm.App.UseCases;
+using Osm.Pipeline.Application;
+using Osm.Pipeline.Application.Configuration;
 using Osm.Domain.Abstractions;
 using Osm.Json;
 using Osm.Pipeline.ModelIngestion;
@@ -27,9 +27,9 @@ hostBuilder.Services.AddSingleton<IModelIngestionService, ModelIngestionService>
 hostBuilder.Services.AddSingleton<IBuildSsdtPipeline, BuildSsdtPipeline>();
 hostBuilder.Services.AddSingleton<IDmmComparePipeline, DmmComparePipeline>();
 hostBuilder.Services.AddSingleton<IExtractModelPipeline, ExtractModelPipeline>();
-hostBuilder.Services.AddSingleton<BuildSsdtUseCase>();
-hostBuilder.Services.AddSingleton<CompareWithDmmUseCase>();
-hostBuilder.Services.AddSingleton<ExtractModelUseCase>();
+hostBuilder.Services.AddSingleton<IBuildSsdtApplicationService, BuildSsdtApplicationService>();
+hostBuilder.Services.AddSingleton<ICompareWithDmmApplicationService, CompareWithDmmApplicationService>();
+hostBuilder.Services.AddSingleton<IExtractModelApplicationService, ExtractModelApplicationService>();
 
 using var host = hostBuilder.Build();
 
@@ -119,7 +119,7 @@ Command CreateBuildCommand()
         using var scope = rootServices.CreateScope();
         var services = scope.ServiceProvider;
         var configurationService = services.GetRequiredService<ICliConfigurationService>();
-        var useCase = services.GetRequiredService<BuildSsdtUseCase>();
+        var applicationService = services.GetRequiredService<IBuildSsdtApplicationService>();
 
         var configPath = context.ParseResult.GetValueForOption(configOption);
         var cancellationToken = context.GetCancellationToken();
@@ -150,14 +150,14 @@ Command CreateBuildCommand()
             context.ParseResult.GetValueForOption(staticDataOption),
             context.ParseResult.GetValueForOption(renameOption));
 
-        var input = new BuildSsdtUseCaseInput(
+        var input = new BuildSsdtApplicationRequest(
             configurationResult.Value,
             overrides,
             moduleFilter,
             CreateSqlOverrides(context.ParseResult, sqlOptions),
             cache);
 
-        var result = await useCase.RunAsync(input, cancellationToken);
+        var result = await applicationService.ExecuteAsync(input, cancellationToken);
         if (result.IsFailure)
         {
             WriteErrors(context, result.Errors);
@@ -165,10 +165,10 @@ Command CreateBuildCommand()
             return;
         }
 
-        var useCaseResult = result.Value;
-        var pipelineResult = useCaseResult.PipelineResult;
+        var applicationResult = result.Value;
+        var pipelineResult = applicationResult.PipelineResult;
 
-        if (IsSqlProfiler(useCaseResult.ProfilerProvider))
+        if (IsSqlProfiler(applicationResult.ProfilerProvider))
         {
             EmitSqlProfilerSnapshot(context, pipelineResult.Profile);
         }
@@ -193,8 +193,8 @@ Command CreateBuildCommand()
             WriteLine(context.Console, $"Static entity seed script written to {pipelineResult.StaticSeedScriptPath}");
         }
 
-        WriteLine(context.Console, $"Emitted {pipelineResult.Manifest.Tables.Count} tables to {useCaseResult.OutputDirectory}.");
-        WriteLine(context.Console, $"Manifest written to {Path.Combine(useCaseResult.OutputDirectory, "manifest.json")}");
+        WriteLine(context.Console, $"Emitted {pipelineResult.Manifest.Tables.Count} tables to {applicationResult.OutputDirectory}.");
+        WriteLine(context.Console, $"Manifest written to {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
         WriteLine(context.Console, $"Columns tightened: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount}");
         WriteLine(context.Console, $"Unique indexes enforced: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount}");
         WriteLine(context.Console, $"Foreign keys created: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount}");
@@ -210,7 +210,7 @@ Command CreateBuildCommand()
         {
             try
             {
-                var reportPath = await PipelineReportLauncher.GenerateAsync(useCaseResult, cancellationToken).ConfigureAwait(false);
+                var reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, cancellationToken).ConfigureAwait(false);
                 WriteLine(context.Console, $"Report written to {reportPath}");
                 PipelineReportLauncher.TryOpen(reportPath, context.Console);
             }
@@ -254,7 +254,7 @@ Command CreateExtractCommand()
         using var scope = rootServices.CreateScope();
         var services = scope.ServiceProvider;
         var configurationService = services.GetRequiredService<ICliConfigurationService>();
-        var useCase = services.GetRequiredService<ExtractModelUseCase>();
+        var applicationService = services.GetRequiredService<IExtractModelApplicationService>();
 
         var configPath = context.ParseResult.GetValueForOption(configOption);
         var configurationResult = await configurationService.LoadAsync(configPath, context.GetCancellationToken());
@@ -273,12 +273,12 @@ Command CreateExtractCommand()
             context.ParseResult.GetValueForOption(outputOption),
             context.ParseResult.GetValueForOption(mockSqlOption));
 
-        var input = new ExtractModelUseCaseInput(
+        var input = new ExtractModelApplicationRequest(
             configurationResult.Value,
             overrides,
             CreateSqlOverrides(context.ParseResult, sqlOptions));
 
-        var result = await useCase.RunAsync(input, context.GetCancellationToken());
+        var result = await applicationService.ExecuteAsync(input, context.GetCancellationToken());
         if (result.IsFailure)
         {
             WriteErrors(context, result.Errors);
@@ -334,7 +334,7 @@ Command CreateCompareCommand()
         using var scope = rootServices.CreateScope();
         var services = scope.ServiceProvider;
         var configurationService = services.GetRequiredService<ICliConfigurationService>();
-        var useCase = services.GetRequiredService<CompareWithDmmUseCase>();
+        var applicationService = services.GetRequiredService<ICompareWithDmmApplicationService>();
 
         var configPath = context.ParseResult.GetValueForOption(configOption);
         var configurationResult = await configurationService.LoadAsync(configPath, context.GetCancellationToken());
@@ -361,14 +361,14 @@ Command CreateCompareCommand()
             context.ParseResult.GetValueForOption(dmmOption),
             context.ParseResult.GetValueForOption(outputOption));
 
-        var input = new CompareWithDmmUseCaseInput(
+        var input = new CompareWithDmmApplicationRequest(
             configurationResult.Value,
             overrides,
             moduleFilter,
             CreateSqlOverrides(context.ParseResult, sqlOptions),
             cache);
 
-        var result = await useCase.RunAsync(input, context.GetCancellationToken());
+        var result = await applicationService.ExecuteAsync(input, context.GetCancellationToken());
         if (result.IsFailure)
         {
             WriteErrors(context, result.Errors);

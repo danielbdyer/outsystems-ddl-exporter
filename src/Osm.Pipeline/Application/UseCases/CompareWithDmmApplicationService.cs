@@ -2,36 +2,43 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Osm.App.Configuration;
+using Osm.Pipeline.Application.Configuration;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
 using Osm.Smo;
 
-namespace Osm.App.UseCases;
+namespace Osm.Pipeline.Application;
 
-public sealed record CompareWithDmmUseCaseInput(
+public sealed record CompareWithDmmApplicationRequest(
     CliConfigurationContext ConfigurationContext,
     CompareWithDmmOverrides Overrides,
     ModuleFilterOverrides ModuleFilter,
     SqlOptionsOverrides Sql,
     CacheOptionsOverrides Cache);
 
-public sealed record CompareWithDmmUseCaseResult(
+public sealed record CompareWithDmmApplicationResult(
     DmmComparePipelineResult PipelineResult,
     string DiffOutputPath);
 
-public sealed class CompareWithDmmUseCase
+public interface ICompareWithDmmApplicationService
+{
+    Task<Result<CompareWithDmmApplicationResult>> ExecuteAsync(
+        CompareWithDmmApplicationRequest input,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class CompareWithDmmApplicationService : ICompareWithDmmApplicationService
 {
     private readonly IDmmComparePipeline _pipeline;
 
-    public CompareWithDmmUseCase(IDmmComparePipeline pipeline)
+    public CompareWithDmmApplicationService(IDmmComparePipeline pipeline)
     {
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
     }
 
-    public async Task<Result<CompareWithDmmUseCaseResult>> RunAsync(CompareWithDmmUseCaseInput input, CancellationToken cancellationToken = default)
+    public async Task<Result<CompareWithDmmApplicationResult>> ExecuteAsync(CompareWithDmmApplicationRequest input, CancellationToken cancellationToken = default)
     {
         if (input is null)
         {
@@ -44,13 +51,13 @@ public sealed class CompareWithDmmUseCase
         var sqlOptionsResult = SqlOptionsResolver.Resolve(configuration, input.Sql);
         if (sqlOptionsResult.IsFailure)
         {
-            return Result<CompareWithDmmUseCaseResult>.Failure(sqlOptionsResult.Errors);
+            return Result<CompareWithDmmApplicationResult>.Failure(sqlOptionsResult.Errors);
         }
 
         var moduleFilterResult = ModuleFilterResolver.Resolve(configuration, input.ModuleFilter);
         if (moduleFilterResult.IsFailure)
         {
-            return Result<CompareWithDmmUseCaseResult>.Failure(moduleFilterResult.Errors);
+            return Result<CompareWithDmmApplicationResult>.Failure(moduleFilterResult.Errors);
         }
 
         var moduleFilter = moduleFilterResult.Value;
@@ -63,7 +70,7 @@ public sealed class CompareWithDmmUseCase
 
         if (modelPathResult.IsFailure)
         {
-            return Result<CompareWithDmmUseCaseResult>.Failure(modelPathResult.Errors);
+            return Result<CompareWithDmmApplicationResult>.Failure(modelPathResult.Errors);
         }
 
         var profilePathResult = ResolveRequiredPath(
@@ -74,7 +81,7 @@ public sealed class CompareWithDmmUseCase
 
         if (profilePathResult.IsFailure)
         {
-            return Result<CompareWithDmmUseCaseResult>.Failure(profilePathResult.Errors);
+            return Result<CompareWithDmmApplicationResult>.Failure(profilePathResult.Errors);
         }
 
         var dmmPathResult = ResolveRequiredPath(
@@ -85,7 +92,7 @@ public sealed class CompareWithDmmUseCase
 
         if (dmmPathResult.IsFailure)
         {
-            return Result<CompareWithDmmUseCaseResult>.Failure(dmmPathResult.Errors);
+            return Result<CompareWithDmmApplicationResult>.Failure(dmmPathResult.Errors);
         }
 
         var outputDirectory = ResolveOutputDirectory(input.Overrides.OutputDirectory);
@@ -119,11 +126,11 @@ public sealed class CompareWithDmmUseCase
         var pipelineResult = await _pipeline.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
         if (pipelineResult.IsFailure)
         {
-            return Result<CompareWithDmmUseCaseResult>.Failure(pipelineResult.Errors);
+            return Result<CompareWithDmmApplicationResult>.Failure(pipelineResult.Errors);
         }
 
         var resolvedDiffPath = pipelineResult.Value.DiffArtifactPath;
-        return new CompareWithDmmUseCaseResult(pipelineResult.Value, resolvedDiffPath);
+        return new CompareWithDmmApplicationResult(pipelineResult.Value, resolvedDiffPath);
     }
 
     private static Result<string> ResolveRequiredPath(string? overridePath, string? fallbackPath, string errorCode, string errorMessage)

@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Osm.App.UseCases;
+using Osm.Pipeline.Application;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
@@ -76,7 +76,7 @@ public class PipelineReportLauncherTests
         await File.WriteAllTextAsync(Path.Combine(output.Path, "dmm-diff.json"), "{}");
         await File.WriteAllTextAsync(Path.Combine(output.Path, "Seeds", "StaticEntities.seed.sql"), string.Empty);
 
-        var useCaseResult = new BuildSsdtUseCaseResult(
+        var useCaseResult = new BuildSsdtApplicationResult(
             pipelineResult,
             "fixture",
             Path.Combine(output.Path, "profile.json"),

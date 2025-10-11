@@ -1,9 +1,9 @@
 using System;
 using Osm.Domain.Abstractions;
-using Osm.App.Configuration;
+using Osm.Pipeline.Application.Configuration;
 using Osm.Pipeline.Orchestration;
 
-namespace Osm.App.UseCases;
+namespace Osm.Pipeline.Application;
 
 internal static class SqlOptionsResolver
 {

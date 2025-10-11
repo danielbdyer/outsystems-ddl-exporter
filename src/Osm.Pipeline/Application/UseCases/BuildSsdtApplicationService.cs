@@ -2,8 +2,8 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Osm.App.Configuration;
-using Osm.App.StaticData;
+using Osm.Pipeline.Application.Configuration;
+using Osm.Pipeline.Application.StaticData;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
@@ -13,31 +13,38 @@ using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
-namespace Osm.App.UseCases;
+namespace Osm.Pipeline.Application;
 
-public sealed record BuildSsdtUseCaseInput(
+public sealed record BuildSsdtApplicationRequest(
     CliConfigurationContext ConfigurationContext,
     BuildSsdtOverrides Overrides,
     ModuleFilterOverrides ModuleFilter,
     SqlOptionsOverrides Sql,
     CacheOptionsOverrides Cache);
 
-public sealed record BuildSsdtUseCaseResult(
+public sealed record BuildSsdtApplicationResult(
     BuildSsdtPipelineResult PipelineResult,
     string ProfilerProvider,
     string? ProfilePath,
     string OutputDirectory);
 
-public sealed class BuildSsdtUseCase
+public interface IBuildSsdtApplicationService
+{
+    Task<Result<BuildSsdtApplicationResult>> ExecuteAsync(
+        BuildSsdtApplicationRequest input,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class BuildSsdtApplicationService : IBuildSsdtApplicationService
 {
     private readonly IBuildSsdtPipeline _pipeline;
-    public BuildSsdtUseCase(
+    public BuildSsdtApplicationService(
         IBuildSsdtPipeline pipeline)
     {
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
     }
 
-    public async Task<Result<BuildSsdtUseCaseResult>> RunAsync(BuildSsdtUseCaseInput input, CancellationToken cancellationToken = default)
+    public async Task<Result<BuildSsdtApplicationResult>> ExecuteAsync(BuildSsdtApplicationRequest input, CancellationToken cancellationToken = default)
     {
         if (input is null)
         {
@@ -50,13 +57,13 @@ public sealed class BuildSsdtUseCase
         var sqlOptionsResult = SqlOptionsResolver.Resolve(configuration, input.Sql);
         if (sqlOptionsResult.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(sqlOptionsResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(sqlOptionsResult.Errors);
         }
 
         var moduleFilterResult = ModuleFilterResolver.Resolve(configuration, input.ModuleFilter);
         if (moduleFilterResult.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(moduleFilterResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(moduleFilterResult.Errors);
         }
 
         var moduleFilter = moduleFilterResult.Value;
@@ -65,7 +72,7 @@ public sealed class BuildSsdtUseCase
         var profilePathResult = ResolveProfilePath(profilerProvider, configuration, input.Overrides);
         if (profilePathResult.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(profilePathResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(profilePathResult.Errors);
         }
 
         var profilePath = profilePathResult.Value;
@@ -73,7 +80,7 @@ public sealed class BuildSsdtUseCase
         var modelPath = ResolveModelPath(configuration, input.Overrides.ModelPath);
         if (modelPath.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(modelPath.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(modelPath.Errors);
         }
 
         var outputDirectory = ResolveOutputDirectory(input.Overrides.OutputDirectory);
@@ -84,7 +91,7 @@ public sealed class BuildSsdtUseCase
 
         if (namingOverridesResult.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(namingOverridesResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(namingOverridesResult.Errors);
         }
 
         var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission)
@@ -118,10 +125,10 @@ public sealed class BuildSsdtUseCase
         var pipelineResult = await _pipeline.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
         if (pipelineResult.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(pipelineResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(pipelineResult.Errors);
         }
 
-        return new BuildSsdtUseCaseResult(
+        return new BuildSsdtApplicationResult(
             pipelineResult.Value,
             profilerProvider,
             profilePath,

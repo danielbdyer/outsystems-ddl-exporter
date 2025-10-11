@@ -8,7 +8,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Osm.App.UseCases;
+using Osm.Pipeline.Application;
 using Osm.Emission;
 
 namespace Osm.Cli;
@@ -17,7 +17,7 @@ internal static class PipelineReportLauncher
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-    public static async Task<string> GenerateAsync(BuildSsdtUseCaseResult useCaseResult, CancellationToken cancellationToken)
+    public static async Task<string> GenerateAsync(BuildSsdtApplicationResult useCaseResult, CancellationToken cancellationToken)
     {
         if (useCaseResult is null)
         {
@@ -110,7 +110,7 @@ internal static class PipelineReportLauncher
     }
 
     private static string BuildHtml(
-        BuildSsdtUseCaseResult useCaseResult,
+        BuildSsdtApplicationResult useCaseResult,
         SsdtManifest manifest,
         Osm.Validation.Tightening.PolicyDecisionReport decisionReport,
         ModuleSummary[] moduleSummaries,

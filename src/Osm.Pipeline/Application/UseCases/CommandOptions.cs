@@ -4,7 +4,7 @@ using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.ModelIngestion;
 
-namespace Osm.App.UseCases;
+namespace Osm.Pipeline.Application;
 
 public sealed record SqlOptionsOverrides(
     string? ConnectionString,
