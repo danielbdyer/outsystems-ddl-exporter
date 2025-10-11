@@ -1,17 +1,16 @@
 CREATE TABLE [dbo].[CUSTOMER_PORTAL] (
+    [CityId]    BIGINT         NOT NULL,
+    [Email]     NVARCHAR (255) COLLATE [Latin1_General_CI_AI] NOT NULL,
+    [FirstName] NVARCHAR (100)
+        DEFAULT (''),
     [Id]        BIGINT         IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_CUSTOMER_PORTAL]
             PRIMARY KEY CLUSTERED,
-    [Email]     NVARCHAR (255) COLLATE Latin1_General_CI_AI NOT NULL,
-    [FirstName] NVARCHAR (100)
-        DEFAULT (''),
     [LastName]  NVARCHAR (100)
         DEFAULT (''),
-    [CityId]    BIGINT         NOT NULL,
     CONSTRAINT [FK_CUSTOMER_PORTAL_CityId]
         FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])
-            ON DELETE NO ACTION
-            ON UPDATE NO ACTION
+            ON DELETE NO ACTION ON UPDATE NO ACTION
 )
 
 GO
@@ -136,4 +135,3 @@ ELSE
         @level0type=N'SCHEMA',@level0name=N'dbo',
         @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
         @level2type=N'COLUMN',@level2name=N'CityId';
-

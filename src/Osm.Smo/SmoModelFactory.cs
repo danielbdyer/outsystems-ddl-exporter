@@ -120,8 +120,8 @@ public sealed class SmoModelFactory
         IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality)
     {
         var columns = BuildColumns(context, decisions, profileDefaults);
-        var indexes = BuildIndexes(context, decisions, options.IncludePlatformAutoIndexes);
-        var foreignKeys = BuildForeignKeys(context, decisions, entityLookup, foreignKeyReality);
+        var indexes = BuildIndexes(context, decisions, options.IncludePlatformAutoIndexes, options.Format);
+        var foreignKeys = BuildForeignKeys(context, decisions, entityLookup, foreignKeyReality, options.Format);
         var triggers = BuildTriggers(context);
         var catalog = string.IsNullOrWhiteSpace(context.Entity.Catalog) ? options.DefaultCatalogName : context.Entity.Catalog!;
 
@@ -356,7 +356,8 @@ public sealed class SmoModelFactory
     private static ImmutableArray<SmoIndexDefinition> BuildIndexes(
         EntityEmissionContext context,
         PolicyDecisionSet decisions,
-        bool includePlatformAuto)
+        bool includePlatformAuto,
+        SmoFormatOptions format)
     {
         var builder = ImmutableArray.CreateBuilder<SmoIndexDefinition>();
         var uniqueDecisions = decisions.UniqueIndexes;
@@ -375,7 +376,12 @@ public sealed class SmoModelFactory
                 pkColumns.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, i + 1, IsIncluded: false, IsDescending: false));
             }
 
-            var pkName = NormalizeConstraintName($"PK_{context.Entity.PhysicalName.Value}", context.Entity, context.IdentifierAttributes);
+            var pkName = NormalizeConstraintName(
+                $"PK_{context.Entity.PhysicalName.Value}",
+                context.Entity,
+                context.IdentifierAttributes,
+                ConstraintNameKind.PrimaryKey,
+                format);
             var pkColumnArray = pkColumns.ToImmutable();
 
             builder.Add(new SmoIndexDefinition(
@@ -431,7 +437,12 @@ public sealed class SmoModelFactory
             {
                 continue;
             }
-            var normalizedName = NormalizeConstraintName(index.Name.Value, context.Entity, referencedAttributes);
+            var normalizedName = NormalizeConstraintName(
+                index.Name.Value,
+                context.Entity,
+                referencedAttributes,
+                index.IsUnique ? ConstraintNameKind.UniqueIndex : ConstraintNameKind.NonUniqueIndex,
+                format);
 
             var indexCoordinate = new IndexCoordinate(context.Entity.Schema, context.Entity.PhysicalName, index.Name);
             var enforceUnique = index.IsUnique;
@@ -494,7 +505,8 @@ public sealed class SmoModelFactory
         EntityEmissionContext context,
         PolicyDecisionSet decisions,
         EntityEmissionIndex entityLookup,
-        IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality)
+        IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality,
+        SmoFormatOptions format)
     {
         var builder = ImmutableArray.CreateBuilder<SmoForeignKeyDefinition>();
 
@@ -525,7 +537,12 @@ public sealed class SmoModelFactory
 
             var isNoCheck = foreignKeyReality.TryGetValue(coordinate, out var reality) && reality.IsNoCheck;
             var referencedAttributes = new[] { attribute };
-            var name = NormalizeConstraintName($"FK_{context.Entity.PhysicalName.Value}_{attribute.ColumnName.Value}", context.Entity, referencedAttributes);
+            var name = NormalizeConstraintName(
+                $"FK_{context.Entity.PhysicalName.Value}_{attribute.ColumnName.Value}",
+                context.Entity,
+                referencedAttributes,
+                ConstraintNameKind.ForeignKey,
+                format);
             builder.Add(new SmoForeignKeyDefinition(
                 name,
                 attribute.LogicalName.Value,
@@ -589,7 +606,9 @@ public sealed class SmoModelFactory
     private static string NormalizeConstraintName(
         string originalName,
         EntityModel entity,
-        IReadOnlyCollection<AttributeModel> referencedAttributes)
+        IReadOnlyCollection<AttributeModel> referencedAttributes,
+        ConstraintNameKind kind,
+        SmoFormatOptions format)
     {
         if (string.IsNullOrWhiteSpace(originalName))
         {
@@ -615,7 +634,8 @@ public sealed class SmoModelFactory
             .ToArray();
 
         var rebuiltSuffix = string.Join('_', parts);
-        return string.IsNullOrEmpty(prefix) ? rebuiltSuffix : $"{prefix}_{rebuiltSuffix}";
+        var baseName = string.IsNullOrEmpty(prefix) ? rebuiltSuffix : $"{prefix}_{rebuiltSuffix}";
+        return format.IndexNaming.Apply(baseName, kind);
     }
 
     private static string NormalizeToken(string value)

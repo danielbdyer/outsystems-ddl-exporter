@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.SqlServer.SqlManagementObjects" Version="170.23.0" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="170.23.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Osm.Domain\Osm.Domain.csproj" />

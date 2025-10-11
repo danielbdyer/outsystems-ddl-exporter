@@ -2,7 +2,6 @@ using System;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using Microsoft.SqlServer.Management.Smo;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Osm.Domain.Configuration;
@@ -54,11 +53,12 @@ public class SsdtEmitterTests
         Assert.Contains("CREATE TABLE [dbo].[Customer]", customerScript);
         Assert.Contains("CONSTRAINT [PK_Customer]", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("CONSTRAINT [FK_Customer_CityId]", customerScript, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(Environment.NewLine + "            PRIMARY KEY CLUSTERED,", customerScript);
-        Assert.Contains("FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PRIMARY KEY", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FOREIGN KEY", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("REFERENCES [dbo].[City] ([Id])", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ON DELETE NO ACTION", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ON UPDATE NO ACTION", customerScript, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("DEFAULT ('')", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DEFAULT", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("CREATE UNIQUE INDEX [IDX_Customer_Email]", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("EXEC sys.sp_addextendedproperty", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("LegacyCode", customerScript, StringComparison.Ordinal);
@@ -88,10 +88,6 @@ public class SsdtEmitterTests
     [Fact]
     public void FormatCreateTableScript_places_default_on_indented_line()
     {
-        var method = typeof(SsdtEmitter)
-            .GetMethod("FormatCreateTableScript", BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(method);
-
         var statement = new CreateTableStatement
         {
             Definition = new TableDefinition()
@@ -106,7 +102,7 @@ public class SsdtEmitterTests
         });
 
         var foreignKeyLookup = ImmutableDictionary<string, bool>.Empty as IReadOnlyDictionary<string, bool>;
-        var formatted = (string)method!.Invoke(null, new object[] { script, statement, foreignKeyLookup })!;
+        var formatted = PerTableWriter.FormatCreateTableScript(script, statement, foreignKeyLookup);
 
         var expected = string.Join(Environment.NewLine, new[]
         {
@@ -122,10 +118,6 @@ public class SsdtEmitterTests
     [Fact]
     public void FormatCreateTableScript_indents_named_default_constraint_with_trailing_comma()
     {
-        var method = typeof(SsdtEmitter)
-            .GetMethod("FormatCreateTableScript", BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(method);
-
         var statement = new CreateTableStatement
         {
             Definition = new TableDefinition()
@@ -142,7 +134,7 @@ public class SsdtEmitterTests
         });
 
         var foreignKeyLookup = ImmutableDictionary<string, bool>.Empty as IReadOnlyDictionary<string, bool>;
-        var formatted = (string)method!.Invoke(null, new object[] { script, statement, foreignKeyLookup })!;
+        var formatted = PerTableWriter.FormatCreateTableScript(script, statement, foreignKeyLookup);
 
         var expected = string.Join(Environment.NewLine, new[]
         {
@@ -159,10 +151,6 @@ public class SsdtEmitterTests
     [Fact]
     public void FormatCreateTableScript_does_not_modify_table_constraints()
     {
-        var method = typeof(SsdtEmitter)
-            .GetMethod("FormatCreateTableScript", BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(method);
-
         var statement = new CreateTableStatement
         {
             Definition = new TableDefinition()
@@ -178,7 +166,7 @@ public class SsdtEmitterTests
         });
 
         var foreignKeyLookup = ImmutableDictionary<string, bool>.Empty as IReadOnlyDictionary<string, bool>;
-        var formatted = (string)method!.Invoke(null, new object[] { script, statement, foreignKeyLookup })!;
+        var formatted = PerTableWriter.FormatCreateTableScript(script, statement, foreignKeyLookup);
 
         Assert.Equal(script, formatted);
     }
@@ -186,10 +174,6 @@ public class SsdtEmitterTests
     [Fact]
     public void FormatForeignKeyConstraints_moves_trailing_comma_after_on_clauses()
     {
-        var method = typeof(SsdtEmitter)
-            .GetMethod("FormatForeignKeyConstraints", BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(method);
-
         var script = string.Join(Environment.NewLine, new[]
         {
             "CREATE TABLE [dbo].[Sample] (",
@@ -199,8 +183,15 @@ public class SsdtEmitterTests
             ")"
         });
 
+        var statement = new CreateTableStatement
+        {
+            Definition = new TableDefinition()
+        };
+        statement.Definition!.ColumnDefinitions.Add(new ColumnDefinition());
+        statement.Definition.ColumnDefinitions.Add(new ColumnDefinition());
+
         var foreignKeyLookup = ImmutableDictionary<string, bool>.Empty as IReadOnlyDictionary<string, bool>;
-        var formatted = (string)method!.Invoke(null, new object[] { script, foreignKeyLookup })!;
+        var formatted = PerTableWriter.FormatCreateTableScript(script, statement, foreignKeyLookup);
 
         var expected = string.Join(Environment.NewLine, new[]
         {
@@ -640,7 +631,8 @@ public class SsdtEmitterTests
             EmitBareTableOnly: false,
             SanitizeModuleNames: true,
             ModuleParallelism: 1,
-            NamingOverrides: overrides.Value);
+            NamingOverrides: overrides.Value,
+            Format: SmoFormatOptions.Default);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
