@@ -347,7 +347,7 @@ public sealed class SmoModelFactory
         var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
         if (decisions.Nullability.TryGetValue(coordinate, out var decision))
         {
-            return decision.MakeNotNull;
+            return decision.Outcome.MakeNotNull;
         }
 
         return attribute.IsMandatory;
@@ -448,7 +448,7 @@ public sealed class SmoModelFactory
             var enforceUnique = index.IsUnique;
             if (index.IsUnique && uniqueDecisions.TryGetValue(indexCoordinate, out var decision))
             {
-                enforceUnique = decision.EnforceUnique;
+                enforceUnique = decision.Outcome.EnforceUnique;
             }
 
             var metadata = MapIndexMetadata(index);
@@ -518,7 +518,7 @@ public sealed class SmoModelFactory
             }
 
             var coordinate = new ColumnCoordinate(context.Entity.Schema, context.Entity.PhysicalName, attribute.ColumnName);
-            if (!decisions.ForeignKeys.TryGetValue(coordinate, out var decision) || !decision.CreateConstraint)
+            if (!decisions.ForeignKeys.TryGetValue(coordinate, out var decision) || !decision.Outcome.CreateConstraint)
             {
                 continue;
             }

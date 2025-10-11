@@ -9,6 +9,7 @@ using Osm.Domain.ValueObjects;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
+using Xunit;
 
 namespace Osm.Smo.Tests;
 
@@ -20,8 +21,9 @@ public class SmoModelFactoryTests
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, options);
-        return (model, decisions, snapshot);
+        var result = policy.Decide(model, snapshot, options);
+        Assert.Equal(PolicyResultKind.Decision, result.Kind);
+        return (model, result.Decision, snapshot);
     }
 
     [Fact]
@@ -210,7 +212,9 @@ public class SmoModelFactoryTests
         var model = ModelFixtures.LoadModel("model.micro-unique.json");
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUniqueWithDuplicates);
         var options = TighteningOptions.Default;
-        var decisions = new TighteningPolicy().Decide(model, snapshot, options);
+        var decisionResult = new TighteningPolicy().Decide(model, snapshot, options);
+        Assert.Equal(PolicyResultKind.Decision, decisionResult.Kind);
+        var decisions = decisionResult.Decision;
         var factory = new SmoModelFactory();
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
 
@@ -237,12 +241,14 @@ public class SmoModelFactoryTests
             defaults.Mocking).Value;
 
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, aggressiveOptions);
+        var result = policy.Decide(model, snapshot, aggressiveOptions);
+        Assert.Equal(PolicyResultKind.Decision, result.Kind);
+        var decisions = result.Decision;
 
         var entity = model.Modules.Single().Entities.Single();
         var indexModel = entity.Indexes.Single();
         var coordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, indexModel.Name);
-        var indexDecision = decisions.UniqueIndexes[coordinate];
+        var indexDecision = decisions.UniqueIndexes[coordinate].Outcome;
         Assert.True(indexDecision.EnforceUnique);
         Assert.True(indexDecision.RequiresRemediation);
 
@@ -292,9 +298,11 @@ public class SmoModelFactoryTests
         var foreignKeyDecision = ForeignKeyDecision.Create(fkCoordinate, createConstraint: true, ImmutableArray<string>.Empty);
 
         var decisions = PolicyDecisionSet.Create(
-            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
-            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(fkCoordinate, foreignKeyDecision),
-            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, PolicyDecision<NullabilityDecision>>.Empty,
+            ImmutableDictionary<ColumnCoordinate, PolicyDecision<ForeignKeyDecision>>.Empty.Add(
+                fkCoordinate,
+                ManualDecision(foreignKeyDecision)),
+            ImmutableDictionary<IndexCoordinate, PolicyDecision<UniqueIndexDecision>>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty);
 
         var factory = new SmoModelFactory();
@@ -367,9 +375,11 @@ public class SmoModelFactoryTests
         var fkDecision = ForeignKeyDecision.Create(columnCoordinate, createConstraint: true, ImmutableArray<string>.Empty);
 
         var decisions = PolicyDecisionSet.Create(
-            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
-            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(columnCoordinate, fkDecision),
-            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, PolicyDecision<NullabilityDecision>>.Empty,
+            ImmutableDictionary<ColumnCoordinate, PolicyDecision<ForeignKeyDecision>>.Empty.Add(
+                columnCoordinate,
+                ManualDecision(fkDecision)),
+            ImmutableDictionary<IndexCoordinate, PolicyDecision<UniqueIndexDecision>>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty);
 
         var factory = new SmoModelFactory();
@@ -427,6 +437,10 @@ public class SmoModelFactoryTests
             isActive: true,
             new[] { id, name }).Value;
     }
+
+    private static PolicyDecision<TDecision> ManualDecision<TDecision>(TDecision outcome)
+        where TDecision : class
+        => PolicyDecision<TDecision>.Create("tests.manual", outcome);
 
     private static EntityModel CreateProductEntity(EntityModel category)
     {

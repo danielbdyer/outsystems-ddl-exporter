@@ -74,6 +74,12 @@ public static class DirectorySnapshot
                 foreach (var property in element.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
                 {
                     writer.WritePropertyName(property.Name);
+                    if (string.Equals(property.Name, "GeneratedAtUtc", StringComparison.Ordinal))
+                    {
+                        writer.WriteStringValue("0001-01-01T00:00:00Z");
+                        continue;
+                    }
+
                     WriteCanonicalJson(writer, property.Value);
                 }
 

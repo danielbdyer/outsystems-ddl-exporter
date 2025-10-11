@@ -20,7 +20,9 @@ public sealed class TighteningPolicyGoldenVectorsTests
     [Fact]
     public void EvaluateCautiousMatchesGoldenExpectations()
     {
-        var decisions = TighteningPolicy.Evaluate(Model, Snapshot, TighteningMode.Cautious);
+        var cautiousResult = TighteningPolicy.Evaluate(Model, Snapshot, TighteningMode.Cautious);
+        Assert.Equal(PolicyResultKind.Decision, cautiousResult.Kind);
+        var decisions = cautiousResult.Decision;
 
         var customerId = decisions.Nullability[CustomerColumn("ID")];
         Assert.True(customerId.MakeNotNull);
@@ -39,7 +41,9 @@ public sealed class TighteningPolicyGoldenVectorsTests
     [Fact]
     public void EvaluateEvidenceGatedTightensOnCleanSignals()
     {
-        var decisions = TighteningPolicy.Evaluate(Model, Snapshot, TighteningMode.EvidenceGated);
+        var gatedResult = TighteningPolicy.Evaluate(Model, Snapshot, TighteningMode.EvidenceGated);
+        Assert.Equal(PolicyResultKind.Decision, gatedResult.Kind);
+        var decisions = gatedResult.Decision;
 
         var customerId = decisions.Nullability[CustomerColumn("ID")];
         Assert.True(customerId.MakeNotNull);
@@ -64,7 +68,9 @@ public sealed class TighteningPolicyGoldenVectorsTests
     [Fact]
     public void EvaluateAggressiveRequiresRemediationWhenDataIsDirty()
     {
-        var decisions = TighteningPolicy.Evaluate(Model, Snapshot, TighteningMode.Aggressive);
+        var aggressiveResult = TighteningPolicy.Evaluate(Model, Snapshot, TighteningMode.Aggressive);
+        Assert.Equal(PolicyResultKind.Decision, aggressiveResult.Kind);
+        var decisions = aggressiveResult.Decision;
 
         var customerId = decisions.Nullability[CustomerColumn("ID")];
         Assert.True(customerId.MakeNotNull);

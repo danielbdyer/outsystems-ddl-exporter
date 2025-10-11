@@ -24,7 +24,9 @@ public class DmmComparatorTests
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, options);
+        var result = policy.Decide(model, snapshot, options);
+        Assert.Equal(PolicyResultKind.Decision, result.Kind);
+        var decisions = result.Decision;
         var factory = new SmoModelFactory();
         _smoModel = factory.Create(
             model,
@@ -210,7 +212,9 @@ public class DmmComparatorTests
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(mutatedModel, snapshot, options);
+        var decisionResult = policy.Decide(mutatedModel, snapshot, options);
+        Assert.Equal(PolicyResultKind.Decision, decisionResult.Kind);
+        var decisions = decisionResult.Decision;
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
         var smoModel = new SmoModelFactory().Create(
             mutatedModel,

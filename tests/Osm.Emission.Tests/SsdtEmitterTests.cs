@@ -5,11 +5,14 @@ using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
+using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
+using Xunit;
 
 namespace Osm.Emission.Tests;
 
@@ -24,7 +27,7 @@ public class SsdtEmitterTests
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var report = PolicyDecisionReporter.Create(decisions);
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
         var factory = new SmoModelFactory();
@@ -215,7 +218,7 @@ public class SsdtEmitterTests
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
         var smoModel = new SmoModelFactory().Create(
             model,
@@ -241,7 +244,7 @@ public class SsdtEmitterTests
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var options = CreateOptionsWithPlatformIndexesEnabled();
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
         var smoModel = new SmoModelFactory().Create(
             model,
@@ -281,7 +284,7 @@ public class SsdtEmitterTests
             bareEmission,
             defaults.Mocking).Value;
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, bareOptions);
+        var decisions = Decide(policy, model, snapshot, bareOptions);
         var smoOptions = SmoBuildOptions.FromEmission(bareOptions.Emission);
         var factory = new SmoModelFactory();
         var smoModel = factory.Create(
@@ -321,7 +324,7 @@ public class SsdtEmitterTests
         using var temp = new TempDirectory();
 
         var cleanSnapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUnique);
-        var cleanDecisions = policy.Decide(model, cleanSnapshot, defaults);
+        var cleanDecisions = Decide(policy, model, cleanSnapshot, defaults);
         var cleanOut = Path.Combine(temp.Path, "clean");
         Directory.CreateDirectory(cleanOut);
         var cleanModel = factory.Create(
@@ -336,7 +339,7 @@ public class SsdtEmitterTests
         Assert.Contains("CREATE UNIQUE INDEX [UX_User_Email]", cleanScript, StringComparison.OrdinalIgnoreCase);
 
         var duplicateSnapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUniqueWithDuplicates);
-        var duplicateDecisions = policy.Decide(model, duplicateSnapshot, defaults);
+        var duplicateDecisions = Decide(policy, model, duplicateSnapshot, defaults);
         var duplicateOut = Path.Combine(temp.Path, "duplicates");
         Directory.CreateDirectory(duplicateOut);
         var duplicateModel = factory.Create(
@@ -359,7 +362,7 @@ public class SsdtEmitterTests
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var report = PolicyDecisionReporter.Create(decisions);
 
         var overrideResult = NamingOverrideRule.Create("dbo", "OSUSR_ABC_CUSTOMER", null, null, "CUSTOMER_PORTAL");
@@ -412,7 +415,7 @@ public class SsdtEmitterTests
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var report = PolicyDecisionReporter.Create(decisions);
 
         var overrideResult = NamingOverrideRule.Create(null, null, null, "Customer", "CUSTOMER_EXTERNAL");
@@ -469,7 +472,7 @@ public class SsdtEmitterTests
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(mutatedModel, snapshot, options);
+        var decisions = Decide(policy, mutatedModel, snapshot, options);
         var report = PolicyDecisionReporter.Create(decisions);
 
         var overrideResult = NamingOverrideRule.Create(null, null, "App Core", "Customer", "CUSTOMER_EXTERNAL");
@@ -848,6 +851,17 @@ public class SsdtEmitterTests
                 Directory.Delete(Path, recursive: true);
             }
         }
+    }
+
+    private static PolicyDecisionSet Decide(
+        TighteningPolicy policy,
+        OsmModel model,
+        ProfileSnapshot snapshot,
+        TighteningOptions options)
+    {
+        var result = policy.Decide(model, snapshot, options);
+        Assert.Equal(PolicyResultKind.Decision, result.Kind);
+        return result.Decision;
     }
 
     private static TighteningOptions CreateOptionsWithPlatformIndexesEnabled()

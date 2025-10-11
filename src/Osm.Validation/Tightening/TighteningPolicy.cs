@@ -6,38 +6,72 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
+using Osm.Domain.Abstractions;
 
 namespace Osm.Validation.Tightening;
 
 public sealed class TighteningPolicy
 {
-    public static TighteningDecisions Evaluate(OsmModel model, ProfileSnapshot snapshot, TighteningMode mode)
+    public static PolicyResult<TighteningDecisions> Evaluate(OsmModel model, ProfileSnapshot snapshot, TighteningMode mode)
     {
         var options = CreateKernelOptions(mode);
-        var decisionSet = ComputeDecisionSet(model, snapshot, options);
+        var policy = new TighteningPolicy();
+        var decisionResult = policy.Decide(model, snapshot, options);
 
-        return TighteningDecisions.Create(decisionSet.Nullability, decisionSet.ForeignKeys, decisionSet.UniqueIndexes);
+        return decisionResult.Kind switch
+        {
+            PolicyResultKind.Decision => PolicyResult<TighteningDecisions>.FromDecision(
+                TighteningDecisions.FromPolicyDecisions(decisionResult.Decision),
+                decisionResult.Warnings),
+            PolicyResultKind.Warning => PolicyResult<TighteningDecisions>.FromWarnings(decisionResult.Warnings),
+            PolicyResultKind.Error => PolicyResult<TighteningDecisions>.FromError(decisionResult.Error!),
+            _ => PolicyResult<TighteningDecisions>.FromError(
+                PolicyError.Create("policy.result.unexpected", "Unexpected policy evaluation outcome."))
+        };
     }
 
-    public PolicyDecisionSet Decide(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
-        => ComputeDecisionSet(model, snapshot, options);
-
-    private static PolicyDecisionSet ComputeDecisionSet(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
+    public PolicyResult<PolicyDecisionSet> Decide(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
     {
-        if (model is null)
+        var contextResult = PolicyContext.Create(model, snapshot, options);
+        if (contextResult.IsFailure)
         {
-            throw new ArgumentNullException(nameof(model));
+            return PolicyResult<PolicyDecisionSet>.FromError(ToPolicyError(contextResult.Errors));
         }
 
-        if (snapshot is null)
+        return Decide(contextResult.Value);
+    }
+
+    public PolicyResult<PolicyDecisionSet> Decide(PolicyContext context)
+    {
+        if (context is null)
         {
-            throw new ArgumentNullException(nameof(snapshot));
+            return PolicyResult<PolicyDecisionSet>.FromError(
+                PolicyError.Create("policy.context.null", "Policy context cannot be null."));
         }
 
-        if (options is null)
+        var warningBuilder = ImmutableArray.CreateBuilder<PolicyWarning>();
+        var decisionSet = ComputeDecisionSet(context, warningBuilder);
+        return PolicyResult<PolicyDecisionSet>.FromDecision(decisionSet, warningBuilder.ToImmutable());
+    }
+
+    private static PolicyError ToPolicyError(ImmutableArray<ValidationError> errors)
+    {
+        if (errors.IsDefaultOrEmpty)
         {
-            throw new ArgumentNullException(nameof(options));
+            return PolicyError.Create("policy.context.invalid", "Policy context failed validation.");
         }
+
+        var error = errors[0];
+        return PolicyError.Create(error.Code, error.Message);
+    }
+
+    private static PolicyDecisionSet ComputeDecisionSet(
+        PolicyContext context,
+        ImmutableArray<PolicyWarning>.Builder warnings)
+    {
+        var model = context.Model;
+        var snapshot = context.Profile;
+        var options = context.Options;
 
         var columnProfiles = snapshot.Columns.ToDictionary(ColumnCoordinate.From, static c => c);
         var uniqueProfiles = snapshot.UniqueCandidates.ToDictionary(ColumnCoordinate.From, static u => u);
@@ -61,20 +95,45 @@ public sealed class TighteningPolicy
 
         var uniqueStrategy = new UniqueIndexDecisionStrategy(options, columnProfiles, uniqueProfiles, uniqueEvidence);
 
-        var nullabilityBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, NullabilityDecision>();
-        var foreignKeyBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ForeignKeyDecision>();
-        var uniqueIndexBuilder = ImmutableDictionary.CreateBuilder<IndexCoordinate, UniqueIndexDecision>();
+        var missingColumnEvidence = new HashSet<ColumnCoordinate>();
+        var missingForeignKeyEvidence = new HashSet<ColumnCoordinate>();
 
-        foreach (var entity in model.Modules.SelectMany(m => m.Entities))
+        var nullabilityBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, PolicyDecision<NullabilityDecision>>();
+        var foreignKeyBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, PolicyDecision<ForeignKeyDecision>>();
+        var uniqueIndexBuilder = ImmutableDictionary.CreateBuilder<IndexCoordinate, PolicyDecision<UniqueIndexDecision>>();
+
+        foreach (var entity in model.Modules.SelectMany(static m => m.Entities))
         {
             foreach (var attribute in attributeIndex.GetAttributes(entity))
             {
                 var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
 
-                ColumnProfile? columnProfile = columnProfiles.TryGetValue(coordinate, out var profile) ? profile : null;
-                UniqueCandidateProfile? uniqueProfile = uniqueProfiles.TryGetValue(coordinate, out var unique) ? unique : null;
-                ForeignKeyReality? fkProfile = fkReality.TryGetValue(coordinate, out var fk) ? fk : null;
+                columnProfiles.TryGetValue(coordinate, out var columnProfile);
+                uniqueProfiles.TryGetValue(coordinate, out var uniqueProfile);
+                fkReality.TryGetValue(coordinate, out var fkProfile);
                 var foreignKeyTarget = foreignKeyTargets.GetTarget(coordinate);
+
+                if (columnProfile is null)
+                {
+                    RecordMissingEvidence(
+                        coordinate,
+                        "profiling.column",
+                        "policy.evidence.columnProfile.missing",
+                        $"Column profiling metrics are unavailable for {coordinate}.",
+                        warnings,
+                        missingColumnEvidence);
+                }
+
+                if (attribute.Reference.IsReference && fkProfile is null)
+                {
+                    RecordMissingEvidence(
+                        coordinate,
+                        "profiling.foreignKey",
+                        "policy.evidence.foreignKey.missing",
+                        $"Foreign key profiling metrics are unavailable for {coordinate}.",
+                        warnings,
+                        missingForeignKeyEvidence);
+                }
 
                 var nullability = EvaluateNullability(
                     entity,
@@ -90,7 +149,13 @@ public sealed class TighteningPolicy
                     compositeUniqueClean,
                     compositeUniqueDuplicates);
 
-                nullabilityBuilder[coordinate] = nullability;
+                var nullabilityEvidence = BuildColumnEvidence(coordinate, columnProfile, uniqueProfile, fkProfile);
+                var nullabilityRemediation = BuildNullabilityRemediation(nullability);
+                nullabilityBuilder[coordinate] = PolicyDecision<NullabilityDecision>.Create(
+                    "policy.nullability",
+                    nullability,
+                    nullabilityEvidence,
+                    nullabilityRemediation);
 
                 if (attribute.Reference.IsReference)
                 {
@@ -102,7 +167,13 @@ public sealed class TighteningPolicy
                         options,
                         foreignKeyTarget);
 
-                    foreignKeyBuilder[coordinate] = fkDecision;
+                    var fkEvidence = BuildForeignKeyEvidence(coordinate, columnProfile, fkProfile);
+                    var fkRemediation = BuildForeignKeyRemediation(coordinate, fkDecision, foreignKeyTarget);
+                    foreignKeyBuilder[coordinate] = PolicyDecision<ForeignKeyDecision>.Create(
+                        "policy.foreignKey",
+                        fkDecision,
+                        fkEvidence,
+                        fkRemediation);
                 }
             }
 
@@ -110,8 +181,19 @@ public sealed class TighteningPolicy
             {
                 var indexCoordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
                 var uniqueDecision = uniqueStrategy.Decide(entity, index);
+                var uniqueEvidenceLinks = BuildUniqueIndexEvidence(
+                    entity,
+                    index,
+                    columnProfiles,
+                    warnings,
+                    missingColumnEvidence);
+                var uniqueRemediation = BuildUniqueIndexRemediation(entity, index, uniqueDecision);
 
-                uniqueIndexBuilder[indexCoordinate] = uniqueDecision;
+                uniqueIndexBuilder[indexCoordinate] = PolicyDecision<UniqueIndexDecision>.Create(
+                    "policy.uniqueIndex",
+                    uniqueDecision,
+                    uniqueEvidenceLinks,
+                    uniqueRemediation);
             }
         }
 
@@ -120,6 +202,163 @@ public sealed class TighteningPolicy
             foreignKeyBuilder.ToImmutable(),
             uniqueIndexBuilder.ToImmutable(),
             lookupResolution.Diagnostics);
+    }
+
+    private static IEnumerable<PolicyEvidenceLink> BuildColumnEvidence(
+        ColumnCoordinate coordinate,
+        ColumnProfile? columnProfile,
+        UniqueCandidateProfile? uniqueProfile,
+        ForeignKeyReality? fkProfile)
+    {
+        if (columnProfile is not null)
+        {
+            yield return PolicyEvidenceLink.FromColumnProfile(columnProfile);
+        }
+
+        if (uniqueProfile is not null)
+        {
+            yield return PolicyEvidenceLink.FromUniqueCandidate(uniqueProfile);
+        }
+
+        if (fkProfile is not null)
+        {
+            yield return PolicyEvidenceLink.FromForeignKeyReality(fkProfile);
+        }
+    }
+
+    private static IEnumerable<PolicyEvidenceLink> BuildForeignKeyEvidence(
+        ColumnCoordinate coordinate,
+        ColumnProfile? columnProfile,
+        ForeignKeyReality? fkProfile)
+    {
+        if (columnProfile is not null)
+        {
+            yield return PolicyEvidenceLink.FromColumnProfile(columnProfile);
+        }
+
+        if (fkProfile is not null)
+        {
+            yield return PolicyEvidenceLink.FromForeignKeyReality(fkProfile);
+        }
+        else
+        {
+            yield return PolicyEvidenceLink.Missing("profiling.foreignKey", coordinate.ToString());
+        }
+    }
+
+    private static IEnumerable<PolicyEvidenceLink> BuildUniqueIndexEvidence(
+        EntityModel entity,
+        IndexModel index,
+        IReadOnlyDictionary<ColumnCoordinate, ColumnProfile> columnProfiles,
+        ImmutableArray<PolicyWarning>.Builder warnings,
+        ISet<ColumnCoordinate> missingColumnEvidence)
+    {
+        var orderedColumns = index.Columns
+            .OrderBy(static column => column.Ordinal)
+            .Select(column => new ColumnCoordinate(entity.Schema, entity.PhysicalName, column.Column));
+
+        foreach (var coordinate in orderedColumns)
+        {
+            if (columnProfiles.TryGetValue(coordinate, out var profile))
+            {
+                yield return PolicyEvidenceLink.FromColumnProfile(profile);
+            }
+            else
+            {
+                RecordMissingEvidence(
+                    coordinate,
+                    "profiling.column",
+                    "policy.evidence.columnProfile.missing",
+                    $"Column profiling metrics are unavailable for {coordinate} while evaluating unique index {index.Name.Value}.",
+                    warnings,
+                    missingColumnEvidence);
+
+                yield return PolicyEvidenceLink.Missing("profiling.column", coordinate.ToString());
+            }
+        }
+    }
+
+    private static IEnumerable<string> BuildNullabilityRemediation(NullabilityDecision decision)
+    {
+        if (!decision.RequiresRemediation)
+        {
+            return Array.Empty<string>();
+        }
+
+        var column = decision.Column;
+        var table = $"[{column.Schema.Value}].[{column.Table.Value}]";
+        var columnName = $"[{column.Column.Value}]";
+
+        return new[]
+        {
+            $"UPDATE {table} SET {columnName} = <replacement_value> WHERE {columnName} IS NULL;"
+        };
+    }
+
+    private static IEnumerable<string> BuildUniqueIndexRemediation(
+        EntityModel entity,
+        IndexModel index,
+        UniqueIndexDecision decision)
+    {
+        if (!decision.RequiresRemediation)
+        {
+            return Array.Empty<string>();
+        }
+
+        var orderedColumns = index.Columns
+            .OrderBy(static column => column.Ordinal)
+            .Select(column => $"[{column.Column.Value}]");
+        var columnList = string.Join(", ", orderedColumns);
+        var table = $"[{entity.Schema.Value}].[{entity.PhysicalName.Value}]";
+
+        return new[]
+        {
+            $"SELECT {columnList}, COUNT(*) AS DuplicateCount FROM {table} GROUP BY {columnList} HAVING COUNT(*) > 1;"
+        };
+    }
+
+    private static IEnumerable<string> BuildForeignKeyRemediation(
+        ColumnCoordinate coordinate,
+        ForeignKeyDecision decision,
+        EntityModel? foreignKeyTarget)
+    {
+        if (!decision.Rationales.Contains(TighteningRationales.DataHasOrphans))
+        {
+            return Array.Empty<string>();
+        }
+
+        if (foreignKeyTarget is null)
+        {
+            return new[]
+            {
+                $"/* Resolve orphan rows in [{coordinate.Schema.Value}].[{coordinate.Table.Value}] column [{coordinate.Column.Value}] before enforcing the foreign key. */"
+            };
+        }
+
+        var sourceTable = $"[{coordinate.Schema.Value}].[{coordinate.Table.Value}]";
+        var sourceColumn = $"[{coordinate.Column.Value}]";
+        var targetTable = $"[{foreignKeyTarget.Schema.Value}].[{foreignKeyTarget.PhysicalName.Value}]";
+
+        return new[]
+        {
+            $"SELECT {sourceColumn} FROM {sourceTable} src WHERE {sourceColumn} IS NOT NULL AND NOT EXISTS (SELECT 1 FROM {targetTable} tgt WHERE tgt.{sourceColumn} = src.{sourceColumn});"
+        };
+    }
+
+    private static void RecordMissingEvidence(
+        ColumnCoordinate coordinate,
+        string source,
+        string code,
+        string message,
+        ImmutableArray<PolicyWarning>.Builder warnings,
+        ISet<ColumnCoordinate> recorded)
+    {
+        if (!recorded.Add(coordinate))
+        {
+            return;
+        }
+
+        warnings.Add(PolicyWarning.Create(code, message, new[] { PolicyEvidenceLink.Missing(source, coordinate.ToString()) }));
     }
 
     private static TighteningOptions CreateKernelOptions(TighteningMode mode)

@@ -1,247 +1,646 @@
 {
-  "ColumnCount": 15,
-  "TightenedColumnCount": 10,
-  "RemediationColumnCount": 0,
-  "UniqueIndexCount": 2,
-  "UniqueIndexesEnforcedCount": 2,
-  "UniqueIndexesRequireRemediationCount": 0,
-  "ForeignKeyCount": 2,
-  "ForeignKeysCreatedCount": 1,
-  "ColumnRationales": {
-    "PHYSICAL_NOT_NULL": 4,
-    "MANDATORY": 10,
-    "DELETE_RULE_IGNORE": 1,
-    "FK_ENFORCED": 1,
-    "DATA_NO_NULLS": 10,
-    "PROFILE_MISSING": 1,
-    "DATA_HAS_ORPHANS": 1,
-    "PK": 4,
-    "DEFAULT_PRESENT": 2,
-    "UNIQUE_NO_NULLS": 2
-  },
-  "UniqueIndexRationales": {
-    "PHYSICAL_UNIQUE_KEY": 2,
-    "UNIQUE_NO_NULLS": 2
-  },
-  "ForeignKeyRationales": {
-    "DELETE_RULE_IGNORE": 1,
-    "DATA_HAS_ORPHANS": 1,
-    "DB_CONSTRAINT_PRESENT": 1
-  },
   "Columns": [
     {
-      "Schema": "billing",
-      "Table": "BILLING_ACCOUNT",
       "Column": "ACCOUNTNUMBER",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "true",
+            "NullCount": "0",
+            "PhysicalNullable": "true",
+            "RowCount": "58000"
+          },
+          "Reference": "billing.BILLING_ACCOUNT.ACCOUNTNUMBER",
+          "Source": "profiling.column"
+        },
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "HasDuplicate": "false"
+          },
+          "Reference": "billing.BILLING_ACCOUNT.ACCOUNTNUMBER",
+          "Source": "profiling.unique"
+        }
+      ],
       "MakeNotNull": true,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_NO_NULLS",
         "MANDATORY",
         "UNIQUE_NO_NULLS"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT"
     },
     {
-      "Schema": "billing",
-      "Table": "BILLING_ACCOUNT",
       "Column": "EXTREF",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "false",
+            "NullCount": "540",
+            "PhysicalNullable": "true",
+            "RowCount": "58000"
+          },
+          "Reference": "billing.BILLING_ACCOUNT.EXTREF",
+          "Source": "profiling.column"
+        }
+      ],
       "MakeNotNull": false,
+      "PreRemediationSql": [],
+      "Rationales": [],
       "RequiresRemediation": false,
-      "Rationales": []
+      "RuleId": "policy.nullability",
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT"
     },
     {
-      "Schema": "billing",
-      "Table": "BILLING_ACCOUNT",
       "Column": "ID",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "true",
+            "IsUniqueKey": "false",
+            "NullCount": "0",
+            "PhysicalNullable": "false",
+            "RowCount": "58000"
+          },
+          "Reference": "billing.BILLING_ACCOUNT.ID",
+          "Source": "profiling.column"
+        }
+      ],
       "MakeNotNull": true,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_NO_NULLS",
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_ABC_CUSTOMER",
       "Column": "CITYID",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "false",
+            "NullCount": "0",
+            "PhysicalNullable": "true",
+            "RowCount": "125000"
+          },
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.CITYID",
+          "Source": "profiling.column"
+        },
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "HasOrphan": "false",
+            "IsNoCheck": "false"
+          },
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.CITYID",
+          "Source": "profiling.foreignKey"
+        }
+      ],
       "MakeNotNull": true,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_NO_NULLS",
         "FK_ENFORCED",
         "MANDATORY"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_ABC_CUSTOMER",
       "Column": "EMAIL",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "true",
+            "NullCount": "0",
+            "PhysicalNullable": "true",
+            "RowCount": "125000"
+          },
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.EMAIL",
+          "Source": "profiling.column"
+        },
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "HasDuplicate": "false"
+          },
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.EMAIL",
+          "Source": "profiling.unique"
+        }
+      ],
       "MakeNotNull": true,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_NO_NULLS",
         "MANDATORY",
         "UNIQUE_NO_NULLS"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_ABC_CUSTOMER",
       "Column": "FIRSTNAME",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "('')",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "false",
+            "NullCount": "432",
+            "PhysicalNullable": "true",
+            "RowCount": "125000"
+          },
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.FIRSTNAME",
+          "Source": "profiling.column"
+        }
+      ],
       "MakeNotNull": false,
+      "PreRemediationSql": [],
+      "Rationales": [],
       "RequiresRemediation": false,
-      "Rationales": []
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_ABC_CUSTOMER",
       "Column": "ID",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "true",
+            "IsUniqueKey": "false",
+            "NullCount": "0",
+            "PhysicalNullable": "false",
+            "RowCount": "125000"
+          },
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.ID",
+          "Source": "profiling.column"
+        }
+      ],
       "MakeNotNull": true,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_NO_NULLS",
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_ABC_CUSTOMER",
       "Column": "LASTNAME",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "('')",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "false",
+            "NullCount": "125",
+            "PhysicalNullable": "true",
+            "RowCount": "125000"
+          },
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.LASTNAME",
+          "Source": "profiling.column"
+        }
+      ],
       "MakeNotNull": false,
+      "PreRemediationSql": [],
+      "Rationales": [],
       "RequiresRemediation": false,
-      "Rationales": []
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_ABC_CUSTOMER",
       "Column": "LEGACYCODE",
+      "Evidence": [],
       "MakeNotNull": false,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "PROFILE_MISSING"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_DEF_CITY",
       "Column": "ID",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "true",
+            "IsUniqueKey": "false",
+            "NullCount": "0",
+            "PhysicalNullable": "false",
+            "RowCount": "320"
+          },
+          "Reference": "dbo.OSUSR_DEF_CITY.ID",
+          "Source": "profiling.column"
+        }
+      ],
       "MakeNotNull": true,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_NO_NULLS",
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_DEF_CITY"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_DEF_CITY",
       "Column": "ISACTIVE",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "((1))",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "false",
+            "NullCount": "0",
+            "PhysicalNullable": "true",
+            "RowCount": "320"
+          },
+          "Reference": "dbo.OSUSR_DEF_CITY.ISACTIVE",
+          "Source": "profiling.column"
+        }
+      ],
       "MakeNotNull": true,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_NO_NULLS",
         "DEFAULT_PRESENT",
         "MANDATORY"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_DEF_CITY"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_DEF_CITY",
       "Column": "NAME",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "false",
+            "NullCount": "0",
+            "PhysicalNullable": "true",
+            "RowCount": "320"
+          },
+          "Reference": "dbo.OSUSR_DEF_CITY.NAME",
+          "Source": "profiling.column"
+        }
+      ],
       "MakeNotNull": true,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_NO_NULLS",
         "MANDATORY"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_DEF_CITY"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_XYZ_JOBRUN",
       "Column": "CREATEDON",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "(getutcdate())",
+            "IsComputed": "true",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "false",
+            "NullCount": "0",
+            "PhysicalNullable": "true",
+            "RowCount": "2500000"
+          },
+          "Reference": "dbo.OSUSR_XYZ_JOBRUN.CREATEDON",
+          "Source": "profiling.column"
+        }
+      ],
       "MakeNotNull": true,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_NO_NULLS",
         "DEFAULT_PRESENT",
         "MANDATORY"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_XYZ_JOBRUN"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_XYZ_JOBRUN",
       "Column": "ID",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "true",
+            "IsUniqueKey": "false",
+            "NullCount": "0",
+            "PhysicalNullable": "false",
+            "RowCount": "2500000"
+          },
+          "Reference": "dbo.OSUSR_XYZ_JOBRUN.ID",
+          "Source": "profiling.column"
+        }
+      ],
       "MakeNotNull": true,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_NO_NULLS",
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.nullability",
+      "Schema": "dbo",
+      "Table": "OSUSR_XYZ_JOBRUN"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_XYZ_JOBRUN",
       "Column": "TRIGGEREDBYUSERID",
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "false",
+            "NullCount": "950000",
+            "PhysicalNullable": "true",
+            "RowCount": "2500000"
+          },
+          "Reference": "dbo.OSUSR_XYZ_JOBRUN.TRIGGEREDBYUSERID",
+          "Source": "profiling.column"
+        },
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "HasOrphan": "true",
+            "IsNoCheck": "true"
+          },
+          "Reference": "dbo.OSUSR_XYZ_JOBRUN.TRIGGEREDBYUSERID",
+          "Source": "profiling.foreignKey"
+        }
+      ],
       "MakeNotNull": false,
-      "RequiresRemediation": false,
+      "PreRemediationSql": [],
       "Rationales": [
         "DATA_HAS_ORPHANS",
         "DELETE_RULE_IGNORE"
-      ]
-    }
-  ],
-  "UniqueIndexes": [
-    {
-      "Schema": "billing",
-      "Table": "BILLING_ACCOUNT",
-      "Index": "IDX_BILLINGACCOUNT_ACCTNUM",
-      "EnforceUnique": true,
+      ],
       "RequiresRemediation": false,
-      "Rationales": [
-        "PHYSICAL_UNIQUE_KEY",
-        "UNIQUE_NO_NULLS"
-      ]
-    },
-    {
+      "RuleId": "policy.nullability",
       "Schema": "dbo",
-      "Table": "OSUSR_ABC_CUSTOMER",
-      "Index": "IDX_CUSTOMER_EMAIL",
-      "EnforceUnique": true,
-      "RequiresRemediation": false,
-      "Rationales": [
-        "PHYSICAL_UNIQUE_KEY",
-        "UNIQUE_NO_NULLS"
-      ]
+      "Table": "OSUSR_XYZ_JOBRUN"
     }
   ],
+  "Diagnostics": [],
   "ForeignKeys": [
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_ABC_CUSTOMER",
       "Column": "CITYID",
       "CreateConstraint": true,
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "false",
+            "NullCount": "0",
+            "PhysicalNullable": "true",
+            "RowCount": "125000"
+          },
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.CITYID",
+          "Source": "profiling.column"
+        },
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "HasOrphan": "false",
+            "IsNoCheck": "false"
+          },
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.CITYID",
+          "Source": "profiling.foreignKey"
+        }
+      ],
+      "PreRemediationSql": [],
       "Rationales": [
         "DB_CONSTRAINT_PRESENT"
-      ]
+      ],
+      "RuleId": "policy.foreignKey",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER"
     },
     {
-      "Schema": "dbo",
-      "Table": "OSUSR_XYZ_JOBRUN",
       "Column": "TRIGGEREDBYUSERID",
       "CreateConstraint": false,
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "false",
+            "NullCount": "950000",
+            "PhysicalNullable": "true",
+            "RowCount": "2500000"
+          },
+          "Reference": "dbo.OSUSR_XYZ_JOBRUN.TRIGGEREDBYUSERID",
+          "Source": "profiling.column"
+        },
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "HasOrphan": "true",
+            "IsNoCheck": "true"
+          },
+          "Reference": "dbo.OSUSR_XYZ_JOBRUN.TRIGGEREDBYUSERID",
+          "Source": "profiling.foreignKey"
+        }
+      ],
+      "PreRemediationSql": [
+        "SELECT [TRIGGEREDBYUSERID] FROM [dbo].[OSUSR_XYZ_JOBRUN] src WHERE [TRIGGEREDBYUSERID] IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [dbo].[OSUSR_ABC_CUSTOMER] tgt WHERE tgt.[TRIGGEREDBYUSERID] = src.[TRIGGEREDBYUSERID]);"
+      ],
       "Rationales": [
         "DATA_HAS_ORPHANS",
         "DELETE_RULE_IGNORE"
-      ]
+      ],
+      "RuleId": "policy.foreignKey",
+      "Schema": "dbo",
+      "Table": "OSUSR_XYZ_JOBRUN"
     }
   ],
-  "Diagnostics": []
+  "GeneratedAtUtc": "0001-01-01T00:00:00Z",
+  "SchemaVersion": "1.0.0",
+  "Summary": {
+    "ColumnCount": 15,
+    "ColumnRationales": {
+      "DATA_HAS_ORPHANS": 1,
+      "DATA_NO_NULLS": 10,
+      "DEFAULT_PRESENT": 2,
+      "DELETE_RULE_IGNORE": 1,
+      "FK_ENFORCED": 1,
+      "MANDATORY": 10,
+      "PHYSICAL_NOT_NULL": 4,
+      "PK": 4,
+      "PROFILE_MISSING": 1,
+      "UNIQUE_NO_NULLS": 2
+    },
+    "ForeignKeyCount": 2,
+    "ForeignKeyRationales": {
+      "DATA_HAS_ORPHANS": 1,
+      "DB_CONSTRAINT_PRESENT": 1,
+      "DELETE_RULE_IGNORE": 1
+    },
+    "ForeignKeysCreatedCount": 1,
+    "RemediationColumnCount": 0,
+    "TightenedColumnCount": 10,
+    "UniqueIndexCount": 2,
+    "UniqueIndexRationales": {
+      "PHYSICAL_UNIQUE_KEY": 2,
+      "UNIQUE_NO_NULLS": 2
+    },
+    "UniqueIndexesEnforcedCount": 2,
+    "UniqueIndexesRequireRemediationCount": 0
+  },
+  "UniqueIndexes": [
+    {
+      "EnforceUnique": true,
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "true",
+            "NullCount": "0",
+            "PhysicalNullable": "true",
+            "RowCount": "58000"
+          },
+          "Reference": "billing.BILLING_ACCOUNT.ACCOUNTNUMBER",
+          "Source": "profiling.column"
+        }
+      ],
+      "Index": "IDX_BILLINGACCOUNT_ACCTNUM",
+      "PreRemediationSql": [],
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY",
+        "UNIQUE_NO_NULLS"
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.uniqueIndex",
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT"
+    },
+    {
+      "EnforceUnique": true,
+      "Evidence": [
+        {
+          "IsPresent": true,
+          "Metrics": {
+            "Default": "",
+            "IsComputed": "false",
+            "IsPrimaryKey": "false",
+            "IsUniqueKey": "true",
+            "NullCount": "0",
+            "PhysicalNullable": "true",
+            "RowCount": "125000"
+          },
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.EMAIL",
+          "Source": "profiling.column"
+        }
+      ],
+      "Index": "IDX_CUSTOMER_EMAIL",
+      "PreRemediationSql": [],
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY",
+        "UNIQUE_NO_NULLS"
+      ],
+      "RequiresRemediation": false,
+      "RuleId": "policy.uniqueIndex",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER"
+    }
+  ],
+  "Warnings": [
+    {
+      "Code": "policy.evidence.columnProfile.missing",
+      "Evidence": [
+        {
+          "IsPresent": false,
+          "Metrics": {},
+          "Reference": "dbo.OSUSR_ABC_CUSTOMER.LEGACYCODE",
+          "Source": "profiling.column"
+        }
+      ],
+      "Message": "Column profiling metrics are unavailable for dbo.OSUSR_ABC_CUSTOMER.LEGACYCODE."
+    }
+  ]
 }

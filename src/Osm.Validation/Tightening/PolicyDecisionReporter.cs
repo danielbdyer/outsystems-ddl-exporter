@@ -105,27 +105,65 @@ public sealed record ColumnDecisionReport(
     ColumnCoordinate Column,
     bool MakeNotNull,
     bool RequiresRemediation,
-    ImmutableArray<string> Rationales)
+    ImmutableArray<string> Rationales,
+    string RuleId,
+    ImmutableArray<PolicyEvidenceLink> Evidence,
+    ImmutableArray<string> PreRemediationSql)
 {
-    public static ColumnDecisionReport From(NullabilityDecision decision)
-        => new(decision.Column, decision.MakeNotNull, decision.RequiresRemediation, decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales);
+    public static ColumnDecisionReport From(PolicyDecision<NullabilityDecision> decision)
+    {
+        var outcome = decision.Outcome;
+        return new ColumnDecisionReport(
+            outcome.Column,
+            outcome.MakeNotNull,
+            outcome.RequiresRemediation,
+            outcome.Rationales.IsDefault ? ImmutableArray<string>.Empty : outcome.Rationales,
+            decision.RuleId,
+            decision.Evidence.IsDefault ? ImmutableArray<PolicyEvidenceLink>.Empty : decision.Evidence,
+            decision.PreRemediationSql.IsDefault ? ImmutableArray<string>.Empty : decision.PreRemediationSql);
+    }
 }
 
 public sealed record ForeignKeyDecisionReport(
     ColumnCoordinate Column,
     bool CreateConstraint,
-    ImmutableArray<string> Rationales)
+    ImmutableArray<string> Rationales,
+    string RuleId,
+    ImmutableArray<PolicyEvidenceLink> Evidence,
+    ImmutableArray<string> PreRemediationSql)
 {
-    public static ForeignKeyDecisionReport From(ForeignKeyDecision decision)
-        => new(decision.Column, decision.CreateConstraint, decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales);
+    public static ForeignKeyDecisionReport From(PolicyDecision<ForeignKeyDecision> decision)
+    {
+        var outcome = decision.Outcome;
+        return new ForeignKeyDecisionReport(
+            outcome.Column,
+            outcome.CreateConstraint,
+            outcome.Rationales.IsDefault ? ImmutableArray<string>.Empty : outcome.Rationales,
+            decision.RuleId,
+            decision.Evidence.IsDefault ? ImmutableArray<PolicyEvidenceLink>.Empty : decision.Evidence,
+            decision.PreRemediationSql.IsDefault ? ImmutableArray<string>.Empty : decision.PreRemediationSql);
+    }
 }
 
 public sealed record UniqueIndexDecisionReport(
     IndexCoordinate Index,
     bool EnforceUnique,
     bool RequiresRemediation,
-    ImmutableArray<string> Rationales)
+    ImmutableArray<string> Rationales,
+    string RuleId,
+    ImmutableArray<PolicyEvidenceLink> Evidence,
+    ImmutableArray<string> PreRemediationSql)
 {
-    public static UniqueIndexDecisionReport From(UniqueIndexDecision decision)
-        => new(decision.Index, decision.EnforceUnique, decision.RequiresRemediation, decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales);
+    public static UniqueIndexDecisionReport From(PolicyDecision<UniqueIndexDecision> decision)
+    {
+        var outcome = decision.Outcome;
+        return new UniqueIndexDecisionReport(
+            outcome.Index,
+            outcome.EnforceUnique,
+            outcome.RequiresRemediation,
+            outcome.Rationales.IsDefault ? ImmutableArray<string>.Empty : outcome.Rationales,
+            decision.RuleId,
+            decision.Evidence.IsDefault ? ImmutableArray<PolicyEvidenceLink>.Empty : decision.Evidence,
+            decision.PreRemediationSql.IsDefault ? ImmutableArray<string>.Empty : decision.PreRemediationSql);
+    }
 }

@@ -38,8 +38,10 @@ public class CliIntegrationTests
         using (var document = System.Text.Json.JsonDocument.Parse(decisionStream))
         {
             var root = document.RootElement;
-            Assert.True(root.GetProperty("TightenedColumnCount").GetInt32() >= 0);
-            Assert.True(root.GetProperty("UniqueIndexCount").GetInt32() >= 0);
+            Assert.Equal("1.0.0", root.GetProperty("SchemaVersion").GetString());
+            var summary = root.GetProperty("Summary");
+            Assert.True(summary.GetProperty("TightenedColumnCount").GetInt32() >= 0);
+            Assert.True(summary.GetProperty("UniqueIndexCount").GetInt32() >= 0);
             Assert.True(root.GetProperty("Columns").GetArrayLength() > 0);
             Assert.True(root.GetProperty("UniqueIndexes").GetArrayLength() >= 0);
         }

@@ -81,5 +81,8 @@ public class DecisionSummaryFormatterTests
             new ColumnCoordinate(new SchemaName(schema), new TableName(table), new ColumnName(column)),
             makeNotNull,
             RequiresRemediation: false,
-            rationales.Length == 0 ? ImmutableArray<string>.Empty : ImmutableArray.CreateRange(rationales));
+            rationales.Length == 0 ? ImmutableArray<string>.Empty : ImmutableArray.CreateRange(rationales),
+            RuleId: "test.rule",
+            Evidence: ImmutableArray<PolicyEvidenceLink>.Empty,
+            PreRemediationSql: ImmutableArray<string>.Empty);
 }

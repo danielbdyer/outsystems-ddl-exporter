@@ -241,7 +241,34 @@ public sealed class BuildSsdtPipeline : IBuildSsdtPipeline
                 "Evidence cache disabled for request.");
         }
 
-        var decisions = _tighteningPolicy.Decide(filteredModel, profile, request.TighteningOptions);
+        var policyResult = _tighteningPolicy.Decide(filteredModel, profile, request.TighteningOptions);
+
+        if (policyResult.Kind == PolicyResultKind.Error)
+        {
+            var error = policyResult.Error!;
+            return ValidationError.Create(error.Code, error.Message);
+        }
+
+        if (policyResult.Kind == PolicyResultKind.Warning)
+        {
+            return ValidationError.Create(
+                "policy.decisions.unavailable",
+                "Tightening policy returned warnings without decisions; emission cannot continue.");
+        }
+
+        foreach (var warning in policyResult.Warnings)
+        {
+            log.Record(
+                "policy.warning",
+                warning.Message,
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["code"] = warning.Code,
+                    ["evidenceCount"] = warning.Evidence.Length.ToString(CultureInfo.InvariantCulture)
+                });
+        }
+
+        var decisions = policyResult.Decision;
         var decisionReport = PolicyDecisionReporter.Create(decisions);
         log.Record(
             "policy.decisions.synthesized",
@@ -300,6 +327,7 @@ public sealed class BuildSsdtPipeline : IBuildSsdtPipeline
         var decisionLogPath = await _decisionLogWriter.WriteAsync(
             request.OutputDirectory,
             decisionReport,
+            policyResult.Warnings,
             cancellationToken).ConfigureAwait(false);
         log.Record(
             "policy.log.persisted",

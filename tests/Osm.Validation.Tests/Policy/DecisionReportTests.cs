@@ -2,6 +2,7 @@ using System.Linq;
 using Osm.Domain.Configuration;
 using Osm.Validation.Tightening;
 using Tests.Support;
+using Xunit;
 
 namespace Osm.Validation.Tests.Policy;
 
@@ -13,7 +14,9 @@ public sealed class DecisionReportTests
         var model = ModelFixtures.LoadModel("model.edge-case.json");
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
         var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, TighteningOptions.Default);
+        var result = policy.Decide(model, snapshot, TighteningOptions.Default);
+        Assert.Equal(PolicyResultKind.Decision, result.Kind);
+        var decisions = result.Decision;
 
         var report = PolicyDecisionReporter.Create(decisions);
 

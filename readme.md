@@ -59,7 +59,7 @@
      --out ./out
    ```
 
-   The command evaluates NOT NULL/UNIQUE/FK decisions, materializes SMO tables, emits SSDT-ready per-table files to `./out/Modules/...`, and records a structured summary in `./out/policy-decisions.json` alongside the `manifest.json` snapshot.
+   The command evaluates NOT NULL/UNIQUE/FK decisions, materializes SMO tables, emits SSDT-ready per-table files to `./out/Modules/...`, and records a structured summary in `./out/policy-decisions.json` (schema version `1.0.0`) alongside the `manifest.json` snapshot.
 
   The emitted manifest mirrors the fixtures we keep under `tests/Fixtures/emission/edge-case` (and the rename variant under `tests/Fixtures/emission/edge-case-rename`), so you can diff your live runs against the curated baselines.
 3. **(Optional) Verify DMM parity** using the same model/profile inputs:

@@ -6,6 +6,7 @@ using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
 using Tests.Support;
+using Xunit;
 
 namespace Osm.Validation.Tests.Policy;
 
@@ -22,10 +23,10 @@ public sealed class TighteningPolicyTests
         var policy = new TighteningPolicy();
         var options = TighteningPolicyTestHelper.CreateOptions(mode);
 
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var entity = GetEntity(model, "User");
         var coordinate = GetCoordinate(entity, "Email");
-        var decision = decisions.Nullability[coordinate];
+        var decision = decisions.Nullability[coordinate].Outcome;
 
         Assert.Equal(expected, decision.MakeNotNull);
         if (expected)
@@ -47,11 +48,11 @@ public sealed class TighteningPolicyTests
         var policy = new TighteningPolicy();
         var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
 
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var entity = GetEntity(model, "Child");
         var coordinate = GetCoordinate(entity, "ParentId");
-        var columnDecision = decisions.Nullability[coordinate];
-        var fkDecision = decisions.ForeignKeys[coordinate];
+        var columnDecision = decisions.Nullability[coordinate].Outcome;
+        var fkDecision = decisions.ForeignKeys[coordinate].Outcome;
 
         Assert.True(columnDecision.MakeNotNull);
         Assert.Contains(TighteningRationales.ForeignKeyEnforced, columnDecision.Rationales);
@@ -69,11 +70,11 @@ public sealed class TighteningPolicyTests
         var policy = new TighteningPolicy();
         var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
 
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var entity = GetEntity(model, "B");
         var coordinate = GetCoordinate(entity, "AId");
-        var columnDecision = decisions.Nullability[coordinate];
-        var fkDecision = decisions.ForeignKeys[coordinate];
+        var columnDecision = decisions.Nullability[coordinate].Outcome;
+        var fkDecision = decisions.ForeignKeys[coordinate].Outcome;
 
         Assert.False(columnDecision.MakeNotNull);
         Assert.Contains(TighteningRationales.DeleteRuleIgnore, columnDecision.Rationales);
@@ -94,15 +95,15 @@ public sealed class TighteningPolicyTests
         var evidenceOptions = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
         var aggressiveOptions = TighteningPolicyTestHelper.CreateOptions(TighteningMode.Aggressive);
 
-        var evidenceDecision = policy.Decide(model, dirtySnapshot, evidenceOptions);
-        var aggressiveDecision = policy.Decide(model, dirtySnapshot, aggressiveOptions);
+        var evidenceDecision = Decide(policy, model, dirtySnapshot, evidenceOptions);
+        var aggressiveDecision = Decide(policy, model, dirtySnapshot, aggressiveOptions);
 
         var entity = GetEntity(model, "User");
         var coordinate = GetCoordinate(entity, "Email");
 
-        Assert.False(evidenceDecision.Nullability[coordinate].MakeNotNull);
+        Assert.False(evidenceDecision.Nullability[coordinate].Outcome.MakeNotNull);
 
-        var aggressiveColumn = aggressiveDecision.Nullability[coordinate];
+        var aggressiveColumn = aggressiveDecision.Nullability[coordinate].Outcome;
         Assert.True(aggressiveColumn.MakeNotNull);
         Assert.True(aggressiveColumn.RequiresRemediation);
         Assert.Contains(TighteningRationales.RemediateBeforeTighten, aggressiveColumn.Rationales);
@@ -119,10 +120,10 @@ public sealed class TighteningPolicyTests
         var policy = new TighteningPolicy();
         var options = TighteningPolicyTestHelper.CreateOptions(mode);
 
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var entity = GetEntity(model, "OrderAllocation");
         var coordinate = GetCoordinate(entity, "CountryId");
-        var decision = decisions.Nullability[coordinate];
+        var decision = decisions.Nullability[coordinate].Outcome;
 
         Assert.Equal(expected, decision.MakeNotNull);
         if (expected)
@@ -145,10 +146,10 @@ public sealed class TighteningPolicyTests
         var policy = new TighteningPolicy();
         var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
 
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var entity = GetEntity(model, "OrderAllocation");
         var coordinate = GetCoordinate(entity, "CountryId");
-        var decision = decisions.Nullability[coordinate];
+        var decision = decisions.Nullability[coordinate].Outcome;
 
         Assert.False(decision.MakeNotNull);
         Assert.Contains(TighteningRationales.CompositeUniqueDuplicatesPresent, decision.Rationales);
@@ -162,10 +163,10 @@ public sealed class TighteningPolicyTests
         var policy = new TighteningPolicy();
         var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
 
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var entity = GetEntity(model, "User");
         var indexCoordinate = GetIndexCoordinate(entity, "UX_USER_EMAIL");
-        var decision = decisions.UniqueIndexes[indexCoordinate];
+        var decision = decisions.UniqueIndexes[indexCoordinate].Outcome;
 
         Assert.False(decision.EnforceUnique);
         Assert.False(decision.RequiresRemediation);
@@ -181,10 +182,10 @@ public sealed class TighteningPolicyTests
         var policy = new TighteningPolicy();
         var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.Aggressive);
 
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var entity = GetEntity(model, "User");
         var indexCoordinate = GetIndexCoordinate(entity, "UX_USER_EMAIL");
-        var decision = decisions.UniqueIndexes[indexCoordinate];
+        var decision = decisions.UniqueIndexes[indexCoordinate].Outcome;
 
         Assert.True(decision.EnforceUnique);
         Assert.True(decision.RequiresRemediation);
@@ -210,10 +211,10 @@ public sealed class TighteningPolicyTests
             defaults.Emission,
             defaults.Mocking).Value;
 
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
         var entity = GetEntity(model, "User");
         var indexCoordinate = GetIndexCoordinate(entity, "UX_USER_EMAIL");
-        var decision = decisions.UniqueIndexes[indexCoordinate];
+        var decision = decisions.UniqueIndexes[indexCoordinate].Outcome;
 
         Assert.False(decision.EnforceUnique);
         Assert.Contains(TighteningRationales.UniquePolicyDisabled, decision.Rationales);
@@ -227,7 +228,7 @@ public sealed class TighteningPolicyTests
         var policy = new TighteningPolicy();
         var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
 
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
 
         var diagnostic = Assert.Single(decisions.Diagnostics);
         Assert.Equal("tightening.entity.duplicate.unresolved", diagnostic.Code);
@@ -269,7 +270,7 @@ public sealed class TighteningPolicyTests
             emissionResult.Value,
             defaults.Mocking).Value;
 
-        var decisions = policy.Decide(model, snapshot, options);
+        var decisions = Decide(policy, model, snapshot, options);
 
         var diagnostic = Assert.Single(decisions.Diagnostics);
         Assert.Equal("tightening.entity.duplicate.resolved", diagnostic.Code);
@@ -292,6 +293,17 @@ public sealed class TighteningPolicyTests
     {
         var index = entity.Indexes.Single(i => string.Equals(i.Name.Value, indexName, StringComparison.Ordinal));
         return new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
+    }
+
+    private static PolicyDecisionSet Decide(
+        TighteningPolicy policy,
+        OsmModel model,
+        ProfileSnapshot snapshot,
+        TighteningOptions options)
+    {
+        var result = policy.Decide(model, snapshot, options);
+        Assert.Equal(PolicyResultKind.Decision, result.Kind);
+        return result.Decision;
     }
 
     private static OsmModel CreateDuplicateModel()

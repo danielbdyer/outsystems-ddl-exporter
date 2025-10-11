@@ -260,7 +260,7 @@ public sealed class EmissionFingerprintCalculator
             BuildDiagnostics(decisions.Diagnostics));
     }
 
-    private static IReadOnlyList<NullabilityDecisionDocument> BuildNullabilityDecisions(ImmutableDictionary<ColumnCoordinate, NullabilityDecision> decisions)
+    private static IReadOnlyList<NullabilityDecisionDocument> BuildNullabilityDecisions(ImmutableDictionary<ColumnCoordinate, PolicyDecision<NullabilityDecision>> decisions)
     {
         if (decisions.IsEmpty)
         {
@@ -275,13 +275,16 @@ public sealed class EmissionFingerprintCalculator
                 pair.Key.Schema.Value,
                 pair.Key.Table.Value,
                 pair.Key.Column.Value,
-                pair.Value.MakeNotNull,
-                pair.Value.RequiresRemediation,
-                SortRationales(pair.Value.Rationales)))
+                pair.Value.RuleId,
+                pair.Value.Outcome.MakeNotNull,
+                pair.Value.Outcome.RequiresRemediation,
+                SortRationales(pair.Value.Outcome.Rationales),
+                pair.Value.PreRemediationSql.ToArray(),
+                BuildEvidence(pair.Value.Evidence)))
             .ToList();
     }
 
-    private static IReadOnlyList<ForeignKeyDecisionDocument> BuildForeignKeyDecisions(ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision> decisions)
+    private static IReadOnlyList<ForeignKeyDecisionDocument> BuildForeignKeyDecisions(ImmutableDictionary<ColumnCoordinate, PolicyDecision<ForeignKeyDecision>> decisions)
     {
         if (decisions.IsEmpty)
         {
@@ -296,12 +299,15 @@ public sealed class EmissionFingerprintCalculator
                 pair.Key.Schema.Value,
                 pair.Key.Table.Value,
                 pair.Key.Column.Value,
-                pair.Value.CreateConstraint,
-                SortRationales(pair.Value.Rationales)))
+                pair.Value.RuleId,
+                pair.Value.Outcome.CreateConstraint,
+                SortRationales(pair.Value.Outcome.Rationales),
+                pair.Value.PreRemediationSql.ToArray(),
+                BuildEvidence(pair.Value.Evidence)))
             .ToList();
     }
 
-    private static IReadOnlyList<UniqueIndexDecisionDocument> BuildUniqueIndexDecisions(ImmutableDictionary<IndexCoordinate, UniqueIndexDecision> decisions)
+    private static IReadOnlyList<UniqueIndexDecisionDocument> BuildUniqueIndexDecisions(ImmutableDictionary<IndexCoordinate, PolicyDecision<UniqueIndexDecision>> decisions)
     {
         if (decisions.IsEmpty)
         {
@@ -316,9 +322,33 @@ public sealed class EmissionFingerprintCalculator
                 pair.Key.Schema.Value,
                 pair.Key.Table.Value,
                 pair.Key.Index.Value,
-                pair.Value.EnforceUnique,
-                pair.Value.RequiresRemediation,
-                SortRationales(pair.Value.Rationales)))
+                pair.Value.RuleId,
+                pair.Value.Outcome.EnforceUnique,
+                pair.Value.Outcome.RequiresRemediation,
+                SortRationales(pair.Value.Outcome.Rationales),
+                pair.Value.PreRemediationSql.ToArray(),
+                BuildEvidence(pair.Value.Evidence)))
+            .ToList();
+    }
+
+    private static IReadOnlyList<PolicyEvidenceDocument> BuildEvidence(ImmutableArray<PolicyEvidenceLink> evidence)
+    {
+        if (evidence.IsDefaultOrEmpty)
+        {
+            return Array.Empty<PolicyEvidenceDocument>();
+        }
+
+        return evidence
+            .OrderBy(e => e.Source, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => e.Reference, StringComparer.OrdinalIgnoreCase)
+            .Select(e =>
+            {
+                var metrics = e.Metrics.IsEmpty
+                    ? ImmutableSortedDictionary<string, string>.Empty
+                    : e.Metrics.ToImmutableSortedDictionary(StringComparer.Ordinal);
+
+                return new PolicyEvidenceDocument(e.Source, e.Reference, e.IsPresent, metrics);
+            })
             .ToList();
     }
 
@@ -487,24 +517,33 @@ public sealed class EmissionFingerprintCalculator
         string Schema,
         string Table,
         string Column,
+        string RuleId,
         bool MakeNotNull,
         bool RequiresRemediation,
-        IReadOnlyList<string> Rationales);
+        IReadOnlyList<string> Rationales,
+        IReadOnlyList<string> PreRemediationSql,
+        IReadOnlyList<PolicyEvidenceDocument> Evidence);
 
     private sealed record ForeignKeyDecisionDocument(
         string Schema,
         string Table,
         string Column,
+        string RuleId,
         bool CreateConstraint,
-        IReadOnlyList<string> Rationales);
+        IReadOnlyList<string> Rationales,
+        IReadOnlyList<string> PreRemediationSql,
+        IReadOnlyList<PolicyEvidenceDocument> Evidence);
 
     private sealed record UniqueIndexDecisionDocument(
         string Schema,
         string Table,
         string Index,
+        string RuleId,
         bool EnforceUnique,
         bool RequiresRemediation,
-        IReadOnlyList<string> Rationales);
+        IReadOnlyList<string> Rationales,
+        IReadOnlyList<string> PreRemediationSql,
+        IReadOnlyList<PolicyEvidenceDocument> Evidence);
 
     private sealed record DiagnosticDocument(
         string Code,
@@ -518,4 +557,10 @@ public sealed class EmissionFingerprintCalculator
         bool ResolvedByOverride);
 
     private sealed record DuplicateCandidateDocument(string Module, string Schema, string PhysicalName);
+
+    private sealed record PolicyEvidenceDocument(
+        string Source,
+        string Reference,
+        bool IsPresent,
+        IReadOnlyDictionary<string, string> Metrics);
 }

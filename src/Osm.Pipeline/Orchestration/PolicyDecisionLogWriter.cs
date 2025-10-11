@@ -1,12 +1,22 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
 public sealed class PolicyDecisionLogWriter
 {
-    public async Task<string> WriteAsync(string outputDirectory, PolicyDecisionReport report, CancellationToken cancellationToken = default)
+    private const string SchemaVersion = "1.0.0";
+
+    public async Task<string> WriteAsync(
+        string outputDirectory,
+        PolicyDecisionReport report,
+        IEnumerable<PolicyWarning> warnings,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -18,38 +28,60 @@ public sealed class PolicyDecisionLogWriter
             throw new ArgumentNullException(nameof(report));
         }
 
+        if (warnings is null)
+        {
+            throw new ArgumentNullException(nameof(warnings));
+        }
+
+        var warningArray = warnings.ToImmutableArray();
         var log = new PolicyDecisionLog(
-            report.ColumnCount,
-            report.TightenedColumnCount,
-            report.RemediationColumnCount,
-            report.UniqueIndexCount,
-            report.UniqueIndexesEnforcedCount,
-            report.UniqueIndexesRequireRemediationCount,
-            report.ForeignKeyCount,
-            report.ForeignKeysCreatedCount,
-            report.ColumnRationaleCounts,
-            report.UniqueIndexRationaleCounts,
-            report.ForeignKeyRationaleCounts,
+            SchemaVersion,
+            DateTime.UtcNow,
+            new PolicyDecisionLogSummary(
+                report.ColumnCount,
+                report.TightenedColumnCount,
+                report.RemediationColumnCount,
+                report.UniqueIndexCount,
+                report.UniqueIndexesEnforcedCount,
+                report.UniqueIndexesRequireRemediationCount,
+                report.ForeignKeyCount,
+                report.ForeignKeysCreatedCount,
+                report.ColumnRationaleCounts,
+                report.UniqueIndexRationaleCounts,
+                report.ForeignKeyRationaleCounts),
+            warningArray.Select(static w => new PolicyDecisionLogWarning(
+                w.Code,
+                w.Message,
+                w.Evidence.Select(ToEvidence).ToArray())).ToArray(),
             report.Columns.Select(static c => new PolicyDecisionLogColumn(
                 c.Column.Schema.Value,
                 c.Column.Table.Value,
                 c.Column.Column.Value,
+                c.RuleId,
                 c.MakeNotNull,
                 c.RequiresRemediation,
-                c.Rationales.ToArray())).ToArray(),
+                c.Rationales.ToArray(),
+                c.PreRemediationSql.ToArray(),
+                c.Evidence.Select(ToEvidence).ToArray())).ToArray(),
             report.UniqueIndexes.Select(static u => new PolicyDecisionLogUniqueIndex(
                 u.Index.Schema.Value,
                 u.Index.Table.Value,
                 u.Index.Index.Value,
+                u.RuleId,
                 u.EnforceUnique,
                 u.RequiresRemediation,
-                u.Rationales.ToArray())).ToArray(),
+                u.Rationales.ToArray(),
+                u.PreRemediationSql.ToArray(),
+                u.Evidence.Select(ToEvidence).ToArray())).ToArray(),
             report.ForeignKeys.Select(static f => new PolicyDecisionLogForeignKey(
                 f.Column.Schema.Value,
                 f.Column.Table.Value,
                 f.Column.Column.Value,
+                f.RuleId,
                 f.CreateConstraint,
-                f.Rationales.ToArray())).ToArray(),
+                f.Rationales.ToArray(),
+                f.PreRemediationSql.ToArray(),
+                f.Evidence.Select(ToEvidence).ToArray())).ToArray(),
             report.Diagnostics.Select(static d => new PolicyDecisionLogDiagnostic(
                 d.LogicalName,
                 d.CanonicalModule,
@@ -71,7 +103,24 @@ public sealed class PolicyDecisionLogWriter
         return path;
     }
 
+    private static PolicyDecisionLogEvidence ToEvidence(PolicyEvidenceLink evidence)
+        => new(
+            evidence.Source,
+            evidence.Reference,
+            evidence.IsPresent,
+            evidence.Metrics);
+
     private sealed record PolicyDecisionLog(
+        string SchemaVersion,
+        DateTime GeneratedAtUtc,
+        PolicyDecisionLogSummary Summary,
+        IReadOnlyList<PolicyDecisionLogWarning> Warnings,
+        IReadOnlyList<PolicyDecisionLogColumn> Columns,
+        IReadOnlyList<PolicyDecisionLogUniqueIndex> UniqueIndexes,
+        IReadOnlyList<PolicyDecisionLogForeignKey> ForeignKeys,
+        IReadOnlyList<PolicyDecisionLogDiagnostic> Diagnostics);
+
+    private sealed record PolicyDecisionLogSummary(
         int ColumnCount,
         int TightenedColumnCount,
         int RemediationColumnCount,
@@ -82,34 +131,44 @@ public sealed class PolicyDecisionLogWriter
         int ForeignKeysCreatedCount,
         IReadOnlyDictionary<string, int> ColumnRationales,
         IReadOnlyDictionary<string, int> UniqueIndexRationales,
-        IReadOnlyDictionary<string, int> ForeignKeyRationales,
-        IReadOnlyList<PolicyDecisionLogColumn> Columns,
-        IReadOnlyList<PolicyDecisionLogUniqueIndex> UniqueIndexes,
-        IReadOnlyList<PolicyDecisionLogForeignKey> ForeignKeys,
-        IReadOnlyList<PolicyDecisionLogDiagnostic> Diagnostics);
+        IReadOnlyDictionary<string, int> ForeignKeyRationales);
+
+    private sealed record PolicyDecisionLogWarning(
+        string Code,
+        string Message,
+        IReadOnlyList<PolicyDecisionLogEvidence> Evidence);
 
     private sealed record PolicyDecisionLogColumn(
         string Schema,
         string Table,
         string Column,
+        string RuleId,
         bool MakeNotNull,
         bool RequiresRemediation,
-        IReadOnlyList<string> Rationales);
+        IReadOnlyList<string> Rationales,
+        IReadOnlyList<string> PreRemediationSql,
+        IReadOnlyList<PolicyDecisionLogEvidence> Evidence);
 
     private sealed record PolicyDecisionLogUniqueIndex(
         string Schema,
         string Table,
         string Index,
+        string RuleId,
         bool EnforceUnique,
         bool RequiresRemediation,
-        IReadOnlyList<string> Rationales);
+        IReadOnlyList<string> Rationales,
+        IReadOnlyList<string> PreRemediationSql,
+        IReadOnlyList<PolicyDecisionLogEvidence> Evidence);
 
     private sealed record PolicyDecisionLogForeignKey(
         string Schema,
         string Table,
         string Column,
+        string RuleId,
         bool CreateConstraint,
-        IReadOnlyList<string> Rationales);
+        IReadOnlyList<string> Rationales,
+        IReadOnlyList<string> PreRemediationSql,
+        IReadOnlyList<PolicyDecisionLogEvidence> Evidence);
 
     private sealed record PolicyDecisionLogDiagnostic(
         string LogicalName,
@@ -121,6 +180,12 @@ public sealed class PolicyDecisionLogWriter
         string Severity,
         bool ResolvedByOverride,
         IReadOnlyList<PolicyDecisionLogDuplicateCandidate> Candidates);
+
+    private sealed record PolicyDecisionLogEvidence(
+        string Source,
+        string Reference,
+        bool IsPresent,
+        IReadOnlyDictionary<string, string> Metrics);
 
     private sealed record PolicyDecisionLogDuplicateCandidate(string Module, string Schema, string PhysicalName);
 }
