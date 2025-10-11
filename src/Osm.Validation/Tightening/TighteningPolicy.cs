@@ -44,6 +44,8 @@ public sealed class TighteningPolicy
         var fkReality = snapshot.ForeignKeys.ToDictionary(f => ColumnCoordinate.From(f.Reference), static f => f);
         var lookupResolution = BuildEntityLookup(model, options.Emission.NamingOverrides);
         var entityLookup = lookupResolution.Lookup;
+        var attributeIndex = EntityAttributeIndex.Create(model);
+        var foreignKeyTargets = ForeignKeyTargetIndex.Create(attributeIndex, entityLookup);
 
         var uniqueEvidence = UniqueIndexEvidenceAggregator.Create(
             model,
@@ -65,13 +67,14 @@ public sealed class TighteningPolicy
 
         foreach (var entity in model.Modules.SelectMany(m => m.Entities))
         {
-            foreach (var attribute in entity.Attributes)
+            foreach (var attribute in attributeIndex.GetAttributes(entity))
             {
                 var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
 
                 ColumnProfile? columnProfile = columnProfiles.TryGetValue(coordinate, out var profile) ? profile : null;
                 UniqueCandidateProfile? uniqueProfile = uniqueProfiles.TryGetValue(coordinate, out var unique) ? unique : null;
                 ForeignKeyReality? fkProfile = fkReality.TryGetValue(coordinate, out var fk) ? fk : null;
+                var foreignKeyTarget = foreignKeyTargets.GetTarget(coordinate);
 
                 var nullability = EvaluateNullability(
                     entity,
@@ -80,8 +83,8 @@ public sealed class TighteningPolicy
                     columnProfile,
                     uniqueProfile,
                     fkProfile,
+                    foreignKeyTarget,
                     options,
-                    entityLookup,
                     singleUniqueClean,
                     singleUniqueDuplicates,
                     compositeUniqueClean,
@@ -97,7 +100,7 @@ public sealed class TighteningPolicy
                         coordinate,
                         fkProfile,
                         options,
-                        entityLookup);
+                        foreignKeyTarget);
 
                     foreignKeyBuilder[coordinate] = fkDecision;
                 }
@@ -140,8 +143,8 @@ public sealed class TighteningPolicy
         ColumnProfile? columnProfile,
         UniqueCandidateProfile? uniqueProfile,
         ForeignKeyReality? fkReality,
+        EntityModel? foreignKeyTarget,
         TighteningOptions options,
-        IReadOnlyDictionary<EntityName, EntityModel> entityLookup,
         ISet<ColumnCoordinate> singleUniqueColumns,
         ISet<ColumnCoordinate> singleUniqueDuplicates,
         ISet<ColumnCoordinate> compositeUniqueColumns,
@@ -231,7 +234,7 @@ public sealed class TighteningPolicy
             && fkReality is ForeignKeyReality fk
             && !fk.HasOrphan
             && !IsIgnoreRule(attribute.Reference.DeleteRuleCode)
-            && ForeignKeySupportsTightening(entity, attribute, fk, options.ForeignKeys, entityLookup);
+            && ForeignKeySupportsTightening(entity, fk, options.ForeignKeys, foreignKeyTarget);
 
         if (fkSupports)
         {
@@ -280,7 +283,7 @@ public sealed class TighteningPolicy
         ColumnCoordinate coordinate,
         ForeignKeyReality? fkReality,
         TighteningOptions options,
-        IReadOnlyDictionary<EntityName, EntityModel> entityLookup)
+        EntityModel? targetEntity)
     {
         var rationales = new SortedSet<string>(StringComparer.Ordinal);
         var createConstraint = false;
@@ -309,7 +312,6 @@ public sealed class TighteningPolicy
             rationales.Add(TighteningRationales.DatabaseConstraintPresent);
         }
 
-        var targetEntity = GetTargetEntity(attribute.Reference, entityLookup);
         var crossSchema = targetEntity is not null && !SchemaEquals(entity.Schema, targetEntity.Schema);
         var crossCatalog = targetEntity is not null && !CatalogEquals(entity.Catalog, targetEntity.Catalog);
 
@@ -344,10 +346,9 @@ public sealed class TighteningPolicy
 
     private static bool ForeignKeySupportsTightening(
         EntityModel entity,
-        AttributeModel attribute,
         ForeignKeyReality fkReality,
         ForeignKeyOptions options,
-        IReadOnlyDictionary<EntityName, EntityModel> entityLookup)
+        EntityModel? target)
     {
         if (fkReality.Reference.HasDatabaseConstraint)
         {
@@ -359,7 +360,6 @@ public sealed class TighteningPolicy
             return false;
         }
 
-        var target = GetTargetEntity(attribute.Reference, entityLookup);
         if (target is null)
         {
             return false;
@@ -376,16 +376,6 @@ public sealed class TighteningPolicy
         }
 
         return true;
-    }
-
-    private static EntityModel? GetTargetEntity(AttributeReference reference, IReadOnlyDictionary<EntityName, EntityModel> lookup)
-    {
-        if (!reference.IsReference || reference.TargetEntity is null)
-        {
-            return null;
-        }
-
-        return lookup.TryGetValue(reference.TargetEntity.Value, out var entity) ? entity : null;
     }
 
     private static bool IsIgnoreRule(string? deleteRule)
