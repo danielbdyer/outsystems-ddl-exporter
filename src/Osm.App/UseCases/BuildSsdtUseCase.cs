@@ -30,9 +30,9 @@ public sealed record BuildSsdtUseCaseResult(
 
 public sealed class BuildSsdtUseCase
 {
-    private readonly BuildSsdtPipeline _pipeline;
+    private readonly IBuildSsdtPipeline _pipeline;
     public BuildSsdtUseCase(
-        BuildSsdtPipeline pipeline)
+        IBuildSsdtPipeline pipeline)
     {
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
     }

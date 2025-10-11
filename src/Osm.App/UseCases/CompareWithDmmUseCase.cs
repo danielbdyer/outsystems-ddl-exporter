@@ -23,9 +23,9 @@ public sealed record CompareWithDmmUseCaseResult(
 
 public sealed class CompareWithDmmUseCase
 {
-    private readonly DmmComparePipeline _pipeline;
+    private readonly IDmmComparePipeline _pipeline;
 
-    public CompareWithDmmUseCase(DmmComparePipeline pipeline)
+    public CompareWithDmmUseCase(IDmmComparePipeline pipeline)
     {
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
     }

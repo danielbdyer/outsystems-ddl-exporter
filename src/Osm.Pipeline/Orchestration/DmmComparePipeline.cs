@@ -16,7 +16,14 @@ using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class DmmComparePipeline
+public interface IDmmComparePipeline
+{
+    Task<Result<DmmComparePipelineResult>> ExecuteAsync(
+        DmmComparePipelineRequest request,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class DmmComparePipeline : IDmmComparePipeline
 {
     private readonly IModelIngestionService _modelIngestionService;
     private readonly ModuleFilter _moduleFilter;
