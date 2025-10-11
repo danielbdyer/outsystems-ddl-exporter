@@ -11,4 +11,5 @@ public sealed record BuildSsdtPipelineResult(
     SsdtManifest Manifest,
     string DecisionLogPath,
     string? StaticSeedScriptPath,
-    EvidenceCacheResult? EvidenceCache);
+    EvidenceCacheResult? EvidenceCache,
+    PipelineExecutionLog ExecutionLog);

@@ -315,6 +315,8 @@ static async Task<int> RunBuildSsdtAsync(string[] args)
         EmitSqlProfilerSnapshot(result.Profile);
     }
 
+    EmitPipelineLog(result.ExecutionLog);
+
     foreach (var diagnostic in result.DecisionReport.Diagnostics.Where(d => d.Severity == TighteningDiagnosticSeverity.Warning))
     {
         Console.Error.WriteLine($"[warning] {diagnostic.Message}");
@@ -446,6 +448,8 @@ static async Task<int> RunDmmCompareAsync(string[] args)
     }
 
     var result = pipelineResult.Value;
+
+    EmitPipelineLog(result.ExecutionLog);
 
     if (result.EvidenceCache is { } cache)
     {
@@ -1009,6 +1013,27 @@ static void EmitSqlProfilerSnapshot(ProfileSnapshot snapshot)
     Console.WriteLine("SQL profiler snapshot:");
     Console.WriteLine(Osm.Cli.ProfileSnapshotDebugFormatter.ToJson(snapshot));
 }
+
+static void EmitPipelineLog(PipelineExecutionLog log)
+{
+    if (log is null || log.Entries.Count == 0)
+    {
+        return;
+    }
+
+    Console.WriteLine("Pipeline execution log:");
+    foreach (var entry in log.Entries)
+    {
+        var metadata = entry.Metadata.Count == 0
+            ? string.Empty
+            : " | " + string.Join(", ", entry.Metadata.Select(pair => $"{pair.Key}={FormatMetadataValue(pair.Value)}"));
+
+        Console.WriteLine($"[{entry.TimestampUtc:O}] {entry.Step}: {entry.Message}{metadata}");
+    }
+}
+
+static string FormatMetadataValue(string? value)
+    => value ?? "<null>";
 
 static Result<NamingOverrideOptions> ResolveNamingOverrides(
     Dictionary<string, string?> options,

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -79,23 +81,88 @@ public sealed class BuildSsdtPipeline
                 "Output directory must be provided for SSDT emission.");
         }
 
+        var log = new PipelineExecutionLogBuilder();
+        log.Record(
+            "request.received",
+            "Received build-ssdt pipeline request.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["modelPath"] = request.ModelPath,
+                ["outputDirectory"] = request.OutputDirectory,
+                ["profilerProvider"] = request.ProfilerProvider,
+                ["moduleFilter.hasFilter"] = request.ModuleFilter.HasFilter ? "true" : "false",
+                ["moduleFilter.moduleCount"] = request.ModuleFilter.Modules.Length.ToString(CultureInfo.InvariantCulture),
+                ["supplemental.includeUsers"] = request.SupplementalModels.IncludeUsers ? "true" : "false",
+                ["supplemental.pathCount"] = request.SupplementalModels.Paths.Count.ToString(CultureInfo.InvariantCulture),
+                ["tightening.mode"] = request.TighteningOptions.Policy.Mode.ToString(),
+                ["tightening.nullBudget"] = request.TighteningOptions.Policy.NullBudget.ToString(CultureInfo.InvariantCulture),
+                ["emission.includePlatformAutoIndexes"] = request.SmoOptions.IncludePlatformAutoIndexes ? "true" : "false",
+                ["emission.emitBareTableOnly"] = request.SmoOptions.EmitBareTableOnly ? "true" : "false",
+                ["emission.sanitizeModuleNames"] = request.SmoOptions.SanitizeModuleNames ? "true" : "false"
+            });
+
         var modelResult = await _modelIngestionService.LoadFromFileAsync(request.ModelPath, cancellationToken).ConfigureAwait(false);
         if (modelResult.IsFailure)
         {
             return Result<BuildSsdtPipelineResult>.Failure(modelResult.Errors);
         }
 
-        var filteredResult = _moduleFilter.Apply(modelResult.Value, request.ModuleFilter);
+        var model = modelResult.Value;
+        var moduleCount = model.Modules.Length;
+        var entityCount = model.Modules.Sum(static module => module.Entities.Length);
+        var attributeCount = model.Modules.Sum(static module => module.Entities.Sum(entity => entity.Attributes.Length));
+        log.Record(
+            "model.ingested",
+            "Loaded OutSystems model from disk.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["modules"] = moduleCount.ToString(CultureInfo.InvariantCulture),
+                ["entities"] = entityCount.ToString(CultureInfo.InvariantCulture),
+                ["attributes"] = attributeCount.ToString(CultureInfo.InvariantCulture),
+                ["exportedAtUtc"] = model.ExportedAtUtc.ToString("O", CultureInfo.InvariantCulture)
+            });
+
+        var filteredResult = _moduleFilter.Apply(model, request.ModuleFilter);
         if (filteredResult.IsFailure)
         {
             return Result<BuildSsdtPipelineResult>.Failure(filteredResult.Errors);
         }
+
+        var filteredModel = filteredResult.Value;
+        log.Record(
+            "model.filtered",
+            "Applied module filter options.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["originalModules"] = moduleCount.ToString(CultureInfo.InvariantCulture),
+                ["filteredModules"] = filteredModel.Modules.Length.ToString(CultureInfo.InvariantCulture),
+                ["filter.includeSystemModules"] = request.ModuleFilter.IncludeSystemModules ? "true" : "false",
+                ["filter.includeInactiveModules"] = request.ModuleFilter.IncludeInactiveModules ? "true" : "false"
+            });
 
         var supplementalResult = await _supplementalLoader.LoadAsync(request.SupplementalModels, cancellationToken).ConfigureAwait(false);
         if (supplementalResult.IsFailure)
         {
             return Result<BuildSsdtPipelineResult>.Failure(supplementalResult.Errors);
         }
+
+        log.Record(
+            "supplemental.loaded",
+            "Loaded supplemental entity definitions.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["supplementalEntityCount"] = supplementalResult.Value.Length.ToString(CultureInfo.InvariantCulture),
+                ["requestedPaths"] = request.SupplementalModels.Paths.Count.ToString(CultureInfo.InvariantCulture)
+            });
+
+        log.Record(
+            "profiling.capture.start",
+            "Capturing profiling snapshot.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["provider"] = request.ProfilerProvider,
+                ["profilePath"] = request.ProfilePath
+            });
 
         var profileResult = await CaptureProfileAsync(request, filteredResult.Value, cancellationToken).ConfigureAwait(false);
         if (profileResult.IsFailure)
@@ -104,11 +171,31 @@ public sealed class BuildSsdtPipeline
         }
 
         var profile = profileResult.Value;
+        log.Record(
+            "profiling.capture.completed",
+            "Captured profiling snapshot.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["provider"] = request.ProfilerProvider,
+                ["columnProfiles"] = profile.Columns.Length.ToString(CultureInfo.InvariantCulture),
+                ["uniqueCandidates"] = profile.UniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
+                ["compositeUniqueCandidates"] = profile.CompositeUniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
+                ["foreignKeys"] = profile.ForeignKeys.Length.ToString(CultureInfo.InvariantCulture)
+            });
 
         EvidenceCacheResult? cacheResult = null;
         if (request.EvidenceCache is { } cacheOptions && !string.IsNullOrWhiteSpace(cacheOptions.RootDirectory))
         {
             var metadata = cacheOptions.Metadata ?? new Dictionary<string, string?>(StringComparer.Ordinal);
+            log.Record(
+                "evidence.cache.requested",
+                "Caching pipeline inputs.",
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["rootDirectory"] = cacheOptions.RootDirectory?.Trim(),
+                    ["refresh"] = cacheOptions.Refresh ? "true" : "false",
+                    ["metadataCount"] = metadata.Count.ToString(CultureInfo.InvariantCulture)
+                });
             var cacheRequest = new EvidenceCacheRequest(
                 cacheOptions.RootDirectory!.Trim(),
                 cacheOptions.Command,
@@ -126,17 +213,59 @@ public sealed class BuildSsdtPipeline
             }
 
             cacheResult = cacheExecution.Value;
+            log.Record(
+                "evidence.cache.persisted",
+                "Persisted evidence cache manifest.",
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["cacheDirectory"] = cacheResult.CacheDirectory,
+                    ["artifactCount"] = cacheResult.Manifest.Artifacts.Count.ToString(CultureInfo.InvariantCulture),
+                    ["cacheKey"] = cacheResult.Manifest.Key
+                });
+        }
+        else
+        {
+            log.Record(
+                "evidence.cache.skipped",
+                "Evidence cache disabled for request.");
         }
 
-        var decisions = _tighteningPolicy.Decide(filteredResult.Value, profile, request.TighteningOptions);
+        var decisions = _tighteningPolicy.Decide(filteredModel, profile, request.TighteningOptions);
         var decisionReport = PolicyDecisionReporter.Create(decisions);
+        log.Record(
+            "policy.decisions.synthesized",
+            "Synthesized tightening decisions.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["columns"] = decisionReport.ColumnCount.ToString(CultureInfo.InvariantCulture),
+                ["tightenedColumns"] = decisionReport.TightenedColumnCount.ToString(CultureInfo.InvariantCulture),
+                ["remediationColumns"] = decisionReport.RemediationColumnCount.ToString(CultureInfo.InvariantCulture),
+                ["uniqueIndexes"] = decisionReport.UniqueIndexCount.ToString(CultureInfo.InvariantCulture),
+                ["uniqueIndexesEnforced"] = decisionReport.UniqueIndexesEnforcedCount.ToString(CultureInfo.InvariantCulture),
+                ["foreignKeys"] = decisionReport.ForeignKeyCount.ToString(CultureInfo.InvariantCulture),
+                ["foreignKeysCreated"] = decisionReport.ForeignKeysCreatedCount.ToString(CultureInfo.InvariantCulture)
+            });
 
         var smoModel = _smoModelFactory.Create(
-            filteredResult.Value,
+            filteredModel,
             decisions,
             profile,
             request.SmoOptions,
             supplementalResult.Value);
+        var smoTableCount = smoModel.Tables.Length;
+        var smoColumnCount = smoModel.Tables.Sum(static table => table.Columns.Length);
+        var smoIndexCount = smoModel.Tables.Sum(static table => table.Indexes.Length);
+        var smoForeignKeyCount = smoModel.Tables.Sum(static table => table.ForeignKeys.Length);
+        log.Record(
+            "smo.model.created",
+            "Materialized SMO table graph.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["tables"] = smoTableCount.ToString(CultureInfo.InvariantCulture),
+                ["columns"] = smoColumnCount.ToString(CultureInfo.InvariantCulture),
+                ["indexes"] = smoIndexCount.ToString(CultureInfo.InvariantCulture),
+                ["foreignKeys"] = smoForeignKeyCount.ToString(CultureInfo.InvariantCulture)
+            });
 
         var manifest = await _ssdtEmitter.EmitAsync(
             smoModel,
@@ -144,14 +273,31 @@ public sealed class BuildSsdtPipeline
             request.SmoOptions,
             decisionReport,
             cancellationToken).ConfigureAwait(false);
+        log.Record(
+            "ssdt.emission.completed",
+            "Emitted SSDT artifacts.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["outputDirectory"] = request.OutputDirectory,
+                ["tableArtifacts"] = manifest.Tables.Count.ToString(CultureInfo.InvariantCulture),
+                ["includesPolicySummary"] = (manifest.PolicySummary is not null) ? "true" : "false"
+            });
 
         var decisionLogPath = await _decisionLogWriter.WriteAsync(
             request.OutputDirectory,
             decisionReport,
             cancellationToken).ConfigureAwait(false);
+        log.Record(
+            "policy.log.persisted",
+            "Persisted policy decision log.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["path"] = decisionLogPath,
+                ["diagnostics"] = decisionReport.Diagnostics.Length.ToString(CultureInfo.InvariantCulture)
+            });
 
         string? seedPath = null;
-        var seedDefinitions = StaticEntitySeedDefinitionBuilder.Build(filteredResult.Value, request.SmoOptions.NamingOverrides);
+        var seedDefinitions = StaticEntitySeedDefinitionBuilder.Build(filteredModel, request.SmoOptions.NamingOverrides);
         if (!seedDefinitions.IsDefaultOrEmpty)
         {
             if (request.StaticDataProvider is null)
@@ -179,9 +325,34 @@ public sealed class BuildSsdtPipeline
 
             await _seedGenerator.WriteAsync(targetPath!, _seedTemplate, staticDataResult.Value, cancellationToken).ConfigureAwait(false);
             seedPath = targetPath;
+            log.Record(
+                "staticData.seed.generated",
+                "Generated static entity seed script.",
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["path"] = seedPath,
+                    ["tableCount"] = seedDefinitions.Length.ToString(CultureInfo.InvariantCulture)
+                });
+        }
+        else
+        {
+            log.Record(
+                "staticData.seed.skipped",
+                "No static entity seeds required for request.");
         }
 
-        return new BuildSsdtPipelineResult(profile, decisionReport, manifest, decisionLogPath, seedPath, cacheResult);
+        log.Record(
+            "pipeline.completed",
+            "Build-SSDT pipeline completed successfully.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["manifestPath"] = Path.Combine(request.OutputDirectory, "manifest.json"),
+                ["decisionLogPath"] = decisionLogPath,
+                ["seedScriptPath"] = seedPath ?? "<none>",
+                ["cacheDirectory"] = cacheResult?.CacheDirectory
+            });
+
+        return new BuildSsdtPipelineResult(profile, decisionReport, manifest, decisionLogPath, seedPath, cacheResult, log.Build());
     }
 
     private async Task<Result<ProfileSnapshot>> CaptureProfileAsync(

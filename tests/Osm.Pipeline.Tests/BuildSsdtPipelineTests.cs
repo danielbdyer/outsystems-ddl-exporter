@@ -64,6 +64,9 @@ public class BuildSsdtPipelineTests
         Assert.NotNull(value.StaticSeedScriptPath);
         Assert.True(File.Exists(value.StaticSeedScriptPath!));
         Assert.True(File.Exists(Path.Combine(output.Path, "policy-decisions.json")));
+        Assert.NotNull(value.ExecutionLog);
+        Assert.True(value.ExecutionLog.Entries.Count > 0);
+        Assert.Contains(value.ExecutionLog.Entries, entry => entry.Step == "pipeline.completed");
 
         Assert.NotNull(value.EvidenceCache);
         Assert.True(Directory.Exists(value.EvidenceCache!.CacheDirectory));
