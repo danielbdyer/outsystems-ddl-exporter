@@ -48,7 +48,7 @@
     "IncludePlatformAutoIndexes": false,
     "EmitBareTableOnly": false,
     "SanitizeModuleNames": true,
-    "ModuleParallelism": 1
+    "ModuleParallelism": 2
   },
   "PolicySummary": {
     "ColumnCount": 15,
@@ -83,7 +83,7 @@
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "132b33f964b52843af1bf176afcf10d48f4f85c53ec242cc19f11d14f54d424d"
+    "Hash": "891974cfa849b639dec75dcd4a41354d416776d6a88fcb17bf4835653fac5ae3"
   },
   "PreRemediation": []
 }

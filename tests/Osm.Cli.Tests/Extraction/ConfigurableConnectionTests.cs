@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -35,6 +36,17 @@ public class ConfigurableConnectionTests
 
     private static async Task<CommandResult> RunCliAsync(string workingDirectory, string arguments)
     {
-        return await DotNetCli.RunAsync(workingDirectory, arguments);
+        var startInfo = DotNetCli.CreateStartInfo(workingDirectory, arguments);
+        using var process = new Process { StartInfo = startInfo };
+        if (!process.Start())
+        {
+            throw new InvalidOperationException("Failed to launch dotnet process.");
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await Task.WhenAll(process.WaitForExitAsync(), stdoutTask, stderrTask).ConfigureAwait(false);
+
+        return new CommandResult(process.ExitCode, stdoutTask.Result, stderrTask.Result);
     }
 }

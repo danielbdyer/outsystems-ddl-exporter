@@ -29,7 +29,7 @@ public class EmissionPipelineTests
         var configPath = Path.Combine(repoRoot, "config", "default-tightening.json");
         var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case");
 
-        var tighteningOptions = await LoadTighteningOptionsAsync(configPath);
+        var tighteningOptions = OverrideModuleParallelism(await LoadTighteningOptionsAsync(configPath), 2);
         var model = await LoadModelAsync(modelPath);
         var profile = await LoadProfileAsync(profilePath);
 
@@ -78,7 +78,7 @@ public class EmissionPipelineTests
         var configPath = Path.Combine(repoRoot, "config", "default-tightening.json");
         var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case-rename");
 
-        var tighteningOptions = await LoadTighteningOptionsAsync(configPath);
+        var tighteningOptions = OverrideModuleParallelism(await LoadTighteningOptionsAsync(configPath), 2);
         var model = await LoadModelAsync(modelPath);
         var profile = await LoadProfileAsync(profilePath);
 
@@ -159,6 +159,31 @@ public class EmissionPipelineTests
 
         var message = string.Join(Environment.NewLine, result.Errors.Select(e => $"{e.Code}: {e.Message}"));
         throw new Xunit.Sdk.XunitException($"Expected result to succeed but failed with:{Environment.NewLine}{message}");
+    }
+
+    private static TighteningOptions OverrideModuleParallelism(TighteningOptions options, int moduleParallelism)
+    {
+        var emission = options.Emission;
+        var emissionOverride = EmissionOptions.Create(
+            emission.PerTableFiles,
+            emission.IncludePlatformAutoIndexes,
+            emission.SanitizeModuleNames,
+            emission.EmitBareTableOnly,
+            emission.EmitTableHeaders,
+            moduleParallelism,
+            emission.NamingOverrides);
+        AssertResultSucceeded(emissionOverride);
+
+        var tightened = TighteningOptions.Create(
+            options.Policy,
+            options.ForeignKeys,
+            options.Uniqueness,
+            options.Remediation,
+            emissionOverride.Value,
+            options.Mocking);
+        AssertResultSucceeded(tightened);
+
+        return tightened.Value;
     }
 
     private static async Task WriteDecisionLogAsync(string outputDirectory, PolicyDecisionReport report)
