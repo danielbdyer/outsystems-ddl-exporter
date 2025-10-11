@@ -263,6 +263,7 @@ SELECT
     CAST(c.is_identity AS bit) AS IsIdentity,
     CAST(COLUMNPROPERTY(c.object_id, c.[name], 'IsComputed') AS bit) AS IsComputed,
     cc.definition AS ComputedDefinition,
+    dc.name AS DefaultConstraintName,
     dc.definition AS DefaultDefinition,
     c.[name] AS PhysicalColumn
 INTO #ColumnReality
@@ -278,6 +279,42 @@ LEFT JOIN sys.computed_columns cc
 LEFT JOIN sys.default_constraints dc
   ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id;
 CREATE CLUSTERED INDEX IX_ColumnReality ON #ColumnReality(AttrId);
+
+-- Column-level check constraints (attached to physical columns)
+IF OBJECT_ID('tempdb..#ColumnCheckReality') IS NOT NULL DROP TABLE #ColumnCheckReality;
+SELECT
+    a.AttrId,
+    ck.[name] AS ConstraintName,
+    ck.definition AS Definition,
+    CAST(ck.is_not_trusted AS bit) AS IsNotTrusted
+INTO #ColumnCheckReality
+FROM #Attr a
+JOIN #PhysTbls pt ON pt.EntityId = a.EntityId
+JOIN sys.columns c
+  ON c.object_id = pt.object_id
+ AND c.[name] COLLATE Latin1_General_CI_AI = COALESCE(NULLIF(a.PhysicalColumnName, ''), NULLIF(a.DatabaseColumnName, ''), a.AttrName) COLLATE Latin1_General_CI_AI
+JOIN sys.check_constraints ck
+  ON ck.parent_object_id = c.object_id
+ AND ck.parent_column_id = c.column_id;
+CREATE CLUSTERED INDEX IX_ColumnCheckReality ON #ColumnCheckReality(AttrId);
+
+-- Aggregate check constraint JSON for quick lookup
+IF OBJECT_ID('tempdb..#AttrCheckJson') IS NOT NULL DROP TABLE #AttrCheckJson;
+SELECT
+  cc.AttrId,
+  (
+    SELECT
+      cc2.ConstraintName AS [name],
+      cc2.Definition AS [definition],
+      CAST(cc2.IsNotTrusted AS bit) AS [isNotTrusted]
+    FROM #ColumnCheckReality cc2
+    WHERE cc2.AttrId = cc.AttrId
+    FOR JSON PATH
+  ) AS CheckJson
+INTO #AttrCheckJson
+FROM #ColumnCheckReality cc
+GROUP BY cc.AttrId;
+CREATE CLUSTERED INDEX IX_AttrCheckJson ON #AttrCheckJson(AttrId);
 
 -- 8) Record which logical attributes still exist physically
 IF OBJECT_ID('tempdb..#PhysColsPresent') IS NOT NULL DROP TABLE #PhysColsPresent;
@@ -601,7 +638,7 @@ SELECT
       CAST(ISNULL(h.HasFK, 0) AS int) AS [hasDbConstraint],
       a.ExternalColumnType AS [external_dbType],
       CAST(CASE WHEN a.AttrIsActive = 0 AND pc.AttrId IS NOT NULL THEN 1 ELSE 0 END AS bit) AS [physical_isPresentButInactive],
-      CASE WHEN cr.AttrId IS NOT NULL THEN JSON_QUERY(
+      CASE WHEN cr.AttrId IS NOT NULL OR chk.AttrId IS NOT NULL THEN JSON_QUERY(
         (SELECT
             CAST(cr.IsNullable AS bit) AS [isNullable],
             cr.SqlType AS [sqlType],
@@ -612,7 +649,15 @@ SELECT
             CAST(cr.IsIdentity AS bit) AS [isIdentity],
             CAST(cr.IsComputed AS bit) AS [isComputed],
             cr.ComputedDefinition AS [computedDefinition],
-            cr.DefaultDefinition AS [defaultDefinition]
+            cr.DefaultDefinition AS [defaultDefinition],
+            CASE WHEN cr.DefaultConstraintName IS NOT NULL OR cr.DefaultDefinition IS NOT NULL THEN JSON_QUERY(
+                (SELECT
+                    cr.DefaultConstraintName AS [name],
+                    cr.DefaultDefinition AS [definition],
+                    CAST(0 AS bit) AS [isNotTrusted]
+                 FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
+            ) END AS [defaultConstraint],
+            CASE WHEN chk.CheckJson IS NOT NULL THEN JSON_QUERY(chk.CheckJson) END AS [checkConstraints]
          FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
       ) END AS [onDisk],
       CASE WHEN NULLIF(LTRIM(RTRIM(a.AttrDescription)), '') IS NOT NULL THEN JSON_QUERY(
@@ -624,6 +669,7 @@ SELECT
     LEFT JOIN #AttrHasFK h ON h.AttrId = a.AttrId
     LEFT JOIN #PhysColsPresent pc ON pc.AttrId = a.AttrId
     LEFT JOIN #ColumnReality cr ON cr.AttrId = a.AttrId
+    LEFT JOIN #AttrCheckJson chk ON chk.AttrId = a.AttrId
     WHERE a.EntityId = en.EntityId
     ORDER BY CASE WHEN COALESCE(a.IsIdentifier, CASE WHEN a.AttrSSKey = en.PrimaryKeySSKey THEN 1 ELSE 0 END) = 1 THEN 0 ELSE 1 END,
              a.AttrName

@@ -505,7 +505,21 @@ public class SsdtEmitterTests
     public async Task EmitAsync_applies_module_scoped_override_without_affecting_other_entities()
     {
         var categoryColumns = ImmutableArray.Create(
-            new SmoColumnDefinition("Id", "Id", DataType.BigInt, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
+            new SmoColumnDefinition(
+                "Id",
+                "Id",
+                DataType.BigInt,
+                Nullable: false,
+                IsIdentity: true,
+                IdentitySeed: 1,
+                IdentityIncrement: 1,
+                IsComputed: false,
+                ComputedExpression: null,
+                DefaultExpression: null,
+                Collation: null,
+                Description: null,
+                DefaultConstraint: null,
+                CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty));
         var categoryIndexes = ImmutableArray.Create(
             new SmoIndexDefinition(
                 "PK_Category",
@@ -541,8 +555,36 @@ public class SsdtEmitterTests
             categoryForeignKeys);
 
         var productColumns = ImmutableArray.Create(
-            new SmoColumnDefinition("Id", "Id", DataType.BigInt, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null),
-            new SmoColumnDefinition("CategoryId", "CategoryId", DataType.BigInt, Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
+            new SmoColumnDefinition(
+                "Id",
+                "Id",
+                DataType.BigInt,
+                Nullable: false,
+                IsIdentity: true,
+                IdentitySeed: 1,
+                IdentityIncrement: 1,
+                IsComputed: false,
+                ComputedExpression: null,
+                DefaultExpression: null,
+                Collation: null,
+                Description: null,
+                DefaultConstraint: null,
+                CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty),
+            new SmoColumnDefinition(
+                "CategoryId",
+                "CategoryId",
+                DataType.BigInt,
+                Nullable: false,
+                IsIdentity: false,
+                IdentitySeed: 0,
+                IdentityIncrement: 0,
+                IsComputed: false,
+                ComputedExpression: null,
+                DefaultExpression: null,
+                Collation: null,
+                Description: null,
+                DefaultConstraint: null,
+                CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty));
         var productIndexes = ImmutableArray.Create(
             new SmoIndexDefinition(
                 "PK_Product",
@@ -611,12 +653,110 @@ public class SsdtEmitterTests
     }
 
     [Fact]
+    public async Task EmitAsync_includes_named_default_and_check_constraints()
+    {
+        var columns = ImmutableArray.Create(
+            new SmoColumnDefinition(
+                "Quantity",
+                "Quantity",
+                DataType.Int,
+                Nullable: false,
+                IsIdentity: false,
+                IdentitySeed: 0,
+                IdentityIncrement: 0,
+                IsComputed: false,
+                ComputedExpression: null,
+                DefaultExpression: "((0))",
+                Collation: null,
+                Description: null,
+                DefaultConstraint: new SmoDefaultConstraintDefinition("DF_OSUSR_ORDER_QTY", "((0))", IsNotTrusted: false),
+                CheckConstraints: ImmutableArray.Create(
+                    new SmoCheckConstraintDefinition("CK_OSUSR_ORDER_QTY", "([Quantity] >= (0))", IsNotTrusted: true))));
+
+        var indexes = ImmutableArray.Create(
+            new SmoIndexDefinition(
+                "PK_OrderLine",
+                IsUnique: true,
+                IsPrimaryKey: true,
+                IsPlatformAuto: false,
+                ImmutableArray.Create(new SmoIndexColumnDefinition("Quantity", 1, IsIncluded: false, IsDescending: false)),
+                SmoIndexMetadata.Empty));
+
+        var table = new SmoTableDefinition(
+            "Ordering",
+            "Ordering",
+            "OSUSR_ORD_ORDERLINE",
+            "dbo",
+            "OutSystems",
+            "OrderLine",
+            Description: null,
+            columns,
+            indexes,
+            ImmutableArray<SmoForeignKeyDefinition>.Empty);
+
+        var model = SmoModel.Create(ImmutableArray.Create(table));
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        var manifest = await emitter.EmitAsync(model, temp.Path, SmoBuildOptions.Default);
+
+        var tableEntry = Assert.Single(manifest.Tables);
+        var tablePath = Path.Combine(temp.Path, tableEntry.TableFile);
+        var script = await File.ReadAllTextAsync(tablePath);
+
+        Assert.Contains("CONSTRAINT [DF_OSUSR_ORDER_QTY] DEFAULT ((0))", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CONSTRAINT [CK_OSUSR_ORDER_QTY] CHECK (([Quantity] >= (0)))", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task EmitAsync_applies_index_metadata_options()
     {
         var columns = ImmutableArray.Create(
-            new SmoColumnDefinition("Id", "Id", DataType.BigInt, Nullable: false, IsIdentity: true, IdentitySeed: 1, IdentityIncrement: 1, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null),
-            new SmoColumnDefinition("Name", "Name", DataType.NVarChar(100), Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null),
-            new SmoColumnDefinition("PartitionCol", "PartitionCol", DataType.Int, Nullable: false, IsIdentity: false, IdentitySeed: 0, IdentityIncrement: 0, IsComputed: false, ComputedExpression: null, DefaultExpression: null, Collation: null, Description: null));
+            new SmoColumnDefinition(
+                "Id",
+                "Id",
+                DataType.BigInt,
+                Nullable: false,
+                IsIdentity: true,
+                IdentitySeed: 1,
+                IdentityIncrement: 1,
+                IsComputed: false,
+                ComputedExpression: null,
+                DefaultExpression: null,
+                Collation: null,
+                Description: null,
+                DefaultConstraint: null,
+                CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty),
+            new SmoColumnDefinition(
+                "Name",
+                "Name",
+                DataType.NVarChar(100),
+                Nullable: false,
+                IsIdentity: false,
+                IdentitySeed: 0,
+                IdentityIncrement: 0,
+                IsComputed: false,
+                ComputedExpression: null,
+                DefaultExpression: null,
+                Collation: null,
+                Description: null,
+                DefaultConstraint: null,
+                CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty),
+            new SmoColumnDefinition(
+                "PartitionCol",
+                "PartitionCol",
+                DataType.Int,
+                Nullable: false,
+                IsIdentity: false,
+                IdentitySeed: 0,
+                IdentityIncrement: 0,
+                IsComputed: false,
+                ComputedExpression: null,
+                DefaultExpression: null,
+                Collation: null,
+                Description: null,
+                DefaultConstraint: null,
+                CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty));
 
         var pk = new SmoIndexDefinition(
             "PK_Sample",

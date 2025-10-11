@@ -87,6 +87,46 @@ public class SmoModelFactoryTests
     }
 
     [Fact]
+    public void Build_maps_on_disk_default_and_check_constraints()
+    {
+        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
+        var module = model.Modules.First();
+        var entity = module.Entities.First();
+        var attribute = entity.Attributes.First(a => !a.IsIdentifier);
+
+        var updatedOnDisk = attribute.OnDisk with
+        {
+            DefaultDefinition = "((1))",
+            DefaultConstraint = new AttributeOnDiskDefaultConstraint("DF_Custom_Default", "((1))", IsNotTrusted: false),
+            CheckConstraints = ImmutableArray.Create(
+                new AttributeOnDiskCheckConstraint("CK_Custom_Check", "([" + attribute.ColumnName.Value + "] > (0))", IsNotTrusted: true))
+        };
+
+        var updatedAttribute = attribute with { OnDisk = updatedOnDisk };
+        var updatedAttributes = entity.Attributes.Replace(attribute, updatedAttribute);
+        var updatedEntity = entity with { Attributes = updatedAttributes };
+        var updatedModule = module with { Entities = module.Entities.Replace(entity, updatedEntity) };
+        var updatedModel = model with { Modules = model.Modules.Replace(module, updatedModule) };
+
+        var factory = new SmoModelFactory();
+        var smoOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var smoModel = factory.Create(updatedModel, decisions, profile: snapshot, options: smoOptions);
+
+        var smoTable = smoModel.Tables.Single(t => t.Name.Equals(entity.PhysicalName.Value, StringComparison.OrdinalIgnoreCase));
+        var smoColumn = smoTable.Columns.Single(c => c.Name.Equals(updatedAttribute.LogicalName.Value, StringComparison.Ordinal));
+
+        Assert.Equal("((1))", smoColumn.DefaultExpression);
+        Assert.NotNull(smoColumn.DefaultConstraint);
+        Assert.Equal("DF_Custom_Default", smoColumn.DefaultConstraint!.Name);
+        Assert.Equal("((1))", smoColumn.DefaultConstraint!.Expression);
+        Assert.True(smoColumn.CheckConstraints.Any());
+        var checkConstraint = Assert.Single(smoColumn.CheckConstraints);
+        Assert.Equal("CK_Custom_Check", checkConstraint.Name);
+        Assert.Equal("([" + updatedAttribute.ColumnName.Value + "] > (0))", checkConstraint.Expression);
+        Assert.True(checkConstraint.IsNotTrusted);
+    }
+
+    [Fact]
     public void Build_excludes_platform_auto_indexes_when_disabled()
     {
         var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
