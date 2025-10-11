@@ -246,6 +246,20 @@ JOIN sys.schemas s
   ON s.schema_id = t.schema_id;
 CREATE CLUSTERED INDEX IX_PhysTbls ON #PhysTbls(EntityId);
 
+-- Table triggers
+IF OBJECT_ID('tempdb..#Triggers') IS NOT NULL DROP TABLE #Triggers;
+SELECT
+    pt.EntityId,
+    tr.[name] AS TriggerName,
+    CAST(tr.is_disabled AS bit) AS IsDisabled,
+    COALESCE(OBJECT_DEFINITION(tr.object_id), N'') AS TriggerDefinition
+INTO #Triggers
+FROM #PhysTbls pt
+JOIN sys.triggers tr
+  ON tr.parent_id = pt.object_id
+WHERE tr.parent_class_desc = 'OBJECT_OR_COLUMN';
+CREATE CLUSTERED INDEX IX_Triggers ON #Triggers(EntityId, TriggerName);
+
 -- 7) Column reality (nullability, SQL type, identity, defaults)
 IF OBJECT_ID('tempdb..#ColumnReality') IS NOT NULL DROP TABLE #ColumnReality;
 SELECT
@@ -498,7 +512,8 @@ SELECT
     fk.referenced_object_id AS ReferencedObjectId,
     refPt.EntityId AS ReferencedEntityId,
     sRef.[name] AS ReferencedSchema,
-    tRef.[name] AS ReferencedTable
+    tRef.[name] AS ReferencedTable,
+    CAST(fk.is_not_trusted AS bit) AS IsNoCheck
 INTO #FkReality
 FROM #PhysTbls pt
 JOIN sys.foreign_keys fk ON fk.parent_object_id = pt.object_id
@@ -598,6 +613,7 @@ SELECT
       fk.UpdateAction AS [onUpdate],
       fk.ReferencedSchema AS [referencedSchema],
       fk.ReferencedTable AS [referencedTable],
+      CAST(fk.IsNoCheck AS bit) AS [isNoCheck],
       JSON_QUERY(fkc.ColumnsJson) AS [columns]
     FROM #FkReality fk
     LEFT JOIN #FkColumnsJson fkc ON fkc.FkObjectId = fk.FkObjectId
@@ -762,6 +778,25 @@ FROM #AllIdx ai
 GROUP BY ai.EntityId;
 CREATE CLUSTERED INDEX IX_IdxJson ON #IdxJson(EntityId);
 
+-- Trigger JSON per entity
+IF OBJECT_ID('tempdb..#TriggerJson') IS NOT NULL DROP TABLE #TriggerJson;
+SELECT
+  tr.EntityId,
+  (
+    SELECT
+      tr2.TriggerName       AS [name],
+      CAST(tr2.IsDisabled AS bit) AS [isDisabled],
+      tr2.TriggerDefinition AS [definition]
+    FROM #Triggers tr2
+    WHERE tr2.EntityId = tr.EntityId
+    ORDER BY tr2.TriggerName
+    FOR JSON PATH
+  ) AS TriggersJson
+INTO #TriggerJson
+FROM #Triggers tr
+GROUP BY tr.EntityId;
+CREATE CLUSTERED INDEX IX_TriggerJson ON #TriggerJson(EntityId);
+
 -- Module JSON (final assembly)
 IF OBJECT_ID('tempdb..#ModuleJson') IS NOT NULL DROP TABLE #ModuleJson;
 SELECT
@@ -783,13 +818,15 @@ SELECT
       ) END                           AS [meta],
       JSON_QUERY(aj.AttributesJson)   AS [attributes],
       JSON_QUERY(rj.RelationshipsJson)AS [relationships],
-      JSON_QUERY(ij.IndexesJson)      AS [indexes]
+      JSON_QUERY(ij.IndexesJson)      AS [indexes],
+      JSON_QUERY(tj.TriggersJson)     AS [triggers]
     FROM #Ent en
     LEFT JOIN #PhysTbls pt  ON pt.EntityId = en.EntityId
     LEFT JOIN sys.schemas s ON s.schema_id = OBJECT_SCHEMA_NAME(pt.object_id, DB_ID())
     LEFT JOIN #AttrJson aj  ON aj.EntityId = en.EntityId
     LEFT JOIN #RelJson  rj  ON rj.EntityId = en.EntityId
     LEFT JOIN #IdxJson  ij  ON ij.EntityId = en.EntityId
+    LEFT JOIN #TriggerJson tj ON tj.EntityId = en.EntityId
     WHERE en.EspaceId = e.EspaceId
     ORDER BY en.EntityName
     FOR JSON PATH

@@ -103,7 +103,8 @@ public class SsdtEmitterTests
             ")"
         });
 
-        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
+        var foreignKeyLookup = ImmutableDictionary<string, bool>.Empty as IReadOnlyDictionary<string, bool>;
+        var formatted = (string)method!.Invoke(null, new object[] { script, statement, foreignKeyLookup })!;
 
         var expected = string.Join(Environment.NewLine, new[]
         {
@@ -138,7 +139,8 @@ public class SsdtEmitterTests
             ")"
         });
 
-        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
+        var foreignKeyLookup = ImmutableDictionary<string, bool>.Empty as IReadOnlyDictionary<string, bool>;
+        var formatted = (string)method!.Invoke(null, new object[] { script, statement, foreignKeyLookup })!;
 
         var expected = string.Join(Environment.NewLine, new[]
         {
@@ -173,7 +175,8 @@ public class SsdtEmitterTests
             ")"
         });
 
-        var formatted = (string)method!.Invoke(null, new object[] { script, statement })!;
+        var foreignKeyLookup = ImmutableDictionary<string, bool>.Empty as IReadOnlyDictionary<string, bool>;
+        var formatted = (string)method!.Invoke(null, new object[] { script, statement, foreignKeyLookup })!;
 
         Assert.Equal(script, formatted);
     }
@@ -194,7 +197,8 @@ public class SsdtEmitterTests
             ")"
         });
 
-        var formatted = (string)method!.Invoke(null, new object[] { script })!;
+        var foreignKeyLookup = ImmutableDictionary<string, bool>.Empty as IReadOnlyDictionary<string, bool>;
+        var formatted = (string)method!.Invoke(null, new object[] { script, foreignKeyLookup })!;
 
         var expected = string.Join(Environment.NewLine, new[]
         {
@@ -540,7 +544,8 @@ public class SsdtEmitterTests
             Description: null,
             categoryColumns,
             categoryIndexes,
-            categoryForeignKeys);
+            categoryForeignKeys,
+            ImmutableArray<SmoTriggerDefinition>.Empty);
 
         var catalogCategory = new SmoTableDefinition(
             "Catalog",
@@ -552,7 +557,8 @@ public class SsdtEmitterTests
             Description: null,
             categoryColumns,
             categoryIndexes,
-            categoryForeignKeys);
+            categoryForeignKeys,
+            ImmutableArray<SmoTriggerDefinition>.Empty);
 
         var productColumns = ImmutableArray.Create(
             new SmoColumnDefinition(
@@ -602,7 +608,8 @@ public class SsdtEmitterTests
                 "dbo",
                 "Id",
                 "Category",
-                ForeignKeyAction.NoAction));
+                ForeignKeyAction.NoAction,
+                IsNoCheck: true));
 
         var productTable = new SmoTableDefinition(
             "Catalog",
@@ -614,7 +621,8 @@ public class SsdtEmitterTests
             Description: null,
             productColumns,
             productIndexes,
-            productForeignKeys);
+            productForeignKeys,
+            ImmutableArray<SmoTriggerDefinition>.Empty);
 
         var smoModel = SmoModel.Create(ImmutableArray.Create(inventoryCategory, catalogCategory, productTable));
 
@@ -647,6 +655,7 @@ public class SsdtEmitterTests
         var productScript = await File.ReadAllTextAsync(productTablePath);
         Assert.Contains("REFERENCES [dbo].[CATEGORY_STATIC]", productScript, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OSUSR_INV_CATEGORY", productScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("-- Source constraint was not trusted (WITH NOCHECK)", productScript, StringComparison.OrdinalIgnoreCase);
 
         var otherScript = await File.ReadAllTextAsync(otherTable);
         Assert.Contains("CREATE TABLE [dbo].[Category]", otherScript, StringComparison.OrdinalIgnoreCase);
@@ -692,7 +701,8 @@ public class SsdtEmitterTests
             Description: null,
             columns,
             indexes,
-            ImmutableArray<SmoForeignKeyDefinition>.Empty);
+            ImmutableArray<SmoForeignKeyDefinition>.Empty,
+            ImmutableArray<SmoTriggerDefinition>.Empty);
 
         var model = SmoModel.Create(ImmutableArray.Create(table));
 
@@ -798,7 +808,8 @@ public class SsdtEmitterTests
             Description: null,
             columns,
             ImmutableArray.Create(pk, metadataIndex),
-            ImmutableArray<SmoForeignKeyDefinition>.Empty);
+            ImmutableArray<SmoForeignKeyDefinition>.Empty,
+            ImmutableArray<SmoTriggerDefinition>.Empty);
 
         var smoModel = new SmoModel(ImmutableArray.Create(table));
         using var temp = new TempDirectory();

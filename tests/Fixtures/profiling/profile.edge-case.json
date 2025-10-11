@@ -26,7 +26,8 @@
         "ToSchema": "dbo", "ToTable": "OSUSR_DEF_CITY", "ToColumn": "ID",
         "HasDbConstraint": true
       },
-      "HasOrphan": false
+      "HasOrphan": false,
+      "IsNoCheck": false
     },
     {
       "Ref": {
@@ -34,7 +35,8 @@
         "ToSchema": "dbo", "ToTable": "OSUSR_ABC_CUSTOMER", "ToColumn": "ID",
         "HasDbConstraint": false
       },
-      "HasOrphan": true
+      "HasOrphan": true,
+      "IsNoCheck": true
     }
   ]
 }

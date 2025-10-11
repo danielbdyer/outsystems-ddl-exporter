@@ -16,7 +16,8 @@
         "ToColumn": "ID",
         "HasDbConstraint": true
       },
-      "HasOrphan": false
+      "HasOrphan": false,
+      "IsNoCheck": false
     }
   ]
 }

@@ -208,6 +208,13 @@ public class EntityModelTests
         Assert.True(relationshipResult.IsSuccess);
         var relationship = relationshipResult.Value;
 
+        var triggerResult = TriggerModel.Create(
+            TriggerName.Create("TR_OSUSR_ENTITY_AUDIT").Value,
+            isDisabled: false,
+            "CREATE TRIGGER [dbo].[TR_OSUSR_ENTITY_AUDIT] ON [dbo].[OSUSR_ENTITY] AFTER INSERT AS BEGIN SET NOCOUNT ON; END");
+        Assert.True(triggerResult.IsSuccess);
+        var trigger = triggerResult.Value;
+
         var result = EntityModel.Create(
             module,
             logical,
@@ -219,11 +226,55 @@ public class EntityModelTests
             isActive: true,
             new[] { id, name },
             new[] { index },
-            new[] { relationship });
+            new[] { relationship },
+            new[] { trigger });
 
         Assert.True(result.IsSuccess);
         Assert.Equal(module, result.Value.Module);
         Assert.Equal(2, result.Value.Attributes.Length);
         Assert.Single(result.Value.Relationships);
+        Assert.Single(result.Value.Triggers);
+    }
+
+    [Fact]
+    public void Create_ShouldFail_WhenDuplicateTriggerNames()
+    {
+        var module = ModuleName.Create("Module").Value;
+        var logical = EntityName.Create("Entity").Value;
+        var schema = SchemaName.Create("dbo").Value;
+        var table = TableName.Create("OSUSR_ENTITY").Value;
+
+        var idResult = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true,
+            reference: AttributeReference.None);
+        Assert.True(idResult.IsSuccess);
+        var id = idResult.Value;
+
+        var trigger = TriggerModel.Create(
+            TriggerName.Create("TR_OSUSR_ENTITY_AUDIT").Value,
+            isDisabled: false,
+            "CREATE TRIGGER [dbo].[TR_OSUSR_ENTITY_AUDIT] ON [dbo].[OSUSR_ENTITY] AFTER INSERT AS BEGIN RETURN; END").Value;
+        var duplicate = trigger with { IsDisabled = true };
+
+        var result = EntityModel.Create(
+            module,
+            logical,
+            table,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { id },
+            triggers: new[] { trigger, duplicate });
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "entity.triggers.duplicateName");
     }
 }

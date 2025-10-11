@@ -28,7 +28,8 @@ public sealed record SmoTableDefinition(
     string? Description,
     ImmutableArray<SmoColumnDefinition> Columns,
     ImmutableArray<SmoIndexDefinition> Indexes,
-    ImmutableArray<SmoForeignKeyDefinition> ForeignKeys);
+    ImmutableArray<SmoForeignKeyDefinition> ForeignKeys,
+    ImmutableArray<SmoTriggerDefinition> Triggers);
 
 public sealed record SmoColumnDefinition(
     string Name,
@@ -101,4 +102,12 @@ public sealed record SmoForeignKeyDefinition(
     string ReferencedSchema,
     string ReferencedColumn,
     string ReferencedLogicalTable,
-    ForeignKeyAction DeleteAction);
+    ForeignKeyAction DeleteAction,
+    bool IsNoCheck);
+
+public sealed record SmoTriggerDefinition(
+    string Name,
+    string Schema,
+    string Table,
+    bool IsDisabled,
+    string Definition);

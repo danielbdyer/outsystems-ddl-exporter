@@ -594,6 +594,13 @@
                 }
               ]
             }
+          ],
+          "triggers": [
+            {
+              "name": "TR_OSUSR_XYZ_JOBRUN_AUDIT",
+              "isDisabled": true,
+              "definition": "CREATE TRIGGER [dbo].[TR_OSUSR_XYZ_JOBRUN_AUDIT] ON [dbo].[OSUSR_XYZ_JOBRUN] AFTER INSERT AS BEGIN SET NOCOUNT ON; END"
+            }
           ]
         }
       ]

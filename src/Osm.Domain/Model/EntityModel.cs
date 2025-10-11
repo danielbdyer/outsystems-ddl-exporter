@@ -18,6 +18,7 @@ public sealed record EntityModel(
     ImmutableArray<AttributeModel> Attributes,
     ImmutableArray<IndexModel> Indexes,
     ImmutableArray<RelationshipModel> Relationships,
+    ImmutableArray<TriggerModel> Triggers,
     EntityMetadata Metadata)
 {
     public static Result<EntityModel> Create(
@@ -32,6 +33,7 @@ public sealed record EntityModel(
         IEnumerable<AttributeModel> attributes,
         IEnumerable<IndexModel>? indexes = null,
         IEnumerable<RelationshipModel>? relationships = null,
+        IEnumerable<TriggerModel>? triggers = null,
         EntityMetadata? metadata = null)
     {
         if (attributes is null)
@@ -62,6 +64,13 @@ public sealed record EntityModel(
 
         var indexArray = (indexes ?? Enumerable.Empty<IndexModel>()).ToImmutableArray();
         var relationshipArray = (relationships ?? Enumerable.Empty<RelationshipModel>()).ToImmutableArray();
+        var triggerArray = (triggers ?? Enumerable.Empty<TriggerModel>()).ToImmutableArray();
+
+        if (HasDuplicates(triggerArray.Select(t => t.Name.Value), StringComparer.OrdinalIgnoreCase))
+        {
+            return Result<EntityModel>.Failure(ValidationError.Create("entity.triggers.duplicateName", "Trigger names must be unique."));
+        }
+
         var normalizedCatalog = string.IsNullOrWhiteSpace(catalog) ? null : catalog!.Trim();
 
         return Result<EntityModel>.Success(new EntityModel(
@@ -76,6 +85,7 @@ public sealed record EntityModel(
             attributeArray,
             indexArray,
             relationshipArray,
+            triggerArray,
             metadata ?? EntityMetadata.Empty));
     }
 
