@@ -6,6 +6,7 @@ using Osm.Domain.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
 using Osm.Smo;
+using Osm.Smo.TypeMapping;
 using Tests.Support;
 using Xunit;
 
@@ -39,6 +40,7 @@ public class DmmComparePipelineTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null)),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
+            TypeMappingPolicy.LoadDefault(),
             diffPath,
             new EvidenceCachePipelineOptions(
                 cache.Path,

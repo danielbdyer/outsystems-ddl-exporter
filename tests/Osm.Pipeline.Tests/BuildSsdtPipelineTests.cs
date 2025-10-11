@@ -10,6 +10,7 @@ using Osm.Emission.Seeds;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
 using Osm.Smo;
+using Osm.Smo.TypeMapping;
 using Tests.Support;
 using Xunit;
 
@@ -40,6 +41,7 @@ public class BuildSsdtPipelineTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null)),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicy.LoadDefault(),
             new EvidenceCachePipelineOptions(
                 cache.Path,
                 Refresh: false,

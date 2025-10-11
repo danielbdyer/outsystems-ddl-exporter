@@ -8,6 +8,7 @@ using Osm.Domain.Configuration;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
 using Osm.Smo;
+using Osm.Smo.TypeMapping;
 using Osm.Pipeline.Mediation;
 
 namespace Osm.App.UseCases;
@@ -93,7 +94,29 @@ public sealed class CompareWithDmmUseCase
         Directory.CreateDirectory(outputDirectory);
         var diffPath = Path.Combine(outputDirectory, "dmm-diff.json");
 
-        var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission, applyNamingOverrides: false);
+        if (input.Overrides.MaxDegreeOfParallelism is { } maxDegreeOfParallelism && maxDegreeOfParallelism < 1)
+        {
+            return Result<CompareWithDmmUseCaseResult>.Failure(
+                ValidationError.Create(
+                    "pipeline.dmmCompare.parallelism.invalid",
+                    "Max degree of parallelism must be at least 1."));
+        }
+
+        var smoOptionsBase = SmoBuildOptions.FromEmission(tighteningOptions.Emission, applyNamingOverrides: false);
+        if (input.Overrides.MaxDegreeOfParallelism is { } overrideParallelism)
+        {
+            smoOptionsBase = smoOptionsBase.WithModuleParallelism(overrideParallelism);
+        }
+
+        var smoOptions = smoOptionsBase;
+
+        var typeMappingResult = TypeMappingPolicyResolver.Resolve(configuration, input.ConfigurationContext.ConfigPath);
+        if (typeMappingResult.IsFailure)
+        {
+            return Result<CompareWithDmmUseCaseResult>.Failure(typeMappingResult.Errors);
+        }
+
+        var typeMappingPolicy = typeMappingResult.Value;
 
         var cacheOptions = ResolveCacheOptions(
             configuration,
@@ -114,6 +137,7 @@ public sealed class CompareWithDmmUseCase
             ResolveSupplementalOptions(configuration.SupplementalModels),
             sqlOptionsResult.Value,
             smoOptions,
+            typeMappingPolicy,
             diffPath,
             cacheOptions);
 

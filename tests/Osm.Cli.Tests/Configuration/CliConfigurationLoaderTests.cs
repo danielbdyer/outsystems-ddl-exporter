@@ -73,10 +73,12 @@ public sealed class CliConfigurationLoaderTests
         var tighteningPath = Path.Combine(directory.Path, "tightening.json");
         var modelPath = Path.Combine(directory.Path, "model.json");
         var profilePath = Path.Combine(directory.Path, "profile.json");
+        var typeMapPath = Path.Combine(directory.Path, "type-map.json");
 
         await File.WriteAllTextAsync(tighteningPath, CreateLegacyTighteningJson());
         await File.WriteAllTextAsync(modelPath, "{}");
         await File.WriteAllTextAsync(profilePath, "{}");
+        await File.WriteAllTextAsync(typeMapPath, "{}");
 
         var config = new
         {
@@ -85,7 +87,8 @@ public sealed class CliConfigurationLoaderTests
             profile = new { path = "profile.json" },
             cache = new { root = "cache" },
             profiler = new { provider = "Fixture", profilePath = "profile.json", mockFolder = "mocks" },
-            sql = new { connectionString = "Server=.;Database=Test;" }
+            sql = new { connectionString = "Server=.;Database=Test;" },
+            typeMap = new { path = "type-map.json" }
         };
 
         await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
@@ -102,6 +105,7 @@ public sealed class CliConfigurationLoaderTests
         Assert.Equal(new[] { "AppCore", "Ops" }, result.Value.ModuleFilter.Modules);
         Assert.Equal(false, result.Value.ModuleFilter.IncludeSystemModules);
         Assert.Equal(false, result.Value.ModuleFilter.IncludeInactiveModules);
+        Assert.Equal(Path.GetFullPath(typeMapPath), result.Value.TypeMapping.Path);
     }
 
     [Fact]

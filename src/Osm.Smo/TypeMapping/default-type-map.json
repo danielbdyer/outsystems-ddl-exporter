@@ -1,0 +1,168 @@
+{
+  "default": {
+    "kind": "unicode",
+    "maxLength": -1
+  },
+  "rules": [
+    {
+      "logicalType": "identifier",
+      "kind": "identifier",
+      "primaryKeyType": "bigint",
+      "foreignKeyType": "bigint",
+      "defaultType": "int"
+    },
+    {
+      "logicalType": "autonumber",
+      "kind": "fixed",
+      "sqlType": "bigint"
+    },
+    {
+      "logicalType": "integer",
+      "kind": "fixed",
+      "sqlType": "int"
+    },
+    {
+      "logicalType": "longinteger",
+      "kind": "fixed",
+      "sqlType": "bigint"
+    },
+    {
+      "logicalType": "boolean",
+      "kind": "fixed",
+      "sqlType": "bit"
+    },
+    {
+      "logicalType": "datetime",
+      "kind": "fixed",
+      "sqlType": "datetime"
+    },
+    {
+      "logicalType": "datetime2",
+      "kind": "datetime",
+      "sqlType": "datetime2",
+      "scale": 7
+    },
+    {
+      "logicalType": "datetimeoffset",
+      "kind": "datetime",
+      "sqlType": "datetimeoffset",
+      "scale": 7
+    },
+    {
+      "logicalType": "date",
+      "kind": "fixed",
+      "sqlType": "date"
+    },
+    {
+      "logicalType": "time",
+      "kind": "datetime",
+      "sqlType": "time",
+      "scale": 7
+    },
+    {
+      "logicalType": "decimal",
+      "kind": "decimal",
+      "sqlType": "decimal",
+      "precision": 18,
+      "scale": 0
+    },
+    {
+      "logicalType": "currency",
+      "kind": "decimal",
+      "sqlType": "decimal",
+      "precision": 37,
+      "scale": 8
+    },
+    {
+      "logicalType": "double",
+      "kind": "fixed",
+      "sqlType": "float"
+    },
+    {
+      "logicalType": "float",
+      "kind": "fixed",
+      "sqlType": "float"
+    },
+    {
+      "logicalType": "real",
+      "kind": "fixed",
+      "sqlType": "real"
+    },
+    {
+      "logicalType": "binarydata",
+      "kind": "varbinary"
+    },
+    {
+      "logicalType": "binary",
+      "kind": "varbinary"
+    },
+    {
+      "logicalType": "varbinary",
+      "kind": "varbinary"
+    },
+    {
+      "logicalType": "longbinarydata",
+      "kind": "varbinary"
+    },
+    {
+      "logicalType": "image",
+      "kind": "fixed",
+      "sqlType": "image"
+    },
+    {
+      "logicalType": "longtext",
+      "kind": "unicode",
+      "maxLength": -1
+    },
+    {
+      "logicalType": "text",
+      "kind": "unicode",
+      "maxLength": 2000
+    },
+    {
+      "logicalType": "email",
+      "kind": "varchar",
+      "fallbackLength": 250
+    },
+    {
+      "logicalType": "phonenumber",
+      "kind": "varchar",
+      "fallbackLength": 20
+    },
+    {
+      "logicalType": "phone",
+      "kind": "varchar",
+      "fallbackLength": 20
+    },
+    {
+      "logicalType": "url",
+      "kind": "unicode",
+      "maxLength": 2000
+    },
+    {
+      "logicalType": "password",
+      "kind": "unicode",
+      "maxLength": 2000
+    },
+    {
+      "logicalType": "username",
+      "kind": "unicode",
+      "maxLength": 2000
+    },
+    {
+      "logicalType": "identifiertext",
+      "kind": "unicode",
+      "maxLength": 2000
+    },
+    {
+      "logicalType": "guid",
+      "kind": "fixed",
+      "sqlType": "uniqueidentifier"
+    },
+    {
+      "logicalType": "uniqueidentifier",
+      "kind": "fixed",
+      "sqlType": "uniqueidentifier"
+    }
+  ]
+}

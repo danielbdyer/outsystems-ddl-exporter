@@ -1,0 +1,9 @@
+{
+  "rules": [
+    {
+      "logicalType": "email",
+      "kind": "unicode",
+      "maxLength": 400
+    }
+  ]
+}

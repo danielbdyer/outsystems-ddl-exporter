@@ -45,6 +45,16 @@ public sealed record SmoBuildOptions(
         return this with { DefaultCatalogName = catalogName.Trim() };
     }
 
+    public SmoBuildOptions WithModuleParallelism(int moduleParallelism)
+    {
+        if (moduleParallelism < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(moduleParallelism), "Module parallelism must be at least 1.");
+        }
+
+        return this with { ModuleParallelism = moduleParallelism };
+    }
+
     public SmoBuildOptions WithNamingOverrides(NamingOverrideOptions namingOverrides)
     {
         if (namingOverrides is null)

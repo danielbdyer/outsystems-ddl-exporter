@@ -47,6 +47,17 @@ var includeInactiveModulesOption = new Option<bool>("--include-inactive-modules"
 var onlyActiveModulesOption = new Option<bool>("--only-active-modules", "Restrict filtering to active modules only.");
 var cacheRootOption = new Option<string?>("--cache-root", "Root directory for evidence caching.");
 var refreshCacheOption = new Option<bool>("--refresh-cache", "Force cache refresh for this execution.");
+var maxParallelismOption = new Option<int?>(
+    "--max-degree-of-parallelism",
+    description: "Maximum degree of parallelism when emitting or comparing modules.");
+maxParallelismOption.AddValidator(static result =>
+{
+    var value = result.GetValueOrDefault<int?>();
+    if (value is < 1)
+    {
+        result.ErrorMessage = "Max degree of parallelism must be at least 1.";
+    }
+});
 
 var buildCommand = CreateBuildCommand();
 var extractCommand = CreateExtractCommand();
@@ -61,6 +72,7 @@ buildCommand.AddOption(includeInactiveModulesOption);
 buildCommand.AddOption(onlyActiveModulesOption);
 buildCommand.AddOption(cacheRootOption);
 buildCommand.AddOption(refreshCacheOption);
+buildCommand.AddOption(maxParallelismOption);
 AddSqlOptions(buildCommand, sqlOptions);
 
 extractCommand.AddGlobalOption(configOption);
@@ -75,6 +87,7 @@ compareCommand.AddOption(includeInactiveModulesOption);
 compareCommand.AddOption(onlyActiveModulesOption);
 compareCommand.AddOption(cacheRootOption);
 compareCommand.AddOption(refreshCacheOption);
+compareCommand.AddOption(maxParallelismOption);
 
 var rootCommand = new RootCommand("OutSystems DDL Exporter CLI")
 {
@@ -151,7 +164,8 @@ Command CreateBuildCommand()
             context.ParseResult.GetValueForOption(outputOption),
             context.ParseResult.GetValueForOption(profilerProviderOption),
             context.ParseResult.GetValueForOption(staticDataOption),
-            context.ParseResult.GetValueForOption(renameOption));
+            context.ParseResult.GetValueForOption(renameOption),
+            context.ParseResult.GetValueForOption(maxParallelismOption));
 
         var input = new BuildSsdtUseCaseInput(
             configurationResult.Value,
@@ -362,7 +376,8 @@ Command CreateCompareCommand()
             context.ParseResult.GetValueForOption(modelOption),
             context.ParseResult.GetValueForOption(profileOption),
             context.ParseResult.GetValueForOption(dmmOption),
-            context.ParseResult.GetValueForOption(outputOption));
+            context.ParseResult.GetValueForOption(outputOption),
+            context.ParseResult.GetValueForOption(maxParallelismOption));
 
         var input = new CompareWithDmmUseCaseInput(
             configurationResult.Value,

@@ -687,6 +687,7 @@ Copy `config/appsettings.example.json` to an environment-specific location (e.g.
   "profile": { "path": "tests/Fixtures/profiling/profile.edge-case.json" },
   "cache": { "root": ".artifacts/cache", "refresh": false },
   "profiler": { "provider": "Fixture", "profilePath": "tests/Fixtures/profiling/profile.edge-case.json" },
+  "typeMap": { "path": "config/type-map.override.json" },
   "sql": { "connectionString": "Server=localhost;Database=OutSystems;Trusted_Connection=True;", "commandTimeoutSeconds": 120 }
 }
 ```
@@ -694,6 +695,8 @@ Copy `config/appsettings.example.json` to an environment-specific location (e.g.
 Module filters declared in configuration act as defaults—`--modules`, `--exclude-system-modules`, and `--only-active-modules` override them on the command line. The evidence cache key incorporates the resolved module list and toggles so cached payloads stay aligned when you swap module selections between runs.
 
 `sql.sampling` tunes when the profiler switches to sampling and how many rows it inspects; `sql.authentication` plugs in Azure AD / managed identity authentication or per-connection ADO.NET overrides (e.g., application name, certificate trust) without polluting the connection string.
+
+`typeMap.path` points at an optional JSON file that overrides the embedded OutSystems → SQL Server type policy. The resolver first loads the default map (`src/Osm.Smo/TypeMapping/default-type-map.json`) and then overlays any rules declared in your file, making it easy to customize identifier sizing, text lengths, or bespoke logical types without recompiling.【F:src/Osm.App/Configuration/TypeMappingPolicyResolver.cs†L9-L67】【F:src/Osm.Smo/TypeMapping/TypeMappingPolicy.cs†L18-L334】 You can set the same path via the `OSM_TYPE_MAP_PATH` environment variable when running in CI or containerized environments.【F:src/Osm.App/Configuration/CliConfigurationService.cs†L119-L133】 The repository ships with `config/type-map.override.json` as a working example (it bumps `Email` columns to NVARCHAR(400))—copy and edit that file to match your platform conventions.
 
 ### Supplemental models (entity overrides)
 
@@ -776,6 +779,7 @@ When resolving inputs, the CLI honours the following order: CLI flag ➝ environ
   * `--connection-string`, `--command-timeout`, `--sql-authentication`, `--sql-access-token`, `--sql-trust-server-certificate`, `--sql-application-name` — same semantics as `extract-model`; only required when running the live SQL profiler.
   * `--sampling-threshold`, `--sampling-size` — override profiler sampling defaults when capturing directly from SQL Server.
   * `--modules <csv>` — optional module filter; values are trimmed and case-insensitive.
+  * `--max-degree-of-parallelism <count>` — cap module emission parallelism (defaults to the tightening config; minimum of 1).
   * `--exclude-system-modules` / `--include-system-modules` — toggle whether system modules participate when the filter is empty.
   * `--only-active-modules` / `--include-inactive-modules` — drop inactive modules entirely (active-only by default when the flag is present).
   * `--config <appsettings.json>` — optional CLI configuration (model/profile defaults, cache root, tightening overrides).
@@ -785,6 +789,7 @@ When resolving inputs, the CLI honours the following order: CLI flag ➝ environ
 * `dmm-compare`
   * `--model <model.json>` / `--profile <profile.json>` — same as `build-ssdt`.
   * `--dmm <path>` — baseline DMM script to compare against SMO output.
+  * `--max-degree-of-parallelism <count>` — reuse the emission parallelism override during comparison when rebuilding SMO scripts.
   * `--modules`, `--exclude-system-modules`, `--only-active-modules` — same semantics as `build-ssdt`; restricts the SMO baseline prior to diffing.
   * `--config`, `--cache-root`, `--refresh-cache` — same semantics as `build-ssdt`.
 

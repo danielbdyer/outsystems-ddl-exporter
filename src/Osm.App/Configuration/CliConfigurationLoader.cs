@@ -99,6 +99,11 @@ public sealed class CliConfigurationLoader
             configuration = configuration with { ModelPath = legacyModelPath };
         }
 
+        if (TryReadTypeMap(root, baseDirectory, out var typeMap))
+        {
+            configuration = configuration with { TypeMapping = typeMap };
+        }
+
         if (TryReadPath(root, "profile", baseDirectory, out var profilePath))
         {
             configuration = configuration with { ProfilePath = profilePath };
@@ -188,6 +193,28 @@ public sealed class CliConfigurationLoader
         }
 
         inlineElement = element;
+        return true;
+    }
+
+    private static bool TryReadTypeMap(JsonElement root, string baseDirectory, out TypeMappingConfiguration typeMap)
+    {
+        typeMap = TypeMappingConfiguration.Empty;
+        if (!root.TryGetProperty("typeMap", out var element) || element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        string? path = null;
+        if (element.TryGetProperty("path", out var pathElement) && pathElement.ValueKind == JsonValueKind.String)
+        {
+            var raw = pathElement.GetString();
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                path = ResolveRelativePath(baseDirectory, raw!);
+            }
+        }
+
+        typeMap = new TypeMappingConfiguration(path);
         return true;
     }
 

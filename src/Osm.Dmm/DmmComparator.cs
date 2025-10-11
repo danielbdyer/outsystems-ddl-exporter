@@ -117,7 +117,7 @@ public sealed class DmmComparator
                 continue;
             }
 
-            if (!string.Equals(expectedColumn.DataType, actualColumn.DataType, StringComparison.OrdinalIgnoreCase))
+            if (!ScriptDomDataTypeComparer.AreEquivalent(expectedColumn.DataType, actualColumn.DataType))
             {
                 ssdtDifferences.Add($"data type mismatch for {expected.Schema}.{expected.Name}.{expectedColumn.Name}: expected {expectedColumn.DataType}, actual {actualColumn.DataType}");
             }

@@ -24,6 +24,7 @@ public sealed class CliConfigurationService : ICliConfigurationService
     private const string EnvRefreshCache = "OSM_CLI_REFRESH_CACHE";
     private const string EnvProfilerProvider = "OSM_CLI_PROFILER_PROVIDER";
     private const string EnvProfilerMockFolder = "OSM_CLI_PROFILER_MOCK_FOLDER";
+    private const string EnvTypeMapPath = "OSM_CLI_TYPEMAP_PATH";
     private const string EnvSqlConnectionString = "OSM_CLI_CONNECTION_STRING";
     private const string EnvSqlCommandTimeout = "OSM_CLI_SQL_COMMAND_TIMEOUT";
     private const string EnvSqlAuthentication = "OSM_CLI_SQL_AUTHENTICATION";
@@ -113,6 +114,11 @@ public sealed class CliConfigurationService : ICliConfigurationService
         if (TryGetEnvironmentPath(EnvDmmPath, out var dmmPath))
         {
             result = result with { DmmPath = dmmPath };
+        }
+
+        if (TryGetEnvironmentPath(EnvTypeMapPath, out var typeMapPath))
+        {
+            result = result with { TypeMapping = new TypeMappingConfiguration(Path.GetFullPath(typeMapPath!)) };
         }
 
         var cache = result.Cache;

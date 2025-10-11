@@ -25,6 +25,9 @@
     "profilePath": "tests/Fixtures/profiling/profile.edge-case.json",
     "mockFolder": "tests/Fixtures/profiling"
   },
+  "typeMap": {
+    "path": "config/type-map.override.json"
+  },
   "supplementalModels": {
     "includeUsers": true,
     "paths": []

@@ -247,7 +247,8 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             decisions,
             profile,
             request.SmoOptions,
-            supplementalResult.Value);
+            supplementalResult.Value,
+            request.TypeMappingPolicy);
         var smoTableCount = smoModel.Tables.Length;
         var smoColumnCount = smoModel.Tables.Sum(static table => table.Columns.Length);
         var smoIndexCount = smoModel.Tables.Sum(static table => table.Indexes.Length);

@@ -14,6 +14,7 @@ public sealed record CliConfiguration(
     ProfilerConfiguration Profiler,
     SqlConfiguration Sql,
     ModuleFilterConfiguration ModuleFilter,
+    TypeMappingConfiguration TypeMapping,
     SupplementalModelConfiguration SupplementalModels)
 {
     public static CliConfiguration Empty { get; } = new(
@@ -25,6 +26,7 @@ public sealed record CliConfiguration(
         ProfilerConfiguration.Empty,
         SqlConfiguration.Empty,
         ModuleFilterConfiguration.Empty,
+        TypeMappingConfiguration.Empty,
         SupplementalModelConfiguration.Empty);
 }
 
@@ -76,4 +78,9 @@ public sealed record SupplementalModelConfiguration(
 {
     public static SupplementalModelConfiguration Empty { get; }
         = new SupplementalModelConfiguration(true, Array.Empty<string>());
+}
+
+public sealed record TypeMappingConfiguration(string? Path)
+{
+    public static TypeMappingConfiguration Empty { get; } = new((string?)null);
 }

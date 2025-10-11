@@ -13,6 +13,7 @@ using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Pipeline.Mediation;
+using Osm.Smo.TypeMapping;
 
 namespace Osm.App.UseCases;
 
@@ -77,6 +78,14 @@ public sealed class BuildSsdtUseCase
             return Result<BuildSsdtUseCaseResult>.Failure(modelPath.Errors);
         }
 
+        var typeMappingResult = TypeMappingPolicyResolver.Resolve(configuration, input.ConfigurationContext.ConfigPath);
+        if (typeMappingResult.IsFailure)
+        {
+            return Result<BuildSsdtUseCaseResult>.Failure(typeMappingResult.Errors);
+        }
+
+        var typeMappingPolicy = typeMappingResult.Value;
+
         var outputDirectory = ResolveOutputDirectory(input.Overrides.OutputDirectory);
 
         var namingOverridesResult = NamingOverridesResolver.Resolve(
@@ -88,8 +97,21 @@ public sealed class BuildSsdtUseCase
             return Result<BuildSsdtUseCaseResult>.Failure(namingOverridesResult.Errors);
         }
 
-        var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission)
-            .WithNamingOverrides(namingOverridesResult.Value);
+        if (input.Overrides.MaxDegreeOfParallelism is { } maxDegreeOfParallelism && maxDegreeOfParallelism < 1)
+        {
+            return Result<BuildSsdtUseCaseResult>.Failure(
+                ValidationError.Create(
+                    "pipeline.buildSsdt.parallelism.invalid",
+                    "Max degree of parallelism must be at least 1."));
+        }
+
+        var smoOptionsBase = SmoBuildOptions.FromEmission(tighteningOptions.Emission);
+        if (input.Overrides.MaxDegreeOfParallelism is { } overrideParallelism)
+        {
+            smoOptionsBase = smoOptionsBase.WithModuleParallelism(overrideParallelism);
+        }
+
+        var smoOptions = smoOptionsBase.WithNamingOverrides(namingOverridesResult.Value);
 
         var staticDataProvider = ResolveStaticEntityDataProvider(input.Overrides.StaticDataPath, sqlOptionsResult.Value);
 
@@ -112,6 +134,7 @@ public sealed class BuildSsdtUseCase
             profilePath,
             sqlOptionsResult.Value,
             smoOptions,
+            typeMappingPolicy,
             cacheOptions,
             staticDataProvider,
             Path.Combine(outputDirectory, "Seeds", "StaticEntities.seed.sql"));
