@@ -160,6 +160,83 @@ public class DmmComparatorTests
     }
 
     [Fact]
+    public void Compare_detects_missing_index_when_feature_enabled()
+    {
+        var comparator = new DmmComparator(DmmComparisonFeatures.Columns | DmmComparisonFeatures.PrimaryKeys | DmmComparisonFeatures.Indexes);
+        var expectedTable = new DmmTable(
+            "dbo",
+            "Example",
+            new[] { new DmmColumn("Id", "int", false, null) },
+            new[] { "Id" },
+            new[]
+            {
+                new DmmIndex(
+                    "IX_Example",
+                    true,
+                    new[] { new DmmIndexColumn("Id", false) },
+                    Array.Empty<DmmIndexColumn>(),
+                    null,
+                    false,
+                    new DmmIndexOptions(null, null, null, null, null, null))
+            },
+            Array.Empty<DmmForeignKey>(),
+            null);
+        var actualTable = expectedTable with { Indexes = Array.Empty<DmmIndex>() };
+
+        var comparison = comparator.Compare(new[] { expectedTable }, new[] { actualTable });
+
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(comparison.ModelDifferences, diff => diff.Contains("missing index", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Compare_detects_foreign_key_drift_when_feature_enabled()
+    {
+        var comparator = new DmmComparator(DmmComparisonFeatures.Columns | DmmComparisonFeatures.PrimaryKeys | DmmComparisonFeatures.ForeignKeys);
+        var expectedTable = new DmmTable(
+            "dbo",
+            "Orders",
+            new[] { new DmmColumn("CustomerId", "int", false, null) },
+            new[] { "CustomerId" },
+            Array.Empty<DmmIndex>(),
+            new[]
+            {
+                new DmmForeignKey("FK_Orders_Customers", "CustomerId", "dbo", "Customers", "Id", "NoAction", false)
+            },
+            null);
+        var actualTable = expectedTable with { ForeignKeys = new[] { expectedTable.ForeignKeys[0] with { ReferencedTable = "Customers_Archive" } } };
+
+        var comparison = comparator.Compare(new[] { expectedTable }, new[] { actualTable });
+
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("foreign key table mismatch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Compare_detects_extended_property_drift_when_feature_enabled()
+    {
+        var comparator = new DmmComparator(DmmComparisonFeatures.Columns | DmmComparisonFeatures.PrimaryKeys | DmmComparisonFeatures.ExtendedProperties);
+        var expectedTable = new DmmTable(
+            "dbo",
+            "Customers",
+            new[] { new DmmColumn("Email", "nvarchar(255)", false, "Customer email") },
+            new[] { "Email" },
+            Array.Empty<DmmIndex>(),
+            Array.Empty<DmmForeignKey>(),
+            "Customer table");
+        var actualTable = expectedTable with
+        {
+            Columns = new[] { expectedTable.Columns[0] with { Description = "Updated email" } },
+            Description = "Changed description"
+        };
+
+        var comparison = comparator.Compare(new[] { expectedTable }, new[] { actualTable });
+
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("extended property mismatch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Compare_accepts_equivalent_type_spacing_and_casing()
     {
         var script = EdgeCaseScript
