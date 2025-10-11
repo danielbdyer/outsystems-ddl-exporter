@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
@@ -63,6 +66,25 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
             .ToArray();
 
         return Result<IReadOnlyList<DmmTable>>.Success(orderedTables);
+    }
+
+    public async IAsyncEnumerable<Result<DmmTable>> ProjectAsync(
+        SmoDmmLensRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var result = Project(request);
+        if (result.IsFailure)
+        {
+            yield return Result<DmmTable>.Failure(result.Errors);
+            yield break;
+        }
+
+        foreach (var table in result.Value)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return Result<DmmTable>.Success(table);
+            await Task.Yield();
+        }
     }
 
     private static string Canonicalize(DataType dataType)

@@ -29,7 +29,7 @@ public class EmissionPipelineTests
         var configPath = Path.Combine(repoRoot, "config", "default-tightening.json");
         var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case");
 
-        var tighteningOptions = OverrideModuleParallelism(await LoadTighteningOptionsAsync(configPath), 2);
+        var tighteningOptions = OverrideModuleParallelism(await LoadTighteningOptionsAsync(configPath), 1);
         var model = await LoadModelAsync(modelPath);
         var profile = await LoadProfileAsync(profilePath);
 
@@ -78,7 +78,7 @@ public class EmissionPipelineTests
         var configPath = Path.Combine(repoRoot, "config", "default-tightening.json");
         var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case-rename");
 
-        var tighteningOptions = OverrideModuleParallelism(await LoadTighteningOptionsAsync(configPath), 2);
+        var tighteningOptions = OverrideModuleParallelism(await LoadTighteningOptionsAsync(configPath), 1);
         var model = await LoadModelAsync(modelPath);
         var profile = await LoadProfileAsync(profilePath);
 

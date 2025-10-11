@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using Osm.Domain.Profiling;
 using Osm.Json;
 using Osm.Pipeline.Profiling;
 using Tests.Support;
@@ -122,5 +124,55 @@ public sealed class FixtureDataProfilerTests
         Assert.True(result.IsFailure);
         var error = Assert.Single(result.Errors);
         Assert.Equal("profiler.fixture.missing", error.Code);
+    }
+
+    [Fact]
+    public async Task StreamAsync_ShouldYieldObservations_InOrder()
+    {
+        var path = FixtureFile.GetPath(FixtureProfileSource.EdgeCase);
+        var profiler = new FixtureDataProfiler(path, new ProfileSnapshotDeserializer());
+        var expected = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+
+        var observedColumns = new List<ColumnProfile>();
+        var observedUniques = new List<UniqueCandidateProfile>();
+        var observedComposites = new List<CompositeUniqueCandidateProfile>();
+        var observedForeignKeys = new List<ForeignKeyReality>();
+        var observedKinds = new List<ProfileObservationKind>();
+
+        await foreach (var observation in profiler.StreamAsync())
+        {
+            Assert.True(observation.IsSuccess);
+            var value = observation.Value;
+            observedKinds.Add(value.Kind);
+            switch (value.Kind)
+            {
+                case ProfileObservationKind.Column:
+                    observedColumns.Add(value.Column!);
+                    break;
+                case ProfileObservationKind.UniqueCandidate:
+                    observedUniques.Add(value.UniqueCandidate!);
+                    break;
+                case ProfileObservationKind.CompositeUniqueCandidate:
+                    observedComposites.Add(value.CompositeUniqueCandidate!);
+                    break;
+                case ProfileObservationKind.ForeignKey:
+                    observedForeignKeys.Add(value.ForeignKey!);
+                    break;
+            }
+        }
+
+        Assert.Equal(expected.Columns, observedColumns);
+        Assert.Equal(expected.UniqueCandidates, observedUniques);
+        Assert.Equal(expected.CompositeUniqueCandidates, observedComposites);
+        Assert.Equal(expected.ForeignKeys, observedForeignKeys);
+
+        var expectedKinds = Enumerable.Empty<ProfileObservationKind>()
+            .Concat(Enumerable.Repeat(ProfileObservationKind.Column, expected.Columns.Length))
+            .Concat(Enumerable.Repeat(ProfileObservationKind.UniqueCandidate, expected.UniqueCandidates.Length))
+            .Concat(Enumerable.Repeat(ProfileObservationKind.CompositeUniqueCandidate, expected.CompositeUniqueCandidates.Length))
+            .Concat(Enumerable.Repeat(ProfileObservationKind.ForeignKey, expected.ForeignKeys.Length))
+            .ToArray();
+
+        Assert.Equal(expectedKinds, observedKinds);
     }
 }

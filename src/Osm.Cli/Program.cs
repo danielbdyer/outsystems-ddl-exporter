@@ -469,6 +469,11 @@ static void AddSqlOptions(Command command, SqlOptionSet optionSet)
     command.AddOption(optionSet.TrustServerCertificate);
     command.AddOption(optionSet.ApplicationName);
     command.AddOption(optionSet.AccessToken);
+    command.AddOption(optionSet.MaxDegreeOfParallelism);
+    command.AddOption(optionSet.TableBatchSize);
+    command.AddOption(optionSet.RetryCount);
+    command.AddOption(optionSet.RetryBaseDelayMilliseconds);
+    command.AddOption(optionSet.RetryJitterMilliseconds);
 }
 
 static SqlOptionsOverrides CreateSqlOverrides(ParseResult parseResult, SqlOptionSet optionSet)
@@ -480,7 +485,12 @@ static SqlOptionsOverrides CreateSqlOverrides(ParseResult parseResult, SqlOption
         parseResult.GetValueForOption(optionSet.AuthenticationMethod),
         parseResult.GetValueForOption(optionSet.TrustServerCertificate),
         parseResult.GetValueForOption(optionSet.ApplicationName),
-        parseResult.GetValueForOption(optionSet.AccessToken));
+        parseResult.GetValueForOption(optionSet.AccessToken),
+        parseResult.GetValueForOption(optionSet.MaxDegreeOfParallelism),
+        parseResult.GetValueForOption(optionSet.TableBatchSize),
+        parseResult.GetValueForOption(optionSet.RetryCount),
+        parseResult.GetValueForOption(optionSet.RetryBaseDelayMilliseconds),
+        parseResult.GetValueForOption(optionSet.RetryJitterMilliseconds));
 
 static void WriteLine(IConsole console, string message)
     => console.Out.Write(message + Environment.NewLine);
@@ -596,7 +606,26 @@ static SqlOptionSet CreateSqlOptionSet()
     var applicationName = new Option<string?>("--sql-application-name", "Application name for SQL connections.");
     var accessToken = new Option<string?>("--sql-access-token", "Access token for SQL authentication.");
 
-    return new SqlOptionSet(connectionString, commandTimeout, samplingThreshold, samplingSize, authenticationMethod, trustServerCertificate, applicationName, accessToken);
+    var maxParallel = new Option<int?>("--max-degree-of-parallelism", "Maximum number of concurrent profiling workers.");
+    var tableBatchSize = new Option<int?>("--profiling-batch-size", "Number of tables to include per metadata batch.");
+    var retryCount = new Option<int?>("--profiling-retries", "Number of retries for transient SQL errors.");
+    var retryBaseDelay = new Option<int?>("--profiling-retry-base-ms", "Base delay in milliseconds for retry backoff.");
+    var retryJitter = new Option<int?>("--profiling-retry-jitter-ms", "Maximum jitter in milliseconds applied to retry delays.");
+
+    return new SqlOptionSet(
+        connectionString,
+        commandTimeout,
+        samplingThreshold,
+        samplingSize,
+        authenticationMethod,
+        trustServerCertificate,
+        applicationName,
+        accessToken,
+        maxParallel,
+        tableBatchSize,
+        retryCount,
+        retryBaseDelay,
+        retryJitter);
 }
 
 readonly record struct SqlOptionSet(
@@ -607,4 +636,9 @@ readonly record struct SqlOptionSet(
     Option<SqlAuthenticationMethod?> AuthenticationMethod,
     Option<bool?> TrustServerCertificate,
     Option<string?> ApplicationName,
-    Option<string?> AccessToken);
+    Option<string?> AccessToken,
+    Option<int?> MaxDegreeOfParallelism,
+    Option<int?> TableBatchSize,
+    Option<int?> RetryCount,
+    Option<int?> RetryBaseDelayMilliseconds,
+    Option<int?> RetryJitterMilliseconds);

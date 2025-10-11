@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Osm.Domain.Abstractions;
 
@@ -28,6 +31,25 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
         var builder = new TableModelBuilder();
         fragment.Accept(builder);
         return Result<IReadOnlyList<DmmTable>>.Success(builder.Build());
+    }
+
+    public async IAsyncEnumerable<Result<DmmTable>> ProjectAsync(
+        TextReader reader,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var result = Project(reader);
+        if (result.IsFailure)
+        {
+            yield return Result<DmmTable>.Failure(result.Errors);
+            yield break;
+        }
+
+        foreach (var table in result.Value)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return Result<DmmTable>.Success(table);
+            await Task.Yield();
+        }
     }
 
     private sealed class TableModelBuilder : TSqlFragmentVisitor

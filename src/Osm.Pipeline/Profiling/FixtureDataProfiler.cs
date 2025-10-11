@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Abstractions;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -42,5 +43,52 @@ public sealed class FixtureDataProfiler : IDataProfiler
 
         await using var stream = _fileSystem.File.Open(_fixturePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         return _deserializer.Deserialize(stream);
+    }
+
+    public async IAsyncEnumerable<Result<ProfileObservation>> StreamAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_fileSystem.File.Exists(_fixturePath))
+        {
+            yield return Result<ProfileObservation>.Failure(ValidationError.Create(
+                "profiler.fixture.missing",
+                $"Profiling fixture '{_fixturePath}' was not found."));
+            yield break;
+        }
+
+        await using var stream = _fileSystem.File.Open(_fixturePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var snapshotResult = _deserializer.Deserialize(stream);
+        if (snapshotResult.IsFailure)
+        {
+            yield return Result<ProfileObservation>.Failure(snapshotResult.Errors);
+            yield break;
+        }
+
+        var snapshot = snapshotResult.Value;
+        foreach (var column in snapshot.Columns)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return Result<ProfileObservation>.Success(ProfileObservation.ForColumn(column));
+        }
+
+        foreach (var candidate in snapshot.UniqueCandidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return Result<ProfileObservation>.Success(ProfileObservation.ForUniqueCandidate(candidate));
+        }
+
+        foreach (var composite in snapshot.CompositeUniqueCandidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return Result<ProfileObservation>.Success(ProfileObservation.ForCompositeUniqueCandidate(composite));
+        }
+
+        foreach (var foreignKey in snapshot.ForeignKeys)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return Result<ProfileObservation>.Success(ProfileObservation.ForForeignKey(foreignKey));
+        }
     }
 }

@@ -1,11 +1,14 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
 using System.Linq;
 using System.Text;
+using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
@@ -32,170 +35,280 @@ public sealed class SqlDataProfiler : IDataProfiler
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var columns = new List<ColumnProfile>();
+        var uniqueCandidates = new List<UniqueCandidateProfile>();
+        var compositeCandidates = new List<CompositeUniqueCandidateProfile>();
+        var foreignKeys = new List<ForeignKeyReality>();
+
+        await foreach (var observationResult in StreamAsync(cancellationToken).WithCancellation(cancellationToken))
+        {
+            if (observationResult.IsFailure)
+            {
+                return Result<ProfileSnapshot>.Failure(observationResult.Errors);
+            }
+
+            var observation = observationResult.Value;
+            switch (observation.Kind)
+            {
+                case ProfileObservationKind.Column:
+                    columns.Add(observation.Column!);
+                    break;
+                case ProfileObservationKind.UniqueCandidate:
+                    uniqueCandidates.Add(observation.UniqueCandidate!);
+                    break;
+                case ProfileObservationKind.CompositeUniqueCandidate:
+                    compositeCandidates.Add(observation.CompositeUniqueCandidate!);
+                    break;
+                case ProfileObservationKind.ForeignKey:
+                    foreignKeys.Add(observation.ForeignKey!);
+                    break;
+            }
+        }
+
+        return ProfileSnapshot.Create(columns, uniqueCandidates, compositeCandidates, foreignKeys);
+    }
+
+    public async IAsyncEnumerable<Result<ProfileObservation>> StreamAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var linkedToken = linkedCts.Token;
+
+        IReadOnlyCollection<(string Schema, string Table)> tables;
+        Result<ProfileObservation>? failure = null;
         try
         {
-            var tables = CollectTables();
-            await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            tables = CollectTables();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            failure = Result<ProfileObservation>.Failure(ValidationError.Create(
+                "profile.sql.internalError",
+                $"Unable to enumerate tables for profiling: {ex.Message}"));
+            tables = Array.Empty<(string Schema, string Table)>();
+        }
 
-            var metadata = await LoadColumnMetadataAsync(connection, tables, cancellationToken).ConfigureAwait(false);
-            var rowCounts = await LoadRowCountsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
-            var plans = BuildProfilingPlans(metadata, rowCounts);
-            var resultsLookup = new Dictionary<(string Schema, string Table), TableProfilingResults>(plans.Count, TableKeyComparer.Instance);
+        if (failure is not null)
+        {
+            yield return failure.Value;
+            yield break;
+        }
 
-            foreach (var plan in plans.Values)
-            {
-                var nullCounts = await ComputeNullCountsAsync(connection, plan, cancellationToken).ConfigureAwait(false);
-                var duplicateFlags = await ComputeDuplicateCandidatesAsync(connection, plan, cancellationToken).ConfigureAwait(false);
-                var orphanFlags = await ComputeForeignKeyRealityAsync(connection, plan, cancellationToken).ConfigureAwait(false);
-                resultsLookup[(plan.Schema, plan.Table)] = new TableProfilingResults(nullCounts, duplicateFlags, orphanFlags);
-            }
+        if (tables.Count == 0)
+        {
+            yield break;
+        }
 
-            var columnProfiles = new List<ColumnProfile>();
-            var uniqueProfiles = new List<UniqueCandidateProfile>();
-            var compositeProfiles = new List<CompositeUniqueCandidateProfile>();
-            var foreignKeys = new List<ForeignKeyReality>();
-
-            foreach (var entity in _model.Modules.SelectMany(static module => module.Entities))
-            {
-                var schema = entity.Schema.Value;
-                var table = entity.PhysicalName.Value;
-                var tableKey = (schema, table);
-                rowCounts.TryGetValue(tableKey, out var tableRowCount);
-                var tableResults = resultsLookup.TryGetValue(tableKey, out var computed)
-                    ? computed
-                    : TableProfilingResults.Empty;
-
-                foreach (var attribute in entity.Attributes)
-                {
-                    var columnName = attribute.ColumnName.Value;
-                    var columnKey = (schema, table, columnName);
-                    if (!metadata.TryGetValue(columnKey, out var meta))
-                    {
-                        continue;
-                    }
-
-                    var nullCount = tableResults.NullCounts.TryGetValue(columnName, out var value) ? value : 0L;
-
-                    var columnProfileResult = ColumnProfile.Create(
-                        SchemaName.Create(schema).Value,
-                        TableName.Create(table).Value,
-                        ColumnName.Create(columnName).Value,
-                        meta.IsNullable,
-                        meta.IsComputed,
-                        meta.IsPrimaryKey,
-                        IsSingleColumnUnique(entity, columnName),
-                        meta.DefaultDefinition,
-                        tableRowCount,
-                        nullCount);
-
-                    if (columnProfileResult.IsSuccess)
-                    {
-                        columnProfiles.Add(columnProfileResult.Value);
-                    }
-                }
-
-                foreach (var index in entity.Indexes.Where(static idx => idx.IsUnique))
-                {
-                    var orderedColumns = index.Columns
-                        .OrderBy(static column => column.Ordinal)
-                        .Select(static column => column.Column.Value)
-                        .ToArray();
-
-                    if (orderedColumns.Length == 0)
-                    {
-                        continue;
-                    }
-
-                    var candidateKey = BuildUniqueKey(orderedColumns);
-                    var hasDuplicates = tableResults.UniqueDuplicates.TryGetValue(candidateKey, out var duplicate) && duplicate;
-
-                    if (orderedColumns.Length == 1)
-                    {
-                        var profileResult = UniqueCandidateProfile.Create(
-                            SchemaName.Create(schema).Value,
-                            TableName.Create(table).Value,
-                            ColumnName.Create(orderedColumns[0]).Value,
-                            hasDuplicates);
-
-                        if (profileResult.IsSuccess)
-                        {
-                            uniqueProfiles.Add(profileResult.Value);
-                        }
-                    }
-                    else
-                    {
-                        var columns = orderedColumns
-                            .Select(name => ColumnName.Create(name).Value)
-                            .ToImmutableArray();
-                        var profileResult = CompositeUniqueCandidateProfile.Create(
-                            SchemaName.Create(schema).Value,
-                            TableName.Create(table).Value,
-                            columns,
-                            hasDuplicates);
-
-                        if (profileResult.IsSuccess)
-                        {
-                            compositeProfiles.Add(profileResult.Value);
-                        }
-                    }
-                }
-
-                foreach (var attribute in entity.Attributes)
-                {
-                    if (!attribute.Reference.IsReference || attribute.Reference.TargetEntity is null)
-                    {
-                        continue;
-                    }
-
-                    var targetName = attribute.Reference.TargetEntity.Value;
-                    if (!TryFindEntity(targetName, out var targetEntity))
-                    {
-                        continue;
-                    }
-
-                    var targetIdentifier = GetPreferredIdentifier(targetEntity);
-                    if (targetIdentifier is null)
-                    {
-                        continue;
-                    }
-
-                    var foreignKeyKey = BuildForeignKeyKey(
-                        attribute.ColumnName.Value,
-                        targetEntity.Schema.Value,
-                        targetEntity.PhysicalName.Value,
-                        targetIdentifier.ColumnName.Value);
-
-                    var hasOrphans = tableResults.ForeignKeys.TryGetValue(foreignKeyKey, out var orphaned) && orphaned;
-
-                    var referenceResult = ForeignKeyReference.Create(
-                        SchemaName.Create(schema).Value,
-                        TableName.Create(table).Value,
-                        ColumnName.Create(attribute.ColumnName.Value).Value,
-                        SchemaName.Create(targetEntity.Schema.Value).Value,
-                        TableName.Create(targetEntity.PhysicalName.Value).Value,
-                        ColumnName.Create(targetIdentifier.ColumnName.Value).Value,
-                        attribute.Reference.HasDatabaseConstraint);
-
-                    if (referenceResult.IsFailure)
-                    {
-                        continue;
-                    }
-
-                    var realityResult = ForeignKeyReality.Create(referenceResult.Value, hasOrphans, isNoCheck: false);
-                    if (realityResult.IsSuccess)
-                    {
-                        foreignKeys.Add(realityResult.Value);
-                    }
-                }
-            }
-
-            return ProfileSnapshot.Create(columnProfiles, uniqueProfiles, compositeProfiles, foreignKeys);
+        Dictionary<(string Schema, string Table, string Column), ColumnMetadata>? metadata = null;
+        try
+        {
+            metadata = await LoadColumnMetadataInBatchesAsync(tables, linkedToken).ConfigureAwait(false);
         }
         catch (DbException ex)
         {
-            return Result<ProfileSnapshot>.Failure(ValidationError.Create(
+            failure = Result<ProfileObservation>.Failure(ValidationError.Create(
                 "profile.sql.executionFailed",
-                $"Failed to capture profiling snapshot: {ex.Message}"));
+                $"Failed to load column metadata: {ex.Message}"));
+        }
+
+        if (failure is not null)
+        {
+            yield return failure.Value;
+            yield break;
+        }
+
+        Dictionary<(string Schema, string Table), long>? rowCounts = null;
+        try
+        {
+            rowCounts = await LoadRowCountsInBatchesAsync(tables, linkedToken).ConfigureAwait(false);
+        }
+        catch (DbException ex)
+        {
+            failure = Result<ProfileObservation>.Failure(ValidationError.Create(
+                "profile.sql.executionFailed",
+                $"Failed to load row counts: {ex.Message}"));
+        }
+
+        if (failure is not null)
+        {
+            yield return failure.Value;
+            yield break;
+        }
+
+        var plans = BuildProfilingPlans(metadata!, rowCounts!);
+        await foreach (var observation in StreamPlansAsync(plans, metadata!, linkedToken).ConfigureAwait(false))
+        {
+            yield return observation;
+            if (observation.IsFailure)
+            {
+                linkedCts.Cancel();
+            }
+        }
+    }
+
+    private async Task<Dictionary<(string Schema, string Table, string Column), ColumnMetadata>> LoadColumnMetadataInBatchesAsync(
+        IReadOnlyCollection<(string Schema, string Table)> tables,
+        CancellationToken cancellationToken)
+    {
+        var metadata = new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(ColumnKeyComparer.Instance);
+        foreach (var batch in ChunkTables(tables))
+        {
+            var batchResult = await ExecuteWithRetryAsync(
+                async token =>
+                {
+                    await using var connection = await _connectionFactory.CreateOpenConnectionAsync(token).ConfigureAwait(false);
+                    return await LoadColumnMetadataBatchAsync(connection, batch, token).ConfigureAwait(false);
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            foreach (var kvp in batchResult)
+            {
+                metadata[kvp.Key] = kvp.Value;
+            }
+        }
+
+        return metadata;
+    }
+
+    private async Task<Dictionary<(string Schema, string Table), long>> LoadRowCountsInBatchesAsync(
+        IReadOnlyCollection<(string Schema, string Table)> tables,
+        CancellationToken cancellationToken)
+    {
+        var counts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance);
+        foreach (var batch in ChunkTables(tables))
+        {
+            var batchResult = await ExecuteWithRetryAsync(
+                async token =>
+                {
+                    await using var connection = await _connectionFactory.CreateOpenConnectionAsync(token).ConfigureAwait(false);
+                    return await LoadRowCountsBatchAsync(connection, batch, token).ConfigureAwait(false);
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            foreach (var kvp in batchResult)
+            {
+                counts[kvp.Key] = kvp.Value;
+            }
+        }
+
+        return counts;
+    }
+
+    private async IAsyncEnumerable<Result<ProfileObservation>> StreamPlansAsync(
+        IReadOnlyDictionary<(string Schema, string Table), TableProfilingPlan> plans,
+        IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (plans.Count == 0)
+        {
+            yield break;
+        }
+
+        var planChannel = Channel.CreateBounded<TableProfilingPlan>(new BoundedChannelOptions(Math.Max(1, _options.TableBatchSize))
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleWriter = true,
+            SingleReader = _options.MaxDegreeOfParallelism <= 1,
+            AllowSynchronousContinuations = false
+        });
+
+        var resultChannel = Channel.CreateUnbounded<Result<ProfileObservation>>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            AllowSynchronousContinuations = false
+        });
+
+        var writerTask = Task.Run(async () =>
+        {
+            try
+            {
+                foreach (var plan in plans.Values)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await planChannel.Writer.WriteAsync(plan, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Propagate cancellation to readers.
+            }
+            finally
+            {
+                planChannel.Writer.TryComplete();
+            }
+        }, cancellationToken);
+
+        var workerCount = Math.Max(1, _options.MaxDegreeOfParallelism);
+        var workers = new Task[workerCount];
+
+        for (var i = 0; i < workerCount; i++)
+        {
+            workers[i] = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var plan in planChannel.Reader.ReadAllAsync(cancellationToken))
+                    {
+                        try
+                        {
+                            var results = await ExecuteWithRetryAsync(
+                                async token =>
+                                {
+                                    await using var connection = await _connectionFactory.CreateOpenConnectionAsync(token).ConfigureAwait(false);
+                                    var nullCounts = await ComputeNullCountsAsync(connection, plan, token).ConfigureAwait(false);
+                                    var duplicates = await ComputeDuplicateCandidatesAsync(connection, plan, token).ConfigureAwait(false);
+                                    var orphans = await ComputeForeignKeyRealityAsync(connection, plan, token).ConfigureAwait(false);
+                                    return new TableProfilingResults(nullCounts, duplicates, orphans);
+                                },
+                                cancellationToken).ConfigureAwait(false);
+
+                            foreach (var observation in ProjectObservations(plan, metadata, results))
+                            {
+                                await resultChannel.Writer.WriteAsync(observation, cancellationToken).ConfigureAwait(false);
+                            }
+                        }
+                        catch (DbException ex)
+                        {
+                            await resultChannel.Writer.WriteAsync(Result<ProfileObservation>.Failure(ValidationError.Create(
+                                "profile.sql.executionFailed",
+                                $"Failed to capture profiling snapshot: {ex.Message}")), cancellationToken).ConfigureAwait(false);
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Cancellation requested by caller.
+                }
+            }, cancellationToken);
+        }
+
+        var completionTask = Task.WhenAll(workers).ContinueWith(_ => resultChannel.Writer.TryComplete(), cancellationToken);
+
+        try
+        {
+            await foreach (var observation in resultChannel.Reader.ReadAllAsync(cancellationToken))
+            {
+                yield return observation;
+            }
+        }
+        finally
+        {
+            planChannel.Writer.TryComplete();
+            try
+            {
+                await writerTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            try
+            {
+                await completionTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
         }
     }
 
@@ -210,7 +323,29 @@ public sealed class SqlDataProfiler : IDataProfiler
         return tables;
     }
 
-    private async Task<Dictionary<(string Schema, string Table, string Column), ColumnMetadata>> LoadColumnMetadataAsync(
+    private IEnumerable<IReadOnlyList<(string Schema, string Table)>> ChunkTables(
+        IReadOnlyCollection<(string Schema, string Table)> tables)
+    {
+        var batchSize = Math.Max(1, _options.TableBatchSize);
+        var batch = new List<(string Schema, string Table)>(batchSize);
+
+        foreach (var table in tables)
+        {
+            batch.Add(table);
+            if (batch.Count >= batchSize)
+            {
+                yield return batch.ToArray();
+                batch.Clear();
+            }
+        }
+
+        if (batch.Count > 0)
+        {
+            yield return batch.ToArray();
+        }
+    }
+
+    private async Task<Dictionary<(string Schema, string Table, string Column), ColumnMetadata>> LoadColumnMetadataBatchAsync(
         DbConnection connection,
         IReadOnlyCollection<(string Schema, string Table)> tables,
         CancellationToken cancellationToken)
@@ -271,7 +406,7 @@ WHERE t.is_ms_shipped = 0 AND {filterClause};";
         return metadata;
     }
 
-    private async Task<Dictionary<(string Schema, string Table), long>> LoadRowCountsAsync(
+    private async Task<Dictionary<(string Schema, string Table), long>> LoadRowCountsBatchAsync(
         DbConnection connection,
         IReadOnlyCollection<(string Schema, string Table)> tables,
         CancellationToken cancellationToken)
@@ -409,6 +544,50 @@ GROUP BY s.name, t.name;";
         }
 
         return results.ToImmutable();
+    }
+
+    private async Task<T> ExecuteWithRetryAsync<T>(Func<CancellationToken, Task<T>> action, CancellationToken cancellationToken)
+    {
+        var retries = Math.Max(0, _options.RetryCount);
+        var attempt = 0;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                return await action(cancellationToken).ConfigureAwait(false);
+            }
+            catch (DbException) when (attempt < retries)
+            {
+                attempt++;
+                var delay = CalculateRetryDelay(attempt);
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
+    private TimeSpan CalculateRetryDelay(int attempt)
+    {
+        if (_options.RetryBaseDelay <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var multiplier = Math.Pow(2, Math.Max(0, attempt - 1));
+        var delay = TimeSpan.FromMilliseconds(_options.RetryBaseDelay.TotalMilliseconds * multiplier);
+
+        if (_options.RetryJitter > TimeSpan.Zero)
+        {
+            var jitter = _options.RetryJitter.TotalMilliseconds * Random.Shared.NextDouble();
+            delay += TimeSpan.FromMilliseconds(jitter);
+        }
+
+        return delay;
     }
 
     private static string BuildNullCountSql(
@@ -719,6 +898,8 @@ GROUP BY s.name, t.name;";
                 builders[key] = builder;
             }
 
+            builder.AttachEntity(entity);
+
             foreach (var attribute in entity.Attributes)
             {
                 var columnName = attribute.ColumnName.Value;
@@ -772,14 +953,190 @@ GROUP BY s.name, t.name;";
         return plans;
     }
 
+    private IEnumerable<Result<ProfileObservation>> ProjectObservations(
+        TableProfilingPlan plan,
+        IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
+        TableProfilingResults results)
+    {
+        var entity = plan.Entity;
+        var schemaValue = entity.Schema.Value;
+        var tableValue = entity.PhysicalName.Value;
+
+        foreach (var attribute in entity.Attributes)
+        {
+            var columnNameValue = attribute.ColumnName.Value;
+            if (!metadata.TryGetValue((schemaValue, tableValue, columnNameValue), out var columnMetadata))
+            {
+                continue;
+            }
+
+            var nullCount = results.NullCounts.TryGetValue(columnNameValue, out var value) ? value : 0L;
+            var columnProfileResult = ColumnProfile.Create(
+                entity.Schema,
+                entity.PhysicalName,
+                attribute.ColumnName,
+                columnMetadata.IsNullable,
+                columnMetadata.IsComputed,
+                columnMetadata.IsPrimaryKey,
+                IsSingleColumnUnique(entity, columnNameValue),
+                columnMetadata.DefaultDefinition,
+                plan.RowCount,
+                nullCount);
+
+            if (columnProfileResult.IsFailure)
+            {
+                yield return Result<ProfileObservation>.Failure(columnProfileResult.Errors);
+                continue;
+            }
+
+            yield return Result<ProfileObservation>.Success(ProfileObservation.ForColumn(columnProfileResult.Value));
+        }
+
+        foreach (var index in entity.Indexes.Where(static idx => idx.IsUnique))
+        {
+            var orderedColumns = index.Columns
+                .OrderBy(static column => column.Ordinal)
+                .Select(static column => column.Column)
+                .ToArray();
+
+            if (orderedColumns.Length == 0)
+            {
+                continue;
+            }
+
+            var candidateKey = BuildUniqueKey(orderedColumns.Select(static column => column.Value));
+            var hasDuplicates = results.UniqueDuplicates.TryGetValue(candidateKey, out var duplicate) && duplicate;
+
+            if (orderedColumns.Length == 1)
+            {
+                var uniqueResult = UniqueCandidateProfile.Create(entity.Schema, entity.PhysicalName, orderedColumns[0], hasDuplicates);
+                if (uniqueResult.IsFailure)
+                {
+                    yield return Result<ProfileObservation>.Failure(uniqueResult.Errors);
+                }
+                else
+                {
+                    yield return Result<ProfileObservation>.Success(ProfileObservation.ForUniqueCandidate(uniqueResult.Value));
+                }
+            }
+            else
+            {
+                var columns = orderedColumns.ToImmutableArray();
+                var compositeResult = CompositeUniqueCandidateProfile.Create(entity.Schema, entity.PhysicalName, columns, hasDuplicates);
+                if (compositeResult.IsFailure)
+                {
+                    yield return Result<ProfileObservation>.Failure(compositeResult.Errors);
+                }
+                else
+                {
+                    yield return Result<ProfileObservation>.Success(ProfileObservation.ForCompositeUniqueCandidate(compositeResult.Value));
+                }
+            }
+        }
+
+        foreach (var attribute in entity.Attributes)
+        {
+            if (!attribute.Reference.IsReference || attribute.Reference.TargetEntity is null)
+            {
+                continue;
+            }
+
+            var targetName = attribute.Reference.TargetEntity.Value;
+            if (!TryFindEntity(targetName, out var targetEntity))
+            {
+                continue;
+            }
+
+            var targetIdentifier = GetPreferredIdentifier(targetEntity);
+            if (targetIdentifier is null)
+            {
+                continue;
+            }
+
+            var foreignKeyKey = BuildForeignKeyKey(
+                attribute.ColumnName.Value,
+                targetEntity.Schema.Value,
+                targetEntity.PhysicalName.Value,
+                targetIdentifier.ColumnName.Value);
+
+            var hasOrphans = results.ForeignKeys.TryGetValue(foreignKeyKey, out var orphaned) && orphaned;
+
+            var referenceResult = ForeignKeyReference.Create(
+                entity.Schema,
+                entity.PhysicalName,
+                attribute.ColumnName,
+                targetEntity.Schema,
+                targetEntity.PhysicalName,
+                targetIdentifier.ColumnName,
+                attribute.Reference.HasDatabaseConstraint);
+
+            if (referenceResult.IsFailure)
+            {
+                yield return Result<ProfileObservation>.Failure(referenceResult.Errors);
+                continue;
+            }
+
+            var realityResult = ForeignKeyReality.Create(referenceResult.Value, hasOrphans, isNoCheck: false);
+            if (realityResult.IsFailure)
+            {
+                yield return Result<ProfileObservation>.Failure(realityResult.Errors);
+            }
+            else
+            {
+                yield return Result<ProfileObservation>.Success(ProfileObservation.ForForeignKey(realityResult.Value));
+            }
+        }
+    }
+
     private static string BuildUniqueKey(IEnumerable<string> columns)
     {
-        return string.Join("|", columns.Select(static column => column.ToLowerInvariant()));
+        var parts = columns.ToArray();
+        return BuildKey(parts);
     }
 
     private static string BuildForeignKeyKey(string column, string targetSchema, string targetTable, string targetColumn)
     {
-        return string.Join("|", new[] { column, targetSchema, targetTable, targetColumn }.Select(static value => value.ToLowerInvariant()));
+        return BuildKey(new[] { column, targetSchema, targetTable, targetColumn });
+    }
+
+    private static string BuildKey(string[] parts)
+    {
+        if (parts.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var totalLength = parts.Length - 1;
+        foreach (var part in parts)
+        {
+            totalLength += part.Length;
+        }
+
+        var pool = ArrayPool<char>.Shared;
+        var buffer = pool.Rent(totalLength);
+        try
+        {
+            var position = 0;
+            for (var i = 0; i < parts.Length; i++)
+            {
+                if (i > 0)
+                {
+                    buffer[position++] = '|';
+                }
+
+                var part = parts[i];
+                for (var j = 0; j < part.Length; j++)
+                {
+                    buffer[position++] = char.ToLowerInvariant(part[j]);
+                }
+            }
+
+            return new string(buffer, 0, totalLength);
+        }
+        finally
+        {
+            pool.Return(buffer);
+        }
     }
 
     private sealed record TableProfilingPlan(
@@ -788,7 +1145,8 @@ GROUP BY s.name, t.name;";
         long RowCount,
         ImmutableArray<string> Columns,
         ImmutableArray<UniqueCandidatePlan> UniqueCandidates,
-        ImmutableArray<ForeignKeyPlan> ForeignKeys);
+        ImmutableArray<ForeignKeyPlan> ForeignKeys,
+        EntityModel Entity);
 
     private sealed record UniqueCandidatePlan(string Key, ImmutableArray<string> Columns);
 
@@ -812,6 +1170,7 @@ GROUP BY s.name, t.name;";
         private readonly List<UniqueCandidatePlan> _uniqueCandidates = new();
         private readonly HashSet<string> _foreignKeyKeys = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<ForeignKeyPlan> _foreignKeys = new();
+        private EntityModel? _entity;
 
         public TableProfilingPlanBuilder(string schema, string table)
         {
@@ -822,6 +1181,11 @@ GROUP BY s.name, t.name;";
         public string Schema { get; }
 
         public string Table { get; }
+
+        public void AttachEntity(EntityModel entity)
+        {
+            _entity ??= entity ?? throw new ArgumentNullException(nameof(entity));
+        }
 
         public void AddColumn(string column)
         {
@@ -870,7 +1234,12 @@ GROUP BY s.name, t.name;";
                 .ToImmutableArray();
             var uniqueCandidates = _uniqueCandidates.ToImmutableArray();
             var foreignKeys = _foreignKeys.ToImmutableArray();
-            return new TableProfilingPlan(Schema, Table, rowCount, columns, uniqueCandidates, foreignKeys);
+            if (_entity is null)
+            {
+                throw new InvalidOperationException($"No entity attached for table {Schema}.{Table}.");
+            }
+
+            return new TableProfilingPlan(Schema, Table, rowCount, columns, uniqueCandidates, foreignKeys, _entity);
         }
     }
 

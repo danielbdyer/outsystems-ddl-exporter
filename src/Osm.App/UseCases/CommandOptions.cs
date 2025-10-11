@@ -14,7 +14,12 @@ public sealed record SqlOptionsOverrides(
     SqlAuthenticationMethod? AuthenticationMethod,
     bool? TrustServerCertificate,
     string? ApplicationName,
-    string? AccessToken);
+    string? AccessToken,
+    int? MaxDegreeOfParallelism,
+    int? TableBatchSize,
+    int? RetryCount,
+    int? RetryBaseDelayMilliseconds,
+    int? RetryJitterMilliseconds);
 
 public sealed record ModuleFilterOverrides(
     IReadOnlyList<string> Modules,

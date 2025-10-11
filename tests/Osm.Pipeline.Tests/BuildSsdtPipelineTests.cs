@@ -38,7 +38,12 @@ public class BuildSsdtPipelineTests
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MaxDegreeOfParallelism: null,
+                TableBatchSize: null,
+                RetryCount: null,
+                RetryBaseDelayMilliseconds: null,
+                RetryJitterMilliseconds: null),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             new EvidenceCachePipelineOptions(
                 cache.Path,

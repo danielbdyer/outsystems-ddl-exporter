@@ -396,7 +396,18 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
 
             var sampling = CreateSamplingOptions(request.SqlOptions.Sampling);
             var connectionOptions = CreateConnectionOptions(request.SqlOptions.Authentication);
-            var profilerOptions = new SqlProfilerOptions(request.SqlOptions.CommandTimeoutSeconds, sampling);
+            var profilerOptions = new SqlProfilerOptions(
+                request.SqlOptions.CommandTimeoutSeconds,
+                sampling,
+                request.SqlOptions.MaxDegreeOfParallelism ?? SqlProfilerOptions.Default.MaxDegreeOfParallelism,
+                request.SqlOptions.TableBatchSize ?? SqlProfilerOptions.Default.TableBatchSize,
+                request.SqlOptions.RetryCount ?? SqlProfilerOptions.Default.RetryCount,
+                request.SqlOptions.RetryBaseDelayMilliseconds.HasValue
+                    ? TimeSpan.FromMilliseconds(request.SqlOptions.RetryBaseDelayMilliseconds.Value)
+                    : SqlProfilerOptions.Default.RetryBaseDelay,
+                request.SqlOptions.RetryJitterMilliseconds.HasValue
+                    ? TimeSpan.FromMilliseconds(request.SqlOptions.RetryJitterMilliseconds.Value)
+                    : SqlProfilerOptions.Default.RetryJitter);
             var sqlProfiler = new SqlDataProfiler(new SqlConnectionFactory(request.SqlOptions.ConnectionString!, connectionOptions), model, profilerOptions);
             return await sqlProfiler.CaptureAsync(cancellationToken).ConfigureAwait(false);
         }

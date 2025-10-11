@@ -263,13 +263,16 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 ["foreignKeys"] = smoForeignKeyCount.ToString(CultureInfo.InvariantCulture)
             });
 
-        var projectedResult = _smoLens.Project(new SmoDmmLensRequest(smoModel, request.SmoOptions.NamingOverrides));
-        if (projectedResult.IsFailure)
+        var modelTables = new List<DmmTable>();
+        await foreach (var tableResult in _smoLens.ProjectAsync(new SmoDmmLensRequest(smoModel, request.SmoOptions.NamingOverrides), cancellationToken))
         {
-            return Result<DmmComparePipelineResult>.Failure(projectedResult.Errors);
-        }
+            if (tableResult.IsFailure)
+            {
+                return Result<DmmComparePipelineResult>.Failure(tableResult.Errors);
+            }
 
-        var modelTables = projectedResult.Value;
+            modelTables.Add(tableResult.Value);
+        }
         log.Record(
             "smo.model.projected",
             "Projected SMO model into DMM comparison shape.",
@@ -279,13 +282,16 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             });
 
         using var reader = File.OpenText(request.DmmPath);
-        var parseResult = _dmmScriptLens.Project(reader);
-        if (parseResult.IsFailure)
+        var dmmTables = new List<DmmTable>();
+        await foreach (var tableResult in _dmmScriptLens.ProjectAsync(reader, cancellationToken))
         {
-            return Result<DmmComparePipelineResult>.Failure(parseResult.Errors);
-        }
+            if (tableResult.IsFailure)
+            {
+                return Result<DmmComparePipelineResult>.Failure(tableResult.Errors);
+            }
 
-        var dmmTables = parseResult.Value;
+            dmmTables.Add(tableResult.Value);
+        }
         log.Record(
             "dmm.script.parsed",
             "Parsed DMM baseline script.",

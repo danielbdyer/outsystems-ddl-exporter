@@ -42,9 +42,23 @@ public sealed record SqlConfiguration(
     string? ConnectionString,
     int? CommandTimeoutSeconds,
     SqlSamplingConfiguration Sampling,
-    SqlAuthenticationConfiguration Authentication)
+    SqlAuthenticationConfiguration Authentication,
+    int? MaxDegreeOfParallelism,
+    int? TableBatchSize,
+    int? RetryCount,
+    int? RetryBaseDelayMilliseconds,
+    int? RetryJitterMilliseconds)
 {
-    public static SqlConfiguration Empty { get; } = new(null, null, SqlSamplingConfiguration.Empty, SqlAuthenticationConfiguration.Empty);
+    public static SqlConfiguration Empty { get; } = new(
+        null,
+        null,
+        SqlSamplingConfiguration.Empty,
+        SqlAuthenticationConfiguration.Empty,
+        null,
+        null,
+        null,
+        null,
+        null);
 }
 
 public sealed record SqlSamplingConfiguration(long? RowSamplingThreshold, int? SampleSize)

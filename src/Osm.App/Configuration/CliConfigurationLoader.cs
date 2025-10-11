@@ -444,7 +444,22 @@ public sealed class CliConfigurationLoader
             authentication = new SqlAuthenticationConfiguration(method, trust, applicationName, accessToken);
         }
 
-        sql = new SqlConfiguration(connection, timeout, sampling, authentication);
+        var maxDegreeOfParallelism = ReadOptionalInt32(element, "maxDegreeOfParallelism");
+        var tableBatchSize = ReadOptionalInt32(element, "tableBatchSize");
+        var retryCount = ReadOptionalInt32(element, "retryCount");
+        var retryBaseDelayMilliseconds = ReadOptionalInt32(element, "retryBaseDelayMilliseconds");
+        var retryJitterMilliseconds = ReadOptionalInt32(element, "retryJitterMilliseconds");
+
+        sql = new SqlConfiguration(
+            connection,
+            timeout,
+            sampling,
+            authentication,
+            maxDegreeOfParallelism,
+            tableBatchSize,
+            retryCount,
+            retryBaseDelayMilliseconds,
+            retryJitterMilliseconds);
         return true;
     }
 
@@ -618,6 +633,21 @@ public sealed class CliConfigurationLoader
             JsonValueKind.True => true,
             JsonValueKind.False => false,
             JsonValueKind.String => bool.TryParse(property.GetString(), out var parsed) ? parsed : null,
+            _ => null,
+        };
+    }
+
+    private static int? ReadOptionalInt32(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.Number when property.TryGetInt32(out var number) => number,
+            JsonValueKind.String when int.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
             _ => null,
         };
     }
