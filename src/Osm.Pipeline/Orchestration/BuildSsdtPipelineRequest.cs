@@ -18,4 +18,4 @@ public sealed record BuildSsdtPipelineRequest(
     SmoBuildOptions SmoOptions,
     EvidenceCachePipelineOptions? EvidenceCache,
     IStaticEntityDataProvider? StaticDataProvider,
-    string? SeedScriptPathHint) : ICommand<BuildSsdtPipelineResult>;
+    string? SeedOutputDirectoryHint) : ICommand<BuildSsdtPipelineResult>;

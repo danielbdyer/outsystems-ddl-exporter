@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -181,6 +182,28 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
             namingOverrides = namingOverrideResult.Value;
         }
 
+        StaticSeedOptions staticSeeds = StaticSeedOptions.Default;
+        if (document.Emission.StaticSeeds is { } staticSeedDocument)
+        {
+            var modeText = staticSeedDocument.Mode;
+            var modeValue = StaticSeedSynchronizationMode.NonDestructive;
+            if (!string.IsNullOrWhiteSpace(modeText) &&
+                !Enum.TryParse<StaticSeedSynchronizationMode>(modeText, ignoreCase: true, out modeValue))
+            {
+                return ValidationError.Create(
+                    "config.staticSeeds.mode.invalid",
+                    $"Unrecognized static seed synchronization mode '{modeText}'.");
+            }
+
+            var staticSeedResult = StaticSeedOptions.Create(staticSeedDocument.GroupByModule, modeValue);
+            if (staticSeedResult.IsFailure)
+            {
+                return Result<TighteningOptions>.Failure(staticSeedResult.Errors);
+            }
+
+            staticSeeds = staticSeedResult.Value;
+        }
+
         var emissionResult = EmissionOptions.Create(
             document.Emission.PerTableFiles,
             document.Emission.IncludePlatformAutoIndexes,
@@ -188,7 +211,8 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
             document.Emission.EmitBareTableOnly,
             document.Emission.EmitTableHeaders,
             document.Emission.ModuleParallelism,
-            namingOverrides);
+            namingOverrides,
+            staticSeeds);
 
         if (emissionResult.IsFailure)
         {
@@ -315,6 +339,18 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
 
         [JsonPropertyName("namingOverrides")]
         public NamingOverridesDocument? NamingOverrides { get; init; }
+
+        [JsonPropertyName("staticSeeds")]
+        public StaticSeedsDocument? StaticSeeds { get; init; }
+    }
+
+    private sealed record StaticSeedsDocument
+    {
+        [JsonPropertyName("groupByModule")]
+        public bool GroupByModule { get; init; } = true;
+
+        [JsonPropertyName("mode")]
+        public string? Mode { get; init; }
     }
 
     private sealed record NamingOverridesDocument

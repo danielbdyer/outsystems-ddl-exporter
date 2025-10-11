@@ -56,7 +56,10 @@ public sealed class StaticEntitySeedScriptGenerator
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-    public string Generate(StaticEntitySeedTemplate template, IReadOnlyList<StaticEntityTableData> tables)
+    public string Generate(
+        StaticEntitySeedTemplate template,
+        IReadOnlyList<StaticEntityTableData> tables,
+        StaticSeedSynchronizationMode synchronizationMode)
     {
         if (template is null)
         {
@@ -87,25 +90,33 @@ public sealed class StaticEntitySeedScriptGenerator
                 builder.AppendLine();
             }
 
-            AppendBlock(builder, ordered[i]);
+            AppendBlock(builder, ordered[i], synchronizationMode);
         }
 
         return template.ApplyBlocks(builder.ToString());
     }
 
-    public async Task WriteAsync(string path, StaticEntitySeedTemplate template, IReadOnlyList<StaticEntityTableData> tables, CancellationToken cancellationToken = default)
+    public async Task WriteAsync(
+        string path,
+        StaticEntitySeedTemplate template,
+        IReadOnlyList<StaticEntityTableData> tables,
+        StaticSeedSynchronizationMode synchronizationMode,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
             throw new ArgumentException("Seed output path must be provided.", nameof(path));
         }
 
-        var script = Generate(template, tables);
+        var script = Generate(template, tables, synchronizationMode);
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? Directory.GetCurrentDirectory());
         await File.WriteAllTextAsync(path, script, Utf8NoBom, cancellationToken).ConfigureAwait(false);
     }
 
-    private static void AppendBlock(StringBuilder builder, StaticEntityTableData tableData)
+    private static void AppendBlock(
+        StringBuilder builder,
+        StaticEntityTableData tableData,
+        StaticSeedSynchronizationMode synchronizationMode)
     {
         var definition = tableData.Definition;
         var schema = definition.Schema;
@@ -208,6 +219,12 @@ public sealed class StaticEntitySeedScriptGenerator
         builder.Append("    VALUES (");
         builder.Append(string.Join(", ", definition.Columns.Select(static c => $"Source.{FormatColumnName(c.ColumnName)}")));
         builder.AppendLine(");");
+
+        if (synchronizationMode == StaticSeedSynchronizationMode.Authoritative)
+        {
+            builder.AppendLine("WHEN NOT MATCHED BY SOURCE THEN DELETE;");
+        }
+
         builder.AppendLine();
         builder.AppendLine("GO");
 

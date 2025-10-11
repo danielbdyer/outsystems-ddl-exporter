@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -321,7 +322,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 ["diagnostics"] = decisionReport.Diagnostics.Length.ToString(CultureInfo.InvariantCulture)
             });
 
-        string? seedPath = null;
+        var seedPaths = ImmutableArray<string>.Empty;
         var seedDefinitions = StaticEntitySeedDefinitionBuilder.Build(filteredModel, emissionSmoOptions.NamingOverrides);
         if (!seedDefinitions.IsDefaultOrEmpty)
         {
@@ -340,22 +341,60 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 return Result<BuildSsdtPipelineResult>.Failure(staticDataResult.Errors);
             }
 
-            var targetPath = request.SeedScriptPathHint;
-            if (string.IsNullOrWhiteSpace(targetPath))
+            var deterministicData = StaticEntitySeedDeterminizer.Normalize(staticDataResult.Value);
+            var seedOptions = request.TighteningOptions.Emission.StaticSeeds;
+            var seedsRoot = request.SeedOutputDirectoryHint;
+            if (string.IsNullOrWhiteSpace(seedsRoot))
             {
-                var seedsRoot = Path.Combine(request.OutputDirectory, "Seeds");
-                Directory.CreateDirectory(seedsRoot);
-                targetPath = Path.Combine(seedsRoot, "StaticEntities.seed.sql");
+                seedsRoot = Path.Combine(request.OutputDirectory, "Seeds");
             }
 
-            await _seedGenerator.WriteAsync(targetPath!, _seedTemplate, staticDataResult.Value, cancellationToken).ConfigureAwait(false);
-            seedPath = targetPath;
+            Directory.CreateDirectory(seedsRoot!);
+            var seedPathBuilder = ImmutableArray.CreateBuilder<string>();
+
+            if (seedOptions.GroupByModule)
+            {
+                var grouped = deterministicData
+                    .GroupBy(table => table.Definition.Module, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var group in grouped)
+                {
+                    var sanitizedModule = request.SmoOptions.SanitizeModuleNames
+                        ? ModuleNameSanitizer.Sanitize(group.Key)
+                        : group.Key;
+
+                    var moduleDirectory = Path.Combine(seedsRoot!, sanitizedModule);
+                    Directory.CreateDirectory(moduleDirectory);
+
+                    var moduleTables = group
+                        .OrderBy(table => table.Definition.LogicalName, StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(table => table.Definition.EffectiveName, StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+
+                    var modulePath = Path.Combine(moduleDirectory, "StaticEntities.seed.sql");
+                    await _seedGenerator
+                        .WriteAsync(modulePath, _seedTemplate, moduleTables, seedOptions.SynchronizationMode, cancellationToken)
+                        .ConfigureAwait(false);
+                    seedPathBuilder.Add(modulePath);
+                }
+            }
+            else
+            {
+                var seedPath = Path.Combine(seedsRoot!, "StaticEntities.seed.sql");
+                await _seedGenerator
+                    .WriteAsync(seedPath, _seedTemplate, deterministicData, seedOptions.SynchronizationMode, cancellationToken)
+                    .ConfigureAwait(false);
+                seedPathBuilder.Add(seedPath);
+            }
+
+            seedPaths = seedPathBuilder.ToImmutable();
             log.Record(
                 "staticData.seed.generated",
-                "Generated static entity seed script.",
+                "Generated static entity seed scripts.",
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
-                    ["path"] = seedPath,
+                    ["paths"] = seedPaths.IsDefaultOrEmpty ? string.Empty : string.Join(";", seedPaths),
                     ["tableCount"] = seedDefinitions.Length.ToString(CultureInfo.InvariantCulture)
                 });
         }
@@ -373,11 +412,11 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             {
                 ["manifestPath"] = Path.Combine(request.OutputDirectory, "manifest.json"),
                 ["decisionLogPath"] = decisionLogPath,
-                ["seedScriptPath"] = seedPath ?? "<none>",
+                ["seedScriptPaths"] = seedPaths.IsDefaultOrEmpty ? "<none>" : string.Join(";", seedPaths),
                 ["cacheDirectory"] = cacheResult?.CacheDirectory
             });
 
-        return new BuildSsdtPipelineResult(profile, decisionReport, manifest, decisionLogPath, seedPath, cacheResult, log.Build());
+        return new BuildSsdtPipelineResult(profile, decisionReport, manifest, decisionLogPath, seedPaths, cacheResult, log.Build());
     }
 
     private async Task<Result<ProfileSnapshot>> CaptureProfileAsync(

@@ -133,7 +133,7 @@ public sealed class SmoModelFactory
         var triggers = BuildTriggers(context);
         var catalog = string.IsNullOrWhiteSpace(context.Entity.Catalog) ? options.DefaultCatalogName : context.Entity.Catalog!;
 
-        var moduleName = options.SanitizeModuleNames ? SanitizeModuleName(context.ModuleName) : context.ModuleName;
+        var moduleName = options.SanitizeModuleNames ? ModuleNameSanitizer.Sanitize(context.ModuleName) : context.ModuleName;
 
         return new SmoTableDefinition(
             moduleName,
@@ -200,21 +200,6 @@ public sealed class SmoModelFactory
         }
 
         return !attribute.Reality.IsPresentButInactive;
-    }
-
-    private static string SanitizeModuleName(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "Module";
-        }
-
-        var trimmed = value.Trim();
-        var sanitized = new string(trimmed
-            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '_')
-            .ToArray());
-
-        return string.IsNullOrWhiteSpace(sanitized) ? "Module" : sanitized;
     }
 
     private static ImmutableArray<SmoColumnDefinition> BuildColumns(

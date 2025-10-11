@@ -59,11 +59,28 @@ public class EmissionPipelineTests
             var seedResult = await provider.GetDataAsync(staticDefinitions);
             AssertResultSucceeded(seedResult);
 
-            var template = StaticEntitySeedTemplate.Load();
-            var generator = new StaticEntitySeedScriptGenerator();
-            var seedsRoot = Path.Combine(output.Path, "Seeds");
-            Directory.CreateDirectory(seedsRoot);
-            await generator.WriteAsync(Path.Combine(seedsRoot, "StaticEntities.seed.sql"), template, seedResult.Value);
+        var template = StaticEntitySeedTemplate.Load();
+        var generator = new StaticEntitySeedScriptGenerator();
+        var seedsRoot = Path.Combine(output.Path, "Seeds");
+        Directory.CreateDirectory(seedsRoot);
+        var deterministicSeeds = StaticEntitySeedDeterminizer.Normalize(seedResult.Value);
+        var seedGroups = deterministicSeeds
+            .GroupBy(data => data.Definition.Module, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in seedGroups)
+        {
+            var sanitizedModule = smoOptions.SanitizeModuleNames
+                ? ModuleNameSanitizer.Sanitize(group.Key)
+                : group.Key;
+            var moduleDirectory = Path.Combine(seedsRoot, sanitizedModule);
+            Directory.CreateDirectory(moduleDirectory);
+            await generator.WriteAsync(
+                Path.Combine(moduleDirectory, "StaticEntities.seed.sql"),
+                template,
+                group.ToArray(),
+                StaticSeedSynchronizationMode.NonDestructive);
+        }
         }
 
         DirectorySnapshot.AssertMatches(expectedRoot, output.Path);
@@ -116,11 +133,28 @@ public class EmissionPipelineTests
             var seedResult = await provider.GetDataAsync(staticDefinitions);
             AssertResultSucceeded(seedResult);
 
-            var template = StaticEntitySeedTemplate.Load();
-            var generator = new StaticEntitySeedScriptGenerator();
-            var seedsRoot = Path.Combine(output.Path, "Seeds");
-            Directory.CreateDirectory(seedsRoot);
-            await generator.WriteAsync(Path.Combine(seedsRoot, "StaticEntities.seed.sql"), template, seedResult.Value);
+        var template = StaticEntitySeedTemplate.Load();
+        var generator = new StaticEntitySeedScriptGenerator();
+        var seedsRoot = Path.Combine(output.Path, "Seeds");
+        Directory.CreateDirectory(seedsRoot);
+        var deterministicSeeds = StaticEntitySeedDeterminizer.Normalize(seedResult.Value);
+        var seedGroups = deterministicSeeds
+            .GroupBy(data => data.Definition.Module, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in seedGroups)
+        {
+            var sanitizedModule = smoOptions.SanitizeModuleNames
+                ? ModuleNameSanitizer.Sanitize(group.Key)
+                : group.Key;
+            var moduleDirectory = Path.Combine(seedsRoot, sanitizedModule);
+            Directory.CreateDirectory(moduleDirectory);
+            await generator.WriteAsync(
+                Path.Combine(moduleDirectory, "StaticEntities.seed.sql"),
+                template,
+                group.ToArray(),
+                StaticSeedSynchronizationMode.NonDestructive);
+        }
         }
 
         DirectorySnapshot.AssertMatches(expectedRoot, output.Path);
@@ -171,7 +205,8 @@ public class EmissionPipelineTests
             emission.EmitBareTableOnly,
             emission.EmitTableHeaders,
             moduleParallelism,
-            emission.NamingOverrides);
+            emission.NamingOverrides,
+            emission.StaticSeeds);
         AssertResultSucceeded(emissionOverride);
 
         var tightened = TighteningOptions.Create(
