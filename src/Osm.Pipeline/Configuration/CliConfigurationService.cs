@@ -1,11 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
 
-namespace Osm.App.Configuration;
+namespace Osm.Pipeline.Configuration;
 
 public interface ICliConfigurationService
 {
@@ -56,39 +57,94 @@ public sealed class CliConfigurationService : ICliConfigurationService
         return new CliConfigurationContext(configuration, configPath);
     }
 
+    private static readonly string[] ConfigCandidates =
+    {
+        "pipeline.yaml",
+        "pipeline.yml",
+        "pipeline.json",
+        "config.json",
+        "appsettings.json"
+    };
+
     private static string? ResolveConfigPath(string? overridePath)
     {
-        if (!string.IsNullOrWhiteSpace(overridePath))
+        if (TryResolveExplicitPath(overridePath, out var resolved))
         {
-            return overridePath;
+            return resolved;
         }
 
         var envPath = Environment.GetEnvironmentVariable(EnvConfigPath);
-        if (!string.IsNullOrWhiteSpace(envPath))
+        if (TryResolveExplicitPath(envPath, out resolved))
         {
-            return envPath;
+            return resolved;
         }
 
-        var currentDirectory = Directory.GetCurrentDirectory();
-        var candidates = new[]
+        foreach (var root in EnumerateSearchRoots())
         {
-            "pipeline.yaml",
-            "pipeline.yml",
-            "pipeline.json",
-            "config.json",
-            "appsettings.json"
-        };
-
-        foreach (var candidate in candidates)
-        {
-            var path = Path.Combine(currentDirectory, candidate);
-            if (File.Exists(path))
+            var directory = new DirectoryInfo(root);
+            while (directory is not null)
             {
-                return path;
+                foreach (var candidate in ConfigCandidates)
+                {
+                    var candidatePath = Path.Combine(directory.FullName, candidate);
+                    if (File.Exists(candidatePath))
+                    {
+                        return candidatePath;
+                    }
+                }
+
+                directory = directory.Parent;
             }
         }
 
         return null;
+    }
+
+    private static bool TryResolveExplicitPath(string? path, out string? resolved)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            resolved = null;
+            return false;
+        }
+
+        try
+        {
+            resolved = Path.GetFullPath(path);
+            return true;
+        }
+        catch (Exception)
+        {
+            resolved = path;
+            return true;
+        }
+    }
+
+    private static IEnumerable<string> EnumerateSearchRoots()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(candidate);
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            if (seen.Add(fullPath))
+            {
+                yield return fullPath;
+            }
+        }
     }
 
     private static CliConfiguration ApplyEnvironmentOverrides(CliConfiguration configuration)
@@ -199,23 +255,25 @@ public sealed class CliConfigurationService : ICliConfigurationService
 
     private static bool TryParseBoolean(string? value, out bool result)
     {
-        result = default;
-        if (string.IsNullOrWhiteSpace(value))
+        if (!string.IsNullOrWhiteSpace(value) && bool.TryParse(value, out var parsed))
         {
-            return false;
+            result = parsed;
+            return true;
         }
 
-        return bool.TryParse(value, out result);
+        result = default;
+        return false;
     }
 
     private static bool TryParseInt(string? value, out int result)
     {
-        result = default;
-        if (string.IsNullOrWhiteSpace(value))
+        if (!string.IsNullOrWhiteSpace(value) && int.TryParse(value, out var parsed))
         {
-            return false;
+            result = parsed;
+            return true;
         }
 
-        return int.TryParse(value, out result);
+        result = default;
+        return false;
     }
 }

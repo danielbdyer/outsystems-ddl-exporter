@@ -2,43 +2,43 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Osm.App.Configuration;
-using Osm.App.StaticData;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
+using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Evidence;
+using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
+using Osm.Pipeline.StaticData;
 using Osm.Smo;
 using Osm.Validation.Tightening;
-using Osm.Pipeline.Mediation;
 
-namespace Osm.App.UseCases;
+namespace Osm.Pipeline.Application;
 
-public sealed record BuildSsdtUseCaseInput(
+public sealed record BuildSsdtApplicationInput(
     CliConfigurationContext ConfigurationContext,
     BuildSsdtOverrides Overrides,
     ModuleFilterOverrides ModuleFilter,
     SqlOptionsOverrides Sql,
     CacheOptionsOverrides Cache);
 
-public sealed record BuildSsdtUseCaseResult(
+public sealed record BuildSsdtApplicationResult(
     BuildSsdtPipelineResult PipelineResult,
     string ProfilerProvider,
     string? ProfilePath,
     string OutputDirectory);
 
-public sealed class BuildSsdtUseCase
+public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>
 {
     private readonly ICommandDispatcher _dispatcher;
 
-    public BuildSsdtUseCase(ICommandDispatcher dispatcher)
+    public BuildSsdtApplicationService(ICommandDispatcher dispatcher)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
     }
 
-    public async Task<Result<BuildSsdtUseCaseResult>> RunAsync(BuildSsdtUseCaseInput input, CancellationToken cancellationToken = default)
+    public async Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
     {
         if (input is null)
         {
@@ -51,13 +51,13 @@ public sealed class BuildSsdtUseCase
         var sqlOptionsResult = SqlOptionsResolver.Resolve(configuration, input.Sql);
         if (sqlOptionsResult.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(sqlOptionsResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(sqlOptionsResult.Errors);
         }
 
         var moduleFilterResult = ModuleFilterResolver.Resolve(configuration, input.ModuleFilter);
         if (moduleFilterResult.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(moduleFilterResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(moduleFilterResult.Errors);
         }
 
         var moduleFilter = moduleFilterResult.Value;
@@ -66,7 +66,7 @@ public sealed class BuildSsdtUseCase
         var profilePathResult = ResolveProfilePath(profilerProvider, configuration, input.Overrides);
         if (profilePathResult.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(profilePathResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(profilePathResult.Errors);
         }
 
         var profilePath = profilePathResult.Value;
@@ -74,7 +74,7 @@ public sealed class BuildSsdtUseCase
         var modelPath = ResolveModelPath(configuration, input.Overrides.ModelPath);
         if (modelPath.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(modelPath.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(modelPath.Errors);
         }
 
         var outputDirectory = ResolveOutputDirectory(input.Overrides.OutputDirectory);
@@ -85,11 +85,23 @@ public sealed class BuildSsdtUseCase
 
         if (namingOverridesResult.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(namingOverridesResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(namingOverridesResult.Errors);
         }
 
         var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission)
             .WithNamingOverrides(namingOverridesResult.Value);
+
+        if (input.Overrides.MaxDegreeOfParallelism is int moduleParallelism)
+        {
+            if (moduleParallelism <= 0)
+            {
+                return ValidationError.Create(
+                    "cli.buildSsdt.parallelism.invalid",
+                    "--max-degree-of-parallelism must be a positive integer when specified.");
+            }
+
+            smoOptions = smoOptions with { ModuleParallelism = moduleParallelism };
+        }
 
         var staticDataProvider = ResolveStaticEntityDataProvider(input.Overrides.StaticDataPath, sqlOptionsResult.Value);
 
@@ -121,10 +133,10 @@ public sealed class BuildSsdtUseCase
             cancellationToken).ConfigureAwait(false);
         if (pipelineResult.IsFailure)
         {
-            return Result<BuildSsdtUseCaseResult>.Failure(pipelineResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(pipelineResult.Errors);
         }
 
-        return new BuildSsdtUseCaseResult(
+        return new BuildSsdtApplicationResult(
             pipelineResult.Value,
             profilerProvider,
             profilePath,

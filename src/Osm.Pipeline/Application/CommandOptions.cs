@@ -1,10 +1,9 @@
-using System;
 using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.ModelIngestion;
 
-namespace Osm.App.UseCases;
+namespace Osm.Pipeline.Application;
 
 public sealed record SqlOptionsOverrides(
     string? ConnectionString,
@@ -29,13 +28,15 @@ public sealed record BuildSsdtOverrides(
     string? OutputDirectory,
     string? ProfilerProvider,
     string? StaticDataPath,
-    string? RenameOverrides);
+    string? RenameOverrides,
+    int? MaxDegreeOfParallelism);
 
 public sealed record CompareWithDmmOverrides(
     string? ModelPath,
     string? ProfilePath,
     string? DmmPath,
-    string? OutputDirectory);
+    string? OutputDirectory,
+    int? MaxDegreeOfParallelism);
 
 public sealed record ExtractModelOverrides(
     IReadOnlyList<string> Modules,

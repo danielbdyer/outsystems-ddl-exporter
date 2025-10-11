@@ -1,9 +1,9 @@
 using System;
 using Osm.Domain.Abstractions;
-using Osm.App.Configuration;
+using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
 
-namespace Osm.App.UseCases;
+namespace Osm.Pipeline.Application;
 
 internal static class SqlOptionsResolver
 {
@@ -23,6 +23,7 @@ internal static class SqlOptionsResolver
         {
             return ValidationError.Create("cli.sql.commandTimeout.invalid", "Command timeout must be non-negative.");
         }
+
         var sampling = configuration.Sql.Sampling;
         var authentication = configuration.Sql.Authentication;
 
