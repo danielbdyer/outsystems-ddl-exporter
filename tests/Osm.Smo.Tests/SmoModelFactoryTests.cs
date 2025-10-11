@@ -25,6 +25,33 @@ public class SmoModelFactoryTests
     }
 
     [Fact]
+    public void Build_applies_custom_index_naming_prefixes()
+    {
+        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
+        var factory = new SmoModelFactory();
+        var defaultOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var format = SmoFormatOptions.Default.WithIndexNaming(new IndexNamingOptions(
+            PrimaryKeyPrefix: "PKX",
+            UniqueIndexPrefix: "UX",
+            NonUniqueIndexPrefix: "IX",
+            ForeignKeyPrefix: "FKX"));
+        var options = defaultOptions.WithFormat(format);
+
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
+
+        var customerTable = smoModel.Tables.Single(t => t.LogicalName.Equals("Customer", StringComparison.Ordinal));
+
+        var primaryKey = Assert.Single(customerTable.Indexes.Where(i => i.IsPrimaryKey));
+        Assert.StartsWith("PKX_", primaryKey.Name, StringComparison.Ordinal);
+
+        var uniqueIndex = customerTable.Indexes.Single(i => i.IsUnique && !i.IsPrimaryKey);
+        Assert.StartsWith("UX_", uniqueIndex.Name, StringComparison.Ordinal);
+
+        var foreignKey = Assert.Single(customerTable.ForeignKeys);
+        Assert.StartsWith("FKX_", foreignKey.Name, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_creates_tables_with_policy_driven_nullability_and_foreign_keys()
     {
         var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
@@ -158,7 +185,8 @@ public class SmoModelFactoryTests
             EmitBareTableOnly: false,
             SanitizeModuleNames: true,
             ModuleParallelism: 1,
-            NamingOverrides: NamingOverrideOptions.Empty);
+            NamingOverrides: NamingOverrideOptions.Empty,
+            Format: SmoFormatOptions.Default);
         var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
 
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
