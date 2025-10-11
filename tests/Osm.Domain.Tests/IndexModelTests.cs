@@ -67,7 +67,7 @@ public sealed class IndexModelTests
             allowPageLocks: false,
             noRecomputeStatistics: true,
             filterDefinition: "[FIRST] IS NOT NULL",
-            dataSpace: IndexDataSpace.Create("PRIMARY", "ROWS_FILEGROUP"),
+            dataSpace: IndexDataSpace.Create("PRIMARY", "ROWS_FILEGROUP").Value,
             ImmutableArray<IndexPartitionColumn>.Empty,
             ImmutableArray<IndexPartitionCompression>.Empty);
 

@@ -452,7 +452,13 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
             !string.IsNullOrWhiteSpace(doc.DataSpace.Name) &&
             !string.IsNullOrWhiteSpace(doc.DataSpace.Type))
         {
-            dataSpace = IndexDataSpace.Create(doc.DataSpace.Name, doc.DataSpace.Type);
+            var dataSpaceResult = IndexDataSpace.Create(doc.DataSpace.Name, doc.DataSpace.Type);
+            if (dataSpaceResult.IsFailure)
+            {
+                return Result<IndexOnDiskMetadata>.Failure(dataSpaceResult.Errors);
+            }
+
+            dataSpace = dataSpaceResult.Value;
         }
 
         var partitionColumns = ImmutableArray.CreateBuilder<IndexPartitionColumn>();
@@ -531,6 +537,8 @@ public sealed class ModelJsonDeserializer : IModelJsonDeserializer
             "UQ" => IndexKind.UniqueConstraint,
             "UIX" => IndexKind.UniqueIndex,
             "IX" => IndexKind.NonUniqueIndex,
+            "CLUSTERED" or "CL" => IndexKind.ClusteredIndex,
+            "NONCLUSTERED" or "NON-CLUSTERED" or "NC" => IndexKind.NonClusteredIndex,
             _ => IndexKind.Unknown,
         };
     }

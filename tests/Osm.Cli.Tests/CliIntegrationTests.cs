@@ -18,13 +18,14 @@ public class CliIntegrationTests
         var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
         var expectedEmissionRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case");
 
         using var output = new TempDirectory();
         using var comparisonWorkspace = new TempDirectory();
         var diffPath = Path.Combine(comparisonWorkspace.Path, "dmm-diff.json");
 
-        var buildExit = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --out {output.Path}");
+        var buildExit = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --static-data {staticDataPath} --out {output.Path}");
         Assert.Equal(0, buildExit);
 
         var manifestPath = Path.Combine(output.Path, "manifest.json");
@@ -105,11 +106,12 @@ public class CliIntegrationTests
         var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
 
         using var output = new TempDirectory();
         var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case-rename");
 
-        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --out \"{output.Path}\" --rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL";
+        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --static-data \"{staticDataPath}\" --out \"{output.Path}\" --rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL";
         var exit = await RunCliAsync(repoRoot, command);
         Assert.Equal(0, exit);
 
@@ -174,7 +176,8 @@ public class CliIntegrationTests
             configPath,
             JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
 
-        var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
+        var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
+        var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --static-data \"{staticDataPath}\" --out \"{outputPath}\"";
         var exit = await RunCliAsync(repoRoot, command);
         Assert.Equal(0, exit);
 
@@ -200,10 +203,11 @@ public class CliIntegrationTests
         var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
 
         using var output = new TempDirectory();
 
-        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --modules AppCore --out \"{output.Path}\"";
+        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --static-data \"{staticDataPath}\" --modules AppCore --out \"{output.Path}\"";
         var exit = await RunCliAsync(repoRoot, command);
 
         Assert.Equal(0, exit);
@@ -246,7 +250,8 @@ public class CliIntegrationTests
             configPath,
             JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
 
-        var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
+        var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
+        var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --static-data \"{staticDataPath}\" --out \"{outputPath}\"";
         var exit = await RunCliAsync(repoRoot, command);
 
         Assert.Equal(0, exit);
@@ -271,11 +276,12 @@ public class CliIntegrationTests
         var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
 
         using var output = new TempDirectory();
         using var cacheRoot = new TempDirectory();
 
-        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --out \"{output.Path}\" --cache-root \"{cacheRoot.Path}\" --refresh-cache";
+        var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --static-data \"{staticDataPath}\" --out \"{output.Path}\" --cache-root \"{cacheRoot.Path}\" --refresh-cache";
         var exit = await RunCliAsync(repoRoot, command);
         Assert.Equal(0, exit);
 
@@ -317,7 +323,8 @@ public class CliIntegrationTests
             configPath,
             JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
 
-        var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
+        var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
+        var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --static-data \"{staticDataPath}\" --out \"{outputPath}\"";
         var exit = await RunCliAsync(repoRoot, command);
 
         Assert.Equal(0, exit);
@@ -350,6 +357,7 @@ public class CliIntegrationTests
 
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
 
         var originalModelEnv = Environment.GetEnvironmentVariable("OSM_CLI_MODEL_PATH");
         var originalProfileEnv = Environment.GetEnvironmentVariable("OSM_CLI_PROFILE_PATH");
@@ -359,7 +367,7 @@ public class CliIntegrationTests
             Environment.SetEnvironmentVariable("OSM_CLI_MODEL_PATH", modelPath);
             Environment.SetEnvironmentVariable("OSM_CLI_PROFILE_PATH", profilePath);
 
-            var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --out \"{outputPath}\"";
+            var command = $"run --project {cliProject} -- build-ssdt --config \"{configPath}\" --static-data \"{staticDataPath}\" --out \"{outputPath}\"";
             var exit = await RunCliAsync(repoRoot, command);
 
             Assert.Equal(0, exit);

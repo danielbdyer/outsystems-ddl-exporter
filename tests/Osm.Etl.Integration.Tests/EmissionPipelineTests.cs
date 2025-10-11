@@ -3,11 +3,13 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Osm.Cli.StaticData;
 using Osm.Domain.Configuration;
 using Osm.Json;
 using Osm.Json.Configuration;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Profiling;
+using Osm.Emission.Seeds;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
@@ -44,6 +46,21 @@ public class EmissionPipelineTests
         var emitter = new Osm.Emission.SsdtEmitter();
         await emitter.EmitAsync(smoModel, output.Path, smoOptions, decisionReport);
         await WriteDecisionLogAsync(output.Path, decisionReport);
+
+        var staticDefinitions = StaticEntitySeedDefinitionBuilder.Build(model, smoOptions.NamingOverrides);
+        if (!staticDefinitions.IsDefaultOrEmpty)
+        {
+            var seedPath = Path.Combine(repoRoot, "tests", "Fixtures", "static-data", "static-entities.edge-case.json");
+            var provider = new FixtureStaticEntityDataProvider(seedPath);
+            var seedResult = await provider.GetDataAsync(staticDefinitions);
+            AssertResultSucceeded(seedResult);
+
+            var template = StaticEntitySeedTemplate.Load();
+            var generator = new StaticEntitySeedScriptGenerator();
+            var seedsRoot = Path.Combine(output.Path, "Seeds");
+            Directory.CreateDirectory(seedsRoot);
+            await generator.WriteAsync(Path.Combine(seedsRoot, "StaticEntities.seed.sql"), template, seedResult.Value);
+        }
 
         DirectorySnapshot.AssertMatches(expectedRoot, output.Path);
     }
@@ -84,6 +101,21 @@ public class EmissionPipelineTests
         var emitter = new Osm.Emission.SsdtEmitter();
         await emitter.EmitAsync(smoModel, output.Path, smoOptions, decisionReport);
         await WriteDecisionLogAsync(output.Path, decisionReport);
+
+        var staticDefinitions = StaticEntitySeedDefinitionBuilder.Build(model, smoOptions.NamingOverrides);
+        if (!staticDefinitions.IsDefaultOrEmpty)
+        {
+            var seedPath = Path.Combine(repoRoot, "tests", "Fixtures", "static-data", "static-entities.edge-case.json");
+            var provider = new FixtureStaticEntityDataProvider(seedPath);
+            var seedResult = await provider.GetDataAsync(staticDefinitions);
+            AssertResultSucceeded(seedResult);
+
+            var template = StaticEntitySeedTemplate.Load();
+            var generator = new StaticEntitySeedScriptGenerator();
+            var seedsRoot = Path.Combine(output.Path, "Seeds");
+            Directory.CreateDirectory(seedsRoot);
+            await generator.WriteAsync(Path.Combine(seedsRoot, "StaticEntities.seed.sql"), template, seedResult.Value);
+        }
 
         DirectorySnapshot.AssertMatches(expectedRoot, output.Path);
     }

@@ -1,0 +1,13 @@
+{
+  "tables": [
+    {
+      "schema": "dbo",
+      "table": "OSUSR_DEF_CITY",
+      "rows": [
+        { "ID": 1, "NAME": "Lisbon", "ISACTIVE": true },
+        { "ID": 2, "NAME": "Porto", "ISACTIVE": true },
+        { "ID": 3, "NAME": "Madrid", "ISACTIVE": false }
+      ]
+    }
+  ]
+}
