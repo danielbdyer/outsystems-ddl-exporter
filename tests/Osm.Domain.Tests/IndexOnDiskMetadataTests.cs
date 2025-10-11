@@ -99,7 +99,7 @@ public sealed class IndexOnDiskMetadataTests
             allowPageLocks: false,
             noRecomputeStatistics: true,
             filterDefinition: "[RegionId] IS NOT NULL",
-            dataSpace: IndexDataSpace.Create("PRIMARY", "rows"),
+            dataSpace: IndexDataSpace.Create("PRIMARY", "rows").Value,
             columns,
             compression);
 

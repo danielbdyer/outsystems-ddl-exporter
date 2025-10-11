@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Osm.Pipeline\Osm.Pipeline.csproj" />
+    <ProjectReference Include="..\Osm.Json\Osm.Json.csproj" />
+    <ProjectReference Include="..\Osm.Domain\Osm.Domain.csproj" />
+    <ProjectReference Include="..\Osm.Validation\Osm.Validation.csproj" />
+    <ProjectReference Include="..\Osm.Smo\Osm.Smo.csproj" />
+    <ProjectReference Include="..\Osm.Emission\Osm.Emission.csproj" />
+    <ProjectReference Include="..\Osm.Dmm\Osm.Dmm.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>

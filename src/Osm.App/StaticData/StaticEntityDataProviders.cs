@@ -6,7 +6,7 @@ using Osm.Domain.Abstractions;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Sql;
 
-namespace Osm.Cli.StaticData;
+namespace Osm.App.StaticData;
 
 public sealed class FixtureStaticEntityDataProvider : IStaticEntityDataProvider
 {
