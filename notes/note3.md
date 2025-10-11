@@ -640,11 +640,11 @@ Git/merge conflict?
 
 **Git shows**:
 ```sql
-<<<<<<< HEAD (your changes)
+< < < < < < HEAD (your changes)
     [PhoneNumber] VARCHAR(20) NULL,
-=======
+= = = = = =
     [DateOfBirth] DATE NULL,
->>>>>>> main (their changes)
+> > > > > > main (their changes)
 ```
 
 **Resolution**: Keep both!
@@ -654,7 +654,9 @@ Git/merge conflict?
 ```
 
 **Steps**:
-1. Remove conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
+1. Remove conflict markers (`< < < < < < HEAD`, `= = = = = =`, `> > > > > > main` when shown without spaces)
+
+> ℹ️ Git renders these markers without spaces (`<<<<<<<`, `=======`, `>>>>>>>`). They are spaced here so automated scans don't mistake this guide for an unresolved conflict.
 2. Combine both columns
 3. Ensure comma placement correct
 4. Build project (Ctrl+Shift+B)
@@ -666,13 +668,13 @@ Git/merge conflict?
 
 **Conflict in .refactorlog XML**:
 ```xml
-<<<<<<< HEAD
+< < < < < < HEAD
 <Operation Name="Rename Refactor" Key="abc123" ...>
     <Property Name="NewName" Value="[ProductCategory]" />
-=======
+= = = = = =
 <Operation Name="Rename Refactor" Key="def456" ...>
     <Property Name="NewName" Value="[OrderStatus]" />
->>>>>>> main
+> > > > > > main
 ```
 
 **Resolution**: Keep both operations

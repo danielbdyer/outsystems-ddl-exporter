@@ -47,8 +47,11 @@ internal static class PipelineReportLauncher
         var diffPath = Path.Combine(outputDirectory, "dmm-diff.json");
         var hasDiff = File.Exists(diffPath);
 
-        var staticSeedPath = applicationResult.PipelineResult.StaticSeedScriptPath;
-        var hasStaticSeed = !string.IsNullOrWhiteSpace(staticSeedPath) && File.Exists(staticSeedPath);
+        var staticSeedPaths = applicationResult.PipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty
+            ? Array.Empty<string>()
+            : applicationResult.PipelineResult.StaticSeedScriptPaths
+                .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path!))
+                .ToArray();
 
         var html = BuildHtml(
             applicationResult,
@@ -59,7 +62,7 @@ internal static class PipelineReportLauncher
             totalIndexes,
             totalForeignKeys,
             hasDiff,
-            hasStaticSeed ? staticSeedPath : null);
+            staticSeedPaths);
 
         Directory.CreateDirectory(outputDirectory);
         var reportPath = Path.Combine(outputDirectory, "report.html");
@@ -118,7 +121,7 @@ internal static class PipelineReportLauncher
         int totalIndexes,
         int totalForeignKeys,
         bool hasDiff,
-        string? staticSeedPath)
+        IReadOnlyList<string> staticSeedPaths)
     {
         var builder = new StringBuilder();
         var outputDirectory = applicationResult.OutputDirectory;
@@ -185,10 +188,13 @@ internal static class PipelineReportLauncher
         {
             builder.AppendLine("      <li><a href=\"dmm-diff.json\">dmm-diff.json</a> – Latest DMM comparison result.</li>");
         }
-        if (!string.IsNullOrWhiteSpace(staticSeedPath))
+        if (staticSeedPaths is { Count: > 0 })
         {
-            var relativeSeedPath = Relativize(outputDirectory, staticSeedPath);
-            builder.AppendLine($"      <li><a href=\"{relativeSeedPath}\">{HtmlEncode(relativeSeedPath)}</a> – Static entity seed script.</li>");
+            foreach (var seedPath in staticSeedPaths)
+            {
+                var relativeSeedPath = Relativize(outputDirectory, seedPath);
+                builder.AppendLine($"      <li><a href=\"{relativeSeedPath}\">{HtmlEncode(relativeSeedPath)}</a> – Static entity seed script.</li>");
+            }
         }
         builder.AppendLine("    </ul>");
         builder.AppendLine("  </section>");

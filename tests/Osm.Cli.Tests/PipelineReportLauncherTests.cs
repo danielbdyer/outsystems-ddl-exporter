@@ -58,6 +58,10 @@ public class PipelineReportLauncherTests
             ImmutableDictionary<string, int>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty);
 
+        var seedPaths = ImmutableArray.Create(
+            Path.Combine(output.Path, "Seeds", "AppCore", "StaticEntities.seed.sql"),
+            Path.Combine(output.Path, "Seeds", "ExtBilling", "StaticEntities.seed.sql"));
+
         var pipelineResult = new BuildSsdtPipelineResult(
             new ProfileSnapshot(
                 ImmutableArray<ColumnProfile>.Empty,
@@ -67,14 +71,18 @@ public class PipelineReportLauncherTests
             decisionReport,
             manifest,
             Path.Combine(output.Path, "policy-decisions.json"),
-            Path.Combine(output.Path, "Seeds", "StaticEntities.seed.sql"),
+            seedPaths,
             null,
             PipelineExecutionLog.Empty);
 
-        Directory.CreateDirectory(Path.Combine(output.Path, "Seeds"));
+        foreach (var seedPath in seedPaths)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(seedPath)!);
+            await File.WriteAllTextAsync(seedPath, string.Empty);
+        }
+
         await File.WriteAllTextAsync(Path.Combine(output.Path, "policy-decisions.json"), "{}");
         await File.WriteAllTextAsync(Path.Combine(output.Path, "dmm-diff.json"), "{}");
-        await File.WriteAllTextAsync(Path.Combine(output.Path, "Seeds", "StaticEntities.seed.sql"), string.Empty);
 
         var applicationResult = new BuildSsdtApplicationResult(
             pipelineResult,

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using Osm.Domain.Abstractions;
@@ -56,7 +57,10 @@ public sealed class StaticEntitySeedScriptGenerator
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-    public string Generate(StaticEntitySeedTemplate template, IReadOnlyList<StaticEntityTableData> tables)
+    public string Generate(
+        StaticEntitySeedTemplate template,
+        IReadOnlyList<StaticEntityTableData> tables,
+        StaticSeedSynchronizationMode synchronizationMode)
     {
         if (template is null)
         {
@@ -87,25 +91,33 @@ public sealed class StaticEntitySeedScriptGenerator
                 builder.AppendLine();
             }
 
-            AppendBlock(builder, ordered[i]);
+            AppendBlock(builder, ordered[i], synchronizationMode);
         }
 
         return template.ApplyBlocks(builder.ToString());
     }
 
-    public async Task WriteAsync(string path, StaticEntitySeedTemplate template, IReadOnlyList<StaticEntityTableData> tables, CancellationToken cancellationToken = default)
+    public async Task WriteAsync(
+        string path,
+        StaticEntitySeedTemplate template,
+        IReadOnlyList<StaticEntityTableData> tables,
+        StaticSeedSynchronizationMode synchronizationMode,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
             throw new ArgumentException("Seed output path must be provided.", nameof(path));
         }
 
-        var script = Generate(template, tables);
+        var script = Generate(template, tables, synchronizationMode);
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? Directory.GetCurrentDirectory());
         await File.WriteAllTextAsync(path, script, Utf8NoBom, cancellationToken).ConfigureAwait(false);
     }
 
-    private static void AppendBlock(StringBuilder builder, StaticEntityTableData tableData)
+    private static void AppendBlock(
+        StringBuilder builder,
+        StaticEntityTableData tableData,
+        StaticSeedSynchronizationMode synchronizationMode)
     {
         var definition = tableData.Definition;
         var schema = definition.Schema;
@@ -122,14 +134,66 @@ public sealed class StaticEntitySeedScriptGenerator
         }
         builder.AppendLine("--------------------------------------------------------------------------------");
 
+        var targetIdentifier = FormatTwoPartName(schema, targetName);
+        var columnNames = definition.Columns.Select(static c => FormatColumnName(c.ColumnName)).ToArray();
+        var columnList = string.Join(", ", columnNames);
+        var sourceProjection = string.Join(", ", columnNames.Select(static name => $"Source.{name}"));
+        var targetProjection = string.Join(", ", columnNames.Select(static name => $"Existing.{name}"));
+        var driftErrorMessage = EscapeSqlLiteral(
+            $"Static entity seed data drift detected for {definition.Module}::{definition.LogicalName} ({schema}.{targetName}).");
+
         if (rows.Length == 0)
         {
+            if (synchronizationMode == StaticSeedSynchronizationMode.ValidateThenApply)
+            {
+                builder.AppendLine($"IF EXISTS (SELECT 1 FROM {targetIdentifier})");
+                builder.AppendLine("BEGIN");
+                builder.AppendLine($"    THROW 50000, '{driftErrorMessage}', 1;");
+                builder.AppendLine("END;");
+                builder.AppendLine();
+            }
+
             builder.AppendLine("-- No data rows were returned for this static entity; MERGE statement omitted.");
             return;
         }
 
+        if (synchronizationMode == StaticSeedSynchronizationMode.ValidateThenApply)
+        {
+            builder.AppendLine("IF EXISTS (");
+            builder.Append("    SELECT ");
+            builder.AppendLine(sourceProjection);
+            builder.AppendLine("    FROM");
+            builder.AppendLine("    (");
+            AppendValuesClause(builder, tableData, "        ");
+            builder.Append("    ) AS Source (");
+            builder.Append(columnList);
+            builder.AppendLine(")");
+            builder.AppendLine("    EXCEPT");
+            builder.Append("    SELECT ");
+            builder.AppendLine(targetProjection);
+            builder.AppendLine($"    FROM {targetIdentifier} AS Existing");
+            builder.AppendLine(")");
+            builder.AppendLine("    OR EXISTS (");
+            builder.Append("    SELECT ");
+            builder.AppendLine(targetProjection);
+            builder.AppendLine($"    FROM {targetIdentifier} AS Existing");
+            builder.AppendLine("    EXCEPT");
+            builder.Append("    SELECT ");
+            builder.AppendLine(sourceProjection);
+            builder.AppendLine("    FROM");
+            builder.AppendLine("    (");
+            AppendValuesClause(builder, tableData, "        ");
+            builder.Append("    ) AS Source (");
+            builder.Append(columnList);
+            builder.AppendLine(")");
+            builder.AppendLine(")");
+            builder.AppendLine("BEGIN");
+            builder.AppendLine($"    THROW 50000, '{driftErrorMessage}', 1;");
+            builder.AppendLine("END;");
+            builder.AppendLine();
+        }
+
         var hasIdentity = definition.Columns.Any(static c => c.IsIdentity);
-        var targetIdentifier = FormatTwoPartName(schema, targetName);
 
         if (hasIdentity)
         {
@@ -141,34 +205,9 @@ public sealed class StaticEntitySeedScriptGenerator
         builder.AppendLine($"MERGE INTO {targetIdentifier} AS Target");
         builder.AppendLine("USING");
         builder.AppendLine("(");
-        builder.AppendLine("    VALUES");
-
-        for (var i = 0; i < rows.Length; i++)
-        {
-            var row = rows[i];
-            builder.Append("        (");
-            for (var j = 0; j < definition.Columns.Length; j++)
-            {
-                if (j > 0)
-                {
-                    builder.Append(", ");
-                }
-
-                var column = definition.Columns[j];
-                builder.Append(FormatValue(row.Values[j], column));
-            }
-
-            builder.Append(')');
-            if (i < rows.Length - 1)
-            {
-                builder.Append(',');
-            }
-
-            builder.AppendLine();
-        }
-
+        AppendValuesClause(builder, tableData, "    ");
         builder.Append(") AS Source (");
-        builder.Append(string.Join(", ", definition.Columns.Select(static c => FormatColumnName(c.ColumnName))));
+        builder.Append(columnList);
         builder.AppendLine(")");
 
         var primaryColumns = definition.Columns.Where(static c => c.IsPrimaryKey).ToArray();
@@ -206,8 +245,14 @@ public sealed class StaticEntitySeedScriptGenerator
         builder.Append(string.Join(", ", definition.Columns.Select(static c => FormatColumnName(c.ColumnName))));
         builder.AppendLine(")");
         builder.Append("    VALUES (");
-        builder.Append(string.Join(", ", definition.Columns.Select(static c => $"Source.{FormatColumnName(c.ColumnName)}")));
+        builder.Append(string.Join(", ", columnNames.Select(static name => $"Source.{name}")));
         builder.AppendLine(");");
+
+        if (synchronizationMode == StaticSeedSynchronizationMode.Authoritative)
+        {
+            builder.AppendLine("WHEN NOT MATCHED BY SOURCE THEN DELETE;");
+        }
+
         builder.AppendLine();
         builder.AppendLine("GO");
 
@@ -216,6 +261,39 @@ public sealed class StaticEntitySeedScriptGenerator
             builder.AppendLine();
             builder.AppendLine($"SET IDENTITY_INSERT {targetIdentifier} OFF;");
             builder.AppendLine("GO");
+        }
+    }
+
+    private static void AppendValuesClause(StringBuilder builder, StaticEntityTableData tableData, string indent)
+    {
+        builder.Append(indent);
+        builder.AppendLine("VALUES");
+
+        var definition = tableData.Definition;
+        var rows = tableData.Rows;
+        for (var i = 0; i < rows.Length; i++)
+        {
+            var row = rows[i];
+            builder.Append(indent);
+            builder.Append("    (");
+            for (var j = 0; j < definition.Columns.Length; j++)
+            {
+                if (j > 0)
+                {
+                    builder.Append(", ");
+                }
+
+                var column = definition.Columns[j];
+                builder.Append(FormatValue(row.Values[j], column));
+            }
+
+            builder.Append(')');
+            if (i < rows.Length - 1)
+            {
+                builder.Append(',');
+            }
+
+            builder.AppendLine();
         }
     }
 
@@ -261,6 +339,9 @@ public sealed class StaticEntitySeedScriptGenerator
             _ => $"N'{value.ToString()?.Replace("'", "''", StringComparison.Ordinal) ?? string.Empty}'"
         };
     }
+
+    private static string EscapeSqlLiteral(string value)
+        => value.Replace("'", "''", StringComparison.Ordinal);
 }
 
 public static class StaticEntitySeedDefinitionBuilder

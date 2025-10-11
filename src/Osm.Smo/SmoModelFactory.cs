@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Buffers;
 using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
@@ -133,7 +134,7 @@ public sealed class SmoModelFactory
         var triggers = BuildTriggers(context);
         var catalog = string.IsNullOrWhiteSpace(context.Entity.Catalog) ? options.DefaultCatalogName : context.Entity.Catalog!;
 
-        var moduleName = options.SanitizeModuleNames ? SanitizeModuleName(context.ModuleName) : context.ModuleName;
+        var moduleName = options.SanitizeModuleNames ? ModuleNameSanitizer.Sanitize(context.ModuleName) : context.ModuleName;
 
         return new SmoTableDefinition(
             moduleName,
@@ -200,21 +201,6 @@ public sealed class SmoModelFactory
         }
 
         return !attribute.Reality.IsPresentButInactive;
-    }
-
-    private static string SanitizeModuleName(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "Module";
-        }
-
-        var trimmed = value.Trim();
-        var sanitized = new string(trimmed
-            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '_')
-            .ToArray());
-
-        return string.IsNullOrWhiteSpace(sanitized) ? "Module" : sanitized;
     }
 
     private static ImmutableArray<SmoColumnDefinition> BuildColumns(
@@ -730,23 +716,58 @@ public sealed class SmoModelFactory
 
         var currentIndex = 0;
         var comparison = StringComparison.OrdinalIgnoreCase;
-        var builder = new System.Text.StringBuilder();
+        var pool = ArrayPool<char>.Shared;
+        var estimatedLength = source.Length + Math.Max(0, replacement.Length - search.Length) * 4;
+        var buffer = pool.Rent(Math.Max(estimatedLength, source.Length));
+        var position = 0;
 
-        while (currentIndex < source.Length)
+        try
         {
-            var matchIndex = source.IndexOf(search, currentIndex, comparison);
-            if (matchIndex < 0)
+            while (currentIndex < source.Length)
             {
-                builder.Append(source, currentIndex, source.Length - currentIndex);
-                break;
+                var matchIndex = source.IndexOf(search, currentIndex, comparison);
+                if (matchIndex < 0)
+                {
+                    EnsureCapacity(ref buffer, position, source.Length - currentIndex, pool);
+                    source.AsSpan(currentIndex).CopyTo(buffer.AsSpan(position));
+                    position += source.Length - currentIndex;
+                    break;
+                }
+
+                var segmentLength = matchIndex - currentIndex;
+                if (segmentLength > 0)
+                {
+                    EnsureCapacity(ref buffer, position, segmentLength, pool);
+                    source.AsSpan(currentIndex, segmentLength).CopyTo(buffer.AsSpan(position));
+                    position += segmentLength;
+                }
+
+                EnsureCapacity(ref buffer, position, replacement.Length, pool);
+                replacement.AsSpan().CopyTo(buffer.AsSpan(position));
+                position += replacement.Length;
+                currentIndex = matchIndex + search.Length;
             }
 
-            builder.Append(source, currentIndex, matchIndex - currentIndex);
-            builder.Append(replacement);
-            currentIndex = matchIndex + search.Length;
+            return new string(buffer, 0, position);
+        }
+        finally
+        {
+            pool.Return(buffer);
+        }
+    }
+
+    private static void EnsureCapacity(ref char[] buffer, int position, int additionalLength, ArrayPool<char> pool)
+    {
+        var required = position + additionalLength;
+        if (required <= buffer.Length)
+        {
+            return;
         }
 
-        return builder.ToString();
+        var newBuffer = pool.Rent(Math.Max(required, buffer.Length * 2));
+        buffer.AsSpan(0, position).CopyTo(newBuffer);
+        pool.Return(buffer);
+        buffer = newBuffer;
     }
 
     private sealed class SmoTableDefinitionComparer : IComparer<SmoTableDefinition>

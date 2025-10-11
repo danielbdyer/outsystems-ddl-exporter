@@ -259,7 +259,8 @@ public sealed class TighteningPolicyTests
             defaults.Emission.EmitBareTableOnly,
             defaults.Emission.EmitTableHeaders,
             defaults.Emission.ModuleParallelism,
-            overridesResult.Value);
+            overridesResult.Value,
+            defaults.Emission.StaticSeeds);
         Assert.True(emissionResult.IsSuccess, string.Join(Environment.NewLine, emissionResult.Errors.Select(e => e.Message)));
 
         var options = TighteningOptions.Create(

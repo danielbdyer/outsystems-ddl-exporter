@@ -38,11 +38,11 @@ CREATE TABLE [dbo].[Customers] (
     [FirstName] NVARCHAR(50) NOT NULL,
     [LastName] NVARCHAR(50) NOT NULL,
     [Email] NVARCHAR(100) NOT NULL,
-<<<<<<< HEAD (your branch)
+< < < < < < HEAD (your branch)
     [PhoneNumber] VARCHAR(20) NULL,
-=======
+= = = = = =
     [DateOfBirth] DATE NULL,
->>>>>>> main (their branch)
+> > > > > > main (their branch)
     [CreatedDate] DATETIME2 NOT NULL DEFAULT GETDATE()
 );
 ```
@@ -69,9 +69,11 @@ CREATE TABLE [dbo].[Customers] (
 
 **Step 3: Remove conflict markers**
 Delete these lines:
-- `<<<<<<< HEAD`
-- `=======`
-- `>>>>>>> main`
+- `< < < < < < HEAD`
+- `= = = = = =`
+- `> > > > > > main`
+
+> ℹ️ Actual Git conflict markers appear without spaces (`<<<<<<<`, `=======`, `>>>>>>>`). Spaces are shown here to avoid confusing tooling.
 
 **Step 4: Verify syntax**
 - Check commas (each column except last needs comma)
@@ -103,13 +105,13 @@ CREATE TABLE [dbo].[Customers] (
     [CustomerId] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
     [FirstName] NVARCHAR(50) NOT NULL,
     [LastName] NVARCHAR(50) NOT NULL,
-<<<<<<< HEAD
+< < < < < < HEAD
     [Email] NVARCHAR(100) NOT NULL,
     [PhoneNumber] VARCHAR(20) NULL,
-=======
+= = = = = =
     [Email] NVARCHAR(100) NOT NULL,
     [MiddleName] NVARCHAR(50) NULL,
->>>>>>> main
+> > > > > > main
     [CreatedDate] DATETIME2 NOT NULL DEFAULT GETDATE()
 );
 ```
@@ -156,11 +158,11 @@ CREATE TABLE [dbo].[Customers] (
 
 **Git shows**:
 ```sql
-<<<<<<< HEAD
+< < < < < < HEAD
     [PhoneNumber] VARCHAR(20) NULL,
-=======
+= = = = = =
     [PhoneNumber] NVARCHAR(50) NOT NULL,
->>>>>>> main
+> > > > > > main
 ```
 
 #### Resolution (15-20 minutes)
@@ -215,19 +217,19 @@ Agreed on NVARCHAR(50) NULL to support international formats."
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <Operations Version="1.0">
-<<<<<<< HEAD
+< < < < < < HEAD
   <Operation Name="Rename Refactor" Key="abc-123-def" ChangeDateTime="01/15/2025 10:30:00">
     <Property Name="ElementName" Value="[dbo].[Products]" />
     <Property Name="ElementType" Value="SqlTable" />
     <Property Name="NewName" Value="[Product]" />
   </Operation>
-=======
+= = = = = =
   <Operation Name="Rename Refactor" Key="xyz-789-ghi" ChangeDateTime="01/15/2025 11:00:00">
     <Property Name="ElementName" Value="[dbo].[OrderStatus]" />
     <Property Name="ElementType" Value="SqlTable" />
     <Property Name="NewName" Value="[OrderState]" />
   </Operation>
->>>>>>> main
+> > > > > > main
 </Operations>
 ```
 
@@ -299,14 +301,14 @@ MERGE INTO [dbo].[OrderStatus] AS Target
 USING (VALUES
     (1, 'Pending'),
     (2, 'Processing'),
-<<<<<<< HEAD
+< < < < < < HEAD
     (3, 'Shipped'),
     (4, 'Delivered')
-=======
+= = = = = =
     (3, 'InTransit'),
     (4, 'Completed'),
     (5, 'Cancelled')
->>>>>>> main
+> > > > > > main
 ) AS Source ([StatusId], [StatusName])
 ```
 
