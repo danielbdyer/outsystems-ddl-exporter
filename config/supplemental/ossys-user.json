@@ -1,0 +1,52 @@
+{
+  "modules": [
+    {
+      "name": "OutSystems.System",
+      "isSystem": true,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "User",
+          "physicalName": "OSUSR_U_USER",
+          "schema": "dbo",
+          "isActive": true,
+          "isExternal": false,
+          "isStatic": false,
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "dataType": "Identifier",
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true
+            },
+            {
+              "name": "Username",
+              "physicalName": "USERNAME",
+              "dataType": "Text",
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "length": 50
+            },
+            {
+              "name": "Email",
+              "physicalName": "EMAIL",
+              "dataType": "Text",
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "length": 255
+            }
+          ],
+          "indexes": [],
+          "relationships": []
+        }
+      ]
+    }
+  ]
+}
