@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -34,22 +33,12 @@ public class ConfigurableConnectionTests
 
     private static async Task<int> RunCliAsync(string workingDirectory, string arguments)
     {
-        var adjustedArguments = DotNetCli.EnsureNoBuildAndConfiguration(arguments);
-        var startInfo = new ProcessStartInfo("dotnet", adjustedArguments)
+        var exitCode = await DotNetCli.RunAsync(workingDirectory, arguments);
+        if (exitCode != 0)
         {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-
-        using var process = Process.Start(startInfo)!;
-        await process.WaitForExitAsync();
-        if (process.ExitCode != 0)
-        {
-            var error = await process.StandardError.ReadToEndAsync();
-            throw new InvalidOperationException($"CLI exited with code {process.ExitCode}: {error}");
+            throw new InvalidOperationException($"CLI exited with code {exitCode}.");
         }
 
-        return process.ExitCode;
+        return exitCode;
     }
 }
