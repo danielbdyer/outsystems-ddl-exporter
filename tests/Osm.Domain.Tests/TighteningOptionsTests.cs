@@ -39,7 +39,7 @@ public class TighteningOptionsTests
             ForeignKeyOptions.Create(true, true, false).Value,
             UniquenessOptions.Create(true, false).Value,
             RemediationOptions.Create(true, RemediationSentinelOptions.Create("0", "", "1900-01-01").Value, 10).Value,
-            EmissionOptions.Create(true, true, false, true).Value,
+            EmissionOptions.Create(true, true, false, true, 1).Value,
             MockingOptions.Create(false, null).Value);
 
         Assert.True(options.IsSuccess);

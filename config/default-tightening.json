@@ -26,6 +26,7 @@
     "includePlatformAutoIndexes": false,
     "sanitizeModuleNames": true,
     "emitBareTableOnly": false,
+    "moduleParallelism": 1,
     "namingOverrides": {
       "rules": []
     }

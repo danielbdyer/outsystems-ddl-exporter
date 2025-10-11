@@ -8,6 +8,7 @@ public sealed record SmoBuildOptions(
     bool IncludePlatformAutoIndexes,
     bool EmitBareTableOnly,
     bool SanitizeModuleNames,
+    int ModuleParallelism,
     NamingOverrideOptions NamingOverrides)
 {
     public static SmoBuildOptions Default { get; } = new(
@@ -15,6 +16,7 @@ public sealed record SmoBuildOptions(
         IncludePlatformAutoIndexes: false,
         EmitBareTableOnly: false,
         SanitizeModuleNames: true,
+        ModuleParallelism: 1,
         NamingOverrides: NamingOverrideOptions.Empty);
 
     public static SmoBuildOptions FromEmission(EmissionOptions emission, bool applyNamingOverrides = true) => new(
@@ -22,6 +24,7 @@ public sealed record SmoBuildOptions(
         emission.IncludePlatformAutoIndexes,
         emission.EmitBareTableOnly,
         emission.SanitizeModuleNames,
+        emission.ModuleParallelism,
         applyNamingOverrides ? emission.NamingOverrides : NamingOverrideOptions.Empty);
 
     public SmoBuildOptions WithCatalog(string catalogName)

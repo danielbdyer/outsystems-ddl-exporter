@@ -4,7 +4,9 @@ namespace Osm.Emission;
 public sealed record SsdtManifest(
     IReadOnlyList<TableManifestEntry> Tables,
     SsdtManifestOptions Options,
-    SsdtPolicySummary? PolicySummary);
+    SsdtPolicySummary? PolicySummary,
+    SsdtEmissionMetadata Emission,
+    IReadOnlyList<PreRemediationManifestEntry> PreRemediation);
 
 public sealed record TableManifestEntry(
     string Module,
@@ -17,7 +19,17 @@ public sealed record TableManifestEntry(
 
 public sealed record SsdtManifestOptions(
     bool IncludePlatformAutoIndexes,
-    bool EmitBareTableOnly);
+    bool EmitBareTableOnly,
+    bool SanitizeModuleNames,
+    int ModuleParallelism);
+
+public sealed record SsdtEmissionMetadata(string Algorithm, string Hash);
+
+public sealed record PreRemediationManifestEntry(
+    string Module,
+    string Table,
+    string TableFile,
+    string Hash);
 
 public sealed record SsdtPolicySummary(
     int ColumnCount,

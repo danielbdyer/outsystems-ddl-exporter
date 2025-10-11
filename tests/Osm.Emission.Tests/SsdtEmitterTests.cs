@@ -16,6 +16,8 @@ namespace Osm.Emission.Tests;
 
 public class SsdtEmitterTests
 {
+    private static readonly SsdtEmissionMetadata DefaultMetadata = new("SHA256", "test-hash");
+
     [Fact]
     public async Task EmitAsync_writes_per_table_artifacts_and_manifest()
     {
@@ -35,7 +37,7 @@ public class SsdtEmitterTests
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, report);
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report);
 
         Assert.Equal(4, manifest.Tables.Count);
         Assert.Equal(options.Emission.IncludePlatformAutoIndexes, manifest.Options.IncludePlatformAutoIndexes);
@@ -232,7 +234,7 @@ public class SsdtEmitterTests
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, null);
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, decisionReport: null);
 
         var jobRun = manifest.Tables.Single(t => t.Table.Equals("JobRun", StringComparison.Ordinal));
         Assert.DoesNotContain(jobRun.Indexes, name => name.Contains("OSIDX", StringComparison.OrdinalIgnoreCase));
@@ -258,7 +260,7 @@ public class SsdtEmitterTests
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, null);
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, decisionReport: null);
 
         var jobRun = manifest.Tables.Single(t => t.Table.Equals("JobRun", StringComparison.Ordinal));
         Assert.Contains(jobRun.Indexes, name => name.Equals("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
@@ -278,6 +280,7 @@ public class SsdtEmitterTests
             defaults.Emission.IncludePlatformAutoIndexes,
             defaults.Emission.SanitizeModuleNames,
             emitBareTableOnly: true,
+            defaults.Emission.ModuleParallelism,
             defaults.Emission.NamingOverrides).Value;
         var bareOptions = TighteningOptions.Create(
             defaults.Policy,
@@ -298,7 +301,7 @@ public class SsdtEmitterTests
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, null);
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, decisionReport: null);
 
         Assert.True(manifest.Options.EmitBareTableOnly);
         var customerEntry = manifest.Tables.Single(t => t.Table.Equals("Customer", StringComparison.Ordinal));
@@ -335,7 +338,7 @@ public class SsdtEmitterTests
             cleanDecisions,
             profile: cleanSnapshot,
             options: smoOptions);
-        var cleanManifest = await emitter.EmitAsync(cleanModel, cleanOut, smoOptions, null);
+        var cleanManifest = await emitter.EmitAsync(cleanModel, cleanOut, smoOptions, DefaultMetadata, decisionReport: null);
         var cleanEntry = cleanManifest.Tables.Single(t => t.Table.Equals("User", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(cleanEntry.Indexes, name => name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
         var cleanScript = await File.ReadAllTextAsync(Path.Combine(cleanOut, cleanEntry.TableFile));
@@ -350,7 +353,7 @@ public class SsdtEmitterTests
             duplicateDecisions,
             profile: duplicateSnapshot,
             options: smoOptions);
-        var duplicateManifest = await emitter.EmitAsync(duplicateModel, duplicateOut, smoOptions, null);
+        var duplicateManifest = await emitter.EmitAsync(duplicateModel, duplicateOut, smoOptions, DefaultMetadata, decisionReport: null);
         var duplicateEntry = duplicateManifest.Tables.Single(t => t.Table.Equals("User", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(duplicateEntry.Indexes, name => name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
         var duplicateScript = await File.ReadAllTextAsync(Path.Combine(duplicateOut, duplicateEntry.TableFile));
@@ -382,7 +385,7 @@ public class SsdtEmitterTests
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, report);
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report);
 
         var renamedEntry = manifest.Tables.FirstOrDefault(t => t.Table.Equals("CUSTOMER_PORTAL", StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(renamedEntry);
@@ -435,7 +438,7 @@ public class SsdtEmitterTests
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, report);
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report);
 
         var renamedEntry = manifest.Tables.FirstOrDefault(t => t.Table.Equals("CUSTOMER_EXTERNAL", StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(renamedEntry);
@@ -492,7 +495,7 @@ public class SsdtEmitterTests
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, report);
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report);
 
         var renamedEntry = manifest.Tables.FirstOrDefault(
             t => t.Table.Equals("CUSTOMER_EXTERNAL", StringComparison.OrdinalIgnoreCase));
@@ -636,11 +639,12 @@ public class SsdtEmitterTests
             IncludePlatformAutoIndexes: false,
             EmitBareTableOnly: false,
             SanitizeModuleNames: true,
+            ModuleParallelism: 1,
             NamingOverrides: overrides.Value);
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, options);
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, options, DefaultMetadata);
 
         var renamedTable = Directory.GetFiles(temp.Path, "dbo.CATEGORY_STATIC.sql", SearchOption.AllDirectories).Single();
         var otherTable = Directory.GetFiles(temp.Path, "dbo.Category.sql", SearchOption.AllDirectories).Single();
@@ -708,7 +712,7 @@ public class SsdtEmitterTests
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(model, temp.Path, SmoBuildOptions.Default);
+        var manifest = await emitter.EmitAsync(model, temp.Path, SmoBuildOptions.Default, DefaultMetadata);
 
         var tableEntry = Assert.Single(manifest.Tables);
         var tablePath = Path.Combine(temp.Path, tableEntry.TableFile);
@@ -814,7 +818,7 @@ public class SsdtEmitterTests
         var smoModel = new SmoModel(ImmutableArray.Create(table));
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, SmoBuildOptions.Default);
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, SmoBuildOptions.Default, DefaultMetadata);
 
         var entry = Assert.Single(manifest.Tables);
         var tablePath = Path.Combine(temp.Path, entry.TableFile);
@@ -862,6 +866,7 @@ public class SsdtEmitterTests
             includePlatformAutoIndexes: true,
             defaults.Emission.SanitizeModuleNames,
             defaults.Emission.EmitBareTableOnly,
+            defaults.Emission.ModuleParallelism,
             defaults.Emission.NamingOverrides);
 
         Assert.True(emissionResult.IsSuccess);

@@ -46,7 +46,9 @@
   ],
   "Options": {
     "IncludePlatformAutoIndexes": false,
-    "EmitBareTableOnly": false
+    "EmitBareTableOnly": false,
+    "SanitizeModuleNames": true,
+    "ModuleParallelism": 1
   },
   "PolicySummary": {
     "ColumnCount": 15,
@@ -58,25 +60,30 @@
     "ForeignKeyCount": 2,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
-      "DELETE_RULE_IGNORE": 1,
-      "MANDATORY": 10,
-      "DATA_HAS_ORPHANS": 1,
+      "UNIQUE_NO_NULLS": 2,
       "DEFAULT_PRESENT": 2,
       "PROFILE_MISSING": 1,
-      "PHYSICAL_NOT_NULL": 4,
-      "FK_ENFORCED": 1,
-      "PK": 4,
+      "DATA_HAS_ORPHANS": 1,
       "DATA_NO_NULLS": 10,
-      "UNIQUE_NO_NULLS": 2
+      "PK": 4,
+      "DELETE_RULE_IGNORE": 1,
+      "FK_ENFORCED": 1,
+      "MANDATORY": 10,
+      "PHYSICAL_NOT_NULL": 4
     },
     "UniqueIndexRationales": {
-      "PHYSICAL_UNIQUE_KEY": 2,
-      "UNIQUE_NO_NULLS": 2
+      "UNIQUE_NO_NULLS": 2,
+      "PHYSICAL_UNIQUE_KEY": 2
     },
     "ForeignKeyRationales": {
-      "DELETE_RULE_IGNORE": 1,
       "DATA_HAS_ORPHANS": 1,
-      "DB_CONSTRAINT_PRESENT": 1
+      "DB_CONSTRAINT_PRESENT": 1,
+      "DELETE_RULE_IGNORE": 1
     }
-  }
+  },
+  "Emission": {
+    "Algorithm": "SHA256",
+    "Hash": "132b33f964b52843af1bf176afcf10d48f4f85c53ec242cc19f11d14f54d424d"
+  },
+  "PreRemediation": []
 }
