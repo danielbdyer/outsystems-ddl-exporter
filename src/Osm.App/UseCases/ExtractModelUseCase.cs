@@ -3,10 +3,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.App.Configuration;
 using Osm.Domain.Abstractions;
-using Osm.Json;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
-using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 
 namespace Osm.App.UseCases;
@@ -22,11 +20,11 @@ public sealed record ExtractModelUseCaseResult(
 
 public sealed class ExtractModelUseCase
 {
-    private readonly IModelJsonDeserializer _deserializer;
+    private readonly IExtractModelPipeline _pipeline;
 
-    public ExtractModelUseCase(IModelJsonDeserializer deserializer)
+    public ExtractModelUseCase(IExtractModelPipeline pipeline)
     {
-        _deserializer = deserializer ?? throw new ArgumentNullException(nameof(deserializer));
+        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
     }
 
     public async Task<Result<ExtractModelUseCaseResult>> RunAsync(ExtractModelUseCaseInput input, CancellationToken cancellationToken = default)
@@ -53,52 +51,17 @@ public sealed class ExtractModelUseCase
             return Result<ExtractModelUseCaseResult>.Failure(sqlOptionsResult.Errors);
         }
 
-        var executorResult = ResolveExecutor(sqlOptionsResult.Value, input.Overrides.MockAdvancedSqlManifest);
-        if (executorResult.IsFailure)
-        {
-            return Result<ExtractModelUseCaseResult>.Failure(executorResult.Errors);
-        }
+        var request = new ExtractModelPipelineRequest(
+            commandResult.Value,
+            sqlOptionsResult.Value,
+            input.Overrides.MockAdvancedSqlManifest);
 
-        var extractionService = new SqlModelExtractionService(executorResult.Value, _deserializer);
-        var extractionResult = await extractionService.ExtractAsync(commandResult.Value, cancellationToken).ConfigureAwait(false);
+        var extractionResult = await _pipeline.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
         if (extractionResult.IsFailure)
         {
             return Result<ExtractModelUseCaseResult>.Failure(extractionResult.Errors);
         }
 
         return new ExtractModelUseCaseResult(extractionResult.Value, outputPath);
-    }
-
-    private static Result<IAdvancedSqlExecutor> ResolveExecutor(ResolvedSqlOptions sqlOptions, string? manifestPath)
-    {
-        if (!string.IsNullOrWhiteSpace(manifestPath))
-        {
-            return Result<IAdvancedSqlExecutor>.Success(new FixtureAdvancedSqlExecutor(manifestPath!));
-        }
-
-        if (string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
-        {
-            return ValidationError.Create(
-                "pipeline.extractModel.sqlConnection.missing",
-                "Connection string is required for live extraction. Provide --connection-string or configure sql.connectionString.");
-        }
-
-        var samplingOptions = new SqlSamplingOptions(
-            sqlOptions.Sampling.RowSamplingThreshold ?? SqlSamplingOptions.Default.RowCountSamplingThreshold,
-            sqlOptions.Sampling.SampleSize ?? SqlSamplingOptions.Default.SampleSize);
-
-        var connectionOptions = new SqlConnectionOptions(
-            sqlOptions.Authentication.Method,
-            sqlOptions.Authentication.TrustServerCertificate,
-            sqlOptions.Authentication.ApplicationName,
-            sqlOptions.Authentication.AccessToken);
-
-        var executionOptions = new SqlExecutionOptions(sqlOptions.CommandTimeoutSeconds, samplingOptions);
-        var executor = new SqlClientAdvancedSqlExecutor(
-            new SqlConnectionFactory(sqlOptions.ConnectionString!, connectionOptions),
-            new EmbeddedAdvancedSqlScriptProvider(),
-            executionOptions);
-
-        return Result<IAdvancedSqlExecutor>.Success(executor);
     }
 }

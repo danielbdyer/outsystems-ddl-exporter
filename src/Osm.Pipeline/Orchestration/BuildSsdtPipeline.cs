@@ -18,7 +18,14 @@ using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtPipeline
+public interface IBuildSsdtPipeline
+{
+    Task<Result<BuildSsdtPipelineResult>> ExecuteAsync(
+        BuildSsdtPipelineRequest request,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class BuildSsdtPipeline : IBuildSsdtPipeline
 {
     private readonly IModelIngestionService _modelIngestionService;
     private readonly ModuleFilter _moduleFilter;
