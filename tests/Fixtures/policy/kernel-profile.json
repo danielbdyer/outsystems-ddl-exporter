@@ -1,0 +1,29 @@
+{
+  "columns": [
+    { "Schema": "dbo", "Table": "OSUSR_POLICY_CUSTOMER", "Column": "ID",          "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 5 },
+    { "Schema": "dbo", "Table": "OSUSR_POLICY_CUSTOMER", "Column": "EMAIL",       "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 5 },
+    { "Schema": "dbo", "Table": "OSUSR_POLICY_CUSTOMER", "Column": "EXTERNALID",  "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 2, "RowCount": 5 },
+    { "Schema": "dbo", "Table": "OSUSR_POLICY_ORDER",    "Column": "ID",          "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 8 },
+    { "Schema": "dbo", "Table": "OSUSR_POLICY_ORDER",    "Column": "CUSTOMERID",  "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 1, "RowCount": 8 }
+  ],
+  "uniqueCandidates": [
+    { "Schema": "dbo", "Table": "OSUSR_POLICY_CUSTOMER", "Column": "EMAIL",      "HasDuplicate": false },
+    { "Schema": "dbo", "Table": "OSUSR_POLICY_CUSTOMER", "Column": "EXTERNALID", "HasDuplicate": true }
+  ],
+  "compositeUniqueCandidates": [],
+  "fkReality": [
+    {
+      "Ref": {
+        "FromSchema": "dbo",
+        "FromTable": "OSUSR_POLICY_ORDER",
+        "FromColumn": "CUSTOMERID",
+        "ToSchema": "dbo",
+        "ToTable": "OSUSR_POLICY_CUSTOMER",
+        "ToColumn": "ID",
+        "HasDbConstraint": false
+      },
+      "HasOrphan": false,
+      "IsNoCheck": false
+    }
+  ]
+}

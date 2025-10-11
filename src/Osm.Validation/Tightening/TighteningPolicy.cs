@@ -11,7 +11,18 @@ namespace Osm.Validation.Tightening;
 
 public sealed class TighteningPolicy
 {
+    public static TighteningDecisions Evaluate(OsmModel model, ProfileSnapshot snapshot, TighteningMode mode)
+    {
+        var options = CreateKernelOptions(mode);
+        var decisionSet = ComputeDecisionSet(model, snapshot, options);
+
+        return TighteningDecisions.Create(decisionSet.Nullability, decisionSet.ForeignKeys, decisionSet.UniqueIndexes);
+    }
+
     public PolicyDecisionSet Decide(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
+        => ComputeDecisionSet(model, snapshot, options);
+
+    private static PolicyDecisionSet ComputeDecisionSet(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
     {
         if (model is null)
         {
@@ -106,6 +117,20 @@ public sealed class TighteningPolicy
             foreignKeyBuilder.ToImmutable(),
             uniqueIndexBuilder.ToImmutable(),
             lookupResolution.Diagnostics);
+    }
+
+    private static TighteningOptions CreateKernelOptions(TighteningMode mode)
+    {
+        var defaults = TighteningOptions.Default;
+        var policy = PolicyOptions.Create(mode, defaults.Policy.NullBudget).Value;
+
+        return TighteningOptions.Create(
+            policy,
+            defaults.ForeignKeys,
+            defaults.Uniqueness,
+            defaults.Remediation,
+            defaults.Emission,
+            defaults.Mocking).Value;
     }
 
     private static NullabilityDecision EvaluateNullability(

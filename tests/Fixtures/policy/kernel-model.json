@@ -1,0 +1,175 @@
+{
+  "modules": [
+    {
+      "name": "PolicySpec",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Customer",
+          "physicalName": "OSUSR_POLICY_CUSTOMER",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "Email",
+              "physicalName": "EMAIL",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 255,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "ExternalId",
+              "physicalName": "EXTERNALID",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 50,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            }
+          ],
+          "indexes": [
+            {
+              "name": "UX_CUSTOMER_EMAIL",
+              "isUnique": true,
+              "isPrimary": false,
+              "isPlatformAuto": 0,
+              "columns": [
+                { "attribute": "Email", "physicalColumn": "EMAIL", "ordinal": 1 }
+              ]
+            },
+            {
+              "name": "UX_CUSTOMER_EXTERNALID",
+              "isUnique": true,
+              "isPrimary": false,
+              "isPlatformAuto": 0,
+              "columns": [
+                { "attribute": "ExternalId", "physicalColumn": "EXTERNALID", "ordinal": 1 }
+              ]
+            }
+          ],
+          "relationships": []
+        },
+        {
+          "name": "Order",
+          "physicalName": "OSUSR_POLICY_ORDER",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "CustomerId",
+              "physicalName": "CUSTOMERID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 1,
+              "refEntityId": 1,
+              "refEntity_name": "Customer",
+              "refEntity_physicalName": "OSUSR_POLICY_CUSTOMER",
+              "reference_deleteRuleCode": "Protect",
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            }
+          ],
+          "indexes": [],
+          "relationships": [
+            {
+              "viaAttributeId": 2,
+              "viaAttributeName": "CustomerId",
+              "toEntity_name": "Customer",
+              "toEntity_physicalName": "OSUSR_POLICY_CUSTOMER",
+              "deleteRuleCode": "Protect",
+              "hasDbConstraint": 0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
