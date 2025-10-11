@@ -58,4 +58,57 @@ public class StaticEntitySeedScriptGeneratorTests
 
         Assert.Contains("WHEN NOT MATCHED BY SOURCE THEN DELETE;", script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Generate_WithValidateThenApplyMode_AddsDriftGuards()
+    {
+        var template = StaticEntitySeedTemplate.Load();
+        var definition = new StaticEntitySeedTableDefinition(
+            Module: "TestModule",
+            LogicalName: "Status",
+            Schema: "dbo",
+            PhysicalName: "OSUSR_TEST_STATUS",
+            EffectiveName: "OSUSR_TEST_STATUS",
+            Columns: ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
+                new StaticEntitySeedColumn("Name", "NAME", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+
+        var rows = ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, "Active" }));
+        var data = ImmutableArray.Create(StaticEntityTableData.Create(definition, rows));
+        var generator = new StaticEntitySeedScriptGenerator();
+
+        var script = generator.Generate(template, data, StaticSeedSynchronizationMode.ValidateThenApply);
+
+        Assert.Contains("IF EXISTS (", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "THROW 50000, 'Static entity seed data drift detected for TestModule::Status (dbo.OSUSR_TEST_STATUS).', 1;",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains("FROM [dbo].[OSUSR_TEST_STATUS] AS Existing", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generate_WithValidateThenApplyModeAndNoRows_GuardsAgainstExistingData()
+    {
+        var template = StaticEntitySeedTemplate.Load();
+        var definition = new StaticEntitySeedTableDefinition(
+            Module: "TestModule",
+            LogicalName: "Status",
+            Schema: "dbo",
+            PhysicalName: "OSUSR_TEST_STATUS",
+            EffectiveName: "OSUSR_TEST_STATUS",
+            Columns: ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false)));
+
+        var data = ImmutableArray.Create(StaticEntityTableData.Create(definition, Array.Empty<StaticEntityRow>()));
+        var generator = new StaticEntitySeedScriptGenerator();
+
+        var script = generator.Generate(template, data, StaticSeedSynchronizationMode.ValidateThenApply);
+
+        Assert.Contains(
+            "IF EXISTS (SELECT 1 FROM [dbo].[OSUSR_TEST_STATUS])",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains("-- No data rows were returned for this static entity; MERGE statement omitted.", script, StringComparison.Ordinal);
+    }
 }
