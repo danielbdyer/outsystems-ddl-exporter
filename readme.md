@@ -413,7 +413,7 @@ dotnet run --project src/Osm.Cli -- build-ssdt \
 ```
 
 * Keep reusable snapshots under version control (for example the repository fixtures) and point to them via `--profile` or the CLI configuration file.
-* `profiler.provider=Fixture` and `profiler.profilePath=<path>` in `appsettings.json` remove the need to pass flags on every invocation; environment variables such as `OSM_CLI_PROFILE_PATH` offer another override when automating builds.【F:src/Osm.Cli/Configuration/CliConfigurationLoader.cs†L98-L158】【F:readme.md†L626-L671】
+* `profiler.provider=Fixture` and `profiler.profilePath=<path>` in `appsettings.json` remove the need to pass flags on every invocation; environment variables such as `OSM_CLI_PROFILE_PATH` offer another override when automating builds.【F:src/Osm.App/Configuration/CliConfigurationLoader.cs†L98-L158】【F:readme.md†L626-L671】
 
 #### Live SQL capture
 
@@ -427,7 +427,7 @@ dotnet run --project src/Osm.Cli -- build-ssdt \
   --out ./out-live
 ```
 
-* Supplying `--profiler-provider sql` switches to the live profiler, requiring a connection string (via CLI flag, configuration, or `OSM_CLI_CONNECTION_STRING`). Optional authentication and sampling knobs mirror the `sql.*` configuration section so you can pin timeouts, Azure AD credentials, or table sampling thresholds without editing secrets into source control.【F:src/Osm.Cli/Program.cs†L1127-L1171】【F:src/Osm.Cli/Configuration/CliConfigurationLoader.cs†L215-L360】
+* Supplying `--profiler-provider sql` switches to the live profiler, requiring a connection string (via CLI flag, configuration, or `OSM_CLI_CONNECTION_STRING`). Optional authentication and sampling knobs mirror the `sql.*` configuration section so you can pin timeouts, Azure AD credentials, or table sampling thresholds without editing secrets into source control.【F:src/Osm.Cli/Program.cs†L1127-L1171】【F:src/Osm.App/Configuration/CliConfigurationLoader.cs†L215-L360】
 * When a live run completes the CLI emits the captured snapshot to STDOUT (`SQL profiler snapshot:` …). Redirect the output to persist the JSON and reuse it for later fixture-style runs:
 
   ```bash
@@ -708,7 +708,7 @@ OutSystems modules frequently reference **system** or **external** tables (for e
   }
   ```
 
-  * `includeUsers` controls whether the built-in `OSUSR_U_USER` definition ships with every run. It is `true` by default so FKs targeting `Users` always bind, and you can disable it when you maintain a richer override file yourself.【F:src/Osm.Cli/Configuration/CliConfiguration.cs†L73-L80】【F:src/Osm.Domain/Model/OutSystemsInternalModel.cs†L9-L44】
+  * `includeUsers` controls whether the built-in `OSUSR_U_USER` definition ships with every run. It is `true` by default so FKs targeting `Users` always bind, and you can disable it when you maintain a richer override file yourself.【F:src/Osm.App/Configuration/CliConfiguration.cs†L73-L80】【F:src/Osm.Domain/Model/OutSystemsInternalModel.cs†L9-L44】
   * `paths` accepts any number of additional JSON payloads that follow the same shape as the Advanced SQL export (`modules` → `entities` → attributes/indexes/relationships). Each file can describe one or more tables—even outside of OutSystems—so long as the schema/table names align with the foreign keys you expect to emit.【F:src/Osm.Cli/Program.cs†L720-L786】
 
 * The loader merges these supplemental entities ahead of SMO construction. During emission the factory first prefers modules/entities from the primary model, but it can fall back to supplemental definitions when resolving FK targets or when you want to ship an external table alongside OutSystems entities.【F:src/Osm.Smo/SmoModelFactory.cs†L15-L118】【F:src/Osm.Smo/SmoModelFactory.cs†L659-L746】

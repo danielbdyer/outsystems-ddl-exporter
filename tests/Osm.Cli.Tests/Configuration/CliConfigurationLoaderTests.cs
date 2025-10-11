@@ -1,6 +1,6 @@
 using System.IO;
 using System.Text.Json;
-using Osm.Cli.Configuration;
+using Osm.App.Configuration;
 using Osm.Domain.Configuration;
 using Tests.Support;
 
