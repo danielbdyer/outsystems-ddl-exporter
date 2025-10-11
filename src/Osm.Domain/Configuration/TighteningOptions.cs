@@ -51,7 +51,8 @@ public sealed record TighteningOptions
             perTableFiles: true,
             includePlatformAutoIndexes: false,
             sanitizeModuleNames: true,
-            emitBareTableOnly: false).Value,
+            emitBareTableOnly: false,
+            moduleParallelism: 1).Value,
         MockingOptions.Create(useProfileMockFolder: false, profileMockFolder: null).Value).Value;
 
     public static Result<TighteningOptions> Create(
@@ -237,12 +238,14 @@ public sealed record EmissionOptions
         bool includePlatformAutoIndexes,
         bool sanitizeModuleNames,
         bool emitBareTableOnly,
+        int moduleParallelism,
         NamingOverrideOptions namingOverrides)
     {
         PerTableFiles = perTableFiles;
         IncludePlatformAutoIndexes = includePlatformAutoIndexes;
         SanitizeModuleNames = sanitizeModuleNames;
         EmitBareTableOnly = emitBareTableOnly;
+        ModuleParallelism = moduleParallelism;
         NamingOverrides = namingOverrides;
     }
 
@@ -254,6 +257,8 @@ public sealed record EmissionOptions
 
     public bool EmitBareTableOnly { get; }
 
+    public int ModuleParallelism { get; }
+
     public NamingOverrideOptions NamingOverrides { get; }
 
     public static Result<EmissionOptions> Create(
@@ -261,13 +266,22 @@ public sealed record EmissionOptions
         bool includePlatformAutoIndexes,
         bool sanitizeModuleNames,
         bool emitBareTableOnly,
+        int moduleParallelism,
         NamingOverrideOptions? namingOverrides = null)
     {
+        if (moduleParallelism < 1)
+        {
+            return ValidationError.Create(
+                "options.emission.parallelism.invalid",
+                "Module parallelism must be at least 1 for deterministic emission.");
+        }
+
         return new EmissionOptions(
             perTableFiles,
             includePlatformAutoIndexes,
             sanitizeModuleNames,
             emitBareTableOnly,
+            moduleParallelism,
             namingOverrides ?? NamingOverrideOptions.Empty);
     }
 }

@@ -32,3 +32,4 @@ WHEN NOT MATCHED THEN INSERT ([ID], [NAME], [ISACTIVE])
     VALUES (Source.[ID], Source.[NAME], Source.[ISACTIVE]);
 
 GO
+

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
@@ -33,7 +34,9 @@ public sealed class SsdtEmitter
         SmoModel model,
         string outputDirectory,
         SmoBuildOptions options,
+        SsdtEmissionMetadata emission,
         PolicyDecisionReport? decisionReport = null,
+        IReadOnlyList<PreRemediationManifestEntry>? preRemediation = null,
         CancellationToken cancellationToken = default)
     {
         if (model is null)
@@ -49,81 +52,49 @@ public sealed class SsdtEmitter
         cancellationToken.ThrowIfCancellationRequested();
 
         Directory.CreateDirectory(outputDirectory);
-        var manifestEntries = new List<TableManifestEntry>(model.Tables.Length);
-        var moduleDirectories = new Dictionary<string, ModuleDirectoryPaths>(StringComparer.Ordinal);
+        var tableCount = model.Tables.Length;
+        var moduleDirectories = new ConcurrentDictionary<string, ModuleDirectoryPaths>(StringComparer.Ordinal);
+        var manifestEntries = new List<TableManifestEntry>(tableCount);
 
-        foreach (var table in model.Tables)
+        if (!model.Tables.IsDefaultOrEmpty)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            var results = new TableManifestEntry[tableCount];
 
-            var modulePaths = EnsureModuleDirectories(moduleDirectories, outputDirectory, table.Module);
-            var tablesRoot = modulePaths.TablesRoot;
-
-            var effectiveTableName = options.NamingOverrides.GetEffectiveTableName(
-                table.Schema,
-                table.Name,
-                table.LogicalName,
-                table.OriginalModule);
-
-            var tableStatement = BuildCreateTableStatement(table, effectiveTableName, options);
-            var inlineForeignKeys = AddForeignKeys(
-                tableStatement,
-                table,
-                effectiveTableName,
-                options,
-                out var foreignKeyTrustLookup);
-            var tableScript = Script(tableStatement, foreignKeyTrustLookup);
-
-            var scriptBuilder = new StringBuilder(tableScript.Length + 512);
-            AppendStatement(scriptBuilder, tableScript);
-
-            var indexNames = new List<string>();
-            if (!options.EmitBareTableOnly)
+            if (options.ModuleParallelism <= 1)
             {
-                foreach (var index in table.Indexes)
+                for (var i = 0; i < tableCount; i++)
                 {
-                    if (index.IsPrimaryKey)
-                    {
-                        continue;
-                    }
-
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var indexName = ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
-                    var indexStatement = BuildCreateIndexStatement(table, index, effectiveTableName, indexName);
-                    var script = Script(indexStatement);
-                    AppendStatement(scriptBuilder, script);
-                    indexNames.Add(indexName);
-
-                    if (index.Metadata.IsDisabled)
-                    {
-                        var disableStatement = BuildDisableIndexStatement(table, effectiveTableName, indexName);
-                        var disableScript = Script(disableStatement);
-                        AppendStatement(scriptBuilder, disableScript);
-                    }
+                    results[i] = await EmitTableAsync(
+                        model.Tables[i],
+                        outputDirectory,
+                        options,
+                        moduleDirectories,
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
-
-            var extendedPropertiesEmitted = false;
-            if (!options.EmitBareTableOnly)
+            else
             {
-                extendedPropertiesEmitted = AppendExtendedProperties(scriptBuilder, table, effectiveTableName);
-                if (table.Triggers.Length > 0)
+                var parallelOptions = new ParallelOptions
                 {
-                    AppendTriggers(scriptBuilder, table, effectiveTableName);
-                }
+                    CancellationToken = cancellationToken,
+                    MaxDegreeOfParallelism = Math.Max(1, options.ModuleParallelism),
+                };
+
+                await Parallel.ForEachAsync(
+                    Enumerable.Range(0, tableCount),
+                    parallelOptions,
+                    async (index, ct) =>
+                    {
+                        results[index] = await EmitTableAsync(
+                            model.Tables[index],
+                            outputDirectory,
+                            options,
+                            moduleDirectories,
+                            ct).ConfigureAwait(false);
+                    }).ConfigureAwait(false);
             }
 
-            var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.sql");
-            await WriteAsync(tableFilePath, scriptBuilder.ToString(), cancellationToken);
-
-            manifestEntries.Add(new TableManifestEntry(
-                table.Module,
-                table.Schema,
-                effectiveTableName,
-                Relativize(tableFilePath, outputDirectory),
-                indexNames,
-                inlineForeignKeys,
-                extendedPropertiesEmitted));
+            manifestEntries.AddRange(results);
         }
 
         SsdtPolicySummary? summary = null;
@@ -143,10 +114,18 @@ public sealed class SsdtEmitter
                 decisionReport.ForeignKeyRationaleCounts);
         }
 
+        var preRemediationEntries = preRemediation ?? Array.Empty<PreRemediationManifestEntry>();
+
         var manifest = new SsdtManifest(
             manifestEntries,
-            new SsdtManifestOptions(options.IncludePlatformAutoIndexes, options.EmitBareTableOnly),
-            summary);
+            new SsdtManifestOptions(
+                options.IncludePlatformAutoIndexes,
+                options.EmitBareTableOnly,
+                options.SanitizeModuleNames,
+                options.ModuleParallelism),
+            summary,
+            emission,
+            preRemediationEntries);
 
         var manifestPath = Path.Combine(outputDirectory, "manifest.json");
         var manifestJson = JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });
@@ -156,21 +135,18 @@ public sealed class SsdtEmitter
     }
 
     private static ModuleDirectoryPaths EnsureModuleDirectories(
-        IDictionary<string, ModuleDirectoryPaths> cache,
+        ConcurrentDictionary<string, ModuleDirectoryPaths> cache,
         string outputDirectory,
         string module)
     {
-        if (!cache.TryGetValue(module, out var paths))
+        return cache.GetOrAdd(module, key =>
         {
-            var moduleRoot = Path.Combine(outputDirectory, "Modules", module);
+            var moduleRoot = Path.Combine(outputDirectory, "Modules", key);
             var tablesRoot = Path.Combine(moduleRoot, "Tables");
             Directory.CreateDirectory(tablesRoot);
 
-            paths = new ModuleDirectoryPaths(tablesRoot);
-            cache[module] = paths;
-        }
-
-        return paths;
+            return new ModuleDirectoryPaths(tablesRoot);
+        });
     }
 
     private static void AppendStatement(StringBuilder builder, string statement)
@@ -188,6 +164,95 @@ public sealed class SsdtEmitter
         }
 
         builder.AppendLine(statement.TrimEnd());
+    }
+
+    private async Task<TableManifestEntry> EmitTableAsync(
+        SmoTableDefinition table,
+        string outputDirectory,
+        SmoBuildOptions options,
+        ConcurrentDictionary<string, ModuleDirectoryPaths> moduleDirectories,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var modulePaths = EnsureModuleDirectories(moduleDirectories, outputDirectory, table.Module);
+        var tablesRoot = modulePaths.TablesRoot;
+
+        var effectiveTableName = options.NamingOverrides.GetEffectiveTableName(
+            table.Schema,
+            table.Name,
+            table.LogicalName,
+            table.OriginalModule);
+
+        var tableStatement = BuildCreateTableStatement(table, effectiveTableName, options);
+        var inlineForeignKeys = AddForeignKeys(
+            tableStatement,
+            table,
+            effectiveTableName,
+            options,
+            out var foreignKeyTrustLookup);
+        var tableScript = Script(tableStatement, foreignKeyTrustLookup);
+
+        var scriptBuilder = new StringBuilder(tableScript.Length + 512);
+        AppendStatement(scriptBuilder, tableScript);
+
+        var indexNames = new List<string>();
+        if (!options.EmitBareTableOnly)
+        {
+            foreach (var index in table.Indexes)
+            {
+                if (index.IsPrimaryKey)
+                {
+                    continue;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                var indexName = ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
+                var indexStatement = BuildCreateIndexStatement(table, index, effectiveTableName, indexName);
+                var script = Script(indexStatement);
+                AppendStatement(scriptBuilder, script);
+                indexNames.Add(indexName);
+
+                if (index.Metadata.IsDisabled)
+                {
+                    var disableStatement = BuildDisableIndexStatement(table, effectiveTableName, indexName);
+                    var disableScript = Script(disableStatement);
+                    AppendStatement(scriptBuilder, disableScript);
+                }
+            }
+        }
+
+        var extendedPropertiesEmitted = false;
+        if (!options.EmitBareTableOnly)
+        {
+            extendedPropertiesEmitted = AppendExtendedProperties(scriptBuilder, table, effectiveTableName);
+            if (table.Triggers.Length > 0)
+            {
+                AppendTriggers(scriptBuilder, table, effectiveTableName);
+            }
+        }
+
+        var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{effectiveTableName}.sql");
+        await WriteAsync(tableFilePath, scriptBuilder.ToString(), cancellationToken).ConfigureAwait(false);
+
+        indexNames.Sort(StringComparer.OrdinalIgnoreCase);
+
+        IReadOnlyList<string> foreignKeyNames = Array.Empty<string>();
+        if (!inlineForeignKeys.IsDefaultOrEmpty)
+        {
+            foreignKeyNames = inlineForeignKeys
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        return new TableManifestEntry(
+            table.Module,
+            table.Schema,
+            effectiveTableName,
+            Relativize(tableFilePath, outputDirectory),
+            indexNames,
+            foreignKeyNames,
+            extendedPropertiesEmitted);
     }
 
     private bool AppendExtendedProperties(StringBuilder builder, SmoTableDefinition table, string effectiveTableName)

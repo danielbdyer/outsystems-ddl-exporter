@@ -157,6 +157,7 @@ public class SmoModelFactoryTests
             IncludePlatformAutoIndexes: true,
             EmitBareTableOnly: false,
             SanitizeModuleNames: true,
+            ModuleParallelism: 1,
             NamingOverrides: NamingOverrideOptions.Empty);
         var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
 

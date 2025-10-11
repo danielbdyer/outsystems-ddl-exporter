@@ -46,7 +46,13 @@ public sealed class SmoModelFactory
             }
         }
 
-        return SmoModel.Create(tablesBuilder.ToImmutable());
+        var tables = tablesBuilder.ToImmutable();
+        if (!tables.IsDefaultOrEmpty)
+        {
+            tables = tables.Sort(SmoTableDefinitionComparer.Instance);
+        }
+
+        return SmoModel.Create(tables);
     }
 
     private static EntityEmissionIndex BuildEntityContexts(
@@ -145,12 +151,13 @@ public sealed class SmoModelFactory
         var builder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, string>();
         foreach (var column in profile.Columns)
         {
-            if (string.IsNullOrWhiteSpace(column.DefaultDefinition))
+            var normalized = NormalizeSqlExpression(column.DefaultDefinition);
+            if (normalized is null)
             {
                 continue;
             }
 
-            builder[ColumnCoordinate.From(column)] = column.DefaultDefinition!;
+            builder[ColumnCoordinate.From(column)] = normalized;
         }
 
         return builder.ToImmutable();
@@ -229,18 +236,39 @@ public sealed class SmoModelFactory
             var isComputed = onDisk.IsComputed ?? false;
             var computed = isComputed ? onDisk.ComputedDefinition : null;
             var coordinate = new ColumnCoordinate(context.Entity.Schema, context.Entity.PhysicalName, attribute.ColumnName);
-            var defaultExpression = ResolveDefaultExpression(onDisk.DefaultDefinition, profileDefaults, coordinate, attribute);
-            var collation = onDisk.Collation;
-            var description = attribute.Metadata.Description;
-            var defaultConstraint = attribute.OnDisk.DefaultConstraint is { Definition: not null } onDiskDefault
-                ? new SmoDefaultConstraintDefinition(onDiskDefault.Name, onDiskDefault.Definition, onDiskDefault.IsNotTrusted)
-                : null;
-            var checkConstraints = attribute.OnDisk.CheckConstraints.IsDefaultOrEmpty
-                ? ImmutableArray<SmoCheckConstraintDefinition>.Empty
-                : attribute.OnDisk.CheckConstraints
-                    .Where(static constraint => !string.IsNullOrWhiteSpace(constraint.Definition))
-                    .Select(static constraint => new SmoCheckConstraintDefinition(constraint.Name, constraint.Definition, constraint.IsNotTrusted))
-                    .ToImmutableArray();
+            var defaultExpression = NormalizeSqlExpression(ResolveDefaultExpression(onDisk.DefaultDefinition, profileDefaults, coordinate, attribute));
+            var collation = NormalizeWhitespace(onDisk.Collation);
+            var description = NormalizeWhitespace(attribute.Metadata.Description);
+            var defaultConstraint = CreateDefaultConstraint(attribute.OnDisk.DefaultConstraint);
+
+            var checkConstraints = ImmutableArray<SmoCheckConstraintDefinition>.Empty;
+            if (!attribute.OnDisk.CheckConstraints.IsDefaultOrEmpty)
+            {
+                var checkBuilder = ImmutableArray.CreateBuilder<SmoCheckConstraintDefinition>(attribute.OnDisk.CheckConstraints.Length);
+                foreach (var constraint in attribute.OnDisk.CheckConstraints)
+                {
+                    if (constraint is null)
+                    {
+                        continue;
+                    }
+
+                    var expression = NormalizeSqlExpression(constraint.Definition);
+                    if (expression is null)
+                    {
+                        continue;
+                    }
+
+                    checkBuilder.Add(new SmoCheckConstraintDefinition(
+                        NormalizeWhitespace(constraint.Name),
+                        expression,
+                        constraint.IsNotTrusted));
+                }
+
+                if (checkBuilder.Count > 0)
+                {
+                    checkConstraints = checkBuilder.ToImmutable().Sort(SmoCheckConstraintComparer.Instance);
+                }
+            }
 
             builder.Add(new SmoColumnDefinition(
                 attribute.LogicalName.Value,
@@ -260,6 +288,38 @@ public sealed class SmoModelFactory
         }
 
         return builder.ToImmutable();
+    }
+
+    private static SmoDefaultConstraintDefinition? CreateDefaultConstraint(AttributeOnDiskDefaultConstraint? constraint)
+    {
+        if (constraint is not { Definition: { } definition })
+        {
+            return null;
+        }
+
+        var expression = NormalizeSqlExpression(definition);
+        if (expression is null)
+        {
+            return null;
+        }
+
+        return new SmoDefaultConstraintDefinition(
+            NormalizeWhitespace(constraint.Name),
+            expression,
+            constraint.IsNotTrusted);
+    }
+
+    private static string? NormalizeWhitespace(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? NormalizeSqlExpression(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim();
     }
 
     private static string? ResolveDefaultExpression(
@@ -492,14 +552,20 @@ public sealed class SmoModelFactory
         foreach (var trigger in context.Entity.Triggers)
         {
             builder.Add(new SmoTriggerDefinition(
-                trigger.Name.Value,
+                NormalizeWhitespace(trigger.Name.Value) ?? trigger.Name.Value,
                 context.Entity.Schema.Value,
                 context.Entity.PhysicalName.Value,
                 trigger.IsDisabled,
-                trigger.Definition));
+                NormalizeSqlExpression(trigger.Definition) ?? trigger.Definition));
         }
 
-        return builder.ToImmutable();
+        var triggers = builder.ToImmutable();
+        if (!triggers.IsDefaultOrEmpty)
+        {
+            triggers = triggers.Sort(SmoTriggerDefinitionComparer.Instance);
+        }
+
+        return triggers;
     }
 
     private static ForeignKeyAction MapDeleteRule(string? deleteRule)
@@ -601,6 +667,209 @@ public sealed class SmoModelFactory
         }
 
         return builder.ToString();
+    }
+
+    private sealed class SmoTableDefinitionComparer : IComparer<SmoTableDefinition>
+    {
+        public static readonly SmoTableDefinitionComparer Instance = new();
+
+        public int Compare(SmoTableDefinition? x, SmoTableDefinition? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return 0;
+            }
+
+            if (x is null)
+            {
+                return -1;
+            }
+
+            if (y is null)
+            {
+                return 1;
+            }
+
+            var comparison = StringComparer.Ordinal.Compare(x.Module, y.Module);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.OrdinalIgnoreCase.Compare(x.Schema, y.Schema);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.OrdinalIgnoreCase.Compare(x.Name, y.Name);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.Ordinal.Compare(x.LogicalName, y.LogicalName);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            var leftCatalog = x.Catalog ?? string.Empty;
+            var rightCatalog = y.Catalog ?? string.Empty;
+            return StringComparer.OrdinalIgnoreCase.Compare(leftCatalog, rightCatalog);
+        }
+    }
+
+    private sealed class SmoIndexDefinitionComparer : IComparer<SmoIndexDefinition>
+    {
+        public static readonly SmoIndexDefinitionComparer Instance = new();
+
+        public int Compare(SmoIndexDefinition? x, SmoIndexDefinition? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return 0;
+            }
+
+            if (x is null)
+            {
+                return -1;
+            }
+
+            if (y is null)
+            {
+                return 1;
+            }
+
+            if (x.IsPrimaryKey && !y.IsPrimaryKey)
+            {
+                return -1;
+            }
+
+            if (!x.IsPrimaryKey && y.IsPrimaryKey)
+            {
+                return 1;
+            }
+
+            if (x.IsUnique && !y.IsUnique)
+            {
+                return -1;
+            }
+
+            if (!x.IsUnique && y.IsUnique)
+            {
+                return 1;
+            }
+
+            return StringComparer.OrdinalIgnoreCase.Compare(x.Name, y.Name);
+        }
+    }
+
+    private sealed class SmoForeignKeyDefinitionComparer : IComparer<SmoForeignKeyDefinition>
+    {
+        public static readonly SmoForeignKeyDefinitionComparer Instance = new();
+
+        public int Compare(SmoForeignKeyDefinition? x, SmoForeignKeyDefinition? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return 0;
+            }
+
+            if (x is null)
+            {
+                return -1;
+            }
+
+            if (y is null)
+            {
+                return 1;
+            }
+
+            var comparison = StringComparer.OrdinalIgnoreCase.Compare(x.Name, y.Name);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.OrdinalIgnoreCase.Compare(x.ReferencedSchema, y.ReferencedSchema);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.OrdinalIgnoreCase.Compare(x.ReferencedTable, y.ReferencedTable);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.OrdinalIgnoreCase.Compare(x.Column, y.Column);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            return StringComparer.OrdinalIgnoreCase.Compare(x.ReferencedColumn, y.ReferencedColumn);
+        }
+    }
+
+    private sealed class SmoCheckConstraintComparer : IComparer<SmoCheckConstraintDefinition>
+    {
+        public static readonly SmoCheckConstraintComparer Instance = new();
+
+        public int Compare(SmoCheckConstraintDefinition? x, SmoCheckConstraintDefinition? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return 0;
+            }
+
+            if (x is null)
+            {
+                return -1;
+            }
+
+            if (y is null)
+            {
+                return 1;
+            }
+
+            var leftName = x.Name ?? string.Empty;
+            var rightName = y.Name ?? string.Empty;
+            var comparison = StringComparer.OrdinalIgnoreCase.Compare(leftName, rightName);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            return StringComparer.OrdinalIgnoreCase.Compare(x.Expression, y.Expression);
+        }
+    }
+
+    private sealed class SmoTriggerDefinitionComparer : IComparer<SmoTriggerDefinition>
+    {
+        public static readonly SmoTriggerDefinitionComparer Instance = new();
+
+        public int Compare(SmoTriggerDefinition? x, SmoTriggerDefinition? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return 0;
+            }
+
+            if (x is null)
+            {
+                return -1;
+            }
+
+            if (y is null)
+            {
+                return 1;
+            }
+
+            return StringComparer.OrdinalIgnoreCase.Compare(x.Name, y.Name);
+        }
     }
 
     private static void AddContext(

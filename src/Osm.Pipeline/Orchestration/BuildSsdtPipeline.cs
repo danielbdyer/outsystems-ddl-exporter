@@ -31,6 +31,7 @@ public sealed class BuildSsdtPipeline
     private readonly StaticEntitySeedScriptGenerator _seedGenerator;
     private readonly StaticEntitySeedTemplate _seedTemplate;
     private readonly ProfileSnapshotDeserializer _profileSnapshotDeserializer;
+    private readonly EmissionFingerprintCalculator _fingerprintCalculator;
 
     public BuildSsdtPipeline(
         IModelIngestionService? modelIngestionService = null,
@@ -43,7 +44,8 @@ public sealed class BuildSsdtPipeline
         IEvidenceCacheService? evidenceCacheService = null,
         StaticEntitySeedScriptGenerator? seedGenerator = null,
         StaticEntitySeedTemplate? seedTemplate = null,
-        ProfileSnapshotDeserializer? profileSnapshotDeserializer = null)
+        ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
+        EmissionFingerprintCalculator? fingerprintCalculator = null)
     {
         _modelIngestionService = modelIngestionService ?? new ModelIngestionService(new ModelJsonDeserializer());
         _moduleFilter = moduleFilter ?? new ModuleFilter();
@@ -56,6 +58,7 @@ public sealed class BuildSsdtPipeline
         _seedGenerator = seedGenerator ?? new StaticEntitySeedScriptGenerator();
         _seedTemplate = seedTemplate ?? StaticEntitySeedTemplate.Load();
         _profileSnapshotDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
+        _fingerprintCalculator = fingerprintCalculator ?? new EmissionFingerprintCalculator();
     }
 
     public async Task<Result<BuildSsdtPipelineResult>> ExecuteAsync(
@@ -98,7 +101,8 @@ public sealed class BuildSsdtPipeline
                 ["tightening.nullBudget"] = request.TighteningOptions.Policy.NullBudget.ToString(CultureInfo.InvariantCulture),
                 ["emission.includePlatformAutoIndexes"] = request.SmoOptions.IncludePlatformAutoIndexes ? "true" : "false",
                 ["emission.emitBareTableOnly"] = request.SmoOptions.EmitBareTableOnly ? "true" : "false",
-                ["emission.sanitizeModuleNames"] = request.SmoOptions.SanitizeModuleNames ? "true" : "false"
+                ["emission.sanitizeModuleNames"] = request.SmoOptions.SanitizeModuleNames ? "true" : "false",
+                ["emission.moduleParallelism"] = request.SmoOptions.ModuleParallelism.ToString(CultureInfo.InvariantCulture)
             });
 
         var modelResult = await _modelIngestionService.LoadFromFileAsync(request.ModelPath, cancellationToken).ConfigureAwait(false);
@@ -267,12 +271,15 @@ public sealed class BuildSsdtPipeline
                 ["foreignKeys"] = smoForeignKeyCount.ToString(CultureInfo.InvariantCulture)
             });
 
+        var emissionMetadata = _fingerprintCalculator.Compute(smoModel, decisions, request.SmoOptions);
+
         var manifest = await _ssdtEmitter.EmitAsync(
             smoModel,
             request.OutputDirectory,
             request.SmoOptions,
+            emissionMetadata,
             decisionReport,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         log.Record(
             "ssdt.emission.completed",
             "Emitted SSDT artifacts.",
