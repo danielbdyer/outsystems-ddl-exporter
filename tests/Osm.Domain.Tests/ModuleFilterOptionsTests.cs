@@ -1,5 +1,7 @@
 using System.Linq;
+using System.Linq;
 using Osm.Domain.Configuration;
+using Osm.Domain.ValueObjects;
 using Xunit;
 
 namespace Osm.Domain.Tests;
@@ -42,7 +44,7 @@ public sealed class ModuleFilterOptionsTests
         var result = ModuleFilterOptions.Create(new[] { "Ops", "AppCore", "ops" }, includeSystemModules: false, includeInactiveModules: true);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(new[] { "AppCore", "Ops" }, result.Value.Modules);
+        Assert.Equal(new[] { "AppCore", "Ops" }, result.Value.Modules.Select(static module => module.Value));
         Assert.False(result.Value.IncludeSystemModules);
         Assert.True(result.Value.IncludeInactiveModules);
     }
@@ -52,21 +54,31 @@ public sealed class ModuleFilterOptionsTests
     {
         var options = ModuleFilterOptions.Create(new[] { "AppCore" }, true, true).Value;
 
-        var merged = options.Merge(new[] { "Ops", "AppCore", "ExtBilling" });
+        var merged = options.Merge(new[]
+        {
+            ModuleName.Create("Ops").Value,
+            ModuleName.Create("AppCore").Value,
+            ModuleName.Create("ExtBilling").Value
+        });
 
-        Assert.Equal(new[] { "AppCore", "ExtBilling", "Ops" }, merged.Modules);
+        Assert.Equal(new[] { "AppCore", "ExtBilling", "Ops" }, merged.Modules.Select(static module => module.Value));
         Assert.True(merged.IncludeSystemModules);
         Assert.True(merged.IncludeInactiveModules);
     }
 
     [Fact]
-    public void Merge_IgnoresNullOrWhitespaceModules()
+    public void Merge_IgnoresDuplicateModules()
     {
         var options = ModuleFilterOptions.Create(new[] { "AppCore" }, includeSystemModules: false, includeInactiveModules: false).Value;
 
-        var merged = options.Merge(new[] { "  ", null!, "Ops" });
+        var merged = options.Merge(new[]
+        {
+            ModuleName.Create("AppCore").Value,
+            ModuleName.Create("Ops").Value,
+            ModuleName.Create("appcore").Value
+        });
 
-        Assert.Equal(new[] { "AppCore", "Ops" }, merged.Modules);
+        Assert.Equal(new[] { "AppCore", "Ops" }, merged.Modules.Select(static module => module.Value));
         Assert.False(merged.IncludeSystemModules);
         Assert.False(merged.IncludeInactiveModules);
     }

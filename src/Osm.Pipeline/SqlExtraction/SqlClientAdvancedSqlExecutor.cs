@@ -2,6 +2,7 @@ using System;
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -90,8 +91,8 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
             command.CommandTimeout = options.CommandTimeoutSeconds.Value;
         }
 
-        var modules = request.ModuleNames is { Count: > 0 }
-            ? string.Join(',', request.ModuleNames)
+        var modules = request.ModuleNames.Length > 0
+            ? string.Join(',', request.ModuleNames.Select(static module => module.Value))
             : string.Empty;
 
         var moduleParam = command.CreateParameter();

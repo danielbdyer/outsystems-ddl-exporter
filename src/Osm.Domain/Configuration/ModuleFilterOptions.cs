@@ -3,26 +3,27 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Osm.Domain.Abstractions;
+using Osm.Domain.ValueObjects;
 
 namespace Osm.Domain.Configuration;
 
 public sealed record ModuleFilterOptions
 {
-    private ModuleFilterOptions(ImmutableArray<string> modules, bool includeSystemModules, bool includeInactiveModules)
+    private ModuleFilterOptions(ImmutableArray<ModuleName> modules, bool includeSystemModules, bool includeInactiveModules)
     {
         Modules = modules;
         IncludeSystemModules = includeSystemModules;
         IncludeInactiveModules = includeInactiveModules;
     }
 
-    public ImmutableArray<string> Modules { get; }
+    public ImmutableArray<ModuleName> Modules { get; }
 
     public bool IncludeSystemModules { get; }
 
     public bool IncludeInactiveModules { get; }
 
     public static ModuleFilterOptions IncludeAll { get; } = new(
-        ImmutableArray<string>.Empty,
+        ImmutableArray<ModuleName>.Empty,
         includeSystemModules: true,
         includeInactiveModules: true);
 
@@ -36,72 +37,99 @@ public sealed record ModuleFilterOptions
         if (modules is null)
         {
             return new ModuleFilterOptions(
-                ImmutableArray<string>.Empty,
+                ImmutableArray<ModuleName>.Empty,
                 includeSystemModules,
                 includeInactiveModules);
         }
 
-        var builder = ImmutableArray.CreateBuilder<string>();
+        var builder = ImmutableArray.CreateBuilder<ModuleName>();
+        var errors = ImmutableArray.CreateBuilder<ValidationError>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var index = 0;
         foreach (var candidate in modules)
         {
             if (candidate is null)
             {
-                return ValidationError.Create(
+                errors.Add(ValidationError.Create(
                     "moduleFilter.modules.null",
-                    "Module names must not be null.");
+                    $"Module name at position {index} must not be null."));
+                index++;
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                errors.Add(ValidationError.Create(
+                    "moduleFilter.modules.empty",
+                    $"Module name at position {index} must not be empty or whitespace."));
+                index++;
+                continue;
             }
 
             var trimmed = candidate.Trim();
-            if (trimmed.Length == 0)
+            var moduleResult = ModuleName.Create(trimmed);
+            if (moduleResult.IsFailure)
             {
-                return ValidationError.Create(
-                    "moduleFilter.modules.empty",
-                    "Module names must not be empty or whitespace.");
+                foreach (var error in moduleResult.Errors)
+                {
+                    errors.Add(ValidationError.Create(
+                        error.Code,
+                        $"Module name '{trimmed}' is invalid: {error.Message}"));
+                }
+
+                index++;
+                continue;
             }
 
-            if (seen.Add(trimmed))
+            var moduleName = moduleResult.Value;
+            if (seen.Add(moduleName.Value))
             {
-                builder.Add(trimmed);
+                builder.Add(moduleName);
             }
+
+            index++;
+        }
+
+        if (errors.Count > 0)
+        {
+            return Result<ModuleFilterOptions>.Failure(errors.ToImmutable());
         }
 
         var normalized = builder.ToImmutable();
         if (!normalized.IsDefaultOrEmpty)
         {
-            normalized = normalized.Sort(StringComparer.OrdinalIgnoreCase);
+            normalized = normalized.Sort(Comparer<ModuleName>.Create(static (left, right)
+                => string.Compare(left.Value, right.Value, StringComparison.OrdinalIgnoreCase)));
         }
 
         return new ModuleFilterOptions(normalized, includeSystemModules, includeInactiveModules);
     }
 
-    public ModuleFilterOptions Merge(IEnumerable<string> modules)
+    public ModuleFilterOptions Merge(IEnumerable<ModuleName> modules)
     {
         if (modules is null)
         {
             throw new ArgumentNullException(nameof(modules));
         }
 
-        if (!modules.Any())
+        var materialized = modules.ToImmutableArray();
+        if (materialized.IsDefaultOrEmpty)
         {
             return this;
         }
 
-        var combined = new HashSet<string>(Modules, StringComparer.OrdinalIgnoreCase);
-        foreach (var module in modules)
+        var combined = new Dictionary<string, ModuleName>(StringComparer.OrdinalIgnoreCase);
+        foreach (var module in Modules)
         {
-            if (module is null)
-            {
-                continue;
-            }
+            combined[module.Value] = module;
+        }
 
-            var trimmed = module.Trim();
-            if (trimmed.Length == 0)
+        foreach (var module in materialized)
+        {
+            if (!combined.ContainsKey(module.Value))
             {
-                continue;
+                combined[module.Value] = module;
             }
-
-            combined.Add(trimmed);
         }
 
         if (combined.Count == Modules.Length)
@@ -110,7 +138,8 @@ public sealed record ModuleFilterOptions
         }
 
         var normalized = combined
-            .OrderBy(static value => value, StringComparer.OrdinalIgnoreCase)
+            .Values
+            .OrderBy(static value => value.Value, StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
 
         return new ModuleFilterOptions(normalized, IncludeSystemModules, IncludeInactiveModules);

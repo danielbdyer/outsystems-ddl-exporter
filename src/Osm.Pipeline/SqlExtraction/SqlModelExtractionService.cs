@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -7,6 +8,8 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Json;
+using Osm.Domain.ValueObjects;
+using System.Linq;
 
 namespace Osm.Pipeline.SqlExtraction;
 
@@ -80,14 +83,14 @@ public sealed class ModelExtractionResult
 
 public sealed class ModelExtractionCommand
 {
-    private ModelExtractionCommand(IReadOnlyList<string> moduleNames, bool includeSystemModules, bool onlyActiveAttributes)
+    private ModelExtractionCommand(ImmutableArray<ModuleName> moduleNames, bool includeSystemModules, bool onlyActiveAttributes)
     {
         ModuleNames = moduleNames;
         IncludeSystemModules = includeSystemModules;
         OnlyActiveAttributes = onlyActiveAttributes;
     }
 
-    public IReadOnlyList<string> ModuleNames { get; }
+    public ImmutableArray<ModuleName> ModuleNames { get; }
 
     public bool IncludeSystemModules { get; }
 
@@ -95,31 +98,71 @@ public sealed class ModelExtractionCommand
 
     public static Result<ModelExtractionCommand> Create(IEnumerable<string>? moduleNames, bool includeSystemModules, bool onlyActiveAttributes)
     {
-        var normalized = new List<string>();
-        if (moduleNames is not null)
+        if (moduleNames is null)
         {
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var candidate in moduleNames)
-            {
-                if (candidate is null)
-                {
-                    return Result<ModelExtractionCommand>.Failure(ValidationError.Create("extraction.modules.null", "Module names must not be null."));
-                }
-
-                var trimmed = candidate.Trim();
-                if (trimmed.Length == 0)
-                {
-                    return Result<ModelExtractionCommand>.Failure(ValidationError.Create("extraction.modules.empty", "Module names must not be empty or whitespace."));
-                }
-
-                if (seen.Add(trimmed))
-                {
-                    normalized.Add(trimmed);
-                }
-            }
+            return new ModelExtractionCommand(ImmutableArray<ModuleName>.Empty, includeSystemModules, onlyActiveAttributes);
         }
 
-        normalized.Sort(StringComparer.OrdinalIgnoreCase);
-        return Result<ModelExtractionCommand>.Success(new ModelExtractionCommand(normalized, includeSystemModules, onlyActiveAttributes));
+        var modules = ImmutableArray.CreateBuilder<ModuleName>();
+        var errors = ImmutableArray.CreateBuilder<ValidationError>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var index = 0;
+        foreach (var candidate in moduleNames)
+        {
+            if (candidate is null)
+            {
+                errors.Add(ValidationError.Create(
+                    "extraction.modules.null",
+                    $"Module name at position {index} must not be null."));
+                index++;
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                errors.Add(ValidationError.Create(
+                    "extraction.modules.empty",
+                    $"Module name at position {index} must not be empty or whitespace."));
+                index++;
+                continue;
+            }
+
+            var trimmed = candidate.Trim();
+            var moduleResult = ModuleName.Create(trimmed);
+            if (moduleResult.IsFailure)
+            {
+                foreach (var error in moduleResult.Errors)
+                {
+                    errors.Add(ValidationError.Create(
+                        error.Code,
+                        $"Module name '{trimmed}' is invalid: {error.Message}"));
+                }
+
+                index++;
+                continue;
+            }
+
+            var moduleName = moduleResult.Value;
+            if (seen.Add(moduleName.Value))
+            {
+                modules.Add(moduleName);
+            }
+
+            index++;
+        }
+
+        if (errors.Count > 0)
+        {
+            return Result<ModelExtractionCommand>.Failure(errors.ToImmutable());
+        }
+
+        var normalized = modules.ToImmutable();
+        if (!normalized.IsDefaultOrEmpty)
+        {
+            normalized = normalized.Sort(Comparer<ModuleName>.Create(static (left, right)
+                => string.Compare(left.Value, right.Value, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        return new ModelExtractionCommand(normalized, includeSystemModules, onlyActiveAttributes);
     }
 }

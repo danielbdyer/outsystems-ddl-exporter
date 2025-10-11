@@ -36,13 +36,13 @@ public sealed class ModuleFilter
             var missing = new List<string>();
             foreach (var moduleName in options.Modules)
             {
-                if (lookup.TryGetValue(moduleName, out var module))
+                if (lookup.TryGetValue(moduleName.Value, out var module))
                 {
                     selected.Add(module);
                 }
                 else
                 {
-                    missing.Add(moduleName);
+                    missing.Add(moduleName.Value);
                 }
             }
 

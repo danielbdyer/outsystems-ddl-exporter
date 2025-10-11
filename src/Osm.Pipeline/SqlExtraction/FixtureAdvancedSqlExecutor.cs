@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.IO.Abstractions;
@@ -8,6 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
+using Osm.Domain.ValueObjects;
 
 namespace Osm.Pipeline.SqlExtraction;
 
@@ -49,7 +51,7 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
         {
             return Task.FromResult(Result<string>.Failure(ValidationError.Create(
                 "extraction.fixture.missing",
-                $"No fixture JSON registered for modules '{string.Join(",", request.ModuleNames)}', includeSystem={request.IncludeSystemModules}, onlyActive={request.OnlyActiveAttributes}.")));
+                $"No fixture JSON registered for modules '{string.Join(",", request.ModuleNames.Select(static module => module.Value))}', includeSystem={request.IncludeSystemModules}, onlyActive={request.OnlyActiveAttributes}.")));
         }
 
         if (!_fileSystem.File.Exists(entry.JsonPath))
@@ -91,12 +93,7 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
                 throw new InvalidDataException("Each fixture case must include a 'jsonPath'.");
             }
 
-            var normalizedModules = modules
-                .Select(static module => (module ?? string.Empty).Trim())
-                .Where(static module => module.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(static module => module, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            var normalizedModules = NormalizeModules(modules);
 
             var key = BuildKey(normalizedModules, includeSystem, onlyActive);
             var jsonPath = jsonPathElement.GetString() ?? string.Empty;
@@ -115,10 +112,47 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
         return entries;
     }
 
-    private static string BuildKey(IEnumerable<string> modules, bool includeSystem, bool onlyActive)
+    private static ImmutableArray<ModuleName> NormalizeModules(IEnumerable<string> modules)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"modules:{string.Join("|", modules)}|system:{includeSystem}|active:{onlyActive}");
+        var builder = ImmutableArray.CreateBuilder<ModuleName>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var module in modules)
+        {
+            if (string.IsNullOrWhiteSpace(module))
+            {
+                continue;
+            }
+
+            var trimmed = module.Trim();
+            var result = ModuleName.Create(trimmed);
+            if (result.IsFailure)
+            {
+                var details = string.Join(", ", result.Errors.Select(static error => error.Message));
+                throw new InvalidDataException($"Fixture module '{trimmed}' is invalid: {details}.");
+            }
+
+            var moduleName = result.Value;
+            if (seen.Add(moduleName.Value))
+            {
+                builder.Add(moduleName);
+            }
+        }
+
+        var materialized = builder.ToImmutable();
+        if (!materialized.IsDefaultOrEmpty)
+        {
+            materialized = materialized.Sort(Comparer<ModuleName>.Create(static (left, right)
+                => string.Compare(left.Value, right.Value, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        return materialized;
     }
 
-    private sealed record FixtureEntry(string JsonPath, IReadOnlyList<string> Modules);
+    private static string BuildKey(IEnumerable<ModuleName> modules, bool includeSystem, bool onlyActive)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"modules:{string.Join("|", modules.Select(static module => module.Value))}|system:{includeSystem}|active:{onlyActive}");
+    }
+
+    private sealed record FixtureEntry(string JsonPath, ImmutableArray<ModuleName> Modules);
 }

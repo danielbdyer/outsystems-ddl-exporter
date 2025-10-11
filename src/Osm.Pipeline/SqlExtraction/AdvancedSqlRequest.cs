@@ -1,17 +1,18 @@
-using System.Collections.Generic;
+using System.Collections.Immutable;
+using Osm.Domain.ValueObjects;
 
 namespace Osm.Pipeline.SqlExtraction;
 
 public sealed class AdvancedSqlRequest
 {
-    public AdvancedSqlRequest(IReadOnlyList<string> moduleNames, bool includeSystemModules, bool onlyActiveAttributes)
+    public AdvancedSqlRequest(ImmutableArray<ModuleName> moduleNames, bool includeSystemModules, bool onlyActiveAttributes)
     {
-        ModuleNames = moduleNames ?? throw new ArgumentNullException(nameof(moduleNames));
+        ModuleNames = moduleNames;
         IncludeSystemModules = includeSystemModules;
         OnlyActiveAttributes = onlyActiveAttributes;
     }
 
-    public IReadOnlyList<string> ModuleNames { get; }
+    public ImmutableArray<ModuleName> ModuleNames { get; }
 
     public bool IncludeSystemModules { get; }
 

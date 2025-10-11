@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -32,7 +33,7 @@ public class SqlModelExtractionServiceTests
     {
         var result = ModelExtractionCommand.Create(new[] { "Ops", "AppCore", "ops" }, includeSystemModules: true, onlyActiveAttributes: false);
         Assert.True(result.IsSuccess);
-        Assert.Equal(new[] { "AppCore", "Ops" }, result.Value.ModuleNames);
+        Assert.Equal(new[] { "AppCore", "Ops" }, result.Value.ModuleNames.Select(static module => module.Value));
         Assert.True(result.Value.IncludeSystemModules);
         Assert.False(result.Value.OnlyActiveAttributes);
     }
