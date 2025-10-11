@@ -20,7 +20,7 @@ public sealed class IndexOnDiskMetadataTests
     public void Create_ShouldNormalizeFilterDefinition()
     {
         var metadata = IndexOnDiskMetadata.Create(
-            IndexKind.NonClusteredIndex,
+            IndexKind.UniqueIndex,
             isDisabled: false,
             isPadded: false,
             fillFactor: 90,
@@ -44,7 +44,7 @@ public sealed class IndexOnDiskMetadataTests
     public void Create_ShouldNormalizeFillFactor(int? input, int? expected)
     {
         var metadata = IndexOnDiskMetadata.Create(
-            IndexKind.ClusteredIndex,
+            IndexKind.PrimaryKey,
             isDisabled: false,
             isPadded: false,
             fillFactor: input,
@@ -64,7 +64,7 @@ public sealed class IndexOnDiskMetadataTests
     public void Create_ShouldUseEmptyCollections_WhenDefaultsProvided()
     {
         var metadata = IndexOnDiskMetadata.Create(
-            IndexKind.ClusteredIndex,
+            IndexKind.NonUniqueIndex,
             isDisabled: false,
             isPadded: false,
             fillFactor: 80,
@@ -90,7 +90,7 @@ public sealed class IndexOnDiskMetadataTests
         var compression = ImmutableArray.Create(Compression(1, "PAGE"));
 
         var metadata = IndexOnDiskMetadata.Create(
-            IndexKind.ClusteredIndex,
+            IndexKind.UniqueConstraint,
             isDisabled: false,
             isPadded: true,
             fillFactor: 70,
@@ -99,7 +99,7 @@ public sealed class IndexOnDiskMetadataTests
             allowPageLocks: false,
             noRecomputeStatistics: true,
             filterDefinition: "[RegionId] IS NOT NULL",
-            dataSpace: IndexDataSpace.Create("PRIMARY", "rows").Value,
+            dataSpace: IndexDataSpace.Create("PRIMARY", "rows"),
             columns,
             compression);
 
