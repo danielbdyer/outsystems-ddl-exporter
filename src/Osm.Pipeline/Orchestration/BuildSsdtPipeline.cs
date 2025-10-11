@@ -12,7 +12,6 @@ using Osm.Json;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Profiling;
-using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
@@ -30,7 +29,7 @@ public sealed class BuildSsdtPipeline
     private readonly IEvidenceCacheService _evidenceCacheService;
     private readonly StaticEntitySeedScriptGenerator _seedGenerator;
     private readonly StaticEntitySeedTemplate _seedTemplate;
-    private readonly ProfileSnapshotDeserializer _profileSnapshotDeserializer;
+    private readonly IProfilerFactory _profilerFactory;
 
     public BuildSsdtPipeline(
         IModelIngestionService? modelIngestionService = null,
@@ -43,7 +42,7 @@ public sealed class BuildSsdtPipeline
         IEvidenceCacheService? evidenceCacheService = null,
         StaticEntitySeedScriptGenerator? seedGenerator = null,
         StaticEntitySeedTemplate? seedTemplate = null,
-        ProfileSnapshotDeserializer? profileSnapshotDeserializer = null)
+        IProfilerFactory? profilerFactory = null)
     {
         _modelIngestionService = modelIngestionService ?? new ModelIngestionService(new ModelJsonDeserializer());
         _moduleFilter = moduleFilter ?? new ModuleFilter();
@@ -55,7 +54,7 @@ public sealed class BuildSsdtPipeline
         _evidenceCacheService = evidenceCacheService ?? new EvidenceCacheService();
         _seedGenerator = seedGenerator ?? new StaticEntitySeedScriptGenerator();
         _seedTemplate = seedTemplate ?? StaticEntitySeedTemplate.Load();
-        _profileSnapshotDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
+        _profilerFactory = profilerFactory ?? new DefaultProfilerFactory(new ProfileSnapshotDeserializer());
     }
 
     public async Task<Result<BuildSsdtPipelineResult>> ExecuteAsync(
@@ -360,46 +359,12 @@ public sealed class BuildSsdtPipeline
         OsmModel model,
         CancellationToken cancellationToken)
     {
-        if (string.Equals(request.ProfilerProvider, "sql", StringComparison.OrdinalIgnoreCase))
+        var profilerResult = _profilerFactory.Create(request, model);
+        if (profilerResult.IsFailure)
         {
-            if (string.IsNullOrWhiteSpace(request.SqlOptions.ConnectionString))
-            {
-                return ValidationError.Create(
-                    "pipeline.buildSsdt.sql.connectionString.missing",
-                    "Connection string is required when using the SQL profiler.");
-            }
-
-            var sampling = CreateSamplingOptions(request.SqlOptions.Sampling);
-            var connectionOptions = CreateConnectionOptions(request.SqlOptions.Authentication);
-            var profilerOptions = new SqlProfilerOptions(request.SqlOptions.CommandTimeoutSeconds, sampling);
-            var sqlProfiler = new SqlDataProfiler(new SqlConnectionFactory(request.SqlOptions.ConnectionString!, connectionOptions), model, profilerOptions);
-            return await sqlProfiler.CaptureAsync(cancellationToken).ConfigureAwait(false);
+            return Result<ProfileSnapshot>.Failure(profilerResult.Errors);
         }
 
-        if (string.IsNullOrWhiteSpace(request.ProfilePath))
-        {
-            return ValidationError.Create(
-                "pipeline.buildSsdt.profile.path.missing",
-                "Profile path is required when using the fixture profiler.");
-        }
-
-        var fixtureProfiler = new FixtureDataProfiler(request.ProfilePath!, _profileSnapshotDeserializer);
-        return await fixtureProfiler.CaptureAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static SqlSamplingOptions CreateSamplingOptions(SqlSamplingSettings configuration)
-    {
-        var threshold = configuration.RowSamplingThreshold ?? SqlSamplingOptions.Default.RowCountSamplingThreshold;
-        var sampleSize = configuration.SampleSize ?? SqlSamplingOptions.Default.SampleSize;
-        return new SqlSamplingOptions(threshold, sampleSize);
-    }
-
-    private static SqlConnectionOptions CreateConnectionOptions(SqlAuthenticationSettings configuration)
-    {
-        return new SqlConnectionOptions(
-            configuration.Method,
-            configuration.TrustServerCertificate,
-            configuration.ApplicationName,
-            configuration.AccessToken);
+        return await profilerResult.Value.CaptureAsync(cancellationToken).ConfigureAwait(false);
     }
 }

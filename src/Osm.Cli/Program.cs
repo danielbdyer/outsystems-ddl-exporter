@@ -16,6 +16,7 @@ using Osm.App.UseCases;
 using Osm.Domain.Abstractions;
 using Osm.Json;
 using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
 
@@ -23,6 +24,8 @@ var hostBuilder = Host.CreateApplicationBuilder(args);
 hostBuilder.Services.AddLogging(static builder => builder.AddSimpleConsole());
 hostBuilder.Services.AddSingleton<ICliConfigurationService, CliConfigurationService>();
 hostBuilder.Services.AddSingleton<IModelJsonDeserializer, ModelJsonDeserializer>();
+hostBuilder.Services.AddSingleton<IProfileSnapshotDeserializer, ProfileSnapshotDeserializer>();
+hostBuilder.Services.AddSingleton<IProfilerFactory, DefaultProfilerFactory>();
 hostBuilder.Services.AddSingleton<IModelIngestionService, ModelIngestionService>();
 hostBuilder.Services.AddSingleton<BuildSsdtPipeline>();
 hostBuilder.Services.AddSingleton<DmmComparePipeline>();
