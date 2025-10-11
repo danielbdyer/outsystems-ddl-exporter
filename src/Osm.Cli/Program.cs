@@ -72,7 +72,6 @@ compareCommand.AddOption(includeInactiveModulesOption);
 compareCommand.AddOption(onlyActiveModulesOption);
 compareCommand.AddOption(cacheRootOption);
 compareCommand.AddOption(refreshCacheOption);
-compareCommand.AddOption(outputOption);
 
 var rootCommand = new RootCommand("OutSystems DDL Exporter CLI")
 {

@@ -4,7 +4,8 @@
     "path": "tests/Fixtures/model.edge-case.json",
     "modules": [
       "AppCore",
-      "ExtBilling"
+      "ExtBilling",
+      "Ops"
     ],
     "includeSystemModules": false,
     "includeInactiveModules": true
