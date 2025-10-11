@@ -304,7 +304,8 @@ public sealed record EmissionOptions
 public enum StaticSeedSynchronizationMode
 {
     NonDestructive,
-    Authoritative
+    Authoritative,
+    ValidateThenApply
 }
 
 public sealed record StaticSeedOptions
