@@ -135,7 +135,9 @@ public sealed class StaticEntitySeedScriptGenerator
         builder.AppendLine("--------------------------------------------------------------------------------");
 
         var targetIdentifier = FormatTwoPartName(schema, targetName);
-        var columnNames = definition.Columns.Select(static c => FormatColumnName(c.ColumnName)).ToArray();
+        var columnNames = definition.Columns
+            .Select(static c => FormatColumnName(c.TargetColumnName))
+            .ToArray();
         var columnList = string.Join(", ", columnNames);
         var sourceProjection = string.Join(", ", columnNames.Select(static name => $"Source.{name}"));
         var targetProjection = string.Join(", ", columnNames.Select(static name => $"Existing.{name}"));
@@ -219,7 +221,8 @@ public sealed class StaticEntitySeedScriptGenerator
         builder.Append("    ON ");
         builder.AppendLine(string.Join(
             " AND ",
-            primaryColumns.Select(static c => $"Target.{FormatColumnName(c.ColumnName)} = Source.{FormatColumnName(c.ColumnName)}")));
+            primaryColumns.Select(static c =>
+                $"Target.{FormatColumnName(c.TargetColumnName)} = Source.{FormatColumnName(c.TargetColumnName)}")));
 
         var updatableColumns = definition.Columns.Where(static c => !c.IsPrimaryKey).ToArray();
         if (updatableColumns.Length > 0)
@@ -229,9 +232,9 @@ public sealed class StaticEntitySeedScriptGenerator
             {
                 var column = updatableColumns[i];
                 builder.Append("    Target.");
-                builder.Append(FormatColumnName(column.ColumnName));
+                builder.Append(FormatColumnName(column.TargetColumnName));
                 builder.Append(" = Source.");
-                builder.Append(FormatColumnName(column.ColumnName));
+                builder.Append(FormatColumnName(column.TargetColumnName));
                 if (i < updatableColumns.Length - 1)
                 {
                     builder.Append(',');
@@ -242,7 +245,7 @@ public sealed class StaticEntitySeedScriptGenerator
         }
 
         builder.Append("WHEN NOT MATCHED THEN INSERT (");
-        builder.Append(string.Join(", ", definition.Columns.Select(static c => FormatColumnName(c.ColumnName))));
+        builder.Append(string.Join(", ", definition.Columns.Select(static c => FormatColumnName(c.TargetColumnName))));
         builder.AppendLine(")");
         builder.Append("    VALUES (");
         builder.Append(string.Join(", ", columnNames.Select(static name => $"Source.{name}")));
@@ -456,7 +459,12 @@ public sealed record StaticEntitySeedColumn(
     int? Precision,
     int? Scale,
     bool IsPrimaryKey,
-    bool IsIdentity);
+    bool IsIdentity)
+{
+    public string TargetColumnName => string.IsNullOrWhiteSpace(LogicalName)
+        ? ColumnName
+        : LogicalName;
+}
 
 public sealed record StaticEntityRow(ImmutableArray<object?> Values)
 {
