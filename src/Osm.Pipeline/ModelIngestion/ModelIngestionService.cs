@@ -1,5 +1,8 @@
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
+using System.Threading;
+using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Json;
@@ -8,7 +11,7 @@ namespace Osm.Pipeline.ModelIngestion;
 
 public interface IModelIngestionService
 {
-    Task<Result<OsmModel>> LoadFromFileAsync(string path, CancellationToken cancellationToken = default);
+    Task<Result<OsmModel>> LoadFromFileAsync(string path, ICollection<string>? warnings = null, CancellationToken cancellationToken = default);
 }
 
 public sealed class ModelIngestionService : IModelIngestionService
@@ -22,7 +25,7 @@ public sealed class ModelIngestionService : IModelIngestionService
         _fileSystem = fileSystem ?? new FileSystem();
     }
 
-    public async Task<Result<OsmModel>> LoadFromFileAsync(string path, CancellationToken cancellationToken = default)
+    public async Task<Result<OsmModel>> LoadFromFileAsync(string path, ICollection<string>? warnings = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -36,6 +39,6 @@ public sealed class ModelIngestionService : IModelIngestionService
         }
 
         await using var stream = _fileSystem.File.Open(trimmed, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return _deserializer.Deserialize(stream);
+        return _deserializer.Deserialize(stream, warnings);
     }
 }

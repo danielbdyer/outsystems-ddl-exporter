@@ -13,4 +13,5 @@ public sealed record BuildSsdtPipelineResult(
     string DecisionLogPath,
     ImmutableArray<string> StaticSeedScriptPaths,
     EvidenceCacheResult? EvidenceCache,
-    PipelineExecutionLog ExecutionLog);
+    PipelineExecutionLog ExecutionLog,
+    ImmutableArray<string> Warnings);

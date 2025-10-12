@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Osm.Domain.Profiling;
 using Osm.Dmm;
 using Osm.Pipeline.Evidence;
@@ -9,4 +10,5 @@ public sealed record DmmComparePipelineResult(
     DmmComparisonResult Comparison,
     string DiffArtifactPath,
     EvidenceCacheResult? EvidenceCache,
-    PipelineExecutionLog ExecutionLog);
+    PipelineExecutionLog ExecutionLog,
+    ImmutableArray<string> Warnings);

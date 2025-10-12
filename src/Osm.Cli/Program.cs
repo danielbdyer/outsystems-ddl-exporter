@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Invocation;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -182,6 +183,7 @@ Command CreateBuildCommand()
         }
 
         EmitPipelineLog(context, pipelineResult.ExecutionLog);
+        EmitPipelineWarnings(context, pipelineResult.Warnings);
 
         foreach (var diagnostic in pipelineResult.DecisionReport.Diagnostics)
         {
@@ -390,6 +392,7 @@ Command CreateCompareCommand()
 
         var pipelineResult = result.Value.PipelineResult;
         EmitPipelineLog(context, pipelineResult.ExecutionLog);
+        EmitPipelineWarnings(context, pipelineResult.Warnings);
 
         if (pipelineResult.EvidenceCache is { } cacheResult)
         {
@@ -443,7 +446,10 @@ Command CreateInspectCommand()
         var ingestion = services.GetRequiredService<IModelIngestionService>();
         var modelPath = context.ParseResult.GetValueForOption(modelOption);
 
-        var result = await ingestion.LoadFromFileAsync(modelPath!, context.GetCancellationToken()).ConfigureAwait(false);
+        var warnings = new List<string>();
+        var result = await ingestion
+            .LoadFromFileAsync(modelPath!, warnings, context.GetCancellationToken())
+            .ConfigureAwait(false);
         if (result.IsFailure)
         {
             WriteErrors(context, result.Errors);
@@ -452,6 +458,7 @@ Command CreateInspectCommand()
         }
 
         var model = result.Value;
+        EmitPipelineWarnings(context, warnings.ToImmutableArray());
         var entityCount = model.Modules.Sum(static module => module.Entities.Length);
         var attributeCount = model.Modules.Sum(static module => module.Entities.Sum(static entity => entity.Attributes.Length));
 
@@ -555,18 +562,98 @@ static void EmitPipelineLog(InvocationContext context, PipelineExecutionLog log)
     }
 
     WriteLine(context.Console, "Pipeline execution log:");
+    var order = new List<(string Step, string Message)>();
+    var grouped = new Dictionary<(string Step, string Message), List<PipelineLogEntry>>();
+
     foreach (var entry in log.Entries)
     {
-        var metadata = entry.Metadata.Count == 0
-            ? string.Empty
-            : " | " + string.Join(", ", entry.Metadata.Select(pair => $"{pair.Key}={FormatMetadataValue(pair.Value)}"));
+        var key = (entry.Step, entry.Message);
+        if (!grouped.TryGetValue(key, out var list))
+        {
+            list = new List<PipelineLogEntry>();
+            grouped[key] = list;
+            order.Add(key);
+        }
 
-        WriteLine(context.Console, $"[{entry.TimestampUtc:O}] {entry.Step}: {entry.Message}{metadata}");
+        list.Add(entry);
+    }
+
+    foreach (var key in order)
+    {
+        var entries = grouped[key];
+        if (entries.Count == 1)
+        {
+            WriteLine(context.Console, FormatLogEntry(entries[0]));
+            continue;
+        }
+
+        var first = entries[0];
+        var last = entries[^1];
+        WriteLine(
+            context.Console,
+            $"[{first.Step}] {first.Message} – {entries.Count} occurrence(s) between {first.TimestampUtc:O} and {last.TimestampUtc:O}.");
+
+        var sampleCount = Math.Min(3, entries.Count);
+        WriteLine(context.Console, "  Examples:");
+        for (var i = 0; i < sampleCount; i++)
+        {
+            WriteLine(context.Console, $"    {FormatLogSample(entries[i])}");
+        }
+
+        if (entries.Count > sampleCount)
+        {
+            WriteLine(context.Console, $"    … {entries.Count - sampleCount} additional occurrence(s) suppressed.");
+        }
     }
 }
 
 static string FormatMetadataValue(string? value)
     => value ?? "<null>";
+
+static string FormatLogEntry(PipelineLogEntry entry)
+{
+    var metadata = entry.Metadata.Count == 0
+        ? string.Empty
+        : " | " + string.Join(", ", entry.Metadata.Select(pair => $"{pair.Key}={FormatMetadataValue(pair.Value)}"));
+
+    return $"[{entry.TimestampUtc:O}] {entry.Step}: {entry.Message}{metadata}";
+}
+
+static string FormatLogSample(PipelineLogEntry entry)
+{
+    if (entry.Metadata.Count == 0)
+    {
+        return $"[{entry.TimestampUtc:O}] (no metadata)";
+    }
+
+    var metadata = string.Join(", ", entry.Metadata.Select(pair => $"{pair.Key}={FormatMetadataValue(pair.Value)}"));
+    return $"[{entry.TimestampUtc:O}] {metadata}";
+}
+
+static void EmitPipelineWarnings(InvocationContext context, ImmutableArray<string> warnings)
+{
+    if (warnings.IsDefaultOrEmpty || warnings.Length == 0)
+    {
+        return;
+    }
+
+    foreach (var warning in warnings)
+    {
+        if (string.IsNullOrWhiteSpace(warning))
+        {
+            continue;
+        }
+
+        if (char.IsWhiteSpace(warning[0]))
+        {
+            WriteErrorLine(context.Console, warning);
+        }
+        else
+        {
+            WriteErrorLine(context.Console, $"[warning] {warning}");
+        }
+    }
+}
 
 static string FormatDifference(DmmDifference difference)
 {
