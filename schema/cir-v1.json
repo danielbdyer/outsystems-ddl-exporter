@@ -1,0 +1,412 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://outsystems.com/ddl/schema/cir-v1.json",
+  "title": "OutSystems Canonical Intermediate Representation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["exportedAtUtc", "modules"],
+  "properties": {
+    "exportedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/module" }
+    },
+    "sequences": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sequence" },
+      "default": []
+    },
+    "extendedProperties": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/extendedProperty" },
+      "default": []
+    }
+  },
+  "$defs": {
+    "module": {
+      "type": "object",
+      "required": ["name", "entities"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "isSystem": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "entities": {
+          "type": "array",
+          "minItems": 0,
+          "items": { "$ref": "#/$defs/entity" }
+        },
+        "extendedProperties": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/extendedProperty" },
+          "default": []
+        }
+      }
+    },
+    "entity": {
+      "type": "object",
+      "required": [
+        "name",
+        "physicalName",
+        "db_schema",
+        "attributes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "physicalName": { "type": "string", "minLength": 1 },
+        "db_catalog": { "type": ["string", "null"] },
+        "db_schema": { "type": "string", "minLength": 1 },
+        "isStatic": { "type": "boolean" },
+        "isExternal": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "attributes": {
+          "type": "array",
+          "minItems": 0,
+          "items": { "$ref": "#/$defs/attribute" }
+        },
+        "indexes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/index" },
+          "default": []
+        },
+        "relationships": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relationship" },
+          "default": []
+        },
+        "triggers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/trigger" },
+          "default": []
+        },
+        "extendedProperties": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/extendedProperty" },
+          "default": []
+        },
+        "meta": { "$ref": "#/$defs/entityMeta" },
+        "temporal": { "$ref": "#/$defs/temporal" }
+      }
+    },
+    "entityMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": ["string", "null"] }
+      }
+    },
+    "attribute": {
+      "type": "object",
+      "required": [
+        "name",
+        "physicalName",
+        "dataType",
+        "isMandatory",
+        "isIdentifier",
+        "isAutoNumber",
+        "isActive"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "physicalName": { "type": "string", "minLength": 1 },
+        "originalName": { "type": ["string", "null"] },
+        "dataType": { "type": "string", "minLength": 1 },
+        "length": { "type": ["integer", "null"], "minimum": 0 },
+        "precision": { "type": ["integer", "null"], "minimum": 0 },
+        "scale": { "type": ["integer", "null"], "minimum": 0 },
+        "default": { "type": ["string", "null"] },
+        "isMandatory": { "type": "boolean" },
+        "isIdentifier": { "type": "boolean" },
+        "isAutoNumber": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "isReference": { "type": "integer" },
+        "refEntityId": { "type": ["integer", "null"] },
+        "refEntity_name": { "type": ["string", "null"] },
+        "refEntity_physicalName": { "type": ["string", "null"] },
+        "reference_deleteRuleCode": { "type": ["string", "null"] },
+        "reference_hasDbConstraint": { "type": ["integer", "null"] },
+        "external_dbType": { "type": ["string", "null"] },
+        "physical_isPresentButInactive": { "type": "integer" },
+        "onDisk": { "$ref": "#/$defs/attributeOnDisk" },
+        "meta": { "$ref": "#/$defs/attributeMeta" },
+        "reality": { "$ref": "#/$defs/attributeReality" },
+        "extendedProperties": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/extendedProperty" },
+          "default": []
+        }
+      }
+    },
+    "attributeMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": ["string", "null"] }
+      }
+    },
+    "attributeReality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "isNullableInDatabase": { "type": ["boolean", "null"] },
+        "hasNulls": { "type": ["boolean", "null"] },
+        "hasDuplicates": { "type": ["boolean", "null"] },
+        "hasOrphans": { "type": ["boolean", "null"] }
+      }
+    },
+    "attributeOnDisk": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "isNullable": { "type": ["boolean", "null"] },
+        "sqlType": { "type": ["string", "null"] },
+        "maxLength": { "type": ["integer", "null"] },
+        "precision": { "type": ["integer", "null"] },
+        "scale": { "type": ["integer", "null"] },
+        "collation": { "type": ["string", "null"] },
+        "isIdentity": { "type": ["boolean", "null"] },
+        "isComputed": { "type": ["boolean", "null"] },
+        "computedDefinition": { "type": ["string", "null"] },
+        "defaultDefinition": { "type": ["string", "null"] },
+        "defaultConstraint": { "$ref": "#/$defs/attributeDefaultConstraint" },
+        "checkConstraints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/attributeCheckConstraint" },
+          "default": []
+        }
+      }
+    },
+    "attributeDefaultConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "definition": { "type": ["string", "null"] },
+        "isNotTrusted": { "type": ["boolean", "null"] }
+      }
+    },
+    "attributeCheckConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "definition": { "type": ["string", "null"] },
+        "isNotTrusted": { "type": ["boolean", "null"] }
+      }
+    },
+    "relationship": {
+      "type": "object",
+      "required": ["viaAttributeName", "toEntity_name", "toEntity_physicalName"],
+      "additionalProperties": false,
+      "properties": {
+        "viaAttributeName": { "type": "string", "minLength": 1 },
+        "toEntity_name": { "type": "string", "minLength": 1 },
+        "toEntity_physicalName": { "type": "string", "minLength": 1 },
+        "deleteRuleCode": { "type": ["string", "null"] },
+        "hasDbConstraint": { "type": ["integer", "null"] },
+        "actualConstraints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relationshipConstraint" },
+          "default": []
+        }
+      }
+    },
+    "relationshipConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "referencedSchema": { "type": ["string", "null"] },
+        "referencedTable": { "type": ["string", "null"] },
+        "onDelete": { "type": ["string", "null"] },
+        "onUpdate": { "type": ["string", "null"] },
+        "columns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relationshipConstraintColumn" },
+          "default": []
+        }
+      }
+    },
+    "relationshipConstraintColumn": {
+      "type": "object",
+      "required": ["ordinal"],
+      "additionalProperties": false,
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "owner.physical": { "type": ["string", "null"] },
+        "owner.attribute": { "type": ["string", "null"] },
+        "referenced.physical": { "type": ["string", "null"] },
+        "referenced.attribute": { "type": ["string", "null"] }
+      }
+    },
+    "index": {
+      "type": "object",
+      "required": ["name", "columns"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "isUnique": { "type": "boolean" },
+        "isPrimary": { "type": "boolean" },
+        "isPlatformAuto": { "type": "integer" },
+        "kind": { "type": ["string", "null"] },
+        "isDisabled": { "type": ["boolean", "null"] },
+        "isPadded": { "type": ["boolean", "null"] },
+        "fillFactor": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "ignoreDupKey": { "type": ["boolean", "null"] },
+        "allowRowLocks": { "type": ["boolean", "null"] },
+        "allowPageLocks": { "type": ["boolean", "null"] },
+        "noRecompute": { "type": ["boolean", "null"] },
+        "filterDefinition": { "type": ["string", "null"] },
+        "dataSpace": { "$ref": "#/$defs/indexDataSpace" },
+        "partitionColumns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/indexPartitionColumn" },
+          "default": []
+        },
+        "dataCompression": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/indexPartitionCompression" },
+          "default": []
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/indexColumn" }
+        },
+        "extendedProperties": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/extendedProperty" },
+          "default": []
+        }
+      }
+    },
+    "indexColumn": {
+      "type": "object",
+      "required": ["attribute", "physicalColumn", "ordinal"],
+      "additionalProperties": false,
+      "properties": {
+        "attribute": { "type": "string", "minLength": 1 },
+        "physicalColumn": { "type": "string", "minLength": 1 },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "isIncluded": { "type": "boolean" },
+        "direction": { "type": ["string", "null"] }
+      }
+    },
+    "indexDataSpace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "type": { "type": ["string", "null"] }
+      }
+    },
+    "indexPartitionColumn": {
+      "type": "object",
+      "required": ["name", "ordinal"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "ordinal": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "indexPartitionCompression": {
+      "type": "object",
+      "required": ["partition"],
+      "additionalProperties": false,
+      "properties": {
+        "partition": { "type": "integer", "minimum": 0 },
+        "compression": { "type": ["string", "null"] }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["name", "definition"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "isDisabled": { "type": "boolean" },
+        "definition": { "type": "string", "minLength": 1 }
+      }
+    },
+    "temporal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": ["string", "null"] },
+        "historyTable": { "$ref": "#/$defs/temporalHistory" },
+        "periodStartColumn": { "type": ["string", "null"] },
+        "periodEndColumn": { "type": ["string", "null"] },
+        "retention": { "$ref": "#/$defs/temporalRetention" },
+        "extendedProperties": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/extendedProperty" },
+          "default": []
+        }
+      }
+    },
+    "temporalHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] }
+      }
+    },
+    "temporalRetention": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": ["string", "null"] },
+        "unit": { "type": ["string", "null"] },
+        "value": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "sequence": {
+      "type": "object",
+      "required": ["schema", "name", "dataType"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "dataType": { "type": "string", "minLength": 1 },
+        "startValue": { "type": ["number", "null"] },
+        "increment": { "type": ["number", "null"] },
+        "minValue": { "type": ["number", "null"] },
+        "maxValue": { "type": ["number", "null"] },
+        "cycle": { "type": "boolean" },
+        "cacheMode": { "type": ["string", "null"] },
+        "cacheSize": { "type": ["integer", "null"], "minimum": 0 },
+        "extendedProperties": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/extendedProperty" },
+          "default": []
+        }
+      }
+    },
+    "extendedProperty": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "value": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "number" },
+            { "type": "integer" },
+            { "type": "boolean" },
+            { "type": "object" },
+            { "type": "array" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

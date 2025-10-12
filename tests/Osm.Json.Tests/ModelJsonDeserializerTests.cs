@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Osm.Domain.Model;
 using Osm.Json;
 using Tests.Support;
 
@@ -16,11 +17,34 @@ public class ModelJsonDeserializerTests
         const string json = """
         {
           "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "extendedProperties": [
+            { "name": "ci:owner", "value": "DataTeam" }
+          ],
+          "sequences": [
+            {
+              "schema": "dbo",
+              "name": "SEQ_INVOICE",
+              "dataType": "bigint",
+              "startValue": 1,
+              "increment": 1,
+              "minValue": 1,
+              "maxValue": null,
+              "cycle": false,
+              "cacheMode": "cache",
+              "cacheSize": 50,
+              "extendedProperties": [
+                { "name": "sequence.owner", "value": "Finance" }
+              ]
+            }
+          ],
           "modules": [
             {
               "name": "Finance",
               "isSystem": false,
               "isActive": true,
+              "extendedProperties": [
+                { "name": "module.note", "value": "Finance data" }
+              ],
               "entities": [
                 {
                   "name": "Invoice",
@@ -37,7 +61,10 @@ public class ModelJsonDeserializerTests
                       "isMandatory": true,
                       "isIdentifier": true,
                       "isAutoNumber": true,
-                      "isActive": true
+                      "isActive": true,
+                      "extendedProperties": [
+                        { "name": "attr.note", "value": "Primary" }
+                      ]
                     },
                     {
                       "name": "CustomerId",
@@ -52,7 +79,10 @@ public class ModelJsonDeserializerTests
                       "refEntity_physicalName": "OSUSR_FIN_CUSTOMER",
                       "reference_deleteRuleCode": "Protect",
                       "reference_hasDbConstraint": 1,
-                      "isActive": true
+                      "isActive": true,
+                      "extendedProperties": [
+                        { "name": "attr.note", "value": "FK" }
+                      ]
                     },
                     {
                       "name": "LegacyCode",
@@ -64,9 +94,26 @@ public class ModelJsonDeserializerTests
                       "isIdentifier": false,
                       "isAutoNumber": false,
                       "isActive": false,
-                      "physical_isPresentButInactive": 1
+                      "physical_isPresentButInactive": 1,
+                      "extendedProperties": [
+                        { "name": "attr.note", "value": "Legacy" }
+                      ]
                     }
                   ],
+                  "meta": { "description": "Invoice table" },
+                  "extendedProperties": [
+                    { "name": "entity.note", "value": "Invoices" }
+                  ],
+                  "temporal": {
+                    "type": "systemVersioned",
+                    "historyTable": { "schema": "dbo", "name": "OSUSR_FIN_INVOICE_HISTORY" },
+                    "periodStartColumn": "ValidFrom",
+                    "periodEndColumn": "ValidTo",
+                    "retention": { "kind": "limited", "unit": "days", "value": 30 },
+                    "extendedProperties": [
+                      { "name": "temporal.note", "value": "History enabled" }
+                    ]
+                  },
                   "relationships": [
                     {
                       "viaAttributeName": "CustomerId",
@@ -101,6 +148,9 @@ public class ModelJsonDeserializerTests
                       ],
                       "columns": [
                         { "attribute": "Id", "physicalColumn": "ID", "ordinal": 1 }
+                      ],
+                      "extendedProperties": [
+                        { "name": "index.note", "value": "Partitioned" }
                       ]
                     }
                   ],
@@ -123,11 +173,23 @@ public class ModelJsonDeserializerTests
 
         var result = deserializer.Deserialize(stream);
 
-        Assert.True(result.IsSuccess);
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
+        var modelProperty = Assert.Single(result.Value.ExtendedProperties);
+        Assert.Equal("ci:owner", modelProperty.Name);
+        Assert.Equal("DataTeam", modelProperty.Value);
+
+        var sequence = Assert.Single(result.Value.Sequences);
+        Assert.Equal("dbo", sequence.Schema.Value);
+        Assert.Equal("SEQ_INVOICE", sequence.Name.Value);
+        Assert.Equal("bigint", sequence.DataType);
+        Assert.Equal(SequenceCacheMode.Cache, sequence.CacheMode);
+        Assert.Equal(50, sequence.CacheSize);
+
         var module = Assert.Single(result.Value.Modules);
         Assert.Equal("Finance", module.Name.Value);
         Assert.True(module.IsActive);
         Assert.False(module.IsSystemModule);
+        Assert.Equal("Finance data", Assert.Single(module.ExtendedProperties).Value);
 
         var entity = Assert.Single(module.Entities);
         Assert.Equal("Invoice", entity.LogicalName.Value);
@@ -136,12 +198,23 @@ public class ModelJsonDeserializerTests
         Assert.False(entity.IsExternal);
         Assert.True(entity.IsActive);
         Assert.Equal("dbo", entity.Schema.Value);
+        Assert.Equal("Invoice table", entity.Metadata.Description);
+        Assert.Equal("Invoices", Assert.Single(entity.Metadata.ExtendedProperties).Value);
+        Assert.Equal(TemporalTableType.SystemVersioned, entity.Metadata.Temporal.Type);
+        Assert.Equal("dbo", entity.Metadata.Temporal.HistorySchema?.Value);
+        Assert.Equal("OSUSR_FIN_INVOICE_HISTORY", entity.Metadata.Temporal.HistoryTable?.Value);
+        Assert.Equal("ValidFrom", entity.Metadata.Temporal.PeriodStartColumn?.Value);
+        Assert.Equal("ValidTo", entity.Metadata.Temporal.PeriodEndColumn?.Value);
+        Assert.Equal(TemporalRetentionKind.Limited, entity.Metadata.Temporal.RetentionPolicy.Kind);
+        Assert.Equal(TemporalRetentionUnit.Days, entity.Metadata.Temporal.RetentionPolicy.Unit);
+        Assert.Equal(30, entity.Metadata.Temporal.RetentionPolicy.Value);
 
         var attributes = entity.Attributes;
         Assert.Equal(3, attributes.Length);
         var legacy = attributes.Single(a => a.LogicalName.Value == "LegacyCode");
         Assert.False(legacy.IsActive);
         Assert.True(legacy.Reality.IsPresentButInactive);
+        Assert.Equal("Legacy", Assert.Single(legacy.Metadata.ExtendedProperties).Value);
 
         var reference = attributes.Single(a => a.LogicalName.Value == "CustomerId").Reference;
         Assert.True(reference.IsReference);
@@ -153,6 +226,7 @@ public class ModelJsonDeserializerTests
         Assert.Equal("IDX_INVOICE_NUMBER", index.Name.Value);
         Assert.True(index.IsUnique);
         Assert.False(index.IsPlatformAuto);
+        Assert.Equal("Partitioned", Assert.Single(index.ExtendedProperties).Value);
         var indexColumn = Assert.Single(index.Columns);
         Assert.Equal(1, indexColumn.Ordinal);
         Assert.True(index.OnDisk.IsPadded);
@@ -186,6 +260,7 @@ public class ModelJsonDeserializerTests
     {
         const string json = """
         {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
           "modules": [
             {
               "entities": []
@@ -200,7 +275,7 @@ public class ModelJsonDeserializerTests
         var result = deserializer.Deserialize(stream);
 
         Assert.True(result.IsFailure);
-        Assert.Contains(result.Errors, e => e.Code == "module.name.invalid");
+        Assert.Contains(result.Errors, e => e.Code == "json.schema.validation" && e.Message.Contains("\"name\""));
     }
 
     [Fact]
@@ -208,6 +283,7 @@ public class ModelJsonDeserializerTests
     {
         const string json = """
         {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
           "modules": [
             {
               "name": "Finance",
@@ -222,7 +298,8 @@ public class ModelJsonDeserializerTests
                       "dataType": "Identifier",
                       "isMandatory": true,
                       "isIdentifier": true,
-                      "isAutoNumber": true
+                      "isAutoNumber": true,
+                      "isActive": true
                     }
                   ]
                 }
@@ -238,7 +315,7 @@ public class ModelJsonDeserializerTests
         var result = deserializer.Deserialize(stream);
 
         Assert.True(result.IsFailure);
-        Assert.Contains(result.Errors, e => e.Code == "column.name.invalid");
+        Assert.Contains(result.Errors, e => e.Code == "json.schema.validation" && e.Message.Contains("\"physicalName\""));
     }
 
     [Fact]
@@ -292,7 +369,7 @@ public class ModelJsonDeserializerTests
 
         var result = deserializer.Deserialize(stream, warnings);
 
-        Assert.True(result.IsSuccess);
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
         var module = Assert.Single(result.Value.Modules);
         Assert.Equal("Orders", module.Name.Value);
         Assert.Collection(warnings, warning => Assert.Contains("EmptyModule", warning));
@@ -306,7 +383,7 @@ public class ModelJsonDeserializerTests
 
         var result = deserializer.Deserialize(stream);
 
-        Assert.True(result.IsSuccess);
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
         var appCore = Assert.Single(result.Value.Modules.Where(m => m.Name.Value == "AppCore"));
         var customer = Assert.Single(appCore.Entities.Where(e => e.LogicalName.Value == "Customer"));
         Assert.Equal(6, customer.Attributes.Length);
@@ -329,6 +406,7 @@ public class ModelJsonDeserializerTests
     {
         const string json = """
         {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
           "modules": [
             {
               "name": "Finance",
@@ -355,7 +433,7 @@ public class ModelJsonDeserializerTests
         var result = deserializer.Deserialize(stream);
 
         Assert.True(result.IsFailure);
-        Assert.Contains(result.Errors, e => e.Code == "entity.attributes.missing");
+        Assert.Contains(result.Errors, e => e.Code == "json.schema.validation" && e.Message.Contains("\"attributes\""));
     }
 
     [Fact]
@@ -363,6 +441,7 @@ public class ModelJsonDeserializerTests
     {
         const string json = """
         {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
           "modules": [
             {
               "name": "Finance",
@@ -378,7 +457,8 @@ public class ModelJsonDeserializerTests
                       "dataType": "Identifier",
                       "isMandatory": true,
                       "isIdentifier": true,
-                      "isAutoNumber": true
+                      "isAutoNumber": true,
+                      "isActive": true
                     }
                   ]
                 },
@@ -386,7 +466,8 @@ public class ModelJsonDeserializerTests
                   "name": "Legacy",
                   "physicalName": "OSUSR_FIN_LEGACY",
                   "db_schema": "dbo",
-                  "isActive": false
+                  "isActive": false,
+                  "attributes": []
                 }
               ]
             }
@@ -399,7 +480,7 @@ public class ModelJsonDeserializerTests
 
         var result = deserializer.Deserialize(stream);
 
-        Assert.True(result.IsSuccess);
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
         var module = Assert.Single(result.Value.Modules);
         var entity = Assert.Single(module.Entities);
         Assert.Equal("Invoice", entity.LogicalName.Value);
@@ -410,6 +491,7 @@ public class ModelJsonDeserializerTests
     {
         const string json = """
         {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
           "modules": [
             {
               "name": "Common",
@@ -419,7 +501,8 @@ public class ModelJsonDeserializerTests
                   "name": "AuditLog",
                   "physicalName": "OSUSR_COM_AUDIT",
                   "db_schema": "dbo",
-                  "isActive": false
+                  "isActive": false,
+                  "attributes": []
                 }
               ]
             },
@@ -437,7 +520,8 @@ public class ModelJsonDeserializerTests
                       "dataType": "Identifier",
                       "isMandatory": true,
                       "isIdentifier": true,
-                      "isAutoNumber": true
+                      "isAutoNumber": true,
+                      "isActive": true
                     }
                   ]
                 }
@@ -464,6 +548,7 @@ public class ModelJsonDeserializerTests
     {
         const string json = """
         {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
           "modules": [
             {
               "name": "Finance",
@@ -481,6 +566,7 @@ public class ModelJsonDeserializerTests
                       "isIdentifier": false,
                       "isAutoNumber": false,
                       "isReference": 1,
+                      "isActive": true,
                       "refEntity_physicalName": "OSUSR_FIN_CUSTOMER"
                     },
                     {
@@ -489,7 +575,8 @@ public class ModelJsonDeserializerTests
                       "dataType": "Identifier",
                       "isMandatory": true,
                       "isIdentifier": true,
-                      "isAutoNumber": true
+                      "isAutoNumber": true,
+                      "isActive": true
                     }
                   ]
                 }
@@ -513,6 +600,7 @@ public class ModelJsonDeserializerTests
     {
         const string json = """
         {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
           "modules": [
             {
               "name": "Finance",
@@ -530,6 +618,7 @@ public class ModelJsonDeserializerTests
                       "isIdentifier": false,
                       "isAutoNumber": false,
                       "isReference": 1,
+                      "isActive": true,
                       "refEntity_name": "Customer"
                     },
                     {
@@ -538,7 +627,8 @@ public class ModelJsonDeserializerTests
                       "dataType": "Identifier",
                       "isMandatory": true,
                       "isIdentifier": true,
-                      "isAutoNumber": true
+                      "isAutoNumber": true,
+                      "isActive": true
                     }
                   ]
                 }
@@ -562,6 +652,7 @@ public class ModelJsonDeserializerTests
     {
         const string json = """
         {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
           "modules": [
             {
               "name": "Finance",
@@ -616,6 +707,7 @@ public class ModelJsonDeserializerTests
     {
         const string json = """
         {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
           "modules": [
             {
               "name": "Finance",

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using Osm.Domain.Abstractions;
 using Osm.Domain.ValueObjects;
 
@@ -11,7 +12,8 @@ public sealed record IndexModel(
     bool IsPrimary,
     bool IsPlatformAuto,
     ImmutableArray<IndexColumnModel> Columns,
-    IndexOnDiskMetadata OnDisk)
+    IndexOnDiskMetadata OnDisk,
+    ImmutableArray<ExtendedProperty> ExtendedProperties)
 {
     public static Result<IndexModel> Create(
         IndexName name,
@@ -19,7 +21,8 @@ public sealed record IndexModel(
         bool isPrimary,
         bool isPlatformAuto,
         IEnumerable<IndexColumnModel> columns,
-        IndexOnDiskMetadata? onDisk = null)
+        IndexOnDiskMetadata? onDisk = null,
+        IEnumerable<ExtendedProperty>? extendedProperties = null)
     {
         if (columns is null)
         {
@@ -37,13 +40,20 @@ public sealed record IndexModel(
             return Result<IndexModel>.Failure(ValidationError.Create("index.columns.duplicateOrdinal", "Index columns must have unique ordinals."));
         }
 
+        var properties = (extendedProperties ?? Enumerable.Empty<ExtendedProperty>()).ToImmutableArray();
+        if (properties.IsDefault)
+        {
+            properties = ExtendedProperty.EmptyArray;
+        }
+
         return Result<IndexModel>.Success(new IndexModel(
             name,
             isUnique,
             isPrimary,
             isPlatformAuto,
             materialized,
-            onDisk ?? IndexOnDiskMetadata.Empty));
+            onDisk ?? IndexOnDiskMetadata.Empty,
+            properties));
     }
 
     private static bool HasDuplicateOrdinals(ImmutableArray<IndexColumnModel> columns)

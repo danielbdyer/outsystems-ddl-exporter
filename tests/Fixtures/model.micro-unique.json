@@ -1,4 +1,5 @@
 {
+  "exportedAtUtc": "2025-01-01T00:00:00Z",
   "modules": [
     {
       "name": "M",
@@ -66,7 +67,11 @@
               "isPrimary": false,
               "isPlatformAuto": 0,
               "columns": [
-                { "attribute": "Email", "physicalColumn": "EMAIL", "ordinal": 1 }
+                {
+                  "attribute": "Email",
+                  "physicalColumn": "EMAIL",
+                  "ordinal": 1
+                }
               ]
             }
           ],

@@ -1,4 +1,5 @@
 {
+  "exportedAtUtc": "2025-01-01T00:00:00Z",
   "modules": [
     {
       "name": "M",
@@ -33,7 +34,8 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": true
             },
             {
               "name": "ExternalCode",
@@ -54,7 +56,8 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": false
             }
           ],
           "relationships": [],

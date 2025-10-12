@@ -1,4 +1,5 @@
 {
+  "exportedAtUtc": "2025-01-01T00:00:00Z",
   "modules": [
     {
       "name": "AppCore",
@@ -46,7 +47,8 @@
                 "precision": 10,
                 "scale": 0,
                 "isIdentity": true
-              }
+              },
+              "isAutoNumber": true
             },
             {
               "name": "Email",
@@ -76,7 +78,8 @@
                 "sqlType": "nvarchar",
                 "maxLength": 255,
                 "collation": "Latin1_General_CI_AI"
-              }
+              },
+              "isAutoNumber": false
             },
             {
               "name": "FirstName",
@@ -106,7 +109,8 @@
                 "sqlType": "nvarchar",
                 "maxLength": 100,
                 "defaultDefinition": "('')"
-              }
+              },
+              "isAutoNumber": false
             },
             {
               "name": "LastName",
@@ -136,7 +140,8 @@
                 "sqlType": "nvarchar",
                 "maxLength": 100,
                 "defaultDefinition": "('')"
-              }
+              },
+              "isAutoNumber": false
             },
             {
               "name": "CityId",
@@ -166,7 +171,8 @@
                 "sqlType": "int",
                 "precision": 10,
                 "scale": 0
-              }
+              },
+              "isAutoNumber": false
             },
             {
               "name": "LegacyCode",
@@ -187,12 +193,12 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 1
+              "physical_isPresentButInactive": 1,
+              "isAutoNumber": false
             }
           ],
           "relationships": [
             {
-              "viaAttributeId": 31001,
               "viaAttributeName": "CityId",
               "toEntity_name": "City",
               "toEntity_physicalName": "OSUSR_DEF_CITY",
@@ -233,7 +239,10 @@
               "allowPageLocks": true,
               "noRecompute": false,
               "filterDefinition": "[EMAIL] IS NOT NULL",
-              "dataSpace": { "name": "FG_Customers", "type": "ROWS_FILEGROUP" },
+              "dataSpace": {
+                "name": "FG_Customers",
+                "type": "ROWS_FILEGROUP"
+              },
               "partitionColumns": [],
               "dataCompression": [],
               "columns": [
@@ -260,7 +269,10 @@
               "allowPageLocks": true,
               "noRecompute": true,
               "filterDefinition": null,
-              "dataSpace": { "name": "FG_Customers", "type": "ROWS_FILEGROUP" },
+              "dataSpace": {
+                "name": "FG_Customers",
+                "type": "ROWS_FILEGROUP"
+              },
               "partitionColumns": [],
               "dataCompression": [],
               "columns": [
@@ -310,7 +322,8 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": true
             },
             {
               "name": "Name",
@@ -331,7 +344,8 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": false
             },
             {
               "name": "IsActive",
@@ -352,7 +366,8 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": false
             }
           ],
           "relationships": [],
@@ -408,7 +423,8 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": "int",
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": true
             },
             {
               "name": "AccountNumber",
@@ -429,7 +445,8 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": "varchar(50)",
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": false
             },
             {
               "name": "ExtRef",
@@ -450,7 +467,8 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": "varchar(50)",
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": false
             }
           ],
           "relationships": [],
@@ -506,7 +524,8 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": true
             },
             {
               "name": "TriggeredByUserId",
@@ -527,7 +546,8 @@
               "reference_deleteRuleCode": "Ignore",
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": false
             },
             {
               "name": "CreatedOn",
@@ -548,12 +568,12 @@
               "reference_deleteRuleCode": null,
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
-              "physical_isPresentButInactive": 0
+              "physical_isPresentButInactive": 0,
+              "isAutoNumber": false
             }
           ],
           "relationships": [
             {
-              "viaAttributeId": 41003,
               "viaAttributeName": "TriggeredByUserId",
               "toEntity_name": "Customer",
               "toEntity_physicalName": "OSUSR_ABC_CUSTOMER",
@@ -576,13 +596,25 @@
               "allowPageLocks": true,
               "noRecompute": false,
               "filterDefinition": null,
-              "dataSpace": { "name": "PS_JobRun", "type": "PARTITION_SCHEME" },
+              "dataSpace": {
+                "name": "PS_JobRun",
+                "type": "PARTITION_SCHEME"
+              },
               "partitionColumns": [
-                { "ordinal": 1, "name": "CREATEDON" }
+                {
+                  "ordinal": 1,
+                  "name": "CREATEDON"
+                }
               ],
               "dataCompression": [
-                { "partition": 1, "compression": "PAGE" },
-                { "partition": 2, "compression": "ROW" }
+                {
+                  "partition": 1,
+                  "compression": "PAGE"
+                },
+                {
+                  "partition": 2,
+                  "compression": "ROW"
+                }
               ],
               "columns": [
                 {
