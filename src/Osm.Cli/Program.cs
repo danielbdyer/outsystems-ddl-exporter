@@ -13,6 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Osm.Domain.Abstractions;
 using Osm.Json;
+using Osm.Dmm;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.ModelIngestion;
@@ -407,7 +408,7 @@ Command CreateCompareCommand()
             WriteErrorLine(context.Console, "Model requires additional SSDT coverage:");
             foreach (var difference in pipelineResult.Comparison.ModelDifferences)
             {
-                WriteErrorLine(context.Console, $" - {difference}");
+                WriteErrorLine(context.Console, $" - {FormatDifference(difference)}");
             }
         }
 
@@ -416,7 +417,7 @@ Command CreateCompareCommand()
             WriteErrorLine(context.Console, "SSDT scripts drift from OutSystems model:");
             foreach (var difference in pipelineResult.Comparison.SsdtDifferences)
             {
-                WriteErrorLine(context.Console, $" - {difference}");
+                WriteErrorLine(context.Console, $" - {FormatDifference(difference)}");
             }
         }
 
@@ -566,6 +567,52 @@ static void EmitPipelineLog(InvocationContext context, PipelineExecutionLog log)
 
 static string FormatMetadataValue(string? value)
     => value ?? "<null>";
+
+static string FormatDifference(DmmDifference difference)
+{
+    if (difference is null)
+    {
+        return string.Empty;
+    }
+
+    var scopeParts = new List<string>(capacity: 3);
+    if (!string.IsNullOrWhiteSpace(difference.Schema))
+    {
+        scopeParts.Add(difference.Schema);
+    }
+
+    if (!string.IsNullOrWhiteSpace(difference.Table))
+    {
+        scopeParts.Add(difference.Table);
+    }
+
+    var scope = scopeParts.Count > 0 ? string.Join('.', scopeParts) : "artifact";
+
+    if (!string.IsNullOrWhiteSpace(difference.Column))
+    {
+        scope += $".{difference.Column}";
+    }
+    else if (!string.IsNullOrWhiteSpace(difference.Index))
+    {
+        scope += $" [Index: {difference.Index}]";
+    }
+    else if (!string.IsNullOrWhiteSpace(difference.ForeignKey))
+    {
+        scope += $" [FK: {difference.ForeignKey}]";
+    }
+
+    var property = string.IsNullOrWhiteSpace(difference.Property) ? "Difference" : difference.Property;
+    var expected = difference.Expected ?? "<none>";
+    var actual = difference.Actual ?? "<none>";
+
+    var message = $"{scope} – {property} expected {expected} actual {actual}";
+    if (!string.IsNullOrWhiteSpace(difference.ArtifactPath))
+    {
+        message += $" ({difference.ArtifactPath})";
+    }
+
+    return message;
+}
 
 static void WriteErrors(InvocationContext context, IEnumerable<ValidationError> errors)
 {

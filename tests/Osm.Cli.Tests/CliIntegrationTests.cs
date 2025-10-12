@@ -97,8 +97,9 @@ public class CliIntegrationTests
         var ssdtDifferences = root.GetProperty("SsdtDifferences");
         Assert.True(ssdtDifferences.GetArrayLength() > 0);
         Assert.Contains(
-            ssdtDifferences.EnumerateArray().Select(element => element.GetString()),
-            difference => difference != null && difference.Contains("nullability mismatch", StringComparison.OrdinalIgnoreCase));
+            ssdtDifferences.EnumerateArray(),
+            element => string.Equals(element.GetProperty("property").GetString(), "Nullability", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(element.GetProperty("column").GetString(), "EMAIL", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

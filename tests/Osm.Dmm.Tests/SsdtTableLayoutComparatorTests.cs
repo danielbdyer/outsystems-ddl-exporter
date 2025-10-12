@@ -61,7 +61,12 @@ public class SsdtTableLayoutComparatorTests
         var result = _comparator.Compare(_model, _options, workspace.Path);
 
         Assert.False(result.IsMatch);
-        Assert.Contains(result.ModelDifferences, diff => diff.Contains("missing table file", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            result.ModelDifferences,
+            diff => string.Equals(diff.Property, "FilePresence", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "Customer", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Expected, Path.Combine("Modules", "AppCore", "Tables", "dbo.Customer.sql"), StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -85,7 +90,11 @@ public class SsdtTableLayoutComparatorTests
         var result = _comparator.Compare(_model, _options, workspace.Path);
 
         Assert.False(result.IsMatch);
-        Assert.Contains(result.SsdtDifferences, diff => diff.Contains("table file mismatch", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            result.SsdtDifferences,
+            diff => string.Equals(diff.Property, "FileLocation", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "Customer", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -106,6 +115,11 @@ public class SsdtTableLayoutComparatorTests
         var result = _comparator.Compare(_model, _options, workspace.Path);
 
         Assert.False(result.IsMatch);
-        Assert.Contains(result.SsdtDifferences, diff => diff.Contains("unexpected table file", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            result.SsdtDifferences,
+            diff => string.Equals(diff.Property, "FilePresence", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "Extra", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Actual, Path.Combine("Modules", "AppCore", "Tables", "dbo.Extra.sql"), StringComparison.OrdinalIgnoreCase));
     }
 }

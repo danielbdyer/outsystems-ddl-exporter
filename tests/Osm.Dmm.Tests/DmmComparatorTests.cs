@@ -59,10 +59,15 @@ public class DmmComparatorTests
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(
             _baselineTables,
-            ParseScript(EdgeCaseScript.Replace("[EMAIL] NVARCHAR(255) NOT NULL", "[EMAIL] NVARCHAR(255) NULL")));
+            ParseScript(EdgeCaseScript.Replace(
+                "[EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL",
+                "[EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NULL")));
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("nullability mismatch", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "Nullability", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Column, "EMAIL", StringComparison.OrdinalIgnoreCase));
         Assert.Empty(comparison.ModelDifferences);
     }
 
@@ -70,14 +75,17 @@ public class DmmComparatorTests
     public void Compare_detects_column_order_difference()
     {
         var reorderedScript = EdgeCaseScript.Replace(
-            "[ID] BIGINT NOT NULL,\n    [EMAIL] NVARCHAR(255) NOT NULL,",
-            "[EMAIL] NVARCHAR(255) NOT NULL,\n    [ID] BIGINT NOT NULL,");
+            "[ID] BIGINT NOT NULL,\n    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,",
+            "[EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,\n    [ID] BIGINT NOT NULL,");
 
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(_baselineTables, ParseScript(reorderedScript));
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("column order mismatch", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "ColumnOrder", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
         Assert.Empty(comparison.ModelDifferences);
     }
 
@@ -92,7 +100,13 @@ public class DmmComparatorTests
         var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.ModelDifferences, diff => diff.Equals("missing table dbo.OSUSR_DEF_CITY", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.ModelDifferences,
+            diff => string.Equals(diff.Property, "TablePresence", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "OSUSR_DEF_CITY", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Expected, "Present", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Actual, "Missing", StringComparison.OrdinalIgnoreCase));
         Assert.Empty(comparison.SsdtDifferences);
     }
 
@@ -104,35 +118,57 @@ public class DmmComparatorTests
         var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.SsdtDifferences, diff => diff.Equals("unexpected table dbo.EXTRA", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "TablePresence", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "EXTRA", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Expected, "Missing", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Actual, "Present", StringComparison.OrdinalIgnoreCase));
         Assert.Empty(comparison.ModelDifferences);
     }
 
     [Fact]
     public void Compare_detects_missing_column()
     {
-        var script = EdgeCaseScript.Replace("    [EMAIL] NVARCHAR(255) NOT NULL,\n", string.Empty);
+        var script = EdgeCaseScript.Replace("    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,\n", string.Empty);
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.ModelDifferences, diff => diff.Contains("missing columns", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(comparison.ModelDifferences, diff => diff.Contains("column count mismatch", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.ModelDifferences,
+            diff => string.Equals(diff.Property, "Presence", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Column, "EMAIL", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Expected, "Present", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Actual, "Missing", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.ModelDifferences,
+            diff => string.Equals(diff.Property, "ColumnCount", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
     public void Compare_detects_unexpected_column()
     {
         var script = EdgeCaseScript.Replace(
-            "    [EMAIL] NVARCHAR(255) NOT NULL,\n",
-            "    [EMAIL] NVARCHAR(255) NOT NULL,\n    [EXTRA] INT NULL,\n");
+            "    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,\n",
+            "    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,\n    [EXTRA] INT NULL,\n");
 
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("unexpected columns", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("column count mismatch", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "Presence", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Column, "EXTRA", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Expected, "Missing", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Actual, "Present", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "Collation", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(diff.Property, "Default", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -146,18 +182,26 @@ public class DmmComparatorTests
         var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("primary key mismatch", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "PrimaryKeyOrdinal", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
     public void Compare_detects_data_type_difference()
     {
-        var script = EdgeCaseScript.Replace("[EMAIL] NVARCHAR(255) NOT NULL", "[EMAIL] NVARCHAR(200) NOT NULL");
+        var script = EdgeCaseScript.Replace(
+            "[EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL",
+            "[EMAIL] NVARCHAR(200) COLLATE Latin1_General_CI_AI NOT NULL");
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("data type mismatch", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "DataType", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Column, "EMAIL", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -167,7 +211,7 @@ public class DmmComparatorTests
         var expectedTable = new DmmTable(
             "dbo",
             "Example",
-            new[] { new DmmColumn("Id", "int", false, null) },
+            new[] { new DmmColumn("Id", "int", false, null, null, null) },
             new[] { "Id" },
             new[]
             {
@@ -187,7 +231,12 @@ public class DmmComparatorTests
         var comparison = comparator.Compare(new[] { expectedTable }, new[] { actualTable });
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.ModelDifferences, diff => diff.Contains("missing index", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.ModelDifferences,
+            diff => string.Equals(diff.Property, "Presence", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Index, "IX_Example", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Expected, "Present", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Actual, "Missing", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -197,7 +246,7 @@ public class DmmComparatorTests
         var expectedTable = new DmmTable(
             "dbo",
             "Orders",
-            new[] { new DmmColumn("CustomerId", "int", false, null) },
+            new[] { new DmmColumn("CustomerId", "int", false, null, null, null) },
             new[] { "CustomerId" },
             Array.Empty<DmmIndex>(),
             new[]
@@ -210,7 +259,10 @@ public class DmmComparatorTests
         var comparison = comparator.Compare(new[] { expectedTable }, new[] { actualTable });
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("foreign key table mismatch", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "ReferencedTable", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.ForeignKey, "FK_Orders_Customers", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -220,7 +272,7 @@ public class DmmComparatorTests
         var expectedTable = new DmmTable(
             "dbo",
             "Customers",
-            new[] { new DmmColumn("Email", "nvarchar(255)", false, "Customer email") },
+            new[] { new DmmColumn("Email", "nvarchar(255)", false, null, null, "Customer email") },
             new[] { "Email" },
             Array.Empty<DmmIndex>(),
             Array.Empty<DmmForeignKey>(),
@@ -234,14 +286,23 @@ public class DmmComparatorTests
         var comparison = comparator.Compare(new[] { expectedTable }, new[] { actualTable });
 
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.SsdtDifferences, diff => diff.Contains("extended property mismatch", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "Description", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Column, "Email", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "Description", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "Customers", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
     public void Compare_accepts_equivalent_type_spacing_and_casing()
     {
         var script = EdgeCaseScript
-            .Replace("[EMAIL] NVARCHAR(255) NOT NULL", "[EMAIL] NvArChAr ( 255 ) NOT NULL")
+            .Replace(
+                "[EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL",
+                "[EMAIL] NvArChAr ( 255 ) COLLATE Latin1_General_CI_AI NOT NULL")
             .Replace("[ACCOUNTNUMBER] VARCHAR(50) NOT NULL", "[ACCOUNTNUMBER] varchar ( 50 ) NOT NULL");
 
         var comparator = new DmmComparator();
@@ -269,8 +330,8 @@ public class DmmComparatorTests
 
         Assert.True(
             comparison.IsMatch,
-            $"Model: {string.Join(" | ", comparison.ModelDifferences)}; " +
-            $"DMM: {string.Join(" | ", comparison.SsdtDifferences)}");
+            $"Model: {string.Join(" | ", comparison.ModelDifferences.Select(DescribeDifference))}; " +
+            $"DMM: {string.Join(" | ", comparison.SsdtDifferences.Select(DescribeDifference))}");
     }
 
     [Fact]
@@ -313,8 +374,8 @@ public class DmmComparatorTests
 
         Assert.True(
             comparison.IsMatch,
-            $"Model: {string.Join(" | ", comparison.ModelDifferences)}; " +
-            $"DMM: {string.Join(" | ", comparison.SsdtDifferences)}");
+            $"Model: {string.Join(" | ", comparison.ModelDifferences.Select(DescribeDifference))}; " +
+            $"DMM: {string.Join(" | ", comparison.SsdtDifferences.Select(DescribeDifference))}");
     }
 
     [Fact]
@@ -349,18 +410,29 @@ ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
         return result.Value;
     }
 
+    private static string DescribeDifference(DmmDifference difference)
+    {
+        if (difference is null)
+        {
+            return string.Empty;
+        }
+
+        var target = difference.Column ?? difference.Index ?? difference.ForeignKey ?? difference.Table;
+        return $"{difference.Property}:{target}";
+    }
+
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
     [ID] BIGINT NOT NULL,
-    [EMAIL] NVARCHAR(255) NOT NULL,
-    [FIRSTNAME] NVARCHAR(100) NULL,
-    [LASTNAME] NVARCHAR(100) NULL,
+    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,
+    [FIRSTNAME] NVARCHAR(100) NULL DEFAULT (''),
+    [LASTNAME] NVARCHAR(100) NULL DEFAULT (''),
     [CITYID] BIGINT NOT NULL,
     CONSTRAINT [PK_Customer] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_DEF_CITY](
     [ID] BIGINT NOT NULL,
     [NAME] NVARCHAR(200) NOT NULL,
-    [ISACTIVE] BIT NOT NULL,
+    [ISACTIVE] BIT NOT NULL DEFAULT ((1)),
     CONSTRAINT [PK_City] PRIMARY KEY ([ID])
 );
 CREATE TABLE [billing].[BILLING_ACCOUNT](
@@ -372,7 +444,7 @@ CREATE TABLE [billing].[BILLING_ACCOUNT](
 CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
     [ID] BIGINT NOT NULL,
     [TRIGGEREDBYUSERID] BIGINT NULL,
-    [CREATEDON] DATETIME NOT NULL,
+    [CREATEDON] DATETIME NOT NULL DEFAULT (getutcdate()),
     CONSTRAINT [PK_JobRun] PRIMARY KEY ([ID])
 );";
 }

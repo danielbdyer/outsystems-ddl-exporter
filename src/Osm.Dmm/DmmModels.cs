@@ -16,6 +16,8 @@ public sealed record DmmColumn(
     string Name,
     string DataType,
     bool IsNullable,
+    string? DefaultExpression,
+    string? Collation,
     string? Description);
 
 public sealed record DmmIndex(
@@ -48,10 +50,22 @@ public sealed record DmmForeignKey(
 
 public sealed record DmmComparisonResult(
     bool IsMatch,
-    IReadOnlyList<string> ModelDifferences,
-    IReadOnlyList<string> SsdtDifferences)
+    IReadOnlyList<DmmDifference> ModelDifferences,
+    IReadOnlyList<DmmDifference> SsdtDifferences)
 {
-    public IReadOnlyList<string> Differences => _differences ??= ModelDifferences.Concat(SsdtDifferences).ToArray();
+    public IReadOnlyList<DmmDifference> Differences
+        => _differences ??= ModelDifferences.Concat(SsdtDifferences).ToArray();
 
-    private IReadOnlyList<string>? _differences;
+    private IReadOnlyList<DmmDifference>? _differences;
 }
+
+public sealed record DmmDifference(
+    string Schema,
+    string Table,
+    string Property,
+    string? Column = null,
+    string? Index = null,
+    string? ForeignKey = null,
+    string? Expected = null,
+    string? Actual = null,
+    string? ArtifactPath = null);
