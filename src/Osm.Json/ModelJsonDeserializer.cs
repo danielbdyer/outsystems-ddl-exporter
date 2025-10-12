@@ -31,7 +31,8 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
         }
         catch (JsonException ex)
         {
-            return Result<OsmModel>.Failure(ValidationError.Create("json.parse.failed", $"Invalid JSON payload: {ex.Message}"));
+            var message = JsonErrorFormatter.BuildMessage("Invalid model JSON payload", ex);
+            return Result<OsmModel>.Failure(ValidationError.Create("json.parse.failed", message));
         }
 
         if (document is null)

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -687,5 +688,28 @@ public class ModelJsonDeserializerTests
 
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, e => e.Code == "json.parse.failed");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldReturnDetailedError_WhenJsonShapeInvalid()
+    {
+        const string json = """
+        {
+          "modules": "invalid"
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("json.parse.failed", error.Code);
+        Assert.Contains("path '$.modules'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("line 1", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("position", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Invalid model JSON payload", error.Message, StringComparison.Ordinal);
     }
 }

@@ -6,32 +6,28 @@ using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
 using Xunit;
+using SmoIndex = Microsoft.SqlServer.Management.Smo.Index;
 
 namespace Osm.Smo.Tests;
 
-public sealed class SmoObjectGraphFactoryTests : IDisposable
+public class SmoObjectGraphFactoryTests
 {
-    private readonly SmoObjectGraphFactory _factory;
-    private readonly SmoModelFactory _modelFactory;
-    private readonly TighteningPolicy _policy;
-
-    public SmoObjectGraphFactoryTests()
-    {
-        _factory = new SmoObjectGraphFactory();
-        _modelFactory = new SmoModelFactory();
-        _policy = new TighteningPolicy();
-    }
-
-    [Fact]
+    [SkippableFact]
     public void CreateTable_populates_columns_indexes_and_foreign_keys()
     {
+        SmoTestSupport.SkipUnlessSqlServerAvailable();
+
+        using var factory = new SmoObjectGraphFactory();
+        var modelFactory = new SmoModelFactory();
+        var policy = new TighteningPolicy();
+
         var model = ModelFixtures.LoadModel("model.edge-case.json");
         var profile = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
-        var decisions = _policy.Decide(model, profile, TighteningOptions.Default);
+        var decisions = policy.Decide(model, profile, TighteningOptions.Default);
         var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
-        var smoModel = _modelFactory.Create(model, decisions, profile, options);
+        var smoModel = modelFactory.Create(model, decisions, profile, options);
 
-        var tables = _factory.CreateTables(smoModel, options);
+        var tables = factory.CreateTables(smoModel, options);
         var customerTable = Assert.Single(tables.Where(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase)));
 
         Assert.Equal("dbo", customerTable.Schema);
@@ -64,12 +60,18 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
             column.ReferencedColumn.Equals("Id", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
+    [SkippableFact]
     public void CreateTable_respects_naming_overrides_for_referenced_tables()
     {
+        SmoTestSupport.SkipUnlessSqlServerAvailable();
+
+        using var factory = new SmoObjectGraphFactory();
+        var modelFactory = new SmoModelFactory();
+        var policy = new TighteningPolicy();
+
         var model = ModelFixtures.LoadModel("model.edge-case.json");
         var profile = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
-        var decisions = _policy.Decide(model, profile, TighteningOptions.Default);
+        var decisions = policy.Decide(model, profile, TighteningOptions.Default);
         var baseOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
 
         var overrideRuleResult = NamingOverrideRule.Create(
@@ -84,17 +86,47 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         Assert.True(overrides.IsSuccess);
 
         var options = baseOptions.WithNamingOverrides(overrides.Value);
-        var smoModel = _modelFactory.Create(model, decisions, profile, options);
+        var smoModel = modelFactory.Create(model, decisions, profile, options);
 
-        var tables = _factory.CreateTables(smoModel, options);
+        var tables = factory.CreateTables(smoModel, options);
         var customerTable = tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
         var foreignKey = Assert.Single(customerTable.ForeignKeys.Cast<ForeignKey>());
 
         Assert.Equal("CityArchive", foreignKey.ReferencedTable);
     }
 
-    public void Dispose()
+    [SkippableFact]
+    public void CreateTable_applies_index_lock_and_recompute_settings()
     {
-        _factory.Dispose();
+        SmoTestSupport.SkipUnlessSqlServerAvailable();
+
+        using var factory = new SmoObjectGraphFactory();
+        var modelFactory = new SmoModelFactory();
+        var policy = new TighteningPolicy();
+
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var profile = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var decisions = policy.Decide(model, profile, TighteningOptions.Default);
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var smoModel = modelFactory.Create(model, decisions, profile, options);
+
+        var tables = factory.CreateTables(smoModel, options);
+        var customerTable = tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
+        var jobRunTable = tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
+
+        var emailIndex = (SmoIndex)customerTable.Indexes["IDX_Customer_Email"];
+        Assert.Equal(85, emailIndex.FillFactor);
+        Assert.False(emailIndex.DisallowRowLocks);
+        Assert.False(emailIndex.DisallowPageLocks);
+        Assert.False(emailIndex.NoAutomaticRecomputation);
+
+        var nameIndex = (SmoIndex)customerTable.Indexes["IDX_Customer_Name"];
+        Assert.True(nameIndex.NoAutomaticRecomputation);
+        Assert.False(nameIndex.DisallowRowLocks);
+        Assert.False(nameIndex.DisallowPageLocks);
+
+        var platformIndex = (SmoIndex)jobRunTable.Indexes["OSIDX_JobRun_CreatedOn"];
+        Assert.True(platformIndex.DisallowRowLocks);
+        Assert.False(platformIndex.DisallowPageLocks);
     }
 }

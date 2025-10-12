@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Text;
 using Osm.Json;
@@ -62,5 +63,27 @@ public sealed class ProfileSnapshotDeserializerTests
         var composite = Assert.Single(result.Value.CompositeUniqueCandidates);
         Assert.False(composite.HasDuplicate);
         Assert.Equal(2, composite.Columns.Length);
+    }
+
+    [Fact]
+    public void Deserialize_ShouldSurfaceLocationDetails_ForInvalidJson()
+    {
+        const string json = """
+        {
+          "columns": "invalid"
+        }
+        """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+        var result = _deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("profile.json.parseFailed", error.Code);
+        Assert.Contains("path '$.columns'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("line 1", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("position", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Invalid profiling JSON payload", error.Message, StringComparison.Ordinal);
     }
 }

@@ -389,18 +389,28 @@ public class SmoModelFactoryTests
         Assert.Equal("User", foreignKey.ReferencedLogicalTable);
     }
 
-    [Fact]
+    [SkippableFact]
     public void CreateSmoTables_materializes_detached_smo_objects()
     {
+        SmoTestSupport.SkipUnlessSqlServerAvailable();
+
         var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
         var factory = new SmoModelFactory();
         var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
-
-        var tables = factory.CreateSmoTables(model, decisions, snapshot, options);
+        ImmutableArray<Table> tables;
+        try
+        {
+            tables = factory.CreateSmoTables(model, decisions, snapshot, options);
+        }
+        catch (FailedOperationException ex)
+        {
+            SmoTestSupport.SkipOnConnectionFailure(ex);
+            throw;
+        }
         Assert.NotEmpty(tables);
 
         var customer = tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
-        var pk = Assert.Single(customer.Indexes.Cast<Index>(), index => index.IndexKeyType == IndexKeyType.DriPrimaryKey);
+        var pk = Assert.Single(customer.Indexes.Cast<Microsoft.SqlServer.Management.Smo.Index>(), index => index.IndexKeyType == IndexKeyType.DriPrimaryKey);
         Assert.Equal("PK_Customer", pk.Name);
 
         var foreignKey = Assert.Single(customer.ForeignKeys.Cast<ForeignKey>());

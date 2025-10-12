@@ -35,7 +35,8 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         }
         catch (JsonException ex)
         {
-            return Result<ProfileSnapshot>.Failure(ValidationError.Create("profile.json.parseFailed", $"Invalid profiling JSON payload: {ex.Message}"));
+            var message = JsonErrorFormatter.BuildMessage("Invalid profiling JSON payload", ex);
+            return Result<ProfileSnapshot>.Failure(ValidationError.Create("profile.json.parseFailed", message));
         }
 
         if (document is null)
