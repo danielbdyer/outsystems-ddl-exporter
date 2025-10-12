@@ -74,19 +74,19 @@ public sealed class SsdtEmitter
                 }
             }
 
-            var results = new TableManifestEntry[tableCount];
+            var tablePlans = new TableEmissionPlan[tableCount];
 
             if (options.ModuleParallelism <= 1)
             {
                 for (var i = 0; i < tableCount; i++)
                 {
-                    results[i] = await EmitTableAsync(
+                    tablePlans[i] = PlanTableEmission(
                         model.Tables[i],
                         outputDirectory,
                         options,
                         moduleDirectories,
                         renameLookup,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken);
                 }
             }
             else
@@ -100,19 +100,25 @@ public sealed class SsdtEmitter
                 await Parallel.ForEachAsync(
                     Enumerable.Range(0, tableCount),
                     parallelOptions,
-                    async (index, ct) =>
+                    (index, ct) =>
                     {
-                        results[index] = await EmitTableAsync(
+                        tablePlans[index] = PlanTableEmission(
                             model.Tables[index],
                             outputDirectory,
                             options,
                             moduleDirectories,
                             renameLookup,
-                            ct).ConfigureAwait(false);
+                            ct);
+
+                        return ValueTask.CompletedTask;
                     }).ConfigureAwait(false);
             }
 
-            manifestEntries.AddRange(results);
+            await WriteTablesAsync(tablePlans, options.ModuleParallelism, cancellationToken).ConfigureAwait(false);
+            for (var i = 0; i < tablePlans.Length; i++)
+            {
+                manifestEntries.Add(tablePlans[i].ManifestEntry);
+            }
         }
 
         SsdtPolicySummary? summary = null;
@@ -152,7 +158,7 @@ public sealed class SsdtEmitter
         return manifest;
     }
 
-    private async Task<TableManifestEntry> EmitTableAsync(
+    private TableEmissionPlan PlanTableEmission(
         SmoTableDefinition table,
         string outputDirectory,
         SmoBuildOptions options,
@@ -192,8 +198,6 @@ public sealed class SsdtEmitter
 
         var tablesRoot = modulePaths.TablesRoot;
         var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{result.EffectiveTableName}.sql");
-        await WriteIfChangedAsync(tableFilePath, result.Script, cancellationToken).ConfigureAwait(false);
-
         var indexNames = result.IndexNames.IsDefaultOrEmpty
             ? ImmutableArray<string>.Empty
             : result.IndexNames;
@@ -202,7 +206,7 @@ public sealed class SsdtEmitter
             ? ImmutableArray<string>.Empty
             : result.ForeignKeyNames;
 
-        return new TableManifestEntry(
+        var manifestEntry = new TableManifestEntry(
             table.Module,
             table.Schema,
             result.EffectiveTableName,
@@ -210,6 +214,63 @@ public sealed class SsdtEmitter
             indexNames,
             foreignKeyNames,
             result.IncludesExtendedProperties);
+
+        return new TableEmissionPlan(manifestEntry, tableFilePath, result.Script);
+    }
+
+    private static async Task WriteTablesAsync(
+        IReadOnlyList<TableEmissionPlan> plans,
+        int moduleParallelism,
+        CancellationToken cancellationToken)
+    {
+        if (plans.Count == 0)
+        {
+            return;
+        }
+
+        if (moduleParallelism <= 1)
+        {
+            for (var i = 0; i < plans.Count; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var plan = plans[i];
+                Directory.CreateDirectory(Path.GetDirectoryName(plan.Path)!);
+                await WriteIfChangedAsync(plan.Path, plan.Script, cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        var boundedConcurrency = Math.Max(1, moduleParallelism);
+        using var semaphore = new SemaphoreSlim(boundedConcurrency, boundedConcurrency);
+        var writeTasks = new Task[plans.Count];
+
+        for (var i = 0; i < plans.Count; i++)
+        {
+            var plan = plans[i];
+            writeTasks[i] = WritePlanAsync(plan, semaphore, cancellationToken);
+        }
+
+        await Task.WhenAll(writeTasks).ConfigureAwait(false);
+    }
+
+    private static async Task WritePlanAsync(
+        TableEmissionPlan plan,
+        SemaphoreSlim semaphore,
+        CancellationToken cancellationToken)
+    {
+        await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Directory.CreateDirectory(Path.GetDirectoryName(plan.Path)!);
+            await WriteIfChangedAsync(plan.Path, plan.Script, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            semaphore.Release();
+        }
     }
 
     private static ModuleDirectoryPaths EnsureModuleDirectories(
@@ -221,8 +282,6 @@ public sealed class SsdtEmitter
         {
             var moduleRoot = Path.Combine(outputDirectory, "Modules", key);
             var tablesRoot = Path.Combine(moduleRoot, "Tables");
-            Directory.CreateDirectory(tablesRoot);
-
             return new ModuleDirectoryPaths(tablesRoot);
         });
     }
@@ -254,4 +313,9 @@ public sealed class SsdtEmitter
     }
 
     private sealed record ModuleDirectoryPaths(string TablesRoot);
+
+    private sealed record TableEmissionPlan(
+        TableManifestEntry ManifestEntry,
+        string Path,
+        string Script);
 }
