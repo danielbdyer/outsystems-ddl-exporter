@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
 using Osm.Json.Configuration;
+using Osm.Smo;
 
 namespace Osm.Pipeline.Configuration;
 
@@ -133,6 +134,15 @@ public sealed class CliConfigurationLoader
             sql = sqlConfig;
         }
         configuration = configuration with { Sql = sql };
+
+        if (TryReadTypeMapping(root, baseDirectory, out var typeMappingConfig, out var typeMappingError))
+        {
+            configuration = configuration with { TypeMapping = typeMappingConfig };
+        }
+        else if (typeMappingError is not null)
+        {
+            return Result<CliConfiguration>.Failure(typeMappingError.Value);
+        }
 
         if (TryReadSupplementalModels(root, baseDirectory, out var supplementalModels))
         {
@@ -345,6 +355,74 @@ public sealed class CliConfigurationLoader
         }
 
         configuration = new SqlConfiguration(connectionString, commandTimeout, sampling, authentication);
+        return true;
+    }
+
+    private static bool TryReadTypeMapping(
+        JsonElement root,
+        string baseDirectory,
+        out TypeMappingConfiguration configuration,
+        out ValidationError? error)
+    {
+        configuration = TypeMappingConfiguration.Empty;
+        error = null;
+
+        if (!root.TryGetProperty("typeMapping", out var element) || element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        string? path = null;
+        if (element.TryGetProperty("path", out var pathElement) && pathElement.ValueKind == JsonValueKind.String)
+        {
+            var raw = pathElement.GetString();
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                var resolved = ResolveRelativePath(baseDirectory, raw!);
+                if (!File.Exists(resolved))
+                {
+                    error = ValidationError.Create(
+                        "cli.config.typeMapping.missing",
+                        $"Type mapping file '{resolved}' was not found.");
+                    return false;
+                }
+
+                path = resolved;
+            }
+        }
+
+        TypeMappingRuleDefinition? defaultRule = null;
+        if (element.TryGetProperty("default", out var defaultElement) && defaultElement.ValueKind != JsonValueKind.Null)
+        {
+            if (!TypeMappingRuleDefinition.TryParse(defaultElement, out var parsedDefault, out var defaultError))
+            {
+                error = ValidationError.Create(
+                    "cli.config.typeMapping.default.invalid",
+                    defaultError ?? "Invalid default type mapping rule.");
+                return false;
+            }
+
+            defaultRule = parsedDefault;
+        }
+
+        var overrides = new Dictionary<string, TypeMappingRuleDefinition>(StringComparer.OrdinalIgnoreCase);
+        if (element.TryGetProperty("overrides", out var overridesElement) && overridesElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in overridesElement.EnumerateObject())
+            {
+                if (!TypeMappingRuleDefinition.TryParse(property.Value, out var overrideDefinition, out var overrideError))
+                {
+                    error = ValidationError.Create(
+                        "cli.config.typeMapping.override.invalid",
+                        $"Failed to parse override for '{property.Name}': {overrideError}");
+                    return false;
+                }
+
+                overrides[property.Name] = overrideDefinition;
+            }
+        }
+
+        configuration = new TypeMappingConfiguration(path, defaultRule, overrides);
         return true;
     }
 

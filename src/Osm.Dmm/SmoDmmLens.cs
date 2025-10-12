@@ -1,18 +1,33 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
-using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Smo;
 
 namespace Osm.Dmm;
 
-public sealed record SmoDmmLensRequest(SmoModel Model, NamingOverrideOptions NamingOverrides);
+public sealed record SmoDmmLensRequest(SmoModel Model, SmoBuildOptions Options);
 
 public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
 {
+    private readonly PerTableWriter _perTableWriter;
+    private readonly ScriptDomDmmLens _scriptLens;
+
+    public SmoDmmLens()
+        : this(new PerTableWriter(), new ScriptDomDmmLens())
+    {
+    }
+
+    public SmoDmmLens(PerTableWriter perTableWriter, ScriptDomDmmLens scriptLens)
+    {
+        _perTableWriter = perTableWriter ?? throw new ArgumentNullException(nameof(perTableWriter));
+        _scriptLens = scriptLens ?? throw new ArgumentNullException(nameof(scriptLens));
+    }
+
     public Result<IReadOnlyList<DmmTable>> Project(SmoDmmLensRequest request)
     {
         if (request is null)
@@ -25,28 +40,201 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
             throw new ArgumentNullException(nameof(request.Model));
         }
 
-        var namingOverrides = request.NamingOverrides ?? NamingOverrideOptions.Empty;
-        var tables = new List<DmmTable>(request.Model.Tables.Length);
+        var options = request.Options ?? SmoBuildOptions.Default;
+        var namingMetadata = request.Model.Tables.ToDictionary(
+            table => TableKey(table.Schema, table.Name),
+            table => new TableNamingMetadata(table.OriginalModule, table.LogicalName),
+            StringComparer.OrdinalIgnoreCase);
+        var physicalOverrides = CreatePhysicalNamingOverrides(request.Model);
+        if (physicalOverrides.Count > 0)
+        {
+            if (options.NamingOverrides.IsEmpty)
+            {
+                var overrideOptions = NamingOverrideOptions.Create(physicalOverrides);
+                if (overrideOptions.IsSuccess)
+                {
+                    options = options.WithNamingOverrides(overrideOptions.Value);
+                }
+            }
+            else
+            {
+                var missingPhysicalOverrides = physicalOverrides
+                    .Where(rule => rule.Schema is not null && rule.PhysicalName is not null)
+                    .Where(rule => !options.NamingOverrides.TryGetTableOverride(
+                        rule.Schema!.Value.Value,
+                        rule.PhysicalName!.Value.Value,
+                        out _))
+                    .Where(rule =>
+                    {
+                        var key = TableKey(rule.Schema!.Value.Value, rule.PhysicalName!.Value.Value);
+                        if (!namingMetadata.TryGetValue(key, out var metadata))
+                        {
+                            return true;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(metadata.LogicalName))
+                        {
+                            return true;
+                        }
+
+                        return !options.NamingOverrides.TryGetEntityOverride(
+                            metadata.Module,
+                            metadata.LogicalName,
+                            out _);
+                    })
+                    .ToArray();
+
+                if (missingPhysicalOverrides.Length > 0)
+                {
+                    options = options.WithNamingOverrides(options.NamingOverrides.MergeWith(missingPhysicalOverrides));
+                }
+            }
+        }
+        var builder = new StringBuilder();
 
         foreach (var table in request.Model.Tables)
         {
-            var effectiveName = table.Name;
-            if (namingOverrides.TryGetTableOverride(table.Schema, table.Name, out var tableOverride))
+            var writeResult = _perTableWriter.Generate(table, options);
+            foreach (var statement in SplitStatements(writeResult.Script))
             {
-                effectiveName = tableOverride;
+                var sanitized = NormalizeStatement(statement.Trim());
+                if (string.IsNullOrWhiteSpace(sanitized) || IsTriggerStatement(sanitized))
+                {
+                    continue;
+                }
+
+                if (builder.Length > 0)
+                {
+                    builder.AppendLine();
+                    builder.AppendLine();
+                }
+
+                builder.AppendLine(sanitized);
             }
-            else if (namingOverrides.TryGetEntityOverride(table.OriginalModule, table.LogicalName, out var entityOverride))
+        }
+
+        if (builder.Length == 0)
+        {
+            return Result<IReadOnlyList<DmmTable>>.Success(Array.Empty<DmmTable>());
+        }
+
+        using var reader = new StringReader(builder.ToString());
+        var parsedResult = _scriptLens.Project(reader);
+        if (parsedResult.IsFailure)
+        {
+            return parsedResult;
+        }
+
+        return Result<IReadOnlyList<DmmTable>>.Success(AlignTableOrdering(request.Model, options, parsedResult.Value));
+    }
+
+    private static IEnumerable<string> SplitStatements(string script)
+    {
+        if (string.IsNullOrWhiteSpace(script))
+        {
+            yield break;
+        }
+
+        var builder = new StringBuilder(script.Length);
+        using var reader = new StringReader(script);
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            if (line.Trim().Equals("GO", StringComparison.OrdinalIgnoreCase))
             {
-                effectiveName = entityOverride.Value;
+                if (builder.Length > 0)
+                {
+                    yield return builder.ToString();
+                    builder.Clear();
+                }
+
+                continue;
             }
 
-            var columns = table.Columns
-                .Select(column => new DmmColumn(
-                    column.Name,
-                    Canonicalize(column.DataType),
-                    column.Nullable,
-                    column.Description))
-                .ToArray();
+            builder.AppendLine(line);
+        }
+
+        if (builder.Length > 0)
+        {
+            yield return builder.ToString();
+        }
+    }
+
+    private static bool IsTriggerStatement(string statement)
+    {
+        if (string.IsNullOrWhiteSpace(statement))
+        {
+            return false;
+        }
+
+        if (statement.StartsWith("--", StringComparison.Ordinal))
+        {
+            // Commentary preceding the trigger definition is emitted alongside the CREATE TRIGGER batch.
+            return statement.IndexOf("trigger", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        return statement.IndexOf("create trigger", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static string NormalizeStatement(string statement)
+    {
+        if (string.IsNullOrWhiteSpace(statement))
+        {
+            return string.Empty;
+        }
+
+        return Regex.Replace(
+            statement,
+            @"COLLATE\s+\[(?<name>[^\]]+)\]",
+            static match => $"COLLATE {match.Groups["name"].Value}",
+            RegexOptions.IgnoreCase);
+    }
+
+    private static IReadOnlyList<NamingOverrideRule> CreatePhysicalNamingOverrides(SmoModel model)
+    {
+        if (model is null || model.Tables.Length == 0)
+        {
+            return Array.Empty<NamingOverrideRule>();
+        }
+
+        var overrides = new List<NamingOverrideRule>(model.Tables.Length);
+        foreach (var table in model.Tables)
+        {
+            var ruleResult = NamingOverrideRule.Create(table.Schema, table.Name, module: null, logicalName: null, target: table.Name);
+            if (ruleResult.IsSuccess)
+            {
+                overrides.Add(ruleResult.Value);
+            }
+        }
+
+        return overrides;
+    }
+
+    private static IReadOnlyList<DmmTable> AlignTableOrdering(SmoModel model, SmoBuildOptions options, IReadOnlyList<DmmTable> tables)
+    {
+        if (model.Tables.Length == 0 || tables.Count == 0)
+        {
+            return tables;
+        }
+
+        var metadata = new Dictionary<string, TableMetadata>(model.Tables.Length, StringComparer.OrdinalIgnoreCase);
+        foreach (var table in model.Tables)
+        {
+            var key = TableKey(table.Schema, table.Name);
+            if (metadata.ContainsKey(key))
+            {
+                continue;
+            }
+
+            var columnOrder = new Dictionary<string, int>(table.Columns.Length, StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < table.Columns.Length; i++)
+            {
+                var column = table.Columns[i];
+                if (!string.IsNullOrWhiteSpace(column.Name))
+                {
+                    columnOrder[column.Name] = i;
+                }
+            }
 
             var primaryKey = table.Indexes.FirstOrDefault(index => index.IsPrimaryKey);
             var primaryKeyColumns = primaryKey is null
@@ -56,140 +244,62 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
                     .Select(column => column.Name)
                     .ToArray();
 
-            var indexes = table.Indexes
-                .Where(static index => !index.IsPrimaryKey)
-                .Select(MapIndex)
-                .OrderBy(index => index.Name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            var tableMetadata = new TableMetadata(columnOrder, primaryKeyColumns);
+            metadata[key] = tableMetadata;
 
-            var foreignKeys = table.ForeignKeys
-                .Select(MapForeignKey)
-                .OrderBy(fk => fk.Name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            tables.Add(new DmmTable(
+            var effectiveName = options.NamingOverrides.GetEffectiveTableName(
                 table.Schema,
-                effectiveName,
-                columns,
+                table.Name,
+                table.LogicalName,
+                table.OriginalModule);
+            var effectiveKey = TableKey(table.Schema, effectiveName);
+            if (!metadata.ContainsKey(effectiveKey))
+            {
+                metadata[effectiveKey] = tableMetadata;
+            }
+        }
+
+        var adjusted = new List<DmmTable>(tables.Count);
+        foreach (var table in tables)
+        {
+            var key = TableKey(table.Schema, table.Name);
+            if (!metadata.TryGetValue(key, out var tableMetadata))
+            {
+                adjusted.Add(table);
+                continue;
+            }
+
+            var orderedColumns = table.Columns;
+            if (tableMetadata.ColumnOrder.Count > 0 && table.Columns.Count > 1)
+            {
+                orderedColumns = table.Columns
+                    .OrderBy(column => tableMetadata.ColumnOrder.TryGetValue(column.Name, out var index) ? index : int.MaxValue)
+                    .ThenBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+
+            var primaryKeyColumns = tableMetadata.PrimaryKeyColumns.Count > 0
+                ? tableMetadata.PrimaryKeyColumns.ToArray()
+                : table.PrimaryKeyColumns.ToArray();
+
+            adjusted.Add(new DmmTable(
+                table.Schema,
+                table.Name,
+                orderedColumns,
                 primaryKeyColumns,
-                indexes,
-                foreignKeys,
+                table.Indexes,
+                table.ForeignKeys,
                 table.Description));
         }
 
-        var orderedTables = tables
-            .OrderBy(t => t.Schema, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        return Result<IReadOnlyList<DmmTable>>.Success(orderedTables);
+        return adjusted;
     }
 
-    private static DmmIndex MapIndex(SmoIndexDefinition index)
-    {
-        var keyColumns = index.Columns
-            .Where(static column => !column.IsIncluded)
-            .OrderBy(static column => column.Ordinal)
-            .Select(column => new DmmIndexColumn(column.Name, column.IsDescending))
-            .ToArray();
+    private static string TableKey(string schema, string name) => $"{schema}.{name}";
 
-        var includedColumns = index.Columns
-            .Where(static column => column.IsIncluded)
-            .OrderBy(static column => column.Ordinal)
-            .Select(column => new DmmIndexColumn(column.Name, column.IsDescending))
-            .ToArray();
+    private sealed record TableMetadata(
+        IReadOnlyDictionary<string, int> ColumnOrder,
+        IReadOnlyList<string> PrimaryKeyColumns);
 
-        var metadata = index.Metadata;
-        return new DmmIndex(
-            index.Name,
-            index.IsUnique,
-            keyColumns,
-            includedColumns,
-            CanonicalizeFilter(metadata.FilterDefinition),
-            metadata.IsDisabled,
-            new DmmIndexOptions(
-                metadata.IsPadded,
-                metadata.FillFactor,
-                metadata.IgnoreDuplicateKey,
-                metadata.AllowRowLocks,
-                metadata.AllowPageLocks,
-                metadata.StatisticsNoRecompute));
-    }
-
-    private static DmmForeignKey MapForeignKey(SmoForeignKeyDefinition foreignKey)
-    {
-        return new DmmForeignKey(
-            foreignKey.Name,
-            foreignKey.Column,
-            foreignKey.ReferencedSchema,
-            foreignKey.ReferencedTable,
-            foreignKey.ReferencedColumn,
-            foreignKey.DeleteAction.ToString(),
-            foreignKey.IsNoCheck);
-    }
-
-    private static string Canonicalize(DataType dataType)
-    {
-        return dataType.SqlDataType switch
-        {
-            SqlDataType.BigInt => "bigint",
-            SqlDataType.Int => "int",
-            SqlDataType.SmallInt => "smallint",
-            SqlDataType.TinyInt => "tinyint",
-            SqlDataType.Bit => "bit",
-            SqlDataType.Date => "date",
-            SqlDataType.DateTime => "datetime",
-            SqlDataType.Float => "float",
-            SqlDataType.Real => "real",
-            SqlDataType.Decimal => FormatDecimal(dataType.NumericPrecision, dataType.NumericScale, "decimal"),
-            SqlDataType.Numeric => FormatDecimal(dataType.NumericPrecision, dataType.NumericScale, "decimal"),
-            SqlDataType.Money => "money",
-            SqlDataType.SmallMoney => "smallmoney",
-            SqlDataType.UniqueIdentifier => "uniqueidentifier",
-            SqlDataType.VarChar => FormatLengthType("varchar", dataType),
-            SqlDataType.NVarChar => FormatLengthType("nvarchar", dataType),
-            SqlDataType.Char => FormatLengthType("char", dataType),
-            SqlDataType.NChar => FormatLengthType("nchar", dataType),
-            SqlDataType.VarBinary => FormatLengthType("varbinary", dataType),
-            SqlDataType.Binary => FormatLengthType("binary", dataType),
-            SqlDataType.Text => "text",
-            SqlDataType.NText => "ntext",
-            SqlDataType.Image => "image",
-            _ => dataType.SqlDataType.ToString().ToLowerInvariant(),
-        };
-    }
-
-    private static string? CanonicalizeFilter(string? filter)
-    {
-        if (string.IsNullOrWhiteSpace(filter))
-        {
-            return null;
-        }
-
-        var trimmed = filter.Trim();
-        trimmed = Regex.Replace(trimmed, "\\s+", " ");
-        return trimmed;
-    }
-
-    private static string FormatDecimal(int numericPrecision, int numericScale, string baseName)
-    {
-        var precision = numericPrecision <= 0 ? 18 : numericPrecision;
-        var scale = numericScale < 0 ? 0 : numericScale;
-        return $"{baseName}({precision},{scale})";
-    }
-
-    private static string FormatLengthType(string baseName, DataType dataType)
-    {
-        if (dataType.MaximumLength < 0)
-        {
-            return $"{baseName}(max)";
-        }
-
-        if (dataType.MaximumLength == 0)
-        {
-            return baseName;
-        }
-
-        return $"{baseName}({dataType.MaximumLength})";
-    }
+    private sealed record TableNamingMetadata(string Module, string LogicalName);
 }

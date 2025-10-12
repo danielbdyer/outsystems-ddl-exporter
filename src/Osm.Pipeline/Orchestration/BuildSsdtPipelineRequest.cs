@@ -16,6 +16,7 @@ public sealed record BuildSsdtPipelineRequest(
     string? ProfilePath,
     ResolvedSqlOptions SqlOptions,
     SmoBuildOptions SmoOptions,
+    TypeMappingPolicy TypeMappingPolicy,
     EvidenceCachePipelineOptions? EvidenceCache,
     IStaticEntityDataProvider? StaticDataProvider,
     string? SeedOutputDirectoryHint) : ICommand<BuildSsdtPipelineResult>;

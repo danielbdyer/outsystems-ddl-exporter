@@ -8,6 +8,7 @@ using System.Text;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.ModelIngestion;
+using Osm.Smo;
 
 namespace Osm.Pipeline.Application;
 
@@ -139,6 +140,23 @@ internal static class CacheMetadataBuilder
             metadata["sql.authentication.accessTokenHash"] = ComputeSha256(configuration.Sql.Authentication.AccessToken);
         }
 
+        if (!string.IsNullOrWhiteSpace(configuration.TypeMapping.Path))
+        {
+            var resolvedPath = Path.GetFullPath(configuration.TypeMapping.Path);
+            metadata["typeMapping.path"] = resolvedPath;
+            metadata["typeMapping.hash"] = ComputeFileHash(resolvedPath);
+        }
+
+        if (configuration.TypeMapping.Default is { } defaultMapping)
+        {
+            metadata["typeMapping.default"] = defaultMapping.ToMetadataString();
+        }
+
+        if (configuration.TypeMapping.Overrides is { Count: > 0 } overrides)
+        {
+            metadata["typeMapping.overridesHash"] = ComputeSha256(BuildOverrideSignature(overrides));
+        }
+
         return metadata;
     }
 
@@ -147,5 +165,31 @@ internal static class CacheMetadataBuilder
         using var sha = SHA256.Create();
         var bytes = Encoding.UTF8.GetBytes(value);
         return Convert.ToHexString(sha.ComputeHash(bytes));
+    }
+
+    private static string ComputeFileHash(string path)
+    {
+        using var stream = File.OpenRead(path);
+        using var sha = SHA256.Create();
+        return Convert.ToHexString(sha.ComputeHash(stream));
+    }
+
+    private static string BuildOverrideSignature(IReadOnlyDictionary<string, TypeMappingRuleDefinition> overrides)
+    {
+        if (overrides.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        foreach (var entry in overrides.OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            builder.Append(entry.Key);
+            builder.Append('=');
+            builder.Append(entry.Value.ToMetadataString());
+            builder.Append(';');
+        }
+
+        return builder.ToString();
     }
 }

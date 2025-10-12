@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
+using Osm.Smo;
 
 namespace Osm.Pipeline.Configuration;
 
@@ -14,6 +15,7 @@ public sealed record CliConfiguration(
     ProfilerConfiguration Profiler,
     SqlConfiguration Sql,
     ModuleFilterConfiguration ModuleFilter,
+    TypeMappingConfiguration TypeMapping,
     SupplementalModelConfiguration SupplementalModels)
 {
     public static CliConfiguration Empty { get; } = new(
@@ -25,6 +27,7 @@ public sealed record CliConfiguration(
         ProfilerConfiguration.Empty,
         SqlConfiguration.Empty,
         ModuleFilterConfiguration.Empty,
+        TypeMappingConfiguration.Empty,
         SupplementalModelConfiguration.Empty);
 }
 
@@ -68,6 +71,15 @@ public sealed record ModuleFilterConfiguration(
 {
     public static ModuleFilterConfiguration Empty { get; }
         = new ModuleFilterConfiguration(Array.Empty<string>(), null, null);
+}
+
+public sealed record TypeMappingConfiguration(
+    string? Path,
+    TypeMappingRuleDefinition? Default,
+    IReadOnlyDictionary<string, TypeMappingRuleDefinition> Overrides)
+{
+    public static TypeMappingConfiguration Empty { get; }
+        = new(null, null, new Dictionary<string, TypeMappingRuleDefinition>(StringComparer.OrdinalIgnoreCase));
 }
 
 public sealed record SupplementalModelConfiguration(

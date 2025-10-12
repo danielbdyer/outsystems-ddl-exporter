@@ -17,7 +17,8 @@ public sealed class SmoModelFactory
         PolicyDecisionSet decisions,
         ProfileSnapshot? profile = null,
         SmoBuildOptions? options = null,
-        IEnumerable<EntityModel>? supplementalEntities = null)
+        IEnumerable<EntityModel>? supplementalEntities = null,
+        TypeMappingPolicy? typeMappingPolicy = null)
     {
         if (model is null)
         {
@@ -30,6 +31,7 @@ public sealed class SmoModelFactory
         }
 
         options ??= SmoBuildOptions.Default;
+        typeMappingPolicy ??= TypeMappingPolicy.Default;
 
         var profileDefaults = BuildProfileDefaults(profile);
         var foreignKeyReality = BuildForeignKeyReality(profile);
@@ -50,7 +52,7 @@ public sealed class SmoModelFactory
             foreach (var entity in orderedEntities)
             {
                 var context = contexts.GetContext(entity);
-                tablesBuilder.Add(BuildTable(context, decisions, options, contexts, profileDefaults, foreignKeyReality));
+                tablesBuilder.Add(BuildTable(context, decisions, options, contexts, profileDefaults, foreignKeyReality, typeMappingPolicy));
             }
         }
 
@@ -125,9 +127,10 @@ public sealed class SmoModelFactory
         SmoBuildOptions options,
         EntityEmissionIndex entityLookup,
         IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults,
-        IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality)
+        IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality,
+        TypeMappingPolicy typeMapping)
     {
-        var columns = BuildColumns(context, decisions, profileDefaults);
+        var columns = BuildColumns(context, decisions, profileDefaults, typeMapping);
         var indexes = BuildIndexes(context, decisions, options.IncludePlatformAutoIndexes, options.Format);
         var foreignKeys = BuildForeignKeys(context, decisions, entityLookup, foreignKeyReality, options.Format);
         var triggers = BuildTriggers(context);
@@ -205,22 +208,14 @@ public sealed class SmoModelFactory
     private static ImmutableArray<SmoColumnDefinition> BuildColumns(
         EntityEmissionContext context,
         PolicyDecisionSet decisions,
-        IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults)
+        IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults,
+        TypeMappingPolicy typeMappingPolicy)
     {
         var builder = ImmutableArray.CreateBuilder<SmoColumnDefinition>();
 
         foreach (var attribute in context.EmittableAttributes)
         {
-            var dataType = SqlDataTypeMapper.Resolve(attribute);
-            if (attribute.IsIdentifier)
-            {
-                dataType = DataType.BigInt;
-            }
-            else if (attribute.Reference.IsReference &&
-                     string.Equals(attribute.DataType, "Identifier", StringComparison.OrdinalIgnoreCase))
-            {
-                dataType = DataType.BigInt;
-            }
+            var dataType = typeMappingPolicy.Resolve(attribute);
             var nullable = !ShouldEnforceNotNull(context.Entity, attribute, decisions);
             var onDisk = attribute.OnDisk;
             var isIdentity = onDisk.IsIdentity ?? attribute.IsAutoNumber;

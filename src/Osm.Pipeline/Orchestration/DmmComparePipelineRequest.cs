@@ -14,5 +14,6 @@ public sealed record DmmComparePipelineRequest(
     SupplementalModelOptions SupplementalModels,
     ResolvedSqlOptions SqlOptions,
     SmoBuildOptions SmoOptions,
+    TypeMappingPolicy TypeMappingPolicy,
     string DiffOutputPath,
     EvidenceCachePipelineOptions? EvidenceCache) : ICommand<DmmComparePipelineResult>;

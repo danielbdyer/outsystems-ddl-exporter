@@ -12,4 +12,7 @@
     <ProjectReference Include="..\Osm.Domain\Osm.Domain.csproj" />
     <ProjectReference Include="..\Osm.Validation\Osm.Validation.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\config\type-mapping.default.json" Link="Resources\type-mapping.default.json" />
+  </ItemGroup>
 </Project>

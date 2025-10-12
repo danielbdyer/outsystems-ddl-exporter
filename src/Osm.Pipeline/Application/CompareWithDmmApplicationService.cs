@@ -56,6 +56,14 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
 
         var moduleFilter = moduleFilterResult.Value;
 
+        var typeMappingResult = TypeMappingPolicyResolver.Resolve(input.ConfigurationContext);
+        if (typeMappingResult.IsFailure)
+        {
+            return Result<CompareWithDmmApplicationResult>.Failure(typeMappingResult.Errors);
+        }
+
+        var typeMappingPolicy = typeMappingResult.Value;
+
         var modelPathResult = ResolveRequiredPath(
             input.Overrides.ModelPath,
             configuration.ModelPath,
@@ -126,6 +134,7 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
             ResolveSupplementalOptions(configuration.SupplementalModels),
             sqlOptionsResult.Value,
             smoOptions,
+            typeMappingPolicy,
             diffPath,
             cacheOptions);
 

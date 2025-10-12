@@ -40,6 +40,7 @@ public class BuildSsdtPipelineTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null)),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicy.LoadDefault(),
             new EvidenceCachePipelineOptions(
                 cache.Path,
                 Refresh: false,

@@ -1,69 +1,112 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Model;
 
 namespace Osm.Smo;
 
-internal static class SqlDataTypeMapper
+public sealed class TypeMappingPolicy
 {
-    public static DataType Resolve(AttributeModel attribute)
+    private const int DefaultUnicodeMaxLengthThreshold = 2000;
+
+    private static readonly Lazy<TypeMappingPolicy> DefaultInstance = new(() => LoadDefault());
+
+    private readonly IReadOnlyDictionary<string, TypeMappingRule> _rules;
+    private readonly TypeMappingRule _defaultRule;
+
+    private TypeMappingPolicy(IReadOnlyDictionary<string, TypeMappingRule> rules, TypeMappingRule defaultRule)
+    {
+        _rules = rules ?? throw new ArgumentNullException(nameof(rules));
+        _defaultRule = defaultRule ?? throw new ArgumentNullException(nameof(defaultRule));
+    }
+
+    public static TypeMappingPolicy Default => DefaultInstance.Value;
+
+    public static TypeMappingPolicy LoadDefault(
+        TypeMappingRuleDefinition? defaultOverride = null,
+        IReadOnlyDictionary<string, TypeMappingRuleDefinition>? overrides = null)
+    {
+        using var stream = typeof(TypeMappingPolicy).Assembly.GetManifestResourceStream("Osm.Smo.Resources.type-mapping.default.json");
+        if (stream is null)
+        {
+            throw new InvalidOperationException("Embedded type mapping resource was not found.");
+        }
+
+        return Load(stream, defaultOverride, overrides);
+    }
+
+    public static TypeMappingPolicy LoadFromFile(
+        string path,
+        TypeMappingRuleDefinition? defaultOverride = null,
+        IReadOnlyDictionary<string, TypeMappingRuleDefinition>? overrides = null)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new ArgumentException("Type mapping path must be provided.", nameof(path));
+        }
+
+        using var stream = File.OpenRead(path);
+        return Load(stream, defaultOverride, overrides);
+    }
+
+    internal static TypeMappingPolicy Load(
+        Stream jsonStream,
+        TypeMappingRuleDefinition? defaultOverride,
+        IReadOnlyDictionary<string, TypeMappingRuleDefinition>? overrides)
+    {
+        if (jsonStream is null)
+        {
+            throw new ArgumentNullException(nameof(jsonStream));
+        }
+
+        var definition = TypeMappingPolicyDefinition.Parse(jsonStream);
+        if (defaultOverride is not null)
+        {
+            definition = definition with { Default = defaultOverride };
+        }
+
+        if (overrides is not null && overrides.Count > 0)
+        {
+            definition = definition.WithOverrides(overrides);
+        }
+
+        return definition.ToPolicy();
+    }
+
+    public DataType Resolve(AttributeModel attribute)
     {
         if (attribute is null)
         {
             throw new ArgumentNullException(nameof(attribute));
         }
 
-        if (TryResolveFromOnDisk(attribute, attribute.OnDisk, out var onDiskType))
+        var normalized = NormalizeKey(attribute.DataType);
+        var preferRuntimeMapping = ShouldPreferRuntimeMapping(attribute, normalized);
+
+        if (!preferRuntimeMapping && TryResolveFromOnDisk(attribute, attribute.OnDisk, out var onDiskType))
         {
             return onDiskType;
         }
 
-        if (!string.IsNullOrWhiteSpace(attribute.ExternalDatabaseType))
+        if (!preferRuntimeMapping && !string.IsNullOrWhiteSpace(attribute.ExternalDatabaseType))
         {
             return ResolveExternal(attribute.ExternalDatabaseType!);
         }
 
-        var normalized = NormalizeDataType(attribute.DataType);
-        return normalized switch
+        if (!_rules.TryGetValue(normalized, out var rule))
         {
-            "identifier" => DataType.Int,
-            "autonumber" => DataType.BigInt,
-            "integer" => DataType.Int,
-            "longinteger" => DataType.BigInt,
-            "boolean" => DataType.Bit,
-            "datetime" => DataType.DateTime,
-            "datetime2" => DataType.DateTime2(ResolveScale(null, attribute.Scale, 7)),
-            "datetimeoffset" => DataType.DateTimeOffset(ResolveScale(null, attribute.Scale, 7)),
-            "date" => DataType.Date,
-            "time" => DataType.Time(ResolveScale(null, attribute.Scale, 7)),
-            "decimal" => ResolveDecimal(attribute.Precision, attribute.Scale),
-            "double" => DataType.Float,
-            "float" => DataType.Float,
-            "real" => DataType.Real,
-            "currency" => ResolveDecimal(attribute.Precision, attribute.Scale, 37, 8),
-            "binarydata" => ResolveVarBinary(attribute.Length),
-            "binary" => ResolveVarBinary(attribute.Length),
-            "varbinary" => ResolveVarBinary(attribute.Length),
-            "longbinarydata" => ResolveVarBinary(attribute.Length),
-            "image" => DataType.Image,
-            "longtext" => DataType.NVarCharMax,
-            "text" => ResolveUnicodeText(attribute.Length),
-            "email" => ResolveVarCharText(attribute.Length, 250),
-            "phonenumber" => ResolveVarCharText(attribute.Length, 20),
-            "phone" => ResolveVarCharText(attribute.Length, 20),
-            "url" => ResolveUnicodeText(attribute.Length),
-            "password" => ResolveUnicodeText(attribute.Length),
-            "username" => ResolveUnicodeText(attribute.Length),
-            "identifiertext" => ResolveUnicodeText(attribute.Length),
-            "guid" => DataType.UniqueIdentifier,
-            "uniqueidentifier" => DataType.UniqueIdentifier,
-            _ => DataType.NVarCharMax,
-        };
+            rule = _defaultRule;
+        }
+
+        return rule.Apply(attribute);
     }
 
-    private static bool TryResolveFromOnDisk(AttributeModel attribute, AttributeOnDiskMetadata onDisk, out DataType dataType)
+    internal static string NormalizeKey(string? dataType) => NormalizeDataType(dataType ?? string.Empty);
+
+    private static bool TryResolveFromOnDisk(AttributeModel attribute, AttributeOnDiskMetadata? onDisk, out DataType dataType)
     {
         dataType = DataType.NVarCharMax;
         if (onDisk is null || string.IsNullOrWhiteSpace(onDisk.SqlType))
@@ -71,26 +114,29 @@ internal static class SqlDataTypeMapper
             return false;
         }
 
-        var type = onDisk.SqlType!.Trim().ToLowerInvariant();
-        switch (type)
+        var sqlType = onDisk.SqlType!.Trim().ToLowerInvariant();
+        switch (sqlType)
         {
             case "nvarchar":
-                dataType = ResolveUnicodeText(onDisk.MaxLength ?? attribute.Length);
+                dataType = ResolveUnicodeText(onDisk.MaxLength, attribute.Length, DefaultUnicodeMaxLengthThreshold);
                 return true;
             case "nchar":
-                dataType = DataType.NChar(Math.Max(1, (onDisk.MaxLength ?? attribute.Length) ?? 1));
+                var ncharLength = onDisk.MaxLength ?? attribute.Length ?? 1;
+                dataType = DataType.NChar(Math.Max(1, ncharLength));
                 return true;
             case "varchar":
-                dataType = ResolveVarChar(onDisk.MaxLength ?? attribute.Length);
+                dataType = ResolveVarChar(onDisk.MaxLength ?? attribute.Length ?? 0);
                 return true;
             case "char":
-                dataType = DataType.Char(Math.Max(1, (onDisk.MaxLength ?? attribute.Length) ?? 1));
+                var charLength = onDisk.MaxLength ?? attribute.Length ?? 1;
+                dataType = DataType.Char(Math.Max(1, charLength));
                 return true;
             case "varbinary":
-                dataType = ResolveVarBinary(onDisk.MaxLength ?? attribute.Length);
+                dataType = ResolveVarBinary(onDisk.MaxLength ?? attribute.Length ?? 0);
                 return true;
             case "binary":
-                dataType = DataType.Binary(Math.Max(1, (onDisk.MaxLength ?? attribute.Length) ?? 1));
+                var binaryLength = onDisk.MaxLength ?? attribute.Length ?? 1;
+                dataType = DataType.Binary(Math.Max(1, binaryLength));
                 return true;
             case "decimal":
             case "numeric":
@@ -163,7 +209,7 @@ internal static class SqlDataTypeMapper
         return false;
     }
 
-    private static DataType ResolveUnicodeText(int? length, int? fallbackLength = null)
+    private static DataType ResolveUnicodeText(int? length, int? fallbackLength, int maxThreshold)
     {
         var effectiveLength = length ?? fallbackLength;
         if (effectiveLength is null or <= 0)
@@ -171,7 +217,7 @@ internal static class SqlDataTypeMapper
             return DataType.NVarCharMax;
         }
 
-        if (effectiveLength == -1 || effectiveLength > 2000)
+        if (effectiveLength == -1 || effectiveLength > maxThreshold)
         {
             return DataType.NVarCharMax;
         }
@@ -191,8 +237,8 @@ internal static class SqlDataTypeMapper
 
     private static DataType ResolveVarCharText(int? length, int fallbackLength)
     {
-        var effectiveLength = length;
-        if (effectiveLength is null or <= 0)
+        var effectiveLength = length ?? fallbackLength;
+        if (effectiveLength <= 0)
         {
             effectiveLength = fallbackLength;
         }
@@ -300,7 +346,7 @@ internal static class SqlDataTypeMapper
                 return ResolveVarChar(varcharLength);
             case "nvarchar":
                 var nvarcharLength = parameters.Count > 0 ? parameters[0] : 0;
-                return ResolveUnicodeText(nvarcharLength);
+                return ResolveUnicodeText(nvarcharLength, null, DefaultUnicodeMaxLengthThreshold);
             case "nchar":
                 var ncharLength = parameters.Count > 0 ? parameters[0] : 0;
                 return DataType.NChar(Math.Max(1, ncharLength <= 0 ? 1 : ncharLength));
@@ -360,6 +406,16 @@ internal static class SqlDataTypeMapper
         }
     }
 
+    private static bool ShouldPreferRuntimeMapping(AttributeModel attribute, string normalizedDataType)
+    {
+        if (attribute.IsIdentifier || attribute.IsAutoNumber)
+        {
+            return true;
+        }
+
+        return normalizedDataType is "identifier" or "autonumber" or "longinteger";
+    }
+
     private static int ParseExternalParameter(string segment)
     {
         if (string.IsNullOrWhiteSpace(segment))
@@ -374,5 +430,129 @@ internal static class SqlDataTypeMapper
         }
 
         return int.TryParse(trimmed, out var value) ? value : 0;
+    }
+
+    private sealed class TypeMappingRule
+    {
+        private readonly TypeMappingStrategy _strategy;
+        private readonly string? _sqlType;
+        private readonly int? _fallbackLength;
+        private readonly int? _defaultPrecision;
+        private readonly int? _defaultScale;
+        private readonly int? _scale;
+        private readonly int? _maxLengthThreshold;
+
+        public TypeMappingRule(TypeMappingRuleDefinition definition)
+        {
+            if (definition is null)
+            {
+                throw new ArgumentNullException(nameof(definition));
+            }
+
+            _strategy = definition.Strategy;
+            _sqlType = string.IsNullOrWhiteSpace(definition.SqlType) ? null : definition.SqlType!.Trim();
+            _fallbackLength = definition.FallbackLength;
+            _defaultPrecision = definition.DefaultPrecision;
+            _defaultScale = definition.DefaultScale;
+            _scale = definition.Scale;
+            _maxLengthThreshold = definition.MaxLengthThreshold;
+        }
+
+        public DataType Apply(AttributeModel attribute)
+        {
+            return _strategy switch
+            {
+                TypeMappingStrategy.Fixed => ResolveFixed(_sqlType),
+                TypeMappingStrategy.UnicodeText => ResolveUnicodeText(attribute.Length, _fallbackLength, _maxLengthThreshold ?? DefaultUnicodeMaxLengthThreshold),
+                TypeMappingStrategy.VarChar => ResolveVarChar(attribute.Length ?? _fallbackLength),
+                TypeMappingStrategy.VarCharText => ResolveVarCharText(attribute.Length, _fallbackLength ?? 0),
+                TypeMappingStrategy.VarBinary => ResolveVarBinary(attribute.Length ?? _fallbackLength),
+                TypeMappingStrategy.Decimal => ResolveDecimal(attribute.Precision, attribute.Scale, _defaultPrecision ?? 18, _defaultScale ?? 0),
+                TypeMappingStrategy.DateTime2 => DataType.DateTime2(ResolveScale(null, attribute.Scale, _scale ?? 7)),
+                TypeMappingStrategy.DateTimeOffset => DataType.DateTimeOffset(ResolveScale(null, attribute.Scale, _scale ?? 7)),
+                TypeMappingStrategy.Time => DataType.Time(ResolveScale(null, attribute.Scale, _scale ?? 7)),
+                _ => ResolveFixed(_sqlType),
+            };
+        }
+
+        private static DataType ResolveFixed(string? sqlType)
+        {
+            return string.IsNullOrWhiteSpace(sqlType) ? DataType.NVarCharMax : ResolveExternal(sqlType);
+        }
+    }
+
+    private sealed record TypeMappingPolicyDefinition(
+        TypeMappingRuleDefinition Default,
+        IReadOnlyDictionary<string, TypeMappingRuleDefinition> Mappings)
+    {
+        public static TypeMappingPolicyDefinition Parse(Stream stream)
+        {
+            using var document = JsonDocument.Parse(stream);
+            var root = document.RootElement;
+
+            TypeMappingRuleDefinition defaultRule;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("default", out var defaultElement))
+            {
+                if (!TypeMappingRuleDefinition.TryParse(defaultElement, out defaultRule, out var error))
+                {
+                    throw new InvalidOperationException($"Failed to parse default type mapping: {error}");
+                }
+            }
+            else
+            {
+                defaultRule = new TypeMappingRuleDefinition(TypeMappingStrategy.Fixed, "nvarchar(max)", null, null, null, null, null);
+            }
+
+            var mappings = new Dictionary<string, TypeMappingRuleDefinition>(StringComparer.OrdinalIgnoreCase);
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("mappings", out var mappingsElement) && mappingsElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in mappingsElement.EnumerateObject())
+                {
+                    if (!TypeMappingRuleDefinition.TryParse(property.Value, out var rule, out var error))
+                    {
+                        throw new InvalidOperationException($"Failed to parse type mapping for '{property.Name}': {error}");
+                    }
+
+                    var key = NormalizeKey(property.Name);
+                    mappings[key] = rule;
+                }
+            }
+
+            return new TypeMappingPolicyDefinition(defaultRule, mappings);
+        }
+
+        public TypeMappingPolicyDefinition WithOverrides(IReadOnlyDictionary<string, TypeMappingRuleDefinition> overrides)
+        {
+            if (overrides is null || overrides.Count == 0)
+            {
+                return this;
+            }
+
+            var builder = new Dictionary<string, TypeMappingRuleDefinition>(Mappings, StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in overrides)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key))
+                {
+                    continue;
+                }
+
+                var key = NormalizeKey(pair.Key);
+                builder[key] = pair.Value;
+            }
+
+            return this with { Mappings = builder };
+        }
+
+        public TypeMappingPolicy ToPolicy()
+        {
+            var compiled = new Dictionary<string, TypeMappingRule>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in Mappings)
+            {
+                var key = NormalizeKey(pair.Key);
+                compiled[key] = new TypeMappingRule(pair.Value);
+            }
+
+            return new TypeMappingPolicy(compiled, new TypeMappingRule(Default));
+        }
     }
 }
