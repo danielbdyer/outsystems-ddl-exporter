@@ -16,7 +16,7 @@
 - [x] Extend domain DTOs to capture all fixture fields (`isPlatformAuto`, `physical.isPresentButInactive`, external db hints, delete rule semantics).
 - [x] Introduce profiling DTOs (column stats, uniqueness, FK evidence) and decision result types (per-column NULL, per-index UNIQUE, per-reference FK decision).
 - [x] Add a model validator that enforces required shape, attribute uniqueness, identifier rules, reference targets, and index integrity with regression tests derived from the edge-case fixture.
-- [ ] Publish a boundary contract appendix that documents `IModelProvider`, `IDataProfiler`, `ITighteningPolicy`, `ISmoBuilder`, `IDdlEmitter`, and `IDmmComparator` invariants for contributors. *(In progress via `notes/design-contracts.md` draft — expand with DTO examples.)*
+- [x] Publish a boundary contract appendix that documents `IModelProvider`, `IDataProfiler`, `ITighteningPolicy`, `ISmoBuilder`, `IDdlEmitter`, and `IDmmComparator` invariants for contributors. *(Now covers DTO snippets and interface quick reference in `notes/design-contracts.md`.)*
 - 🔗 **Checklist**: maps to §1.1–§1.6 (JSON validation rules).
 
 ## 2. Profiling Pipeline (Mock-First)
@@ -36,8 +36,8 @@
 - 🔗 **Checklist**: covers §3.1–§3.9, §11.1–§11.2, and cross-schema items in §16.
 
 ## 4. SMO Object Graph Construction
-- [ ] Create translators from domain + decisions → SMO `Table`, `Index`, `ForeignKey` objects (no string concatenation).
-  - Progress: offline `SmoTableDefinition`/`SmoColumnDefinition` records now capture the policy outcomes for tests without requiring a live SMO server; real SMO object wiring remains open.
+- [x] Create translators from domain + decisions → SMO `Table`, `Index`, `ForeignKey` objects (no string concatenation).
+  - Completed: `SmoObjectGraphFactory` materialises detached SMO objects using naming overrides so tests can assert against real SMO metadata without SQL connectivity.
 - [x] Ensure indexes respect `isPlatformAuto` toggle; exclude when configured. *(Unit · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs); Integration · [tests/Osm.Emission.Tests/SsdtEmitterTests.cs](tests/Osm.Emission.Tests/SsdtEmitterTests.cs))*
 - [ ] Validate NOT NULL/UNIQUE/FK flagging via SMO assertions on the edge-case fixture baseline (`tests/Osm.Smo.Tests/SmoModelFactoryTests.cs`).
 - [x] Unique index enforcement / suppression flows through SMO definitions and emitted scripts. *(Unit · P1 · [tests/Osm.Smo.Tests/SmoModelFactoryTests.cs](tests/Osm.Smo.Tests/SmoModelFactoryTests.cs), [tests/Osm.Emission.Tests/SsdtEmitterTests.cs](tests/Osm.Emission.Tests/SsdtEmitterTests.cs))*

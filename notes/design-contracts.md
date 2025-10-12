@@ -45,6 +45,16 @@ This appendix complements `architecture-guardrails.md` by describing the executa
 - **Failures**: Throwing is reserved for programming errors (null arguments). Option validation should occur before invocation.
 - **Telemetry hooks**: table/index/foreign-key counts and whether bare-table mode is active.
 
+### SMO object translation (`SmoObjectGraphFactory`)
+- **Input**: `SmoModel` definitions and `SmoBuildOptions`.
+- **Output**: Detached `Microsoft.SqlServer.Management.Smo.Table` objects suitable for validation/scripting.
+- **Invariants**:
+  - Respects naming overrides for both primary tables and referenced foreign key targets.
+  - Populates identity settings, nullability, index metadata (unique/primary key flags, included columns), and FK trust flags exactly as present in `SmoModel`.
+  - Reuses a deterministic in-memory `Server`/`Database` so tests do not require SQL connectivity.
+- **Failures**: Programming errors (`ArgumentNullException`) when definitions/options are missing. Callers should validate DTO shape before translation.
+- **Telemetry hooks**: Count of translated tables and which catalogs were materialised (for future logging scenarios).
+
 ## SSDT emission (`SsdtEmitter` / `SsdtManifest`)
 - **Input**: `SmoModel`, emission directory, `SmoBuildOptions`, and `PolicyDecisionReport`.
 - **Output**: Single-file SSDT artifacts per table (CREATE TABLE + inline defaults/FKs/indexes + extended properties), `manifest.json`, and `policy-decisions.json`.
@@ -78,3 +88,21 @@ This appendix complements `architecture-guardrails.md` by describing the executa
 ---
 
 Keep this document synchronized with the code by updating it whenever an interface gains a new field, failure code, or toggle. Tests in `notes/test-plan.md` reference these contracts to ensure guardrails stay enforceable.
+
+---
+
+## Interface quick reference
+
+| Boundary | Inputs | Outputs | Failure codes | Notes |
+| --- | --- | --- | --- | --- |
+| `IModelProvider` (pipeline ingestion) | Model path, module filter, supplemental entity hints | `Result<OsmModel>` | `pipeline.buildSsdt.model.missing`, `model.validation.*` | Consumers receive a fully validated domain graph; supplemental material must already satisfy identifier rules. |
+| `IDataProfiler` (`FixtureDataProfiler`, future SQL) | `OsmModel`, profiling options (`SqlProfilerOptions` or fixture manifest) | `Result<ProfileSnapshot>` | `pipeline.buildSsdt.profile.path.missing`, `profile.capture.*` | Snapshot rows are keyed by schema/table/column physical identifiers and carry timestamps + sampling metadata. |
+| `ITighteningPolicy` | `OsmModel`, `ProfileSnapshot`, `TighteningOptions` | `PolicyDecisionSet` | _none (pure function)_ | All consumers must treat results as immutable decisions and respect rationale codes for telemetry. |
+| `ISmoBuilder` (`SmoModelFactory` + `SmoObjectGraphFactory`) | Domain model, policy decisions, `SmoBuildOptions` | `SmoModel` definitions and detached SMO `Table` objects | _programming errors only_ | Definitions remain the canonical interchange; detached tables are for validation/scripting that requires SMO types. |
+| `IDdlEmitter` (`SsdtEmitter`) | `SmoModel`, emission directory, `SmoBuildOptions`, decision summaries | `SsdtManifest`, file system artifacts | `pipeline.buildSsdt.output.missing`, IO errors | Emits per-table artifacts plus concatenated optional outputs without mutating the model. |
+| `IDmmComparator` (`DmmComparator`) | Emitted SMO projections, parsed DMM ScriptDom tree | `DmmComparisonResult` | `dmm.parse.*` | Comparison normalises types and identifier casing while preserving schema separation for drift reporting. |
+
+### DTO snippet glossary
+- **`ProfileSnapshot.ColumnProfile`** – `{ schema: string, table: string, column: string, nullFraction: decimal, rowCount: long }` (nullable values require the tightening policy to honour the configured null budget).
+- **`PolicyDecision.ColumnDecision`** – `{ coordinate: ColumnCoordinate, makeNotNull: bool, rationale: string[] }` (coordinates use logical names when available; `makeNotNull=false` does _not_ imply allow nulls unless the source model already permits it).
+- **`SmoForeignKeyDefinition`** – `{ name: string, column: string, referencedSchema: string, referencedTable: string, referencedLogicalTable: string, deleteAction: ForeignKeyAction, isNoCheck: bool }` (referenced table name is rewritten via naming overrides during SMO translation).
