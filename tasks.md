@@ -3,7 +3,7 @@
 > This backlog captures the open scope needed to finish the extraction → tightening → SMO emission pipeline described in the README while honoring the architectural guardrails and the living test plan. Completed work from earlier iterations has been collapsed into guardrail references so we can focus on the remaining shippable increments.
 
 ## 0. Foundational Stabilization
-- [ ] **Unblock the .NET 9 build** by resolving the `System.Index` vs. `Microsoft.SqlServer.Management.Smo.Index` ambiguity in `SmoObjectGraphFactory`. Add a regression test in `Osm.Smo.Tests` to guard the namespace import order. *(Guardrails §5; Test Plan smoke prereq)*
+- [x] **Unblock the .NET 9 build** by resolving the `System.Index` vs. `Microsoft.SqlServer.Management.Smo.Index` ambiguity in `SmoObjectGraphFactory`. Add a regression test in `Osm.Smo.Tests` to guard the namespace import order. *(Guardrails §5; Test Plan smoke prereq)*
 - [ ] Review solution-wide nullable annotations and `LangVersion` settings so the compiler baseline matches the `notes/run-checklist.md` tooling expectations.
 - [ ] Refresh the contributor onboarding docs (README + `notes/run-checklist.md`) with any additional steps discovered while fixing the current build break.
 

@@ -154,22 +154,21 @@ public sealed class SmoObjectGraphFactory : IDisposable
     {
         foreach (var index in indexes)
         {
-            var smoIndex = new Index(table, index.Name)
+            var smoIndex = new Microsoft.SqlServer.Management.Smo.Index(table, index.Name)
             {
                 IndexKeyType = ResolveIndexKeyType(index),
                 IsUnique = index.IsUnique,
                 FilterDefinition = index.Metadata.FilterDefinition,
                 IgnoreDuplicateKeys = index.Metadata.IgnoreDuplicateKey,
-                IsEnabled = !index.Metadata.IsDisabled,
                 PadIndex = index.Metadata.IsPadded,
-                AllowRowLocks = index.Metadata.AllowRowLocks,
-                AllowPageLocks = index.Metadata.AllowPageLocks,
-                StatisticsNoRecompute = index.Metadata.StatisticsNoRecompute,
+                DisallowRowLocks = !index.Metadata.AllowRowLocks,
+                DisallowPageLocks = !index.Metadata.AllowPageLocks,
+                NoAutomaticRecomputation = index.Metadata.StatisticsNoRecompute,
             };
 
             if (index.Metadata.FillFactor.HasValue)
             {
-                smoIndex.FillFactor = index.Metadata.FillFactor.Value;
+                smoIndex.FillFactor = (byte)index.Metadata.FillFactor.Value;
             }
 
             if (index.Metadata.DataSpace is { } dataSpace && !string.IsNullOrWhiteSpace(dataSpace.Name))
