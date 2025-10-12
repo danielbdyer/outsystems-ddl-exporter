@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data;
@@ -7,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -40,15 +42,16 @@ public sealed class SqlDataProfiler : IDataProfiler
             var metadata = await LoadColumnMetadataAsync(connection, tables, cancellationToken).ConfigureAwait(false);
             var rowCounts = await LoadRowCountsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
             var plans = BuildProfilingPlans(metadata, rowCounts);
-            var resultsLookup = new Dictionary<(string Schema, string Table), TableProfilingResults>(plans.Count, TableKeyComparer.Instance);
+            var resultsLookup = new ConcurrentDictionary<(string Schema, string Table), TableProfilingResults>(TableKeyComparer.Instance);
 
+            using var gate = new SemaphoreSlim(_options.MaxConcurrentTableProfiles);
+            var tasks = new List<Task>(plans.Count);
             foreach (var plan in plans.Values)
             {
-                var nullCounts = await ComputeNullCountsAsync(connection, plan, cancellationToken).ConfigureAwait(false);
-                var duplicateFlags = await ComputeDuplicateCandidatesAsync(connection, plan, cancellationToken).ConfigureAwait(false);
-                var orphanFlags = await ComputeForeignKeyRealityAsync(connection, plan, cancellationToken).ConfigureAwait(false);
-                resultsLookup[(plan.Schema, plan.Table)] = new TableProfilingResults(nullCounts, duplicateFlags, orphanFlags);
+                tasks.Add(ProfileTableWithGateAsync(plan, resultsLookup, gate, cancellationToken));
             }
+
+            await Task.WhenAll(tasks).ConfigureAwait(false);
 
             var columnProfiles = new List<ColumnProfile>();
             var uniqueProfiles = new List<UniqueCandidateProfile>();
@@ -317,6 +320,52 @@ GROUP BY s.name, t.name;";
         return counts;
     }
 
+    private async Task ProfileTableWithGateAsync(
+        TableProfilingPlan plan,
+        ConcurrentDictionary<(string Schema, string Table), TableProfilingResults> resultsLookup,
+        SemaphoreSlim gate,
+        CancellationToken cancellationToken)
+    {
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            var results = await ProfileTableAsync(plan, cancellationToken).ConfigureAwait(false);
+            resultsLookup[(plan.Schema, plan.Table)] = results;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<TableProfilingResults> ProfileTableAsync(TableProfilingPlan plan, CancellationToken cancellationToken)
+    {
+        await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        using var tableCancellation = CreateTableCancellationSource(cancellationToken);
+
+        var nullCounts = await ExecuteWithTimeoutFallback(
+            ct => ComputeNullCountsAsync(connection, plan, ct),
+            BuildConservativeNullCounts(plan),
+            tableCancellation,
+            cancellationToken).ConfigureAwait(false);
+
+        var duplicateFlags = await ExecuteWithTimeoutFallback(
+            ct => ComputeDuplicateCandidatesAsync(connection, plan, ct),
+            BuildConservativeUniqueResults(plan),
+            tableCancellation,
+            cancellationToken).ConfigureAwait(false);
+
+        var orphanFlags = await ExecuteWithTimeoutFallback(
+            ct => ComputeForeignKeyRealityAsync(connection, plan, ct),
+            BuildConservativeForeignKeyResults(plan),
+            tableCancellation,
+            cancellationToken).ConfigureAwait(false);
+
+        return new TableProfilingResults(nullCounts, duplicateFlags, orphanFlags);
+    }
+
     private bool ShouldSample(long rowCount)
     {
         if (rowCount <= 0)
@@ -324,8 +373,132 @@ GROUP BY s.name, t.name;";
             return false;
         }
 
-        var sampling = _options.Sampling;
-        return rowCount > sampling.RowCountSamplingThreshold;
+        var threshold = _options.Sampling.RowCountSamplingThreshold;
+        if (_options.Limits.MaxRowsPerTable.HasValue)
+        {
+            threshold = Math.Min(threshold, _options.Limits.MaxRowsPerTable.Value);
+        }
+
+        return rowCount > threshold;
+    }
+
+    private int GetSampleSize(long rowCount)
+    {
+        var sample = (long)_options.Sampling.SampleSize;
+        if (_options.Limits.MaxRowsPerTable.HasValue)
+        {
+            sample = Math.Min(sample, _options.Limits.MaxRowsPerTable.Value);
+        }
+
+        if (rowCount > 0)
+        {
+            sample = Math.Min(sample, rowCount);
+        }
+
+        sample = Math.Clamp(sample, 1, (long)int.MaxValue);
+        return (int)sample;
+    }
+
+    private async Task<T> ExecuteWithTimeoutFallback<T>(
+        Func<CancellationToken, Task<T>> operation,
+        T fallback,
+        CancellationTokenSource? tableCancellation,
+        CancellationToken originalToken)
+    {
+        try
+        {
+            var token = tableCancellation?.Token ?? originalToken;
+            return await operation(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (IsTableTimeout(tableCancellation, originalToken))
+        {
+            return fallback;
+        }
+        catch (DbException ex) when (IsTimeoutException(ex))
+        {
+            return fallback;
+        }
+    }
+
+    private CancellationTokenSource? CreateTableCancellationSource(CancellationToken cancellationToken)
+    {
+        if (!_options.Limits.TableTimeout.HasValue)
+        {
+            return null;
+        }
+
+        var source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        source.CancelAfter(_options.Limits.TableTimeout.Value);
+        return source;
+    }
+
+    private static IReadOnlyDictionary<string, long> BuildConservativeNullCounts(TableProfilingPlan plan)
+    {
+        if (plan.Columns.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<string, long>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in plan.Columns)
+        {
+            builder[column] = plan.RowCount;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static IReadOnlyDictionary<string, bool> BuildConservativeUniqueResults(TableProfilingPlan plan)
+    {
+        if (plan.UniqueCandidates.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<string, bool>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in plan.UniqueCandidates)
+        {
+            builder[candidate.Key] = true;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static IReadOnlyDictionary<string, bool> BuildConservativeForeignKeyResults(TableProfilingPlan plan)
+    {
+        if (plan.ForeignKeys.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<string, bool>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in plan.ForeignKeys)
+        {
+            builder[candidate.Key] = true;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static bool IsTableTimeout(CancellationTokenSource? tableCancellation, CancellationToken originalToken)
+    {
+        return tableCancellation is not null && tableCancellation.IsCancellationRequested && !originalToken.IsCancellationRequested;
+    }
+
+    private static bool IsTimeoutException(DbException exception)
+    {
+        if (exception is SqlException sqlException)
+        {
+            foreach (SqlError error in sqlException.Errors)
+            {
+                if (error.Number == -2)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private async Task<IReadOnlyDictionary<string, long>> ComputeNullCountsAsync(
@@ -350,6 +523,7 @@ GROUP BY s.name, t.name;";
         }
 
         var useSampling = ShouldSample(plan.RowCount);
+        var sampleSize = GetSampleSize(plan.RowCount);
         await using var command = connection.CreateCommand();
         var columnList = plan.Columns.Select(QuoteIdentifier).ToArray();
         var aliasNames = plan.Columns.Select((_, index) => $"NullCount{index}").ToArray();
@@ -365,7 +539,7 @@ GROUP BY s.name, t.name;";
             var parameter = command.CreateParameter();
             parameter.ParameterName = "@SampleSize";
             parameter.DbType = DbType.Int32;
-            parameter.Value = _options.Sampling.SampleSize;
+            parameter.Value = sampleSize;
             command.Parameters.Add(parameter);
         }
 
@@ -511,7 +685,7 @@ GROUP BY s.name, t.name;";
             var parameter = command.CreateParameter();
             parameter.ParameterName = "@SampleSize";
             parameter.DbType = DbType.Int32;
-            parameter.Value = _options.Sampling.SampleSize;
+            parameter.Value = GetSampleSize(plan.RowCount);
             command.Parameters.Add(parameter);
         }
 
@@ -615,7 +789,7 @@ GROUP BY s.name, t.name;";
             var parameter = command.CreateParameter();
             parameter.ParameterName = "@SampleSize";
             parameter.DbType = DbType.Int32;
-            parameter.Value = _options.Sampling.SampleSize;
+            parameter.Value = GetSampleSize(plan.RowCount);
             command.Parameters.Add(parameter);
         }
 
