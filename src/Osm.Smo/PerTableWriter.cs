@@ -581,11 +581,17 @@ public sealed class PerTableWriter
                 continue;
             }
 
-            statement.Columns.Add(new ColumnWithSortOrder
+            var orderedColumn = new ColumnWithSortOrder
             {
                 Column = BuildColumnReference(column.Name, format),
-                SortOrder = column.IsDescending ? SortOrder.Descending : SortOrder.Ascending,
-            });
+            };
+
+            if (column.IsDescending)
+            {
+                orderedColumn.SortOrder = SortOrder.Descending;
+            }
+
+            statement.Columns.Add(orderedColumn);
         }
 
         ApplyIndexMetadata(statement, index.Metadata, format);
@@ -649,35 +655,50 @@ public sealed class PerTableWriter
             });
         }
 
-        options.Add(new IndexStateOption
+        if (metadata.IsPadded)
         {
-            OptionKind = IndexOptionKind.PadIndex,
-            OptionState = metadata.IsPadded ? OptionState.On : OptionState.Off,
-        });
+            options.Add(new IndexStateOption
+            {
+                OptionKind = IndexOptionKind.PadIndex,
+                OptionState = OptionState.On,
+            });
+        }
 
-        options.Add(new IgnoreDupKeyIndexOption
+        if (metadata.IgnoreDuplicateKey)
         {
-            OptionKind = IndexOptionKind.IgnoreDupKey,
-            OptionState = metadata.IgnoreDuplicateKey ? OptionState.On : OptionState.Off,
-        });
+            options.Add(new IgnoreDupKeyIndexOption
+            {
+                OptionKind = IndexOptionKind.IgnoreDupKey,
+                OptionState = OptionState.On,
+            });
+        }
 
-        options.Add(new IndexStateOption
+        if (metadata.StatisticsNoRecompute)
         {
-            OptionKind = IndexOptionKind.StatisticsNoRecompute,
-            OptionState = metadata.StatisticsNoRecompute ? OptionState.On : OptionState.Off,
-        });
+            options.Add(new IndexStateOption
+            {
+                OptionKind = IndexOptionKind.StatisticsNoRecompute,
+                OptionState = OptionState.On,
+            });
+        }
 
-        options.Add(new IndexStateOption
+        if (!metadata.AllowRowLocks)
         {
-            OptionKind = IndexOptionKind.AllowRowLocks,
-            OptionState = metadata.AllowRowLocks ? OptionState.On : OptionState.Off,
-        });
+            options.Add(new IndexStateOption
+            {
+                OptionKind = IndexOptionKind.AllowRowLocks,
+                OptionState = OptionState.Off,
+            });
+        }
 
-        options.Add(new IndexStateOption
+        if (!metadata.AllowPageLocks)
         {
-            OptionKind = IndexOptionKind.AllowPageLocks,
-            OptionState = metadata.AllowPageLocks ? OptionState.On : OptionState.Off,
-        });
+            options.Add(new IndexStateOption
+            {
+                OptionKind = IndexOptionKind.AllowPageLocks,
+                OptionState = OptionState.Off,
+            });
+        }
 
         foreach (var compression in BuildCompressionOptions(metadata.DataCompression))
         {
