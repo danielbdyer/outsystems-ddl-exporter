@@ -49,5 +49,41 @@ public sealed class SqlSamplingOptionsTests
 
         Assert.Null(options.CommandTimeoutSeconds);
         Assert.Equal(SqlSamplingOptions.Default, options.Sampling);
+        Assert.Equal(4, options.MaxConcurrentTableProfiles);
+        Assert.Equal(SqlProfilerLimits.Default, options.Limits);
+    }
+
+    [Fact]
+    public void SqlProfilerLimits_Default_ShouldExposeExpectedValues()
+    {
+        var limits = SqlProfilerLimits.Default;
+
+        Assert.Equal(1_000_000, limits.MaxRowsPerTable);
+        Assert.Equal(TimeSpan.FromMinutes(2), limits.TableTimeout);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void SqlProfilerLimits_ShouldThrow_WhenMaxRowsNotPositive(long maxRows)
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new SqlProfilerLimits(maxRows, TimeSpan.FromMinutes(1)));
+        Assert.Equal("maxRowsPerTable", exception.ParamName);
+    }
+
+    [Fact]
+    public void SqlProfilerLimits_ShouldThrow_WhenTimeoutNotPositive()
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new SqlProfilerLimits(10, TimeSpan.Zero));
+        Assert.Equal("tableTimeout", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-4)]
+    public void SqlProfilerOptions_ShouldThrow_WhenConcurrencyInvalid(int concurrency)
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new SqlProfilerOptions(null, SqlSamplingOptions.Default, concurrency, SqlProfilerLimits.Default));
+        Assert.Equal("maxConcurrentTableProfiles", exception.ParamName);
     }
 }
