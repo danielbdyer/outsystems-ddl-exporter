@@ -6,6 +6,8 @@ using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
 using Xunit;
+using SmoIndex = Microsoft.SqlServer.Management.Smo.Index;
+using SystemIndex = System.Index;
 
 namespace Osm.Smo.Tests;
 
@@ -62,6 +64,27 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         Assert.Contains(foreignKey.Columns.Cast<ForeignKeyColumn>(), column =>
             column.Name.Equals("CityId", StringComparison.OrdinalIgnoreCase) &&
             column.ReferencedColumn.Equals("Id", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void CreateTable_uses_smo_index_type_when_system_index_is_in_scope()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var profile = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var decisions = _policy.Decide(model, profile, TighteningOptions.Default);
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var smoModel = _modelFactory.Create(model, decisions, profile, options);
+
+        var tables = _factory.CreateTables(smoModel, options);
+        var customerTable = Assert.Single(tables.Where(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase)));
+
+        var uniqueIndex = Assert.IsType<SmoIndex>(customerTable.Indexes["IDX_Customer_Email"]);
+        Assert.Equal("IDX_Customer_Email", uniqueIndex.Name);
+        Assert.Equal(IndexKeyType.DriUniqueKey, uniqueIndex.IndexKeyType);
+
+        var systemIndex = SystemIndex.Start;
+        Assert.False(systemIndex.IsFromEnd);
+        Assert.Equal(0, systemIndex.GetOffset(5));
     }
 
     [Fact]

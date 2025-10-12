@@ -2,6 +2,7 @@ using System;
 using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
+using SmoIndex = Microsoft.SqlServer.Management.Smo.Index;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -400,7 +401,7 @@ public class SmoModelFactoryTests
         Assert.NotEmpty(tables);
 
         var customer = tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
-        var pk = Assert.Single(customer.Indexes.Cast<Index>(), index => index.IndexKeyType == IndexKeyType.DriPrimaryKey);
+        var pk = Assert.Single(customer.Indexes.Cast<SmoIndex>(), index => index.IndexKeyType == IndexKeyType.DriPrimaryKey);
         Assert.Equal("PK_Customer", pk.Name);
 
         var foreignKey = Assert.Single(customer.ForeignKeys.Cast<ForeignKey>());
