@@ -23,13 +23,13 @@ USING
         (1, N'Lisbon', 1),
         (2, N'Porto', 1),
         (3, N'Madrid', 0)
-) AS Source ([ID], [NAME], [ISACTIVE])
-    ON Target.[ID] = Source.[ID]
+) AS Source ([Id], [Name], [IsActive])
+    ON Target.[Id] = Source.[Id]
 WHEN MATCHED THEN UPDATE SET
-    Target.[NAME] = Source.[NAME],
-    Target.[ISACTIVE] = Source.[ISACTIVE]
-WHEN NOT MATCHED THEN INSERT ([ID], [NAME], [ISACTIVE])
-    VALUES (Source.[ID], Source.[NAME], Source.[ISACTIVE]);
+    Target.[Name] = Source.[Name],
+    Target.[IsActive] = Source.[IsActive]
+WHEN NOT MATCHED THEN INSERT ([Id], [Name], [IsActive])
+    VALUES (Source.[Id], Source.[Name], Source.[IsActive]);
 
 GO
 
