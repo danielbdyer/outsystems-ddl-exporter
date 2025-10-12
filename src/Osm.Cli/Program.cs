@@ -1,3 +1,4 @@
+using System;
 using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Invocation;
@@ -7,11 +8,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.CommandLine.Parsing;
-using Osm.Cli;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Osm.Cli;
 using Osm.Domain.Abstractions;
 using Osm.Json;
 using Osm.Dmm;
@@ -36,6 +37,16 @@ hostBuilder.Services.AddSingleton<IApplicationService<BuildSsdtApplicationInput,
 hostBuilder.Services.AddSingleton<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>, CompareWithDmmApplicationService>();
 hostBuilder.Services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();
 
+var enableRemapUsers = string.Equals(
+    Environment.GetEnvironmentVariable("OSM_ENABLE_REMAP_USERS"),
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+
+if (enableRemapUsers)
+{
+    hostBuilder.Services.AddSingleton<RemapUsersCommand>();
+}
+
 using var host = hostBuilder.Build();
 
 var configOption = new Option<string?>("--config", "Path to CLI configuration file.");
@@ -55,6 +66,12 @@ var buildCommand = CreateBuildCommand();
 var extractCommand = CreateExtractCommand();
 var compareCommand = CreateCompareCommand();
 var inspectCommand = CreateInspectCommand();
+Command? remapUsersCommand = null;
+
+if (enableRemapUsers)
+{
+    remapUsersCommand = CreateRemapUsersCommand();
+}
 
 buildCommand.AddGlobalOption(configOption);
 buildCommand.AddOption(modulesOption);
@@ -81,13 +98,16 @@ compareCommand.AddOption(cacheRootOption);
 compareCommand.AddOption(refreshCacheOption);
 compareCommand.AddOption(maxParallelOption);
 
-var rootCommand = new RootCommand("OutSystems DDL Exporter CLI")
+var rootCommand = new RootCommand("OutSystems DDL Exporter CLI");
+rootCommand.AddCommand(inspectCommand);
+rootCommand.AddCommand(extractCommand);
+rootCommand.AddCommand(buildCommand);
+rootCommand.AddCommand(compareCommand);
+
+if (remapUsersCommand is not null)
 {
-    inspectCommand,
-    extractCommand,
-    buildCommand,
-    compareCommand
-};
+    rootCommand.AddCommand(remapUsersCommand);
+}
 
 var parser = new CommandLineBuilder(rootCommand)
     .UseDefaults()
@@ -99,6 +119,179 @@ var parser = new CommandLineBuilder(rootCommand)
     .Build();
 
 return await parser.InvokeAsync(args);
+
+Command CreateRemapUsersCommand()
+{
+    var sourceEnvironmentOption = new Option<string>("--source-env", "Source environment associated with the snapshot.")
+    {
+        IsRequired = true
+    };
+    sourceEnvironmentOption.FromAmong("DEV", "QA");
+
+    var uatConnectionOption = new Option<string>("--uat-conn", "ADO.NET connection string for the UAT database.")
+    {
+        IsRequired = true
+    };
+
+    var snapshotPathOption = new Option<string>("--snapshot-path", "Path to the source snapshot folder or descriptor.")
+    {
+        IsRequired = true
+    };
+
+    var matchingRulesOption = new Option<string[]>(
+        "--matching-rules",
+        static result =>
+        {
+            var values = result.Tokens
+                .Select(token => token.Value)
+                .SelectMany(token => token.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                .ToArray();
+
+            if (values.Length == 0)
+            {
+                result.ErrorMessage = "At least one matching rule must be specified.";
+            }
+
+            return values;
+        },
+        description: "Ordered list of matching rules to construct the user map.")
+    {
+        IsRequired = true,
+        AllowMultipleArgumentsPerToken = true,
+        ArgumentHelpName = "rules"
+    };
+
+    var fallbackUserIdOption = new Option<long?>("--fallback-user-id", "Fallback user identifier used by the 'fallback' rule.");
+
+    var policyOption = new Option<string>("--policy", () => "reassign", "Handling policy for unmapped foreign keys.");
+    policyOption.FromAmong("reassign", "prune");
+
+    var dryRunOption = new Option<bool>("--dry-run", () => true, "Preview changes without loading into base tables.");
+
+    var outputOption = new Option<string>("--out", () => "./_artifacts/remap-users", "Directory for run artifacts.");
+
+    var batchSizeOption = new Option<int>("--batch-size", () => 5000, "Batch size applied to rewrite operations.");
+
+    var commandTimeoutOption = new Option<int>("--command-timeout-s", () => 600, "Command timeout, in seconds, for SQL operations.");
+
+    var parallelismOption = new Option<int>("--parallelism", () => 4, "Maximum degree of parallelism for rewrite stages.");
+
+    var logLevelOption = new Option<string?>("--log-level", "Telemetry verbosity for the pipeline.");
+    logLevelOption.FromAmong("info", "debug", "trace");
+
+    var userTableOption = new Option<string>("--user-table", () => "ossys_User", "Name of the user table in the target environment.");
+
+    var command = new Command("remap-users", "Remap source user foreign keys into the UAT environment.")
+    {
+        sourceEnvironmentOption,
+        uatConnectionOption,
+        snapshotPathOption,
+        matchingRulesOption,
+        fallbackUserIdOption,
+        policyOption,
+        dryRunOption,
+        outputOption,
+        batchSizeOption,
+        commandTimeoutOption,
+        parallelismOption,
+        logLevelOption,
+        userTableOption
+    };
+
+    command.AddValidator(result =>
+    {
+        var errors = new List<string>();
+        var matchingRules = result.GetValueForOption(matchingRulesOption) ?? Array.Empty<string>();
+        var unknownRules = matchingRules
+            .Where(rule => !IsKnownRule(rule))
+            .ToArray();
+
+        if (unknownRules.Length > 0)
+        {
+            errors.Add("Unknown matching rule(s): " + string.Join(", ", unknownRules) + ". Allowed values: email, normalize-email, username, empno, fallback.");
+        }
+
+        if (matchingRules.Any(rule => string.Equals(rule, "fallback", StringComparison.OrdinalIgnoreCase)) &&
+            result.GetValueForOption(fallbackUserIdOption) is null)
+        {
+            errors.Add("The --fallback-user-id option is required when the matching rules include 'fallback'.");
+        }
+
+        if (result.GetValueForOption(batchSizeOption) <= 0)
+        {
+            errors.Add("The --batch-size option must be greater than zero.");
+        }
+
+        if (result.GetValueForOption(commandTimeoutOption) <= 0)
+        {
+            errors.Add("The --command-timeout-s option must be greater than zero.");
+        }
+
+        if (result.GetValueForOption(parallelismOption) <= 0)
+        {
+            errors.Add("The --parallelism option must be greater than zero.");
+        }
+
+        if (errors.Count > 0)
+        {
+            result.ErrorMessage = string.Join(Environment.NewLine, errors);
+        }
+    });
+
+    command.SetHandler(async context =>
+    {
+        var rootServices = GetServices(context);
+        using var scope = rootServices.CreateScope();
+        var services = scope.ServiceProvider;
+        var remapUsersHandler = services.GetRequiredService<RemapUsersCommand>();
+
+        var parseResult = context.ParseResult;
+        var matchingRules = (parseResult.GetValueForOption(matchingRulesOption) ?? Array.Empty<string>())
+            .Select(rule => rule.Trim())
+            .Where(rule => !string.IsNullOrEmpty(rule))
+            .Select(rule => rule.ToLowerInvariant())
+            .ToArray();
+
+        var policyValue = parseResult.GetValueForOption(policyOption) ?? "reassign";
+        var policy = Enum.TryParse<RemapUsersPolicy>(policyValue, ignoreCase: true, out var parsedPolicy)
+            ? parsedPolicy
+            : RemapUsersPolicy.Reassign;
+
+        var logLevel = parseResult.GetValueForOption(logLevelOption);
+        var normalizedLogLevel = string.IsNullOrWhiteSpace(logLevel) ? null : logLevel.Trim().ToLowerInvariant();
+
+        var options = new RemapUsersOptions(
+            parseResult.GetValueForOption(sourceEnvironmentOption)!,
+            parseResult.GetValueForOption(uatConnectionOption)!,
+            parseResult.GetValueForOption(snapshotPathOption)!,
+            matchingRules,
+            parseResult.GetValueForOption(fallbackUserIdOption),
+            policy,
+            parseResult.GetValueForOption(dryRunOption),
+            parseResult.GetValueForOption(outputOption)!,
+            parseResult.GetValueForOption(batchSizeOption),
+            parseResult.GetValueForOption(commandTimeoutOption),
+            parseResult.GetValueForOption(parallelismOption),
+            normalizedLogLevel,
+            parseResult.GetValueForOption(userTableOption)!);
+
+        var exitCode = await remapUsersHandler.ExecuteAsync(options, context.GetCancellationToken()).ConfigureAwait(false);
+        context.ExitCode = exitCode;
+    });
+
+    return command;
+
+    static bool IsKnownRule(string rule)
+    {
+        if (string.IsNullOrWhiteSpace(rule))
+        {
+            return false;
+        }
+
+        var allowedRules = new[] { "email", "normalize-email", "username", "empno", "fallback" };
+        return allowedRules.Any(allowed => string.Equals(rule, allowed, StringComparison.OrdinalIgnoreCase));
+    }
+}
 
 Command CreateBuildCommand()
 {
