@@ -88,6 +88,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         }
 
         var log = new PipelineExecutionLogBuilder();
+        var pipelineWarnings = ImmutableArray.CreateBuilder<string>();
         log.Record(
             "request.received",
             "Received build-ssdt pipeline request.",
@@ -108,10 +109,48 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 ["emission.moduleParallelism"] = request.SmoOptions.ModuleParallelism.ToString(CultureInfo.InvariantCulture)
             });
 
-        var modelResult = await _modelIngestionService.LoadFromFileAsync(request.ModelPath, cancellationToken).ConfigureAwait(false);
+        var ingestionWarnings = new List<string>();
+        var modelResult = await _modelIngestionService
+            .LoadFromFileAsync(request.ModelPath, ingestionWarnings, cancellationToken)
+            .ConfigureAwait(false);
         if (modelResult.IsFailure)
         {
             return Result<BuildSsdtPipelineResult>.Failure(modelResult.Errors);
+        }
+
+        if (ingestionWarnings.Count > 0)
+        {
+            pipelineWarnings.AddRange(ingestionWarnings);
+            var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["summary"] = ingestionWarnings[0],
+                ["lineCount"] = ingestionWarnings.Count.ToString(CultureInfo.InvariantCulture)
+            };
+
+            if (ingestionWarnings.Count > 1)
+            {
+                metadata["example1"] = ingestionWarnings[1];
+            }
+
+            if (ingestionWarnings.Count > 2)
+            {
+                metadata["example2"] = ingestionWarnings[2];
+            }
+
+            if (ingestionWarnings.Count > 3)
+            {
+                metadata["example3"] = ingestionWarnings[3];
+            }
+
+            if (ingestionWarnings.Count > 4)
+            {
+                metadata["suppressed"] = ingestionWarnings[^1];
+            }
+
+            log.Record(
+                "model.schema.warnings",
+                "Model JSON schema validation produced warnings.",
+                metadata);
         }
 
         var model = modelResult.Value;
@@ -426,7 +465,15 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 ["cacheDirectory"] = cacheResult?.CacheDirectory
             });
 
-        return new BuildSsdtPipelineResult(profile, decisionReport, manifest, decisionLogPath, seedPaths, cacheResult, log.Build());
+        return new BuildSsdtPipelineResult(
+            profile,
+            decisionReport,
+            manifest,
+            decisionLogPath,
+            seedPaths,
+            cacheResult,
+            log.Build(),
+            pipelineWarnings.ToImmutable());
     }
 
     private async Task<Result<ProfileSnapshot>> CaptureProfileAsync(

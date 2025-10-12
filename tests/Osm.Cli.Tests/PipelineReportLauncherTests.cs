@@ -80,7 +80,8 @@ public class PipelineReportLauncherTests
             Path.Combine(output.Path, "policy-decisions.json"),
             seedPaths,
             null,
-            PipelineExecutionLog.Empty);
+            PipelineExecutionLog.Empty,
+            ImmutableArray<string>.Empty);
 
         foreach (var seedPath in seedPaths)
         {

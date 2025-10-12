@@ -43,7 +43,7 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             var schemaResult = CirSchemaValidator.Validate(document.RootElement);
             if (schemaResult.IsFailure)
             {
-                return Result<OsmModel>.Failure(schemaResult.Errors);
+                AppendSchemaWarnings(warnings, schemaResult.Errors);
             }
 
             ModelDocument? model;
@@ -101,6 +101,28 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             }
 
             return OsmModel.Create(model.ExportedAtUtc, moduleResults, sequencesResult.Value, propertyResult.Value);
+        }
+    }
+
+    private static void AppendSchemaWarnings(ICollection<string>? warnings, ImmutableArray<ValidationError> errors)
+    {
+        if (warnings is null || errors.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var totalIssues = errors.Length;
+        warnings.Add($"Schema validation encountered {totalIssues} issue(s). Proceeding with best-effort import.");
+
+        var sampleCount = Math.Min(3, totalIssues);
+        for (var i = 0; i < sampleCount; i++)
+        {
+            warnings.Add($"  Example {i + 1}: {errors[i].Message}");
+        }
+
+        if (totalIssues > sampleCount)
+        {
+            warnings.Add($"  … {totalIssues - sampleCount} additional issue(s) suppressed.");
         }
     }
 

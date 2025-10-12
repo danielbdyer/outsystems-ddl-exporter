@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -271,11 +272,13 @@ public class ModelJsonDeserializerTests
 
         var deserializer = new ModelJsonDeserializer();
         using var stream = ToStream(json);
+        var warnings = new List<string>();
 
-        var result = deserializer.Deserialize(stream);
+        var result = deserializer.Deserialize(stream, warnings);
 
         Assert.True(result.IsFailure);
-        Assert.Contains(result.Errors, e => e.Code == "json.schema.validation" && e.Message.Contains("\"name\""));
+        Assert.Equal("module.name.invalid", Assert.Single(result.Errors).Code);
+        Assert.Contains(warnings, w => w.Contains("Schema validation encountered", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -311,11 +314,13 @@ public class ModelJsonDeserializerTests
 
         var deserializer = new ModelJsonDeserializer();
         using var stream = ToStream(json);
+        var warnings = new List<string>();
 
-        var result = deserializer.Deserialize(stream);
+        var result = deserializer.Deserialize(stream, warnings);
 
         Assert.True(result.IsFailure);
-        Assert.Contains(result.Errors, e => e.Code == "json.schema.validation" && e.Message.Contains("\"physicalName\""));
+        Assert.Equal("column.name.invalid", Assert.Single(result.Errors).Code);
+        Assert.Contains(warnings, w => w.Contains("Schema validation encountered", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -429,11 +434,13 @@ public class ModelJsonDeserializerTests
 
         var deserializer = new ModelJsonDeserializer();
         using var stream = ToStream(json);
+        var warnings = new List<string>();
 
-        var result = deserializer.Deserialize(stream);
+        var result = deserializer.Deserialize(stream, warnings);
 
         Assert.True(result.IsFailure);
-        Assert.Contains(result.Errors, e => e.Code == "json.schema.validation" && e.Message.Contains("\"attributes\""));
+        Assert.Equal("entity.attributes.missing", Assert.Single(result.Errors).Code);
+        Assert.Contains(warnings, w => w.Contains("Schema validation encountered", StringComparison.Ordinal));
     }
 
     [Fact]
