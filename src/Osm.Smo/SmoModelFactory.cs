@@ -145,7 +145,7 @@ public sealed class SmoModelFactory
         IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality,
         TypeMappingPolicy typeMapping)
     {
-        var columns = BuildColumns(context, decisions, profileDefaults, typeMapping);
+        var columns = BuildColumns(context, decisions, profileDefaults, typeMapping, entityLookup);
         var indexes = BuildIndexes(context, decisions, options.IncludePlatformAutoIndexes, options.Format);
         var foreignKeys = BuildForeignKeys(context, decisions, entityLookup, foreignKeyReality, options.Format);
         var triggers = BuildTriggers(context);
@@ -224,13 +224,24 @@ public sealed class SmoModelFactory
         EntityEmissionContext context,
         PolicyDecisionSet decisions,
         IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults,
-        TypeMappingPolicy typeMappingPolicy)
+        TypeMappingPolicy typeMappingPolicy,
+        EntityEmissionIndex entityLookup)
     {
         var builder = ImmutableArray.CreateBuilder<SmoColumnDefinition>();
 
         foreach (var attribute in context.EmittableAttributes)
         {
             var dataType = typeMappingPolicy.Resolve(attribute);
+
+            if (attribute.Reference.IsReference &&
+                entityLookup.TryResolveReference(attribute.Reference, context, out var targetContext))
+            {
+                var referencedIdentifier = targetContext.GetPreferredIdentifier();
+                if (referencedIdentifier is not null)
+                {
+                    dataType = typeMappingPolicy.Resolve(referencedIdentifier);
+                }
+            }
             var nullable = !ShouldEnforceNotNull(context.Entity, attribute, decisions);
             var onDisk = attribute.OnDisk;
             var isIdentity = onDisk.IsIdentity ?? attribute.IsAutoNumber;

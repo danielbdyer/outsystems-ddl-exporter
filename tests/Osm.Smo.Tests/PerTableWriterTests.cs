@@ -109,4 +109,96 @@ public class PerTableWriterTests
         Assert.Contains("Module: Sales", result.Script, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE [dbo].[Customer]", result.Script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Generate_inlines_foreign_keys_with_referencing_columns()
+    {
+        var idColumn = new SmoColumnDefinition(
+            Name: "Id",
+            LogicalName: "Id",
+            DataType: DataType.BigInt,
+            Nullable: false,
+            IsIdentity: true,
+            IdentitySeed: 1,
+            IdentityIncrement: 1,
+            IsComputed: false,
+            ComputedExpression: null,
+            DefaultExpression: null,
+            Collation: null,
+            Description: null,
+            DefaultConstraint: null,
+            CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty);
+
+        var foreignKeyColumn = new SmoColumnDefinition(
+            Name: "CityId",
+            LogicalName: "CityId",
+            DataType: DataType.BigInt,
+            Nullable: false,
+            IsIdentity: false,
+            IdentitySeed: 0,
+            IdentityIncrement: 0,
+            IsComputed: false,
+            ComputedExpression: null,
+            DefaultExpression: null,
+            Collation: null,
+            Description: null,
+            DefaultConstraint: null,
+            CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty);
+
+        var nameColumn = new SmoColumnDefinition(
+            Name: "Name",
+            LogicalName: "Name",
+            DataType: DataType.NVarChar(100),
+            Nullable: true,
+            IsIdentity: false,
+            IdentitySeed: 0,
+            IdentityIncrement: 0,
+            IsComputed: false,
+            ComputedExpression: null,
+            DefaultExpression: null,
+            Collation: null,
+            Description: null,
+            DefaultConstraint: null,
+            CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty);
+
+        var foreignKey = new SmoForeignKeyDefinition(
+            Name: "FK_Order_CityId",
+            Column: foreignKeyColumn.Name,
+            ReferencedModule: "AppCore",
+            ReferencedTable: "OSUSR_DEF_CITY",
+            ReferencedSchema: "dbo",
+            ReferencedColumn: "Id",
+            ReferencedLogicalTable: "City",
+            DeleteAction: ForeignKeyAction.NoAction,
+            IsNoCheck: false);
+
+        var table = new SmoTableDefinition(
+            Module: "Sales",
+            OriginalModule: "Sales",
+            Name: "OSUSR_SALES_ORDER",
+            Schema: "dbo",
+            Catalog: "OutSystems",
+            LogicalName: "Order",
+            Description: null,
+            Columns: ImmutableArray.Create(idColumn, foreignKeyColumn, nameColumn),
+            Indexes: ImmutableArray<SmoIndexDefinition>.Empty,
+            ForeignKeys: ImmutableArray.Create(foreignKey),
+            Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
+
+        var writer = new PerTableWriter();
+        var result = writer.Generate(table, SmoBuildOptions.Default);
+
+        var script = result.Script;
+        var cityIndex = script.IndexOf("[CityId]", StringComparison.Ordinal);
+        Assert.True(cityIndex >= 0);
+
+        var constraintIndex = script.IndexOf("CONSTRAINT [FK_Order_CityId]", cityIndex, StringComparison.Ordinal);
+        Assert.True(constraintIndex > cityIndex);
+
+        var foreignKeyIndex = script.IndexOf("FOREIGN KEY ([CityId])", constraintIndex, StringComparison.Ordinal);
+        Assert.True(foreignKeyIndex > constraintIndex);
+
+        var nextColumnIndex = script.IndexOf("[Name]", foreignKeyIndex, StringComparison.Ordinal);
+        Assert.True(nextColumnIndex > foreignKeyIndex);
+    }
 }
