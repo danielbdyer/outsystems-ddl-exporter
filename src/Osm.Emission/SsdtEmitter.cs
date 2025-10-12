@@ -35,6 +35,8 @@ public sealed class SsdtEmitter
         SsdtEmissionMetadata emission,
         PolicyDecisionReport? decisionReport = null,
         IReadOnlyList<PreRemediationManifestEntry>? preRemediation = null,
+        SsdtCoverageSummary? coverage = null,
+        IReadOnlyList<string>? unsupported = null,
         CancellationToken cancellationToken = default)
     {
         if (model is null)
@@ -139,6 +141,11 @@ public sealed class SsdtEmitter
         }
 
         var preRemediationEntries = preRemediation ?? Array.Empty<PreRemediationManifestEntry>();
+        var coverageSummary = coverage ?? SsdtCoverageSummary.CreateComplete(
+            model.Tables.Length,
+            model.Tables.Sum(static table => table.Columns.Length),
+            model.Tables.Sum(static table => table.Indexes.Length + table.ForeignKeys.Length));
+        var unsupportedEntries = unsupported ?? Array.Empty<string>();
 
         var manifest = new SsdtManifest(
             manifestEntries,
@@ -149,7 +156,9 @@ public sealed class SsdtEmitter
                 options.ModuleParallelism),
             summary,
             emission,
-            preRemediationEntries);
+            preRemediationEntries,
+            coverageSummary,
+            unsupportedEntries);
 
         var manifestPath = Path.Combine(outputDirectory, "manifest.json");
         var manifestJson = JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });

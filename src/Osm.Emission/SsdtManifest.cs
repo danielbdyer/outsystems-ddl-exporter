@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 namespace Osm.Emission;
 
@@ -6,7 +7,9 @@ public sealed record SsdtManifest(
     SsdtManifestOptions Options,
     SsdtPolicySummary? PolicySummary,
     SsdtEmissionMetadata Emission,
-    IReadOnlyList<PreRemediationManifestEntry> PreRemediation);
+    IReadOnlyList<PreRemediationManifestEntry> PreRemediation,
+    SsdtCoverageSummary Coverage,
+    IReadOnlyList<string> Unsupported);
 
 public sealed record TableManifestEntry(
     string Module,
@@ -43,3 +46,42 @@ public sealed record SsdtPolicySummary(
     IReadOnlyDictionary<string, int> ColumnRationales,
     IReadOnlyDictionary<string, int> UniqueIndexRationales,
     IReadOnlyDictionary<string, int> ForeignKeyRationales);
+
+public sealed record SsdtCoverageSummary(
+    CoverageBreakdown Tables,
+    CoverageBreakdown Columns,
+    CoverageBreakdown Constraints)
+{
+    public static SsdtCoverageSummary CreateComplete(int tables, int columns, int constraints)
+    {
+        return new SsdtCoverageSummary(
+            CoverageBreakdown.Create(tables, tables),
+            CoverageBreakdown.Create(columns, columns),
+            CoverageBreakdown.Create(constraints, constraints));
+    }
+}
+
+public sealed record CoverageBreakdown(int Emitted, int Total, decimal Percentage)
+{
+    public static CoverageBreakdown Create(int emitted, int total)
+    {
+        var percentage = ComputePercentage(emitted, total);
+        return new CoverageBreakdown(emitted, total, percentage);
+    }
+
+    private static decimal ComputePercentage(int emitted, int total)
+    {
+        if (total <= 0)
+        {
+            return 100m;
+        }
+
+        if (emitted <= 0)
+        {
+            return 0m;
+        }
+
+        var value = (decimal)emitted / total * 100m;
+        return Math.Round(value, 2, MidpointRounding.AwayFromZero);
+    }
+}

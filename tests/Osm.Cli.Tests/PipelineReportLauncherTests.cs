@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Immutable;
 using System.IO;
 using System.Threading;
@@ -19,6 +20,10 @@ public class PipelineReportLauncherTests
     public async Task GenerateAsync_WritesReportWithArtifactLinks()
     {
         using var output = new TempDirectory();
+        var coverage = new SsdtCoverageSummary(
+            CoverageBreakdown.Create(2, 2),
+            CoverageBreakdown.Create(4, 4),
+            CoverageBreakdown.Create(6, 6));
         var manifest = new SsdtManifest(
             new[]
             {
@@ -42,7 +47,9 @@ public class PipelineReportLauncherTests
             new SsdtManifestOptions(true, false, false, 1),
             null,
             new SsdtEmissionMetadata("SHA256", "abc123"),
-            new PreRemediationManifestEntry[0]);
+            new PreRemediationManifestEntry[0],
+            coverage,
+            Array.Empty<string>());
 
         var decisionReport = new PolicyDecisionReport(
             ImmutableArray.Create(

@@ -293,12 +293,21 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             emissionSmoOptions = emissionSmoOptions.WithHeaderOptions(headerOptions);
         }
 
+        var coverageResult = EmissionCoverageCalculator.Compute(
+            filteredModel,
+            supplementalResult.Value,
+            decisions,
+            smoModel,
+            emissionSmoOptions);
+
         var manifest = await _ssdtEmitter.EmitAsync(
             smoModel,
             request.OutputDirectory,
             emissionSmoOptions,
             emissionMetadata,
             decisionReport,
+            coverage: coverageResult.Summary,
+            unsupported: coverageResult.Unsupported,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         log.Record(
             "ssdt.emission.completed",

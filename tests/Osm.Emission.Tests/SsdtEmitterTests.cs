@@ -45,6 +45,8 @@ public class SsdtEmitterTests
         Assert.Equal(report.TightenedColumnCount, manifest.PolicySummary!.TightenedColumnCount);
         Assert.Equal(report.UniqueIndexCount, manifest.PolicySummary!.UniqueIndexCount);
         Assert.Equal(report.UniqueIndexesEnforcedCount, manifest.PolicySummary!.UniqueIndexesEnforcedCount);
+        Assert.Equal(manifest.Tables.Count, manifest.Coverage.Tables.Emitted);
+        Assert.Equal(manifest.Tables.Count, manifest.Coverage.Tables.Total);
 
         var customerTable = manifest.Tables.Single(t => t.Table.Equals("Customer", StringComparison.Ordinal));
         var customerPath = Path.Combine(temp.Path, customerTable.TableFile);

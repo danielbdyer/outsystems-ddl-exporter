@@ -946,7 +946,13 @@ dotnet run --project src/Osm.Cli dmm-compare \
   "Options": {
     "IncludePlatformAutoIndexes": false,
     "EmitBareTableOnly": false
-  }
+  },
+  "Coverage": {
+    "Tables": { "Emitted": 1, "Total": 1, "Percentage": 100.0 },
+    "Columns": { "Emitted": 6, "Total": 6, "Percentage": 100.0 },
+    "Constraints": { "Emitted": 4, "Total": 4, "Percentage": 100.0 }
+  },
+  "Unsupported": []
 }
 ```
 
