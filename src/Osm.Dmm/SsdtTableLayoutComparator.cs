@@ -28,15 +28,16 @@ public sealed class SsdtTableLayoutComparator
         var expectedFiles = BuildExpectedFileMap(model, options);
         var actualFiles = BuildActualFileMap(ssdtRoot, out var unrecognizedFiles);
 
-        var modelDifferences = new List<string>();
-        var ssdtDifferences = new List<string>();
+        var modelDifferences = new List<DmmDifference>();
+        var ssdtDifferences = new List<DmmDifference>();
         var matched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var entry in expectedFiles)
         {
             if (!actualFiles.TryGetValue(entry.Key, out var candidates) || candidates.Count == 0)
             {
-                modelDifferences.Add($"missing table file {entry.Value}");
+                var coordinates = SplitKey(entry.Key);
+                modelDifferences.Add(Difference.Table(coordinates.Schema, coordinates.Table, "FilePresence", entry.Value, null, entry.Value));
                 continue;
             }
 
@@ -44,12 +45,26 @@ public sealed class SsdtTableLayoutComparator
 
             if (!candidates.Any(path => string.Equals(path, entry.Value, StringComparison.OrdinalIgnoreCase)))
             {
-                ssdtDifferences.Add($"table file mismatch for {entry.Key}: expected {entry.Value}, actual {string.Join(", ", candidates)}");
+                var coordinates = SplitKey(entry.Key);
+                ssdtDifferences.Add(Difference.Table(
+                    coordinates.Schema,
+                    coordinates.Table,
+                    "FileLocation",
+                    entry.Value,
+                    string.Join(", ", candidates),
+                    candidates.FirstOrDefault()));
             }
 
             if (candidates.Count > 1)
             {
-                ssdtDifferences.Add($"duplicate table files for {entry.Key}: {string.Join(", ", candidates)}");
+                var coordinates = SplitKey(entry.Key);
+                ssdtDifferences.Add(Difference.Table(
+                    coordinates.Schema,
+                    coordinates.Table,
+                    "DuplicateFiles",
+                    entry.Value,
+                    string.Join(", ", candidates),
+                    candidates.FirstOrDefault()));
             }
         }
 
@@ -62,13 +77,14 @@ public sealed class SsdtTableLayoutComparator
 
             foreach (var path in entry.Value)
             {
-                ssdtDifferences.Add($"unexpected table file {path}");
+                var coordinates = SplitKey(entry.Key);
+                ssdtDifferences.Add(Difference.Table(coordinates.Schema, coordinates.Table, "FilePresence", null, path, path));
             }
         }
 
         foreach (var path in unrecognizedFiles)
         {
-            ssdtDifferences.Add($"unrecognized table file {path}");
+            ssdtDifferences.Add(Difference.Table(string.Empty, string.Empty, "UnrecognizedFile", null, path, path));
         }
 
         var isMatch = modelDifferences.Count == 0 && ssdtDifferences.Count == 0;
@@ -174,10 +190,22 @@ public sealed class SsdtTableLayoutComparator
         return path.Replace(Path.DirectorySeparatorChar, '/');
     }
 
+    private static (string Schema, string Table) SplitKey(string key)
+    {
+        var parts = key.Split('.', 2);
+        return (parts.Length > 0 ? parts[0] : string.Empty, parts.Length > 1 ? parts[1] : string.Empty);
+    }
+
     private static string Key(string schema, string table) => $"{schema}.{table}";
+
+    private static class Difference
+    {
+        public static DmmDifference Table(string schema, string table, string property, string? expected, string? actual, string? artifact)
+            => new(schema, table, property, Expected: string.IsNullOrWhiteSpace(expected) ? null : expected, Actual: string.IsNullOrWhiteSpace(actual) ? null : actual, ArtifactPath: artifact);
+    }
 }
 
 public sealed record SsdtTableLayoutComparisonResult(
     bool IsMatch,
-    IReadOnlyList<string> ModelDifferences,
-    IReadOnlyList<string> SsdtDifferences);
+    IReadOnlyList<DmmDifference> ModelDifferences,
+    IReadOnlyList<DmmDifference> SsdtDifferences);

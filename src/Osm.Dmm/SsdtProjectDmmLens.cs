@@ -92,8 +92,16 @@ public sealed class SsdtProjectDmmLens : IDmmLens<string>
         {
             if (byName.TryGetValue(column.Name, out var existing))
             {
+                var defaultExpression = existing.DefaultExpression ?? column.DefaultExpression;
+                var collation = existing.Collation ?? column.Collation;
                 var description = existing.Description ?? column.Description;
-                var merged = new DmmColumn(column.Name, column.DataType, column.IsNullable, description);
+                var merged = new DmmColumn(
+                    existing.Name,
+                    existing.DataType,
+                    existing.IsNullable,
+                    defaultExpression,
+                    collation,
+                    description);
                 byName[column.Name] = merged;
                 var index = order.FindIndex(c => string.Equals(c.Name, column.Name, StringComparison.OrdinalIgnoreCase));
                 if (index >= 0)

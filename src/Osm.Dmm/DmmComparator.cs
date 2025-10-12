@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 
@@ -36,8 +37,8 @@ public sealed class DmmComparator
 
         var features = featuresOverride ?? _features;
 
-        var modelDifferences = new List<string>();
-        var ssdtDifferences = new List<string>();
+        var modelDifferences = new List<DmmDifference>();
+        var ssdtDifferences = new List<DmmDifference>();
         var dmmLookup = dmmTables.ToDictionary(
             table => Key(table.Schema, table.Name),
             table => table,
@@ -50,7 +51,7 @@ public sealed class DmmComparator
             var key = Key(table.Schema, table.Name);
             if (!dmmLookup.TryGetValue(key, out var dmmTable))
             {
-                modelDifferences.Add($"missing table {table.Schema}.{table.Name}");
+                modelDifferences.Add(Difference.Table(table.Schema, table.Name, "TablePresence", "Present", "Missing"));
                 continue;
             }
 
@@ -87,7 +88,7 @@ public sealed class DmmComparator
             var key = Key(table.Schema, table.Name);
             if (!seen.Contains(key))
             {
-                ssdtDifferences.Add($"unexpected table {table.Schema}.{table.Name}");
+                ssdtDifferences.Add(Difference.Table(table.Schema, table.Name, "TablePresence", "Missing", "Present"));
             }
         }
 
@@ -98,58 +99,58 @@ public sealed class DmmComparator
     private static void CompareColumns(
         DmmTable expected,
         DmmTable actual,
-        List<string> modelDifferences,
-        List<string> ssdtDifferences,
+        List<DmmDifference> modelDifferences,
+        List<DmmDifference> ssdtDifferences,
         DmmComparisonFeatures features)
     {
-        var expectedNames = expected.Columns.Select(c => c.Name).ToArray();
-        var actualNames = actual.Columns.Select(c => c.Name).ToArray();
+        var expectedColumns = expected.Columns;
+        var actualColumns = actual.Columns;
 
-        var sequencesMatch = expectedNames.SequenceEqual(actualNames, StringComparer.OrdinalIgnoreCase);
-        var expectedSet = new HashSet<string>(expectedNames, StringComparer.OrdinalIgnoreCase);
-        var actualSet = new HashSet<string>(actualNames, StringComparer.OrdinalIgnoreCase);
-
-        if (expectedNames.Length != actualNames.Length)
+        if (expectedColumns.Count != actualColumns.Count)
         {
-            var message = $"column count mismatch for {expected.Schema}.{expected.Name}: expected {expectedNames.Length}, actual {actualNames.Length}";
-            if (expectedNames.Length > actualNames.Length)
-            {
-                modelDifferences.Add(message);
-            }
-            else
-            {
-                ssdtDifferences.Add(message);
-            }
+            modelDifferences.Add(Difference.Table(
+                expected.Schema,
+                expected.Name,
+                "ColumnCount",
+                expectedColumns.Count.ToString(CultureInfo.InvariantCulture),
+                actualColumns.Count.ToString(CultureInfo.InvariantCulture)));
         }
 
-        var missingColumns = expectedNames
-            .Where(name => !actualSet.Contains(name))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        var expectedOrder = expectedColumns.Select(static c => c.Name).ToArray();
+        var actualOrder = actualColumns.Select(static c => c.Name).ToArray();
+
+        var missingColumns = expectedOrder
+            .Except(actualOrder, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        if (missingColumns.Length > 0)
+        foreach (var column in missingColumns)
         {
-            modelDifferences.Add($"missing columns for {expected.Schema}.{expected.Name}: {string.Join(", ", missingColumns)}");
+            modelDifferences.Add(Difference.Column(expected.Schema, expected.Name, column, "Presence", "Present", "Missing"));
         }
 
-        var unexpectedColumns = actualNames
-            .Where(name => !expectedSet.Contains(name))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        var unexpectedColumns = actualOrder
+            .Except(expectedOrder, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        if (unexpectedColumns.Length > 0)
+        foreach (var column in unexpectedColumns)
         {
-            ssdtDifferences.Add($"unexpected columns for {expected.Schema}.{expected.Name}: {string.Join(", ", unexpectedColumns)}");
+            ssdtDifferences.Add(Difference.Column(actual.Schema, actual.Name, column, "Presence", "Missing", "Present"));
         }
 
-        if (!sequencesMatch && missingColumns.Length == 0 && unexpectedColumns.Length == 0)
+        var canCompareOrder = missingColumns.Length == 0 && unexpectedColumns.Length == 0;
+        if (canCompareOrder && !expectedOrder.SequenceEqual(actualOrder, StringComparer.OrdinalIgnoreCase))
         {
-            ssdtDifferences.Add($"column order mismatch for {expected.Schema}.{expected.Name}: expected [{string.Join(", ", expectedNames)}], actual [{string.Join(", ", actualNames)}]");
+            ssdtDifferences.Add(Difference.Table(
+                expected.Schema,
+                expected.Name,
+                "ColumnOrder",
+                string.Join(", ", expectedOrder),
+                string.Join(", ", actualOrder)));
         }
 
-        var actualByName = actual.Columns
-            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var actualByName = actualColumns
+            .GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
-        foreach (var expectedColumn in expected.Columns)
+        foreach (var expectedColumn in expectedColumns)
         {
             if (!actualByName.TryGetValue(expectedColumn.Name, out var actualColumn))
             {
@@ -158,14 +159,52 @@ public sealed class DmmComparator
 
             if (!string.Equals(expectedColumn.DataType, actualColumn.DataType, StringComparison.OrdinalIgnoreCase))
             {
-                ssdtDifferences.Add($"data type mismatch for {expected.Schema}.{expected.Name}.{expectedColumn.Name}: expected {expectedColumn.DataType}, actual {actualColumn.DataType}");
+                ssdtDifferences.Add(Difference.Column(
+                    expected.Schema,
+                    expected.Name,
+                    expectedColumn.Name,
+                    "DataType",
+                    expectedColumn.DataType,
+                    actualColumn.DataType));
             }
 
             if (expectedColumn.IsNullable != actualColumn.IsNullable)
             {
-                var expectation = expectedColumn.IsNullable ? "NULL" : "NOT NULL";
-                var actualNullability = actualColumn.IsNullable ? "NULL" : "NOT NULL";
-                ssdtDifferences.Add($"nullability mismatch for {expected.Schema}.{expected.Name}.{expectedColumn.Name}: expected {expectation}, actual {actualNullability}");
+                ssdtDifferences.Add(Difference.Column(
+                    expected.Schema,
+                    expected.Name,
+                    expectedColumn.Name,
+                    "Nullability",
+                    expectedColumn.IsNullable ? "NULL" : "NOT NULL",
+                    actualColumn.IsNullable ? "NULL" : "NOT NULL"));
+            }
+
+            if (!string.Equals(
+                    expectedColumn.DefaultExpression ?? string.Empty,
+                    actualColumn.DefaultExpression ?? string.Empty,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                ssdtDifferences.Add(Difference.Column(
+                    expected.Schema,
+                    expected.Name,
+                    expectedColumn.Name,
+                    "Default",
+                    ValueOrNull(expectedColumn.DefaultExpression),
+                    ValueOrNull(actualColumn.DefaultExpression)));
+            }
+
+            if (!string.Equals(
+                    expectedColumn.Collation ?? string.Empty,
+                    actualColumn.Collation ?? string.Empty,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                ssdtDifferences.Add(Difference.Column(
+                    expected.Schema,
+                    expected.Name,
+                    expectedColumn.Name,
+                    "Collation",
+                    ValueOrNull(expectedColumn.Collation),
+                    ValueOrNull(actualColumn.Collation)));
             }
 
             if (features.HasFlag(DmmComparisonFeatures.ExtendedProperties))
@@ -174,7 +213,13 @@ public sealed class DmmComparator
                 var actualDescription = NormalizeDescription(actualColumn.Description);
                 if (!string.Equals(expectedDescription, actualDescription, StringComparison.Ordinal))
                 {
-                    ssdtDifferences.Add($"extended property mismatch for {expected.Schema}.{expected.Name}.{expectedColumn.Name}: expected '{FormatDescription(expectedDescription)}', actual '{FormatDescription(actualDescription)}'");
+                    ssdtDifferences.Add(Difference.Column(
+                        expected.Schema,
+                        expected.Name,
+                        expectedColumn.Name,
+                        "Description",
+                        ValueOrNull(expectedDescription),
+                        ValueOrNull(actualDescription)));
                 }
             }
         }
@@ -183,8 +228,8 @@ public sealed class DmmComparator
     private static void ComparePrimaryKeys(
         DmmTable expected,
         DmmTable actual,
-        List<string> modelDifferences,
-        List<string> ssdtDifferences)
+        List<DmmDifference> modelDifferences,
+        List<DmmDifference> ssdtDifferences)
     {
         var expectedColumns = expected.PrimaryKeyColumns.ToArray();
         var actualColumns = actual.PrimaryKeyColumns.ToArray();
@@ -193,22 +238,34 @@ public sealed class DmmComparator
         {
             if (actualColumns.Length > 0)
             {
-                ssdtDifferences.Add($"unexpected primary key defined in DMM for {expected.Schema}.{expected.Name}");
+                ssdtDifferences.Add(Difference.Table(expected.Schema, expected.Name, "PrimaryKeyPresence", "Absent", "Present"));
             }
 
             return;
         }
 
+        if (actualColumns.Length == 0)
+        {
+            modelDifferences.Add(Difference.Table(expected.Schema, expected.Name, "PrimaryKeyPresence", "Present", "Missing"));
+            return;
+        }
+
         if (expectedColumns.Length != actualColumns.Length)
         {
-            var message = $"primary key length mismatch for {expected.Schema}.{expected.Name}: expected {expectedColumns.Length}, actual {actualColumns.Length}";
+            var difference = Difference.Table(
+                expected.Schema,
+                expected.Name,
+                "PrimaryKeyColumns",
+                string.Join(", ", expectedColumns),
+                string.Join(", ", actualColumns));
+
             if (expectedColumns.Length > actualColumns.Length)
             {
-                modelDifferences.Add(message);
+                modelDifferences.Add(difference);
             }
             else
             {
-                ssdtDifferences.Add(message);
+                ssdtDifferences.Add(difference);
             }
 
             return;
@@ -218,7 +275,12 @@ public sealed class DmmComparator
         {
             if (!string.Equals(expectedColumns[i], actualColumns[i], StringComparison.OrdinalIgnoreCase))
             {
-                ssdtDifferences.Add($"primary key mismatch for {expected.Schema}.{expected.Name} at ordinal {i + 1}: expected {expectedColumns[i]}, actual {actualColumns[i]}");
+                ssdtDifferences.Add(Difference.Table(
+                    expected.Schema,
+                    expected.Name,
+                    "PrimaryKeyOrdinal",
+                    expectedColumns[i],
+                    actualColumns[i]));
             }
         }
     }
@@ -226,8 +288,8 @@ public sealed class DmmComparator
     private static void CompareIndexes(
         DmmTable expected,
         DmmTable actual,
-        List<string> modelDifferences,
-        List<string> ssdtDifferences)
+        List<DmmDifference> modelDifferences,
+        List<DmmDifference> ssdtDifferences)
     {
         var actualLookup = actual.Indexes
             .ToDictionary(index => index.Name, index => index, StringComparer.OrdinalIgnoreCase);
@@ -237,7 +299,7 @@ public sealed class DmmComparator
         {
             if (!actualLookup.TryGetValue(expectedIndex.Name, out var actualIndex))
             {
-                modelDifferences.Add($"missing index {expected.Schema}.{expected.Name}.{expectedIndex.Name}");
+                modelDifferences.Add(Difference.Index(expected.Schema, expected.Name, expectedIndex.Name, "Presence", "Present", "Missing"));
                 continue;
             }
 
@@ -249,7 +311,7 @@ public sealed class DmmComparator
         {
             if (!seen.Contains(actualIndex.Name))
             {
-                ssdtDifferences.Add($"unexpected index {actual.Schema}.{actual.Name}.{actualIndex.Name}");
+                ssdtDifferences.Add(Difference.Index(actual.Schema, actual.Name, actualIndex.Name, "Presence", "Missing", "Present"));
             }
         }
     }
@@ -259,26 +321,44 @@ public sealed class DmmComparator
         string table,
         DmmIndex expected,
         DmmIndex actual,
-        List<string> ssdtDifferences)
+        List<DmmDifference> ssdtDifferences)
     {
         if (expected.IsUnique != actual.IsUnique)
         {
-            ssdtDifferences.Add($"index uniqueness mismatch for {schema}.{table}.{expected.Name}: expected {(expected.IsUnique ? "UNIQUE" : "NONUNIQUE")}, actual {(actual.IsUnique ? "UNIQUE" : "NONUNIQUE")}");
+            ssdtDifferences.Add(Difference.Index(
+                schema,
+                table,
+                expected.Name,
+                "Uniqueness",
+                expected.IsUnique ? "UNIQUE" : "NONUNIQUE",
+                actual.IsUnique ? "UNIQUE" : "NONUNIQUE"));
         }
 
-        CompareIndexColumns(schema, table, expected.Name, "key", expected.KeyColumns, actual.KeyColumns, ssdtDifferences);
-        CompareIndexColumns(schema, table, expected.Name, "included", expected.IncludedColumns, actual.IncludedColumns, ssdtDifferences);
+        CompareIndexColumns(schema, table, expected.Name, "KeyColumns", expected.KeyColumns, actual.KeyColumns, ssdtDifferences);
+        CompareIndexColumns(schema, table, expected.Name, "IncludedColumns", expected.IncludedColumns, actual.IncludedColumns, ssdtDifferences);
 
         var expectedFilter = NormalizeFilter(expected.FilterDefinition);
         var actualFilter = NormalizeFilter(actual.FilterDefinition);
-        if (!string.Equals(expectedFilter, actualFilter, StringComparison.Ordinal))
+        if (!string.Equals(expectedFilter ?? string.Empty, actualFilter ?? string.Empty, StringComparison.Ordinal))
         {
-            ssdtDifferences.Add($"index filter mismatch for {schema}.{table}.{expected.Name}: expected '{FormatDescription(expectedFilter)}', actual '{FormatDescription(actualFilter)}'");
+            ssdtDifferences.Add(Difference.Index(
+                schema,
+                table,
+                expected.Name,
+                "Filter",
+                ValueOrNull(expectedFilter),
+                ValueOrNull(actualFilter)));
         }
 
         if (expected.IsDisabled != actual.IsDisabled)
         {
-            ssdtDifferences.Add($"index disable state mismatch for {schema}.{table}.{expected.Name}: expected {(expected.IsDisabled ? "DISABLED" : "ENABLED")}, actual {(actual.IsDisabled ? "DISABLED" : "ENABLED")}");
+            ssdtDifferences.Add(Difference.Index(
+                schema,
+                table,
+                expected.Name,
+                "State",
+                expected.IsDisabled ? "DISABLED" : "ENABLED",
+                actual.IsDisabled ? "DISABLED" : "ENABLED"));
         }
 
         CompareBooleanOption(schema, table, expected.Name, "PAD_INDEX", expected.Options.PadIndex, actual.Options.PadIndex, defaultValue: false, ssdtDifferences);
@@ -293,7 +373,13 @@ public sealed class DmmComparator
         {
             if (expectedFill.GetValueOrDefault() != actualFill.GetValueOrDefault())
             {
-                ssdtDifferences.Add($"index option mismatch for {schema}.{table}.{expected.Name}: FILLFACTOR expected {FormatNumericOption(expectedFill)}, actual {FormatNumericOption(actualFill)}");
+                ssdtDifferences.Add(Difference.Index(
+                    schema,
+                    table,
+                    expected.Name,
+                    "FILLFACTOR",
+                    expectedFill?.ToString(CultureInfo.InvariantCulture),
+                    actualFill?.ToString(CultureInfo.InvariantCulture)));
             }
         }
     }
@@ -302,16 +388,16 @@ public sealed class DmmComparator
         string schema,
         string table,
         string index,
-        string kind,
+        string property,
         IReadOnlyList<DmmIndexColumn> expected,
         IReadOnlyList<DmmIndexColumn> actual,
-        List<string> ssdtDifferences)
+        List<DmmDifference> ssdtDifferences)
     {
         if (expected.Count != actual.Count || !expected.Zip(actual, IndexColumnEquals).All(static result => result))
         {
             var expectedList = string.Join(", ", expected.Select(FormatIndexColumn));
             var actualList = string.Join(", ", actual.Select(FormatIndexColumn));
-            ssdtDifferences.Add($"index {kind} columns mismatch for {schema}.{table}.{index}: expected [{expectedList}], actual [{actualList}]");
+            ssdtDifferences.Add(Difference.Index(schema, table, index, property, expectedList, actualList));
         }
     }
 
@@ -323,30 +409,27 @@ public sealed class DmmComparator
         bool? expected,
         bool? actual,
         bool defaultValue,
-        List<string> ssdtDifferences)
+        List<DmmDifference> ssdtDifferences)
     {
         var expectedValue = expected ?? defaultValue;
         var actualValue = actual ?? defaultValue;
         if (expectedValue != actualValue)
         {
-            ssdtDifferences.Add($"index option mismatch for {schema}.{table}.{index}: {option} expected {(expectedValue ? "ON" : "OFF")}, actual {(actualValue ? "ON" : "OFF")}");
+            ssdtDifferences.Add(Difference.Index(
+                schema,
+                table,
+                index,
+                option,
+                expectedValue ? "ON" : "OFF",
+                actualValue ? "ON" : "OFF"));
         }
     }
-
-    private static string FormatIndexColumn(DmmIndexColumn column)
-        => column.IsDescending ? $"{column.Name} DESC" : column.Name;
-
-    private static bool IndexColumnEquals(DmmIndexColumn expected, DmmIndexColumn actual)
-        => string.Equals(expected.Name, actual.Name, StringComparison.OrdinalIgnoreCase) && expected.IsDescending == actual.IsDescending;
-
-    private static string FormatNumericOption(int? value)
-        => value.HasValue ? value.Value.ToString() : "<unspecified>";
 
     private static void CompareForeignKeys(
         DmmTable expected,
         DmmTable actual,
-        List<string> modelDifferences,
-        List<string> ssdtDifferences)
+        List<DmmDifference> modelDifferences,
+        List<DmmDifference> ssdtDifferences)
     {
         var actualLookup = actual.ForeignKeys
             .ToDictionary(foreignKey => foreignKey.Name, foreignKey => foreignKey, StringComparer.OrdinalIgnoreCase);
@@ -356,7 +439,13 @@ public sealed class DmmComparator
         {
             if (!actualLookup.TryGetValue(expectedForeignKey.Name, out var actualForeignKey))
             {
-                modelDifferences.Add($"missing foreign key {expected.Schema}.{expected.Name}.{expectedForeignKey.Name}");
+                modelDifferences.Add(Difference.ForeignKey(
+                    expected.Schema,
+                    expected.Name,
+                    expectedForeignKey.Name,
+                    "Presence",
+                    "Present",
+                    "Missing"));
                 continue;
             }
 
@@ -364,32 +453,68 @@ public sealed class DmmComparator
 
             if (!string.Equals(expectedForeignKey.Column, actualForeignKey.Column, StringComparison.OrdinalIgnoreCase))
             {
-                ssdtDifferences.Add($"foreign key column mismatch for {expected.Schema}.{expected.Name}.{expectedForeignKey.Name}: expected {expectedForeignKey.Column}, actual {actualForeignKey.Column}");
+                ssdtDifferences.Add(Difference.ForeignKey(
+                    expected.Schema,
+                    expected.Name,
+                    expectedForeignKey.Name,
+                    "Column",
+                    expectedForeignKey.Column,
+                    actualForeignKey.Column));
             }
 
             if (!string.Equals(expectedForeignKey.ReferencedSchema, actualForeignKey.ReferencedSchema, StringComparison.OrdinalIgnoreCase))
             {
-                ssdtDifferences.Add($"foreign key schema mismatch for {expected.Schema}.{expected.Name}.{expectedForeignKey.Name}: expected {expectedForeignKey.ReferencedSchema}, actual {actualForeignKey.ReferencedSchema}");
+                ssdtDifferences.Add(Difference.ForeignKey(
+                    expected.Schema,
+                    expected.Name,
+                    expectedForeignKey.Name,
+                    "ReferencedSchema",
+                    expectedForeignKey.ReferencedSchema,
+                    actualForeignKey.ReferencedSchema));
             }
 
             if (!string.Equals(expectedForeignKey.ReferencedTable, actualForeignKey.ReferencedTable, StringComparison.OrdinalIgnoreCase))
             {
-                ssdtDifferences.Add($"foreign key table mismatch for {expected.Schema}.{expected.Name}.{expectedForeignKey.Name}: expected {expectedForeignKey.ReferencedTable}, actual {actualForeignKey.ReferencedTable}");
+                ssdtDifferences.Add(Difference.ForeignKey(
+                    expected.Schema,
+                    expected.Name,
+                    expectedForeignKey.Name,
+                    "ReferencedTable",
+                    expectedForeignKey.ReferencedTable,
+                    actualForeignKey.ReferencedTable));
             }
 
             if (!string.Equals(expectedForeignKey.ReferencedColumn, actualForeignKey.ReferencedColumn, StringComparison.OrdinalIgnoreCase))
             {
-                ssdtDifferences.Add($"foreign key referenced column mismatch for {expected.Schema}.{expected.Name}.{expectedForeignKey.Name}: expected {expectedForeignKey.ReferencedColumn}, actual {actualForeignKey.ReferencedColumn}");
+                ssdtDifferences.Add(Difference.ForeignKey(
+                    expected.Schema,
+                    expected.Name,
+                    expectedForeignKey.Name,
+                    "ReferencedColumn",
+                    expectedForeignKey.ReferencedColumn,
+                    actualForeignKey.ReferencedColumn));
             }
 
             if (!string.Equals(expectedForeignKey.DeleteAction, actualForeignKey.DeleteAction, StringComparison.OrdinalIgnoreCase))
             {
-                ssdtDifferences.Add($"foreign key delete action mismatch for {expected.Schema}.{expected.Name}.{expectedForeignKey.Name}: expected {expectedForeignKey.DeleteAction}, actual {actualForeignKey.DeleteAction}");
+                ssdtDifferences.Add(Difference.ForeignKey(
+                    expected.Schema,
+                    expected.Name,
+                    expectedForeignKey.Name,
+                    "DeleteAction",
+                    expectedForeignKey.DeleteAction,
+                    actualForeignKey.DeleteAction));
             }
 
             if (expectedForeignKey.IsNotTrusted != actualForeignKey.IsNotTrusted)
             {
-                ssdtDifferences.Add($"foreign key trust mismatch for {expected.Schema}.{expected.Name}.{expectedForeignKey.Name}: expected {(expectedForeignKey.IsNotTrusted ? "NOT TRUSTED" : "TRUSTED")}, actual {(actualForeignKey.IsNotTrusted ? "NOT TRUSTED" : "TRUSTED")}");
+                ssdtDifferences.Add(Difference.ForeignKey(
+                    expected.Schema,
+                    expected.Name,
+                    expectedForeignKey.Name,
+                    "Trust",
+                    expectedForeignKey.IsNotTrusted ? "NOT TRUSTED" : "TRUSTED",
+                    actualForeignKey.IsNotTrusted ? "NOT TRUSTED" : "TRUSTED"));
             }
         }
 
@@ -397,7 +522,13 @@ public sealed class DmmComparator
         {
             if (!seen.Contains(actualForeignKey.Name))
             {
-                ssdtDifferences.Add($"unexpected foreign key {actual.Schema}.{actual.Name}.{actualForeignKey.Name}");
+                ssdtDifferences.Add(Difference.ForeignKey(
+                    actual.Schema,
+                    actual.Name,
+                    actualForeignKey.Name,
+                    "Presence",
+                    "Missing",
+                    "Present"));
             }
         }
     }
@@ -405,27 +536,38 @@ public sealed class DmmComparator
     private static void CompareTableDescription(
         DmmTable expected,
         DmmTable actual,
-        List<string> ssdtDifferences)
+        List<DmmDifference> ssdtDifferences)
     {
         var expectedDescription = NormalizeDescription(expected.Description);
         var actualDescription = NormalizeDescription(actual.Description);
         if (!string.Equals(expectedDescription, actualDescription, StringComparison.Ordinal))
         {
-            ssdtDifferences.Add($"extended property mismatch for {expected.Schema}.{expected.Name}: expected '{FormatDescription(expectedDescription)}', actual '{FormatDescription(actualDescription)}'");
+            ssdtDifferences.Add(Difference.Table(
+                expected.Schema,
+                expected.Name,
+                "Description",
+                ValueOrNull(expectedDescription),
+                ValueOrNull(actualDescription)));
         }
     }
 
     private static string NormalizeDescription(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
-    private static string FormatDescription(string value)
-        => string.IsNullOrWhiteSpace(value) ? "<none>" : value;
+    private static string? ValueOrNull(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    private static string NormalizeFilter(string? value)
+    private static string FormatIndexColumn(DmmIndexColumn column)
+        => column.IsDescending ? $"{column.Name} DESC" : column.Name;
+
+    private static bool IndexColumnEquals(DmmIndexColumn expected, DmmIndexColumn actual)
+        => string.Equals(expected.Name, actual.Name, StringComparison.OrdinalIgnoreCase) && expected.IsDescending == actual.IsDescending;
+
+    private static string? NormalizeFilter(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return string.Empty;
+            return null;
         }
 
         var normalized = value.Trim().ToLowerInvariant();
@@ -434,4 +576,19 @@ public sealed class DmmComparator
     }
 
     private static string Key(string schema, string name) => $"{schema}.{name}";
+
+    private static class Difference
+    {
+        public static DmmDifference Table(string schema, string table, string property, string? expected, string? actual, string? artifact = null)
+            => new(schema, table, property, Expected: ValueOrNull(expected), Actual: ValueOrNull(actual), ArtifactPath: artifact);
+
+        public static DmmDifference Column(string schema, string table, string column, string property, string? expected, string? actual)
+            => new(schema, table, property, Column: column, Expected: ValueOrNull(expected), Actual: ValueOrNull(actual));
+
+        public static DmmDifference Index(string schema, string table, string index, string property, string? expected, string? actual)
+            => new(schema, table, property, Index: index, Expected: ValueOrNull(expected), Actual: ValueOrNull(actual));
+
+        public static DmmDifference ForeignKey(string schema, string table, string foreignKey, string property, string? expected, string? actual)
+            => new(schema, table, property, ForeignKey: foreignKey, Expected: ValueOrNull(expected), Actual: ValueOrNull(actual));
+    }
 }

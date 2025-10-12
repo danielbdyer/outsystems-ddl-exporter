@@ -1,4 +1,10 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using Osm.Dmm;
 
 namespace Osm.Pipeline.Orchestration;
@@ -39,7 +45,14 @@ public sealed class DmmDiffLogWriter
             comparison.ModelDifferences.ToArray(),
             comparison.SsdtDifferences.ToArray());
 
-        var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(
+            log,
+            new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            });
         await File.WriteAllTextAsync(fullPath, json, cancellationToken).ConfigureAwait(false);
         return fullPath;
     }
@@ -50,6 +63,6 @@ public sealed class DmmDiffLogWriter
         string ProfilePath,
         string DmmPath,
         DateTimeOffset GeneratedAtUtc,
-        IReadOnlyList<string> ModelDifferences,
-        IReadOnlyList<string> SsdtDifferences);
+        IReadOnlyList<DmmDifference> ModelDifferences,
+        IReadOnlyList<DmmDifference> SsdtDifferences);
 }

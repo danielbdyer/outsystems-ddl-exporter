@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Osm.Domain.Model;
+using Osm.Emission;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 

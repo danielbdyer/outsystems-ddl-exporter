@@ -102,6 +102,8 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
                 var columnAccumulator = accumulator.GetOrCreateColumn(column.ColumnIdentifier.Value);
                 columnAccumulator.DataType = Canonicalize(Script(column.DataType));
                 columnAccumulator.IsNullable = IsNullable(column);
+                columnAccumulator.DefaultExpression = ExtractDefaultExpression(column);
+                columnAccumulator.Collation = NormalizeCollation(column.Collation?.Value);
             }
 
             foreach (var constraint in node.Definition.TableConstraints)
@@ -185,10 +187,35 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
                     accumulator.PrimaryKeyColumns.Clear();
                     accumulator.PrimaryKeyColumns.AddRange(unique.Columns.Select(static c => c.Column.MultiPartIdentifier.Identifiers.Last().Value));
                     break;
+                case DefaultConstraintDefinition defaultConstraint:
+                    ApplyDefaultConstraint(accumulator, defaultConstraint);
+                    break;
                 case ForeignKeyConstraintDefinition foreignKey:
                     ProcessForeignKey(accumulator, foreignKey);
                     break;
             }
+        }
+
+        private void ApplyDefaultConstraint(DmmTableAccumulator accumulator, DefaultConstraintDefinition constraint)
+        {
+            if (constraint is null)
+            {
+                return;
+            }
+
+            var columnName = constraint.Column?.Value;
+            if (string.IsNullOrWhiteSpace(columnName))
+            {
+                return;
+            }
+
+            if (constraint.Expression is not { } expression)
+            {
+                return;
+            }
+
+            var column = accumulator.GetOrCreateColumn(columnName);
+            column.DefaultExpression = NormalizeDefaultExpression(Script(expression));
         }
 
         private void ProcessForeignKey(DmmTableAccumulator accumulator, ForeignKeyConstraintDefinition constraint)
@@ -336,6 +363,43 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
             return !notNull;
         }
 
+        private string? ExtractDefaultExpression(ColumnDefinition column)
+        {
+            if (column.DefaultConstraint?.Expression is not { } expression)
+            {
+                return null;
+            }
+
+            return NormalizeDefaultExpression(Script(expression));
+        }
+
+        private static string? NormalizeDefaultExpression(string? expression)
+        {
+            if (string.IsNullOrWhiteSpace(expression))
+            {
+                return null;
+            }
+
+            var trimmed = expression.Trim();
+            return Regex.Replace(trimmed, "\\s+", " ");
+        }
+
+        private static string? NormalizeCollation(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var normalized = value.Trim();
+            if (normalized.Length > 2 && normalized.StartsWith("[", StringComparison.Ordinal) && normalized.EndsWith("]", StringComparison.Ordinal))
+            {
+                normalized = normalized[1..^1];
+            }
+
+            return normalized;
+        }
+
         private static string Unescape(string value) => value.Replace("''", "'");
     }
 
@@ -429,7 +493,12 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
 
         public string? Description { get; set; }
 
-        public DmmColumn ToColumn() => new(Name, DataType, IsNullable, Description);
+        public string? DefaultExpression { get; set; }
+
+        public string? Collation { get; set; }
+
+        public DmmColumn ToColumn()
+            => new(Name, DataType, IsNullable, DefaultExpression, Collation, Description);
     }
 
     private sealed class DmmIndexAccumulator

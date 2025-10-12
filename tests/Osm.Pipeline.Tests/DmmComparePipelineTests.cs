@@ -109,21 +109,25 @@ public class DmmComparePipelineTests
         Assert.True(result.IsSuccess);
         var comparison = result.Value.Comparison;
         Assert.False(comparison.IsMatch);
-        Assert.Contains(comparison.ModelDifferences, diff => diff.Contains("missing table file", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            comparison.ModelDifferences,
+            diff => string.Equals(diff.Property, "FilePresence", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "Customer", StringComparison.OrdinalIgnoreCase));
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
     [ID] BIGINT NOT NULL,
-    [EMAIL] NVARCHAR(255) NOT NULL,
-    [FIRSTNAME] NVARCHAR(100) NULL,
-    [LASTNAME] NVARCHAR(100) NULL,
+    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,
+    [FIRSTNAME] NVARCHAR(100) NULL DEFAULT ('') ,
+    [LASTNAME] NVARCHAR(100) NULL DEFAULT ('') ,
     [CITYID] BIGINT NOT NULL,
     CONSTRAINT [PK_Customer] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_DEF_CITY](
     [ID] BIGINT NOT NULL,
     [NAME] NVARCHAR(200) NOT NULL,
-    [ISACTIVE] BIT NOT NULL,
+    [ISACTIVE] BIT NOT NULL DEFAULT ((1)),
     CONSTRAINT [PK_City] PRIMARY KEY ([ID])
 );
 CREATE TABLE [billing].[BILLING_ACCOUNT](
@@ -135,7 +139,7 @@ CREATE TABLE [billing].[BILLING_ACCOUNT](
 CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
     [ID] BIGINT NOT NULL,
     [TRIGGEREDBYUSERID] BIGINT NULL,
-    [CREATEDON] DATETIME NOT NULL,
+    [CREATEDON] DATETIME NOT NULL DEFAULT (getutcdate()),
     CONSTRAINT [PK_JobRun] PRIMARY KEY ([ID])
 );";
 }

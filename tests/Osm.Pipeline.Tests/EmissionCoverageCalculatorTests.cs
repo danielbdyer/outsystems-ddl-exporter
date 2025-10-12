@@ -21,7 +21,7 @@ public class EmissionCoverageCalculatorTests
         var moduleIndex = Array.FindIndex(
             model.Modules.ToArray(),
             module => module.Entities.Any(entity => string.Equals(
-                entity.PhysicalName.Value,
+                entity.LogicalName.Value,
                 "Customer",
                 StringComparison.OrdinalIgnoreCase)));
         Assert.True(moduleIndex >= 0, "Expected customer module in fixture model.");
@@ -29,13 +29,13 @@ public class EmissionCoverageCalculatorTests
         var module = model.Modules[moduleIndex];
         var entityIndex = Array.FindIndex(
             module.Entities.ToArray(),
-            entity => string.Equals(entity.PhysicalName.Value, "Customer", StringComparison.OrdinalIgnoreCase));
+            entity => string.Equals(entity.LogicalName.Value, "Customer", StringComparison.OrdinalIgnoreCase));
         Assert.True(entityIndex >= 0, "Expected customer entity in fixture model.");
 
         var entity = module.Entities[entityIndex];
         var attributeIndex = Array.FindIndex(
             entity.Attributes.ToArray(),
-            attribute => string.Equals(attribute.LogicalName.Value, "Name", StringComparison.OrdinalIgnoreCase));
+            attribute => string.Equals(attribute.LogicalName.Value, "LastName", StringComparison.OrdinalIgnoreCase));
         Assert.True(attributeIndex >= 0, "Expected Name attribute in customer entity.");
 
         var updatedAttribute = entity.Attributes[attributeIndex] with { IsActive = false };
@@ -64,6 +64,6 @@ public class EmissionCoverageCalculatorTests
         Assert.True(result.Summary.Constraints.Emitted < result.Summary.Constraints.Total);
         Assert.Contains(
             result.Unsupported,
-            message => message.Contains("IDX_Customer_Name", StringComparison.OrdinalIgnoreCase));
+            message => message.Contains("IDX_CUSTOMER_NAME", StringComparison.OrdinalIgnoreCase));
     }
 }

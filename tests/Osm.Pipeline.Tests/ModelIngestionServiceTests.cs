@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
 using System.Text;
 using Osm.Json;
 using Osm.Pipeline.ModelIngestion;
@@ -21,6 +22,7 @@ public class ModelIngestionServiceTests
         const string path = @"/data/model.json";
         const string json = """
         {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
           "modules": [
             {
               "name": "Finance",
@@ -58,7 +60,7 @@ public class ModelIngestionServiceTests
 
         var result = await service.LoadFromFileAsync(path);
 
-        Assert.True(result.IsSuccess);
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
         Assert.Single(result.Value.Modules);
         Assert.Equal("Finance", result.Value.Modules[0].Name.Value);
     }

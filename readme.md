@@ -583,16 +583,31 @@ The `dmm-diff.json` artifact captures:
 
 ```jsonc
 {
-  "IsMatch": true,
-  "ModelPath": "./model.json",
-  "ProfilePath": "./profile.json",
-  "DmmPath": "./dmm_out/edge-case.sql",
-  "GeneratedAtUtc": "2024-09-16T20:01:37.4280793Z",
-  "Differences": []
+  "isMatch": true,
+  "modelPath": "./model.json",
+  "profilePath": "./profile.json",
+  "dmmPath": "./dmm_out/edge-case.sql",
+  "generatedAtUtc": "2024-09-16T20:01:37.4280793Z",
+  "modelDifferences": [],
+  "ssdtDifferences": []
 }
 ```
 
-When drift exists, `IsMatch` flips to `false`, `Differences` enumerates the human-readable messages printed to stderr, and the CLI exits with code `2`.
+When drift exists, `isMatch` flips to `false` and each difference entry carries structured context:
+
+```jsonc
+{
+  "schema": "dbo",
+  "table": "Customer",
+  "column": "Email",
+  "property": "Nullability",
+  "expected": "NOT NULL",
+  "actual": "NULL",
+  "artifactPath": "Modules/AppCore/Tables/dbo.Customer.sql"
+}
+```
+
+The CLI renders the same information to stderr and exits with code `2`, making it easy to pipe the JSON into automation or dashboards.
 
 ---
 
