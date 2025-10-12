@@ -120,6 +120,43 @@ public class SmoModelFactoryTests
     }
 
     [Fact]
+    public void Build_aligns_reference_column_types_with_target_identifiers()
+    {
+        var (model, _, snapshot) = LoadEdgeCaseDecisions();
+        var module = model.Modules.First(m => m.Entities.Any(e => e.LogicalName.Value.Equals("Customer", StringComparison.Ordinal)));
+        var customer = module.Entities.First(e => e.LogicalName.Value.Equals("Customer", StringComparison.Ordinal));
+        var cityId = customer.Attributes.First(a => a.ColumnName.Value.Equals("CityId", StringComparison.OrdinalIgnoreCase));
+
+        var mutatedCityId = cityId with
+        {
+            DataType = "Text",
+            OnDisk = cityId.OnDisk with
+            {
+                SqlType = "nvarchar",
+                MaxLength = 50,
+                Precision = null,
+                Scale = null,
+            }
+        };
+
+        var updatedCustomer = customer with { Attributes = customer.Attributes.Replace(cityId, mutatedCityId) };
+        var updatedModule = module with { Entities = module.Entities.Replace(customer, updatedCustomer) };
+        var updatedModel = model with { Modules = model.Modules.Replace(module, updatedModule) };
+
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(updatedModel, snapshot, TighteningOptions.Default);
+
+        var factory = new SmoModelFactory();
+        var smoOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var smoModel = factory.Create(updatedModel, decisions, profile: snapshot, options: smoOptions);
+
+        var customerTable = smoModel.Tables.Single(t => t.LogicalName.Equals("Customer", StringComparison.Ordinal));
+        var cityColumn = customerTable.Columns.Single(c => c.Name.Equals("CityId", StringComparison.Ordinal));
+
+        Assert.Equal(SqlDataType.BigInt, cityColumn.DataType.SqlDataType);
+    }
+
+    [Fact]
     public void Build_maps_on_disk_default_and_check_constraints()
     {
         var (model, decisions, snapshot) = LoadEdgeCaseDecisions();

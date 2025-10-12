@@ -508,6 +508,16 @@ public sealed class PerTableWriter
 
         var builder = ImmutableArray.CreateBuilder<string>(table.ForeignKeys.Length);
         var trustBuilder = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var columnLookup = new Dictionary<string, ColumnDefinition>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var columnDefinition in statement.Definition.ColumnDefinitions)
+        {
+            if (columnDefinition?.ColumnIdentifier?.Value is { Length: > 0 } name)
+            {
+                columnLookup[name] = columnDefinition;
+            }
+        }
+
         foreach (var foreignKey in table.ForeignKeys)
         {
             var referencedTableName = options.NamingOverrides.GetEffectiveTableName(
@@ -535,7 +545,14 @@ public sealed class PerTableWriter
             constraint.Columns.Add(CreateIdentifier(foreignKey.Column, options.Format));
             constraint.ReferencedTableColumns.Add(CreateIdentifier(foreignKey.ReferencedColumn, options.Format));
 
-            statement.Definition.TableConstraints.Add(constraint);
+            if (columnLookup.TryGetValue(foreignKey.Column, out var columnDefinition))
+            {
+                columnDefinition.Constraints.Add(constraint);
+            }
+            else
+            {
+                statement.Definition.TableConstraints.Add(constraint);
+            }
         }
 
         foreignKeyTrustLookup = trustBuilder.ToImmutable();
