@@ -107,6 +107,6 @@ public class PerTableWriterTests
         Assert.Contains("SHA256 Fingerprint: abc123", result.Script, StringComparison.Ordinal);
         Assert.Contains("LogicalName: Customer", result.Script, StringComparison.Ordinal);
         Assert.Contains("Module: Sales", result.Script, StringComparison.Ordinal);
-        Assert.Contains("IF OBJECT_ID", result.Script, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [dbo].[Customer]", result.Script, StringComparison.Ordinal);
     }
 }
