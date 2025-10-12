@@ -1,0 +1,89 @@
+{
+  "default": {
+    "strategy": "UnicodeText",
+    "maxLengthThreshold": 2000
+  },
+  "mappings": {
+    "identifier": "bigint",
+    "autonumber": "bigint",
+    "integer": "int",
+    "longinteger": "bigint",
+    "boolean": "bit",
+    "datetime": "datetime",
+    "datetime2": {
+      "strategy": "DateTime2",
+      "scale": 7
+    },
+    "datetimeoffset": {
+      "strategy": "DateTimeOffset",
+      "scale": 7
+    },
+    "date": "date",
+    "time": {
+      "strategy": "Time",
+      "scale": 7
+    },
+    "decimal": {
+      "strategy": "Decimal",
+      "defaultPrecision": 18,
+      "defaultScale": 0
+    },
+    "double": "float",
+    "float": "float",
+    "real": "real",
+    "currency": {
+      "strategy": "Decimal",
+      "defaultPrecision": 37,
+      "defaultScale": 8
+    },
+    "binarydata": {
+      "strategy": "VarBinary"
+    },
+    "binary": {
+      "strategy": "VarBinary"
+    },
+    "varbinary": {
+      "strategy": "VarBinary"
+    },
+    "longbinarydata": {
+      "strategy": "VarBinary"
+    },
+    "image": "image",
+    "longtext": "nvarchar(max)",
+    "text": {
+      "strategy": "UnicodeText",
+      "maxLengthThreshold": 2000
+    },
+    "email": {
+      "strategy": "VarCharText",
+      "fallbackLength": 250
+    },
+    "phonenumber": {
+      "strategy": "VarCharText",
+      "fallbackLength": 20
+    },
+    "phone": {
+      "strategy": "VarCharText",
+      "fallbackLength": 20
+    },
+    "url": {
+      "strategy": "UnicodeText",
+      "maxLengthThreshold": 2000
+    },
+    "password": {
+      "strategy": "UnicodeText",
+      "maxLengthThreshold": 2000
+    },
+    "username": {
+      "strategy": "UnicodeText",
+      "maxLengthThreshold": 2000
+    },
+    "identifiertext": {
+      "strategy": "UnicodeText",
+      "maxLengthThreshold": 2000
+    },
+    "guid": "uniqueidentifier",
+    "uniqueidentifier": "uniqueidentifier",
+    "xml": "xml"
+  }
+}

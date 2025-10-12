@@ -39,6 +39,7 @@ public class DmmComparePipelineTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null)),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
+            TypeMappingPolicy.LoadDefault(),
             diffPath,
             new EvidenceCachePipelineOptions(
                 cache.Path,

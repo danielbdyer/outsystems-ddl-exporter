@@ -26,13 +26,14 @@ public class DmmComparatorTests
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, snapshot, options);
         var factory = new SmoModelFactory();
+        var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
         _smoModel = factory.Create(
             model,
             decisions,
             profile: snapshot,
-            options: SmoBuildOptions.FromEmission(options.Emission));
+            options: smoOptions);
 
-        var projection = new SmoDmmLens().Project(new SmoDmmLensRequest(_smoModel, NamingOverrideOptions.Empty));
+        var projection = new SmoDmmLens().Project(new SmoDmmLensRequest(_smoModel, smoOptions));
         if (!projection.IsSuccess)
         {
             throw new InvalidOperationException("Unable to project SMO model into DMM comparison tables for test setup.");
@@ -266,7 +267,10 @@ public class DmmComparatorTests
             ProjectSmo(_smoModel, namingOverrides.Value),
             ParseScript(renamedScript));
 
-        Assert.True(comparison.IsMatch);
+        Assert.True(
+            comparison.IsMatch,
+            $"Model: {string.Join(" | ", comparison.ModelDifferences)}; " +
+            $"DMM: {string.Join(" | ", comparison.SsdtDifferences)}");
     }
 
     [Fact]
@@ -307,7 +311,10 @@ public class DmmComparatorTests
             ProjectSmo(smoModel, namingOverrides.Value),
             ParseScript(renamedScript));
 
-        Assert.True(comparison.IsMatch);
+        Assert.True(
+            comparison.IsMatch,
+            $"Model: {string.Join(" | ", comparison.ModelDifferences)}; " +
+            $"DMM: {string.Join(" | ", comparison.SsdtDifferences)}");
     }
 
     [Fact]
@@ -336,7 +343,8 @@ ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
 
     private static IReadOnlyList<DmmTable> ProjectSmo(SmoModel model, NamingOverrideOptions overrides)
     {
-        var result = new SmoDmmLens().Project(new SmoDmmLensRequest(model, overrides));
+        var options = SmoBuildOptions.Default.WithNamingOverrides(overrides);
+        var result = new SmoDmmLens().Project(new SmoDmmLensRequest(model, options));
         Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(e => $"{e.Code}:{e.Message}")));
         return result.Value;
     }

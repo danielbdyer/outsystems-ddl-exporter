@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Osm.Smo.Tests;
 
-public sealed class SqlDataTypeMapperTests
+public sealed class TypeMappingPolicyTests
 {
     [Fact]
     public void Resolve_UsesOnDiskUnicodeLength()
@@ -24,7 +24,7 @@ public sealed class SqlDataTypeMapperTests
             computedDefinition: null,
             defaultDefinition: null));
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
 
         Assert.Equal(SqlDataType.NVarChar, result.SqlDataType);
         Assert.Equal(120, result.MaximumLength);
@@ -46,7 +46,7 @@ public sealed class SqlDataTypeMapperTests
             computedDefinition: null,
             defaultDefinition: null));
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
         Assert.Equal(SqlDataType.NVarCharMax, result.SqlDataType);
         Assert.True(result.MaximumLength <= 0);
     }
@@ -67,7 +67,7 @@ public sealed class SqlDataTypeMapperTests
             computedDefinition: null,
             defaultDefinition: null));
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
         Assert.Equal(SqlDataType.Decimal, result.SqlDataType);
         Assert.Equal(4, result.NumericPrecision);
         Assert.Equal(12, result.NumericScale);
@@ -90,7 +90,7 @@ public sealed class SqlDataTypeMapperTests
             defaultDefinition: null),
             length: 80);
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
 
         Assert.Equal(SqlDataType.NVarChar, result.SqlDataType);
         Assert.Equal(80, result.MaximumLength);
@@ -107,9 +107,21 @@ public sealed class SqlDataTypeMapperTests
     {
         var attribute = CreateAttribute(dataType: runtimeType, length: 50);
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
 
         Assert.Equal(expected, result.SqlDataType);
+    }
+
+    [Theory]
+    [InlineData("Identifier")]
+    [InlineData("rtIdentifier")]
+    public void Resolve_MapsIdentifierToBigInt(string dataType)
+    {
+        var attribute = CreateAttribute(dataType: dataType, length: null);
+
+        var result = Resolve(attribute);
+
+        Assert.Equal(SqlDataType.BigInt, result.SqlDataType);
     }
 
     [Fact]
@@ -117,7 +129,7 @@ public sealed class SqlDataTypeMapperTests
     {
         var attribute = CreateAttribute(dataType: "rtBinaryData", length: null);
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
 
         Assert.Equal(SqlDataType.VarBinaryMax, result.SqlDataType);
         Assert.True(result.MaximumLength <= 0);
@@ -128,7 +140,7 @@ public sealed class SqlDataTypeMapperTests
     {
         var attribute = CreateAttribute(dataType: "rtCurrency", length: null);
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
 
         Assert.Equal(SqlDataType.Decimal, result.SqlDataType);
         // SMO's Decimal stores the requested precision in NumericScale and the scale in NumericPrecision.
@@ -143,7 +155,7 @@ public sealed class SqlDataTypeMapperTests
     {
         var attribute = CreateAttribute(dataType: "rtText", length: declaredLength);
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
 
         if (declaredLength > 2000)
         {
@@ -161,7 +173,7 @@ public sealed class SqlDataTypeMapperTests
     {
         var attribute = CreateAttribute(dataType: "rtEmail", length: null);
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
 
         Assert.Equal(SqlDataType.VarChar, result.SqlDataType);
         Assert.Equal(250, result.MaximumLength);
@@ -174,7 +186,7 @@ public sealed class SqlDataTypeMapperTests
     {
         var attribute = CreateAttribute(dataType: runtimeType, length: null);
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
 
         Assert.Equal(SqlDataType.VarChar, result.SqlDataType);
         Assert.Equal(20, result.MaximumLength);
@@ -185,7 +197,7 @@ public sealed class SqlDataTypeMapperTests
     {
         var attribute = CreateAttribute(dataType: "Text", length: null, externalDatabaseType: "NVARCHAR(128)");
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
 
         Assert.Equal(SqlDataType.NVarChar, result.SqlDataType);
         Assert.Equal(128, result.MaximumLength);
@@ -196,11 +208,14 @@ public sealed class SqlDataTypeMapperTests
     {
         var attribute = CreateAttribute(dataType: "Text", length: null, externalDatabaseType: "NVARCHAR(MAX)");
 
-        var result = SqlDataTypeMapper.Resolve(attribute);
+        var result = Resolve(attribute);
 
         Assert.Equal(SqlDataType.NVarCharMax, result.SqlDataType);
         Assert.True(result.MaximumLength <= 0);
     }
+
+    private static DataType Resolve(AttributeModel attribute)
+        => TypeMappingPolicy.LoadDefault().Resolve(attribute);
 
     private static AttributeModel CreateAttribute(
         string dataType = "Text",

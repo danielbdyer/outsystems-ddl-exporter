@@ -62,6 +62,14 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
 
         var moduleFilter = moduleFilterResult.Value;
 
+        var typeMappingResult = TypeMappingPolicyResolver.Resolve(input.ConfigurationContext);
+        if (typeMappingResult.IsFailure)
+        {
+            return Result<BuildSsdtApplicationResult>.Failure(typeMappingResult.Errors);
+        }
+
+        var typeMappingPolicy = typeMappingResult.Value;
+
         var profilerProvider = ResolveProfilerProvider(configuration, input.Overrides);
         var profilePathResult = ResolveProfilePath(profilerProvider, configuration, input.Overrides);
         if (profilePathResult.IsFailure)
@@ -124,6 +132,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             profilePath,
             sqlOptionsResult.Value,
             smoOptions,
+            typeMappingPolicy,
             cacheOptions,
             staticDataProvider,
             Path.Combine(outputDirectory, "Seeds"));
