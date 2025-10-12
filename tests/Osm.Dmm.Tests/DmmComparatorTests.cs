@@ -63,7 +63,9 @@ public class DmmComparatorTests
                 "[EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL",
                 "[EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NULL")));
 
-        Assert.False(comparison.IsMatch);
+        Assert.False(
+            comparison.IsMatch,
+            string.Join(", ", comparison.Differences.Select(DescribeDifference)));
         Assert.Contains(
             comparison.SsdtDifferences,
             diff => string.Equals(diff.Property, "Nullability", StringComparison.OrdinalIgnoreCase)
@@ -75,8 +77,8 @@ public class DmmComparatorTests
     public void Compare_detects_column_order_difference()
     {
         var reorderedScript = EdgeCaseScript.Replace(
-            "[ID] BIGINT NOT NULL,\n    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,",
-            "[EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,\n    [ID] BIGINT NOT NULL,");
+            "[ID] BIGINT IDENTITY (1, 1) NOT NULL,\n    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,",
+            "[EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,\n    [ID] BIGINT IDENTITY (1, 1) NOT NULL,");
 
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(_baselineTables, ParseScript(reorderedScript));
@@ -92,14 +94,30 @@ public class DmmComparatorTests
     [Fact]
     public void Compare_detects_missing_table()
     {
-        var script = EdgeCaseScript.Replace(
-            "CREATE TABLE [dbo].[OSUSR_DEF_CITY](\n    [ID] BIGINT NOT NULL,\n    [NAME] NVARCHAR(200) NOT NULL,\n    [ISACTIVE] BIT NOT NULL,\n    CONSTRAINT [PK_City] PRIMARY KEY ([ID])\n);\n",
-            string.Empty);
+        var start = EdgeCaseScript.IndexOf("CREATE TABLE [dbo].[OSUSR_DEF_CITY]", StringComparison.Ordinal);
+        Assert.True(start >= 0, "Fixture script did not contain expected table block.");
+        var end = EdgeCaseScript.IndexOf("CREATE TABLE ", start + 1, StringComparison.Ordinal);
+        if (end < 0)
+        {
+            end = EdgeCaseScript.Length;
+        }
+
+        var script = EdgeCaseScript.Remove(start, end - start);
+
+        Assert.Contains(
+            _baselineTables,
+            table => string.Equals(table.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(table.Name, "OSUSR_DEF_CITY", StringComparison.OrdinalIgnoreCase));
+
+        var dmmTables = ParseScript(script);
+        Assert.DoesNotContain(
+            dmmTables,
+            table => string.Equals(table.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(table.Name, "OSUSR_DEF_CITY", StringComparison.OrdinalIgnoreCase));
 
         var comparator = new DmmComparator();
-        var comparison = comparator.Compare(_baselineTables, ParseScript(script));
+        var comparison = comparator.Compare(_baselineTables, dmmTables);
 
-        Assert.False(comparison.IsMatch);
         Assert.Contains(
             comparison.ModelDifferences,
             diff => string.Equals(diff.Property, "TablePresence", StringComparison.OrdinalIgnoreCase)
@@ -108,6 +126,9 @@ public class DmmComparatorTests
                 && string.Equals(diff.Expected, "Present", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Actual, "Missing", StringComparison.OrdinalIgnoreCase));
         Assert.Empty(comparison.SsdtDifferences);
+        Assert.False(
+            comparison.IsMatch,
+            $"Model={comparison.ModelDifferences.Count}, SSDT={comparison.SsdtDifferences.Count}");
     }
 
     [Fact]
@@ -422,7 +443,7 @@ ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
-    [ID] BIGINT NOT NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,
     [FIRSTNAME] NVARCHAR(100) NULL DEFAULT (''),
     [LASTNAME] NVARCHAR(100) NULL DEFAULT (''),
@@ -430,21 +451,24 @@ ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
     CONSTRAINT [PK_Customer] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_DEF_CITY](
-    [ID] BIGINT NOT NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [NAME] NVARCHAR(200) NOT NULL,
     [ISACTIVE] BIT NOT NULL DEFAULT ((1)),
     CONSTRAINT [PK_City] PRIMARY KEY ([ID])
 );
 CREATE TABLE [billing].[BILLING_ACCOUNT](
-    [ID] BIGINT NOT NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [ACCOUNTNUMBER] VARCHAR(50) NOT NULL,
     [EXTREF] VARCHAR(50) NULL,
     CONSTRAINT [PK_BillingAccount] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
-    [ID] BIGINT NOT NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [TRIGGEREDBYUSERID] BIGINT NULL,
     [CREATEDON] DATETIME NOT NULL DEFAULT (getutcdate()),
     CONSTRAINT [PK_JobRun] PRIMARY KEY ([ID])
-);";
+);
+ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
+ADD CONSTRAINT [FK_Customer_CityId]
+FOREIGN KEY ([CITYID]) REFERENCES [dbo].[OSUSR_DEF_CITY]([ID]);";
 }

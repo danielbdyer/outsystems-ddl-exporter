@@ -60,16 +60,16 @@
     "ForeignKeyCount": 2,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
+      "FK_ENFORCED": 1,
+      "PROFILE_MISSING": 1,
+      "DELETE_RULE_IGNORE": 1,
       "UNIQUE_NO_NULLS": 2,
       "DEFAULT_PRESENT": 2,
-      "PK": 4,
-      "DATA_NO_NULLS": 10,
-      "DELETE_RULE_IGNORE": 1,
-      "PHYSICAL_NOT_NULL": 4,
       "DATA_HAS_ORPHANS": 1,
-      "PROFILE_MISSING": 1,
+      "DATA_NO_NULLS": 10,
+      "PK": 4,
       "MANDATORY": 10,
-      "FK_ENFORCED": 1
+      "PHYSICAL_NOT_NULL": 4
     },
     "UniqueIndexRationales": {
       "UNIQUE_NO_NULLS": 2,
@@ -83,7 +83,27 @@
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "891974cfa849b639dec75dcd4a41354d416776d6a88fcb17bf4835653fac5ae3"
+    "Hash": "13ab16133d53404175eeb5a7d281696e9db2b3fba42cb85c1129d3c44d6d2291"
   },
-  "PreRemediation": []
+  "PreRemediation": [],
+  "Coverage": {
+    "Tables": {
+      "Emitted": 4,
+      "Total": 5,
+      "Percentage": 80.0
+    },
+    "Columns": {
+      "Emitted": 14,
+      "Total": 17,
+      "Percentage": 82.35
+    },
+    "Constraints": {
+      "Emitted": 8,
+      "Total": 9,
+      "Percentage": 88.89
+    }
+  },
+  "Unsupported": [
+    "Table dbo.OSUSR_U_USER missing from emission output."
+  ]
 }

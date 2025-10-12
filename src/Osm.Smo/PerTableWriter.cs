@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -53,9 +52,8 @@ public sealed class PerTableWriter
         var statement = BuildCreateTableStatement(table, effectiveTableName, options);
         var inlineForeignKeys = AddForeignKeys(statement, table, effectiveTableName, options, out var foreignKeyTrustLookup);
         var tableScript = Script(statement, foreignKeyTrustLookup, options.Format);
-        var guardedTable = WrapWithTableGuard(tableScript, table.Schema, effectiveTableName, options.Format);
 
-        var statements = new List<string> { guardedTable };
+        var statements = new List<string> { tableScript };
         var indexNames = ImmutableArray.CreateBuilder<string>();
 
         if (!options.EmitBareTableOnly)
@@ -71,14 +69,14 @@ public sealed class PerTableWriter
                 var indexName = ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
                 var indexStatement = BuildCreateIndexStatement(table, index, effectiveTableName, indexName, options.Format);
                 var indexScript = Script(indexStatement, format: options.Format);
-                statements.Add(WrapWithIndexGuard(indexScript, table.Schema, effectiveTableName, indexName, options.Format));
+                statements.Add(indexScript);
                 indexNames.Add(indexName);
 
                 if (index.Metadata.IsDisabled)
                 {
                     var disableStatement = BuildDisableIndexStatement(table, effectiveTableName, indexName, options.Format);
                     var disableScript = Script(disableStatement, format: options.Format);
-                    statements.Add(WrapWithIndexExistsGuard(disableScript, table.Schema, effectiveTableName, indexName, options.Format));
+                    statements.Add(disableScript);
                 }
             }
         }
@@ -161,80 +159,6 @@ public sealed class PerTableWriter
             builder.Append(lines[i].TrimEnd());
         }
 
-        return builder.ToString();
-    }
-
-    private string WrapWithTableGuard(string script, string schema, string table, SmoFormatOptions format)
-    {
-        var schemaIdentifier = QuoteIdentifier(schema, format);
-        var tableIdentifier = QuoteIdentifier(table, format);
-        var objectLiteral = EscapeSqlLiteral($"{schemaIdentifier}.{tableIdentifier}");
-
-        var builder = new StringBuilder(script.Length + 128);
-        builder.Append("IF OBJECT_ID(N'");
-        builder.Append(objectLiteral);
-        builder.AppendLine("', N'U') IS NULL");
-        builder.AppendLine("BEGIN");
-        builder.AppendLine(IndentBlock(script, 4));
-        builder.Append("END");
-        return builder.ToString();
-    }
-
-    private string WrapWithIndexGuard(
-        string script,
-        string schema,
-        string table,
-        string indexName,
-        SmoFormatOptions format)
-    {
-        var schemaIdentifier = QuoteIdentifier(schema, format);
-        var tableIdentifier = QuoteIdentifier(table, format);
-        var objectLiteral = EscapeSqlLiteral($"{schemaIdentifier}.{tableIdentifier}");
-        var indexLiteral = EscapeSqlLiteral(indexName);
-
-        var builder = new StringBuilder(script.Length + 192);
-        builder.AppendLine("IF NOT EXISTS (");
-        builder.AppendLine("    SELECT 1");
-        builder.AppendLine("    FROM sys.indexes");
-        builder.Append("    WHERE name = N'");
-        builder.Append(indexLiteral);
-        builder.AppendLine("'");
-        builder.Append("      AND object_id = OBJECT_ID(N'");
-        builder.Append(objectLiteral);
-        builder.AppendLine("', N'U')");
-        builder.AppendLine(")");
-        builder.AppendLine("BEGIN");
-        builder.AppendLine(IndentBlock(script, 4));
-        builder.Append("END");
-        return builder.ToString();
-    }
-
-    private string WrapWithIndexExistsGuard(
-        string script,
-        string schema,
-        string table,
-        string indexName,
-        SmoFormatOptions format)
-    {
-        var schemaIdentifier = QuoteIdentifier(schema, format);
-        var tableIdentifier = QuoteIdentifier(table, format);
-        var objectLiteral = EscapeSqlLiteral($"{schemaIdentifier}.{tableIdentifier}");
-        var indexLiteral = EscapeSqlLiteral(indexName);
-
-        var builder = new StringBuilder(script.Length + 192);
-        builder.AppendLine("IF EXISTS (");
-        builder.AppendLine("    SELECT 1");
-        builder.AppendLine("    FROM sys.indexes");
-        builder.Append("    WHERE name = N'");
-        builder.Append(indexLiteral);
-        builder.AppendLine("'");
-        builder.Append("      AND object_id = OBJECT_ID(N'");
-        builder.Append(objectLiteral);
-        builder.AppendLine("', N'U')");
-        builder.AppendLine(")");
-        builder.AppendLine("BEGIN");
-        builder.AppendLine(IndentBlock(script, 4));
-        builder.Append("END");
         return builder.ToString();
     }
 
@@ -434,8 +358,7 @@ public sealed class PerTableWriter
     {
         var definition = new TableDefinition();
         var columnLookup = new Dictionary<string, ColumnDefinition>(table.Columns.Length, StringComparer.OrdinalIgnoreCase);
-        var orderedColumns = table.Columns.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase);
-        foreach (var column in orderedColumns)
+        foreach (var column in table.Columns)
         {
             var columnDefinition = BuildColumnDefinition(column, options);
             definition.ColumnDefinitions.Add(columnDefinition);
@@ -597,13 +520,17 @@ public sealed class PerTableWriter
             builder.Add(foreignKeyName);
             trustBuilder[foreignKeyName] = foreignKey.IsNoCheck;
 
+            var deleteAction = MapDeleteAction(foreignKey.DeleteAction);
             var constraint = new ForeignKeyConstraintDefinition
             {
                 ConstraintIdentifier = CreateIdentifier(foreignKeyName, options.Format),
                 ReferenceTableName = BuildSchemaObjectName(foreignKey.ReferencedSchema, referencedTableName, options.Format),
-                DeleteAction = MapDeleteAction(foreignKey.DeleteAction),
-                UpdateAction = DeleteUpdateAction.NoAction,
             };
+
+            if (deleteAction != DeleteUpdateAction.NoAction)
+            {
+                constraint.DeleteAction = deleteAction;
+            }
 
             constraint.Columns.Add(CreateIdentifier(foreignKey.Column, options.Format));
             constraint.ReferencedTableColumns.Add(CreateIdentifier(foreignKey.ReferencedColumn, options.Format));

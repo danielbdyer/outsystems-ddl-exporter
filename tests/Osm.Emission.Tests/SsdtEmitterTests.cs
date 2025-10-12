@@ -58,8 +58,8 @@ public class SsdtEmitterTests
         Assert.Contains("PRIMARY KEY", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("FOREIGN KEY", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("REFERENCES [dbo].[City] ([Id])", customerScript, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("ON DELETE NO ACTION", customerScript, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("ON UPDATE NO ACTION", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ON DELETE NO ACTION", customerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ON UPDATE NO ACTION", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("DEFAULT", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("CREATE UNIQUE INDEX [IDX_Customer_Email]", customerScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("EXEC sys.sp_addextendedproperty", customerScript, StringComparison.OrdinalIgnoreCase);

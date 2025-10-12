@@ -1,61 +1,33 @@
-IF OBJECT_ID(N'[dbo].[Customer]', N'U') IS NULL
-BEGIN
-    CREATE TABLE [dbo].[Customer] (
-        [CityId]    BIGINT         NOT NULL,
-        [Email]     NVARCHAR (255) COLLATE [Latin1_General_CI_AI] NOT NULL,
-        [FirstName] NVARCHAR (100)
-            DEFAULT (''),
-        [Id]        BIGINT         IDENTITY (1, 1) NOT NULL
-            CONSTRAINT [PK_Customer]
-                PRIMARY KEY CLUSTERED,
-        [LastName]  NVARCHAR (100)
-            DEFAULT (''),
-        CONSTRAINT [FK_Customer_CityId]
-            FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])
-                ON DELETE NO ACTION ON UPDATE NO ACTION
-    )
-END
+CREATE TABLE [dbo].[Customer] (
+    [Id]        BIGINT         IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_Customer]
+            PRIMARY KEY CLUSTERED,
+    [Email]     NVARCHAR (255) COLLATE [Latin1_General_CI_AI] NOT NULL,
+    [FirstName] NVARCHAR (100)
+        DEFAULT (''),
+    [LastName]  NVARCHAR (100)
+        DEFAULT (''),
+    [CityId]    BIGINT         NOT NULL,
+    CONSTRAINT [FK_Customer_CityId]
+        FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])
+)
 
 GO
 
-IF NOT EXISTS (
-    SELECT 1
-    FROM sys.indexes
-    WHERE name = N'IDX_Customer_Email'
-      AND object_id = OBJECT_ID(N'[dbo].[Customer]', N'U')
-)
-BEGIN
-    CREATE UNIQUE INDEX [IDX_Customer_Email]
-        ON [dbo].[Customer]([Email] ASC) WHERE ([EMAIL] IS NOT NULL) WITH (FILLFACTOR = 85, PAD_INDEX = OFF, IGNORE_DUP_KEY = ON, STATISTICS_NORECOMPUTE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
-        ON [FG_Customers]
-END
+CREATE UNIQUE INDEX [IDX_Customer_Email]
+    ON [dbo].[Customer]([Email] ASC) WHERE ([EMAIL] IS NOT NULL) WITH (FILLFACTOR = 85, PAD_INDEX = OFF, IGNORE_DUP_KEY = ON, STATISTICS_NORECOMPUTE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
+    ON [FG_Customers]
 
 GO
 
-IF NOT EXISTS (
-    SELECT 1
-    FROM sys.indexes
-    WHERE name = N'IDX_Customer_Name'
-      AND object_id = OBJECT_ID(N'[dbo].[Customer]', N'U')
-)
-BEGIN
-    CREATE INDEX [IDX_Customer_Name]
-        ON [dbo].[Customer]([LastName] ASC, [FirstName] ASC) WITH (PAD_INDEX = OFF, IGNORE_DUP_KEY = OFF, STATISTICS_NORECOMPUTE = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
-        ON [FG_Customers]
-END
+CREATE INDEX [IDX_Customer_Name]
+    ON [dbo].[Customer]([LastName] ASC, [FirstName] ASC) WITH (PAD_INDEX = OFF, IGNORE_DUP_KEY = OFF, STATISTICS_NORECOMPUTE = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
+    ON [FG_Customers]
 
 GO
 
-IF EXISTS (
-    SELECT 1
-    FROM sys.indexes
-    WHERE name = N'IDX_Customer_Name'
-      AND object_id = OBJECT_ID(N'[dbo].[Customer]', N'U')
-)
-BEGIN
-    ALTER INDEX [IDX_Customer_Name]
-        ON [dbo].[Customer] DISABLE
-END
+ALTER INDEX [IDX_Customer_Name]
+    ON [dbo].[Customer] DISABLE
 
 GO
 

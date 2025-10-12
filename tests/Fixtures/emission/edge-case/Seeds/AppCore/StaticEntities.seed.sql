@@ -16,6 +16,9 @@ SET NOCOUNT ON;
 -- Entity: City (dbo.OSUSR_DEF_CITY)
 -- Target: dbo.City
 --------------------------------------------------------------------------------
+SET IDENTITY_INSERT [dbo].[City] ON;
+GO
+
 MERGE INTO [dbo].[City] AS Target
 USING
 (
@@ -31,5 +34,8 @@ WHEN MATCHED THEN UPDATE SET
 WHEN NOT MATCHED THEN INSERT ([ID], [NAME], [ISACTIVE])
     VALUES (Source.[ID], Source.[NAME], Source.[ISACTIVE]);
 
+GO
+
+SET IDENTITY_INSERT [dbo].[City] OFF;
 GO
 

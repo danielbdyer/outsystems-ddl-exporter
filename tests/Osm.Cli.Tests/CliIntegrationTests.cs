@@ -58,12 +58,12 @@ public class CliIntegrationTests
         using (var diffJson = JsonDocument.Parse(diffStream))
         {
             var root = diffJson.RootElement;
-            Assert.True(root.GetProperty("IsMatch").GetBoolean());
-            Assert.Equal(modelPath, root.GetProperty("ModelPath").GetString());
-            Assert.Equal(profilePath, root.GetProperty("ProfilePath").GetString());
-            Assert.Equal(dmmScriptPath, root.GetProperty("DmmPath").GetString());
-            Assert.Equal(0, root.GetProperty("ModelDifferences").GetArrayLength());
-            Assert.Equal(0, root.GetProperty("SsdtDifferences").GetArrayLength());
+            Assert.True(root.GetProperty("isMatch").GetBoolean());
+            Assert.Equal(modelPath, root.GetProperty("modelPath").GetString());
+            Assert.Equal(profilePath, root.GetProperty("profilePath").GetString());
+            Assert.Equal(dmmScriptPath, root.GetProperty("dmmPath").GetString());
+            Assert.Equal(0, root.GetProperty("modelDifferences").GetArrayLength());
+            Assert.Equal(0, root.GetProperty("ssdtDifferences").GetArrayLength());
         }
     }
 
@@ -89,12 +89,12 @@ public class CliIntegrationTests
         using var diffJson = JsonDocument.Parse(diffStream);
         var root = diffJson.RootElement;
 
-        Assert.False(root.GetProperty("IsMatch").GetBoolean());
-        Assert.Equal(modelPath, root.GetProperty("ModelPath").GetString());
-        Assert.Equal(profilePath, root.GetProperty("ProfilePath").GetString());
-        Assert.Equal(dmmScriptPath, root.GetProperty("DmmPath").GetString());
+        Assert.False(root.GetProperty("isMatch").GetBoolean());
+        Assert.Equal(modelPath, root.GetProperty("modelPath").GetString());
+        Assert.Equal(profilePath, root.GetProperty("profilePath").GetString());
+        Assert.Equal(dmmScriptPath, root.GetProperty("dmmPath").GetString());
 
-        var ssdtDifferences = root.GetProperty("SsdtDifferences");
+        var ssdtDifferences = root.GetProperty("ssdtDifferences");
         Assert.True(ssdtDifferences.GetArrayLength() > 0);
         Assert.Contains(
             ssdtDifferences.EnumerateArray(),
@@ -405,56 +405,62 @@ public class CliIntegrationTests
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
-    [ID] BIGINT NOT NULL,
-    [EMAIL] NVARCHAR(255) NOT NULL,
-    [FIRSTNAME] NVARCHAR(100) NULL,
-    [LASTNAME] NVARCHAR(100) NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
+    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,
+    [FIRSTNAME] NVARCHAR(100) NULL DEFAULT (''),
+    [LASTNAME] NVARCHAR(100) NULL DEFAULT (''),
     [CITYID] BIGINT NOT NULL,
     CONSTRAINT [PK_Customer] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_DEF_CITY](
-    [ID] BIGINT NOT NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [NAME] NVARCHAR(200) NOT NULL,
-    [ISACTIVE] BIT NOT NULL,
+    [ISACTIVE] BIT NOT NULL DEFAULT ((1)),
     CONSTRAINT [PK_City] PRIMARY KEY ([ID])
 );
 CREATE TABLE [billing].[BILLING_ACCOUNT](
-    [ID] BIGINT NOT NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [ACCOUNTNUMBER] VARCHAR(50) NOT NULL,
     [EXTREF] VARCHAR(50) NULL,
     CONSTRAINT [PK_BillingAccount] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
-    [ID] BIGINT NOT NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [TRIGGEREDBYUSERID] BIGINT NULL,
-    [CREATEDON] DATETIME NOT NULL,
+    [CREATEDON] DATETIME NOT NULL DEFAULT (getutcdate()),
     CONSTRAINT [PK_JobRun] PRIMARY KEY ([ID])
-);";
+);
+ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
+ADD CONSTRAINT [FK_Customer_CityId]
+FOREIGN KEY ([CITYID]) REFERENCES [dbo].[OSUSR_DEF_CITY]([ID]);";
 
     private const string MismatchedScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
-    [ID] BIGINT NOT NULL,
-    [EMAIL] NVARCHAR(255) NULL,
-    [FIRSTNAME] NVARCHAR(100) NULL,
-    [LASTNAME] NVARCHAR(100) NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
+    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NULL,
+    [FIRSTNAME] NVARCHAR(100) NULL DEFAULT (''),
+    [LASTNAME] NVARCHAR(100) NULL DEFAULT (''),
     [CITYID] BIGINT NOT NULL,
     CONSTRAINT [PK_Customer] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_DEF_CITY](
-    [ID] BIGINT NOT NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [NAME] NVARCHAR(200) NOT NULL,
-    [ISACTIVE] BIT NOT NULL,
+    [ISACTIVE] BIT NOT NULL DEFAULT ((1)),
     CONSTRAINT [PK_City] PRIMARY KEY ([ID])
 );
 CREATE TABLE [billing].[BILLING_ACCOUNT](
-    [ID] BIGINT NOT NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [ACCOUNTNUMBER] VARCHAR(50) NOT NULL,
     [EXTREF] VARCHAR(50) NULL,
     CONSTRAINT [PK_BillingAccount] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
-    [ID] BIGINT NOT NULL,
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [TRIGGEREDBYUSERID] BIGINT NULL,
-    [CREATEDON] DATETIME NOT NULL,
+    [CREATEDON] DATETIME NOT NULL DEFAULT (getutcdate()),
     CONSTRAINT [PK_JobRun] PRIMARY KEY ([ID])
-);";
+);
+ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
+ADD CONSTRAINT [FK_Customer_CityId]
+FOREIGN KEY ([CITYID]) REFERENCES [dbo].[OSUSR_DEF_CITY]([ID]);";
 }
