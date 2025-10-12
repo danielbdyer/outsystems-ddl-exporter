@@ -1,4 +1,5 @@
 {
+  "exportedAtUtc": "2025-01-01T00:00:00Z",
   "modules": [
     {
       "name": "M",
@@ -97,7 +98,6 @@
           "indexes": [],
           "relationships": [
             {
-              "viaAttributeId": 2,
               "viaAttributeName": "ParentId",
               "toEntity_name": "Parent",
               "toEntity_physicalName": "OSUSR_P_PARENT",

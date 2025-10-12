@@ -24,49 +24,84 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             throw new ArgumentNullException(nameof(jsonStream));
         }
 
-        ModelDocument? document;
+        JsonDocument document;
         try
         {
-            document = JsonSerializer.Deserialize(jsonStream, ModelDocumentSerializerContext.Default.ModelDocument);
+            document = JsonDocument.Parse(jsonStream, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
+            });
         }
         catch (JsonException ex)
         {
             return Result<OsmModel>.Failure(ValidationError.Create("json.parse.failed", $"Invalid JSON payload: {ex.Message}"));
         }
 
-        if (document is null)
+        using (document)
         {
-            return Result<OsmModel>.Failure(ValidationError.Create("json.document.null", "JSON document is empty."));
+            var schemaResult = CirSchemaValidator.Validate(document.RootElement);
+            if (schemaResult.IsFailure)
+            {
+                return Result<OsmModel>.Failure(schemaResult.Errors);
+            }
+
+            ModelDocument? model;
+            try
+            {
+                model = document.RootElement.Deserialize(ModelDocumentSerializerContext.Default.ModelDocument);
+            }
+            catch (JsonException ex)
+            {
+                return Result<OsmModel>.Failure(ValidationError.Create("json.deserialize.failed", $"Unable to materialize CIR document: {ex.Message}"));
+            }
+
+            if (model is null)
+            {
+                return Result<OsmModel>.Failure(ValidationError.Create("json.document.null", "JSON document is empty."));
+            }
+
+            var modules = model.Modules ?? Array.Empty<ModuleDocument>();
+            var moduleResults = new List<ModuleModel>(modules.Length);
+            foreach (var module in modules)
+            {
+                var moduleNameResult = ModuleName.Create(module.Name);
+                if (moduleNameResult.IsFailure)
+                {
+                    return Result<OsmModel>.Failure(moduleNameResult.Errors);
+                }
+
+                if (ShouldSkipInactiveModule(module))
+                {
+                    continue;
+                }
+
+                var moduleResult = MapModule(module, moduleNameResult.Value, warnings);
+                if (moduleResult.IsFailure)
+                {
+                    return Result<OsmModel>.Failure(moduleResult.Errors);
+                }
+
+                if (moduleResult.Value is { } mappedModule)
+                {
+                    moduleResults.Add(mappedModule);
+                }
+            }
+
+            var sequencesResult = MapSequences(model.Sequences);
+            if (sequencesResult.IsFailure)
+            {
+                return Result<OsmModel>.Failure(sequencesResult.Errors);
+            }
+
+            var propertyResult = MapExtendedProperties(model.ExtendedProperties);
+            if (propertyResult.IsFailure)
+            {
+                return Result<OsmModel>.Failure(propertyResult.Errors);
+            }
+
+            return OsmModel.Create(model.ExportedAtUtc, moduleResults, sequencesResult.Value, propertyResult.Value);
         }
-
-        var modules = document.Modules ?? Array.Empty<ModuleDocument>();
-        var moduleResults = new List<ModuleModel>(modules.Length);
-        foreach (var module in modules)
-        {
-            var moduleNameResult = ModuleName.Create(module.Name);
-            if (moduleNameResult.IsFailure)
-            {
-                return Result<OsmModel>.Failure(moduleNameResult.Errors);
-            }
-
-            if (ShouldSkipInactiveModule(module))
-            {
-                continue;
-            }
-
-            var moduleResult = MapModule(module, moduleNameResult.Value, warnings);
-            if (moduleResult.IsFailure)
-            {
-                return Result<OsmModel>.Failure(moduleResult.Errors);
-            }
-
-            if (moduleResult.Value is { } mappedModule)
-            {
-                moduleResults.Add(mappedModule);
-            }
-        }
-
-        return OsmModel.Create(document.ExportedAtUtc, moduleResults);
     }
 
     private static Result<ModuleModel?> MapModule(ModuleDocument doc, ModuleName moduleName, ICollection<string>? warnings)
@@ -95,13 +130,54 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             return Result<ModuleModel?>.Success(null);
         }
 
-        var moduleResult = ModuleModel.Create(moduleName, doc.IsSystem, doc.IsActive, entityResults);
+        var propertiesResult = MapExtendedProperties(doc.ExtendedProperties);
+        if (propertiesResult.IsFailure)
+        {
+            return Result<ModuleModel?>.Failure(propertiesResult.Errors);
+        }
+
+        var moduleResult = ModuleModel.Create(moduleName, doc.IsSystem, doc.IsActive, entityResults, propertiesResult.Value);
         if (moduleResult.IsFailure)
         {
             return Result<ModuleModel?>.Failure(moduleResult.Errors);
         }
 
         return Result<ModuleModel?>.Success(moduleResult.Value);
+    }
+
+    private static Result<ImmutableArray<ExtendedProperty>> MapExtendedProperties(ExtendedPropertyDocument[]? docs)
+    {
+        if (docs is null || docs.Length == 0)
+        {
+            return Result<ImmutableArray<ExtendedProperty>>.Success(ExtendedProperty.EmptyArray);
+        }
+
+        var builder = ImmutableArray.CreateBuilder<ExtendedProperty>(docs.Length);
+        foreach (var doc in docs)
+        {
+            if (doc is null)
+            {
+                continue;
+            }
+
+            var value = doc.Value.ValueKind switch
+            {
+                JsonValueKind.Undefined => null,
+                JsonValueKind.Null => null,
+                JsonValueKind.String => doc.Value.GetString(),
+                _ => doc.Value.GetRawText(),
+            };
+
+            var propertyResult = ExtendedProperty.Create(doc.Name, value);
+            if (propertyResult.IsFailure)
+            {
+                return Result<ImmutableArray<ExtendedProperty>>.Failure(propertyResult.Errors);
+            }
+
+            builder.Add(propertyResult.Value);
+        }
+
+        return Result<ImmutableArray<ExtendedProperty>>.Success(builder.ToImmutable());
     }
 
     private static bool ShouldSkipInactiveModule(ModuleDocument doc)
@@ -190,7 +266,19 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             return Result<EntityModel>.Failure(triggersResult.Errors);
         }
 
-        var metadata = EntityMetadata.Create(doc.Meta?.Description);
+        var temporalResult = MapTemporalMetadata(doc.Temporal);
+        if (temporalResult.IsFailure)
+        {
+            return Result<EntityModel>.Failure(temporalResult.Errors);
+        }
+
+        var propertyResult = MapExtendedProperties(doc.ExtendedProperties);
+        if (propertyResult.IsFailure)
+        {
+            return Result<EntityModel>.Failure(propertyResult.Errors);
+        }
+
+        var metadata = EntityMetadata.Create(doc.Meta?.Description, propertyResult.Value, temporalResult.Value);
 
         return EntityModel.Create(
             moduleName,
@@ -238,12 +326,18 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 
             var reality = BuildReality(doc);
 
-        var metadata = AttributeMetadata.Create(doc.Meta?.Description);
-        var onDisk = doc.OnDisk?.ToDomain() ?? AttributeOnDiskMetadata.Empty;
+            var propertyResult = MapExtendedProperties(doc.ExtendedProperties);
+            if (propertyResult.IsFailure)
+            {
+                return Result<ImmutableArray<AttributeModel>>.Failure(propertyResult.Errors);
+            }
 
-        var attributeResult = AttributeModel.Create(
-            logicalNameResult.Value,
-            columnResult.Value,
+            var metadata = AttributeMetadata.Create(doc.Meta?.Description, propertyResult.Value);
+            var onDisk = doc.OnDisk?.ToDomain() ?? AttributeOnDiskMetadata.Empty;
+
+            var attributeResult = AttributeModel.Create(
+                logicalNameResult.Value,
+                columnResult.Value,
             doc.DataType ?? string.Empty,
             doc.IsMandatory,
             doc.IsIdentifier,
@@ -348,6 +442,12 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
                 return Result<ImmutableArray<IndexModel>>.Failure(onDiskResult.Errors);
             }
 
+            var propertyResult = MapExtendedProperties(doc.ExtendedProperties);
+            if (propertyResult.IsFailure)
+            {
+                return Result<ImmutableArray<IndexModel>>.Failure(propertyResult.Errors);
+            }
+
             var isPrimary = doc.IsPrimary || onDiskResult.Value.Kind == IndexKind.PrimaryKey;
             var indexResult = IndexModel.Create(
                 nameResult.Value,
@@ -355,7 +455,8 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
                 isPrimary,
                 doc.IsPlatformAuto != 0,
                 columnResult.Value,
-                onDiskResult.Value);
+                onDiskResult.Value,
+                propertyResult.Value);
 
             if (indexResult.IsFailure)
             {
@@ -366,6 +467,63 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
         }
 
         return Result<ImmutableArray<IndexModel>>.Success(builder.ToImmutable());
+    }
+
+    private static Result<ImmutableArray<SequenceModel>> MapSequences(SequenceDocument[]? docs)
+    {
+        if (docs is null || docs.Length == 0)
+        {
+            return Result<ImmutableArray<SequenceModel>>.Success(ImmutableArray<SequenceModel>.Empty);
+        }
+
+        var builder = ImmutableArray.CreateBuilder<SequenceModel>(docs.Length);
+        foreach (var doc in docs)
+        {
+            if (doc is null)
+            {
+                continue;
+            }
+
+            var schemaResult = SchemaName.Create(doc.Schema);
+            if (schemaResult.IsFailure)
+            {
+                return Result<ImmutableArray<SequenceModel>>.Failure(schemaResult.Errors);
+            }
+
+            var nameResult = SequenceName.Create(doc.Name);
+            if (nameResult.IsFailure)
+            {
+                return Result<ImmutableArray<SequenceModel>>.Failure(nameResult.Errors);
+            }
+
+            var propertiesResult = MapExtendedProperties(doc.ExtendedProperties);
+            if (propertiesResult.IsFailure)
+            {
+                return Result<ImmutableArray<SequenceModel>>.Failure(propertiesResult.Errors);
+            }
+
+            var modelResult = SequenceModel.Create(
+                schemaResult.Value,
+                nameResult.Value,
+                doc.DataType,
+                doc.StartValue,
+                doc.Increment,
+                doc.MinValue,
+                doc.MaxValue,
+                doc.Cycle,
+                ParseSequenceCacheMode(doc.CacheMode),
+                doc.CacheSize,
+                propertiesResult.Value);
+
+            if (modelResult.IsFailure)
+            {
+                return Result<ImmutableArray<SequenceModel>>.Failure(modelResult.Errors);
+            }
+
+            builder.Add(modelResult.Value);
+        }
+
+        return Result<ImmutableArray<SequenceModel>>.Success(builder.ToImmutable());
     }
 
     private static Result<ImmutableArray<TriggerModel>> MapTriggers(TriggerDocument[]? docs)
@@ -516,6 +674,101 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
         return Result<IndexOnDiskMetadata>.Success(metadata);
     }
 
+    private static Result<TemporalTableMetadata> MapTemporalMetadata(TemporalDocument? doc)
+    {
+        if (doc is null)
+        {
+            return TemporalTableMetadata.None;
+        }
+
+        var propertiesResult = MapExtendedProperties(doc.ExtendedProperties);
+        if (propertiesResult.IsFailure)
+        {
+            return Result<TemporalTableMetadata>.Failure(propertiesResult.Errors);
+        }
+
+        SchemaName? historySchema = null;
+        TableName? historyTable = null;
+        if (doc.History is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(doc.History.Schema))
+            {
+                var schemaResult = SchemaName.Create(doc.History.Schema);
+                if (schemaResult.IsFailure)
+                {
+                    return Result<TemporalTableMetadata>.Failure(schemaResult.Errors);
+                }
+
+                historySchema = schemaResult.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(doc.History.Name))
+            {
+                var tableResult = TableName.Create(doc.History.Name);
+                if (tableResult.IsFailure)
+                {
+                    return Result<TemporalTableMetadata>.Failure(tableResult.Errors);
+                }
+
+                historyTable = tableResult.Value;
+            }
+        }
+
+        ColumnName? periodStart = null;
+        if (!string.IsNullOrWhiteSpace(doc.PeriodStartColumn))
+        {
+            var columnResult = ColumnName.Create(doc.PeriodStartColumn);
+            if (columnResult.IsFailure)
+            {
+                return Result<TemporalTableMetadata>.Failure(columnResult.Errors);
+            }
+
+            periodStart = columnResult.Value;
+        }
+
+        ColumnName? periodEnd = null;
+        if (!string.IsNullOrWhiteSpace(doc.PeriodEndColumn))
+        {
+            var columnResult = ColumnName.Create(doc.PeriodEndColumn);
+            if (columnResult.IsFailure)
+            {
+                return Result<TemporalTableMetadata>.Failure(columnResult.Errors);
+            }
+
+            periodEnd = columnResult.Value;
+        }
+
+        var retentionResult = MapTemporalRetention(doc.Retention);
+        if (retentionResult.IsFailure)
+        {
+            return Result<TemporalTableMetadata>.Failure(retentionResult.Errors);
+        }
+
+        var metadata = TemporalTableMetadata.Create(
+            ParseTemporalType(doc.Type),
+            historySchema,
+            historyTable,
+            periodStart,
+            periodEnd,
+            retentionResult.Value,
+            propertiesResult.Value);
+
+        return Result<TemporalTableMetadata>.Success(metadata);
+    }
+
+    private static Result<TemporalRetentionPolicy> MapTemporalRetention(TemporalRetentionDocument? doc)
+    {
+        if (doc is null)
+        {
+            return TemporalRetentionPolicy.None;
+        }
+
+        var kind = ParseTemporalRetentionKind(doc.Kind);
+        var unit = ParseTemporalRetentionUnit(doc.Unit);
+        var policy = TemporalRetentionPolicy.Create(kind, doc.Value, unit);
+        return Result<TemporalRetentionPolicy>.Success(policy);
+    }
+
     private static IndexKind ParseIndexKind(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -532,6 +785,69 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             "CLUSTERED" or "CL" => IndexKind.ClusteredIndex,
             "NONCLUSTERED" or "NON-CLUSTERED" or "NC" => IndexKind.NonClusteredIndex,
             _ => IndexKind.Unknown,
+        };
+    }
+
+    private static TemporalTableType ParseTemporalType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return TemporalTableType.None;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "systemversioned" or "system-versioned" or "system_versioned" => TemporalTableType.SystemVersioned,
+            "history" or "historytable" or "history_table" => TemporalTableType.HistoryTable,
+            _ => TemporalTableType.UnsupportedYet,
+        };
+    }
+
+    private static TemporalRetentionKind ParseTemporalRetentionKind(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return TemporalRetentionKind.None;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "none" => TemporalRetentionKind.None,
+            "infinite" => TemporalRetentionKind.Infinite,
+            "limited" => TemporalRetentionKind.Limited,
+            _ => TemporalRetentionKind.UnsupportedYet,
+        };
+    }
+
+    private static TemporalRetentionUnit ParseTemporalRetentionUnit(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return TemporalRetentionUnit.None;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "day" or "days" => TemporalRetentionUnit.Days,
+            "week" or "weeks" => TemporalRetentionUnit.Weeks,
+            "month" or "months" => TemporalRetentionUnit.Months,
+            "year" or "years" => TemporalRetentionUnit.Years,
+            _ => TemporalRetentionUnit.UnsupportedYet,
+        };
+    }
+
+    private static SequenceCacheMode ParseSequenceCacheMode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return SequenceCacheMode.Unspecified;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "cache" or "cached" => SequenceCacheMode.Cache,
+            "nocache" or "no-cache" or "no_cache" => SequenceCacheMode.NoCache,
+            _ => SequenceCacheMode.UnsupportedYet,
         };
     }
 
@@ -650,6 +966,12 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("modules")]
         public ModuleDocument[]? Modules { get; init; }
+
+        [JsonPropertyName("sequences")]
+        public SequenceDocument[]? Sequences { get; init; }
+
+        [JsonPropertyName("extendedProperties")]
+        public ExtendedPropertyDocument[]? ExtendedProperties { get; init; }
     }
 
     private sealed record ModuleDocument
@@ -665,6 +987,9 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("entities")]
         public EntityDocument[]? Entities { get; init; }
+
+        [JsonPropertyName("extendedProperties")]
+        public ExtendedPropertyDocument[]? ExtendedProperties { get; init; }
     }
 
     private sealed record EntityDocument
@@ -704,6 +1029,12 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("meta")]
         public EntityMetaDocument? Meta { get; init; }
+
+        [JsonPropertyName("extendedProperties")]
+        public ExtendedPropertyDocument[]? ExtendedProperties { get; init; }
+
+        [JsonPropertyName("temporal")]
+        public TemporalDocument? Temporal { get; init; }
     }
 
     private sealed record AttributeDocument
@@ -776,6 +1107,9 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("reality")]
         public AttributeRealityDocument? Reality { get; init; }
+
+        [JsonPropertyName("extendedProperties")]
+        public ExtendedPropertyDocument[]? ExtendedProperties { get; init; }
     }
 
     private sealed record TriggerDocument
@@ -859,6 +1193,9 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("columns")]
         public IndexColumnDocument[]? Columns { get; init; }
+
+        [JsonPropertyName("extendedProperties")]
+        public ExtendedPropertyDocument[]? ExtendedProperties { get; init; }
     }
 
     private sealed record IndexColumnDocument
@@ -1028,6 +1365,93 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
         public bool? IsNotTrusted { get; init; }
 
         public AttributeOnDiskCheckConstraint? ToDomain() => AttributeOnDiskCheckConstraint.Create(Name, Definition, IsNotTrusted);
+    }
+
+    private sealed record TemporalDocument
+    {
+        [JsonPropertyName("type")]
+        public string? Type { get; init; }
+
+        [JsonPropertyName("historyTable")]
+        public TemporalHistoryDocument? History { get; init; }
+
+        [JsonPropertyName("periodStartColumn")]
+        public string? PeriodStartColumn { get; init; }
+
+        [JsonPropertyName("periodEndColumn")]
+        public string? PeriodEndColumn { get; init; }
+
+        [JsonPropertyName("retention")]
+        public TemporalRetentionDocument? Retention { get; init; }
+
+        [JsonPropertyName("extendedProperties")]
+        public ExtendedPropertyDocument[]? ExtendedProperties { get; init; }
+    }
+
+    private sealed record TemporalHistoryDocument
+    {
+        [JsonPropertyName("schema")]
+        public string? Schema { get; init; }
+
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+    }
+
+    private sealed record TemporalRetentionDocument
+    {
+        [JsonPropertyName("kind")]
+        public string? Kind { get; init; }
+
+        [JsonPropertyName("unit")]
+        public string? Unit { get; init; }
+
+        [JsonPropertyName("value")]
+        public int? Value { get; init; }
+    }
+
+    private sealed record SequenceDocument
+    {
+        [JsonPropertyName("schema")]
+        public string? Schema { get; init; }
+
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+
+        [JsonPropertyName("dataType")]
+        public string? DataType { get; init; }
+
+        [JsonPropertyName("startValue")]
+        public decimal? StartValue { get; init; }
+
+        [JsonPropertyName("increment")]
+        public decimal? Increment { get; init; }
+
+        [JsonPropertyName("minValue")]
+        public decimal? MinValue { get; init; }
+
+        [JsonPropertyName("maxValue")]
+        public decimal? MaxValue { get; init; }
+
+        [JsonPropertyName("cycle")]
+        public bool Cycle { get; init; }
+
+        [JsonPropertyName("cacheMode")]
+        public string? CacheMode { get; init; }
+
+        [JsonPropertyName("cacheSize")]
+        public int? CacheSize { get; init; }
+
+        [JsonPropertyName("extendedProperties")]
+        public ExtendedPropertyDocument[]? ExtendedProperties { get; init; }
+    }
+
+    private sealed record ExtendedPropertyDocument
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+
+        [JsonPropertyName("value")]
+        public JsonElement Value { get; init; }
     }
 
     private sealed record RelationshipConstraintDocument

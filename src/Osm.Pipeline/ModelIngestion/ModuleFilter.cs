@@ -78,6 +78,6 @@ public sealed class ModuleFilter
                 "Module filter removed all modules from the model.");
         }
 
-        return OsmModel.Create(model.ExportedAtUtc, materialized);
+        return OsmModel.Create(model.ExportedAtUtc, materialized, model.Sequences, model.ExtendedProperties);
     }
 }

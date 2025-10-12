@@ -10,13 +10,15 @@ public sealed record ModuleModel(
     ModuleName Name,
     bool IsSystemModule,
     bool IsActive,
-    ImmutableArray<EntityModel> Entities)
+    ImmutableArray<EntityModel> Entities,
+    ImmutableArray<ExtendedProperty> ExtendedProperties)
 {
     public static Result<ModuleModel> Create(
         ModuleName name,
         bool isSystemModule,
         bool isActive,
-        IEnumerable<EntityModel> entities)
+        IEnumerable<EntityModel> entities,
+        IEnumerable<ExtendedProperty>? extendedProperties = null)
     {
         if (entities is null)
         {
@@ -39,7 +41,13 @@ public sealed record ModuleModel(
             return Result<ModuleModel>.Failure(ValidationError.Create("module.entities.duplicatePhysical", "Module contains duplicate entity physical names."));
         }
 
-        return Result<ModuleModel>.Success(new ModuleModel(name, isSystemModule, isActive, materialized));
+        var properties = (extendedProperties ?? Enumerable.Empty<ExtendedProperty>()).ToImmutableArray();
+        if (properties.IsDefault)
+        {
+            properties = ExtendedProperty.EmptyArray;
+        }
+
+        return Result<ModuleModel>.Success(new ModuleModel(name, isSystemModule, isActive, materialized, properties));
     }
 
     private static bool HasDuplicates(IEnumerable<string> values, IEqualityComparer<string>? comparer = null)
