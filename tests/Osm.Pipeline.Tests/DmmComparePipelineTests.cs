@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -63,6 +64,52 @@ public class DmmComparePipelineTests
         Assert.NotNull(value.ExecutionLog);
         Assert.True(value.ExecutionLog.Entries.Count > 0);
         Assert.Contains(value.ExecutionLog.Entries, entry => entry.Step == "pipeline.completed");
+    }
+
+    [Fact]
+    public async Task HandleAsync_reports_table_file_layout_differences()
+    {
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+
+        using var workspace = new TempDirectory();
+        var baselineSource = Path.Combine(
+            FixtureFile.RepositoryRoot,
+            "tests",
+            "Fixtures",
+            "emission",
+            "edge-case");
+        TestFileSystem.CopyDirectory(baselineSource, workspace.Path);
+
+        var customerPath = Path.Combine(workspace.Path, "Modules", "AppCore", "Tables", "dbo.Customer.sql");
+        File.Delete(customerPath);
+
+        var diffPath = Path.Combine(workspace.Path, "dmm-diff.json");
+
+        var request = new DmmComparePipelineRequest(
+            modelPath,
+            ModuleFilterOptions.IncludeAll,
+            profilePath,
+            workspace.Path,
+            TighteningOptions.Default,
+            SupplementalModelOptions.Default,
+            new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
+            TypeMappingPolicy.LoadDefault(),
+            diffPath,
+            null);
+
+        var pipeline = new DmmComparePipeline();
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsSuccess);
+        var comparison = result.Value.Comparison;
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(comparison.ModelDifferences, diff => diff.Contains("missing table file", StringComparison.OrdinalIgnoreCase));
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
