@@ -28,6 +28,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
     private readonly IDmmLens<SmoDmmLensRequest> _smoLens;
     private readonly IDmmLens<string> _ssdtLens;
     private readonly DmmComparator _dmmComparator;
+    private readonly SsdtTableLayoutComparator _ssdtLayoutComparator;
     private readonly DmmDiffLogWriter _diffLogWriter;
     private readonly IEvidenceCacheService _evidenceCacheService;
     private readonly ProfileSnapshotDeserializer _profileSnapshotDeserializer;
@@ -42,6 +43,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         IDmmLens<SmoDmmLensRequest>? smoLens = null,
         IDmmLens<string>? ssdtLens = null,
         DmmComparator? dmmComparator = null,
+        SsdtTableLayoutComparator? ssdtLayoutComparator = null,
         DmmDiffLogWriter? diffLogWriter = null,
         IEvidenceCacheService? evidenceCacheService = null,
         ProfileSnapshotDeserializer? profileSnapshotDeserializer = null)
@@ -55,6 +57,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         _smoLens = smoLens ?? new SmoDmmLens();
         _ssdtLens = ssdtLens ?? new SsdtProjectDmmLens();
         _dmmComparator = dmmComparator ?? new DmmComparator();
+        _ssdtLayoutComparator = ssdtLayoutComparator ?? new SsdtTableLayoutComparator();
         _diffLogWriter = diffLogWriter ?? new DmmDiffLogWriter();
         _evidenceCacheService = evidenceCacheService ?? new EvidenceCacheService();
         _profileSnapshotDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
@@ -288,6 +291,8 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
 
         DmmComparisonFeatures comparisonFeatures;
         IReadOnlyList<DmmTable> dmmTables;
+        SsdtTableLayoutComparisonResult? layoutComparison = null;
+
         if (isSsdtProject)
         {
             var parseResult = _ssdtLens.Project(request.DmmPath);
@@ -304,6 +309,17 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
                     ["tableCount"] = dmmTables.Count.ToString(CultureInfo.InvariantCulture)
+                });
+
+            layoutComparison = _ssdtLayoutComparator.Compare(smoModel, request.SmoOptions, request.DmmPath);
+            log.Record(
+                "dmm.ssdt.layout",
+                "Validated SSDT project table layout.",
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["isMatch"] = layoutComparison.IsMatch ? "true" : "false",
+                    ["modelDifferences"] = layoutComparison.ModelDifferences.Count.ToString(CultureInfo.InvariantCulture),
+                    ["ssdtDifferences"] = layoutComparison.SsdtDifferences.Count.ToString(CultureInfo.InvariantCulture)
                 });
         }
         else
@@ -327,6 +343,31 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         }
 
         var comparison = _dmmComparator.Compare(modelTables, dmmTables, comparisonFeatures);
+
+        if (layoutComparison is { } layout)
+        {
+            if (layout.ModelDifferences.Count > 0 || layout.SsdtDifferences.Count > 0)
+            {
+                var mergedModelDifferences = comparison.ModelDifferences
+                    .Concat(layout.ModelDifferences)
+                    .ToArray();
+                var mergedSsdtDifferences = comparison.SsdtDifferences
+                    .Concat(layout.SsdtDifferences)
+                    .ToArray();
+
+                comparison = new DmmComparisonResult(
+                    comparison.IsMatch && layout.IsMatch,
+                    mergedModelDifferences,
+                    mergedSsdtDifferences);
+            }
+            else if (!layout.IsMatch)
+            {
+                comparison = new DmmComparisonResult(
+                    comparison.IsMatch && layout.IsMatch,
+                    comparison.ModelDifferences,
+                    comparison.SsdtDifferences);
+            }
+        }
         log.Record(
             "dmm.comparison.completed",
             "Compared SMO output against DMM baseline.",
