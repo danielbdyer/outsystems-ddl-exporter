@@ -80,6 +80,9 @@ public class BuildSsdtPipelineTests
         var manifestJson = await File.ReadAllTextAsync(Path.Combine(output.Path, "manifest.json"));
         using var manifestDocument = JsonDocument.Parse(manifestJson);
         Assert.True(manifestDocument.RootElement.GetProperty("Tables").GetArrayLength() > 0);
+        var coverageElement = manifestDocument.RootElement.GetProperty("Coverage");
+        Assert.True(coverageElement.GetProperty("Tables").GetProperty("Total").GetInt32() >= 0);
+        Assert.Equal(JsonValueKind.Array, manifestDocument.RootElement.GetProperty("Unsupported").ValueKind);
     }
 
     private sealed class EmptyStaticEntityDataProvider : IStaticEntityDataProvider
