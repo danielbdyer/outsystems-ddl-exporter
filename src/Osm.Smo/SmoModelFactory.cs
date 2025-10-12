@@ -65,6 +65,21 @@ public sealed class SmoModelFactory
         return SmoModel.Create(tables);
     }
 
+    public ImmutableArray<Table> CreateSmoTables(
+        OsmModel model,
+        PolicyDecisionSet decisions,
+        ProfileSnapshot? profile = null,
+        SmoBuildOptions? options = null,
+        IEnumerable<EntityModel>? supplementalEntities = null,
+        TypeMappingPolicy? typeMappingPolicy = null)
+    {
+        var smoModel = Create(model, decisions, profile, options, supplementalEntities, typeMappingPolicy);
+        options ??= SmoBuildOptions.Default;
+
+        using var factory = new SmoObjectGraphFactory();
+        return factory.CreateTables(smoModel, options);
+    }
+
     private static EntityEmissionIndex BuildEntityContexts(
         OsmModel model,
         IEnumerable<EntityModel>? supplementalEntities)

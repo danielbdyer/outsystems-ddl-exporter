@@ -389,6 +389,25 @@ public class SmoModelFactoryTests
         Assert.Equal("User", foreignKey.ReferencedLogicalTable);
     }
 
+    [Fact]
+    public void CreateSmoTables_materializes_detached_smo_objects()
+    {
+        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
+        var factory = new SmoModelFactory();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+
+        var tables = factory.CreateSmoTables(model, decisions, snapshot, options);
+        Assert.NotEmpty(tables);
+
+        var customer = tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
+        var pk = Assert.Single(customer.Indexes.Cast<Index>(), index => index.IndexKeyType == IndexKeyType.DriPrimaryKey);
+        Assert.Equal("PK_Customer", pk.Name);
+
+        var foreignKey = Assert.Single(customer.ForeignKeys.Cast<ForeignKey>());
+        Assert.True(foreignKey.IsChecked);
+        Assert.Equal("OSUSR_DEF_CITY", foreignKey.ReferencedTable);
+    }
+
     private static EntityModel CreateCategoryEntity(string moduleName, string physicalName)
     {
         var module = ModuleName.Create(moduleName).Value;
