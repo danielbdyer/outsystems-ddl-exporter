@@ -664,14 +664,11 @@ public sealed class PerTableWriter
             });
         }
 
-        if (metadata.IgnoreDuplicateKey)
+        options.Add(new IgnoreDupKeyIndexOption
         {
-            options.Add(new IgnoreDupKeyIndexOption
-            {
-                OptionKind = IndexOptionKind.IgnoreDupKey,
-                OptionState = OptionState.On,
-            });
-        }
+            OptionKind = IndexOptionKind.IgnoreDupKey,
+            OptionState = metadata.IgnoreDuplicateKey ? OptionState.On : OptionState.Off,
+        });
 
         if (metadata.StatisticsNoRecompute)
         {
@@ -682,23 +679,17 @@ public sealed class PerTableWriter
             });
         }
 
-        if (!metadata.AllowRowLocks)
+        options.Add(new IndexStateOption
         {
-            options.Add(new IndexStateOption
-            {
-                OptionKind = IndexOptionKind.AllowRowLocks,
-                OptionState = OptionState.Off,
-            });
-        }
+            OptionKind = IndexOptionKind.AllowRowLocks,
+            OptionState = metadata.AllowRowLocks ? OptionState.On : OptionState.Off,
+        });
 
-        if (!metadata.AllowPageLocks)
+        options.Add(new IndexStateOption
         {
-            options.Add(new IndexStateOption
-            {
-                OptionKind = IndexOptionKind.AllowPageLocks,
-                OptionState = OptionState.Off,
-            });
-        }
+            OptionKind = IndexOptionKind.AllowPageLocks,
+            OptionState = metadata.AllowPageLocks ? OptionState.On : OptionState.Off,
+        });
 
         foreach (var compression in BuildCompressionOptions(metadata.DataCompression))
         {

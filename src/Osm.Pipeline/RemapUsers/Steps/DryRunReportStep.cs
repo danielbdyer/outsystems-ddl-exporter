@@ -24,7 +24,8 @@ internal sealed class DryRunReportStep : RemapUsersPipelineStep
                 pair.Value.RemappedRowCount,
                 pair.Value.ReassignedRowCount,
                 pair.Value.PrunedRowCount,
-                pair.Value.UnmappedRowCount))
+                pair.Value.UnmappedRowCount,
+                pair.Value.Policy))
             .OrderBy(delta => delta.TableSchema, StringComparer.OrdinalIgnoreCase)
             .ThenBy(delta => delta.TableName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(delta => delta.ColumnName, StringComparer.OrdinalIgnoreCase)

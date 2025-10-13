@@ -7,21 +7,21 @@ CREATE TABLE [dbo].[Customer] (
         DEFAULT (''),
     [LastName]  NVARCHAR (100)
         DEFAULT (''),
-    [CityId]    BIGINT         NOT NULL,
-    CONSTRAINT [FK_Customer_CityId]
-        FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])
+    [CityId]    BIGINT         NOT NULL
+        CONSTRAINT [FK_Customer_CityId]
+            FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])
 )
 
 GO
 
 CREATE UNIQUE INDEX [IDX_Customer_Email]
-    ON [dbo].[Customer]([Email]) WHERE ([EMAIL] IS NOT NULL) WITH (FILLFACTOR = 85, IGNORE_DUP_KEY = ON)
+    ON [dbo].[Customer]([Email]) WHERE ([EMAIL] IS NOT NULL) WITH (FILLFACTOR = 85, IGNORE_DUP_KEY = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
     ON [FG_Customers]
 
 GO
 
 CREATE INDEX [IDX_Customer_Name]
-    ON [dbo].[Customer]([LastName], [FirstName]) WITH (STATISTICS_NORECOMPUTE = ON)
+    ON [dbo].[Customer]([LastName], [FirstName]) WITH (IGNORE_DUP_KEY = OFF, STATISTICS_NORECOMPUTE = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
     ON [FG_Customers]
 
 GO

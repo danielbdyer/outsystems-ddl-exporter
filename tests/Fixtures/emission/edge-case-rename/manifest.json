@@ -60,15 +60,15 @@
     "ForeignKeyCount": 2,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
+      "UNIQUE_NO_NULLS": 2,
+      "DATA_NO_NULLS": 10,
+      "DATA_HAS_ORPHANS": 1,
+      "DELETE_RULE_IGNORE": 1,
+      "MANDATORY": 10,
       "FK_ENFORCED": 1,
       "PROFILE_MISSING": 1,
-      "DELETE_RULE_IGNORE": 1,
-      "UNIQUE_NO_NULLS": 2,
-      "DEFAULT_PRESENT": 2,
-      "DATA_HAS_ORPHANS": 1,
-      "DATA_NO_NULLS": 10,
       "PK": 4,
-      "MANDATORY": 10,
+      "DEFAULT_PRESENT": 2,
       "PHYSICAL_NOT_NULL": 4
     },
     "UniqueIndexRationales": {
@@ -76,9 +76,9 @@
       "PHYSICAL_UNIQUE_KEY": 2
     },
     "ForeignKeyRationales": {
-      "DELETE_RULE_IGNORE": 1,
+      "DB_CONSTRAINT_PRESENT": 1,
       "DATA_HAS_ORPHANS": 1,
-      "DB_CONSTRAINT_PRESENT": 1
+      "DELETE_RULE_IGNORE": 1
     }
   },
   "Emission": {

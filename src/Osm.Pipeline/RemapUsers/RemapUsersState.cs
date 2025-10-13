@@ -89,7 +89,8 @@ public sealed record ColumnRewriteSummary(
     long RemappedRowCount,
     long ReassignedRowCount,
     long PrunedRowCount,
-    long UnmappedRowCount);
+    long UnmappedRowCount,
+    RemapUsersPolicy Policy);
 
 public sealed record UserMapCoverageRow(
     string MatchReason,
@@ -114,7 +115,8 @@ public sealed record ColumnDelta(
     long RemappedRows,
     long ReassignedRows,
     long PrunedRows,
-    long UnmappedRows);
+    long UnmappedRows,
+    RemapUsersPolicy Policy);
 
 public sealed record PostLoadValidationReport(
     int DisabledForeignKeys,
