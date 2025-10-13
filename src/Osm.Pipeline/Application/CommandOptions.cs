@@ -39,8 +39,8 @@ public sealed record CompareWithDmmOverrides(
     int? MaxDegreeOfParallelism);
 
 public sealed record ExtractModelOverrides(
-    IReadOnlyList<string> Modules,
-    bool IncludeSystemModules,
-    bool OnlyActiveAttributes,
+    IReadOnlyList<string>? Modules,
+    bool? IncludeSystemModules,
+    bool? OnlyActiveAttributes,
     string? OutputPath,
     string? MockAdvancedSqlManifest);

@@ -402,7 +402,9 @@ Command CreateExtractCommand()
     var modulesOptionLocal = new Option<string?>("--modules", "Comma or semicolon separated list of modules.");
     modulesOptionLocal.AddAlias("--module");
     var includeSystemOption = new Option<bool>("--include-system-modules", "Include system modules during extraction.");
+    var excludeSystemOption = new Option<bool>("--exclude-system-modules", "Exclude system modules during extraction.");
     var onlyActiveAttributesOption = new Option<bool>("--only-active-attributes", "Extract only active attributes.");
+    var includeInactiveAttributesOption = new Option<bool>("--include-inactive-attributes", "Include inactive attributes when extracting.");
     var outputOption = new Option<string?>("--out", () => "model.extracted.json", "Output path for extracted model JSON.");
     var mockSqlOption = new Option<string?>("--mock-advanced-sql", "Path to advanced SQL manifest fixture.");
 
@@ -410,7 +412,9 @@ Command CreateExtractCommand()
     {
         modulesOptionLocal,
         includeSystemOption,
+        excludeSystemOption,
         onlyActiveAttributesOption,
+        includeInactiveAttributesOption,
         outputOption,
         mockSqlOption
     };
@@ -433,10 +437,13 @@ Command CreateExtractCommand()
         }
 
         var modules = SplitModuleList(context.ParseResult.GetValueForOption(modulesOptionLocal));
+        var moduleOverride = modules.Count > 0 ? modules : null;
+        var includeSystemOverride = ResolveIncludeOverride(context, includeSystemOption, excludeSystemOption);
+        var onlyActiveOverride = ResolveOnlyActiveOverride(context, onlyActiveAttributesOption, includeInactiveAttributesOption);
         var overrides = new ExtractModelOverrides(
-            modules,
-            context.ParseResult.HasOption(includeSystemOption),
-            context.ParseResult.HasOption(onlyActiveAttributesOption),
+            moduleOverride,
+            includeSystemOverride,
+            onlyActiveOverride,
             context.ParseResult.GetValueForOption(outputOption),
             context.ParseResult.GetValueForOption(mockSqlOption));
 
@@ -692,6 +699,21 @@ static bool? ResolveInactiveOverride(InvocationContext context, Option<bool> inc
     }
 
     if (context.ParseResult.HasOption(onlyActiveOption))
+    {
+        return false;
+    }
+
+    return null;
+}
+
+static bool? ResolveOnlyActiveOverride(InvocationContext context, Option<bool> onlyActiveOption, Option<bool> includeInactiveOption)
+{
+    if (context.ParseResult.HasOption(onlyActiveOption))
+    {
+        return true;
+    }
+
+    if (context.ParseResult.HasOption(includeInactiveOption))
     {
         return false;
     }
