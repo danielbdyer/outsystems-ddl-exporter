@@ -216,9 +216,21 @@ WITH ParsedRef AS
 )
 SELECT
     a.AttrId,
-    COALESCE(eById.EntityId, eByKey.EntityId)              AS RefEntityId,
-    COALESCE(eById.EntityName, eByKey.EntityName)          AS RefEntityName,
-    COALESCE(eById.PhysicalTableName, eByKey.PhysicalTableName) AS RefPhysicalName
+    COALESCE(
+        eById.EntityId,
+        eByKey.EntityId,
+        fallbackById.EntityId,
+        fallbackByKey.EntityId)                           AS RefEntityId,
+    COALESCE(
+        eById.EntityName,
+        eByKey.EntityName,
+        fallbackById.EntityName,
+        fallbackByKey.EntityName)                         AS RefEntityName,
+    COALESCE(
+        eById.PhysicalTableName,
+        eByKey.PhysicalTableName,
+        fallbackById.PhysicalTableName,
+        fallbackByKey.PhysicalTableName)                  AS RefPhysicalName
 INTO #RefResolved
 FROM #Attr a
 LEFT JOIN #Ent eById ON eById.EntityId = a.RefEntityId
@@ -228,7 +240,34 @@ LEFT JOIN #Ent eByKey
 LEFT JOIN #E eByKeyModule
   ON eByKeyModule.EspaceId = eByKey.EspaceId
  AND eByKeyModule.EspaceSSKey = pr.RefEspaceSSKey
-WHERE COALESCE(eById.EntityId, eByKey.EntityId) IS NOT NULL;
+OUTER APPLY (
+    SELECT TOP (1)
+        en.[Id] AS EntityId,
+        en.[Name] AS EntityName,
+        en.[Physical_Table_Name] AS PhysicalTableName
+    FROM dbo.ossys_Entity en
+    WHERE a.RefEntityId IS NOT NULL
+      AND en.[Id] = a.RefEntityId
+) fallbackById
+OUTER APPLY (
+    SELECT TOP (1)
+        en.[Id] AS EntityId,
+        en.[Name] AS EntityName,
+        en.[Physical_Table_Name] AS PhysicalTableName
+    FROM dbo.ossys_Entity en
+    JOIN dbo.ossys_Espace ee ON ee.[Id] = en.[Espace_Id]
+    WHERE pr.RefEntitySSKey IS NOT NULL
+      AND TRY_CONVERT(uniqueidentifier, en.[SS_Key]) = pr.RefEntitySSKey
+      AND (
+            pr.RefEspaceSSKey IS NULL
+            OR TRY_CONVERT(uniqueidentifier, ee.[SS_Key]) = pr.RefEspaceSSKey
+          )
+) fallbackByKey
+WHERE COALESCE(
+        eById.EntityId,
+        eByKey.EntityId,
+        fallbackById.EntityId,
+        fallbackByKey.EntityId) IS NOT NULL;
 CREATE CLUSTERED INDEX IX_RefResolved ON #RefResolved(AttrId);
 
 -- 6) Physical tables (resolve schema)

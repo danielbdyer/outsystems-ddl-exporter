@@ -540,9 +540,9 @@
               "isActive": true,
               "isIdentifier": false,
               "isReference": 1,
-              "refEntityId": 1001,
-              "refEntity_name": "Customer",
-              "refEntity_physicalName": "OSUSR_ABC_CUSTOMER",
+              "refEntityId": 3001,
+              "refEntity_name": "User",
+              "refEntity_physicalName": "OSUSR_U_USER",
               "reference_deleteRuleCode": "Ignore",
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
@@ -575,8 +575,8 @@
           "relationships": [
             {
               "viaAttributeName": "TriggeredByUserId",
-              "toEntity_name": "Customer",
-              "toEntity_physicalName": "OSUSR_ABC_CUSTOMER",
+              "toEntity_name": "User",
+              "toEntity_physicalName": "OSUSR_U_USER",
               "deleteRuleCode": "Ignore",
               "hasDbConstraint": 0
             }

@@ -138,6 +138,33 @@ public class SqlModelExtractionServiceTests
         Assert.Equal("Inventory", module.Name.Value);
     }
 
+    [Fact]
+    public async Task ExtractAsync_ShouldExposeUserReferencesWhenSystemModulesExcluded()
+    {
+        var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.edge-case.json"));
+        var executor = new StubExecutor(Result<string>.Success(json));
+        var service = new SqlModelExtractionService(executor, new ModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(
+            new[] { "AppCore", "ExtBilling", "Ops" },
+            includeSystemModules: false,
+            onlyActiveAttributes: false).Value;
+
+        var result = await service.ExtractAsync(command);
+
+        Assert.True(result.IsSuccess);
+        var model = result.Value.Model;
+        var opsModule = Assert.Single(model.Modules.Where(module
+            => module.Name.Value.Equals("Ops", StringComparison.OrdinalIgnoreCase)));
+        var jobRun = Assert.Single(opsModule.Entities.Where(entity
+            => entity.LogicalName.Value.Equals("JobRun", StringComparison.OrdinalIgnoreCase)));
+        var triggeredBy = Assert.Single(jobRun.Attributes.Where(attribute
+            => attribute.LogicalName.Value.Equals("TriggeredByUserId", StringComparison.OrdinalIgnoreCase)));
+
+        Assert.True(triggeredBy.Reference.IsReference);
+        Assert.Equal("User", triggeredBy.Reference.TargetEntity?.Value);
+        Assert.Equal("OSUSR_U_USER", triggeredBy.Reference.TargetPhysicalName?.Value);
+    }
+
     private sealed class StubExecutor : IAdvancedSqlExecutor
     {
         private readonly Result<string> _result;
