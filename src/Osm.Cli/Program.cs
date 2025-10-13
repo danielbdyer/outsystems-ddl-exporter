@@ -20,7 +20,6 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
-using Osm.Pipeline.RemapUsers;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Validation.Tightening;
 using Osm.Pipeline.Mediation;
@@ -38,14 +37,14 @@ hostBuilder.Services.AddSingleton<IApplicationService<BuildSsdtApplicationInput,
 hostBuilder.Services.AddSingleton<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>, CompareWithDmmApplicationService>();
 hostBuilder.Services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();
 
-var enableRemapUsers = string.Equals(
+var enableUatUsers = string.Equals(
     Environment.GetEnvironmentVariable("OSM_ENABLE_REMAP_USERS"),
     "true",
     StringComparison.OrdinalIgnoreCase);
 
-if (enableRemapUsers)
+if (enableUatUsers)
 {
-    hostBuilder.Services.AddSingleton<RemapUsersCommand>();
+    hostBuilder.Services.AddSingleton<UatUsersCommand>();
 }
 
 using var host = hostBuilder.Build();
@@ -67,11 +66,11 @@ var buildCommand = CreateBuildCommand();
 var extractCommand = CreateExtractCommand();
 var compareCommand = CreateCompareCommand();
 var inspectCommand = CreateInspectCommand();
-Command? remapUsersCommand = null;
+Command? uatUsersCommand = null;
 
-if (enableRemapUsers)
+if (enableUatUsers)
 {
-    remapUsersCommand = CreateRemapUsersCommand();
+    uatUsersCommand = CreateUatUsersCommand();
 }
 
 buildCommand.AddGlobalOption(configOption);
@@ -105,9 +104,9 @@ rootCommand.AddCommand(extractCommand);
 rootCommand.AddCommand(buildCommand);
 rootCommand.AddCommand(compareCommand);
 
-if (remapUsersCommand is not null)
+if (uatUsersCommand is not null)
 {
-    rootCommand.AddCommand(remapUsersCommand);
+    rootCommand.AddCommand(uatUsersCommand);
 }
 
 var parser = new CommandLineBuilder(rootCommand)
@@ -121,196 +120,96 @@ var parser = new CommandLineBuilder(rootCommand)
 
 return await parser.InvokeAsync(args);
 
-Command CreateRemapUsersCommand()
+Command CreateUatUsersCommand()
 {
-    var sourceEnvironmentOption = new Option<string>("--source-env", "Logical name for the source environment (used for auditing).")
+    var modelOption = new Option<string?>("--model", "Path to the UAT model JSON file.");
+    var fromLiveOption = new Option<bool>("--from-live", "Discover catalog from live metadata.");
+    var uatConnectionOption = new Option<string?>("--uat-conn", "ADO.NET connection string for the UAT database (required with --from-live).");
+    var userTableOption = new Option<string?>("--user-table", () => "dbo.User", "Fully qualified user table name (schema.table).");
+    var userIdOption = new Option<string?>("--user-id-column", () => "Id", "Primary key column for the user table.");
+    var includeColumnsOption = new Option<string[]>(
+        name: "--include-columns",
+        parseArgument: static result => result.Tokens
+            .Select(token => token.Value)
+            .SelectMany(value => value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToArray(),
+        description: "Restrict catalog to specific column names.")
     {
-        IsRequired = true
+        AllowMultipleArgumentsPerToken = true
     };
+    var outputOption = new Option<string?>("--out", () => "./_artifacts", "Root directory for artifacts.");
+    var userMapOption = new Option<string?>("--user-map", "Path to a CSV containing SourceUserId,TargetUserId mappings.");
 
-    var sourceConnectionOption = new Option<string>("--source-conn", "ADO.NET connection string for the source environment.")
+    var command = new Command("uat-users", "Emit user remapping artifacts for UAT.")
     {
-        IsRequired = true
-    };
-
-    var uatConnectionOption = new Option<string>("--uat-conn", "ADO.NET connection string for the UAT database.")
-    {
-        IsRequired = true
-    };
-
-    var snapshotPathOption = new Option<string>("--snapshot-path", "Path to the source snapshot folder or descriptor.")
-    {
-        IsRequired = true
-    };
-
-    var matchingRulesOption = new Option<string[]>(
-        "--matching-rules",
-        static result =>
-        {
-            var values = result.Tokens
-                .Select(token => token.Value)
-                .SelectMany(token => token.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                .ToArray();
-
-            if (values.Length == 0)
-            {
-                result.ErrorMessage = "At least one matching rule must be specified.";
-            }
-
-            return values;
-        },
-        description: "Ordered list of matching rules to construct the user map.")
-    {
-        IsRequired = true,
-        AllowMultipleArgumentsPerToken = true,
-        ArgumentHelpName = "rules"
-    };
-
-    var fallbackUserIdOption = new Option<long?>("--fallback-user-id", "Fallback user identifier used by the 'fallback' rule.");
-
-    var policyOption = new Option<string>("--policy", () => "reassign", "Handling policy for unmapped foreign keys.");
-    policyOption.FromAmong("reassign", "prune");
-
-    var dryRunOption = new Option<bool>("--dry-run", () => true, "Preview changes without loading into base tables.");
-
-    var outputOption = new Option<string>("--out", () => "./_artifacts/remap-users", "Directory for run artifacts.");
-
-    var batchSizeOption = new Option<int>("--batch-size", () => 5000, "Batch size applied to rewrite operations.");
-
-    var commandTimeoutOption = new Option<int>("--command-timeout-s", () => 600, "Command timeout, in seconds, for SQL operations.");
-
-    var parallelismOption = new Option<int>("--parallelism", () => 4, "Maximum degree of parallelism for rewrite stages.");
-
-    var logLevelOption = new Option<string?>("--log-level", "Telemetry verbosity for the pipeline.");
-    logLevelOption.FromAmong("info", "debug", "trace");
-
-    var includePiiOption = new Option<bool>("--include-pii", () => false, "Include PII values in emitted artifacts.");
-
-    var rebuildMapOption = new Option<bool>("--rebuild-map", () => false, "Force rebuilding the user map for the source environment.");
-
-    var userTableOption = new Option<string>("--user-table", () => "ossys_User", "Name of the user table in the target environment.");
-
-    var command = new Command("remap-users", "Remap source user foreign keys into the UAT environment.")
-    {
-        sourceEnvironmentOption,
-        sourceConnectionOption,
+        modelOption,
+        fromLiveOption,
         uatConnectionOption,
-        snapshotPathOption,
-        matchingRulesOption,
-        fallbackUserIdOption,
-        policyOption,
-        dryRunOption,
+        userTableOption,
+        userIdOption,
+        includeColumnsOption,
         outputOption,
-        batchSizeOption,
-        commandTimeoutOption,
-        parallelismOption,
-        logLevelOption,
-        includePiiOption,
-        rebuildMapOption,
-        userTableOption
+        userMapOption
     };
-
-    command.AddValidator(result =>
-    {
-        var errors = new List<string>();
-        var matchingRules = result.GetValueForOption(matchingRulesOption) ?? Array.Empty<string>();
-        var unknownRules = matchingRules
-            .Where(rule => !IsKnownRule(rule))
-            .ToArray();
-
-        if (unknownRules.Length > 0)
-        {
-            errors.Add("Unknown matching rule(s): " + string.Join(", ", unknownRules) + ". Allowed values: email, normalize-email, username, empno, fallback.");
-        }
-
-        if (matchingRules.Any(rule => string.Equals(rule, "fallback", StringComparison.OrdinalIgnoreCase)) &&
-            result.GetValueForOption(fallbackUserIdOption) is null)
-        {
-            errors.Add("The --fallback-user-id option is required when the matching rules include 'fallback'.");
-        }
-
-        if (result.GetValueForOption(batchSizeOption) <= 0)
-        {
-            errors.Add("The --batch-size option must be greater than zero.");
-        }
-
-        if (result.GetValueForOption(commandTimeoutOption) <= 0)
-        {
-            errors.Add("The --command-timeout-s option must be greater than zero.");
-        }
-
-        if (result.GetValueForOption(parallelismOption) <= 0)
-        {
-            errors.Add("The --parallelism option must be greater than zero.");
-        }
-
-        if (errors.Count > 0)
-        {
-            result.ErrorMessage = string.Join(Environment.NewLine, errors);
-        }
-    });
 
     command.SetHandler(async context =>
     {
         var rootServices = GetServices(context);
         using var scope = rootServices.CreateScope();
         var services = scope.ServiceProvider;
-        var remapUsersHandler = services.GetRequiredService<RemapUsersCommand>();
+        var handler = services.GetRequiredService<UatUsersCommand>();
 
         var parseResult = context.ParseResult;
-        var matchingRules = (parseResult.GetValueForOption(matchingRulesOption) ?? Array.Empty<string>())
-            .Select(rule => rule.Trim())
-            .Where(rule => !string.IsNullOrEmpty(rule))
-            .Select(rule => rule.ToLowerInvariant())
-            .ToArray();
+        var tableIdentifier = parseResult.GetValueForOption(userTableOption) ?? "dbo.User";
+        var (userSchema, userTable) = SplitTableIdentifier(tableIdentifier);
+        var options = new UatUsersOptions(
+            parseResult.GetValueForOption(modelOption),
+            parseResult.GetValueForOption(uatConnectionOption),
+            parseResult.GetValueForOption(fromLiveOption),
+            userSchema,
+            userTable,
+            parseResult.GetValueForOption(userIdOption) ?? "Id",
+            parseResult.GetValueForOption(includeColumnsOption),
+            parseResult.GetValueForOption(outputOption) ?? "./_artifacts",
+            parseResult.GetValueForOption(userMapOption));
 
-        var policyValue = parseResult.GetValueForOption(policyOption) ?? "reassign";
-        var policy = Enum.TryParse<RemapUsersPolicy>(policyValue, ignoreCase: true, out var parsedPolicy)
-            ? parsedPolicy
-            : RemapUsersPolicy.Reassign;
-
-        var logLevel = parseResult.GetValueForOption(logLevelOption);
-        var normalizedLogLevel = string.IsNullOrWhiteSpace(logLevel) ? null : logLevel.Trim().ToLowerInvariant();
-        var parsedLogLevel = normalizedLogLevel switch
+        if (!options.FromLiveMetadata && string.IsNullOrWhiteSpace(options.ModelPath))
         {
-            "trace" => RemapUsersLogLevel.Trace,
-            "debug" => RemapUsersLogLevel.Debug,
-            _ => RemapUsersLogLevel.Info
-        };
+            context.ExitCode = 1;
+            context.Console.WriteLine("--model is required when --from-live is not specified.");
+            return;
+        }
 
-        var options = new RemapUsersOptions(
-            parseResult.GetValueForOption(sourceEnvironmentOption)!,
-            parseResult.GetValueForOption(sourceConnectionOption)!,
-            parseResult.GetValueForOption(uatConnectionOption)!,
-            parseResult.GetValueForOption(snapshotPathOption)!,
-            matchingRules,
-            parseResult.GetValueForOption(fallbackUserIdOption),
-            policy,
-            parseResult.GetValueForOption(dryRunOption),
-            parseResult.GetValueForOption(outputOption)!,
-            parseResult.GetValueForOption(batchSizeOption),
-            parseResult.GetValueForOption(commandTimeoutOption),
-            parseResult.GetValueForOption(parallelismOption),
-            parsedLogLevel,
-            parseResult.GetValueForOption(userTableOption)!,
-            parseResult.GetValueForOption(includePiiOption),
-            parseResult.GetValueForOption(rebuildMapOption));
+        if (options.FromLiveMetadata && string.IsNullOrWhiteSpace(options.UatConnectionString))
+        {
+            context.ExitCode = 1;
+            context.Console.WriteLine("--uat-conn is required when --from-live is specified.");
+            return;
+        }
 
-        var exitCode = await remapUsersHandler.ExecuteAsync(options, context.GetCancellationToken()).ConfigureAwait(false);
+        var exitCode = await handler.ExecuteAsync(options, context.GetCancellationToken()).ConfigureAwait(false);
         context.ExitCode = exitCode;
     });
 
     return command;
 
-    static bool IsKnownRule(string rule)
+    static (string Schema, string Table) SplitTableIdentifier(string identifier)
     {
-        if (string.IsNullOrWhiteSpace(rule))
+        if (string.IsNullOrWhiteSpace(identifier))
         {
-            return false;
+            return ("dbo", "User");
         }
 
-        var allowedRules = new[] { "email", "normalize-email", "username", "empno", "fallback" };
-        return allowedRules.Any(allowed => string.Equals(rule, allowed, StringComparison.OrdinalIgnoreCase));
+        var trimmed = identifier.Trim();
+        var separator = trimmed.IndexOf('.');
+        if (separator < 0)
+        {
+            return ("dbo", trimmed);
+        }
+
+        var schema = separator == 0 ? "dbo" : trimmed[..separator];
+        var table = separator >= trimmed.Length - 1 ? "User" : trimmed[(separator + 1)..];
+        return (schema, table);
     }
 }
 
