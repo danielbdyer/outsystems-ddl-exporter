@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -136,16 +137,119 @@ internal sealed class EmitArtifactsStep : RemapUsersPipelineStep
                 cancellationToken).ConfigureAwait(false);
         }
 
+        await WriteUserMapInsertScriptAsync(context, cancellationToken).ConfigureAwait(false);
+
         await WriteSessionLogAsync(context, cancellationToken).ConfigureAwait(false);
 
         context.Telemetry.Info(Name, "Wrote remap-users artifacts to disk.");
     }
+
+    private static async Task WriteUserMapInsertScriptAsync(RemapUsersContext context, CancellationToken cancellationToken)
+    {
+        var rows = await context.SqlRunner.QueryAsync(
+            "SELECT SourceUserId, SourceEmail, SourceUserName, SourceEmpNo, TargetUserId, MatchReason FROM ctl.UserMap WHERE SourceEnv = @SourceEnv ORDER BY SourceUserId;",
+            context.BuildCommonParameters(),
+            record => new UserMapRow(
+                record.GetInt64(0),
+                GetNullableString(record, 1),
+                GetNullableString(record, 2),
+                GetNullableString(record, 3),
+                record.GetInt64(4),
+                record.GetString(5)),
+            context.CommandTimeout,
+            cancellationToken).ConfigureAwait(false);
+
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var builder = new StringBuilder();
+        builder.AppendLine("-- remap-users generated script");
+        builder.AppendLine("-- Applies ctl.UserMap rows for manual review or execution.");
+        builder.AppendLine($"-- Source environment: {context.SourceEnvironment}");
+        builder.AppendLine($"-- Source connection fingerprint: {context.SourceConnectionFingerprint}");
+        builder.AppendLine();
+        builder.AppendLine("SET XACT_ABORT ON;");
+        builder.AppendLine("BEGIN TRANSACTION;");
+        builder.AppendLine($"DELETE FROM ctl.UserMap WHERE SourceEnv = {FormatStringLiteral(context.SourceEnvironment)};");
+        builder.AppendLine();
+
+        foreach (var row in rows)
+        {
+            var email = SelectIdentifierValue(context, row.SourceEmail);
+            var userName = SelectIdentifierValue(context, row.SourceUserName);
+            var empNo = SelectIdentifierValue(context, row.SourceEmployeeNumber);
+
+            builder.Append("INSERT INTO ctl.UserMap (SourceEnv, SourceUserId, SourceEmail, SourceUserName, SourceEmpNo, TargetUserId, MatchReason) VALUES (");
+            builder.Append(FormatStringLiteral(context.SourceEnvironment));
+            builder.Append(", ");
+            builder.Append(row.SourceUserId.ToString(CultureInfo.InvariantCulture));
+            builder.Append(", ");
+            builder.Append(FormatOptionalStringLiteral(email));
+            builder.Append(", ");
+            builder.Append(FormatOptionalStringLiteral(userName));
+            builder.Append(", ");
+            builder.Append(FormatOptionalStringLiteral(empNo));
+            builder.Append(", ");
+            builder.Append(row.TargetUserId.ToString(CultureInfo.InvariantCulture));
+            builder.Append(", ");
+            builder.Append(FormatStringLiteral(row.MatchReason));
+            builder.AppendLine(");");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("COMMIT TRANSACTION;");
+
+        await context.ArtifactWriter.WriteTextAsync("user-map.insert.sql", builder.ToString(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string? SelectIdentifierValue(RemapUsersContext context, string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (context.IncludePii)
+        {
+            return value;
+        }
+
+        var redacted = context.RedactIdentifier(value);
+        return string.IsNullOrWhiteSpace(redacted) ? null : redacted;
+    }
+
+    private static string FormatOptionalStringLiteral(string? value)
+    {
+        return value is null ? "NULL" : FormatStringLiteral(value);
+    }
+
+    private static string FormatStringLiteral(string value)
+    {
+        var escaped = value.Replace("'", "''", StringComparison.Ordinal);
+        return $"'{escaped}'";
+    }
+
+    private static string? GetNullableString(IDataRecord record, int ordinal)
+    {
+        return record.IsDBNull(ordinal) ? null : record.GetString(ordinal);
+    }
+
+    private sealed record UserMapRow(
+        long SourceUserId,
+        string? SourceEmail,
+        string? SourceUserName,
+        string? SourceEmployeeNumber,
+        long TargetUserId,
+        string MatchReason);
 
     private static async Task WriteSessionLogAsync(RemapUsersContext context, CancellationToken cancellationToken)
     {
         var builder = new StringBuilder();
         builder.AppendLine("parameters:");
         AppendParameter(builder, "sourceEnv", context.SourceEnvironment);
+        AppendParameter(builder, "sourceConnectionFingerprint", context.SourceConnectionFingerprint);
         AppendParameter(builder, "snapshotPath", context.SnapshotPath);
         AppendParameter(builder, "policy", context.Policy.ToString());
         AppendParameter(builder, "dryRun", context.DryRun.ToString());

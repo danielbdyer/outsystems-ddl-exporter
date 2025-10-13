@@ -1,6 +1,6 @@
 # remap-users Verb
 
-The `remap-users` verb stages DEV or QA snapshots into a UAT database, deterministically rewrites every foreign key that ultimately points to `ossys_User.Id`, and then (optionally) commits those changes back into the base schemas with constraints revalidated. The verb is gated by a dry-run manifest so that operators can review the planned rewrites and trust posture before any destructive load occurs.
+The `remap-users` verb stages source snapshots into a UAT database, deterministically rewrites every foreign key that ultimately points to `ossys_User.Id`, and then (optionally) commits those changes back into the base schemas with constraints revalidated. The verb now captures the source environment connection string (fingerprinted for safety) so runs remain bound to an explicit origin. Dry-run manifests continue to gate commit mode so operators can review the planned rewrites and trust posture before any destructive load occurs.
 
 ## Key Guarantees
 
@@ -34,14 +34,16 @@ Every run emits artifacts into `--out` (default `./_artifacts/remap-users`):
 | `dry-run.summary.json` | Aggregate totals and the policy used. |
 | `postload.validation.json` | FK trust snapshot and validation errors. |
 | `load.order.txt` | Topological load order applied under the constraint window. |
-| `session.log` | Parameters plus per-step timings and telemetry (no secrets/PII). |
+| `user-map.insert.sql` | Idempotent INSERT script (with optional PII redaction) for rehydrating `ctl.UserMap`. |
+| `session.log` | Parameters plus per-step timings, fingerprints, and telemetry (no secrets/PII). |
 | `run.manifest.json` | Dry-run manifest required to authorize a subsequent commit. |
 
 ## CLI Contract
 
 ```
 remap-users
-  --source-env <DEV|QA>
+  --source-env <name>
+  --source-conn <connection string>
   --uat-conn <connection string>
   --snapshot-path <directory>
   --matching-rules <rule[,rule...]>
@@ -80,6 +82,7 @@ Rules execute in order, inserting only for users that are still unmapped. Ambigu
    ```bash
    dotnet run --project src/Osm.Cli -- remap-users \
      --source-env DEV \
+     --source-conn "Server=dev-sql;Database=DEV;Trusted_Connection=True" \
      --uat-conn "Server=uat-sql;Database=UAT;Trusted_Connection=True" \
      --snapshot-path /snapshots/dev-2024-04-01 \
      --matching-rules email,normalize-email,username,empno,fallback \
@@ -96,6 +99,7 @@ Rules execute in order, inserting only for users that are still unmapped. Ambigu
    ```bash
    dotnet run --project src/Osm.Cli -- remap-users \
      --source-env DEV \
+     --source-conn "Server=dev-sql;Database=DEV;Trusted_Connection=True" \
      --uat-conn "Server=uat-sql;Database=UAT;Trusted_Connection=True" \
      --snapshot-path /snapshots/dev-2024-04-01 \
      --matching-rules email,normalize-email,username,empno,fallback \

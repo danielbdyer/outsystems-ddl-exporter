@@ -12,6 +12,7 @@ public sealed class RemapUsersManifestTests
     {
         var dryRunParameters = new RemapUsersRunParameters(
             "DEV",
+            RemapUsersContext.ComputeConnectionFingerprint("Server=.;Database=DEV;Trusted_Connection=True;"),
             "/snapshots/dev",
             new[] { "email", "normalize-email" },
             RemapUsersPolicy.Reassign,
@@ -38,6 +39,7 @@ public sealed class RemapUsersManifestTests
     {
         var dryRunParameters = new RemapUsersRunParameters(
             "DEV",
+            RemapUsersContext.ComputeConnectionFingerprint("Server=.;Database=DEV;Trusted_Connection=True;"),
             "/snapshots/dev",
             new[] { "email" },
             RemapUsersPolicy.Reassign,

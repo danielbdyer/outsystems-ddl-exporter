@@ -123,11 +123,15 @@ return await parser.InvokeAsync(args);
 
 Command CreateRemapUsersCommand()
 {
-    var sourceEnvironmentOption = new Option<string>("--source-env", "Source environment associated with the snapshot.")
+    var sourceEnvironmentOption = new Option<string>("--source-env", "Logical name for the source environment (used for auditing).")
     {
         IsRequired = true
     };
-    sourceEnvironmentOption.FromAmong("DEV", "QA");
+
+    var sourceConnectionOption = new Option<string>("--source-conn", "ADO.NET connection string for the source environment.")
+    {
+        IsRequired = true
+    };
 
     var uatConnectionOption = new Option<string>("--uat-conn", "ADO.NET connection string for the UAT database.")
     {
@@ -189,6 +193,7 @@ Command CreateRemapUsersCommand()
     var command = new Command("remap-users", "Remap source user foreign keys into the UAT environment.")
     {
         sourceEnvironmentOption,
+        sourceConnectionOption,
         uatConnectionOption,
         snapshotPathOption,
         matchingRulesOption,
@@ -275,6 +280,7 @@ Command CreateRemapUsersCommand()
 
         var options = new RemapUsersOptions(
             parseResult.GetValueForOption(sourceEnvironmentOption)!,
+            parseResult.GetValueForOption(sourceConnectionOption)!,
             parseResult.GetValueForOption(uatConnectionOption)!,
             parseResult.GetValueForOption(snapshotPathOption)!,
             matchingRules,

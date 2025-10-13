@@ -11,6 +11,7 @@ public sealed class RemapUsersOptions
 {
     public RemapUsersOptions(
         string sourceEnvironment,
+        string sourceConnectionString,
         string uatConnectionString,
         string snapshotPath,
         IReadOnlyList<string> matchingRules,
@@ -29,6 +30,9 @@ public sealed class RemapUsersOptions
         SourceEnvironment = !string.IsNullOrWhiteSpace(sourceEnvironment)
             ? sourceEnvironment
             : throw new ArgumentException("Source environment is required.", nameof(sourceEnvironment));
+        SourceConnectionString = !string.IsNullOrWhiteSpace(sourceConnectionString)
+            ? sourceConnectionString
+            : throw new ArgumentException("Source connection string is required.", nameof(sourceConnectionString));
         UatConnectionString = !string.IsNullOrWhiteSpace(uatConnectionString)
             ? uatConnectionString
             : throw new ArgumentException("UAT connection string is required.", nameof(uatConnectionString));
@@ -75,6 +79,8 @@ public sealed class RemapUsersOptions
     }
 
     public string SourceEnvironment { get; }
+
+    public string SourceConnectionString { get; }
 
     public string UatConnectionString { get; }
 

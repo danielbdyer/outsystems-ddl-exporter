@@ -62,6 +62,7 @@ public sealed class RemapUsersCommand
 
             var context = new RemapUsersContext(
                 options.SourceEnvironment,
+                options.SourceConnectionString,
                 options.UatConnectionString,
                 options.SnapshotPath,
                 options.MatchingRules,
@@ -105,8 +106,10 @@ public sealed class RemapUsersCommand
 
     private static RemapUsersRunParameters CreateRunParameters(RemapUsersOptions options)
     {
+        var fingerprint = RemapUsersContext.ComputeConnectionFingerprint(options.SourceConnectionString);
         return new RemapUsersRunParameters(
             options.SourceEnvironment,
+            fingerprint,
             Path.GetFullPath(options.SnapshotPath),
             options.MatchingRules.ToArray(),
             options.Policy,
