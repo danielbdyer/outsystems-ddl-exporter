@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -53,7 +54,17 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             }
             catch (JsonException ex)
             {
-                return Result<OsmModel>.Failure(ValidationError.Create("json.deserialize.failed", $"Unable to materialize CIR document: {ex.Message}"));
+                var path = string.IsNullOrWhiteSpace(ex.Path) ? "$" : ex.Path!;
+                var location = ex.LineNumber is { } line && ex.BytePositionInLine is { } position
+                    ? $" (line {line + 1}, byte {position})"
+                    : string.Empty;
+                var innerMessage = ex.InnerException?.Message;
+                var details = innerMessage is null ? ex.Message : $"{ex.Message} ({innerMessage})";
+
+                return Result<OsmModel>.Failure(
+                    ValidationError.Create(
+                        "json.deserialize.failed",
+                        $"Unable to materialize CIR document at {path}{location}: {details}"));
             }
 
             if (model is null)
@@ -1119,6 +1130,7 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
         public string? ExternalDbType { get; init; }
 
         [JsonPropertyName("physical_isPresentButInactive")]
+        [JsonConverter(typeof(BooleanAsZeroOneIntConverter))]
         public int PhysicalIsPresentButInactive { get; init; }
 
         [JsonPropertyName("onDisk")]
@@ -1519,6 +1531,52 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 
         [JsonPropertyName("referenced.attribute")]
         public string? ReferencedAttribute { get; init; }
+    }
+
+    private sealed class BooleanAsZeroOneIntConverter : JsonConverter<int>
+    {
+        public override int Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.Number when reader.TryGetInt32(out var numericValue):
+                    if (numericValue is 0 or 1)
+                    {
+                        return numericValue;
+                    }
+
+                    break;
+                case JsonTokenType.True:
+                    return 1;
+                case JsonTokenType.False:
+                    return 0;
+                case JsonTokenType.String:
+                    var text = reader.GetString();
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        break;
+                    }
+
+                    if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed is 0 or 1)
+                    {
+                        return parsed;
+                    }
+
+                    if (bool.TryParse(text, out var boolValue))
+                    {
+                        return boolValue ? 1 : 0;
+                    }
+
+                    break;
+            }
+
+            throw new JsonException("Expected boolean or 0/1 value.");
+        }
+
+        public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options)
+        {
+            writer.WriteNumberValue(value);
+        }
     }
 
     [JsonSourceGenerationOptions(
