@@ -485,25 +485,22 @@ public sealed class CliConfigurationLoader
         var modules = Array.Empty<string>();
         bool? includeSystem = null;
         bool? includeInactive = null;
+        IReadOnlyDictionary<string, ModuleEntityFilterConfiguration> entityFilters
+            = new Dictionary<string, ModuleEntityFilterConfiguration>(StringComparer.OrdinalIgnoreCase);
 
         if (element.TryGetProperty("modules", out var modulesElement))
         {
             if (modulesElement.ValueKind == JsonValueKind.Array)
             {
                 var list = new List<string>();
+                var filters = new Dictionary<string, ModuleEntityFilterConfiguration>(StringComparer.OrdinalIgnoreCase);
                 foreach (var moduleElement in modulesElement.EnumerateArray())
                 {
-                    if (moduleElement.ValueKind == JsonValueKind.String)
-                    {
-                        var name = moduleElement.GetString();
-                        if (!string.IsNullOrWhiteSpace(name))
-                        {
-                            list.Add(name);
-                        }
-                    }
+                    ParseModuleElement(moduleElement, list, filters);
                 }
 
                 modules = list.ToArray();
+                entityFilters = filters;
             }
             else if (modulesElement.ValueKind == JsonValueKind.String)
             {
@@ -523,6 +520,14 @@ public sealed class CliConfigurationLoader
 
                     modules = list.ToArray();
                 }
+            }
+            else if (modulesElement.ValueKind == JsonValueKind.Object)
+            {
+                var list = new List<string>();
+                var filters = new Dictionary<string, ModuleEntityFilterConfiguration>(StringComparer.OrdinalIgnoreCase);
+                ParseModuleElement(modulesElement, list, filters);
+                modules = list.ToArray();
+                entityFilters = filters;
             }
         }
 
@@ -556,8 +561,117 @@ public sealed class CliConfigurationLoader
             }
         }
 
-        moduleFilter = new ModuleFilterConfiguration(modules, includeSystem, includeInactive);
+        moduleFilter = new ModuleFilterConfiguration(modules, includeSystem, includeInactive, entityFilters);
         return true;
+    }
+
+    private static void ParseModuleElement(
+        JsonElement moduleElement,
+        ICollection<string> modules,
+        IDictionary<string, ModuleEntityFilterConfiguration> entityFilters)
+    {
+        if (moduleElement.ValueKind == JsonValueKind.String)
+        {
+            var name = moduleElement.GetString();
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                modules.Add(name);
+            }
+
+            return;
+        }
+
+        if (moduleElement.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        if (!moduleElement.TryGetProperty("name", out var nameElement) || nameElement.ValueKind != JsonValueKind.String)
+        {
+            return;
+        }
+
+        var moduleName = nameElement.GetString();
+        if (string.IsNullOrWhiteSpace(moduleName))
+        {
+            return;
+        }
+
+        var trimmedName = moduleName.Trim();
+        modules.Add(trimmedName);
+
+        if (!moduleElement.TryGetProperty("entities", out var entitiesElement))
+        {
+            return;
+        }
+
+        var configuration = ParseEntityFilter(entitiesElement);
+        if (configuration is not null)
+        {
+            entityFilters[trimmedName] = configuration;
+        }
+    }
+
+    private static ModuleEntityFilterConfiguration? ParseEntityFilter(JsonElement entitiesElement)
+    {
+        switch (entitiesElement.ValueKind)
+        {
+            case JsonValueKind.True:
+                return ModuleEntityFilterConfiguration.IncludeAll;
+            case JsonValueKind.False:
+                return null;
+            case JsonValueKind.String:
+            {
+                var value = entitiesElement.GetString();
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return null;
+                }
+
+                if (string.Equals(value.Trim(), "*", StringComparison.Ordinal))
+                {
+                    return ModuleEntityFilterConfiguration.IncludeAll;
+                }
+
+                return new ModuleEntityFilterConfiguration(
+                    IncludeAllEntities: false,
+                    Entities: new[] { value.Trim() });
+            }
+            case JsonValueKind.Array:
+            {
+                var entities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var child in entitiesElement.EnumerateArray())
+                {
+                    if (child.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    var candidate = child.GetString();
+                    if (string.IsNullOrWhiteSpace(candidate))
+                    {
+                        continue;
+                    }
+
+                    var trimmed = candidate.Trim();
+                    if (string.Equals(trimmed, "*", StringComparison.Ordinal))
+                    {
+                        return ModuleEntityFilterConfiguration.IncludeAll;
+                    }
+
+                    entities.Add(trimmed);
+                }
+
+                if (entities.Count == 0)
+                {
+                    return null;
+                }
+
+                return new ModuleEntityFilterConfiguration(false, entities.ToArray());
+            }
+            default:
+                return null;
+        }
     }
 
     private static bool TryReadPath(JsonElement root, string property, string baseDirectory, out string path)

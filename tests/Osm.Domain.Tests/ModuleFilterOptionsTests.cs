@@ -1,4 +1,4 @@
-using System.Linq;
+using System;
 using System.Linq;
 using Osm.Domain.Configuration;
 using Osm.Domain.ValueObjects;
@@ -105,5 +105,37 @@ public sealed class ModuleFilterOptionsTests
         Assert.Equal(options.Modules, updated.Modules);
         Assert.True(updated.IncludeSystemModules);
         Assert.True(updated.IncludeInactiveModules);
+    }
+
+    [Fact]
+    public void Create_AppliesEntityFilters()
+    {
+        var filters = new[]
+        {
+            new ModuleEntityFilterDefinition("AppCore", IncludeAllEntities: false, new[] { "Customer" })
+        };
+
+        var result = ModuleFilterOptions.Create(new[] { "AppCore" }, includeSystemModules: true, includeInactiveModules: true, filters);
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Value.EntityFilters);
+        var filter = Assert.Single(result.Value.EntityFilters);
+        Assert.Equal("AppCore", filter.Key.Value);
+        Assert.False(filter.Value.IncludeAll);
+        Assert.Contains("Customer", filter.Value.EntityNames);
+    }
+
+    [Fact]
+    public void Create_ReturnsFailure_WhenEntityFilterMissingEntities()
+    {
+        var filters = new[]
+        {
+            new ModuleEntityFilterDefinition("AppCore", IncludeAllEntities: false, Array.Empty<string>())
+        };
+
+        var result = ModuleFilterOptions.Create(new[] { "AppCore" }, includeSystemModules: true, includeInactiveModules: true, filters);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "moduleFilter.entities.empty");
     }
 }

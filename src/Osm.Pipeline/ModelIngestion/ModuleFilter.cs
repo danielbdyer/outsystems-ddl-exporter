@@ -78,6 +78,47 @@ public sealed class ModuleFilter
                 "Module filter removed all modules from the model.");
         }
 
+        if (!options.EntityFilters.IsEmpty)
+        {
+            var updatedModules = ImmutableArray.CreateBuilder<ModuleModel>(materialized.Length);
+            foreach (var module in materialized)
+            {
+                if (!options.EntityFilters.TryGetValue(module.Name, out var entityFilter) || entityFilter.IncludeAll)
+                {
+                    updatedModules.Add(module);
+                    continue;
+                }
+
+                var missingEntities = entityFilter.EntityNames
+                    .Where(entityName => !module.Entities.Any(entity
+                        => string.Equals(entity.LogicalName.Value, entityName, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(entity.PhysicalName.Value, entityName, StringComparison.OrdinalIgnoreCase)))
+                    .ToImmutableArray();
+
+                if (!missingEntities.IsDefaultOrEmpty)
+                {
+                    return ValidationError.Create(
+                        "modelFilter.entities.missing",
+                        $"Module '{module.Name.Value}' does not contain the requested entity/entities: {string.Join(", ", missingEntities)}.");
+                }
+
+                var filteredEntities = module.Entities
+                    .Where(entityFilter.Matches)
+                    .ToImmutableArray();
+
+                if (filteredEntities.IsDefaultOrEmpty)
+                {
+                    return ValidationError.Create(
+                        "modelFilter.entities.empty",
+                        $"Entity filter removed all entities from module '{module.Name.Value}'.");
+                }
+
+                updatedModules.Add(module with { Entities = filteredEntities });
+            }
+
+            materialized = updatedModules.ToImmutable();
+        }
+
         return OsmModel.Create(model.ExportedAtUtc, materialized, model.Sequences, model.ExtendedProperties);
     }
 }

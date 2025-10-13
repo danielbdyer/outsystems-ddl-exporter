@@ -68,4 +68,44 @@ public sealed class ModuleFilterTests
         });
         Assert.Equal(new[] { activeModule.Name.Value }, result.Value.Modules.Select(m => m.Name.Value));
     }
+
+    [Fact]
+    public void Apply_FiltersEntitiesWithinModule()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var targetModule = model.Modules.First();
+        var retainedEntity = targetModule.Entities.First();
+
+        var filterOptions = ModuleFilterOptions.Create(
+            new[] { targetModule.Name.Value },
+            includeSystemModules: true,
+            includeInactiveModules: true,
+            new[] { new ModuleEntityFilterDefinition(targetModule.Name.Value, IncludeAllEntities: false, new[] { retainedEntity.LogicalName.Value }) })
+            .Value;
+
+        var result = new ModuleFilter().Apply(model, filterOptions);
+
+        Assert.True(result.IsSuccess);
+        var module = Assert.Single(result.Value.Modules);
+        Assert.Equal(targetModule.Name.Value, module.Name.Value);
+        Assert.Equal(new[] { retainedEntity.LogicalName.Value }, module.Entities.Select(entity => entity.LogicalName.Value));
+    }
+
+    [Fact]
+    public void Apply_ReturnsFailure_WhenEntityFilterMissing()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+
+        var filterOptions = ModuleFilterOptions.Create(
+            new[] { "AppCore" },
+            includeSystemModules: true,
+            includeInactiveModules: true,
+            new[] { new ModuleEntityFilterDefinition("AppCore", IncludeAllEntities: false, new[] { "NonExistingEntity" }) })
+            .Value;
+
+        var result = new ModuleFilter().Apply(model, filterOptions);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "modelFilter.entities.missing");
+    }
 }

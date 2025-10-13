@@ -29,6 +29,11 @@ internal static class ModuleFilterResolver
             ? overrides.Modules
             : configuration.ModuleFilter.Modules ?? Array.Empty<string>();
 
-        return ModuleFilterOptions.Create(modules.ToArray(), includeSystemModules, includeInactiveModules);
+        var entityFilters = configuration.ModuleFilter.EntityFilters
+            .Select(pair => pair.Value.IncludeAllEntities
+                ? ModuleEntityFilterDefinition.IncludeAll(pair.Key)
+                : new ModuleEntityFilterDefinition(pair.Key, IncludeAllEntities: false, pair.Value.Entities));
+
+        return ModuleFilterOptions.Create(modules.ToArray(), includeSystemModules, includeInactiveModules, entityFilters);
     }
 }
