@@ -28,7 +28,8 @@ internal sealed class DiscoverUserFkCatalogStep : RemapUsersPipelineStep
             return;
         }
 
-        var targetTableName = context.UserTable;
+        var targetTableSchema = context.UserTableSchema;
+        var targetTableName = context.UserTableName;
         var primaryKeyColumn = context.UserPrimaryKeyColumn;
         var comparer = StringComparer.OrdinalIgnoreCase;
 
@@ -39,10 +40,15 @@ internal sealed class DiscoverUserFkCatalogStep : RemapUsersPipelineStep
         var queue = new Queue<CatalogTraversalNode>();
         var visited = new HashSet<CatalogTraversalKey>(CatalogTraversalKeyComparer.Instance);
         var catalogEntries = new List<UserForeignKeyCatalogEntry>();
+        var relevantTables = new HashSet<(string Schema, string Table)>(SchemaTableKeyComparer.Instance)
+        {
+            (targetTableSchema, targetTableName)
+        };
 
         foreach (var fk in foreignKeys)
         {
-            if (!comparer.Equals(fk.TargetTable.Name, targetTableName) ||
+            if (!comparer.Equals(fk.TargetTable.Schema, targetTableSchema) ||
+                !comparer.Equals(fk.TargetTable.Name, targetTableName) ||
                 !comparer.Equals(fk.TargetColumn, primaryKeyColumn))
             {
                 continue;
@@ -56,6 +62,7 @@ internal sealed class DiscoverUserFkCatalogStep : RemapUsersPipelineStep
 
             catalogEntries.Add(entry);
             visited.Add(new CatalogTraversalKey(fk.SourceTable.Schema, fk.SourceTable.Name, fk.SourceColumn));
+            relevantTables.Add((fk.SourceTable.Schema, fk.SourceTable.Name));
             queue.Enqueue(new CatalogTraversalNode(fk.SourceTable, fk.SourceColumn, entry.PathSegments.ToArray()));
         }
 
@@ -86,6 +93,7 @@ internal sealed class DiscoverUserFkCatalogStep : RemapUsersPipelineStep
                     pathSegments);
 
                 catalogEntries.Add(entry);
+                relevantTables.Add((fk.SourceTable.Schema, fk.SourceTable.Name));
                 queue.Enqueue(new CatalogTraversalNode(fk.SourceTable, fk.SourceColumn, pathSegments));
             }
         }
@@ -108,7 +116,11 @@ internal sealed class DiscoverUserFkCatalogStep : RemapUsersPipelineStep
         });
 
         context.State.ReplaceForeignKeyCatalog(catalogEntries);
-        context.State.SetLoadOrder(await context.SchemaGraph.GetTopologicallySortedTablesAsync(cancellationToken).ConfigureAwait(false));
+        var loadOrder = await context.SchemaGraph.GetTopologicallySortedTablesAsync(cancellationToken).ConfigureAwait(false);
+        var filteredLoadOrder = loadOrder
+            .Where(table => relevantTables.Contains((table.Schema, table.Name)))
+            .ToArray();
+        context.State.SetLoadOrder(filteredLoadOrder);
 
         var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -178,6 +190,24 @@ internal sealed class DiscoverUserFkCatalogStep : RemapUsersPipelineStep
                 StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Schema),
                 StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Table),
                 StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Column));
+        }
+    }
+
+    private sealed class SchemaTableKeyComparer : IEqualityComparer<(string Schema, string Table)>
+    {
+        public static SchemaTableKeyComparer Instance { get; } = new();
+
+        public bool Equals((string Schema, string Table) x, (string Schema, string Table) y)
+        {
+            return string.Equals(x.Schema, y.Schema, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.Table, y.Table, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int GetHashCode((string Schema, string Table) obj)
+        {
+            return HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Schema),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Table));
         }
     }
 }

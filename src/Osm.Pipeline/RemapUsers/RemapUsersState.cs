@@ -26,6 +26,8 @@ public sealed class RemapUsersState
 
     public PostLoadValidationReport? PostLoadValidation { get; private set; }
 
+    public IReadOnlyList<ReferentialProbeResult> ReferentialProbes { get; private set; } = Array.Empty<ReferentialProbeResult>();
+
     public void ReplaceForeignKeyCatalog(IEnumerable<UserForeignKeyCatalogEntry> entries)
     {
         if (entries is null)
@@ -66,6 +68,11 @@ public sealed class RemapUsersState
     {
         PostLoadValidation = report ?? throw new ArgumentNullException(nameof(report));
     }
+
+    public void SetReferentialProbes(IReadOnlyList<ReferentialProbeResult> probes)
+    {
+        ReferentialProbes = probes ?? throw new ArgumentNullException(nameof(probes));
+    }
 }
 
 public sealed record UserForeignKeyCatalogEntry(
@@ -89,7 +96,8 @@ public sealed record ColumnRewriteSummary(
     long RemappedRowCount,
     long ReassignedRowCount,
     long PrunedRowCount,
-    long UnmappedRowCount);
+    long UnmappedRowCount,
+    RemapUsersPolicy Policy);
 
 public sealed record UserMapCoverageRow(
     string MatchReason,
@@ -114,10 +122,20 @@ public sealed record ColumnDelta(
     long RemappedRows,
     long ReassignedRows,
     long PrunedRows,
-    long UnmappedRows);
+    long UnmappedRows,
+    RemapUsersPolicy Policy);
 
 public sealed record PostLoadValidationReport(
     int DisabledForeignKeys,
     int UntrustedForeignKeys,
     bool ReferentialIntegrityVerified,
     IReadOnlyList<string> ValidationErrors);
+
+public sealed record ReferentialProbeResult(
+    string TableSchema,
+    string TableName,
+    string ColumnName,
+    long CheckedRows,
+    long InvalidRows,
+    IReadOnlyList<string> ValidSamples,
+    IReadOnlyList<string> InvalidSamples);

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,23 +17,26 @@ internal sealed class EmitArtifactsStep : RemapUsersPipelineStep
 
     protected override async Task ExecuteCoreAsync(RemapUsersContext context, CancellationToken cancellationToken)
     {
-        if (context.State.UserMapReport is { } coverage)
+        await WriteCatalogArtifactsAsync(context, cancellationToken).ConfigureAwait(false);
+
+        var coverageReport = context.State.UserMapReport;
+        if (coverageReport is not null)
         {
             await context.ArtifactWriter.WriteJsonAsync(
                 "user-map.coverage.json",
                 new
                 {
                     sourceEnv = context.SourceEnvironment,
-                    coverage = coverage.Coverage
+                    coverage = coverageReport.Coverage
                         .Select(row => new { reason = row.MatchReason, count = row.MatchedCount })
                         .ToArray(),
-                    unresolved = coverage.UnresolvedCount,
-                    sampleUnresolved = coverage.SampleUnresolvedIdentifiers
+                    unresolved = coverageReport.UnresolvedCount,
+                    sampleUnresolved = coverageReport.SampleUnresolvedIdentifiers
                 },
                 cancellationToken).ConfigureAwait(false);
 
             var coverageRows = new List<IReadOnlyList<string>> { new[] { "MatchReason", "MatchedCount" } };
-            coverageRows.AddRange(coverage.Coverage.Select(row => new[]
+            coverageRows.AddRange(coverageReport.Coverage.Select(row => new[]
             {
                 row.MatchReason,
                 row.MatchedCount.ToString(CultureInfo.InvariantCulture)
@@ -44,14 +48,15 @@ internal sealed class EmitArtifactsStep : RemapUsersPipelineStep
                 cancellationToken).ConfigureAwait(false);
         }
 
-        if (context.State.DryRunSummary is { } dryRun)
+        var dryRunSummary = context.State.DryRunSummary;
+        if (dryRunSummary is not null)
         {
             var deltaRows = new List<IReadOnlyList<string>>
             {
-                new[] { "TableSchema", "TableName", "ColumnName", "Remapped", "Reassigned", "Pruned", "Unmapped" }
+                new[] { "TableSchema", "TableName", "ColumnName", "Remapped", "Reassigned", "Pruned", "Unmapped", "Policy" }
             };
 
-            deltaRows.AddRange(dryRun.ColumnChanges.Select(change => new[]
+            deltaRows.AddRange(dryRunSummary.ColumnChanges.Select(change => new[]
             {
                 change.TableSchema,
                 change.TableName,
@@ -59,7 +64,8 @@ internal sealed class EmitArtifactsStep : RemapUsersPipelineStep
                 change.RemappedRows.ToString(CultureInfo.InvariantCulture),
                 change.ReassignedRows.ToString(CultureInfo.InvariantCulture),
                 change.PrunedRows.ToString(CultureInfo.InvariantCulture),
-                change.UnmappedRows.ToString(CultureInfo.InvariantCulture)
+                change.UnmappedRows.ToString(CultureInfo.InvariantCulture),
+                change.Policy.ToString()
             }));
 
             await context.ArtifactWriter.WriteCsvAsync(
@@ -67,19 +73,52 @@ internal sealed class EmitArtifactsStep : RemapUsersPipelineStep
                 deltaRows,
                 cancellationToken).ConfigureAwait(false);
 
+            var unmappedRows = dryRunSummary.ColumnChanges
+                .Where(change => change.UnmappedRows > 0)
+                .Select(change => (change.TableSchema, change.TableName, change.ColumnName, change.UnmappedRows, change.Policy))
+                .ToArray();
+
+            if (unmappedRows.Length > 0)
+            {
+                var unmappedCsv = new List<IReadOnlyList<string>>
+                {
+                    new[] { "TableSchema", "TableName", "ColumnName", "Unmapped", "Policy" }
+                };
+
+                unmappedCsv.AddRange(unmappedRows.Select(row => new[]
+                {
+                    row.TableSchema,
+                    row.TableName,
+                    row.ColumnName,
+                    row.UnmappedRows.ToString(CultureInfo.InvariantCulture),
+                    row.Policy.ToString()
+                }));
+
+                await context.ArtifactWriter.WriteCsvAsync(
+                    "unmapped.impact.csv",
+                    unmappedCsv,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             await context.ArtifactWriter.WriteJsonAsync(
                 "dry-run.summary.json",
                 new
                 {
                     totals = new
                     {
-                        remapped = dryRun.TotalRemapped,
-                        reassigned = dryRun.TotalReassigned,
-                        pruned = dryRun.TotalPruned,
-                        unmapped = dryRun.TotalUnmapped
-                    }
+                        remapped = dryRunSummary.TotalRemapped,
+                        reassigned = dryRunSummary.TotalReassigned,
+                        pruned = dryRunSummary.TotalPruned,
+                        unmapped = dryRunSummary.TotalUnmapped
+                    },
+                    policy = context.Policy.ToString()
                 },
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        if (context.DryRun)
+        {
+            await WriteDryRunGuardsAsync(context, coverageReport, dryRunSummary, cancellationToken).ConfigureAwait(false);
         }
 
         if (context.State.PostLoadValidation is { } validation)
@@ -96,6 +135,30 @@ internal sealed class EmitArtifactsStep : RemapUsersPipelineStep
                 cancellationToken).ConfigureAwait(false);
         }
 
+        if (context.State.ReferentialProbes.Count > 0)
+        {
+            var probeRows = new List<IReadOnlyList<string>>
+            {
+                new[] { "TableSchema", "TableName", "ColumnName", "CheckedRows", "InvalidRows", "ValidSamples", "InvalidSamples" }
+            };
+
+            probeRows.AddRange(context.State.ReferentialProbes.Select(probe => new[]
+            {
+                probe.TableSchema,
+                probe.TableName,
+                probe.ColumnName,
+                probe.CheckedRows.ToString(CultureInfo.InvariantCulture),
+                probe.InvalidRows.ToString(CultureInfo.InvariantCulture),
+                string.Join(';', probe.ValidSamples),
+                string.Join(';', probe.InvalidSamples)
+            }));
+
+            await context.ArtifactWriter.WriteCsvAsync(
+                "referential-probes.csv",
+                probeRows,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var loadOrder = context.State.LoadOrder;
         if (loadOrder.Count > 0)
         {
@@ -106,6 +169,170 @@ internal sealed class EmitArtifactsStep : RemapUsersPipelineStep
                 cancellationToken).ConfigureAwait(false);
         }
 
+        await WriteSessionLogAsync(context, cancellationToken).ConfigureAwait(false);
+
         context.Telemetry.Info(Name, "Wrote remap-users artifacts to disk.");
+    }
+
+    private static async Task WriteCatalogArtifactsAsync(RemapUsersContext context, CancellationToken cancellationToken)
+    {
+        var catalog = context.State.ForeignKeyCatalog;
+        var payload = catalog
+            .Select(entry => new
+            {
+                tableSchema = entry.TableSchema,
+                tableName = entry.TableName,
+                columnName = entry.ColumnName,
+                pathSegments = entry.PathSegments,
+                pathHint = entry.PathSegments.Count == 0
+                    ? "(direct)"
+                    : string.Join(" > ", entry.PathSegments)
+            })
+            .ToArray();
+
+        await context.ArtifactWriter.WriteJsonAsync(
+            "user-fk-catalog.json",
+            payload,
+            cancellationToken).ConfigureAwait(false);
+
+        var builder = new StringBuilder();
+        builder.AppendLine("# user foreign key catalog");
+        if (catalog.Count == 0)
+        {
+            builder.AppendLine("(no foreign keys discovered)");
+        }
+        else
+        {
+            foreach (var entry in catalog)
+            {
+                builder.AppendLine(entry.ToString());
+            }
+        }
+
+        await context.ArtifactWriter.WriteTextAsync(
+            "user-fk-catalog.txt",
+            builder.ToString().TrimEnd(),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task WriteDryRunGuardsAsync(
+        RemapUsersContext context,
+        UserMapReport? coverageReport,
+        DryRunSummary? dryRunSummary,
+        CancellationToken cancellationToken)
+    {
+        if (!context.DryRun)
+        {
+            return;
+        }
+
+        if (coverageReport is null || dryRunSummary is null)
+        {
+            await context.ArtifactWriter.WriteTextAsync(
+                "dry-run.hash",
+                context.DryRunHash + Environment.NewLine,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var matched = coverageReport.Coverage.Sum(row => row.MatchedCount);
+        var total = matched + coverageReport.UnresolvedCount;
+        var coveragePercent = total == 0 ? 0D : (double)matched / total * 100D;
+
+        var builder = new StringBuilder();
+        builder.AppendLine("remap-users dry run summary");
+        builder.AppendLine($"source-env: {context.SourceEnvironment}");
+        builder.AppendLine($"snapshot-path: {context.SnapshotPath}");
+        builder.AppendLine($"matching-rules: {string.Join(',', context.MatchingRules.Select(rule => rule.ToString()))}");
+        builder.AppendLine($"policy: {context.Policy} (explicit={context.PolicyWasExplicit})");
+        builder.AppendLine($"fallback-user-id: {context.FallbackUserId?.ToString(CultureInfo.InvariantCulture) ?? "(none)"}");
+        builder.AppendLine($"total-remapped: {dryRunSummary.TotalRemapped.ToString(CultureInfo.InvariantCulture)}");
+        builder.AppendLine($"total-reassigned: {dryRunSummary.TotalReassigned.ToString(CultureInfo.InvariantCulture)}");
+        builder.AppendLine($"total-pruned: {dryRunSummary.TotalPruned.ToString(CultureInfo.InvariantCulture)}");
+        builder.AppendLine($"total-unmapped: {dryRunSummary.TotalUnmapped.ToString(CultureInfo.InvariantCulture)}");
+        builder.AppendLine($"mapping-coverage: {coveragePercent.ToString("F2", CultureInfo.InvariantCulture)}% ({matched}/{total})");
+        builder.AppendLine($"unresolved-users: {coverageReport.UnresolvedCount.ToString(CultureInfo.InvariantCulture)}");
+
+        await context.ArtifactWriter.WriteTextAsync(
+            "dry-run.summary.txt",
+            builder.ToString(),
+            cancellationToken).ConfigureAwait(false);
+
+        await context.ArtifactWriter.WriteTextAsync(
+            "dry-run.hash",
+            context.DryRunHash + Environment.NewLine,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task WriteSessionLogAsync(RemapUsersContext context, CancellationToken cancellationToken)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("parameters:");
+        AppendParameter(builder, "sourceEnv", context.SourceEnvironment);
+        AppendParameter(builder, "snapshotPath", context.SnapshotPath);
+        AppendParameter(builder, "policy", context.Policy.ToString());
+        AppendParameter(builder, "dryRun", context.DryRun.ToString());
+        AppendParameter(builder, "includePii", context.IncludePii.ToString());
+        AppendParameter(builder, "rebuildMap", context.RebuildMap.ToString());
+        AppendParameter(builder, "matchingRules", string.Join(",", context.MatchingRules.Select(rule => rule.ToString())));
+        AppendParameter(builder, "fallbackUserId", context.FallbackUserId?.ToString(CultureInfo.InvariantCulture) ?? "");
+        AppendParameter(builder, "batchSize", context.BatchSize.ToString(CultureInfo.InvariantCulture));
+        AppendParameter(builder, "commandTimeoutSeconds", ((int)context.CommandTimeout.TotalSeconds).ToString(CultureInfo.InvariantCulture));
+        AppendParameter(builder, "parallelism", context.Parallelism.ToString(CultureInfo.InvariantCulture));
+        AppendParameter(builder, "artifactDirectory", context.ArtifactDirectory);
+        builder.AppendLine("steps:");
+
+        foreach (var entry in context.Telemetry.Entries.OrderBy(e => e.Timestamp))
+        {
+            var metadata = entry.Metadata is null || entry.Metadata.Count == 0
+                ? string.Empty
+                : string.Join(";", entry.Metadata.Select(pair => pair.Key + "=" + pair.Value));
+            builder.Append(entry.Timestamp.ToString("O", CultureInfo.InvariantCulture));
+            builder.Append(' ');
+            builder.Append(entry.Step);
+            builder.Append(' ');
+            builder.Append(entry.EventType);
+            if (entry.Duration.HasValue)
+            {
+                builder.Append(" duration=");
+                builder.Append(entry.Duration.Value.TotalSeconds.ToString("F3", CultureInfo.InvariantCulture));
+                builder.Append('s');
+            }
+
+            if (!string.IsNullOrWhiteSpace(metadata))
+            {
+                builder.Append(" metadata=");
+                builder.Append(metadata);
+            }
+
+            if (!string.IsNullOrWhiteSpace(entry.Message))
+            {
+                builder.Append(" message=");
+                builder.Append(entry.Message);
+            }
+
+            if (!string.IsNullOrWhiteSpace(entry.ExceptionType))
+            {
+                builder.Append(" exception=");
+                builder.Append(entry.ExceptionType);
+                if (!string.IsNullOrWhiteSpace(entry.ExceptionMessage))
+                {
+                    builder.Append(':');
+                    builder.Append(entry.ExceptionMessage);
+                }
+            }
+
+            builder.AppendLine();
+        }
+
+        await context.ArtifactWriter.WriteTextAsync("session.log", builder.ToString(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void AppendParameter(StringBuilder builder, string name, string value)
+    {
+        builder.Append("  ");
+        builder.Append(name);
+        builder.Append('=');
+        builder.AppendLine(string.IsNullOrWhiteSpace(value) ? "(empty)" : value);
     }
 }

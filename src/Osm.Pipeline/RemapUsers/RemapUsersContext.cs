@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Osm.Pipeline.RemapUsers;
 
@@ -17,6 +20,7 @@ public sealed record RemapUsersContext
         IEnumerable<string> matchingRules,
         long? fallbackUserId,
         RemapUsersPolicy policy,
+        bool policyWasExplicit,
         bool dryRun,
         string artifactDirectory,
         int batchSize,
@@ -28,6 +32,9 @@ public sealed record RemapUsersContext
         IBulkLoader bulkLoader,
         IRemapUsersTelemetry telemetry,
         IRemapUsersArtifactWriter artifactWriter,
+        RemapUsersLogLevel logLevel,
+        bool includePii,
+        bool rebuildMap,
         RemapUsersState? state = null)
     {
         if (string.IsNullOrWhiteSpace(sourceEnvironment))
@@ -73,7 +80,7 @@ public sealed record RemapUsersContext
 
         SourceEnvironment = sourceEnvironment.Trim();
         UatConnectionString = uatConnectionString.Trim();
-        SnapshotPath = snapshotPath.Trim();
+        SnapshotPath = Path.GetFullPath(snapshotPath.Trim());
         MatchingRules = RemapUsersMatchRuleExtensions.ParseMany(matchingRules ?? throw new ArgumentNullException(nameof(matchingRules)));
         if (MatchingRules.Count == 0)
         {
@@ -89,11 +96,17 @@ public sealed record RemapUsersContext
 
         FallbackUserId = fallbackUserId;
         Policy = policy;
+        PolicyWasExplicit = policyWasExplicit;
         DryRun = dryRun;
-        ArtifactDirectory = string.IsNullOrWhiteSpace(artifactDirectory) ? "./_artifacts/remap-users" : artifactDirectory;
+        ArtifactDirectory = string.IsNullOrWhiteSpace(artifactDirectory)
+            ? Path.GetFullPath("./_artifacts/remap-users")
+            : Path.GetFullPath(artifactDirectory);
         BatchSize = batchSize;
         CommandTimeout = TimeSpan.FromSeconds(commandTimeoutSeconds);
         Parallelism = parallelism;
+        LogLevel = logLevel;
+        IncludePii = includePii;
+        RebuildMap = rebuildMap;
         var trimmedUserTable = userTable.Trim();
         var schemaSeparatorIndex = trimmedUserTable.IndexOf('.');
         if (schemaSeparatorIndex > 0)
@@ -110,6 +123,7 @@ public sealed record RemapUsersContext
         UserTable = $"{UserTableSchema}.{UserTableName}";
         UserPrimaryKeyColumn = "Id";
         State = state ?? new RemapUsersState();
+        DryRunHash = ComputeDryRunHash();
     }
 
     public string SourceEnvironment { get; }
@@ -123,6 +137,8 @@ public sealed record RemapUsersContext
     public long? FallbackUserId { get; }
 
     public RemapUsersPolicy Policy { get; }
+
+    public bool PolicyWasExplicit { get; }
 
     public bool DryRun { get; }
 
@@ -152,7 +168,15 @@ public sealed record RemapUsersContext
 
     public IRemapUsersArtifactWriter ArtifactWriter { get; }
 
+    public RemapUsersLogLevel LogLevel { get; }
+
+    public bool IncludePii { get; }
+
+    public bool RebuildMap { get; }
+
     public RemapUsersState State { get; }
+
+    public string DryRunHash { get; }
 
     public IReadOnlyDictionary<string, object?> BuildCommonParameters()
     {
@@ -168,5 +192,120 @@ public sealed record RemapUsersContext
     public string FormatStepMessage(string messageTemplate, params object[] args)
     {
         return string.Format(CultureInfo.InvariantCulture, messageTemplate, args);
+    }
+
+    public string RedactIdentifier(string? value)
+    {
+        if (IncludePii)
+        {
+            return value ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var hash = SHA256.HashData(bytes);
+        return "hash:" + Convert.ToHexString(hash);
+    }
+
+    private string ComputeDryRunHash()
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine(SourceEnvironment);
+        builder.AppendLine(SnapshotPath);
+        builder.AppendLine(UserTable);
+        builder.AppendLine(Policy.ToString());
+        builder.AppendLine(PolicyWasExplicit.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(DryRun.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(IncludePii.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(RebuildMap.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(BatchSize.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(((int)CommandTimeout.TotalSeconds).ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(Parallelism.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(FallbackUserId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
+
+        foreach (var rule in MatchingRules)
+        {
+            builder.AppendLine(rule.ToString());
+        }
+
+        foreach (var fingerprint in EnumerateSnapshotFingerprint())
+        {
+            builder.AppendLine(fingerprint);
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(builder.ToString());
+        return Convert.ToHexString(SHA256.HashData(bytes));
+    }
+
+    private IEnumerable<string> EnumerateSnapshotFingerprint()
+    {
+        if (Directory.Exists(SnapshotPath))
+        {
+            var root = Path.GetFullPath(SnapshotPath);
+            foreach (var file in Directory
+                .EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                string? error = null;
+                FileInfo? info = null;
+                try
+                {
+                    info = new FileInfo(file);
+                }
+                catch (Exception ex)
+                {
+                    error = "error:" + ex.GetType().Name + ":" + ex.Message;
+                }
+
+                if (error is not null)
+                {
+                    yield return error;
+                    continue;
+                }
+
+                var relative = Path.GetRelativePath(root, file)
+                    .Replace(Path.DirectorySeparatorChar, '/');
+                yield return string.Join(
+                    '|',
+                    relative,
+                    info!.Length.ToString(CultureInfo.InvariantCulture),
+                    info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture));
+            }
+
+            yield break;
+        }
+
+        if (File.Exists(SnapshotPath))
+        {
+            string? error = null;
+            FileInfo? info = null;
+            try
+            {
+                info = new FileInfo(SnapshotPath);
+            }
+            catch (Exception ex)
+            {
+                error = "error:" + ex.GetType().Name + ":" + ex.Message;
+            }
+
+            if (error is not null)
+            {
+                yield return error;
+                yield break;
+            }
+
+            yield return string.Join(
+                '|',
+                Path.GetFileName(SnapshotPath),
+                info!.Length.ToString(CultureInfo.InvariantCulture),
+                info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture));
+            yield break;
+        }
+
+        yield return "missing:" + SnapshotPath;
     }
 }
