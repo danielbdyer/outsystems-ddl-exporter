@@ -37,8 +37,9 @@ hostBuilder.Services.AddSingleton<IApplicationService<BuildSsdtApplicationInput,
 hostBuilder.Services.AddSingleton<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>, CompareWithDmmApplicationService>();
 hostBuilder.Services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();
 
-var enableUatUsers = string.Equals(
-    Environment.GetEnvironmentVariable("OSM_ENABLE_REMAP_USERS"),
+var remapUsersToggle = Environment.GetEnvironmentVariable("OSM_ENABLE_REMAP_USERS");
+var enableUatUsers = remapUsersToggle is null || string.Equals(
+    remapUsersToggle,
     "true",
     StringComparison.OrdinalIgnoreCase);
 
