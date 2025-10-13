@@ -2,8 +2,8 @@ using System;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -79,11 +79,32 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
 
             await using var command = CreateCommand(connection, script, request, _options);
             _logger.LogDebug("Executing advanced SQL command.");
-            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            stopwatch.Stop();
-            _logger.LogInformation("Advanced SQL command completed in {DurationMs} ms.", stopwatch.Elapsed.TotalMilliseconds);
 
-            if (result is null || result is DBNull)
+            await using var reader = await command
+                .ExecuteReaderAsync(CommandBehavior.SequentialAccess | CommandBehavior.SingleResult, cancellationToken)
+                .ConfigureAwait(false);
+
+            var builder = new StringBuilder();
+            var chunkCount = 0;
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (reader.IsDBNull(0))
+                {
+                    continue;
+                }
+
+                builder.Append(reader.GetString(0));
+                chunkCount++;
+            }
+
+            stopwatch.Stop();
+            _logger.LogInformation(
+                "Advanced SQL command completed in {DurationMs} ms with {ChunkCount} chunk(s).",
+                stopwatch.Elapsed.TotalMilliseconds,
+                chunkCount);
+
+            if (builder.Length == 0)
             {
                 _logger.LogError("Advanced SQL command returned no results.");
                 return Result<string>.Failure(ValidationError.Create(
@@ -91,16 +112,16 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
                     "Advanced SQL execution returned no JSON payload."));
             }
 
-            if (result is string text)
+            var payload = builder.ToString();
+            if (string.IsNullOrWhiteSpace(payload))
             {
-                return string.IsNullOrWhiteSpace(text)
-                    ? Result<string>.Failure(ValidationError.Create(
-                        "extraction.sql.emptyJson",
-                        "Advanced SQL execution returned an empty JSON payload."))
-                    : Result<string>.Success(text);
+                _logger.LogError("Advanced SQL command returned an empty JSON payload after concatenation.");
+                return Result<string>.Failure(ValidationError.Create(
+                    "extraction.sql.emptyJson",
+                    "Advanced SQL execution returned an empty JSON payload."));
             }
 
-            return Result<string>.Success(Convert.ToString(result, CultureInfo.InvariantCulture) ?? string.Empty);
+            return Result<string>.Success(payload);
         }
         catch (DbException ex)
         {
