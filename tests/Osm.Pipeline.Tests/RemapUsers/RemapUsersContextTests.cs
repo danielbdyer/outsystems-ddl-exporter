@@ -37,6 +37,7 @@ public sealed class RemapUsersContextTests
 
         return new RemapUsersContext(
             sourceEnvironment: "DEV",
+            sourceConnectionString: "Server=(local);Database=DEV;Trusted_Connection=True;",
             uatConnectionString: "Server=(local);Database=UAT;Trusted_Connection=True;",
             snapshotPath: "/snapshots/dev",
             matchingRules: new[] { "email" },
@@ -56,6 +57,15 @@ public sealed class RemapUsersContextTests
             logLevel: RemapUsersLogLevel.Info,
             includePii,
             rebuildMap: false);
+    }
+
+    [Fact]
+    public void ComputeConnectionFingerprint_ProducesStableHash()
+    {
+        var first = RemapUsersContext.ComputeConnectionFingerprint("Server=.;Database=DEV;Trusted_Connection=True;");
+        var second = RemapUsersContext.ComputeConnectionFingerprint("Server=.;Database=DEV;Trusted_Connection=True;");
+        first.Should().Be(second);
+        first.Should().HaveLength(64);
     }
 
     private sealed class StubSchemaGraph : ISchemaGraph

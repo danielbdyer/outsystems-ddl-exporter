@@ -6,6 +6,7 @@ namespace Osm.Pipeline.RemapUsers;
 
 public sealed record RemapUsersRunParameters(
     string SourceEnvironment,
+    string SourceConnectionFingerprint,
     string SnapshotPath,
     IReadOnlyList<string> MatchingRules,
     RemapUsersPolicy Policy,
@@ -23,6 +24,7 @@ public sealed record RemapUsersRunParameters(
         return this with
         {
             SourceEnvironment = SourceEnvironment.Trim(),
+            SourceConnectionFingerprint = SourceConnectionFingerprint.Trim(),
             SnapshotPath = SnapshotPath.Trim(),
             UserTable = UserTable.Trim(),
             MatchingRules = MatchingRules.Select(rule => rule.Trim()).ToArray()
@@ -49,6 +51,7 @@ public sealed record RemapUsersRunManifest(
         }
 
         return string.Equals(Parameters.SourceEnvironment, commitParameters.SourceEnvironment, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Parameters.SourceConnectionFingerprint, commitParameters.SourceConnectionFingerprint, StringComparison.Ordinal)
             && string.Equals(Parameters.SnapshotPath, commitParameters.SnapshotPath, StringComparison.Ordinal)
             && string.Equals(Parameters.UserTable, commitParameters.UserTable, StringComparison.OrdinalIgnoreCase)
             && SequenceEquals(Parameters.MatchingRules, commitParameters.MatchingRules)

@@ -15,6 +15,7 @@ public sealed record RemapUsersContext
 {
     public RemapUsersContext(
         string sourceEnvironment,
+        string sourceConnectionString,
         string uatConnectionString,
         string snapshotPath,
         IEnumerable<string> matchingRules,
@@ -39,6 +40,11 @@ public sealed record RemapUsersContext
         if (string.IsNullOrWhiteSpace(sourceEnvironment))
         {
             throw new ArgumentException("Source environment is required.", nameof(sourceEnvironment));
+        }
+
+        if (string.IsNullOrWhiteSpace(sourceConnectionString))
+        {
+            throw new ArgumentException("Source connection string is required.", nameof(sourceConnectionString));
         }
 
         if (string.IsNullOrWhiteSpace(uatConnectionString))
@@ -78,6 +84,7 @@ public sealed record RemapUsersContext
         ArtifactWriter = artifactWriter ?? throw new ArgumentNullException(nameof(artifactWriter));
 
         SourceEnvironment = sourceEnvironment.Trim();
+        SourceConnectionFingerprint = ComputeConnectionFingerprint(sourceConnectionString.Trim());
         UatConnectionString = uatConnectionString.Trim();
         SnapshotPath = Path.GetFullPath(snapshotPath.Trim());
         MatchingRules = RemapUsersMatchRuleExtensions.ParseMany(matchingRules ?? throw new ArgumentNullException(nameof(matchingRules)));
@@ -126,6 +133,8 @@ public sealed record RemapUsersContext
     public string SourceEnvironment { get; }
 
     public string UatConnectionString { get; }
+
+    public string SourceConnectionFingerprint { get; }
 
     public string SnapshotPath { get; }
 
@@ -202,5 +211,17 @@ public sealed record RemapUsersContext
         var bytes = Encoding.UTF8.GetBytes(value);
         var hash = SHA256.HashData(bytes);
         return "hash:" + Convert.ToHexString(hash);
+    }
+
+    public static string ComputeConnectionFingerprint(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new ArgumentException("Connection string must be provided.", nameof(connectionString));
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(connectionString.Trim());
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash);
     }
 }
