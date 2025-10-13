@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.UatUsers;
 
@@ -10,19 +11,30 @@ public sealed class UatUsersContext
 {
     private IReadOnlyList<UserFkColumn> _userFkCatalog = Array.Empty<UserFkColumn>();
     private IReadOnlyList<UserMappingEntry> _userMappings = Array.Empty<UserMappingEntry>();
+    private readonly HashSet<long> _allowedUserIdSet = new();
+    private IReadOnlyList<long> _allowedUserIds = Array.Empty<long>();
+    private readonly HashSet<long> _orphanUserIdSet = new();
+    private IReadOnlyList<long> _orphanUserIds = Array.Empty<long>();
+    private IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> _foreignKeyValueCounts
+        = ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>.Empty;
 
     public UatUsersContext(
         IUserSchemaGraph schemaGraph,
         UatUsersArtifacts artifacts,
+        IDbConnectionFactory connectionFactory,
         string userSchema,
         string userTable,
         string userIdColumn,
         IReadOnlyCollection<string>? includeColumns,
         string userMapPath,
-        bool fromLiveMetadata)
+        string allowedUsersPath,
+        string? snapshotPath,
+        bool fromLiveMetadata,
+        string sourceFingerprint)
     {
         SchemaGraph = schemaGraph ?? throw new ArgumentNullException(nameof(schemaGraph));
         Artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
+        ConnectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
 
         if (string.IsNullOrWhiteSpace(userSchema))
         {
@@ -44,6 +56,16 @@ public sealed class UatUsersContext
             throw new ArgumentException("User map path must be provided.", nameof(userMapPath));
         }
 
+        if (string.IsNullOrWhiteSpace(allowedUsersPath))
+        {
+            throw new ArgumentException("Allowed users path must be provided.", nameof(allowedUsersPath));
+        }
+
+        if (string.IsNullOrWhiteSpace(sourceFingerprint))
+        {
+            throw new ArgumentException("Source fingerprint must be provided.", nameof(sourceFingerprint));
+        }
+
         UserSchema = userSchema.Trim();
         UserTable = userTable.Trim();
         UserIdColumn = userIdColumn.Trim();
@@ -51,12 +73,17 @@ public sealed class UatUsersContext
             ? null
             : includeColumns.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
         UserMapPath = Path.GetFullPath(userMapPath);
+        AllowedUsersCsvPath = Path.GetFullPath(allowedUsersPath);
+        SnapshotPath = string.IsNullOrWhiteSpace(snapshotPath) ? null : Path.GetFullPath(snapshotPath);
         FromLiveMetadata = fromLiveMetadata;
+        SourceFingerprint = sourceFingerprint.Trim();
     }
 
     public IUserSchemaGraph SchemaGraph { get; }
 
     public UatUsersArtifacts Artifacts { get; }
+
+    public IDbConnectionFactory ConnectionFactory { get; }
 
     public string UserSchema { get; }
 
@@ -68,11 +95,33 @@ public sealed class UatUsersContext
 
     public string UserMapPath { get; }
 
+    public string AllowedUsersCsvPath { get; }
+
+    public string? SnapshotPath { get; }
+
     public bool FromLiveMetadata { get; }
+
+    public string SourceFingerprint { get; }
 
     public IReadOnlyList<UserFkColumn> UserFkCatalog => _userFkCatalog;
 
     public IReadOnlyList<UserMappingEntry> UserMap => _userMappings;
+
+    public IReadOnlyCollection<long> AllowedUserIds => _allowedUserIds;
+
+    public IReadOnlyCollection<long> OrphanUserIds => _orphanUserIds;
+
+    public IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> ForeignKeyValueCounts => _foreignKeyValueCounts;
+
+    public bool IsAllowedUser(long userId)
+    {
+        return _allowedUserIdSet.Contains(userId);
+    }
+
+    public bool IsOrphan(long userId)
+    {
+        return _orphanUserIdSet.Contains(userId);
+    }
 
     public void SetUserFkCatalog(IReadOnlyList<UserFkColumn> catalog)
     {
@@ -82,5 +131,62 @@ public sealed class UatUsersContext
     public void SetUserMap(IReadOnlyList<UserMappingEntry> mappings)
     {
         _userMappings = mappings ?? throw new ArgumentNullException(nameof(mappings));
+    }
+
+    public void SetAllowedUserIds(IReadOnlyCollection<long> allowedUserIds)
+    {
+        if (allowedUserIds is null)
+        {
+            throw new ArgumentNullException(nameof(allowedUserIds));
+        }
+
+        _allowedUserIdSet.Clear();
+        var ordered = new SortedSet<long>(allowedUserIds);
+        foreach (var id in ordered)
+        {
+            _allowedUserIdSet.Add(id);
+        }
+
+        _allowedUserIds = ordered.ToList();
+    }
+
+    public void SetOrphanUserIds(IReadOnlyCollection<long> orphanUserIds)
+    {
+        if (orphanUserIds is null)
+        {
+            throw new ArgumentNullException(nameof(orphanUserIds));
+        }
+
+        _orphanUserIdSet.Clear();
+        var ordered = new SortedSet<long>(orphanUserIds);
+        foreach (var id in ordered)
+        {
+            _orphanUserIdSet.Add(id);
+        }
+
+        _orphanUserIds = ordered.ToList();
+    }
+
+    public void SetForeignKeyValueCounts(IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> counts)
+    {
+        if (counts is null)
+        {
+            throw new ArgumentNullException(nameof(counts));
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<UserFkColumn, IReadOnlyDictionary<long, long>>();
+        foreach (var pair in counts)
+        {
+            IReadOnlyDictionary<long, long> values = pair.Value switch
+            {
+                ImmutableDictionary<long, long> immutable => immutable,
+                ImmutableSortedDictionary<long, long> sorted => sorted,
+                _ => ImmutableSortedDictionary.CreateRange(pair.Value)
+            };
+
+            builder[pair.Key] = values;
+        }
+
+        _foreignKeyValueCounts = builder.ToImmutable();
     }
 }

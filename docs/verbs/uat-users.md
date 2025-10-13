@@ -1,13 +1,14 @@
 # uat-users Verb
 
-The `uat-users` verb operates purely on exported artifacts and metadata to build a deterministic catalog of every foreign key column that references `dbo.User(Id)`. It emits a self-contained SQL script that remaps user references according to operator-supplied mappings, keeping discovery and planning offline until the script is executed in UAT.
+The `uat-users` verb discovers every foreign-key column that references `dbo.[User](Id)`, evaluates the live data set for out-of-scope user identifiers, and emits a deterministic remediation bundle. Operators receive a catalog, an orphan mapping template, a preview of pending row counts, and a guarded apply script that can be rerun safely in UAT.
 
 ## Key Behaviors
 
-* **Offline discovery** – Defaults to scanning the model JSON produced by the exporter. Supply `--from-live` with `--uat-conn` to pull metadata directly from `sys.foreign_keys` without writing to the database.
-* **Deterministic catalog** – Columns referencing `dbo.User(Id)` are deduplicated and ordered by schema, table, and column. The catalog drives every downstream artifact.
-* **Operator-controlled mappings** – Runs generate a `00_user_map.template.csv` file. Populate `00_user_map.csv` (or use `--user-map`) with `SourceUserId,TargetUserId` pairs, then rerun to embed those mappings into the SQL script.
-* **Single apply script** – The emitted `02_apply_user_remap.sql` script creates `#UserRemap` and `#Changes` temp tables, applies updates per catalog entry, and captures an audit trail using `SYSUTCDATETIME()`.
+* **Deterministic discovery** – Metadata is sourced from the OutSystems model (or live metadata when `--from-live` is supplied) and flattened into a sorted, deduplicated catalog. Each catalog entry produces its own update block in the SQL script.
+* **Allowed-user hydration** – A local CSV export of `dbo.User` (`--user-ddl`) is parsed to determine the set of in-scope users. Any FK values outside of that set are treated as orphans.
+* **Live data analysis** – Using the supplied UAT connection, every catalogued column is scanned to collect distinct user identifiers and row counts. Results can be snapshotted to disk via `--snapshot` for repeatable dry runs.
+* **Operator-controlled mappings** – `00_user_map.template.csv` lists every orphan. Populate the corresponding `00_user_map.csv` (or provide `--user-map`) with `SourceUserId,TargetUserId` pairs. Missing mappings are surfaced in both the preview file and the generated SQL comments.
+* **Guarded apply script** – `02_apply_user_remap.sql` creates `#UserRemap` and `#Changes` temp tables, validates target existence, protects `NULL` values, and emits a summary. Updates only occur when `SourceUserId <> TargetUserId`, making the script idempotent and rerunnable.
 
 ## CLI Contract
 
@@ -15,11 +16,13 @@ The `uat-users` verb operates purely on exported artifacts and metadata to build
 uat-users
   [--model <path>]                  # Required unless --from-live is supplied
   [--from-live]                     # Query metadata from the live UAT database
-  [--uat-conn <connection string>]  # Required when --from-live is set
+  --uat-conn <connection string>    # Required; used for discovery and data analysis
+  --user-ddl <path>                 # CSV export of dbo.User(Id, ...)
+  [--snapshot <path>]               # Optional JSON cache of FK analysis
   [--user-table <schema.table>]     # Default: dbo.User
   [--user-id-column <name>]         # Default: Id
   [--include-columns <list>]        # Optional allow-list of column names
-  [--user-map <file>]               # CSV containing SourceUserId,TargetUserId mappings
+  [--user-map <file>]               # Override path for SourceUserId,TargetUserId mappings
   [--out <dir>]                     # Default: ./_artifacts
 ```
 
@@ -27,42 +30,36 @@ uat-users
 
 | File | Description |
 | --- | --- |
-| `00_user_map.template.csv` | CSV header ready for operator-supplied mappings. |
-| `01_preview.csv` | Matrix of catalog columns against supplied mappings (row counts left blank for offline mode). |
-| `02_apply_user_remap.sql` | Self-contained SQL script that updates each catalogued column. |
-| `03_catalog.txt` | Ordered list of `<schema>.<table>.<column> -- <foreign key name>` pairs discovered by the pipeline. |
+| `00_user_map.template.csv` | Generated orphan list with blank `TargetUserId` fields ready for operator input. |
+| `01_preview.csv` | Preview matrix of `<schema>,<table>,<column>,SourceUserId,TargetUserId,RowCount` for every orphan discovered. |
+| `02_apply_user_remap.sql` | Idempotent SQL script containing the mapping, sanity checks, per-column updates, and a change summary. |
+| `03_catalog.txt` | Ordered list of `<schema>.<table>.<column> -- <foreign key name>` entries comprising the catalog. |
 
 ## Workflow
 
-1. **Initial discovery**
+1. **Discover and analyze**
    ```bash
    dotnet run --project src/Osm.Cli -- uat-users \
      --model ./_artifacts/model.json \
+     --uat-conn "Server=uat;Database=UAT;Trusted_Connection=True" \
+     --user-ddl ./extracts/dbo.User.csv \
      --out ./_artifacts
    ```
-   Review `03_catalog.txt` and fill `./_artifacts/uat-users/00_user_map.csv` with the desired `SourceUserId,TargetUserId` mappings.
+   Inspect `03_catalog.txt` and the generated `00_user_map.template.csv`. Fill in the companion `00_user_map.csv` with desired `SourceUserId,TargetUserId` pairs.
 
-2. **Generate final script**
-   ```bash
-   dotnet run --project src/Osm.Cli -- uat-users \
-     --model ./_artifacts/model.json \
-     --user-map ./_artifacts/uat-users/00_user_map.csv \
-     --out ./_artifacts
-   ```
-   Execute the resulting `02_apply_user_remap.sql` in UAT to reconcile all foreign keys to in-scope users.
+2. **Review mappings and preview counts**
+   Re-run the command after editing the map (or pointing `--user-map` to an updated CSV). Check `01_preview.csv` to confirm expected row counts per orphan/column combination.
 
-3. **Live metadata mode** (optional)
-   ```bash
-   dotnet run --project src/Osm.Cli -- uat-users \
-     --from-live \
-     --uat-conn "Server=uat-sql;Database=UAT;Trusted_Connection=True" \
-     --out ./_artifacts
-   ```
-   Generates the same artifacts but discovers the catalog by querying `sys.foreign_keys` and related catalog views.
+3. **Apply in UAT**
+   Once satisfied, execute `02_apply_user_remap.sql` against UAT. The script validates target users, skips `NULL` values, records every change in `#Changes`, and prints a summary. Re-running the script produces zero updates thanks to the `<>` guard.
+
+4. **Snapshot reuse (optional)**
+   Provide `--snapshot ./cache/uat-users.snapshot.json` to persist the FK analysis. Subsequent runs will reuse the snapshot (when the fingerprint matches) without re-querying SQL Server.
 
 ## Acceptance Checklist
 
-* `03_catalog.txt` lists all parent columns referencing `dbo.User(Id)` exactly once.
-* Providing `--include-columns CreatedBy,UpdatedBy` filters the catalog to those column names.
-* The number of update blocks in `02_apply_user_remap.sql` equals the catalog length.
-* The script never issues writes during discovery; only the emitted SQL updates UAT.
+* `03_catalog.txt` lists every FK column referencing `dbo.[User](Id)` exactly once, honoring `--include-columns` filters.
+* `00_user_map.template.csv` contains all orphan `SourceUserId` values with blank targets; rerunning after filling targets embeds the mapping inline.
+* `01_preview.csv` reports accurate row counts per orphan/column and reflects the provided mappings.
+* `02_apply_user_remap.sql` includes `WHERE t.[Column] IS NOT NULL` guards, a target sanity check, and no `IDENTITY_INSERT` statements.
+* Re-running `02_apply_user_remap.sql` after a successful apply produces zero additional changes (idempotent behavior).

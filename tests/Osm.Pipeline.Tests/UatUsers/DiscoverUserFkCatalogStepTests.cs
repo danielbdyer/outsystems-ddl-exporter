@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Data.Common;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Pipeline.UatUsers;
 using Osm.Pipeline.UatUsers.Steps;
+using Osm.Pipeline.Sql;
 using Xunit;
 
 namespace Osm.Pipeline.Tests.UatUsers;
@@ -16,6 +18,7 @@ public sealed class DiscoverUserFkCatalogStepTests
     public async Task DiscoversAndDeduplicatesCatalog()
     {
         using var temp = new TemporaryDirectory();
+        var connectionFactory = new ThrowingConnectionFactory();
         var schemaGraph = new StubSchemaGraph(new[]
         {
             new ForeignKeyDefinition(
@@ -46,15 +49,20 @@ public sealed class DiscoverUserFkCatalogStepTests
         });
 
         var artifacts = new UatUsersArtifacts(temp.Path);
+        var allowedPath = Path.Combine(temp.Path, "allowed.csv");
         var context = new UatUsersContext(
             schemaGraph,
             artifacts,
+            connectionFactory,
             "dbo",
             "User",
             "Id",
             includeColumns: null,
             Path.Combine(temp.Path, "map.csv"),
-            fromLiveMetadata: false);
+            allowedPath,
+            snapshotPath: null,
+            fromLiveMetadata: false,
+            sourceFingerprint: "test/db");
 
         var step = new DiscoverUserFkCatalogStep();
         await step.ExecuteAsync(context, CancellationToken.None);
@@ -90,6 +98,7 @@ public sealed class DiscoverUserFkCatalogStepTests
     public async Task IncludeColumnsFiltersCatalog()
     {
         using var temp = new TemporaryDirectory();
+        var connectionFactory = new ThrowingConnectionFactory();
         var schemaGraph = new StubSchemaGraph(new[]
         {
             new ForeignKeyDefinition(
@@ -105,15 +114,20 @@ public sealed class DiscoverUserFkCatalogStepTests
         });
 
         var artifacts = new UatUsersArtifacts(temp.Path);
+        var allowedPath = Path.Combine(temp.Path, "allowed.csv");
         var context = new UatUsersContext(
             schemaGraph,
             artifacts,
+            connectionFactory,
             "dbo",
             "User",
             "Id",
             includeColumns: new[] { "UpdatedBy" },
             Path.Combine(temp.Path, "map.csv"),
-            fromLiveMetadata: false);
+            allowedPath,
+            snapshotPath: null,
+            fromLiveMetadata: false,
+            sourceFingerprint: "test/db");
 
         var step = new DiscoverUserFkCatalogStep();
         await step.ExecuteAsync(context, CancellationToken.None);
@@ -134,6 +148,14 @@ public sealed class DiscoverUserFkCatalogStepTests
         public Task<IReadOnlyList<ForeignKeyDefinition>> GetForeignKeysAsync(CancellationToken cancellationToken)
         {
             return Task.FromResult(_definitions);
+        }
+    }
+
+    private sealed class ThrowingConnectionFactory : IDbConnectionFactory
+    {
+        public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("Connection factory should not be used in this test.");
         }
     }
 

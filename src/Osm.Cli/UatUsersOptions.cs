@@ -17,7 +17,9 @@ public sealed class UatUsersOptions
         string userIdColumn,
         IEnumerable<string>? includeColumns,
         string outputDirectory,
-        string? userMapPath)
+        string? userMapPath,
+        string allowedUsersPath,
+        string? snapshotPath)
     {
         ModelPath = string.IsNullOrWhiteSpace(modelPath) ? null : Path.GetFullPath(modelPath.Trim());
         UatConnectionString = string.IsNullOrWhiteSpace(uatConnectionString) ? null : uatConnectionString.Trim();
@@ -30,6 +32,13 @@ public sealed class UatUsersOptions
             ? Path.GetFullPath("./_artifacts")
             : Path.GetFullPath(outputDirectory);
         UserMapPath = string.IsNullOrWhiteSpace(userMapPath) ? null : Path.GetFullPath(userMapPath.Trim());
+        if (string.IsNullOrWhiteSpace(allowedUsersPath))
+        {
+            throw new ArgumentException("Allowed users path must be provided.", nameof(allowedUsersPath));
+        }
+
+        AllowedUsersPath = Path.GetFullPath(allowedUsersPath.Trim());
+        SnapshotPath = string.IsNullOrWhiteSpace(snapshotPath) ? null : Path.GetFullPath(snapshotPath.Trim());
     }
 
     public string? ModelPath { get; }
@@ -49,4 +58,8 @@ public sealed class UatUsersOptions
     public string OutputDirectory { get; }
 
     public string? UserMapPath { get; }
+
+    public string AllowedUsersPath { get; }
+
+    public string? SnapshotPath { get; }
 }
