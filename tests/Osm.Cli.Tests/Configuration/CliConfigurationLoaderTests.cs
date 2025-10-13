@@ -132,6 +132,36 @@ public sealed class CliConfigurationLoaderTests
         Assert.Single(result.Value.SupplementalModels.Paths, Path.GetFullPath(supplementalPath));
     }
 
+    [Fact]
+    public async Task LoadAsync_ParsesModuleEntityFilters()
+    {
+        using var directory = new TempDirectory();
+        var configPath = Path.Combine(directory.Path, "appsettings.json");
+
+        var config = new
+        {
+            model = new
+            {
+                modules = new object[]
+                {
+                    new { name = "ServiceCenter", entities = new[] { "User" } },
+                    "AppCore"
+                }
+            }
+        };
+
+        await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
+
+        var loader = new CliConfigurationLoader();
+        var result = await loader.LoadAsync(configPath);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(new[] { "ServiceCenter", "AppCore" }, result.Value.ModuleFilter.Modules);
+        Assert.True(result.Value.ModuleFilter.EntityFilters.TryGetValue("ServiceCenter", out var filter));
+        Assert.False(filter.IncludeAllEntities);
+        Assert.Contains("User", filter.Entities);
+    }
+
     private static string CreateLegacyTighteningJson()
     {
         return JsonSerializer.Serialize(new

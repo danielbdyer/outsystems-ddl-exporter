@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -88,7 +89,7 @@ public class ExtractModelApplicationServiceTests
             CacheConfiguration.Empty,
             ProfilerConfiguration.Empty,
             SqlConfiguration.Empty,
-            new ModuleFilterConfiguration(modules, includeSystem, includeInactive),
+            new ModuleFilterConfiguration(modules, includeSystem, includeInactive, new Dictionary<string, ModuleEntityFilterConfiguration>(StringComparer.OrdinalIgnoreCase)),
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty);
     }

@@ -67,10 +67,21 @@ public sealed record SqlAuthenticationConfiguration(
 public sealed record ModuleFilterConfiguration(
     IReadOnlyList<string> Modules,
     bool? IncludeSystemModules,
-    bool? IncludeInactiveModules)
+    bool? IncludeInactiveModules,
+    IReadOnlyDictionary<string, ModuleEntityFilterConfiguration> EntityFilters)
 {
     public static ModuleFilterConfiguration Empty { get; }
-        = new ModuleFilterConfiguration(Array.Empty<string>(), null, null);
+        = new ModuleFilterConfiguration(
+            Array.Empty<string>(),
+            null,
+            null,
+            new Dictionary<string, ModuleEntityFilterConfiguration>(StringComparer.OrdinalIgnoreCase));
+}
+
+public sealed record ModuleEntityFilterConfiguration(bool IncludeAllEntities, IReadOnlyCollection<string> Entities)
+{
+    public static ModuleEntityFilterConfiguration IncludeAll { get; }
+        = new(IncludeAllEntities: true, Array.Empty<string>());
 }
 
 public sealed record TypeMappingConfiguration(
