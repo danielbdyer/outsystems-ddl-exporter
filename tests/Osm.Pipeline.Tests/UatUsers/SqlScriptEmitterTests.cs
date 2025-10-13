@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Data.Common;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Pipeline.Sql;
 using Osm.Pipeline.UatUsers;
 using Xunit;
 
@@ -17,15 +19,22 @@ public sealed class SqlScriptEmitterTests
         var directory = Path.Combine(Path.GetTempPath(), "uat-users-tests", "emitter");
         Directory.CreateDirectory(directory);
         var artifacts = new UatUsersArtifacts(directory);
+        var connectionFactory = new ThrowingConnectionFactory();
+        var allowedPath = Path.Combine(directory, "allowed.csv");
         var context = new UatUsersContext(
             new StubSchemaGraph(),
             artifacts,
+            connectionFactory,
             "dbo",
             "User",
             "Id",
             includeColumns: null,
             Path.Combine(directory, "map.csv"),
-            fromLiveMetadata: false);
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: allowedPath,
+            snapshotPath: null,
+            fromLiveMetadata: false,
+            sourceFingerprint: "test/db");
 
         var catalog = new List<UserFkColumn>
         {
@@ -41,12 +50,29 @@ public sealed class SqlScriptEmitterTests
         };
         context.SetUserMap(mappings);
 
+        context.SetAllowedUserIds(Array.Empty<long>());
+        context.SetOrphanUserIds(new[] { 100L, 300L });
+        context.SetForeignKeyValueCounts(new Dictionary<UserFkColumn, IReadOnlyDictionary<long, long>>
+        {
+            [catalog[0]] = new Dictionary<long, long> { { 100L, 5L } },
+            [catalog[1]] = new Dictionary<long, long> { { 300L, 2L } }
+        });
+
         var script = SqlScriptEmitter.BuildScript(context);
         var updateBlocks = CountOccurrences(script, ";WITH delta AS");
         Assert.Equal(catalog.Count, updateBlocks);
-        Assert.Contains("INSERT INTO #UserRemap (SourceUserId, TargetUserId) VALUES", script);
-        Assert.Contains("(100, 200)", script);
-        Assert.Contains("(300, 400)", script);
+        Assert.Contains("INSERT INTO #UserRemap VALUES", script);
+        Assert.Contains("(100, 200", script);
+        Assert.Contains("(300, 400", script);
+        Assert.Contains("WHERE t.[CreatedBy] IS NOT NULL", script);
+        Assert.Contains("WHERE t.[UpdatedBy] IS NOT NULL", script);
+        Assert.DoesNotContain("IDENTITY_INSERT", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("-- Inputs hash:", script);
+
+        var sanityIndex = script.IndexOf("IF EXISTS (SELECT 1 FROM #UserRemap", StringComparison.Ordinal);
+        var changesIndex = script.IndexOf("CREATE TABLE #Changes", StringComparison.Ordinal);
+        Assert.True(sanityIndex >= 0 && changesIndex >= 0 && sanityIndex < changesIndex, "Sanity check should precede #Changes creation.");
+        Assert.DoesNotContain("DROP TABLE", script, StringComparison.OrdinalIgnoreCase);
     }
 
     private static int CountOccurrences(string text, string value)
@@ -70,5 +96,13 @@ public sealed class SqlScriptEmitterTests
     {
         public Task<IReadOnlyList<ForeignKeyDefinition>> GetForeignKeysAsync(CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<ForeignKeyDefinition>>(ImmutableArray<ForeignKeyDefinition>.Empty);
+    }
+
+    private sealed class ThrowingConnectionFactory : IDbConnectionFactory
+    {
+        public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("Connection factory should not be used in this test.");
+        }
     }
 }

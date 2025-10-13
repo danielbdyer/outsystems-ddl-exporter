@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Osm.Domain.Abstractions;
 using Osm.Pipeline.ModelIngestion;
@@ -31,16 +32,18 @@ public sealed class UatUsersCommand
 
         try
         {
+            if (string.IsNullOrWhiteSpace(options.UatConnectionString))
+            {
+                _logger.LogError("--uat-conn must be supplied.");
+                return 1;
+            }
+
+            var sqlOptions = new SqlConnectionOptions(null, null, "osm-uat-users", null);
+            var connectionFactory = new SqlConnectionFactory(options.UatConnectionString!, sqlOptions);
+
             IUserSchemaGraph schemaGraph;
             if (options.FromLiveMetadata)
             {
-                if (string.IsNullOrWhiteSpace(options.UatConnectionString))
-                {
-                    _logger.LogError("--uat-conn must be supplied when --from-live is enabled.");
-                    return 1;
-                }
-
-                var connectionFactory = new SqlConnectionFactory(options.UatConnectionString!, new SqlConnectionOptions(null, null, "osm-uat-users", null));
                 schemaGraph = new LiveSchemaGraph(connectionFactory);
             }
             else
@@ -66,12 +69,17 @@ public sealed class UatUsersCommand
             var context = new UatUsersContext(
                 schemaGraph,
                 artifacts,
+                connectionFactory,
                 options.UserSchema,
                 options.UserTable,
                 options.UserIdColumn,
                 options.IncludeColumns,
                 userMapPath,
-                options.FromLiveMetadata);
+                options.AllowedUsersSqlPath,
+                options.AllowedUserIdsPath,
+                options.SnapshotPath,
+                options.FromLiveMetadata,
+                BuildSourceFingerprint(options.UatConnectionString!));
 
             var pipeline = new UatUsersPipeline();
             await pipeline.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
@@ -97,5 +105,36 @@ public sealed class UatUsersCommand
         {
             _logger.LogError("{Code}: {Message}", error.Code, error.Message);
         }
+    }
+
+    private static string BuildSourceFingerprint(string connectionString)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        var dataSource = builder.DataSource ?? string.Empty;
+        var catalog = builder.InitialCatalog ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(dataSource) && string.IsNullOrWhiteSpace(catalog))
+        {
+            return "unspecified";
+        }
+
+        if (string.IsNullOrWhiteSpace(dataSource))
+        {
+            return catalog;
+        }
+
+        if (string.IsNullOrWhiteSpace(catalog))
+        {
+            return dataSource;
+        }
+
+        return string.Create(
+            dataSource.Length + catalog.Length + 1,
+            (dataSource, catalog),
+            static (span, state) =>
+            {
+                state.dataSource.AsSpan().CopyTo(span);
+                span[state.dataSource.Length] = '/';
+                state.catalog.AsSpan().CopyTo(span[(state.dataSource.Length + 1)..]);
+            });
     }
 }

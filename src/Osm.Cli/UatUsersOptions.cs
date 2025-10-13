@@ -17,7 +17,10 @@ public sealed class UatUsersOptions
         string userIdColumn,
         IEnumerable<string>? includeColumns,
         string outputDirectory,
-        string? userMapPath)
+        string? userMapPath,
+        string? allowedUsersSqlPath,
+        string? allowedUserIdsPath,
+        string? snapshotPath)
     {
         ModelPath = string.IsNullOrWhiteSpace(modelPath) ? null : Path.GetFullPath(modelPath.Trim());
         UatConnectionString = string.IsNullOrWhiteSpace(uatConnectionString) ? null : uatConnectionString.Trim();
@@ -30,6 +33,19 @@ public sealed class UatUsersOptions
             ? Path.GetFullPath("./_artifacts")
             : Path.GetFullPath(outputDirectory);
         UserMapPath = string.IsNullOrWhiteSpace(userMapPath) ? null : Path.GetFullPath(userMapPath.Trim());
+        AllowedUsersSqlPath = string.IsNullOrWhiteSpace(allowedUsersSqlPath)
+            ? null
+            : Path.GetFullPath(allowedUsersSqlPath.Trim());
+        AllowedUserIdsPath = string.IsNullOrWhiteSpace(allowedUserIdsPath)
+            ? null
+            : Path.GetFullPath(allowedUserIdsPath.Trim());
+
+        if (AllowedUsersSqlPath is null && AllowedUserIdsPath is null)
+        {
+            throw new ArgumentException("Either --user-ddl or --user-ids must be provided.");
+        }
+
+        SnapshotPath = string.IsNullOrWhiteSpace(snapshotPath) ? null : Path.GetFullPath(snapshotPath.Trim());
     }
 
     public string? ModelPath { get; }
@@ -49,4 +65,10 @@ public sealed class UatUsersOptions
     public string OutputDirectory { get; }
 
     public string? UserMapPath { get; }
+
+    public string? AllowedUsersSqlPath { get; }
+
+    public string? AllowedUserIdsPath { get; }
+
+    public string? SnapshotPath { get; }
 }

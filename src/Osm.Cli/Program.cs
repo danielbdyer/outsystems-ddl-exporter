@@ -125,7 +125,8 @@ Command CreateUatUsersCommand()
     var modelOption = new Option<string?>("--model", "Path to the UAT model JSON file.");
     var fromLiveOption = new Option<bool>("--from-live", "Discover catalog from live metadata.");
     var uatConnectionOption = new Option<string?>("--uat-conn", "ADO.NET connection string for the UAT database (required with --from-live).");
-    var userTableOption = new Option<string?>("--user-table", () => "dbo.User", "Fully qualified user table name (schema.table).");
+    var userSchemaOption = new Option<string?>("--user-schema", () => "dbo", "Schema that owns the user table.");
+    var userTableOption = new Option<string?>("--user-table", () => "User", "User table name.");
     var userIdOption = new Option<string?>("--user-id-column", () => "Id", "Primary key column for the user table.");
     var includeColumnsOption = new Option<string[]>(
         name: "--include-columns",
@@ -139,17 +140,24 @@ Command CreateUatUsersCommand()
     };
     var outputOption = new Option<string?>("--out", () => "./_artifacts", "Root directory for artifacts.");
     var userMapOption = new Option<string?>("--user-map", "Path to a CSV containing SourceUserId,TargetUserId mappings.");
+    var userDdlOption = new Option<string?>("--user-ddl", "SQL or CSV export of dbo.User containing allowed user identifiers.");
+    var userIdsOption = new Option<string?>("--user-ids", "Optional CSV or text file containing one allowed user identifier per row.");
+    var snapshotOption = new Option<string?>("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
 
     var command = new Command("uat-users", "Emit user remapping artifacts for UAT.")
     {
         modelOption,
         fromLiveOption,
         uatConnectionOption,
+        userSchemaOption,
         userTableOption,
         userIdOption,
         includeColumnsOption,
         outputOption,
-        userMapOption
+        userMapOption,
+        userDdlOption,
+        userIdsOption,
+        snapshotOption
     };
 
     command.SetHandler(async context =>
@@ -160,18 +168,36 @@ Command CreateUatUsersCommand()
         var handler = services.GetRequiredService<UatUsersCommand>();
 
         var parseResult = context.ParseResult;
-        var tableIdentifier = parseResult.GetValueForOption(userTableOption) ?? "dbo.User";
-        var (userSchema, userTable) = SplitTableIdentifier(tableIdentifier);
+        var userSchema = parseResult.GetValueForOption(userSchemaOption) ?? "dbo";
+        var tableValue = parseResult.GetValueForOption(userTableOption) ?? "User";
+        if (tableValue.Contains('.', StringComparison.Ordinal))
+        {
+            var parts = SplitTableIdentifier(tableValue);
+            userSchema = parts.Schema;
+            tableValue = parts.Table;
+        }
+        var allowedDdl = parseResult.GetValueForOption(userDdlOption);
+        var allowedIds = parseResult.GetValueForOption(userIdsOption);
+        if (string.IsNullOrWhiteSpace(allowedDdl) && string.IsNullOrWhiteSpace(allowedIds))
+        {
+            context.ExitCode = 1;
+            context.Console.WriteLine("Either --user-ddl or --user-ids must be supplied.");
+            return;
+        }
+
         var options = new UatUsersOptions(
             parseResult.GetValueForOption(modelOption),
             parseResult.GetValueForOption(uatConnectionOption),
             parseResult.GetValueForOption(fromLiveOption),
             userSchema,
-            userTable,
+            tableValue,
             parseResult.GetValueForOption(userIdOption) ?? "Id",
             parseResult.GetValueForOption(includeColumnsOption),
             parseResult.GetValueForOption(outputOption) ?? "./_artifacts",
-            parseResult.GetValueForOption(userMapOption));
+            parseResult.GetValueForOption(userMapOption),
+            allowedDdl,
+            allowedIds,
+            parseResult.GetValueForOption(snapshotOption));
 
         if (!options.FromLiveMetadata && string.IsNullOrWhiteSpace(options.ModelPath))
         {
@@ -180,10 +206,10 @@ Command CreateUatUsersCommand()
             return;
         }
 
-        if (options.FromLiveMetadata && string.IsNullOrWhiteSpace(options.UatConnectionString))
+        if (string.IsNullOrWhiteSpace(options.UatConnectionString))
         {
             context.ExitCode = 1;
-            context.Console.WriteLine("--uat-conn is required when --from-live is specified.");
+            context.Console.WriteLine("--uat-conn is required.");
             return;
         }
 
