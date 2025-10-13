@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Osm.Pipeline.RemapUsers;
 
@@ -28,6 +31,9 @@ public sealed record RemapUsersContext
         IBulkLoader bulkLoader,
         IRemapUsersTelemetry telemetry,
         IRemapUsersArtifactWriter artifactWriter,
+        RemapUsersLogLevel logLevel,
+        bool includePii,
+        bool rebuildMap,
         RemapUsersState? state = null)
     {
         if (string.IsNullOrWhiteSpace(sourceEnvironment))
@@ -73,7 +79,7 @@ public sealed record RemapUsersContext
 
         SourceEnvironment = sourceEnvironment.Trim();
         UatConnectionString = uatConnectionString.Trim();
-        SnapshotPath = snapshotPath.Trim();
+        SnapshotPath = Path.GetFullPath(snapshotPath.Trim());
         MatchingRules = RemapUsersMatchRuleExtensions.ParseMany(matchingRules ?? throw new ArgumentNullException(nameof(matchingRules)));
         if (MatchingRules.Count == 0)
         {
@@ -90,10 +96,15 @@ public sealed record RemapUsersContext
         FallbackUserId = fallbackUserId;
         Policy = policy;
         DryRun = dryRun;
-        ArtifactDirectory = string.IsNullOrWhiteSpace(artifactDirectory) ? "./_artifacts/remap-users" : artifactDirectory;
+        ArtifactDirectory = string.IsNullOrWhiteSpace(artifactDirectory)
+            ? Path.GetFullPath("./_artifacts/remap-users")
+            : Path.GetFullPath(artifactDirectory);
         BatchSize = batchSize;
         CommandTimeout = TimeSpan.FromSeconds(commandTimeoutSeconds);
         Parallelism = parallelism;
+        LogLevel = logLevel;
+        IncludePii = includePii;
+        RebuildMap = rebuildMap;
         var trimmedUserTable = userTable.Trim();
         var schemaSeparatorIndex = trimmedUserTable.IndexOf('.');
         if (schemaSeparatorIndex > 0)
@@ -152,6 +163,12 @@ public sealed record RemapUsersContext
 
     public IRemapUsersArtifactWriter ArtifactWriter { get; }
 
+    public RemapUsersLogLevel LogLevel { get; }
+
+    public bool IncludePii { get; }
+
+    public bool RebuildMap { get; }
+
     public RemapUsersState State { get; }
 
     public IReadOnlyDictionary<string, object?> BuildCommonParameters()
@@ -168,5 +185,22 @@ public sealed record RemapUsersContext
     public string FormatStepMessage(string messageTemplate, params object[] args)
     {
         return string.Format(CultureInfo.InvariantCulture, messageTemplate, args);
+    }
+
+    public string RedactIdentifier(string? value)
+    {
+        if (IncludePii)
+        {
+            return value ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var hash = SHA256.HashData(bytes);
+        return "hash:" + Convert.ToHexString(hash);
     }
 }
