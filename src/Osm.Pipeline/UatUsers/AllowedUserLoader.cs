@@ -10,7 +10,7 @@ namespace Osm.Pipeline.UatUsers;
 internal static class AllowedUserLoader
 {
     private static readonly Regex InsertStatementRegex = new(
-        @"INSERT\s+INTO\s+(?:\[?(?<schema>[^\]\s]+)\]?\.)?\[?(?<table>[^\]\s]+)\]?\s*\((?<columns>[^)]+)\)\s+VALUES\s*(?<values>[^;]+);",
+        @"INSERT\s+INTO\s+(?:\[?(?<schema>[^\]\s]+)\]?\.)?\[?(?<table>[^\]\s]+)\]?\s*\((?<columns>[^)]+)\)\s+VALUES\s*(?<values>(?:N?'(?:''|[^'])*'|[^;'])+);",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
     public static IReadOnlyCollection<long> Load(string? ddlPath, string? userIdsPath, string userIdColumn)
