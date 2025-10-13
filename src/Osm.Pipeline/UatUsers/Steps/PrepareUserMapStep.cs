@@ -6,11 +6,20 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Osm.Pipeline.UatUsers.Steps;
 
 public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
 {
+    private readonly ILogger<PrepareUserMapStep> _logger;
+
+    public PrepareUserMapStep(ILogger<PrepareUserMapStep>? logger = null)
+    {
+        _logger = logger ?? NullLogger<PrepareUserMapStep>.Instance;
+    }
+
     public string Name => "prepare-user-map";
 
     public Task ExecuteAsync(UatUsersContext context, CancellationToken cancellationToken)
@@ -20,20 +29,38 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
             throw new ArgumentNullException(nameof(context));
         }
 
+        _logger.LogInformation(
+            "Preparing user map artifacts. OrphanCount={OrphanCount}.",
+            context.OrphanUserIds.Count);
+
         var templateRows = BuildTemplateRows(context.OrphanUserIds);
         context.Artifacts.WriteCsv("00_user_map.template.csv", templateRows);
+        _logger.LogInformation(
+            "User map template written to {Path}.",
+            Path.Combine(context.Artifacts.Root, "uat-users", "00_user_map.template.csv"));
 
         var mapPath = context.UserMapPath;
         var existing = File.Exists(mapPath) ? UserMapLoader.Load(mapPath) : Array.Empty<UserMappingEntry>();
+        _logger.LogInformation(
+            "Loaded {ExistingCount} existing mapping rows from {MapPath}.",
+            existing.Count,
+            mapPath);
         var merged = MergeMappings(context.OrphanUserIds, existing);
         context.SetUserMap(merged);
 
         WriteUserMap(mapPath, merged);
+        _logger.LogInformation(
+            "Primary user map written to {MapPath} with {EntryCount} entries.",
+            mapPath,
+            merged.Count);
 
         var defaultPath = context.Artifacts.GetDefaultUserMapPath();
         if (!string.Equals(defaultPath, mapPath, StringComparison.OrdinalIgnoreCase))
         {
             WriteUserMap(defaultPath, merged);
+            _logger.LogInformation(
+                "Synchronized user map copy written to {DefaultPath}.",
+                defaultPath);
         }
 
         return Task.CompletedTask;

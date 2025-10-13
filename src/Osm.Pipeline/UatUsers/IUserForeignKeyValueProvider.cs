@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.UatUsers;
@@ -19,6 +22,13 @@ public interface IUserForeignKeyValueProvider
 
 public sealed class SqlUserForeignKeyValueProvider : IUserForeignKeyValueProvider
 {
+    private readonly ILogger<SqlUserForeignKeyValueProvider> _logger;
+
+    public SqlUserForeignKeyValueProvider(ILogger<SqlUserForeignKeyValueProvider>? logger = null)
+    {
+        _logger = logger ?? NullLogger<SqlUserForeignKeyValueProvider>.Instance;
+    }
+
     public async Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>> CollectAsync(
         IReadOnlyList<UserFkColumn> catalog,
         IDbConnectionFactory connectionFactory,
@@ -36,18 +46,27 @@ public sealed class SqlUserForeignKeyValueProvider : IUserForeignKeyValueProvide
 
         if (catalog.Count == 0)
         {
+            _logger.LogInformation("No catalog entries provided for foreign key analysis.");
             return ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>.Empty;
         }
 
+        _logger.LogInformation("Opening SQL connection to collect foreign key statistics for {ColumnCount} columns.", catalog.Count);
         await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var results = ImmutableDictionary.CreateBuilder<UserFkColumn, IReadOnlyDictionary<long, long>>();
 
         foreach (var column in catalog)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            _logger.LogInformation(
+                "Scanning column {Schema}.{Table}.{Column} for user references.",
+                column.SchemaName,
+                column.TableName,
+                column.ColumnName);
             using var command = connection.CreateCommand();
             command.CommandText = BuildCommandText(column);
             command.CommandType = CommandType.Text;
+
+            _logger.LogDebug("Executing SQL for {Schema}.{Table}.{Column}: {Sql}", column.SchemaName, column.TableName, column.ColumnName, command.CommandText);
 
             using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             var values = new SortedDictionary<long, long>();
@@ -63,9 +82,19 @@ public sealed class SqlUserForeignKeyValueProvider : IUserForeignKeyValueProvide
                 values[userId] = rowCount;
             }
 
-            results[column] = values.Count == 0
+            var distinctCount = values.Count;
+            var totalRowCount = values.Sum(static pair => pair.Value);
+            results[column] = distinctCount == 0
                 ? ImmutableDictionary<long, long>.Empty
                 : values.ToImmutableDictionary(static pair => pair.Key, static pair => pair.Value);
+
+            _logger.LogInformation(
+                "Column {Schema}.{Table}.{Column} produced {DistinctCount} distinct user IDs across {RowCount} rows.",
+                column.SchemaName,
+                column.TableName,
+                column.ColumnName,
+                distinctCount,
+                totalRowCount);
         }
 
         return results.ToImmutable();
