@@ -1,14 +1,24 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Osm.Pipeline.UatUsers.Steps;
 
 public sealed class EmitArtifactsStep : IPipelineStep<UatUsersContext>
 {
+    private readonly ILogger<EmitArtifactsStep> _logger;
+
+    public EmitArtifactsStep(ILogger<EmitArtifactsStep>? logger = null)
+    {
+        _logger = logger ?? NullLogger<EmitArtifactsStep>.Instance;
+    }
+
     public string Name => "emit-artifacts";
 
     public Task ExecuteAsync(UatUsersContext context, CancellationToken cancellationToken)
@@ -18,11 +28,19 @@ public sealed class EmitArtifactsStep : IPipelineStep<UatUsersContext>
             throw new ArgumentNullException(nameof(context));
         }
 
-        var previewRows = BuildPreviewRows(context);
+        var previewRows = BuildPreviewRows(context).ToList();
         context.Artifacts.WriteCsv("01_preview.csv", previewRows);
+        _logger.LogInformation(
+            "Preview artifact written to {Path} with {DataRowCount} data rows.",
+            Path.Combine(context.Artifacts.Root, "uat-users", "01_preview.csv"),
+            Math.Max(previewRows.Count - 1, 0));
 
         var script = SqlScriptEmitter.BuildScript(context);
         context.Artifacts.WriteText("02_apply_user_remap.sql", script);
+        _logger.LogInformation(
+            "Apply script emitted to {Path} (Length={Length} characters).",
+            Path.Combine(context.Artifacts.Root, "uat-users", "02_apply_user_remap.sql"),
+            script.Length);
         return Task.CompletedTask;
     }
 

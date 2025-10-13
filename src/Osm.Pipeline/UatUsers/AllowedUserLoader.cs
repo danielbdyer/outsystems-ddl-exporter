@@ -7,13 +7,18 @@ using System.Text.RegularExpressions;
 
 namespace Osm.Pipeline.UatUsers;
 
+internal sealed record AllowedUserLoadResult(
+    IReadOnlyCollection<long> UserIds,
+    int SqlRowCount,
+    int ListRowCount);
+
 internal static class AllowedUserLoader
 {
     private static readonly Regex InsertStatementRegex = new(
         @"INSERT\s+INTO\s+(?:\[?(?<schema>[^\]\s]+)\]?\.)?\[?(?<table>[^\]\s]+)\]?\s*\((?<columns>[^)]+)\)\s+VALUES\s*(?<values>(?:N?'(?:''|[^'])*'|[^;'])+);",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
-    public static IReadOnlyCollection<long> Load(string? ddlPath, string? userIdsPath, string userIdColumn)
+    public static AllowedUserLoadResult Load(string? ddlPath, string? userIdsPath, string userIdColumn)
     {
         if (string.IsNullOrWhiteSpace(userIdColumn))
         {
@@ -26,11 +31,14 @@ internal static class AllowedUserLoader
         }
 
         var results = new SortedSet<long>();
+        var sqlRowCount = 0;
+        var listRowCount = 0;
 
         if (!string.IsNullOrWhiteSpace(ddlPath))
         {
             foreach (var id in LoadFromSql(ddlPath!, userIdColumn))
             {
+                sqlRowCount++;
                 results.Add(id);
             }
         }
@@ -39,11 +47,12 @@ internal static class AllowedUserLoader
         {
             foreach (var id in LoadFromList(userIdsPath!, userIdColumn))
             {
+                listRowCount++;
                 results.Add(id);
             }
         }
 
-        return results;
+        return new AllowedUserLoadResult(results, sqlRowCount, listRowCount);
     }
 
     private static IEnumerable<long> LoadFromSql(string path, string userIdColumn)

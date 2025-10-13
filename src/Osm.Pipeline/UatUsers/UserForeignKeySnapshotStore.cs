@@ -3,6 +3,8 @@ using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Osm.Pipeline.UatUsers;
 
@@ -21,6 +23,13 @@ internal sealed class FileUserForeignKeySnapshotStore : IUserForeignKeySnapshotS
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
+    private readonly ILogger<FileUserForeignKeySnapshotStore> _logger;
+
+    public FileUserForeignKeySnapshotStore(ILogger<FileUserForeignKeySnapshotStore>? logger = null)
+    {
+        _logger = logger ?? NullLogger<FileUserForeignKeySnapshotStore>.Instance;
+    }
+
     public async Task<UserForeignKeySnapshot?> LoadAsync(string path, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -30,11 +39,25 @@ internal sealed class FileUserForeignKeySnapshotStore : IUserForeignKeySnapshotS
 
         if (!File.Exists(path))
         {
+            _logger.LogInformation("Snapshot not found at {Path}; live analysis will be performed.", path);
             return null;
         }
 
         await using var stream = File.OpenRead(path);
         var snapshot = await JsonSerializer.DeserializeAsync<UserForeignKeySnapshot>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            _logger.LogWarning("Snapshot file {Path} could not be deserialized.", path);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Loaded snapshot from {Path} captured at {CapturedAt:u} with {ColumnCount} columns.",
+                path,
+                snapshot.CapturedAt,
+                snapshot.Columns?.Count ?? 0);
+        }
+
         return snapshot;
     }
 
@@ -58,5 +81,10 @@ internal sealed class FileUserForeignKeySnapshotStore : IUserForeignKeySnapshotS
 
         await using var stream = File.Open(path, FileMode.Create, FileAccess.Write, FileShare.None);
         await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation(
+            "Snapshot persisted to {Path} (AllowedUserCount={AllowedCount}, OrphanCount={OrphanCount}).",
+            path,
+            snapshot.AllowedUserIds?.Count ?? 0,
+            snapshot.OrphanUserIds?.Count ?? 0);
     }
 }

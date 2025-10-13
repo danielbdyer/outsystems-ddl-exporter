@@ -1,14 +1,24 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Osm.Pipeline.UatUsers.Steps;
 
 public sealed class DiscoverUserFkCatalogStep : IPipelineStep<UatUsersContext>
 {
+    private readonly ILogger<DiscoverUserFkCatalogStep> _logger;
+
+    public DiscoverUserFkCatalogStep(ILogger<DiscoverUserFkCatalogStep>? logger = null)
+    {
+        _logger = logger ?? NullLogger<DiscoverUserFkCatalogStep>.Instance;
+    }
+
     public string Name => "discover-user-fk-catalog";
 
     public async Task ExecuteAsync(UatUsersContext ctx, CancellationToken cancellationToken)
@@ -18,24 +28,30 @@ public sealed class DiscoverUserFkCatalogStep : IPipelineStep<UatUsersContext>
             throw new ArgumentNullException(nameof(ctx));
         }
 
-        var includeSet = ctx.IncludeColumns;
-        var userSchema = ctx.UserSchema;
-        var userTable = ctx.UserTable;
-        var userIdColumn = ctx.UserIdColumn;
+        _logger.LogInformation(
+            "Discovering foreign keys referencing {Schema}.{Table}.{Column}.",
+            ctx.UserSchema,
+            ctx.UserTable,
+            ctx.UserIdColumn);
 
+        var includeSet = ctx.IncludeColumns;
         var foreignKeys = await ctx.SchemaGraph.GetForeignKeysAsync(cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("Schema graph returned {ForeignKeyCount} foreign keys.", foreignKeys.Count);
+
         var matches = foreignKeys
             .Where(fk =>
-                fk.Referenced.Schema.Equals(userSchema, StringComparison.OrdinalIgnoreCase) &&
-                fk.Referenced.Table.Equals(userTable, StringComparison.OrdinalIgnoreCase))
+                fk.Referenced.Schema.Equals(ctx.UserSchema, StringComparison.OrdinalIgnoreCase) &&
+                fk.Referenced.Table.Equals(ctx.UserTable, StringComparison.OrdinalIgnoreCase))
             .SelectMany(fk => fk.Columns
-                .Where(column => column.ReferencedColumn.Equals(userIdColumn, StringComparison.OrdinalIgnoreCase))
+                .Where(column => column.ReferencedColumn.Equals(ctx.UserIdColumn, StringComparison.OrdinalIgnoreCase))
                 .Select(column => new UserFkColumn(
                     fk.Parent.Schema,
                     fk.Parent.Table,
                     column.ParentColumn,
                     fk.Name)))
             .ToList();
+
+        _logger.LogInformation("Matched {MatchCount} candidate foreign key columns.", matches.Count);
 
         var deduplicated = matches
             .GroupBy(column => (column.SchemaName, column.TableName, column.ColumnName), StringTupleComparer.Instance)
@@ -46,9 +62,16 @@ public sealed class DiscoverUserFkCatalogStep : IPipelineStep<UatUsersContext>
 
         if (includeSet is not null && includeSet.Count > 0)
         {
+            var beforeFilter = deduplicated.Count;
             deduplicated = deduplicated
                 .Where(column => includeSet.Contains(column.ColumnName))
                 .ToList();
+
+            _logger.LogInformation(
+                "Filtered catalog from {Before} to {After} columns using include list ({IncludeCount} entries).",
+                beforeFilter,
+                deduplicated.Count,
+                includeSet.Count);
         }
 
         var catalog = deduplicated
@@ -58,6 +81,11 @@ public sealed class DiscoverUserFkCatalogStep : IPipelineStep<UatUsersContext>
             .ToList();
 
         ctx.SetUserFkCatalog(catalog);
+
+        _logger.LogInformation(
+            "Catalog finalized with {CatalogCount} columns across {TableCount} tables.",
+            catalog.Count,
+            catalog.Select(column => (column.SchemaName, column.TableName)).Distinct().Count());
 
         var artifactLines = catalog
             .Select(column => string.Format(
@@ -69,6 +97,9 @@ public sealed class DiscoverUserFkCatalogStep : IPipelineStep<UatUsersContext>
                 column.ForeignKeyName));
 
         ctx.Artifacts.WriteLines("03_catalog.txt", artifactLines);
+        _logger.LogInformation(
+            "Catalog artifact written to {Path}.",
+            Path.Combine(ctx.Artifacts.Root, "uat-users", "03_catalog.txt"));
     }
 
     private sealed class StringTupleComparer : IEqualityComparer<(string Schema, string Table, string Column)>

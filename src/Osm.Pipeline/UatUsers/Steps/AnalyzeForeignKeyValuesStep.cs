@@ -4,6 +4,8 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Osm.Pipeline.UatUsers.Steps;
 
@@ -11,16 +13,24 @@ public sealed class AnalyzeForeignKeyValuesStep : IPipelineStep<UatUsersContext>
 {
     private readonly IUserForeignKeyValueProvider _valueProvider;
     private readonly IUserForeignKeySnapshotStore _snapshotStore;
+    private readonly ILogger<AnalyzeForeignKeyValuesStep> _logger;
 
-    public AnalyzeForeignKeyValuesStep()
-        : this(new SqlUserForeignKeyValueProvider(), new FileUserForeignKeySnapshotStore())
+    public AnalyzeForeignKeyValuesStep(ILogger<AnalyzeForeignKeyValuesStep>? logger = null)
+        : this(
+            new SqlUserForeignKeyValueProvider(),
+            new FileUserForeignKeySnapshotStore(),
+            logger)
     {
     }
 
-    public AnalyzeForeignKeyValuesStep(IUserForeignKeyValueProvider valueProvider, IUserForeignKeySnapshotStore snapshotStore)
+    public AnalyzeForeignKeyValuesStep(
+        IUserForeignKeyValueProvider valueProvider,
+        IUserForeignKeySnapshotStore snapshotStore,
+        ILogger<AnalyzeForeignKeyValuesStep>? logger = null)
     {
         _valueProvider = valueProvider ?? throw new ArgumentNullException(nameof(valueProvider));
         _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
+        _logger = logger ?? NullLogger<AnalyzeForeignKeyValuesStep>.Instance;
     }
 
     public string Name => "analyze-foreign-key-values";
@@ -32,8 +42,13 @@ public sealed class AnalyzeForeignKeyValuesStep : IPipelineStep<UatUsersContext>
             throw new ArgumentNullException(nameof(context));
         }
 
+        _logger.LogInformation(
+            "Analyzing {ColumnCount} foreign key columns for user references.",
+            context.UserFkCatalog.Count);
+
         if (context.UserFkCatalog.Count == 0)
         {
+            _logger.LogInformation("No foreign key columns discovered; skipping analysis.");
             context.SetForeignKeyValueCounts(ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>.Empty);
             context.SetOrphanUserIds(Array.Empty<long>());
             return;
@@ -44,30 +59,66 @@ public sealed class AnalyzeForeignKeyValuesStep : IPipelineStep<UatUsersContext>
         UserForeignKeySnapshot? snapshot = null;
         if (!string.IsNullOrWhiteSpace(context.SnapshotPath))
         {
+            _logger.LogInformation("Attempting to load snapshot from {SnapshotPath}.", context.SnapshotPath);
             snapshot = await _snapshotStore.LoadAsync(context.SnapshotPath!, cancellationToken).ConfigureAwait(false);
-            if (snapshot is not null && !string.Equals(snapshot.SourceFingerprint, context.SourceFingerprint, StringComparison.OrdinalIgnoreCase))
+            if (snapshot is null)
             {
+                _logger.LogInformation("Snapshot not found or could not be deserialized.");
+            }
+            else if (!string.Equals(snapshot.SourceFingerprint, context.SourceFingerprint, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "Snapshot fingerprint {SnapshotFingerprint} does not match source {SourceFingerprint}; ignoring snapshot.",
+                    snapshot.SourceFingerprint,
+                    context.SourceFingerprint);
                 snapshot = null;
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Snapshot captured at {CapturedAt:u} is compatible and will be reused.",
+                    snapshot.CapturedAt);
             }
         }
 
         if (snapshot is not null)
         {
             counts = BuildCountsFromSnapshot(snapshot, context.UserFkCatalog);
+            _logger.LogInformation(
+                "Loaded foreign key value counts from snapshot for {ColumnCount} columns.",
+                counts.Count);
         }
         else
         {
-            counts = await _valueProvider.CollectAsync(context.UserFkCatalog, context.ConnectionFactory, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Collecting foreign key value counts from the source database.");
+            counts = await _valueProvider
+                .CollectAsync(context.UserFkCatalog, context.ConnectionFactory, cancellationToken)
+                .ConfigureAwait(false);
+
             if (!string.IsNullOrWhiteSpace(context.SnapshotPath))
             {
                 var snapshotToPersist = BuildSnapshot(context, counts);
                 await _snapshotStore.SaveAsync(context.SnapshotPath!, snapshotToPersist, cancellationToken).ConfigureAwait(false);
+                _logger.LogInformation(
+                    "Persisted snapshot with {ColumnCount} columns and {AllowedCount} allowed IDs to {SnapshotPath}.",
+                    snapshotToPersist.Columns.Count,
+                    snapshotToPersist.AllowedUserIds.Count,
+                    context.SnapshotPath);
             }
         }
 
         context.SetForeignKeyValueCounts(counts);
         var orphans = ComputeOrphans(context, counts);
         context.SetOrphanUserIds(orphans);
+
+        var totalDistinctValues = counts.Sum(pair => pair.Value.Count);
+        var totalRowCount = counts.Sum(pair => pair.Value.Sum(value => value.Value));
+
+        _logger.LogInformation(
+            "Aggregated {DistinctValueCount} distinct user IDs across {RowCount} referencing rows; identified {OrphanCount} orphan IDs.",
+            totalDistinctValues,
+            totalRowCount,
+            orphans.Count);
     }
 
     private static IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> BuildCountsFromSnapshot(
