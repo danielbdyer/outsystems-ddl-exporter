@@ -26,7 +26,7 @@ public sealed class PrepareUserMapStepTests
         var mapPath = context.UserMapPath;
         File.WriteAllLines(mapPath, new[]
         {
-            "SourceUserId,TargetUserId,Note",
+            "SourceUserId,TargetUserId,Rationale",
             "100,300,existing",
             "999,123,should be removed"
         });
@@ -40,20 +40,20 @@ public sealed class PrepareUserMapStepTests
             {
                 Assert.Equal(100L, entry.SourceUserId);
                 Assert.Equal<long?>(300L, entry.TargetUserId);
-                Assert.Equal("existing", entry.Note);
+                Assert.Equal("existing", entry.Rationale);
             },
             entry =>
             {
                 Assert.Equal(200L, entry.SourceUserId);
                 Assert.Null(entry.TargetUserId);
-                Assert.Null(entry.Note);
+                Assert.Null(entry.Rationale);
             });
 
         var templatePath = Path.Combine(temp.Path, "uat-users", "00_user_map.template.csv");
         var template = File.ReadAllLines(templatePath);
         Assert.Equal(new[]
         {
-            "SourceUserId,TargetUserId,Note",
+            "SourceUserId,TargetUserId,Rationale",
             "100,,",
             "200,,"
         }, template);
@@ -61,7 +61,7 @@ public sealed class PrepareUserMapStepTests
         var mapLines = File.ReadAllLines(mapPath);
         Assert.Equal(new[]
         {
-            "SourceUserId,TargetUserId,Note",
+            "SourceUserId,TargetUserId,Rationale",
             "100,300,existing",
             "200,,"
         }, mapLines);
@@ -83,7 +83,8 @@ public sealed class PrepareUserMapStepTests
             "Id",
             includeColumns: null,
             Path.Combine(root, "map.csv"),
-            allowedPath,
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: allowedPath,
             snapshotPath: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");

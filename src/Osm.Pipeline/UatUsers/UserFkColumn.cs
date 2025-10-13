@@ -6,4 +6,4 @@ public readonly record struct UserFkColumn(
     string ColumnName,
     string ForeignKeyName);
 
-public readonly record struct UserMappingEntry(long SourceUserId, long? TargetUserId, string? Note);
+public readonly record struct UserMappingEntry(long SourceUserId, long? TargetUserId, string? Rationale);

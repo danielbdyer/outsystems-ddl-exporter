@@ -15,7 +15,10 @@ public sealed class LoadAllowedUsersStep : IPipelineStep<UatUsersContext>
             throw new ArgumentNullException(nameof(context));
         }
 
-        var allowed = AllowedUserLoader.Load(context.AllowedUsersCsvPath, context.UserIdColumn);
+        var allowed = AllowedUserLoader.Load(
+            context.AllowedUsersSqlPath,
+            context.AllowedUserIdsPath,
+            context.UserIdColumn);
         context.SetAllowedUserIds(allowed);
         return Task.CompletedTask;
     }

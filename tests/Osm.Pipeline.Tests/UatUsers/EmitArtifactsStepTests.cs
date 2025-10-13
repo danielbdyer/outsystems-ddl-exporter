@@ -28,7 +28,8 @@ public sealed class EmitArtifactsStepTests
             "Id",
             includeColumns: null,
             Path.Combine(temp.Path, "map.csv"),
-            Path.Combine(temp.Path, "users.csv"),
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: Path.Combine(temp.Path, "users.csv"),
             snapshotPath: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
@@ -54,8 +55,8 @@ public sealed class EmitArtifactsStepTests
         var lines = File.ReadAllLines(previewPath);
         Assert.Equal(new[]
         {
-            "Schema,Table,Column,SourceUserId,TargetUserId,RowCount",
-            "dbo,Orders,CreatedBy,100,200,42"
+            "TableName,ColumnName,OldUserId,NewUserId,RowCount",
+            "dbo.Orders,CreatedBy,100,200,42"
         }, lines);
     }
 

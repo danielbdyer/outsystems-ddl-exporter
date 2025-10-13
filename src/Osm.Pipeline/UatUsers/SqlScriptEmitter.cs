@@ -19,8 +19,9 @@ public static class SqlScriptEmitter
         var builder = new StringBuilder();
         AppendHeader(builder, context);
         builder.AppendLine("SET NOCOUNT ON;");
-        builder.AppendLine("IF OBJECT_ID('tempdb..#UserRemap', 'U') IS NOT NULL DROP TABLE #UserRemap;");
-        builder.AppendLine("CREATE TABLE #UserRemap (SourceUserId INT NOT NULL, TargetUserId INT NOT NULL, Note nvarchar(2000) NULL);");
+        builder.AppendLine();
+        builder.AppendLine("CREATE TABLE #UserRemap (SourceUserId INT PRIMARY KEY, TargetUserId INT NOT NULL, Rationale NVARCHAR(200) NULL);");
+        builder.AppendLine();
 
         var applicableMappings = context.UserMap
             .Where(entry => context.IsOrphan(entry.SourceUserId) && entry.TargetUserId.HasValue)
@@ -29,7 +30,7 @@ public static class SqlScriptEmitter
 
         if (applicableMappings.Count > 0)
         {
-            builder.AppendLine("INSERT INTO #UserRemap (SourceUserId, TargetUserId, Note) VALUES");
+            builder.AppendLine("INSERT INTO #UserRemap VALUES");
             for (var i = 0; i < applicableMappings.Count; i++)
             {
                 var entry = applicableMappings[i];
@@ -39,7 +40,7 @@ public static class SqlScriptEmitter
                     .Append(", ")
                     .Append(entry.TargetUserId!.Value.ToString(CultureInfo.InvariantCulture))
                     .Append(", ")
-                    .Append(SqlFormatting.SqlStringLiteral(entry.Note ?? string.Empty))
+                    .Append(SqlFormatting.SqlStringLiteral(TrimRationale(entry.Rationale)))
                     .Append(')')
                     .AppendLine(suffix);
             }
@@ -72,8 +73,9 @@ public static class SqlScriptEmitter
             builder.AppendLine();
         }
 
-        builder.AppendLine("IF OBJECT_ID('tempdb..#Changes', 'U') IS NOT NULL DROP TABLE #Changes;");
-        builder.AppendLine("CREATE TABLE #Changes (TableName sysname NOT NULL, ColumnName sysname NOT NULL, OldUserId INT NULL, NewUserId INT NULL, ChangedAt datetime2(3) NOT NULL);");
+        AppendTargetSanityCheck(builder, context);
+
+        builder.AppendLine("CREATE TABLE #Changes (TableName sysname NOT NULL, ColumnName sysname NOT NULL, OldUserId INT NOT NULL, NewUserId INT NOT NULL, ChangedAt datetime2(3) NOT NULL);");
         builder.AppendLine();
         builder.AppendLine("IF NOT EXISTS (SELECT 1 FROM #UserRemap)");
         builder.AppendLine("BEGIN");
@@ -89,11 +91,7 @@ public static class SqlScriptEmitter
             AppendUpdateBlock(builder, column);
         }
 
-        builder.AppendLine("Summary:");
         builder.AppendLine("SELECT TableName, ColumnName, COUNT(*) AS RowsUpdated FROM #Changes GROUP BY TableName, ColumnName ORDER BY TableName, ColumnName;");
-        builder.AppendLine("SELECT TableName, ColumnName, OldUserId, NewUserId, ChangedAt FROM #Changes ORDER BY ChangedAt;");
-        builder.AppendLine("DROP TABLE IF EXISTS #Changes;");
-        builder.AppendLine("DROP TABLE IF EXISTS #UserRemap;");
         return builder.ToString();
     }
 
@@ -125,11 +123,9 @@ public static class SqlScriptEmitter
     private static void AppendHeader(StringBuilder builder, UatUsersContext context)
     {
         builder.AppendLine($"-- uat-users remap script generated {DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)}");
+        builder.AppendLine($"-- Inputs hash: {ComputeInputsHash(context)}");
+        builder.AppendLine($"-- Catalog length: {context.UserFkCatalog.Count}");
         builder.AppendLine($"-- Source fingerprint: {context.SourceFingerprint}");
-        builder.AppendLine($"-- Catalog entries: {context.UserFkCatalog.Count}");
-        builder.AppendLine($"-- Allowed users: {context.AllowedUserIds.Count}");
-        builder.AppendLine($"-- Orphan users detected: {context.OrphanUserIds.Count}");
-        builder.AppendLine($"-- Catalog hash: {ComputeCatalogFingerprint(context)}");
         builder.AppendLine();
     }
 
@@ -150,10 +146,23 @@ public static class SqlScriptEmitter
         builder.AppendLine();
     }
 
-    private static string ComputeCatalogFingerprint(UatUsersContext context)
+    private static string ComputeInputsHash(UatUsersContext context)
     {
         using var sha256 = SHA256.Create();
         var buffer = new StringBuilder();
+        buffer.Append(context.SourceFingerprint)
+            .Append('|')
+            .Append(context.UserSchema).Append('.').Append(context.UserTable)
+            .Append('|')
+            .Append(context.UserIdColumn)
+            .Append('|');
+
+        foreach (var id in context.AllowedUserIds)
+        {
+            buffer.Append(id).Append(',');
+        }
+
+        buffer.Append('|');
         foreach (var column in context.UserFkCatalog)
         {
             buffer
@@ -164,9 +173,32 @@ public static class SqlScriptEmitter
                 .Append(';');
         }
 
+        buffer.Append('|');
+        foreach (var mapping in context.UserMap)
+        {
+            buffer
+                .Append(mapping.SourceUserId).Append('=');
+            if (mapping.TargetUserId.HasValue)
+            {
+                buffer.Append(mapping.TargetUserId.Value);
+            }
+
+            buffer.Append('|');
+        }
+
         var bytes = Encoding.UTF8.GetBytes(buffer.ToString());
         var hash = sha256.ComputeHash(bytes);
         return Convert.ToHexString(hash);
+    }
+
+    private static string TrimRationale(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return value.Length <= 200 ? value : value[..200];
     }
 
     private static long GetPendingRowCount(UatUsersContext context, long sourceUserId)

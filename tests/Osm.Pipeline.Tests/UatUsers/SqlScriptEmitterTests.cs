@@ -30,7 +30,8 @@ public sealed class SqlScriptEmitterTests
             "Id",
             includeColumns: null,
             Path.Combine(directory, "map.csv"),
-            allowedPath,
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: allowedPath,
             snapshotPath: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
@@ -60,13 +61,18 @@ public sealed class SqlScriptEmitterTests
         var script = SqlScriptEmitter.BuildScript(context);
         var updateBlocks = CountOccurrences(script, ";WITH delta AS");
         Assert.Equal(catalog.Count, updateBlocks);
-        Assert.Contains("INSERT INTO #UserRemap (SourceUserId, TargetUserId, Note) VALUES", script);
+        Assert.Contains("INSERT INTO #UserRemap VALUES", script);
         Assert.Contains("(100, 200", script);
         Assert.Contains("(300, 400", script);
         Assert.Contains("WHERE t.[CreatedBy] IS NOT NULL", script);
         Assert.Contains("WHERE t.[UpdatedBy] IS NOT NULL", script);
         Assert.DoesNotContain("IDENTITY_INSERT", script, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Summary:", script);
+        Assert.Contains("-- Inputs hash:", script);
+
+        var sanityIndex = script.IndexOf("IF EXISTS (SELECT 1 FROM #UserRemap", StringComparison.Ordinal);
+        var changesIndex = script.IndexOf("CREATE TABLE #Changes", StringComparison.Ordinal);
+        Assert.True(sanityIndex >= 0 && changesIndex >= 0 && sanityIndex < changesIndex, "Sanity check should precede #Changes creation.");
+        Assert.DoesNotContain("DROP TABLE", script, StringComparison.OrdinalIgnoreCase);
     }
 
     private static int CountOccurrences(string text, string value)

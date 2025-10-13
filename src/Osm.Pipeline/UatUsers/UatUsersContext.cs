@@ -27,7 +27,8 @@ public sealed class UatUsersContext
         string userIdColumn,
         IReadOnlyCollection<string>? includeColumns,
         string userMapPath,
-        string allowedUsersPath,
+        string? allowedUsersSqlPath,
+        string? allowedUserIdsPath,
         string? snapshotPath,
         bool fromLiveMetadata,
         string sourceFingerprint)
@@ -56,11 +57,6 @@ public sealed class UatUsersContext
             throw new ArgumentException("User map path must be provided.", nameof(userMapPath));
         }
 
-        if (string.IsNullOrWhiteSpace(allowedUsersPath))
-        {
-            throw new ArgumentException("Allowed users path must be provided.", nameof(allowedUsersPath));
-        }
-
         if (string.IsNullOrWhiteSpace(sourceFingerprint))
         {
             throw new ArgumentException("Source fingerprint must be provided.", nameof(sourceFingerprint));
@@ -73,7 +69,17 @@ public sealed class UatUsersContext
             ? null
             : includeColumns.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
         UserMapPath = Path.GetFullPath(userMapPath);
-        AllowedUsersCsvPath = Path.GetFullPath(allowedUsersPath);
+        if (string.IsNullOrWhiteSpace(allowedUsersSqlPath) && string.IsNullOrWhiteSpace(allowedUserIdsPath))
+        {
+            throw new ArgumentException("At least one allowed user source must be provided.");
+        }
+
+        AllowedUsersSqlPath = string.IsNullOrWhiteSpace(allowedUsersSqlPath)
+            ? null
+            : Path.GetFullPath(allowedUsersSqlPath);
+        AllowedUserIdsPath = string.IsNullOrWhiteSpace(allowedUserIdsPath)
+            ? null
+            : Path.GetFullPath(allowedUserIdsPath);
         SnapshotPath = string.IsNullOrWhiteSpace(snapshotPath) ? null : Path.GetFullPath(snapshotPath);
         FromLiveMetadata = fromLiveMetadata;
         SourceFingerprint = sourceFingerprint.Trim();
@@ -95,7 +101,9 @@ public sealed class UatUsersContext
 
     public string UserMapPath { get; }
 
-    public string AllowedUsersCsvPath { get; }
+    public string? AllowedUsersSqlPath { get; }
+
+    public string? AllowedUserIdsPath { get; }
 
     public string? SnapshotPath { get; }
 

@@ -106,7 +106,8 @@ public sealed class AnalyzeForeignKeyValuesStepTests
             "Id",
             includeColumns: null,
             Path.Combine(root, "map.csv"),
-            allowedPath,
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: allowedPath,
             snapshotPath: Path.Combine(root, "snapshot.json"),
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");

@@ -28,14 +28,19 @@ public sealed class EmitArtifactsStep : IPipelineStep<UatUsersContext>
 
     private static IEnumerable<IReadOnlyList<string>> BuildPreviewRows(UatUsersContext context)
     {
-        yield return new[] { "Schema", "Table", "Column", "SourceUserId", "TargetUserId", "RowCount" };
+        yield return new[] { "TableName", "ColumnName", "OldUserId", "NewUserId", "RowCount" };
         if (context.OrphanUserIds.Count == 0 || context.UserFkCatalog.Count == 0)
         {
             yield break;
         }
 
-        var mappingLookup = context.UserMap.ToDictionary(entry => entry.SourceUserId, entry => entry);
-        var orphanSet = new HashSet<long>(context.OrphanUserIds);
+        var mappingLookup = context.UserMap
+            .Where(entry => entry.TargetUserId.HasValue)
+            .ToDictionary(entry => entry.SourceUserId, entry => entry.TargetUserId!.Value);
+        if (mappingLookup.Count == 0)
+        {
+            yield break;
+        }
 
         foreach (var column in context.UserFkCatalog)
         {
@@ -46,22 +51,27 @@ public sealed class EmitArtifactsStep : IPipelineStep<UatUsersContext>
 
             foreach (var pair in values.OrderBy(static entry => entry.Key))
             {
-                if (!orphanSet.Contains(pair.Key))
+                if (!context.IsOrphan(pair.Key))
                 {
                     continue;
                 }
 
-                var target = mappingLookup.TryGetValue(pair.Key, out var mapping) && mapping.TargetUserId.HasValue
-                    ? mapping.TargetUserId.Value.ToString(CultureInfo.InvariantCulture)
-                    : string.Empty;
+                if (!mappingLookup.TryGetValue(pair.Key, out var targetUserId))
+                {
+                    continue;
+                }
+
+                if (pair.Value == 0)
+                {
+                    continue;
+                }
 
                 yield return new[]
                 {
-                    column.SchemaName,
-                    column.TableName,
+                    string.Concat(column.SchemaName, ".", column.TableName),
                     column.ColumnName,
                     pair.Key.ToString(CultureInfo.InvariantCulture),
-                    target,
+                    targetUserId.ToString(CultureInfo.InvariantCulture),
                     pair.Value.ToString(CultureInfo.InvariantCulture)
                 };
             }

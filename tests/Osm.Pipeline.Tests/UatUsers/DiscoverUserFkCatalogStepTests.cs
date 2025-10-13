@@ -59,7 +59,8 @@ public sealed class DiscoverUserFkCatalogStepTests
             "Id",
             includeColumns: null,
             Path.Combine(temp.Path, "map.csv"),
-            allowedPath,
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: allowedPath,
             snapshotPath: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
@@ -124,7 +125,8 @@ public sealed class DiscoverUserFkCatalogStepTests
             "Id",
             includeColumns: new[] { "UpdatedBy" },
             Path.Combine(temp.Path, "map.csv"),
-            allowedPath,
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: allowedPath,
             snapshotPath: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");

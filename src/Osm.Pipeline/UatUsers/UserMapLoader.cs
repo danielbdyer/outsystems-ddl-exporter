@@ -28,7 +28,7 @@ public static class UserMapLoader
         var header = ParseRow(lines[0]);
         var sourceIndex = IndexOf(header, "sourceuserid");
         var targetIndex = IndexOf(header, "targetuserid");
-        var noteIndex = IndexOf(header, "note");
+        var rationaleIndex = IndexOf(header, "rationale");
 
         if (sourceIndex < 0 || targetIndex < 0)
         {
@@ -68,9 +68,9 @@ public static class UserMapLoader
                 targetId = parsedTarget;
             }
 
-            var note = noteIndex >= 0 ? GetCell(row, noteIndex) : null;
-            note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
-            raw.Add(new UserMappingEntry(sourceId, targetId, note));
+            var rationale = rationaleIndex >= 0 ? GetCell(row, rationaleIndex) : null;
+            rationale = string.IsNullOrWhiteSpace(rationale) ? null : rationale.Trim();
+            raw.Add(new UserMappingEntry(sourceId, targetId, rationale));
         }
 
         var deduplicated = new Dictionary<long, UserMappingEntry>();
@@ -88,7 +88,7 @@ public static class UserMapLoader
                 continue;
             }
 
-            if (existing.TargetUserId == entry.TargetUserId && string.IsNullOrEmpty(existing.Note) && !string.IsNullOrEmpty(entry.Note))
+            if (existing.TargetUserId == entry.TargetUserId && string.IsNullOrEmpty(existing.Rationale) && !string.IsNullOrEmpty(entry.Rationale))
             {
                 deduplicated[entry.SourceUserId] = entry;
             }

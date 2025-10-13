@@ -14,7 +14,7 @@ public sealed class UserMapLoaderTests
         var path = Path.Combine(directory, "map.csv");
         File.WriteAllLines(path, new[]
         {
-            "SourceUserId,TargetUserId,Note",
+            "SourceUserId,TargetUserId,Rationale",
             "100,200,Primary",
             "100,300,Duplicate should be ignored",
             "200,400,",
@@ -31,25 +31,25 @@ public sealed class UserMapLoaderTests
             {
                 Assert.Equal(100, entry.SourceUserId);
                 Assert.Equal<long?>(200, entry.TargetUserId);
-                Assert.Equal("Primary", entry.Note);
+                Assert.Equal("Primary", entry.Rationale);
             },
             entry =>
             {
                 Assert.Equal(200, entry.SourceUserId);
                 Assert.Equal<long?>(400, entry.TargetUserId);
-                Assert.Null(entry.Note);
+                Assert.Null(entry.Rationale);
             },
             entry =>
             {
                 Assert.Equal(300, entry.SourceUserId);
                 Assert.Equal<long?>(500, entry.TargetUserId);
-                Assert.Null(entry.Note);
+                Assert.Null(entry.Rationale);
             },
             entry =>
             {
                 Assert.Equal(400, entry.SourceUserId);
                 Assert.Null(entry.TargetUserId);
-                Assert.Equal("Pending", entry.Note);
+                Assert.Equal("Pending", entry.Rationale);
             });
     }
 }

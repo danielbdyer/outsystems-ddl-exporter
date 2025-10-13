@@ -1,6 +1,7 @@
 using System;
 using System.Data.Common;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Pipeline.Sql;
@@ -34,7 +35,8 @@ public sealed class LoadAllowedUsersStepTests
             "Id",
             includeColumns: null,
             Path.Combine(temp.Path, "map.csv"),
-            allowedPath,
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: allowedPath,
             snapshotPath: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
@@ -44,6 +46,36 @@ public sealed class LoadAllowedUsersStepTests
 
         Assert.Equal(3, context.AllowedUserIds.Count);
         Assert.Contains(200L, context.AllowedUserIds);
+    }
+
+    [Fact]
+    public async Task ReadsIdentifiersFromSqlSeedScript()
+    {
+        using var temp = new TemporaryDirectory();
+        var sqlPath = Path.Combine(temp.Path, "dbo.User.sql");
+        File.WriteAllText(sqlPath, @"SET IDENTITY_INSERT [dbo].[User] ON;
+INSERT INTO [dbo].[User] ([Id], [Name]) VALUES (1, 'Admin'), (2, 'Operator');
+SET IDENTITY_INSERT [dbo].[User] OFF;", Encoding.UTF8);
+
+        var context = new UatUsersContext(
+            new StubSchemaGraph(),
+            new UatUsersArtifacts(temp.Path),
+            new ThrowingConnectionFactory(),
+            "dbo",
+            "User",
+            "Id",
+            includeColumns: null,
+            Path.Combine(temp.Path, "map.csv"),
+            allowedUsersSqlPath: sqlPath,
+            allowedUserIdsPath: null,
+            snapshotPath: null,
+            fromLiveMetadata: false,
+            sourceFingerprint: "test/db");
+
+        var step = new LoadAllowedUsersStep();
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(new[] { 1L, 2L }, context.AllowedUserIds);
     }
 
     private sealed class StubSchemaGraph : IUserSchemaGraph

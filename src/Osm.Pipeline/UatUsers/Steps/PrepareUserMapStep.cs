@@ -43,7 +43,7 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
     {
         var rows = new List<IReadOnlyList<string>>(Math.Max(orphanUserIds.Count + 1, 1))
         {
-            new[] { "SourceUserId", "TargetUserId", "Note" }
+            new[] { "SourceUserId", "TargetUserId", "Rationale" }
         };
 
         foreach (var orphan in orphanUserIds.OrderBy(static value => value))
@@ -103,7 +103,7 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
             return true;
         }
 
-        if (existing.TargetUserId == candidate.TargetUserId && string.IsNullOrEmpty(existing.Note) && !string.IsNullOrEmpty(candidate.Note))
+        if (existing.TargetUserId == candidate.TargetUserId && string.IsNullOrEmpty(existing.Rationale) && !string.IsNullOrEmpty(candidate.Rationale))
         {
             return true;
         }
@@ -125,17 +125,17 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
         }
 
         using var writer = new StreamWriter(path, false, Encoding.UTF8);
-        WriteRow(writer, "SourceUserId", "TargetUserId", "Note");
+        WriteRow(writer, "SourceUserId", "TargetUserId", "Rationale");
         foreach (var entry in entries)
         {
             var target = entry.TargetUserId.HasValue
                 ? entry.TargetUserId.Value.ToString(CultureInfo.InvariantCulture)
                 : string.Empty;
-            var note = entry.Note ?? string.Empty;
+            var rationale = entry.Rationale ?? string.Empty;
             WriteRow(writer,
                 entry.SourceUserId.ToString(CultureInfo.InvariantCulture),
                 target,
-                note);
+                rationale);
         }
     }
 

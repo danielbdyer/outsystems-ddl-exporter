@@ -75,7 +75,8 @@ public sealed class UatUsersCommand
                 options.UserIdColumn,
                 options.IncludeColumns,
                 userMapPath,
-                options.AllowedUsersPath,
+                options.AllowedUsersSqlPath,
+                options.AllowedUserIdsPath,
                 options.SnapshotPath,
                 options.FromLiveMetadata,
                 BuildSourceFingerprint(options.UatConnectionString!));
