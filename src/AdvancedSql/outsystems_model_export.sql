@@ -59,7 +59,7 @@ SELECT
     CAST(ISNULL(en.[Is_System],0)  AS bit) AS IsSystemEntity,
     CAST(ISNULL(en.[Is_External],0)AS bit) AS IsExternalEntity,
     en.[Data_Kind]                         AS DataKind,
-    en.[PrimaryKey_SS_Key]                 AS PrimaryKeySSKey,
+    TRY_CONVERT(uniqueidentifier, en.[PrimaryKey_SS_Key]) AS PrimaryKeySSKey,
     TRY_CONVERT(uniqueidentifier, en.[SS_Key]) AS EntitySSKey,
     CAST(NULL AS NVARCHAR(MAX))            AS EntityDescription
 INTO #Ent
@@ -788,7 +788,7 @@ SELECT
       CAST(ai2.IsPrimary AS bit)            AS [isPrimary],
       ai2.Kind                              AS [kind],
       CAST(ai2.IsUnique AS bit)             AS [isUnique],
-      CAST(CASE WHEN ai2.IndexName LIKE 'OSIDX\_%' ESCAPE '\\' THEN 1 ELSE 0 END AS int) AS [isPlatformAuto],
+      CAST(CASE WHEN ai2.IndexName LIKE 'OSIDX\_%' ESCAPE '\' THEN 1 ELSE 0 END AS int) AS [isPlatformAuto],
       CAST(ai2.IsDisabled AS bit)           AS [isDisabled],
       CAST(ai2.IsPadded AS bit)             AS [isPadded],
       ai2.Fill_Factor                       AS [fill_factor],
@@ -846,11 +846,11 @@ SELECT
     SELECT
       en.EntityName                   AS [name],
       en.PhysicalTableName            AS [physicalName],
-      CAST(CASE WHEN en.Data_Kind = 'staticEntity' THEN 1 ELSE 0 END AS bit) AS [isStatic],
+      CAST(CASE WHEN en.DataKind = 'staticEntity' THEN 1 ELSE 0 END AS bit) AS [isStatic],
       en.IsExternalEntity             AS [isExternal],
       en.EntityIsActive               AS [isActive],
       DB_NAME()                       AS [db_catalog],
-      s.[name]                        AS [db_schema],
+      pt.SchemaName                   AS [db_schema],
       CASE WHEN NULLIF(LTRIM(RTRIM(en.EntityDescription)), '') IS NOT NULL THEN JSON_QUERY(
         (SELECT NULLIF(LTRIM(RTRIM(en.EntityDescription)), '') AS [description]
          FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
