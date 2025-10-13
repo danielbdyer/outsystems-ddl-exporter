@@ -317,6 +317,20 @@ Command CreateBuildCommand()
         var applicationResult = result.Value;
         var pipelineResult = applicationResult.PipelineResult;
 
+        if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
+        {
+            var modelMessage = applicationResult.ModelWasExtracted
+                ? $"Extracted model to {applicationResult.ModelPath}."
+                : $"Using model at {applicationResult.ModelPath}.";
+            WriteLine(context.Console, modelMessage);
+        }
+
+        if (!applicationResult.ModelExtractionWarnings.IsDefaultOrEmpty
+            && applicationResult.ModelExtractionWarnings.Length > 0)
+        {
+            EmitPipelineWarnings(context, applicationResult.ModelExtractionWarnings);
+        }
+
         if (IsSqlProfiler(applicationResult.ProfilerProvider))
         {
             EmitSqlProfilerSnapshot(context, pipelineResult.Profile);

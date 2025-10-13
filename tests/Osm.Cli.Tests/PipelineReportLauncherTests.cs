@@ -96,7 +96,10 @@ public class PipelineReportLauncherTests
             pipelineResult,
             "fixture",
             Path.Combine(output.Path, "profile.json"),
-            output.Path);
+            output.Path,
+            Path.Combine(output.Path, "model.json"),
+            false,
+            ImmutableArray<string>.Empty);
 
         var reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, CancellationToken.None);
 

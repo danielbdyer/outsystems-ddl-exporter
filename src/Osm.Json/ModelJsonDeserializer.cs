@@ -1186,8 +1186,14 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
         [JsonPropertyName("isPadded")]
         public bool? IsPadded { get; init; }
 
+        [JsonPropertyName("fill_factor")]
+        public int? FillFactorNew { get; init; }
+
         [JsonPropertyName("fillFactor")]
-        public int? FillFactor { get; init; }
+        public int? FillFactorLegacy { get; init; }
+
+        [JsonIgnore]
+        public int? FillFactor => FillFactorNew ?? FillFactorLegacy;
 
         [JsonPropertyName("ignoreDupKey")]
         public bool? IgnoreDupKey { get; init; }
