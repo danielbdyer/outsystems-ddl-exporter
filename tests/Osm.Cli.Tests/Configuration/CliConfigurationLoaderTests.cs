@@ -48,6 +48,7 @@ public sealed class CliConfigurationLoaderTests
         Assert.Equal(new[] { "AppCore", "ExtBilling" }, result.Value.ModuleFilter.Modules);
         Assert.Equal(true, result.Value.ModuleFilter.IncludeSystemModules);
         Assert.Equal(false, result.Value.ModuleFilter.IncludeInactiveModules);
+        Assert.Empty(result.Value.ModuleFilter.EntityFilters);
     }
 
     [Fact]
@@ -102,6 +103,47 @@ public sealed class CliConfigurationLoaderTests
         Assert.Equal(new[] { "AppCore", "Ops" }, result.Value.ModuleFilter.Modules);
         Assert.Equal(false, result.Value.ModuleFilter.IncludeSystemModules);
         Assert.Equal(false, result.Value.ModuleFilter.IncludeInactiveModules);
+        Assert.Empty(result.Value.ModuleFilter.EntityFilters);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ReadsModuleEntityFilters()
+    {
+        using var directory = new TempDirectory();
+        var configPath = Path.Combine(directory.Path, "appsettings.json");
+        var modelPath = Path.Combine(directory.Path, "model.json");
+
+        await File.WriteAllTextAsync(modelPath, "{}");
+
+        var config = new
+        {
+            model = new
+            {
+                path = "model.json",
+                modules = new object[]
+                {
+                    new { name = "ServiceCenter", entities = new object[] { "User", "OSUSR_U_USER" } },
+                    "AppCore",
+                    new { name = "ExtBilling", entities = "*" }
+                },
+                includeSystemModules = false,
+                includeInactiveModules = true
+            }
+        };
+
+        await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
+
+        var loader = new CliConfigurationLoader();
+        var result = await loader.LoadAsync(configPath);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(new[] { "ServiceCenter", "AppCore", "ExtBilling" }, result.Value.ModuleFilter.Modules);
+        Assert.False(result.Value.ModuleFilter.IncludeSystemModules);
+        Assert.True(result.Value.ModuleFilter.IncludeInactiveModules);
+        Assert.True(result.Value.ModuleFilter.EntityFilters.ContainsKey("ServiceCenter"));
+        Assert.Equal(new[] { "User", "OSUSR_U_USER" }, result.Value.ModuleFilter.EntityFilters["ServiceCenter"]);
+        Assert.False(result.Value.ModuleFilter.EntityFilters.ContainsKey("ExtBilling"));
+        Assert.False(result.Value.ModuleFilter.EntityFilters.ContainsKey("AppCore"));
     }
 
     [Fact]

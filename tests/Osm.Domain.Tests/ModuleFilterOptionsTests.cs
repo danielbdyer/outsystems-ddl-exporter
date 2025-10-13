@@ -1,4 +1,5 @@
-using System.Linq;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Osm.Domain.Configuration;
 using Osm.Domain.ValueObjects;
@@ -17,6 +18,7 @@ public sealed class ModuleFilterOptionsTests
         Assert.True(result.Value.Modules.IsEmpty);
         Assert.True(result.Value.IncludeSystemModules);
         Assert.True(result.Value.IncludeInactiveModules);
+        Assert.True(result.Value.EntityFilters.IsEmpty);
     }
 
     [Fact]
@@ -47,6 +49,7 @@ public sealed class ModuleFilterOptionsTests
         Assert.Equal(new[] { "AppCore", "Ops" }, result.Value.Modules.Select(static module => module.Value));
         Assert.False(result.Value.IncludeSystemModules);
         Assert.True(result.Value.IncludeInactiveModules);
+        Assert.True(result.Value.EntityFilters.IsEmpty);
     }
 
     [Fact]
@@ -64,6 +67,7 @@ public sealed class ModuleFilterOptionsTests
         Assert.Equal(new[] { "AppCore", "ExtBilling", "Ops" }, merged.Modules.Select(static module => module.Value));
         Assert.True(merged.IncludeSystemModules);
         Assert.True(merged.IncludeInactiveModules);
+        Assert.True(merged.EntityFilters.IsEmpty);
     }
 
     [Fact]
@@ -81,6 +85,7 @@ public sealed class ModuleFilterOptionsTests
         Assert.Equal(new[] { "AppCore", "Ops" }, merged.Modules.Select(static module => module.Value));
         Assert.False(merged.IncludeSystemModules);
         Assert.False(merged.IncludeInactiveModules);
+        Assert.True(merged.EntityFilters.IsEmpty);
     }
 
     [Fact]
@@ -93,6 +98,7 @@ public sealed class ModuleFilterOptionsTests
         Assert.Equal(options.Modules, updated.Modules);
         Assert.True(updated.IncludeSystemModules);
         Assert.True(updated.IncludeInactiveModules);
+        Assert.Equal(options.EntityFilters, updated.EntityFilters);
     }
 
     [Fact]
@@ -105,5 +111,36 @@ public sealed class ModuleFilterOptionsTests
         Assert.Equal(options.Modules, updated.Modules);
         Assert.True(updated.IncludeSystemModules);
         Assert.True(updated.IncludeInactiveModules);
+        Assert.Equal(options.EntityFilters, updated.EntityFilters);
+    }
+
+    [Fact]
+    public void Create_ParsesEntityFilters()
+    {
+        var filters = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ServiceCenter"] = new[] { "User", "OSUSR_U_USER" }
+        };
+
+        var result = ModuleFilterOptions.Create(new[] { "ServiceCenter" }, true, true, filters);
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Value.EntityFilters);
+        var filter = result.Value.EntityFilters["ServiceCenter"];
+        Assert.Equal(new[] { "User", "OSUSR_U_USER" }, filter.Names);
+    }
+
+    [Fact]
+    public void Create_ReturnsFailure_WhenEntityFilterEmpty()
+    {
+        var filters = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["AppCore"] = Array.Empty<string>()
+        };
+
+        var result = ModuleFilterOptions.Create(new[] { "AppCore" }, true, true, filters);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "moduleFilter.entities.empty");
     }
 }

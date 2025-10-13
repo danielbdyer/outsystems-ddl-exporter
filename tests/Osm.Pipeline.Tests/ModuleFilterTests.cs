@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.ModelIngestion;
@@ -67,5 +68,42 @@ public sealed class ModuleFilterTests
             Assert.True(module.IsActive);
         });
         Assert.Equal(new[] { activeModule.Name.Value }, result.Value.Modules.Select(m => m.Name.Value));
+    }
+
+    [Fact]
+    public void Apply_FiltersEntitiesWithinModule()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var filters = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["AppCore"] = new[] { "Customer" }
+        };
+
+        var filterOptions = ModuleFilterOptions.Create(new[] { "AppCore" }, true, true, filters).Value;
+
+        var result = new ModuleFilter().Apply(model, filterOptions);
+
+        Assert.True(result.IsSuccess);
+        var module = Assert.Single(result.Value.Modules);
+        Assert.Equal("AppCore", module.Name.Value);
+        var entity = Assert.Single(module.Entities);
+        Assert.Equal("Customer", entity.LogicalName.Value);
+    }
+
+    [Fact]
+    public void Apply_ReturnsFailure_WhenEntityMissing()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var filters = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["AppCore"] = new[] { "MissingEntity" }
+        };
+
+        var filterOptions = ModuleFilterOptions.Create(new[] { "AppCore" }, true, true, filters).Value;
+
+        var result = new ModuleFilter().Apply(model, filterOptions);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "modelFilter.entities.missing");
     }
 }

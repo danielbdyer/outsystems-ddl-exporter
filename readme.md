@@ -695,7 +695,10 @@ Copy `config/appsettings.example.json` to an environment-specific location (e.g.
   "tighteningPath": "config/default-tightening.json",   // optional override for TighteningOptions
   "model": {
     "path": "tests/Fixtures/model.edge-case.json",
-    "modules": ["AppCore", "ExtBilling"],
+    "modules": [
+      "AppCore",
+      { "name": "ServiceCenter", "entities": ["User"] }
+    ],
     "includeSystemModules": false,
     "includeInactiveModules": true
   },
@@ -707,6 +710,8 @@ Copy `config/appsettings.example.json` to an environment-specific location (e.g.
 ```
 
 Module filters declared in configuration act as defaults—`--modules`, `--exclude-system-modules`, and `--only-active-modules` override them on the command line. The evidence cache key incorporates the resolved module list and toggles so cached payloads stay aligned when you swap module selections between runs.
+
+Entries inside the `modules` array can be plain strings (include the entire module) or objects with a `name` plus an optional `entities` selector. Supplying an array (or CSV string) to `entities` trims and deduplicates values so you can scope extraction to specific logical or physical entity names—for example, `{ "name": "ServiceCenter", "entities": ["User"] }` keeps only the Service Center `User` entity while avoiding other tables that might fail validation. A wildcard (`"*"`) or boolean `true` keeps every entity in the module.
 
 `sql.sampling` tunes when the profiler switches to sampling and how many rows it inspects; `sql.authentication` plugs in Azure AD / managed identity authentication or per-connection ADO.NET overrides (e.g., application name, certificate trust) without polluting the connection string.
 
