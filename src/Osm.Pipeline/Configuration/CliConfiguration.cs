@@ -67,10 +67,15 @@ public sealed record SqlAuthenticationConfiguration(
 public sealed record ModuleFilterConfiguration(
     IReadOnlyList<string> Modules,
     bool? IncludeSystemModules,
-    bool? IncludeInactiveModules)
+    bool? IncludeInactiveModules,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> EntityFilters)
 {
     public static ModuleFilterConfiguration Empty { get; }
-        = new ModuleFilterConfiguration(Array.Empty<string>(), null, null);
+        = new ModuleFilterConfiguration(
+            Array.Empty<string>(),
+            null,
+            null,
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase));
 }
 
 public sealed record TypeMappingConfiguration(

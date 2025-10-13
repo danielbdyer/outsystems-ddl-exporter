@@ -78,6 +78,42 @@ public sealed class ModuleFilter
                 "Module filter removed all modules from the model.");
         }
 
+        if (!options.EntityFilters.IsEmpty)
+        {
+            var adjustedModules = ImmutableArray.CreateBuilder<ModuleModel>(materialized.Length);
+            foreach (var module in materialized)
+            {
+                if (!options.EntityFilters.TryGetValue(module.Name.Value, out var entityFilter))
+                {
+                    adjustedModules.Add(module);
+                    continue;
+                }
+
+                var filteredEntities = module.Entities
+                    .Where(entityFilter.Matches)
+                    .ToImmutableArray();
+
+                var missing = entityFilter.GetMissingNames(module.Entities);
+                if (!missing.IsDefaultOrEmpty)
+                {
+                    return ValidationError.Create(
+                        "modelFilter.entities.missing",
+                        $"Module '{module.Name.Value}' does not contain entity(ies): {string.Join(", ", missing)}.");
+                }
+
+                if (filteredEntities.IsDefaultOrEmpty)
+                {
+                    return ValidationError.Create(
+                        "modelFilter.entities.empty",
+                        $"Entity filter removed all entities from module '{module.Name.Value}'.");
+                }
+
+                adjustedModules.Add(module with { Entities = filteredEntities });
+            }
+
+            materialized = adjustedModules.ToImmutable();
+        }
+
         return OsmModel.Create(model.ExportedAtUtc, materialized, model.Sequences, model.ExtendedProperties);
     }
 }

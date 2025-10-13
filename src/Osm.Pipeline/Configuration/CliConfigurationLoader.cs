@@ -482,7 +482,9 @@ public sealed class CliConfigurationLoader
             path = resolved;
         }
 
-        var modules = Array.Empty<string>();
+        var moduleNames = new List<string>();
+        var moduleSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var entityFilters = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         bool? includeSystem = null;
         bool? includeInactive = null;
 
@@ -490,20 +492,41 @@ public sealed class CliConfigurationLoader
         {
             if (modulesElement.ValueKind == JsonValueKind.Array)
             {
-                var list = new List<string>();
                 foreach (var moduleElement in modulesElement.EnumerateArray())
                 {
                     if (moduleElement.ValueKind == JsonValueKind.String)
                     {
-                        var name = moduleElement.GetString();
-                        if (!string.IsNullOrWhiteSpace(name))
+                        AddModuleName(moduleElement.GetString());
+                    }
+                    else if (moduleElement.ValueKind == JsonValueKind.Object)
+                    {
+                        if (!moduleElement.TryGetProperty("name", out var nameElement) || nameElement.ValueKind != JsonValueKind.String)
                         {
-                            list.Add(name);
+                            continue;
+                        }
+
+                        var moduleName = AddModuleName(nameElement.GetString());
+                        if (moduleName is null)
+                        {
+                            continue;
+                        }
+
+                        if (moduleElement.TryGetProperty("entities", out var entitiesElement))
+                        {
+                            var parsedEntities = ParseEntityNames(entitiesElement);
+                            if (parsedEntities is null)
+                            {
+                                entityFilters.Remove(moduleName);
+                            }
+                            else
+                            {
+                                entityFilters[moduleName] = parsedEntities.Count > 0
+                                    ? parsedEntities.ToArray()
+                                    : Array.Empty<string>();
+                            }
                         }
                     }
                 }
-
-                modules = list.ToArray();
             }
             else if (modulesElement.ValueKind == JsonValueKind.String)
             {
@@ -511,17 +534,11 @@ public sealed class CliConfigurationLoader
                 if (!string.IsNullOrWhiteSpace(raw))
                 {
                     var separators = new[] { ';', ',', '|' };
-                    var list = new List<string>();
                     foreach (var token in raw.Split(separators, StringSplitOptions.RemoveEmptyEntries))
                     {
                         var trimmed = token.Trim();
-                        if (!string.IsNullOrWhiteSpace(trimmed))
-                        {
-                            list.Add(trimmed);
-                        }
+                        AddModuleName(trimmed);
                     }
-
-                    modules = list.ToArray();
                 }
             }
         }
@@ -556,8 +573,103 @@ public sealed class CliConfigurationLoader
             }
         }
 
-        moduleFilter = new ModuleFilterConfiguration(modules, includeSystem, includeInactive);
+        var modules = moduleNames.Count > 0
+            ? moduleNames.ToArray()
+            : Array.Empty<string>();
+
+        moduleFilter = new ModuleFilterConfiguration(modules, includeSystem, includeInactive, entityFilters);
         return true;
+
+        string? AddModuleName(string? rawName)
+        {
+            if (string.IsNullOrWhiteSpace(rawName))
+            {
+                return null;
+            }
+
+            var trimmed = rawName.Trim();
+            if (moduleSet.Add(trimmed))
+            {
+                moduleNames.Add(trimmed);
+            }
+
+            return trimmed;
+        }
+
+        static List<string>? ParseEntityNames(JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.True or JsonValueKind.Null => null,
+                JsonValueKind.False => new List<string>(),
+                JsonValueKind.String => ParseEntityString(element.GetString()),
+                JsonValueKind.Array => ParseEntityArray(element),
+                _ => new List<string>()
+            };
+
+            static List<string>? ParseEntityArray(JsonElement arrayElement)
+            {
+                var list = new List<string>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var child in arrayElement.EnumerateArray())
+                {
+                    if (child.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    var parsed = ParseEntityString(child.GetString());
+                    if (parsed is null)
+                    {
+                        return null;
+                    }
+
+                    foreach (var value in parsed)
+                    {
+                        if (seen.Add(value))
+                        {
+                            list.Add(value);
+                        }
+                    }
+                }
+
+                return list;
+            }
+
+            static List<string>? ParseEntityString(string? raw)
+            {
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    return new List<string>();
+                }
+
+                var separators = new[] { ';', ',', '|' };
+                var tokens = raw.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+                var list = new List<string>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var token in tokens)
+                {
+                    var trimmed = token.Trim();
+                    if (string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(trimmed, "*", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return null;
+                    }
+
+                    if (seen.Add(trimmed))
+                    {
+                        list.Add(trimmed);
+                    }
+                }
+
+                return list;
+            }
+        }
     }
 
     private static bool TryReadPath(JsonElement root, string property, string baseDirectory, out string path)
