@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Osm.Pipeline.RemapUsers;
+namespace Osm.Pipeline.UatUsers;
 
 public interface IPipelineStep<in TContext>
 {
