@@ -1,10 +1,13 @@
 using System;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Osm.Domain.Abstractions;
 using Osm.Pipeline.Sql;
 
@@ -20,15 +23,18 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IAdvancedSqlScriptProvider _scriptProvider;
     private readonly SqlExecutionOptions _options;
+    private readonly ILogger<SqlClientAdvancedSqlExecutor> _logger;
 
     public SqlClientAdvancedSqlExecutor(
         IDbConnectionFactory connectionFactory,
         IAdvancedSqlScriptProvider scriptProvider,
-        SqlExecutionOptions? options = null)
+        SqlExecutionOptions? options = null,
+        ILogger<SqlClientAdvancedSqlExecutor>? logger = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _scriptProvider = scriptProvider ?? throw new ArgumentNullException(nameof(scriptProvider));
         _options = options ?? SqlExecutionOptions.Default;
+        _logger = logger ?? NullLogger<SqlClientAdvancedSqlExecutor>.Instance;
     }
 
     public async Task<Result<string>> ExecuteAsync(AdvancedSqlRequest request, CancellationToken cancellationToken = default)
@@ -40,19 +46,46 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        _logger.LogInformation(
+            "Executing advanced SQL script via SQL client (timeoutSeconds: {TimeoutSeconds}, moduleCount: {ModuleCount}, includeSystem: {IncludeSystem}, onlyActive: {OnlyActive}).",
+            _options.CommandTimeoutSeconds,
+            request.ModuleNames.Length,
+            request.IncludeSystemModules,
+            request.OnlyActiveAttributes);
+
+        if (request.ModuleNames.Length > 0)
+        {
+            _logger.LogDebug(
+                "Advanced SQL request modules: {Modules}.",
+                string.Join(",", request.ModuleNames.Select(static module => module.Value)));
+        }
+
         var script = _scriptProvider.GetScript();
         if (string.IsNullOrWhiteSpace(script))
         {
+            _logger.LogError("Advanced SQL script provider returned an empty script.");
             return Result<string>.Failure(ValidationError.Create("extraction.sql.script.missing", "Advanced SQL script was empty."));
         }
 
+        _logger.LogDebug("Advanced SQL script length: {ScriptLength} characters.", script.Length);
+
+        var stopwatch = Stopwatch.StartNew();
+
         try
         {
+            _logger.LogDebug("Opening SQL connection.");
             await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("SQL connection opened successfully.");
+
             await using var command = CreateCommand(connection, script, request, _options);
+            _logger.LogDebug("Executing advanced SQL command.");
             var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+            _logger.LogInformation("Advanced SQL command completed in {DurationMs} ms.", stopwatch.Elapsed.TotalMilliseconds);
+
             if (result is null || result is DBNull)
             {
+                _logger.LogError("Advanced SQL command returned no results.");
                 return Result<string>.Failure(ValidationError.Create(
                     "extraction.sql.emptyJson",
                     "Advanced SQL execution returned no JSON payload."));
@@ -71,6 +104,8 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
         }
         catch (DbException ex)
         {
+            stopwatch.Stop();
+            _logger.LogError(ex, "Advanced SQL execution failed after {DurationMs} ms.", stopwatch.Elapsed.TotalMilliseconds);
             return Result<string>.Failure(ValidationError.Create(
                 "extraction.sql.executionFailed",
                 $"Advanced SQL execution failed: {ex.Message}"));

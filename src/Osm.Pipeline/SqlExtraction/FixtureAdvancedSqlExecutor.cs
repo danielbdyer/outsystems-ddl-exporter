@@ -8,6 +8,8 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Osm.Domain.Abstractions;
 using Osm.Domain.ValueObjects;
 
@@ -17,8 +19,9 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
 {
     private readonly IReadOnlyDictionary<string, FixtureEntry> _entries;
     private readonly IFileSystem _fileSystem;
+    private readonly ILogger<FixtureAdvancedSqlExecutor> _logger;
 
-    public FixtureAdvancedSqlExecutor(string manifestPath, IFileSystem? fileSystem = null)
+    public FixtureAdvancedSqlExecutor(string manifestPath, IFileSystem? fileSystem = null, ILogger<FixtureAdvancedSqlExecutor>? logger = null)
     {
         if (string.IsNullOrWhiteSpace(manifestPath))
         {
@@ -26,6 +29,8 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
         }
 
         _fileSystem = fileSystem ?? new FileSystem();
+        _logger = logger ?? NullLogger<FixtureAdvancedSqlExecutor>.Instance;
+
         var path = manifestPath.Trim();
         if (!_fileSystem.File.Exists(path))
         {
@@ -35,6 +40,11 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
         using var stream = _fileSystem.File.OpenRead(path);
         using var document = JsonDocument.Parse(stream);
         _entries = LoadEntries(document.RootElement, Path.GetDirectoryName(path) ?? _fileSystem.Directory.GetCurrentDirectory());
+
+        _logger.LogInformation(
+            "Loaded advanced SQL fixture manifest from {ManifestPath} with {CaseCount} case(s).",
+            path,
+            _entries.Count);
     }
 
     public Task<Result<string>> ExecuteAsync(AdvancedSqlRequest request, CancellationToken cancellationToken = default)
@@ -47,8 +57,16 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
         cancellationToken.ThrowIfCancellationRequested();
 
         var key = BuildKey(request.ModuleNames, request.IncludeSystemModules, request.OnlyActiveAttributes);
+        _logger.LogInformation(
+            "Resolving advanced SQL fixture for key {FixtureKey} (modules: {Modules}, includeSystem: {IncludeSystem}, onlyActive: {OnlyActive}).",
+            key,
+            string.Join(",", request.ModuleNames.Select(static module => module.Value)),
+            request.IncludeSystemModules,
+            request.OnlyActiveAttributes);
+
         if (!_entries.TryGetValue(key, out var entry))
         {
+            _logger.LogWarning("Advanced SQL fixture entry not found for key {FixtureKey}.", key);
             return Task.FromResult(Result<string>.Failure(ValidationError.Create(
                 "extraction.fixture.missing",
                 $"No fixture JSON registered for modules '{string.Join(",", request.ModuleNames.Select(static module => module.Value))}', includeSystem={request.IncludeSystemModules}, onlyActive={request.OnlyActiveAttributes}.")));
@@ -56,6 +74,7 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
 
         if (!_fileSystem.File.Exists(entry.JsonPath))
         {
+            _logger.LogError("Advanced SQL fixture JSON '{JsonPath}' was not found on disk.", entry.JsonPath);
             return Task.FromResult(Result<string>.Failure(ValidationError.Create(
                 "extraction.fixture.jsonMissing",
                 $"Fixture JSON '{entry.JsonPath}' was not found.")));
@@ -65,10 +84,16 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
         var json = reader.ReadToEnd();
         if (string.IsNullOrWhiteSpace(json))
         {
+            _logger.LogError("Advanced SQL fixture JSON '{JsonPath}' was empty.", entry.JsonPath);
             return Task.FromResult(Result<string>.Failure(ValidationError.Create(
                 "extraction.fixture.jsonEmpty",
                 $"Fixture JSON '{entry.JsonPath}' is empty.")));
         }
+
+        _logger.LogInformation(
+            "Resolved advanced SQL fixture JSON '{JsonPath}' with payload length {PayloadLength} characters.",
+            entry.JsonPath,
+            json.Length);
 
         return Task.FromResult(Result<string>.Success(json));
     }
