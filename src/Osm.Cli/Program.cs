@@ -139,6 +139,8 @@ Command CreateUatUsersCommand()
     };
     var outputOption = new Option<string?>("--out", () => "./_artifacts", "Root directory for artifacts.");
     var userMapOption = new Option<string?>("--user-map", "Path to a CSV containing SourceUserId,TargetUserId mappings.");
+    var userDdlOption = new Option<string>("--user-ddl", "CSV export of dbo.User containing allowed user identifiers.");
+    var snapshotOption = new Option<string?>("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
 
     var command = new Command("uat-users", "Emit user remapping artifacts for UAT.")
     {
@@ -149,7 +151,9 @@ Command CreateUatUsersCommand()
         userIdOption,
         includeColumnsOption,
         outputOption,
-        userMapOption
+        userMapOption,
+        userDdlOption,
+        snapshotOption
     };
 
     command.SetHandler(async context =>
@@ -171,7 +175,9 @@ Command CreateUatUsersCommand()
             parseResult.GetValueForOption(userIdOption) ?? "Id",
             parseResult.GetValueForOption(includeColumnsOption),
             parseResult.GetValueForOption(outputOption) ?? "./_artifacts",
-            parseResult.GetValueForOption(userMapOption));
+            parseResult.GetValueForOption(userMapOption),
+            parseResult.GetValueForOption(userDdlOption) ?? string.Empty,
+            parseResult.GetValueForOption(snapshotOption));
 
         if (!options.FromLiveMetadata && string.IsNullOrWhiteSpace(options.ModelPath))
         {
@@ -180,10 +186,17 @@ Command CreateUatUsersCommand()
             return;
         }
 
-        if (options.FromLiveMetadata && string.IsNullOrWhiteSpace(options.UatConnectionString))
+        if (string.IsNullOrWhiteSpace(options.UatConnectionString))
         {
             context.ExitCode = 1;
-            context.Console.WriteLine("--uat-conn is required when --from-live is specified.");
+            context.Console.WriteLine("--uat-conn is required.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(options.AllowedUsersPath))
+        {
+            context.ExitCode = 1;
+            context.Console.WriteLine("--user-ddl must point to a CSV export of dbo.User.");
             return;
         }
 

@@ -12,6 +12,8 @@ public sealed class UatUsersPipeline : IPipeline<UatUsersContext>
     {
         _inner = new PipelineBuilder<UatUsersContext>()
             .Then(new DiscoverUserFkCatalogStep())
+            .Then(new LoadAllowedUsersStep())
+            .Then(new AnalyzeForeignKeyValuesStep())
             .Then(new PrepareUserMapStep())
             .Then(new EmitArtifactsStep())
             .Build();

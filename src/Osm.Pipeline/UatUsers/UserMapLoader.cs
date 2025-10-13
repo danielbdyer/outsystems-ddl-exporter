@@ -57,9 +57,15 @@ public static class UserMapLoader
                 throw new InvalidDataException($"Invalid SourceUserId '{sourceValue}' on line {i + 1}.");
             }
 
-            if (!long.TryParse(targetValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetId))
+            long? targetId = null;
+            if (!string.IsNullOrEmpty(targetValue))
             {
-                throw new InvalidDataException($"Invalid TargetUserId '{targetValue}' on line {i + 1}.");
+                if (!long.TryParse(targetValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTarget))
+                {
+                    throw new InvalidDataException($"Invalid TargetUserId '{targetValue}' on line {i + 1}.");
+                }
+
+                targetId = parsedTarget;
             }
 
             var note = noteIndex >= 0 ? GetCell(row, noteIndex) : null;
@@ -70,9 +76,21 @@ public static class UserMapLoader
         var deduplicated = new Dictionary<long, UserMappingEntry>();
         foreach (var entry in raw)
         {
-            if (!deduplicated.ContainsKey(entry.SourceUserId))
+            if (!deduplicated.TryGetValue(entry.SourceUserId, out var existing))
             {
                 deduplicated.Add(entry.SourceUserId, entry);
+                continue;
+            }
+
+            if (existing.TargetUserId is null && entry.TargetUserId is not null)
+            {
+                deduplicated[entry.SourceUserId] = entry;
+                continue;
+            }
+
+            if (existing.TargetUserId == entry.TargetUserId && string.IsNullOrEmpty(existing.Note) && !string.IsNullOrEmpty(entry.Note))
+            {
+                deduplicated[entry.SourceUserId] = entry;
             }
         }
 

@@ -29,23 +29,40 @@ public sealed class EmitArtifactsStep : IPipelineStep<UatUsersContext>
     private static IEnumerable<IReadOnlyList<string>> BuildPreviewRows(UatUsersContext context)
     {
         yield return new[] { "Schema", "Table", "Column", "SourceUserId", "TargetUserId", "RowCount" };
-        if (context.UserMap.Count == 0 || context.UserFkCatalog.Count == 0)
+        if (context.OrphanUserIds.Count == 0 || context.UserFkCatalog.Count == 0)
         {
             yield break;
         }
 
+        var mappingLookup = context.UserMap.ToDictionary(entry => entry.SourceUserId, entry => entry);
+        var orphanSet = new HashSet<long>(context.OrphanUserIds);
+
         foreach (var column in context.UserFkCatalog)
         {
-            foreach (var mapping in context.UserMap)
+            if (!context.ForeignKeyValueCounts.TryGetValue(column, out var values))
             {
+                continue;
+            }
+
+            foreach (var pair in values.OrderBy(static entry => entry.Key))
+            {
+                if (!orphanSet.Contains(pair.Key))
+                {
+                    continue;
+                }
+
+                var target = mappingLookup.TryGetValue(pair.Key, out var mapping) && mapping.TargetUserId.HasValue
+                    ? mapping.TargetUserId.Value.ToString(CultureInfo.InvariantCulture)
+                    : string.Empty;
+
                 yield return new[]
                 {
                     column.SchemaName,
                     column.TableName,
                     column.ColumnName,
-                    mapping.SourceUserId.ToString(CultureInfo.InvariantCulture),
-                    mapping.TargetUserId.ToString(CultureInfo.InvariantCulture),
-                    string.Empty
+                    pair.Key.ToString(CultureInfo.InvariantCulture),
+                    target,
+                    pair.Value.ToString(CultureInfo.InvariantCulture)
                 };
             }
         }
