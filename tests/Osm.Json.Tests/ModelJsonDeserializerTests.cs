@@ -6,11 +6,19 @@ using System.Text;
 using Osm.Domain.Model;
 using Osm.Json;
 using Tests.Support;
+using Xunit.Abstractions;
 
 namespace Osm.Json.Tests;
 
 public class ModelJsonDeserializerTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public ModelJsonDeserializerTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     private static MemoryStream ToStream(string json) => new(Encoding.UTF8.GetBytes(json));
 
     [Fact]
@@ -794,6 +802,128 @@ public class ModelJsonDeserializerTests
             .First(static index => index.OnDisk.FillFactor.HasValue);
 
         Assert.Equal(85, indexWithFillFactor.OnDisk.FillFactor);
+    }
+
+    [Fact]
+    public void Deserialize_ShouldAcceptBooleanPhysicalPresenceFlag()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Inventory",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Product",
+                  "physicalName": "OSUSR_INV_PRODUCT",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true,
+                      "isReference": 0,
+                      "physical_isPresentButInactive": 0
+                    },
+                    {
+                      "name": "LegacyFlag",
+                      "physicalName": "LEGACYFLAG",
+                      "dataType": "Text",
+                      "isMandatory": false,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isActive": false,
+                      "physical_isPresentButInactive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
+        var entity = result.Value.Modules.Single().Entities.Single();
+        var attribute = entity.Attributes.Single(a => a.LogicalName.Value == "LegacyFlag");
+        Assert.True(attribute.Reality.IsPresentButInactive);
+    }
+
+    [Fact]
+    public void Deserialize_ShouldExposeJsonPathWhenDeserializationFails()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Inventory",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Product",
+                  "physicalName": "OSUSR_INV_PRODUCT",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true,
+                      "isReference": 0,
+                      "physical_isPresentButInactive": 0
+                    },
+                    {
+                      "name": "LegacyFlag",
+                      "physicalName": "LEGACYFLAG",
+                      "dataType": "Text",
+                      "isMandatory": false,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isActive": false,
+                      "physical_isPresentButInactive": "not-a-bool"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        _output.WriteLine(error.Message);
+        Assert.Equal("json.deserialize.failed", error.Code);
+        Assert.Contains("$.modules[0].entities[0].attributes[1].physical_isPresentButInactive", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Unable to materialize CIR document", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
