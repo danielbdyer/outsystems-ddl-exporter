@@ -86,6 +86,7 @@ public sealed class PrepareUserMapStepTests
             allowedUsersSqlPath: null,
             allowedUserIdsPath: allowedPath,
             snapshotPath: null,
+            userEntityIdentifier: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
     }

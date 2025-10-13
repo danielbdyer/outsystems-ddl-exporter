@@ -30,6 +30,7 @@ public sealed class UatUsersContext
         string? allowedUsersSqlPath,
         string? allowedUserIdsPath,
         string? snapshotPath,
+        string? userEntityIdentifier,
         bool fromLiveMetadata,
         string sourceFingerprint)
     {
@@ -81,6 +82,7 @@ public sealed class UatUsersContext
             ? null
             : Path.GetFullPath(allowedUserIdsPath);
         SnapshotPath = string.IsNullOrWhiteSpace(snapshotPath) ? null : Path.GetFullPath(snapshotPath);
+        UserEntityIdentifier = string.IsNullOrWhiteSpace(userEntityIdentifier) ? null : userEntityIdentifier.Trim();
         FromLiveMetadata = fromLiveMetadata;
         SourceFingerprint = sourceFingerprint.Trim();
     }
@@ -106,6 +108,8 @@ public sealed class UatUsersContext
     public string? AllowedUserIdsPath { get; }
 
     public string? SnapshotPath { get; }
+
+    public string? UserEntityIdentifier { get; }
 
     public bool FromLiveMetadata { get; }
 

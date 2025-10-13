@@ -31,6 +31,7 @@ public sealed class EmitArtifactsStepTests
             allowedUsersSqlPath: null,
             allowedUserIdsPath: Path.Combine(temp.Path, "users.csv"),
             snapshotPath: null,
+            userEntityIdentifier: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
 

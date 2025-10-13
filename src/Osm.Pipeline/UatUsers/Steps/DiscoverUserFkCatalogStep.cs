@@ -35,8 +35,25 @@ public sealed class DiscoverUserFkCatalogStep : IPipelineStep<UatUsersContext>
             ctx.UserIdColumn);
 
         var includeSet = ctx.IncludeColumns;
-        var foreignKeys = await ctx.SchemaGraph.GetForeignKeysAsync(cancellationToken).ConfigureAwait(false);
+        var foreignKeys = (await ctx.SchemaGraph.GetForeignKeysAsync(cancellationToken).ConfigureAwait(false)).ToList();
         _logger.LogInformation("Schema graph returned {ForeignKeyCount} foreign keys.", foreignKeys.Count);
+
+        if (ctx.SchemaGraph is ModelSchemaGraph modelGraph)
+        {
+            var synthetic = modelGraph.GetSyntheticUserForeignKeys(
+                ctx.UserSchema,
+                ctx.UserTable,
+                ctx.UserIdColumn,
+                ctx.UserEntityIdentifier);
+
+            if (synthetic.Count > 0)
+            {
+                foreignKeys.AddRange(synthetic);
+                _logger.LogInformation(
+                    "Augmented catalog with {SyntheticCount} synthetic references derived from model attributes.",
+                    synthetic.Count);
+            }
+        }
 
         var matches = foreignKeys
             .Where(fk =>

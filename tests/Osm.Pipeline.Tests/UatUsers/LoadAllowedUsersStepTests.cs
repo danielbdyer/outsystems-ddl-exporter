@@ -38,6 +38,7 @@ public sealed class LoadAllowedUsersStepTests
             allowedUsersSqlPath: null,
             allowedUserIdsPath: allowedPath,
             snapshotPath: null,
+            userEntityIdentifier: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
 
@@ -69,6 +70,7 @@ SET IDENTITY_INSERT [dbo].[User] OFF;", Encoding.UTF8);
             allowedUsersSqlPath: sqlPath,
             allowedUserIdsPath: null,
             snapshotPath: null,
+            userEntityIdentifier: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
 

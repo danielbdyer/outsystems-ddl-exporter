@@ -5,6 +5,8 @@ using System.Data.Common;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 using Osm.Pipeline.UatUsers;
 using Osm.Pipeline.UatUsers.Steps;
 using Osm.Pipeline.Sql;
@@ -62,6 +64,7 @@ public sealed class DiscoverUserFkCatalogStepTests
             allowedUsersSqlPath: null,
             allowedUserIdsPath: allowedPath,
             snapshotPath: null,
+            userEntityIdentifier: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
 
@@ -128,6 +131,7 @@ public sealed class DiscoverUserFkCatalogStepTests
             allowedUsersSqlPath: null,
             allowedUserIdsPath: allowedPath,
             snapshotPath: null,
+            userEntityIdentifier: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
 
@@ -136,6 +140,88 @@ public sealed class DiscoverUserFkCatalogStepTests
 
         Assert.Single(context.UserFkCatalog);
         Assert.Equal("UpdatedBy", context.UserFkCatalog[0].ColumnName);
+    }
+
+    [Fact]
+    public async Task SynthesizesCatalogFromAttributeReferenceWhenRelationshipsMissing()
+    {
+        using var temp = new TemporaryDirectory();
+        var userReferenceToken = "bt*00000000-0000-0000-0000-000000000000*11111111-1111-1111-1111-111111111111";
+
+        var moduleName = ModuleName.Create("AppCore").Value;
+        var entityName = EntityName.Create("Order").Value;
+        var tableName = TableName.Create("OSUSR_APP_ORDER").Value;
+        var schemaName = SchemaName.Create("dbo").Value;
+
+        var idAttribute = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true).Value;
+
+        var reference = AttributeReference.Create(
+            isReference: true,
+            targetEntityId: null,
+            targetEntity: EntityName.Create("User").Value,
+            targetPhysicalName: TableName.Create("ossys_User").Value,
+            deleteRuleCode: "Protect",
+            hasDatabaseConstraint: null).Value;
+
+        var createdBy = AttributeModel.Create(
+            AttributeName.Create("CreatedBy").Value,
+            ColumnName.Create("CREATEDBY").Value,
+            dataType: userReferenceToken,
+            isMandatory: false,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            reference: reference).Value;
+
+        var entity = EntityModel.Create(
+            moduleName,
+            entityName,
+            tableName,
+            schemaName,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { idAttribute, createdBy }).Value;
+
+        var module = ModuleModel.Create(moduleName, isSystemModule: false, isActive: true, new[] { entity }).Value;
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { module });
+        Assert.True(model.IsSuccess);
+
+        var schemaGraph = new ModelSchemaGraph(model.Value);
+        var artifacts = new UatUsersArtifacts(temp.Path);
+        var context = new UatUsersContext(
+            schemaGraph,
+            artifacts,
+            new ThrowingConnectionFactory(),
+            "dbo",
+            "ossys_User",
+            "Id",
+            includeColumns: null,
+            Path.Combine(temp.Path, "map.csv"),
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: Path.Combine(temp.Path, "allowed.csv"),
+            snapshotPath: null,
+            userEntityIdentifier: userReferenceToken,
+            fromLiveMetadata: false,
+            sourceFingerprint: "test/db");
+
+        var step = new DiscoverUserFkCatalogStep();
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Single(context.UserFkCatalog);
+        var column = context.UserFkCatalog[0];
+        Assert.Equal("dbo", column.SchemaName);
+        Assert.Equal("OSUSR_APP_ORDER", column.TableName);
+        Assert.Equal("CREATEDBY", column.ColumnName);
+        Assert.StartsWith("synthetic_", column.ForeignKeyName, StringComparison.Ordinal);
     }
 
     private sealed class StubSchemaGraph : IUserSchemaGraph

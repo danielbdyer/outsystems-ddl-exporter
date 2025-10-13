@@ -144,6 +144,9 @@ Command CreateUatUsersCommand()
     var userDdlOption = new Option<string?>("--user-ddl", "SQL or CSV export of dbo.User containing allowed user identifiers.");
     var userIdsOption = new Option<string?>("--user-ids", "Optional CSV or text file containing one allowed user identifier per row.");
     var snapshotOption = new Option<string?>("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
+    var userEntityIdOption = new Option<string?>(
+        "--user-entity-id",
+        "Optional override identifier for the user entity (accepts bt*GUID*GUID, physical name, or numeric id).");
 
     var command = new Command("uat-users", "Emit user remapping artifacts for UAT.")
     {
@@ -158,7 +161,8 @@ Command CreateUatUsersCommand()
         userMapOption,
         userDdlOption,
         userIdsOption,
-        snapshotOption
+        snapshotOption,
+        userEntityIdOption
     };
 
     command.SetHandler(async context =>
@@ -198,7 +202,8 @@ Command CreateUatUsersCommand()
             parseResult.GetValueForOption(userMapOption),
             allowedDdl,
             allowedIds,
-            parseResult.GetValueForOption(snapshotOption));
+            parseResult.GetValueForOption(snapshotOption),
+            parseResult.GetValueForOption(userEntityIdOption));
 
         if (!options.FromLiveMetadata && string.IsNullOrWhiteSpace(options.ModelPath))
         {
