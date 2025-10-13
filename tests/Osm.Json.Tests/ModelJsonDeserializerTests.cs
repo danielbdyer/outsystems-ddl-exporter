@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using Osm.Domain.Model;
@@ -133,7 +134,7 @@ public class ModelJsonDeserializerTests
                       "kind": "IX",
                       "isDisabled": false,
                       "isPadded": true,
-                      "fillFactor": 90,
+                      "fill_factor": 90,
                       "ignoreDupKey": true,
                       "allowRowLocks": true,
                       "allowPageLocks": false,
@@ -772,6 +773,27 @@ public class ModelJsonDeserializerTests
 
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, e => e.Code == "module.entities.duplicatePhysical");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldAcceptLegacyFillFactorProperty()
+    {
+        var fixturePath = FixtureFile.GetPath("model.edge-case.json");
+        var json = File.ReadAllText(fixturePath).Replace("\"fill_factor\"", "\"fillFactor\"");
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var warnings = new List<string>();
+        var result = deserializer.Deserialize(stream, warnings);
+
+        Assert.True(result.IsSuccess);
+        var indexWithFillFactor = result.Value.Modules
+            .SelectMany(static module => module.Entities)
+            .SelectMany(static entity => entity.Indexes)
+            .First(static index => index.OnDisk.FillFactor.HasValue);
+
+        Assert.Equal(85, indexWithFillFactor.OnDisk.FillFactor);
     }
 
     [Fact]

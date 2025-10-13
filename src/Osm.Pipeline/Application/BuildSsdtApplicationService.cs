@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Immutable;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -10,6 +12,7 @@ using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
+using Osm.Pipeline.SqlExtraction;
 using Osm.Pipeline.StaticData;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -27,7 +30,10 @@ public sealed record BuildSsdtApplicationResult(
     BuildSsdtPipelineResult PipelineResult,
     string ProfilerProvider,
     string? ProfilePath,
-    string OutputDirectory);
+    string OutputDirectory,
+    string ModelPath,
+    bool ModelWasExtracted,
+    ImmutableArray<string> ModelExtractionWarnings);
 
 public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>
 {
@@ -78,14 +84,21 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
         }
 
         var profilePath = profilePathResult.Value;
+        var outputDirectory = ResolveOutputDirectory(input.Overrides.OutputDirectory);
 
-        var modelPath = ResolveModelPath(configuration, input.Overrides.ModelPath);
-        if (modelPath.IsFailure)
+        var modelResolutionResult = await ResolveModelAsync(
+            configuration,
+            input.Overrides,
+            moduleFilter,
+            sqlOptionsResult.Value,
+            outputDirectory,
+            cancellationToken).ConfigureAwait(false);
+        if (modelResolutionResult.IsFailure)
         {
-            return Result<BuildSsdtApplicationResult>.Failure(modelPath.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(modelResolutionResult.Errors);
         }
 
-        var outputDirectory = ResolveOutputDirectory(input.Overrides.OutputDirectory);
+        var modelResolution = modelResolutionResult.Value;
 
         var namingOverridesResult = NamingOverridesResolver.Resolve(
             input.Overrides.RenameOverrides,
@@ -117,13 +130,13 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             configuration,
             tighteningOptions,
             moduleFilter,
-            modelPath.Value,
+            modelResolution.ModelPath,
             profilePath,
             input.Cache,
             input.ConfigurationContext.ConfigPath);
 
         var request = new BuildSsdtPipelineRequest(
-            modelPath.Value,
+            modelResolution.ModelPath,
             moduleFilter,
             outputDirectory,
             tighteningOptions,
@@ -149,20 +162,10 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             pipelineResult.Value,
             profilerProvider,
             profilePath,
-            outputDirectory);
-    }
-
-    private static Result<string> ResolveModelPath(CliConfiguration configuration, string? overridePath)
-    {
-        var modelPath = overridePath ?? configuration.ModelPath;
-        if (string.IsNullOrWhiteSpace(modelPath))
-        {
-            return ValidationError.Create(
-                "pipeline.buildSsdt.model.missing",
-                "Model path must be provided for SSDT emission.");
-        }
-
-        return Result<string>.Success(modelPath);
+            outputDirectory,
+            modelResolution.ModelPath,
+            modelResolution.WasExtracted,
+            modelResolution.Warnings);
     }
 
     private static string ResolveOutputDirectory(string? overridePath)
@@ -218,6 +221,78 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
 
         return Result<string?>.Success(null);
     }
+
+    private async Task<Result<ModelResolution>> ResolveModelAsync(
+        CliConfiguration configuration,
+        BuildSsdtOverrides overrides,
+        ModuleFilterOptions moduleFilter,
+        ResolvedSqlOptions sqlOptions,
+        string outputDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (configuration is null)
+        {
+            throw new ArgumentNullException(nameof(configuration));
+        }
+
+        overrides ??= new BuildSsdtOverrides(null, null, null, null, null, null, null);
+
+        var candidatePath = overrides.ModelPath ?? configuration.ModelPath;
+        if (!string.IsNullOrWhiteSpace(candidatePath))
+        {
+            return new ModelResolution(candidatePath!, WasExtracted: false, ImmutableArray<string>.Empty);
+        }
+
+        var moduleNames = moduleFilter.Modules.IsDefaultOrEmpty
+            ? null
+            : moduleFilter.Modules.Select(static module => module.Value);
+
+        var extractionCommandResult = ModelExtractionCommand.Create(
+            moduleNames,
+            moduleFilter.IncludeSystemModules,
+            onlyActiveAttributes: false);
+        if (extractionCommandResult.IsFailure)
+        {
+            return Result<ModelResolution>.Failure(extractionCommandResult.Errors);
+        }
+
+        if (string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
+        {
+            return ValidationError.Create(
+                "pipeline.buildSsdt.model.extraction.connectionStringMissing",
+                "Model path was not provided and SQL extraction requires a connection string. Provide --model, configure model.path, or supply --connection-string/sql.connectionString.");
+        }
+
+        var extractRequest = new ExtractModelPipelineRequest(
+            extractionCommandResult.Value,
+            sqlOptions,
+            AdvancedSqlFixtureManifestPath: null);
+
+        var extractionResult = await _dispatcher
+            .DispatchAsync<ExtractModelPipelineRequest, ModelExtractionResult>(extractRequest, cancellationToken)
+            .ConfigureAwait(false);
+        if (extractionResult.IsFailure)
+        {
+            return Result<ModelResolution>.Failure(extractionResult.Errors);
+        }
+
+        var extraction = extractionResult.Value;
+        var resolvedOutputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
+            ? Directory.GetCurrentDirectory()
+            : Path.GetFullPath(outputDirectory);
+
+        Directory.CreateDirectory(resolvedOutputDirectory);
+        var modelPath = Path.Combine(resolvedOutputDirectory, "model.extracted.json");
+        await File.WriteAllTextAsync(modelPath, extraction.Json, cancellationToken).ConfigureAwait(false);
+
+        var warnings = extraction.Warnings.Count == 0
+            ? ImmutableArray<string>.Empty
+            : ImmutableArray.CreateRange(extraction.Warnings);
+
+        return new ModelResolution(Path.GetFullPath(modelPath), true, warnings);
+    }
+
+    private sealed record ModelResolution(string ModelPath, bool WasExtracted, ImmutableArray<string> Warnings);
 
     private static SupplementalModelOptions ResolveSupplementalOptions(SupplementalModelConfiguration configuration)
     {
