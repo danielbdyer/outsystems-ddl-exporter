@@ -77,6 +77,14 @@ public static class SqlScriptEmitter
 
         builder.AppendLine("CREATE TABLE #Changes (TableName sysname NOT NULL, ColumnName sysname NOT NULL, OldUserId INT NOT NULL, NewUserId INT NOT NULL, ChangedAt datetime2(3) NOT NULL);");
         builder.AppendLine();
+        builder.AppendLine("IF NOT EXISTS (SELECT 1 FROM #UserRemap)");
+        builder.AppendLine("BEGIN");
+        builder.AppendLine("    PRINT 'No mappings supplied. Skipping updates.';");
+        builder.AppendLine("    GOTO Summary;");
+        builder.AppendLine("END;");
+        builder.AppendLine();
+
+        AppendTargetSanityCheck(builder, context);
 
         foreach (var column in context.UserFkCatalog)
         {
