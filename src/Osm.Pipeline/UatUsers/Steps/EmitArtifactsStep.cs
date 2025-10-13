@@ -42,9 +42,6 @@ public sealed class EmitArtifactsStep : IPipelineStep<UatUsersContext>
             yield break;
         }
 
-        var mappingLookup = context.UserMap.ToDictionary(entry => entry.SourceUserId, entry => entry);
-        var orphanSet = new HashSet<long>(context.OrphanUserIds);
-
         foreach (var column in context.UserFkCatalog)
         {
             if (!context.ForeignKeyValueCounts.TryGetValue(column, out var values))
