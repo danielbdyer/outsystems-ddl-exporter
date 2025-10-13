@@ -20,6 +20,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.RemapUsers;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Validation.Tightening;
 using Osm.Pipeline.Mediation;
@@ -179,6 +180,10 @@ Command CreateRemapUsersCommand()
     var logLevelOption = new Option<string?>("--log-level", "Telemetry verbosity for the pipeline.");
     logLevelOption.FromAmong("info", "debug", "trace");
 
+    var includePiiOption = new Option<bool>("--include-pii", () => false, "Include PII values in emitted artifacts.");
+
+    var rebuildMapOption = new Option<bool>("--rebuild-map", () => false, "Force rebuilding the user map for the source environment.");
+
     var userTableOption = new Option<string>("--user-table", () => "ossys_User", "Name of the user table in the target environment.");
 
     var command = new Command("remap-users", "Remap source user foreign keys into the UAT environment.")
@@ -195,6 +200,8 @@ Command CreateRemapUsersCommand()
         commandTimeoutOption,
         parallelismOption,
         logLevelOption,
+        includePiiOption,
+        rebuildMapOption,
         userTableOption
     };
 
@@ -253,12 +260,19 @@ Command CreateRemapUsersCommand()
             .ToArray();
 
         var policyValue = parseResult.GetValueForOption(policyOption) ?? "reassign";
+        var policyExplicit = parseResult.HasOption(policyOption);
         var policy = Enum.TryParse<RemapUsersPolicy>(policyValue, ignoreCase: true, out var parsedPolicy)
             ? parsedPolicy
             : RemapUsersPolicy.Reassign;
 
         var logLevel = parseResult.GetValueForOption(logLevelOption);
         var normalizedLogLevel = string.IsNullOrWhiteSpace(logLevel) ? null : logLevel.Trim().ToLowerInvariant();
+        var parsedLogLevel = normalizedLogLevel switch
+        {
+            "trace" => RemapUsersLogLevel.Trace,
+            "debug" => RemapUsersLogLevel.Debug,
+            _ => RemapUsersLogLevel.Info
+        };
 
         var options = new RemapUsersOptions(
             parseResult.GetValueForOption(sourceEnvironmentOption)!,
@@ -267,13 +281,16 @@ Command CreateRemapUsersCommand()
             matchingRules,
             parseResult.GetValueForOption(fallbackUserIdOption),
             policy,
+            policyExplicit,
             parseResult.GetValueForOption(dryRunOption),
             parseResult.GetValueForOption(outputOption)!,
             parseResult.GetValueForOption(batchSizeOption),
             parseResult.GetValueForOption(commandTimeoutOption),
             parseResult.GetValueForOption(parallelismOption),
-            normalizedLogLevel,
-            parseResult.GetValueForOption(userTableOption)!);
+            parsedLogLevel,
+            parseResult.GetValueForOption(userTableOption)!,
+            parseResult.GetValueForOption(includePiiOption),
+            parseResult.GetValueForOption(rebuildMapOption));
 
         var exitCode = await remapUsersHandler.ExecuteAsync(options, context.GetCancellationToken()).ConfigureAwait(false);
         context.ExitCode = exitCode;

@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Osm.Pipeline.RemapUsers;
 
@@ -28,6 +31,11 @@ public sealed record RemapUsersContext
         IBulkLoader bulkLoader,
         IRemapUsersTelemetry telemetry,
         IRemapUsersArtifactWriter artifactWriter,
+        RemapUsersLogLevel logLevel,
+        bool includePii,
+        bool rebuildMap,
+        RemapUsersRunParameters runParameters,
+        bool policyExplicit,
         RemapUsersState? state = null)
     {
         if (string.IsNullOrWhiteSpace(sourceEnvironment))
@@ -73,8 +81,49 @@ public sealed record RemapUsersContext
 
         SourceEnvironment = sourceEnvironment.Trim();
         UatConnectionString = uatConnectionString.Trim();
-        SnapshotPath = snapshotPath.Trim();
-        MatchingRules = RemapUsersMatchRuleExtensions.ParseMany(matchingRules ?? throw new ArgumentNullException(nameof(matchingRules)));
+        SnapshotPath = Path.GetFullPath(snapshotPath.Trim());
+        RunParameters = runParameters ?? throw new ArgumentNullException(nameof(runParameters));
+        if (!string.Equals(RunParameters.SourceEnvironment, SourceEnvironment, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Run parameters source environment does not match context.", nameof(runParameters));
+        }
+
+        if (!string.Equals(Path.GetFullPath(RunParameters.SnapshotPath), SnapshotPath, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Run parameters snapshot path does not match context.", nameof(runParameters));
+        }
+
+        if (!string.Equals(RunParameters.UserTable, userTable, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Run parameters user table does not match context.", nameof(runParameters));
+        }
+
+        if (RunParameters.DryRun != dryRun)
+        {
+            throw new ArgumentException("Run parameters dry-run flag does not match context.", nameof(runParameters));
+        }
+
+        if (RunParameters.Policy != Policy || RunParameters.IncludePii != includePii || RunParameters.RebuildMap != rebuildMap)
+        {
+            throw new ArgumentException("Run parameters do not align with context policy flags.", nameof(runParameters));
+        }
+
+        if (RunParameters.BatchSize != batchSize || RunParameters.CommandTimeoutSeconds != commandTimeoutSeconds || RunParameters.Parallelism != parallelism)
+        {
+            throw new ArgumentException("Run parameters do not align with batching configuration.", nameof(runParameters));
+        }
+
+        if (RunParameters.FallbackUserId != fallbackUserId)
+        {
+            throw new ArgumentException("Run parameters fallback identifier does not match context.", nameof(runParameters));
+        }
+
+        if (!RunParameters.MatchingRules.SequenceEqual(matchingRules ?? throw new ArgumentNullException(nameof(matchingRules)), StringComparer.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Run parameters matching rules do not match context.", nameof(runParameters));
+        }
+
+        MatchingRules = RemapUsersMatchRuleExtensions.ParseMany(matchingRules);
         if (MatchingRules.Count == 0)
         {
             throw new ArgumentException("At least one matching rule must be supplied.", nameof(matchingRules));
@@ -90,10 +139,16 @@ public sealed record RemapUsersContext
         FallbackUserId = fallbackUserId;
         Policy = policy;
         DryRun = dryRun;
-        ArtifactDirectory = string.IsNullOrWhiteSpace(artifactDirectory) ? "./_artifacts/remap-users" : artifactDirectory;
+        ArtifactDirectory = string.IsNullOrWhiteSpace(artifactDirectory)
+            ? Path.GetFullPath("./_artifacts/remap-users")
+            : Path.GetFullPath(artifactDirectory);
         BatchSize = batchSize;
         CommandTimeout = TimeSpan.FromSeconds(commandTimeoutSeconds);
         Parallelism = parallelism;
+        LogLevel = logLevel;
+        IncludePii = includePii;
+        RebuildMap = rebuildMap;
+        PolicyExplicit = policyExplicit;
         var trimmedUserTable = userTable.Trim();
         var schemaSeparatorIndex = trimmedUserTable.IndexOf('.');
         if (schemaSeparatorIndex > 0)
@@ -152,6 +207,16 @@ public sealed record RemapUsersContext
 
     public IRemapUsersArtifactWriter ArtifactWriter { get; }
 
+    public RemapUsersLogLevel LogLevel { get; }
+
+    public bool IncludePii { get; }
+
+    public bool RebuildMap { get; }
+
+    public bool PolicyExplicit { get; }
+
+    public RemapUsersRunParameters RunParameters { get; }
+
     public RemapUsersState State { get; }
 
     public IReadOnlyDictionary<string, object?> BuildCommonParameters()
@@ -168,5 +233,22 @@ public sealed record RemapUsersContext
     public string FormatStepMessage(string messageTemplate, params object[] args)
     {
         return string.Format(CultureInfo.InvariantCulture, messageTemplate, args);
+    }
+
+    public string RedactIdentifier(string? value)
+    {
+        if (IncludePii)
+        {
+            return value ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var hash = SHA256.HashData(bytes);
+        return "hash:" + Convert.ToHexString(hash);
     }
 }

@@ -35,6 +35,12 @@ internal sealed class RewriteStagingFksToUatUsersStep : RemapUsersPipelineStep
             };
 
             var rewriteSql = BuildRewriteSql(entry);
+            var unmappedCount = await context.SqlRunner.ExecuteScalarAsync<long?>(
+                BuildUnmappedCountSql(entry),
+                parameters,
+                context.CommandTimeout,
+                cancellationToken).ConfigureAwait(false) ?? 0L;
+
             var remappedRows = await context.SqlRunner.ExecuteAsync(
                 rewriteSql,
                 parameters,
@@ -44,32 +50,34 @@ internal sealed class RewriteStagingFksToUatUsersStep : RemapUsersPipelineStep
             long reassigned = 0;
             long pruned = 0;
 
-            if (context.Policy == RemapUsersPolicy.Reassign)
+            if (unmappedCount > 0)
             {
-                if (!context.FallbackUserId.HasValue)
+                if (context.Policy == RemapUsersPolicy.Reassign)
                 {
-                    throw new InvalidOperationException("Fallback user id must be provided when policy is set to reassign.");
+                    if (!context.FallbackUserId.HasValue)
+                    {
+                        throw new InvalidOperationException("Fallback user id must be provided when policy is set to reassign.");
+                    }
+
+                    var reassignSql = BuildReassignSql(entry);
+                    reassigned = await context.SqlRunner.ExecuteAsync(
+                        reassignSql,
+                        parameters,
+                        context.CommandTimeout,
+                        cancellationToken).ConfigureAwait(false);
                 }
-
-                var reassignSql = BuildReassignSql(entry);
-                reassigned = await context.SqlRunner.ExecuteAsync(
-                    reassignSql,
-                    parameters,
-                    context.CommandTimeout,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                var pruneSql = BuildPruneSql(entry);
-                pruned = await context.SqlRunner.ExecuteAsync(
-                    pruneSql,
-                    parameters,
-                    context.CommandTimeout,
-                    cancellationToken).ConfigureAwait(false);
+                else
+                {
+                    var pruneSql = BuildPruneSql(entry);
+                    pruned = await context.SqlRunner.ExecuteAsync(
+                        pruneSql,
+                        parameters,
+                        context.CommandTimeout,
+                        cancellationToken).ConfigureAwait(false);
+                }
             }
 
-            var unmapped = reassigned + pruned;
-            var summary = new ColumnRewriteSummary(remappedRows, reassigned, pruned, unmapped);
+            var summary = new ColumnRewriteSummary(remappedRows, reassigned, pruned, unmappedCount, context.Policy);
             context.State.RecordRewrite(entry, summary);
 
             var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -78,7 +86,8 @@ internal sealed class RewriteStagingFksToUatUsersStep : RemapUsersPipelineStep
                 ["column"] = entry.ColumnName,
                 ["remapped"] = remappedRows.ToString(CultureInfo.InvariantCulture),
                 ["reassigned"] = reassigned.ToString(CultureInfo.InvariantCulture),
-                ["pruned"] = pruned.ToString(CultureInfo.InvariantCulture)
+                ["pruned"] = pruned.ToString(CultureInfo.InvariantCulture),
+                ["unmapped"] = unmappedCount.ToString(CultureInfo.InvariantCulture)
             };
 
             context.Telemetry.Info(Name, "Rewrote staging foreign key column.", metadata);
@@ -123,6 +132,18 @@ internal sealed class RewriteStagingFksToUatUsersStep : RemapUsersPipelineStep
     {
         var builder = new StringBuilder();
         builder.AppendLine($"DELETE s");
+        builder.AppendLine($"FROM stg.[{entry.TableName}] s");
+        builder.AppendLine("LEFT JOIN ctl.UserMap m");
+        builder.AppendLine("  ON m.SourceEnv = @SourceEnv");
+        builder.AppendLine($" AND m.SourceUserId = s.[{entry.ColumnName}]");
+        builder.AppendLine("WHERE m.SourceUserId IS NULL;");
+        return builder.ToString();
+    }
+
+    private static string BuildUnmappedCountSql(UserForeignKeyCatalogEntry entry)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"SELECT COUNT_BIG(1)");
         builder.AppendLine($"FROM stg.[{entry.TableName}] s");
         builder.AppendLine("LEFT JOIN ctl.UserMap m");
         builder.AppendLine("  ON m.SourceEnv = @SourceEnv");

@@ -8,12 +8,23 @@ namespace Osm.Pipeline.RemapUsers;
 
 public interface IRemapUsersTelemetry
 {
+    IReadOnlyList<RemapUsersTelemetryEntry> Entries { get; }
     void StepStarted(string stepName);
     void StepCompleted(string stepName);
     void Info(string stepName, string message, IReadOnlyDictionary<string, string?>? metadata = null);
     void Warning(string stepName, string message, IReadOnlyDictionary<string, string?>? metadata = null);
     void Error(string stepName, string message, Exception exception, IReadOnlyDictionary<string, string?>? metadata = null);
 }
+
+public sealed record RemapUsersTelemetryEntry(
+    DateTimeOffset Timestamp,
+    string Step,
+    string EventType,
+    TimeSpan? Duration,
+    string Message,
+    IReadOnlyDictionary<string, string?>? Metadata,
+    string? ExceptionType,
+    string? ExceptionMessage);
 
 public interface IRemapUsersArtifactWriter
 {

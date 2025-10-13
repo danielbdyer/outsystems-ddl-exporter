@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Osm.Pipeline.RemapUsers;
 
 namespace Osm.Cli;
 
@@ -15,13 +16,16 @@ public sealed class RemapUsersOptions
         IReadOnlyList<string> matchingRules,
         long? fallbackUserId,
         RemapUsersPolicy policy,
+        bool policyExplicit,
         bool dryRun,
         string outputDirectory,
         int batchSize,
         int commandTimeoutSeconds,
         int parallelism,
-        string? logLevel,
-        string userTable)
+        RemapUsersLogLevel logLevel,
+        string userTable,
+        bool includePii,
+        bool rebuildMap)
     {
         SourceEnvironment = !string.IsNullOrWhiteSpace(sourceEnvironment)
             ? sourceEnvironment
@@ -60,6 +64,7 @@ public sealed class RemapUsersOptions
 
         FallbackUserId = fallbackUserId;
         Policy = policy;
+        PolicyExplicit = policyExplicit;
         DryRun = dryRun;
         OutputDirectory = string.IsNullOrWhiteSpace(outputDirectory) ? "./_artifacts/remap-users" : outputDirectory;
         BatchSize = batchSize;
@@ -67,6 +72,8 @@ public sealed class RemapUsersOptions
         Parallelism = parallelism;
         LogLevel = logLevel;
         UserTable = userTable;
+        IncludePii = includePii;
+        RebuildMap = rebuildMap;
     }
 
     public string SourceEnvironment { get; }
@@ -81,6 +88,8 @@ public sealed class RemapUsersOptions
 
     public RemapUsersPolicy Policy { get; }
 
+    public bool PolicyExplicit { get; }
+
     public bool DryRun { get; }
 
     public string OutputDirectory { get; }
@@ -91,13 +100,11 @@ public sealed class RemapUsersOptions
 
     public int Parallelism { get; }
 
-    public string? LogLevel { get; }
+    public RemapUsersLogLevel LogLevel { get; }
 
     public string UserTable { get; }
-}
 
-public enum RemapUsersPolicy
-{
-    Reassign,
-    Prune
+    public bool IncludePii { get; }
+
+    public bool RebuildMap { get; }
 }
