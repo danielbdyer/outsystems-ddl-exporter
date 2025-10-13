@@ -20,7 +20,8 @@ public sealed class UatUsersOptions
         string? userMapPath,
         string? allowedUsersSqlPath,
         string? allowedUserIdsPath,
-        string? snapshotPath)
+        string? snapshotPath,
+        string? userEntityIdentifier)
     {
         ModelPath = string.IsNullOrWhiteSpace(modelPath) ? null : Path.GetFullPath(modelPath.Trim());
         UatConnectionString = string.IsNullOrWhiteSpace(uatConnectionString) ? null : uatConnectionString.Trim();
@@ -46,6 +47,7 @@ public sealed class UatUsersOptions
         }
 
         SnapshotPath = string.IsNullOrWhiteSpace(snapshotPath) ? null : Path.GetFullPath(snapshotPath.Trim());
+        UserEntityIdentifier = string.IsNullOrWhiteSpace(userEntityIdentifier) ? null : userEntityIdentifier.Trim();
     }
 
     public string? ModelPath { get; }
@@ -71,4 +73,6 @@ public sealed class UatUsersOptions
     public string? AllowedUserIdsPath { get; }
 
     public string? SnapshotPath { get; }
+
+    public string? UserEntityIdentifier { get; }
 }

@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.UatUsers;
@@ -32,6 +34,56 @@ public sealed class ModelSchemaGraph : IUserSchemaGraph
     public ModelSchemaGraph(OsmModel model)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
+    }
+
+    public IReadOnlyList<ForeignKeyDefinition> GetSyntheticUserForeignKeys(
+        string userSchema,
+        string userTable,
+        string userIdColumn,
+        string? userEntityIdentifier)
+    {
+        if (string.IsNullOrWhiteSpace(userSchema) ||
+            string.IsNullOrWhiteSpace(userTable) ||
+            string.IsNullOrWhiteSpace(userIdColumn))
+        {
+            return Array.Empty<ForeignKeyDefinition>();
+        }
+
+        int? parsedEntityId = null;
+        if (!string.IsNullOrWhiteSpace(userEntityIdentifier) &&
+            int.TryParse(userEntityIdentifier, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numericId))
+        {
+            parsedEntityId = numericId;
+        }
+
+        var results = new List<ForeignKeyDefinition>();
+        foreach (var module in _model.Modules)
+        {
+            foreach (var entity in module.Entities)
+            {
+                foreach (var attribute in entity.Attributes)
+                {
+                    var reference = attribute.Reference;
+                    if (!reference.IsReference)
+                    {
+                        continue;
+                    }
+
+                    if (!MatchesUserReference(reference, attribute, userTable, userEntityIdentifier, parsedEntityId))
+                    {
+                        continue;
+                    }
+
+                    var foreignKeyName = $"synthetic_{entity.PhysicalName.Value}_{attribute.ColumnName.Value}";
+                    var parent = new ForeignKeyTable(entity.Schema.Value, entity.PhysicalName.Value);
+                    var referenced = new ForeignKeyTable(userSchema, userTable);
+                    var columns = ImmutableArray.Create(new ForeignKeyColumn(attribute.ColumnName.Value, userIdColumn));
+                    results.Add(new ForeignKeyDefinition(foreignKeyName, parent, referenced, columns));
+                }
+            }
+        }
+
+        return results;
     }
 
     public Task<IReadOnlyList<ForeignKeyDefinition>> GetForeignKeysAsync(CancellationToken cancellationToken)
@@ -93,6 +145,59 @@ public sealed class ModelSchemaGraph : IUserSchemaGraph
         }
 
         return Task.FromResult<IReadOnlyList<ForeignKeyDefinition>>(result);
+    }
+
+    private static bool MatchesUserReference(
+        AttributeReference reference,
+        AttributeModel attribute,
+        string userTable,
+        string? userEntityIdentifier,
+        int? parsedEntityId)
+    {
+        if (reference.TargetPhysicalName is TableName physicalName &&
+            string.Equals(physicalName.Value, userTable, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (parsedEntityId.HasValue && reference.TargetEntityId.HasValue && reference.TargetEntityId.Value == parsedEntityId.Value)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(userEntityIdentifier))
+        {
+            return false;
+        }
+
+        if (reference.TargetPhysicalName is TableName hintedPhysical &&
+            string.Equals(hintedPhysical.Value, userEntityIdentifier, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (reference.TargetEntity is EntityName entityName &&
+            string.Equals(entityName.Value, userEntityIdentifier, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (reference.TargetEntityId.HasValue &&
+            string.Equals(
+                reference.TargetEntityId.Value.ToString(CultureInfo.InvariantCulture),
+                userEntityIdentifier,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(attribute.DataType) &&
+            string.Equals(attribute.DataType, userEntityIdentifier, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 }
 

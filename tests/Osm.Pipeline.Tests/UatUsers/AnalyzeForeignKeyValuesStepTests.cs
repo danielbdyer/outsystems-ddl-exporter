@@ -109,6 +109,7 @@ public sealed class AnalyzeForeignKeyValuesStepTests
             allowedUsersSqlPath: null,
             allowedUserIdsPath: allowedPath,
             snapshotPath: Path.Combine(root, "snapshot.json"),
+            userEntityIdentifier: null,
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
     }

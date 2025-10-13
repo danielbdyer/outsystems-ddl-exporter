@@ -44,11 +44,12 @@ public sealed class UatUsersCommand
                 options.FromLiveMetadata,
                 options.SnapshotPath ?? "<none>");
             _logger.LogInformation(
-                "User configuration: Schema={Schema}, Table={Table}, IdColumn={Column}, IncludeColumns={IncludeCount}.",
+                "User configuration: Schema={Schema}, Table={Table}, IdColumn={Column}, IncludeColumns={IncludeCount}, EntityIdentifier={EntityIdentifier}.",
                 options.UserSchema,
                 options.UserTable,
                 options.UserIdColumn,
-                options.IncludeColumns.Length);
+                options.IncludeColumns.Length,
+                options.UserEntityIdentifier ?? "<none>");
             _logger.LogInformation(
                 "Allowed user sources: SqlPath={SqlPath}, ListPath={ListPath}.",
                 options.AllowedUsersSqlPath ?? "<none>",
@@ -111,6 +112,7 @@ public sealed class UatUsersCommand
                 options.AllowedUsersSqlPath,
                 options.AllowedUserIdsPath,
                 options.SnapshotPath,
+                options.UserEntityIdentifier,
                 options.FromLiveMetadata,
                 sourceFingerprint);
 
