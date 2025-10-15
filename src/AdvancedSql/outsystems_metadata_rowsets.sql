@@ -869,7 +869,6 @@ SELECT
       JSON_QUERY(tj.TriggersJson)     AS [triggers]
     FROM #Ent en
     LEFT JOIN #PhysTbls pt  ON pt.EntityId = en.EntityId
-    LEFT JOIN sys.schemas s ON s.schema_id = OBJECT_SCHEMA_NAME(pt.object_id, DB_ID())
     LEFT JOIN #AttrJson aj  ON aj.EntityId = en.EntityId
     LEFT JOIN #RelJson  rj  ON rj.EntityId = en.EntityId
     LEFT JOIN #IdxJson  ij  ON ij.EntityId = en.EntityId
