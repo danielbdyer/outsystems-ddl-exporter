@@ -742,16 +742,24 @@ SELECT
     SELECT DISTINCT
       a.AttrId                           AS [viaAttributeId],
       a.AttrName                         AS [viaAttributeName],
-      r.RefEntityName                    AS [toEntity_name],
-      r.RefPhysicalName                  AS [toEntity_physicalName],
+      COALESCE(r.RefEntityName, fk.ReferencedTable)       AS [toEntity_name],
+      COALESCE(r.RefPhysicalName, fk.ReferencedTable)     AS [toEntity_physicalName],
       a.DeleteRule                       AS [deleteRuleCode],
       CAST(ISNULL(h.HasFK, 0) AS int)    AS [hasDbConstraint],
       JSON_QUERY(faj.ConstraintJson)     AS [actualConstraints]
     FROM #Attr a
-    JOIN #RefResolved r ON r.AttrId = a.AttrId
+    LEFT JOIN #RefResolved r ON r.AttrId = a.AttrId
     LEFT JOIN #AttrHasFK h ON h.AttrId = a.AttrId
     LEFT JOIN #FkAttrJson faj ON faj.AttrId = a.AttrId
+    LEFT JOIN #FkReality fk
+      ON fk.EntityId = a.EntityId
+     AND EXISTS (
+           SELECT 1
+           FROM #FkColumns fc
+           WHERE fc.FkObjectId = fk.FkObjectId
+             AND fc.ParentAttrId = a.AttrId)
     WHERE a.EntityId = en.EntityId
+      AND (r.AttrId IS NOT NULL OR fk.FkObjectId IS NOT NULL)
     ORDER BY a.AttrName
     FOR JSON PATH
   ) AS RelationshipsJson
