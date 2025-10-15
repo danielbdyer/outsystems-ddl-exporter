@@ -110,8 +110,9 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             });
 
         var ingestionWarnings = new List<string>();
+        var ingestionOptions = new ModelIngestionOptions(request.ModuleFilter.ValidationOverrides, null);
         var modelResult = await _modelIngestionService
-            .LoadFromFileAsync(request.ModelPath, ingestionWarnings, cancellationToken)
+            .LoadFromFileAsync(request.ModelPath, ingestionWarnings, cancellationToken, ingestionOptions)
             .ConfigureAwait(false);
         if (modelResult.IsFailure)
         {

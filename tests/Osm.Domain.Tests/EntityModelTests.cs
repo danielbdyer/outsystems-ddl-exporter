@@ -1,3 +1,4 @@
+using System.Linq;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
 using Xunit;
@@ -62,6 +63,39 @@ public class EntityModelTests
 
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, e => e.Code == "entity.attributes.missingPrimaryKey");
+    }
+
+    [Fact]
+    public void Create_ShouldAllowMissingPrimaryKey_WhenOverrideEnabled()
+    {
+        var module = ModuleName.Create("Module").Value;
+        var logical = EntityName.Create("Entity").Value;
+        var schema = SchemaName.Create("dbo").Value;
+        var table = TableName.Create("OSUSR_ENTITY").Value;
+
+        var attribute = AttributeModel.Create(
+            AttributeName.Create("Name").Value,
+            ColumnName.Create("NAME").Value,
+            dataType: "Text",
+            isMandatory: true,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            reference: AttributeReference.None).Value;
+
+        var result = EntityModel.Create(
+            module,
+            logical,
+            table,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { attribute },
+            allowMissingPrimaryKey: true);
+
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
     }
 
     [Fact]
