@@ -74,70 +74,70 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                 .ConfigureAwait(false);
 
             var modules = await ReadModulesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "Modules", modules.Count, "Entities", 1).ConfigureAwait(false);
 
             var entities = await ReadEntitiesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "Entities", entities.Count, "Attributes", 2).ConfigureAwait(false);
 
             var attributes = await ReadAttributesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "Attributes", attributes.Count, "References", 3).ConfigureAwait(false);
 
             var references = await ReadReferencesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "References", references.Count, "PhysicalTables", 4).ConfigureAwait(false);
 
             var physicalTables = await ReadPhysicalTablesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "PhysicalTables", physicalTables.Count, "ColumnReality", 5).ConfigureAwait(false);
 
             var columnReality = await ReadColumnRealityAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "ColumnReality", columnReality.Count, "ColumnChecks", 6).ConfigureAwait(false);
 
             var columnChecks = await ReadColumnChecksAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "ColumnChecks", columnChecks.Count, "ColumnCheckJson", 7).ConfigureAwait(false);
 
             var columnCheckJson = await ReadColumnCheckJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "ColumnCheckJson", columnCheckJson.Count, "PhysicalColumnsPresent", 8).ConfigureAwait(false);
 
             var physicalColumnsPresent = await ReadPhysicalColumnsPresentAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "PhysicalColumnsPresent", physicalColumnsPresent.Count, "Indexes", 9).ConfigureAwait(false);
 
             var indexes = await ReadIndexesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "Indexes", indexes.Count, "IndexColumns", 10).ConfigureAwait(false);
 
             var indexColumns = await ReadIndexColumnsAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "IndexColumns", indexColumns.Count, "ForeignKeys", 11).ConfigureAwait(false);
 
             var foreignKeys = await ReadForeignKeysAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "ForeignKeys", foreignKeys.Count, "ForeignKeyColumns", 12).ConfigureAwait(false);
 
             var foreignKeyColumns = await ReadForeignKeyColumnsAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "ForeignKeyColumns", foreignKeyColumns.Count, "ForeignKeyAttrMap", 13).ConfigureAwait(false);
 
             var foreignKeyAttrMap = await ReadForeignKeyAttrMapAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "ForeignKeyAttrMap", foreignKeyAttrMap.Count, "AttributeHasFk", 14).ConfigureAwait(false);
 
             var attributeHasFk = await ReadAttributeHasFkAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "AttributeHasFk", attributeHasFk.Count, "ForeignKeyColumnsJson", 15).ConfigureAwait(false);
 
             var fkColumnsJson = await ReadForeignKeyColumnsJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "ForeignKeyColumnsJson", fkColumnsJson.Count, "ForeignKeyAttributeJson", 16).ConfigureAwait(false);
 
             var fkAttrJson = await ReadForeignKeyAttributeJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "ForeignKeyAttributeJson", fkAttrJson.Count, "Triggers", 17).ConfigureAwait(false);
 
             var triggers = await ReadTriggersAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "Triggers", triggers.Count, "AttributeJson", 18).ConfigureAwait(false);
 
             var attributeJson = await ReadAttributeJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "AttributeJson", attributeJson.Count, "RelationshipJson", 19).ConfigureAwait(false);
 
             var relationshipJson = await ReadRelationshipJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "RelationshipJson", relationshipJson.Count, "IndexJson", 20).ConfigureAwait(false);
 
             var indexJson = await ReadIndexJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "IndexJson", indexJson.Count, "TriggerJson", 21).ConfigureAwait(false);
 
             var triggerJson = await ReadTriggerJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await MoveNextAsync(reader, cancellationToken).ConfigureAwait(false);
+            await EnsureNextResultSetAsync(reader, cancellationToken, "TriggerJson", triggerJson.Count, "ModuleJson", 22).ConfigureAwait(false);
 
             var moduleJson = await ReadModuleJsonAsync(reader, cancellationToken).ConfigureAwait(false);
 
@@ -176,6 +176,22 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                 databaseName ?? string.Empty);
 
             return Result<OutsystemsMetadataSnapshot>.Success(snapshot);
+        }
+        catch (MetadataResultSetMissingException ex)
+        {
+            stopwatch.Stop();
+            _logger.LogError(
+                ex,
+                "Metadata snapshot ended before the '{ExpectedNextResultSet}' result set (index {ExpectedIndex}) became available. Last completed '{CompletedResultSet}' contained {CompletedRowCount} row(s) after {DurationMs} ms.",
+                ex.ExpectedNextResultSetName,
+                ex.ExpectedNextResultSetIndex,
+                ex.CompletedResultSetName,
+                ex.CompletedRowCount,
+                stopwatch.Elapsed.TotalMilliseconds);
+
+            return Result<OutsystemsMetadataSnapshot>.Failure(ValidationError.Create(
+                "extraction.metadata.resultSets.missing",
+                ex.Message));
         }
         catch (DbException ex)
         {
@@ -596,11 +612,21 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
         return rows;
     }
 
-    private static async Task MoveNextAsync(DbDataReader reader, CancellationToken cancellationToken)
+    private async Task EnsureNextResultSetAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken,
+        string completedResultSetName,
+        int completedRowCount,
+        string expectedNextResultSetName,
+        int expectedNextResultSetIndex)
     {
         if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
         {
-            throw new InvalidOperationException("Metadata script returned fewer result sets than expected.");
+            throw new MetadataResultSetMissingException(
+                completedResultSetName,
+                completedRowCount,
+                expectedNextResultSetName,
+                expectedNextResultSetIndex);
         }
     }
 
