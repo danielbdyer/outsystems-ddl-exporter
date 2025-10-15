@@ -13,12 +13,14 @@ public sealed record ModuleFilterOptions
         ImmutableArray<ModuleName> modules,
         bool includeSystemModules,
         bool includeInactiveModules,
-        ImmutableDictionary<string, ModuleEntityFilterOptions> entityFilters)
+        ImmutableDictionary<string, ModuleEntityFilterOptions> entityFilters,
+        ModuleValidationOverrides validationOverrides)
     {
         Modules = modules;
         IncludeSystemModules = includeSystemModules;
         IncludeInactiveModules = includeInactiveModules;
         EntityFilters = entityFilters;
+        ValidationOverrides = validationOverrides ?? ModuleValidationOverrides.Empty;
     }
 
     public ImmutableArray<ModuleName> Modules { get; }
@@ -29,23 +31,28 @@ public sealed record ModuleFilterOptions
 
     public ImmutableDictionary<string, ModuleEntityFilterOptions> EntityFilters { get; }
 
+    public ModuleValidationOverrides ValidationOverrides { get; }
+
     public static ModuleFilterOptions IncludeAll { get; } = new(
         ImmutableArray<ModuleName>.Empty,
         includeSystemModules: true,
         includeInactiveModules: true,
-        ImmutableDictionary<string, ModuleEntityFilterOptions>.Empty);
+        ImmutableDictionary<string, ModuleEntityFilterOptions>.Empty,
+        ModuleValidationOverrides.Empty);
 
     public bool HasFilter
         => !Modules.IsDefaultOrEmpty
             || !IncludeSystemModules
             || !IncludeInactiveModules
-            || !EntityFilters.IsEmpty;
+            || !EntityFilters.IsEmpty
+            || !ValidationOverrides.IsEmpty;
 
     public static Result<ModuleFilterOptions> Create(
         IEnumerable<string>? modules,
         bool includeSystemModules,
         bool includeInactiveModules,
-        IReadOnlyDictionary<string, IReadOnlyList<string>>? entityFilters = null)
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? entityFilters = null,
+        IReadOnlyDictionary<string, ModuleValidationOverrideConfiguration>? validationOverrides = null)
     {
         var builder = ImmutableArray.CreateBuilder<ModuleName>();
         var errors = ImmutableArray.CreateBuilder<ValidationError>();
@@ -145,12 +152,22 @@ public sealed record ModuleFilterOptions
             entityFilterOptions = filterBuilder.ToImmutable();
         }
 
+        var validationOverridesResult = ModuleValidationOverrides.Create(validationOverrides);
+        if (validationOverridesResult.IsFailure)
+        {
+            errors.AddRange(validationOverridesResult.Errors);
+        }
+
         if (errors.Count > 0)
         {
             return Result<ModuleFilterOptions>.Failure(errors.ToImmutable());
         }
 
-        return new ModuleFilterOptions(normalized, includeSystemModules, includeInactiveModules, entityFilterOptions);
+        var overrides = validationOverridesResult.IsFailure
+            ? ModuleValidationOverrides.Empty
+            : validationOverridesResult.Value;
+
+        return new ModuleFilterOptions(normalized, includeSystemModules, includeInactiveModules, entityFilterOptions, overrides);
     }
 
     public ModuleFilterOptions Merge(IEnumerable<ModuleName> modules)
@@ -190,12 +207,12 @@ public sealed record ModuleFilterOptions
             .OrderBy(static value => value.Value, StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
 
-        return new ModuleFilterOptions(normalized, IncludeSystemModules, IncludeInactiveModules, EntityFilters);
+        return new ModuleFilterOptions(normalized, IncludeSystemModules, IncludeInactiveModules, EntityFilters, ValidationOverrides);
     }
 
     public ModuleFilterOptions WithIncludeSystemModules(bool include)
-        => new(Modules, include, IncludeInactiveModules, EntityFilters);
+        => new(Modules, include, IncludeInactiveModules, EntityFilters, ValidationOverrides);
 
     public ModuleFilterOptions WithIncludeInactiveModules(bool include)
-        => new(Modules, IncludeSystemModules, include, EntityFilters);
+        => new(Modules, IncludeSystemModules, include, EntityFilters, ValidationOverrides);
 }

@@ -8,17 +8,45 @@ using System.Text.Json.Serialization;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
+using Osm.Domain.Configuration;
 
 namespace Osm.Json;
 
 public interface IModelJsonDeserializer
 {
-    Result<OsmModel> Deserialize(Stream jsonStream, ICollection<string>? warnings = null);
+    Result<OsmModel> Deserialize(
+        Stream jsonStream,
+        ICollection<string>? warnings = null,
+        ModelJsonDeserializerOptions? options = null);
+}
+
+public sealed class ModelJsonDeserializerOptions
+{
+    public ModelJsonDeserializerOptions(
+        ModuleValidationOverrides? validationOverrides = null,
+        string? missingSchemaFallback = null)
+    {
+        ValidationOverrides = validationOverrides ?? ModuleValidationOverrides.Empty;
+        MissingSchemaFallback = string.IsNullOrWhiteSpace(missingSchemaFallback)
+            ? "dbo"
+            : missingSchemaFallback.Trim();
+    }
+
+    public ModuleValidationOverrides ValidationOverrides { get; }
+
+    public string MissingSchemaFallback { get; }
+
+    public static ModelJsonDeserializerOptions Default { get; } = new();
 }
 
 public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 {
-    public Result<OsmModel> Deserialize(Stream jsonStream, ICollection<string>? warnings = null)
+    private static readonly JsonSerializerOptions PayloadSerializerOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    public Result<OsmModel> Deserialize(Stream jsonStream, ICollection<string>? warnings = null, ModelJsonDeserializerOptions? options = null)
     {
         if (jsonStream is null)
         {
@@ -41,6 +69,8 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 
         using (document)
         {
+            options ??= ModelJsonDeserializerOptions.Default;
+
             var schemaResult = CirSchemaValidator.Validate(document.RootElement);
             if (schemaResult.IsFailure)
             {
@@ -87,7 +117,7 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
                     continue;
                 }
 
-                var moduleResult = MapModule(module, moduleNameResult.Value, warnings);
+                var moduleResult = MapModule(module, moduleNameResult.Value, warnings, options);
                 if (moduleResult.IsFailure)
                 {
                     return Result<OsmModel>.Failure(moduleResult.Errors);
@@ -137,7 +167,39 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
         }
     }
 
-    private static Result<ModuleModel?> MapModule(ModuleDocument doc, ModuleName moduleName, ICollection<string>? warnings)
+    private static ImmutableArray<ValidationError> AppendPayloadContext(
+        ImmutableArray<ValidationError> errors,
+        string moduleName,
+        string entityName,
+        string payload)
+    {
+        if (errors.IsDefaultOrEmpty)
+        {
+            return ImmutableArray.Create(
+                ValidationError.Create(
+                    "entity.schema.invalid",
+                    $"Entity '{moduleName}::{entityName}' has an invalid schema definition. Raw payload: {payload}"));
+        }
+
+        var builder = ImmutableArray.CreateBuilder<ValidationError>(errors.Length);
+        foreach (var error in errors)
+        {
+            builder.Add(ValidationError.Create(
+                error.Code,
+                $"{error.Message} (Entity '{moduleName}::{entityName}' payload: {payload})"));
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static string SerializeEntityDocument(EntityDocument doc)
+        => JsonSerializer.Serialize(doc, PayloadSerializerOptions);
+
+    private static Result<ModuleModel?> MapModule(
+        ModuleDocument doc,
+        ModuleName moduleName,
+        ICollection<string>? warnings,
+        ModelJsonDeserializerOptions options)
     {
         var entities = doc.Entities ?? Array.Empty<EntityDocument>();
         var entityResults = new List<EntityModel>(entities.Length);
@@ -148,7 +210,7 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
                 continue;
             }
 
-            var entityResult = MapEntity(moduleName, entity);
+            var entityResult = MapEntity(moduleName, entity, warnings, options);
             if (entityResult.IsFailure)
             {
                 return Result<ModuleModel?>.Failure(entityResult.Errors);
@@ -253,7 +315,7 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
         return attributes is null || attributes.Length == 0;
     }
 
-    private static Result<EntityModel> MapEntity(ModuleName moduleName, EntityDocument doc)
+    private static Result<EntityModel> MapEntity(ModuleName moduleName, EntityDocument doc, ICollection<string>? warnings, ModelJsonDeserializerOptions options)
     {
         var logicalNameResult = EntityName.Create(doc.Name);
         if (logicalNameResult.IsFailure)
@@ -261,10 +323,47 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             return Result<EntityModel>.Failure(logicalNameResult.Errors);
         }
 
-        var schemaResult = SchemaName.Create(doc.Schema);
-        if (schemaResult.IsFailure)
+        var moduleNameValue = moduleName.Value;
+        var logicalName = logicalNameResult.Value;
+        var entityNameValue = logicalName.Value;
+        string? serializedPayload = null;
+
+        SchemaName schema;
+        var allowMissingSchema = options.ValidationOverrides.AllowsMissingSchema(moduleNameValue, entityNameValue);
+        if (string.IsNullOrWhiteSpace(doc.Schema))
         {
-            return Result<EntityModel>.Failure(schemaResult.Errors);
+            if (!allowMissingSchema)
+            {
+                serializedPayload ??= SerializeEntityDocument(doc);
+                return Result<EntityModel>.Failure(
+                    ValidationError.Create(
+                        "entity.schema.missing",
+                        $"Entity '{moduleNameValue}::{entityNameValue}' is missing a schema name. Raw payload: {serializedPayload}"));
+            }
+
+            schema = SchemaName.Create(options.MissingSchemaFallback).Value;
+            serializedPayload ??= SerializeEntityDocument(doc);
+            warnings?.Add($"Entity '{moduleNameValue}::{entityNameValue}' missing schema; using '{options.MissingSchemaFallback}'. Raw payload: {serializedPayload}");
+        }
+        else
+        {
+            var schemaResult = SchemaName.Create(doc.Schema);
+            if (schemaResult.IsFailure)
+            {
+                if (!allowMissingSchema)
+                {
+                    serializedPayload ??= SerializeEntityDocument(doc);
+                    return Result<EntityModel>.Failure(AppendPayloadContext(schemaResult.Errors, moduleNameValue, entityNameValue, serializedPayload));
+                }
+
+                schema = SchemaName.Create(options.MissingSchemaFallback).Value;
+                serializedPayload ??= SerializeEntityDocument(doc);
+                warnings?.Add($"Entity '{moduleNameValue}::{entityNameValue}' schema '{doc.Schema}' invalid; using '{options.MissingSchemaFallback}'. Raw payload: {serializedPayload}");
+            }
+            else
+            {
+                schema = schemaResult.Value;
+            }
         }
 
         var tableResult = TableName.Create(doc.PhysicalName);
@@ -313,20 +412,37 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 
         var metadata = EntityMetadata.Create(doc.Meta?.Description, propertyResult.Value, temporalResult.Value);
 
+        var attributes = attributesResult.Value;
+        var allowMissingPrimaryKey = options.ValidationOverrides.AllowsMissingPrimaryKey(moduleNameValue, entityNameValue);
+        if (!attributes.Any(static a => a.IsIdentifier))
+        {
+            serializedPayload ??= SerializeEntityDocument(doc);
+            if (!allowMissingPrimaryKey)
+            {
+                return Result<EntityModel>.Failure(
+                    ValidationError.Create(
+                        "entity.attributes.missingPrimaryKey",
+                        $"Entity '{moduleNameValue}::{entityNameValue}' does not define a primary key attribute. Raw payload: {serializedPayload}"));
+            }
+
+            warnings?.Add($"Entity '{moduleNameValue}::{entityNameValue}' missing primary key; override applied. Raw payload: {serializedPayload}");
+        }
+
         return EntityModel.Create(
             moduleName,
-            logicalNameResult.Value,
+            logicalName,
             tableResult.Value,
-            schemaResult.Value,
+            schema,
             catalog,
             doc.IsStatic,
             doc.IsExternal,
             doc.IsActive,
-            attributesResult.Value,
+            attributes,
             indexesResult.Value,
             relationshipsResult.Value,
             triggersResult.Value,
-            metadata);
+            metadata,
+            allowMissingPrimaryKey: allowMissingPrimaryKey);
     }
 
     private static Result<ImmutableArray<AttributeModel>> MapAttributes(AttributeDocument[]? docs)

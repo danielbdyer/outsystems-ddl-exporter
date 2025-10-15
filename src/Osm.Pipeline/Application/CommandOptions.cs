@@ -18,7 +18,9 @@ public sealed record SqlOptionsOverrides(
 public sealed record ModuleFilterOverrides(
     IReadOnlyList<string> Modules,
     bool? IncludeSystemModules,
-    bool? IncludeInactiveModules);
+    bool? IncludeInactiveModules,
+    IReadOnlyList<string> AllowMissingPrimaryKey,
+    IReadOnlyList<string> AllowMissingSchema);
 
 public sealed record CacheOptionsOverrides(string? Root, bool? Refresh);
 

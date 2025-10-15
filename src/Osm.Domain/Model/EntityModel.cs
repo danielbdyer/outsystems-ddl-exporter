@@ -34,7 +34,8 @@ public sealed record EntityModel(
         IEnumerable<IndexModel>? indexes = null,
         IEnumerable<RelationshipModel>? relationships = null,
         IEnumerable<TriggerModel>? triggers = null,
-        EntityMetadata? metadata = null)
+        EntityMetadata? metadata = null,
+        bool allowMissingPrimaryKey = false)
     {
         if (attributes is null)
         {
@@ -47,7 +48,7 @@ public sealed record EntityModel(
             return Result<EntityModel>.Failure(ValidationError.Create("entity.attributes.empty", "Entity must contain at least one attribute."));
         }
 
-        if (!attributeArray.Any(a => a.IsIdentifier))
+        if (!allowMissingPrimaryKey && !attributeArray.Any(a => a.IsIdentifier))
         {
             return Result<EntityModel>.Failure(ValidationError.Create("entity.attributes.missingPrimaryKey", "Entity must define at least one primary key attribute."));
         }

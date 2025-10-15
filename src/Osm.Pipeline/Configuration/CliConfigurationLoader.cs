@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.Json.Configuration;
 using Osm.Smo;
 
@@ -485,6 +486,7 @@ public sealed class CliConfigurationLoader
         var moduleNames = new List<string>();
         var moduleSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var entityFilters = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        var validationOverrides = new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase);
         bool? includeSystem = null;
         bool? includeInactive = null;
 
@@ -524,6 +526,36 @@ public sealed class CliConfigurationLoader
                                     ? parsedEntities.ToArray()
                                     : Array.Empty<string>();
                             }
+                        }
+
+                        var moduleOverride = ModuleValidationOverrideConfiguration.Empty;
+                        var hasOverride = false;
+
+                        if (moduleElement.TryGetProperty("allowMissingPrimaryKey", out var pkElement))
+                        {
+                            var primaryKeyEntities = ParseOverrideEntities(pkElement, out var pkAll);
+                            moduleOverride = moduleOverride.Merge(new ModuleValidationOverrideConfiguration(
+                                primaryKeyEntities.ToArray(),
+                                pkAll,
+                                Array.Empty<string>(),
+                                AllowMissingSchemaForAll: false));
+                            hasOverride |= pkAll || primaryKeyEntities.Count > 0;
+                        }
+
+                        if (moduleElement.TryGetProperty("allowMissingSchema", out var schemaElement))
+                        {
+                            var schemaEntities = ParseOverrideEntities(schemaElement, out var schemaAll);
+                            moduleOverride = moduleOverride.Merge(new ModuleValidationOverrideConfiguration(
+                                Array.Empty<string>(),
+                                AllowMissingPrimaryKeyForAll: false,
+                                schemaEntities.ToArray(),
+                                schemaAll));
+                            hasOverride |= schemaAll || schemaEntities.Count > 0;
+                        }
+
+                        if (hasOverride)
+                        {
+                            validationOverrides[moduleName] = moduleOverride;
                         }
                     }
                 }
@@ -577,7 +609,7 @@ public sealed class CliConfigurationLoader
             ? moduleNames.ToArray()
             : Array.Empty<string>();
 
-        moduleFilter = new ModuleFilterConfiguration(modules, includeSystem, includeInactive, entityFilters);
+        moduleFilter = new ModuleFilterConfiguration(modules, includeSystem, includeInactive, entityFilters, validationOverrides);
         return true;
 
         string? AddModuleName(string? rawName)
@@ -668,6 +700,84 @@ public sealed class CliConfigurationLoader
                 }
 
                 return list;
+            }
+        }
+
+        static List<string> ParseOverrideEntities(JsonElement element, out bool appliesToAll)
+        {
+            appliesToAll = false;
+            var list = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var separators = new[] { ';', ',', '|' };
+
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.True:
+                    appliesToAll = true;
+                    break;
+                case JsonValueKind.False:
+                case JsonValueKind.Null:
+                    break;
+                case JsonValueKind.String:
+                    ParseOverrideTokens(element.GetString(), seen, list, ref appliesToAll, separators);
+                    break;
+                case JsonValueKind.Array:
+                    foreach (var child in element.EnumerateArray())
+                    {
+                        if (child.ValueKind == JsonValueKind.String)
+                        {
+                            ParseOverrideTokens(child.GetString(), seen, list, ref appliesToAll, separators);
+                        }
+                        else if (child.ValueKind == JsonValueKind.True)
+                        {
+                            appliesToAll = true;
+                        }
+                    }
+
+                    break;
+                default:
+                    break;
+            }
+
+            if (appliesToAll)
+            {
+                list.Clear();
+            }
+
+            return list;
+        }
+
+        static void ParseOverrideTokens(
+            string? raw,
+            HashSet<string> seen,
+            List<string> values,
+            ref bool appliesToAll,
+            char[] separators)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return;
+            }
+
+            var tokens = raw.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var token in tokens)
+            {
+                var trimmed = token.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed))
+                {
+                    continue;
+                }
+
+                if (string.Equals(trimmed, "*", StringComparison.OrdinalIgnoreCase))
+                {
+                    appliesToAll = true;
+                    continue;
+                }
+
+                if (seen.Add(trimmed))
+                {
+                    values.Add(trimmed);
+                }
             }
         }
     }

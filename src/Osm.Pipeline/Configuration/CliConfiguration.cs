@@ -68,14 +68,16 @@ public sealed record ModuleFilterConfiguration(
     IReadOnlyList<string> Modules,
     bool? IncludeSystemModules,
     bool? IncludeInactiveModules,
-    IReadOnlyDictionary<string, IReadOnlyList<string>> EntityFilters)
+    IReadOnlyDictionary<string, IReadOnlyList<string>> EntityFilters,
+    IReadOnlyDictionary<string, ModuleValidationOverrideConfiguration> ValidationOverrides)
 {
     public static ModuleFilterConfiguration Empty { get; }
         = new ModuleFilterConfiguration(
             Array.Empty<string>(),
             null,
             null,
-            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase));
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase));
 }
 
 public sealed record TypeMappingConfiguration(

@@ -93,7 +93,8 @@ public class ExtractModelApplicationServiceTests
                 modules,
                 includeSystem,
                 includeInactive,
-                new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)),
+                new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase),
+                new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase)),
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty);
     }

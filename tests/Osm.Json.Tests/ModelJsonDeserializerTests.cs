@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Json;
 using Tests.Support;
@@ -263,6 +264,175 @@ public class ModelJsonDeserializerTests
         Assert.Equal("Customer", relationship.TargetEntity.Value);
         Assert.Equal("CustomerId", relationship.ViaAttribute.Value);
         Assert.True(relationship.HasDatabaseConstraint);
+    }
+
+    [Fact]
+    public void Deserialize_ShouldAllowMissingPrimaryKey_WhenOverrideProvided()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Service Center",
+              "isSystem": true,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "User",
+                  "physicalName": "OSUSR_SYS_USER",
+                  "db_schema": "dbo",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "attributes": [
+                    {
+                      "name": "Identifier",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var overridesResult = ModuleValidationOverrides.Create(new Dictionary<string, ModuleValidationOverrideConfiguration>
+        {
+            ["Service Center"] = new ModuleValidationOverrideConfiguration(
+                new[] { "User" },
+                false,
+                Array.Empty<string>(),
+                false)
+        });
+
+        Assert.True(overridesResult.IsSuccess, string.Join(", ", overridesResult.Errors.Select(e => e.Message)));
+        var options = new ModelJsonDeserializerOptions(overridesResult.Value);
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+        var warnings = new List<string>();
+
+        var result = deserializer.Deserialize(stream, warnings, options);
+
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
+        var entity = Assert.Single(Assert.Single(result.Value.Modules).Entities);
+        Assert.DoesNotContain(entity.Attributes, attribute => attribute.IsIdentifier);
+        Assert.Contains(warnings, warning => warning.Contains("missing primary key", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Deserialize_ShouldAllowMissingSchema_WhenOverrideProvided()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Service Center",
+              "isSystem": true,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "User",
+                  "physicalName": "OSUSR_SYS_USER",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var overridesResult = ModuleValidationOverrides.Create(new Dictionary<string, ModuleValidationOverrideConfiguration>
+        {
+            ["Service Center"] = new ModuleValidationOverrideConfiguration(
+                Array.Empty<string>(),
+                false,
+                new[] { "User" },
+                false)
+        });
+
+        Assert.True(overridesResult.IsSuccess, string.Join(", ", overridesResult.Errors.Select(e => e.Message)));
+        var options = new ModelJsonDeserializerOptions(overridesResult.Value);
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+        var warnings = new List<string>();
+
+        var result = deserializer.Deserialize(stream, warnings, options);
+
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
+        var entity = Assert.Single(Assert.Single(result.Value.Modules).Entities);
+        Assert.Equal("dbo", entity.Schema.Value);
+        Assert.Contains(warnings, warning => warning.Contains("missing schema", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Deserialize_ShouldIncludePayload_WhenSchemaMissingWithoutOverride()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Service Center",
+              "isSystem": true,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "User",
+                  "physicalName": "OSUSR_SYS_USER",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("entity.schema.missing", error.Code);
+        Assert.Contains("OSUSR_SYS_USER", error.Message);
+        Assert.Contains("Raw payload", error.Message);
     }
 
     [Fact]

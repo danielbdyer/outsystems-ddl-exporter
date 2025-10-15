@@ -62,6 +62,8 @@ var onlyActiveModulesOption = new Option<bool>("--only-active-modules", "Restric
 var cacheRootOption = new Option<string?>("--cache-root", "Root directory for evidence caching.");
 var refreshCacheOption = new Option<bool>("--refresh-cache", "Force cache refresh for this execution.");
 var maxParallelOption = new Option<int?>("--max-degree-of-parallelism", "Maximum number of modules processed in parallel.");
+var allowMissingPrimaryKeyOption = CreateOverrideOption("--allow-missing-primary-key", "Allow ingestion to include entities without primary keys. Use Module::Entity or Module::*.");
+var allowMissingSchemaOption = CreateOverrideOption("--allow-missing-schema", "Allow ingestion to include entities without schema names. Use Module::Entity or Module::*.");
 
 var buildCommand = CreateBuildCommand();
 var extractCommand = CreateExtractCommand();
@@ -83,6 +85,8 @@ buildCommand.AddOption(onlyActiveModulesOption);
 buildCommand.AddOption(cacheRootOption);
 buildCommand.AddOption(refreshCacheOption);
 buildCommand.AddOption(maxParallelOption);
+buildCommand.AddOption(allowMissingPrimaryKeyOption);
+buildCommand.AddOption(allowMissingSchemaOption);
 AddSqlOptions(buildCommand, sqlOptions);
 
 extractCommand.AddGlobalOption(configOption);
@@ -98,6 +102,8 @@ compareCommand.AddOption(onlyActiveModulesOption);
 compareCommand.AddOption(cacheRootOption);
 compareCommand.AddOption(refreshCacheOption);
 compareCommand.AddOption(maxParallelOption);
+compareCommand.AddOption(allowMissingPrimaryKeyOption);
+compareCommand.AddOption(allowMissingSchemaOption);
 
 var rootCommand = new RootCommand("OutSystems DDL Exporter CLI");
 rootCommand.AddCommand(inspectCommand);
@@ -286,10 +292,14 @@ Command CreateBuildCommand()
         }
 
         var modules = SplitModuleList(context.ParseResult.GetValueForOption(modulesOption));
+        var allowMissingPrimaryKey = SplitOverrideList(context.ParseResult.GetValueForOption(allowMissingPrimaryKeyOption));
+        var allowMissingSchema = SplitOverrideList(context.ParseResult.GetValueForOption(allowMissingSchemaOption));
         var moduleFilter = new ModuleFilterOverrides(
             modules,
             ResolveIncludeOverride(context, includeSystemModulesOption, excludeSystemModulesOption),
-            ResolveInactiveOverride(context, includeInactiveModulesOption, onlyActiveModulesOption));
+            ResolveInactiveOverride(context, includeInactiveModulesOption, onlyActiveModulesOption),
+            allowMissingPrimaryKey,
+            allowMissingSchema);
 
         var cache = new CacheOptionsOverrides(
             context.ParseResult.GetValueForOption(cacheRootOption),
@@ -525,10 +535,14 @@ Command CreateCompareCommand()
         }
 
         var modules = SplitModuleList(context.ParseResult.GetValueForOption(modulesOption));
+        var allowMissingPrimaryKey = SplitOverrideList(context.ParseResult.GetValueForOption(allowMissingPrimaryKeyOption));
+        var allowMissingSchema = SplitOverrideList(context.ParseResult.GetValueForOption(allowMissingSchemaOption));
         var moduleFilter = new ModuleFilterOverrides(
             modules,
             ResolveIncludeOverride(context, includeSystemModulesOption, excludeSystemModulesOption),
-            ResolveInactiveOverride(context, includeInactiveModulesOption, onlyActiveModulesOption));
+            ResolveInactiveOverride(context, includeInactiveModulesOption, onlyActiveModulesOption),
+            allowMissingPrimaryKey,
+            allowMissingSchema);
 
         var cache = new CacheOptionsOverrides(
             context.ParseResult.GetValueForOption(cacheRootOption),
@@ -670,6 +684,16 @@ static void WriteLine(IConsole console, string message)
 static void WriteErrorLine(IConsole console, string message)
     => console.Error.Write(message + Environment.NewLine);
 
+static Option<string[]?> CreateOverrideOption(string name, string description)
+{
+    var option = new Option<string[]?>(name, description)
+    {
+        AllowMultipleArgumentsPerToken = true
+    };
+
+    return option;
+}
+
 static IReadOnlyList<string> SplitModuleList(string? value)
 {
     if (string.IsNullOrWhiteSpace(value))
@@ -679,6 +703,36 @@ static IReadOnlyList<string> SplitModuleList(string? value)
 
     var separators = new[] { ',', ';' };
     return value.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}
+
+static IReadOnlyList<string> SplitOverrideList(string[]? values)
+{
+    if (values is null || values.Length == 0)
+    {
+        return Array.Empty<string>();
+    }
+
+    var separators = new[] { ',', ';' };
+    var results = new List<string>();
+
+    foreach (var value in values)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            continue;
+        }
+
+        var tokens = value.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var token in tokens)
+        {
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                results.Add(token);
+            }
+        }
+    }
+
+    return results;
 }
 
 static bool? ResolveIncludeOverride(InvocationContext context, Option<bool> includeOption, Option<bool> excludeOption)

@@ -11,7 +11,11 @@ namespace Osm.Pipeline.ModelIngestion;
 
 public interface IModelIngestionService
 {
-    Task<Result<OsmModel>> LoadFromFileAsync(string path, ICollection<string>? warnings = null, CancellationToken cancellationToken = default);
+    Task<Result<OsmModel>> LoadFromFileAsync(
+        string path,
+        ICollection<string>? warnings = null,
+        CancellationToken cancellationToken = default,
+        ModelIngestionOptions? options = null);
 }
 
 public sealed class ModelIngestionService : IModelIngestionService
@@ -25,7 +29,11 @@ public sealed class ModelIngestionService : IModelIngestionService
         _fileSystem = fileSystem ?? new FileSystem();
     }
 
-    public async Task<Result<OsmModel>> LoadFromFileAsync(string path, ICollection<string>? warnings = null, CancellationToken cancellationToken = default)
+    public async Task<Result<OsmModel>> LoadFromFileAsync(
+        string path,
+        ICollection<string>? warnings = null,
+        CancellationToken cancellationToken = default,
+        ModelIngestionOptions? options = null)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -39,6 +47,11 @@ public sealed class ModelIngestionService : IModelIngestionService
         }
 
         await using var stream = _fileSystem.File.Open(trimmed, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return _deserializer.Deserialize(stream, warnings);
+        var ingestionOptions = options ?? ModelIngestionOptions.Empty;
+        var deserializerOptions = new ModelJsonDeserializerOptions(
+            ingestionOptions.ValidationOverrides,
+            ingestionOptions.MissingSchemaFallback);
+
+        return _deserializer.Deserialize(stream, warnings, deserializerOptions);
     }
 }
