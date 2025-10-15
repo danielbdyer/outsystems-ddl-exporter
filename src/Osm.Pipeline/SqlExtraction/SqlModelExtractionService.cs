@@ -5,6 +5,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Globalization;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -23,16 +25,16 @@ public interface ISqlModelExtractionService
 
 public sealed class SqlModelExtractionService : ISqlModelExtractionService
 {
-    private readonly IAdvancedSqlExecutor _executor;
+    private readonly IOutsystemsMetadataReader _metadataReader;
     private readonly IModelJsonDeserializer _deserializer;
     private readonly ILogger<SqlModelExtractionService> _logger;
 
     public SqlModelExtractionService(
-        IAdvancedSqlExecutor executor,
+        IOutsystemsMetadataReader metadataReader,
         IModelJsonDeserializer deserializer,
         ILogger<SqlModelExtractionService>? logger = null)
     {
-        _executor = executor ?? throw new ArgumentNullException(nameof(executor));
+        _metadataReader = metadataReader ?? throw new ArgumentNullException(nameof(metadataReader));
         _deserializer = deserializer ?? throw new ArgumentNullException(nameof(deserializer));
         _logger = logger ?? NullLogger<SqlModelExtractionService>.Instance;
     }
@@ -59,29 +61,27 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
 
         var request = new AdvancedSqlRequest(command.ModuleNames, command.IncludeSystemModules, command.OnlyActiveAttributes);
 
-        var sqlTimer = Stopwatch.StartNew();
-        var jsonResult = await _executor.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
-        sqlTimer.Stop();
+        var metadataTimer = Stopwatch.StartNew();
+        var metadataResult = await _metadataReader.ReadAsync(request, cancellationToken).ConfigureAwait(false);
+        metadataTimer.Stop();
 
-        if (jsonResult.IsFailure)
+        if (metadataResult.IsFailure)
         {
             _logger.LogError(
-                "Advanced SQL execution failed after {DurationMs} ms with errors: {Errors}.",
-                sqlTimer.Elapsed.TotalMilliseconds,
-                string.Join(", ", jsonResult.Errors.Select(static error => error.Code)));
-            return Result<ModelExtractionResult>.Failure(jsonResult.Errors.ToArray());
+                "Metadata reader failed after {DurationMs} ms with errors: {Errors}.",
+                metadataTimer.Elapsed.TotalMilliseconds,
+                string.Join(", ", metadataResult.Errors.Select(static error => error.Code)));
+            return Result<ModelExtractionResult>.Failure(metadataResult.Errors.ToArray());
         }
 
-        var json = jsonResult.Value;
-        _logger.LogInformation(
-            "Advanced SQL execution succeeded in {DurationMs} ms with payload length {PayloadLength} characters.",
-            sqlTimer.Elapsed.TotalMilliseconds,
-            json?.Length ?? 0);
+        var snapshot = metadataResult.Value;
+        var exportedAtUtc = DateTimeOffset.UtcNow;
+        var json = BuildJsonFromSnapshot(snapshot, exportedAtUtc.UtcDateTime);
 
         if (string.IsNullOrWhiteSpace(json))
         {
-            _logger.LogError("Advanced SQL execution returned no JSON payload.");
-            return Result<ModelExtractionResult>.Failure(ValidationError.Create("extraction.sql.emptyJson", "Advanced SQL returned no JSON payload."));
+            _logger.LogError("Metadata reader produced an empty JSON payload.");
+            return Result<ModelExtractionResult>.Failure(ValidationError.Create("extraction.sql.emptyJson", "Metadata reader produced no JSON payload."));
         }
 
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
@@ -93,6 +93,23 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
 
         if (modelResult.IsFailure)
         {
+            if (modelResult.Errors.Length == 1 && modelResult.Errors[0].Code == "model.modules.empty")
+            {
+                _logger.LogWarning(
+                    "Model JSON deserialization returned no modules after {DurationMs} ms. Treating as empty snapshot.",
+                    deserializeTimer.Elapsed.TotalMilliseconds);
+
+                var emptyModel = new OsmModel(
+                    exportedAtUtc.UtcDateTime,
+                    ImmutableArray<ModuleModel>.Empty,
+                    ImmutableArray<SequenceModel>.Empty,
+                    ExtendedProperty.EmptyArray);
+
+                warnings.Add("Advanced SQL returned no modules for the requested filter.");
+                var emptyResult = new ModelExtractionResult(emptyModel, json, exportedAtUtc, warnings, snapshot);
+                return Result<ModelExtractionResult>.Success(emptyResult);
+            }
+
             _logger.LogError(
                 "Model JSON deserialization failed after {DurationMs} ms with errors: {Errors}.",
                 deserializeTimer.Elapsed.TotalMilliseconds,
@@ -114,23 +131,66 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                 deserializeTimer.Elapsed.TotalMilliseconds);
         }
 
-        var result = new ModelExtractionResult(modelResult.Value, json, DateTimeOffset.UtcNow, warnings);
+        var result = new ModelExtractionResult(modelResult.Value, json, exportedAtUtc, warnings, snapshot);
         _logger.LogInformation(
-            "Model extraction finished in {TotalDurationMs} ms.",
-            sqlTimer.Elapsed.TotalMilliseconds + deserializeTimer.Elapsed.TotalMilliseconds);
+            "Model extraction finished in {TotalDurationMs} ms (metadata: {MetadataMs} ms, deserialize: {DeserializeMs} ms).",
+            metadataTimer.Elapsed.TotalMilliseconds + deserializeTimer.Elapsed.TotalMilliseconds,
+            metadataTimer.Elapsed.TotalMilliseconds,
+            deserializeTimer.Elapsed.TotalMilliseconds);
 
         return Result<ModelExtractionResult>.Success(result);
+    }
+
+    private static string BuildJsonFromSnapshot(OutsystemsMetadataSnapshot snapshot, DateTime exportedAtUtc)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+
+        writer.WriteStartObject();
+        writer.WriteString("exportedAtUtc", exportedAtUtc.ToString("O", CultureInfo.InvariantCulture));
+        writer.WritePropertyName("modules");
+        writer.WriteStartArray();
+
+        foreach (var module in snapshot.ModuleJson)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", module.ModuleName);
+            writer.WriteBoolean("isSystem", module.IsSystem);
+            writer.WriteBoolean("isActive", module.IsActive);
+            writer.WritePropertyName("entities");
+
+            var entitiesPayload = string.IsNullOrWhiteSpace(module.ModuleEntitiesJson)
+                ? "[]"
+                : module.ModuleEntitiesJson;
+
+            using var entities = JsonDocument.Parse(entitiesPayload);
+            entities.RootElement.WriteTo(writer);
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+        writer.Flush();
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 }
 
 public sealed class ModelExtractionResult
 {
-    public ModelExtractionResult(OsmModel model, string json, DateTimeOffset extractedAtUtc, IReadOnlyList<string> warnings)
+    public ModelExtractionResult(
+        OsmModel model,
+        string json,
+        DateTimeOffset extractedAtUtc,
+        IReadOnlyList<string> warnings,
+        OutsystemsMetadataSnapshot metadata)
     {
         Model = model ?? throw new ArgumentNullException(nameof(model));
         Json = json ?? throw new ArgumentNullException(nameof(json));
         ExtractedAtUtc = extractedAtUtc;
         Warnings = warnings ?? throw new ArgumentNullException(nameof(warnings));
+        Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
     }
 
     public OsmModel Model { get; }
@@ -140,6 +200,8 @@ public sealed class ModelExtractionResult
     public DateTimeOffset ExtractedAtUtc { get; }
 
     public IReadOnlyList<string> Warnings { get; }
+
+    public OutsystemsMetadataSnapshot Metadata { get; }
 }
 
 public sealed class ModelExtractionCommand

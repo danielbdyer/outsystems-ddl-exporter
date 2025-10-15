@@ -8,13 +8,13 @@ using Tests.Support;
 
 namespace Osm.Pipeline.Tests;
 
-public class FixtureAdvancedSqlExecutorTests
+public class FixtureOutsystemsMetadataReaderTests
 {
     [Fact]
-    public async Task ExecuteAsync_ShouldReturnFixtureJson()
+    public async Task ReadAsync_ShouldReturnFixtureSnapshot()
     {
         var manifest = FixtureFile.GetPath(Path.Combine("extraction", "advanced-sql.manifest.json"));
-        var executor = new FixtureAdvancedSqlExecutor(manifest);
+        var reader = new FixtureOutsystemsMetadataReader(manifest);
         var request = new AdvancedSqlRequest(
             ImmutableArray.Create(
                 ModuleName.Create("AppCore").Value,
@@ -23,22 +23,22 @@ public class FixtureAdvancedSqlExecutorTests
             includeSystemModules: false,
             onlyActiveAttributes: false);
 
-        var result = await executor.ExecuteAsync(request);
+        var result = await reader.ReadAsync(request);
         Assert.True(result.IsSuccess);
-        Assert.Contains("\"modules\"", result.Value, StringComparison.Ordinal);
+        Assert.NotEmpty(result.Value.ModuleJson);
     }
 
     [Fact]
-    public async Task ExecuteAsync_ShouldReturnErrorWhenCaseMissing()
+    public async Task ReadAsync_ShouldReturnErrorWhenCaseMissing()
     {
         var manifest = FixtureFile.GetPath(Path.Combine("extraction", "advanced-sql.manifest.json"));
-        var executor = new FixtureAdvancedSqlExecutor(manifest);
+        var reader = new FixtureOutsystemsMetadataReader(manifest);
         var request = new AdvancedSqlRequest(
             ImmutableArray.Create(ModuleName.Create("Unknown").Value),
             includeSystemModules: false,
             onlyActiveAttributes: false);
 
-        var result = await executor.ExecuteAsync(request);
+        var result = await reader.ReadAsync(request);
         Assert.True(result.IsFailure);
         var error = Assert.Single(result.Errors);
         Assert.Equal("extraction.fixture.missing", error.Code);

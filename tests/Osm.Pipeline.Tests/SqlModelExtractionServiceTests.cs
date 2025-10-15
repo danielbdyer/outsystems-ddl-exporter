@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;
 using Osm.Domain.Abstractions;
 using Osm.Json;
 using Osm.Pipeline.SqlExtraction;
@@ -42,23 +44,24 @@ public class SqlModelExtractionServiceTests
     public async Task ExtractAsync_ShouldReturnModelAndJson()
     {
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.micro-unique.json"));
-        var executor = new StubExecutor(Result<string>.Success(json));
-        var service = new SqlModelExtractionService(executor, new ModelJsonDeserializer());
+        var snapshot = CreateSnapshotFromJson(json);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Value.Model);
-        Assert.Equal(json, result.Value.Json);
+        AssertModulesMatch(json, result.Value.Json);
         Assert.Empty(result.Value.Warnings);
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldPropagateExecutorFailure()
+    public async Task ExtractAsync_ShouldPropagateMetadataFailure()
     {
-        var failure = Result<string>.Failure(ValidationError.Create("boom", "fail"));
-        var executor = new StubExecutor(failure);
-        var service = new SqlModelExtractionService(executor, new ModelJsonDeserializer());
+        var failure = Result<OutsystemsMetadataSnapshot>.Failure(ValidationError.Create("boom", "fail"));
+        var reader = new StubMetadataReader(failure);
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -68,16 +71,46 @@ public class SqlModelExtractionServiceTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldRejectEmptyJson()
+    public async Task ExtractAsync_ShouldHandleEmptyModuleSnapshot()
     {
-        var executor = new StubExecutor(Result<string>.Success("   "));
-        var service = new SqlModelExtractionService(executor, new ModelJsonDeserializer());
+        var emptySnapshot = new OutsystemsMetadataSnapshot(
+            Array.Empty<OutsystemsModuleRow>(),
+            Array.Empty<OutsystemsEntityRow>(),
+            Array.Empty<OutsystemsAttributeRow>(),
+            Array.Empty<OutsystemsReferenceRow>(),
+            Array.Empty<OutsystemsPhysicalTableRow>(),
+            Array.Empty<OutsystemsColumnRealityRow>(),
+            Array.Empty<OutsystemsColumnCheckRow>(),
+            Array.Empty<OutsystemsColumnCheckJsonRow>(),
+            Array.Empty<OutsystemsPhysicalColumnPresenceRow>(),
+            Array.Empty<OutsystemsIndexRow>(),
+            Array.Empty<OutsystemsIndexColumnRow>(),
+            Array.Empty<OutsystemsForeignKeyRow>(),
+            Array.Empty<OutsystemsForeignKeyColumnRow>(),
+            Array.Empty<OutsystemsForeignKeyAttrMapRow>(),
+            Array.Empty<OutsystemsAttributeHasFkRow>(),
+            Array.Empty<OutsystemsForeignKeyColumnsJsonRow>(),
+            Array.Empty<OutsystemsForeignKeyAttributeJsonRow>(),
+            Array.Empty<OutsystemsTriggerRow>(),
+            Array.Empty<OutsystemsAttributeJsonRow>(),
+            Array.Empty<OutsystemsRelationshipJsonRow>(),
+            Array.Empty<OutsystemsIndexJsonRow>(),
+            Array.Empty<OutsystemsTriggerJsonRow>(),
+            Array.Empty<OutsystemsModuleJsonRow>(),
+            "Fixture");
+
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(emptySnapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
-        Assert.True(result.IsFailure);
-        var error = Assert.Single(result.Errors);
-        Assert.Equal("extraction.sql.emptyJson", error.Code);
+        Assert.True(result.IsSuccess);
+        using var payload = JsonDocument.Parse(result.Value.Json);
+        var modules = payload.RootElement.GetProperty("modules");
+        Assert.Equal(JsonValueKind.Array, modules.ValueKind);
+        Assert.Equal(0, modules.GetArrayLength());
+        Assert.Contains(result.Value.Warnings, warning =>
+            warning.Contains("no modules", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -125,8 +158,9 @@ public class SqlModelExtractionServiceTests
         }
         """;
 
-        var executor = new StubExecutor(Result<string>.Success(json));
-        var service = new SqlModelExtractionService(executor, new ModelJsonDeserializer());
+        var snapshot = CreateSnapshotFromJson(json);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -142,8 +176,9 @@ public class SqlModelExtractionServiceTests
     public async Task ExtractAsync_ShouldExposeUserReferencesWhenSystemModulesExcluded()
     {
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.edge-case.json"));
-        var executor = new StubExecutor(Result<string>.Success(json));
-        var service = new SqlModelExtractionService(executor, new ModelJsonDeserializer());
+        var snapshot = CreateSnapshotFromJson(json);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(
             new[] { "AppCore", "ExtBilling", "Ops" },
             includeSystemModules: false,
@@ -165,16 +200,82 @@ public class SqlModelExtractionServiceTests
         Assert.Equal("OSUSR_U_USER", triggeredBy.Reference.TargetPhysicalName?.Value);
     }
 
-    private sealed class StubExecutor : IAdvancedSqlExecutor
+    private static OutsystemsMetadataSnapshot CreateSnapshotFromJson(string json)
     {
-        private readonly Result<string> _result;
+        using var document = JsonDocument.Parse(json);
+        var modules = document.RootElement.GetProperty("modules");
+        var moduleRows = new List<OutsystemsModuleJsonRow>();
+        foreach (var module in modules.EnumerateArray())
+        {
+            var name = module.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty;
+            var isSystem = module.TryGetProperty("isSystem", out var systemElement) && systemElement.GetBoolean();
+            var isActive = module.TryGetProperty("isActive", out var activeElement) ? activeElement.GetBoolean() : true;
+            var entitiesJson = module.TryGetProperty("entities", out var entitiesElement)
+                ? entitiesElement.GetRawText()
+                : "[]";
 
-        public StubExecutor(Result<string> result)
+            moduleRows.Add(new OutsystemsModuleJsonRow(name, isSystem, isActive, entitiesJson));
+        }
+
+        return new OutsystemsMetadataSnapshot(
+            Array.Empty<OutsystemsModuleRow>(),
+            Array.Empty<OutsystemsEntityRow>(),
+            Array.Empty<OutsystemsAttributeRow>(),
+            Array.Empty<OutsystemsReferenceRow>(),
+            Array.Empty<OutsystemsPhysicalTableRow>(),
+            Array.Empty<OutsystemsColumnRealityRow>(),
+            Array.Empty<OutsystemsColumnCheckRow>(),
+            Array.Empty<OutsystemsColumnCheckJsonRow>(),
+            Array.Empty<OutsystemsPhysicalColumnPresenceRow>(),
+            Array.Empty<OutsystemsIndexRow>(),
+            Array.Empty<OutsystemsIndexColumnRow>(),
+            Array.Empty<OutsystemsForeignKeyRow>(),
+            Array.Empty<OutsystemsForeignKeyColumnRow>(),
+            Array.Empty<OutsystemsForeignKeyAttrMapRow>(),
+            Array.Empty<OutsystemsAttributeHasFkRow>(),
+            Array.Empty<OutsystemsForeignKeyColumnsJsonRow>(),
+            Array.Empty<OutsystemsForeignKeyAttributeJsonRow>(),
+            Array.Empty<OutsystemsTriggerRow>(),
+            Array.Empty<OutsystemsAttributeJsonRow>(),
+            Array.Empty<OutsystemsRelationshipJsonRow>(),
+            Array.Empty<OutsystemsIndexJsonRow>(),
+            Array.Empty<OutsystemsTriggerJsonRow>(),
+            moduleRows,
+            "Fixture");
+    }
+
+    private static void AssertModulesMatch(string expectedJson, string actualJson)
+    {
+        using var expectedDoc = JsonDocument.Parse(expectedJson);
+        using var actualDoc = JsonDocument.Parse(actualJson);
+
+        var expectedModules = expectedDoc.RootElement.GetProperty("modules");
+        var actualModules = actualDoc.RootElement.GetProperty("modules");
+
+        Assert.True(expectedModules.ValueKind == JsonValueKind.Array, "Expected modules array.");
+        Assert.True(actualModules.ValueKind == JsonValueKind.Array, "Actual modules array missing.");
+        Assert.Equal(expectedModules.GetArrayLength(), actualModules.GetArrayLength());
+
+        for (var i = 0; i < expectedModules.GetArrayLength(); i++)
+        {
+            using var expectedEntityDoc = JsonDocument.Parse(expectedModules[i].GetRawText());
+            using var actualEntityDoc = JsonDocument.Parse(actualModules[i].GetRawText());
+            Assert.True(expectedEntityDoc.RootElement.TryGetProperty("name", out var expectedName));
+            Assert.True(actualEntityDoc.RootElement.TryGetProperty("name", out var actualName));
+            Assert.Equal(expectedName.GetString(), actualName.GetString());
+        }
+    }
+
+    private sealed class StubMetadataReader : IOutsystemsMetadataReader
+    {
+        private readonly Result<OutsystemsMetadataSnapshot> _result;
+
+        public StubMetadataReader(Result<OutsystemsMetadataSnapshot> result)
         {
             _result = result;
         }
 
-        public Task<Result<string>> ExecuteAsync(AdvancedSqlRequest request, CancellationToken cancellationToken = default)
+        public Task<Result<OutsystemsMetadataSnapshot>> ReadAsync(AdvancedSqlRequest request, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_result);
         }
