@@ -48,19 +48,19 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
                 string.Join(",", request.Command.ModuleNames.Select(static module => module.Value)));
         }
 
-        var executorResult = ResolveExecutor(request.SqlOptions, request.AdvancedSqlFixtureManifestPath);
-        if (executorResult.IsFailure)
+        var readerResult = ResolveMetadataReader(request.SqlOptions, request.AdvancedSqlFixtureManifestPath);
+        if (readerResult.IsFailure)
         {
             _logger.LogError(
-                "Failed to resolve SQL executor: {Errors}.",
-                string.Join(", ", executorResult.Errors.Select(static error => error.Code)));
-            return Result<ModelExtractionResult>.Failure(executorResult.Errors);
+                "Failed to resolve metadata reader: {Errors}.",
+                string.Join(", ", readerResult.Errors.Select(static error => error.Code)));
+            return Result<ModelExtractionResult>.Failure(readerResult.Errors);
         }
 
-        _logger.LogInformation("SQL executor resolved successfully. Beginning advanced SQL execution.");
+        _logger.LogInformation("Metadata reader resolved successfully. Beginning snapshot execution.");
 
         var extractionService = new SqlModelExtractionService(
-            executorResult.Value,
+            readerResult.Value,
             _deserializer,
             _loggerFactory.CreateLogger<SqlModelExtractionService>());
 
@@ -85,18 +85,18 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
         return extractionResult;
     }
 
-    private Result<IAdvancedSqlExecutor> ResolveExecutor(ResolvedSqlOptions sqlOptions, string? manifestPath)
+    private Result<IOutsystemsMetadataReader> ResolveMetadataReader(ResolvedSqlOptions sqlOptions, string? manifestPath)
     {
         if (!string.IsNullOrWhiteSpace(manifestPath))
         {
             _logger.LogInformation(
-                "Using advanced SQL fixture manifest at {ManifestPath}.",
+                "Using metadata fixture manifest at {ManifestPath}.",
                 manifestPath);
 
-            return Result<IAdvancedSqlExecutor>.Success(
-                new FixtureAdvancedSqlExecutor(
+            return Result<IOutsystemsMetadataReader>.Success(
+                new FixtureOutsystemsMetadataReader(
                     manifestPath!,
-                    logger: _loggerFactory.CreateLogger<FixtureAdvancedSqlExecutor>()));
+                    logger: _loggerFactory.CreateLogger<FixtureOutsystemsMetadataReader>()));
         }
 
         if (string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
@@ -112,18 +112,18 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
         var executionOptions = new SqlExecutionOptions(sqlOptions.CommandTimeoutSeconds, samplingOptions);
 
         _logger.LogInformation(
-            "Configuring live SQL executor (timeoutSeconds: {TimeoutSeconds}, samplingThreshold: {SamplingThreshold}, sampleSize: {SampleSize}).",
+            "Configuring live metadata reader (timeoutSeconds: {TimeoutSeconds}, samplingThreshold: {SamplingThreshold}, sampleSize: {SampleSize}).",
             sqlOptions.CommandTimeoutSeconds,
             samplingOptions.RowCountSamplingThreshold,
             samplingOptions.SampleSize);
 
-        var executor = new SqlClientAdvancedSqlExecutor(
+        var reader = new SqlClientOutsystemsMetadataReader(
             new SqlConnectionFactory(sqlOptions.ConnectionString!, connectionOptions),
-            new EmbeddedAdvancedSqlScriptProvider(),
+            new EmbeddedOutsystemsMetadataScriptProvider(),
             executionOptions,
-            _loggerFactory.CreateLogger<SqlClientAdvancedSqlExecutor>());
+            _loggerFactory.CreateLogger<SqlClientOutsystemsMetadataReader>());
 
-        return Result<IAdvancedSqlExecutor>.Success(executor);
+        return Result<IOutsystemsMetadataReader>.Success(reader);
     }
 
     private static SqlSamplingOptions CreateSamplingOptions(SqlSamplingSettings settings)

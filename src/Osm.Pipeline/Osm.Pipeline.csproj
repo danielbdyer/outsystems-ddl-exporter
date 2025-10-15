@@ -19,6 +19,9 @@
     <EmbeddedResource Include="..\AdvancedSql\outsystems_model_export.sql">
       <Link>AdvancedSql\outsystems_model_export.sql</Link>
     </EmbeddedResource>
+    <EmbeddedResource Include="..\AdvancedSql\outsystems_metadata_rowsets.sql">
+      <Link>AdvancedSql\outsystems_metadata_rowsets.sql</Link>
+    </EmbeddedResource>
   </ItemGroup>
 
   <PropertyGroup>
