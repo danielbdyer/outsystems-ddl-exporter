@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -17,15 +18,22 @@ public sealed class SsdtEmitter
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly PerTableWriter _perTableWriter;
+    private readonly IFileSystem _fileSystem;
 
     public SsdtEmitter()
-        : this(new PerTableWriter())
+        : this(new PerTableWriter(), new FileSystem())
     {
     }
 
     public SsdtEmitter(PerTableWriter perTableWriter)
+        : this(perTableWriter, new FileSystem())
+    {
+    }
+
+    public SsdtEmitter(PerTableWriter perTableWriter, IFileSystem fileSystem)
     {
         _perTableWriter = perTableWriter ?? throw new ArgumentNullException(nameof(perTableWriter));
+        _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
     }
 
     public async Task<SsdtManifest> EmitAsync(
@@ -51,8 +59,8 @@ public sealed class SsdtEmitter
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        Directory.CreateDirectory(outputDirectory);
-        Directory.CreateDirectory(Path.Combine(outputDirectory, "Modules"));
+        _fileSystem.Directory.CreateDirectory(outputDirectory);
+        _fileSystem.Directory.CreateDirectory(_fileSystem.Path.Combine(outputDirectory, "Modules"));
         var tableCount = model.Tables.Length;
         var moduleDirectories = new ConcurrentDictionary<string, ModuleDirectoryPaths>(StringComparer.Ordinal);
         var manifestEntries = new List<TableManifestEntry>(tableCount);
@@ -162,9 +170,9 @@ public sealed class SsdtEmitter
             coverageSummary,
             unsupportedEntries);
 
-        var manifestPath = Path.Combine(outputDirectory, "manifest.json");
+        var manifestPath = _fileSystem.Path.Combine(outputDirectory, "manifest.json");
         var manifestJson = JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(manifestPath, manifestJson, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+        await _fileSystem.File.WriteAllTextAsync(manifestPath, manifestJson, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
         return manifest;
     }
@@ -208,7 +216,7 @@ public sealed class SsdtEmitter
         var result = _perTableWriter.Generate(table, options, headerItems, cancellationToken);
 
         var tablesRoot = modulePaths.TablesRoot;
-        var tableFilePath = Path.Combine(tablesRoot, $"{table.Schema}.{result.EffectiveTableName}.sql");
+        var tableFilePath = _fileSystem.Path.Combine(tablesRoot, $"{table.Schema}.{result.EffectiveTableName}.sql");
         var indexNames = result.IndexNames.IsDefaultOrEmpty
             ? ImmutableArray<string>.Empty
             : result.IndexNames;
@@ -229,7 +237,7 @@ public sealed class SsdtEmitter
         return new TableEmissionPlan(manifestEntry, tableFilePath, result.Script);
     }
 
-    private static async Task WriteTablesAsync(
+    private async Task WriteTablesAsync(
         IReadOnlyList<TableEmissionPlan> plans,
         int moduleParallelism,
         CancellationToken cancellationToken)
@@ -245,7 +253,7 @@ public sealed class SsdtEmitter
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var plan = plans[i];
-                Directory.CreateDirectory(Path.GetDirectoryName(plan.Path)!);
+                _fileSystem.Directory.CreateDirectory(_fileSystem.Path.GetDirectoryName(plan.Path)!);
                 await WriteIfChangedAsync(plan.Path, plan.Script, cancellationToken).ConfigureAwait(false);
             }
 
@@ -265,7 +273,7 @@ public sealed class SsdtEmitter
         await Task.WhenAll(writeTasks).ConfigureAwait(false);
     }
 
-    private static async Task WritePlanAsync(
+    private async Task WritePlanAsync(
         TableEmissionPlan plan,
         SemaphoreSlim semaphore,
         CancellationToken cancellationToken)
@@ -275,7 +283,7 @@ public sealed class SsdtEmitter
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Directory.CreateDirectory(Path.GetDirectoryName(plan.Path)!);
+            _fileSystem.Directory.CreateDirectory(_fileSystem.Path.GetDirectoryName(plan.Path)!);
             await WriteIfChangedAsync(plan.Path, plan.Script, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -284,44 +292,43 @@ public sealed class SsdtEmitter
         }
     }
 
-    private static ModuleDirectoryPaths EnsureModuleDirectories(
+    private ModuleDirectoryPaths EnsureModuleDirectories(
         ConcurrentDictionary<string, ModuleDirectoryPaths> cache,
         string outputDirectory,
         string module)
     {
         return cache.GetOrAdd(module, key =>
         {
-            var moduleRoot = Path.Combine(outputDirectory, "Modules", key);
-            var tablesRoot = Path.Combine(moduleRoot, "Tables");
+            var moduleRoot = _fileSystem.Path.Combine(outputDirectory, "Modules", key);
+            var tablesRoot = _fileSystem.Path.Combine(moduleRoot, "Tables");
             return new ModuleDirectoryPaths(tablesRoot);
         });
     }
 
-    private static async Task WriteIfChangedAsync(string path, string script, CancellationToken cancellationToken)
+    private async Task WriteIfChangedAsync(string path, string script, CancellationToken cancellationToken)
     {
         var content = script.EndsWith(Environment.NewLine, StringComparison.Ordinal)
             ? script
             : script + Environment.NewLine;
 
-        if (File.Exists(path))
+        if (_fileSystem.File.Exists(path))
         {
-            var existing = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+            var existing = await _fileSystem.File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
             if (string.Equals(existing, content, StringComparison.Ordinal))
             {
                 return;
             }
         }
 
-        await File.WriteAllTextAsync(path, content, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+        await _fileSystem.File.WriteAllTextAsync(path, content, Utf8NoBom, cancellationToken).ConfigureAwait(false);
     }
 
     private static string SchemaTableKey(string schema, string table)
         => $"{schema}.{table}";
 
-    private static string Relativize(string path, string root)
-    {
-        return Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
-    }
+    private string Relativize(string path, string root)
+        => _fileSystem.Path.GetRelativePath(root, path)
+            .Replace(_fileSystem.Path.DirectorySeparatorChar, '/');
 
     private sealed record ModuleDirectoryPaths(string TablesRoot);
 
