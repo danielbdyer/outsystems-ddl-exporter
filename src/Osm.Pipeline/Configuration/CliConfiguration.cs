@@ -31,9 +31,9 @@ public sealed record CliConfiguration(
         SupplementalModelConfiguration.Empty);
 }
 
-public sealed record CacheConfiguration(string? Root, bool? Refresh)
+public sealed record CacheConfiguration(string? Root, bool? Refresh, TimeSpan? MaxAge, int? MaxEntries)
 {
-    public static CacheConfiguration Empty { get; } = new(null, null);
+    public static CacheConfiguration Empty { get; } = new(null, null, null, null);
 }
 
 public sealed record ProfilerConfiguration(string? Provider, string? ProfilePath, string? MockFolder)

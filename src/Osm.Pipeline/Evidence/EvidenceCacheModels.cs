@@ -74,7 +74,9 @@ public sealed record EvidenceCacheRequest(
     string? DmmPath,
     string? ConfigPath,
     IReadOnlyDictionary<string, string?> Metadata,
-    bool Refresh);
+    bool Refresh,
+    TimeSpan? RetentionMaxAge,
+    int? RetentionMaxEntries);
 
 public interface IEvidenceCacheService
 {

@@ -33,7 +33,9 @@ public sealed class EvidenceCacheServiceTests
                 ["policy.mode"] = "EvidenceGated",
                 ["emission.concatenated"] = "false",
             },
-            Refresh: false);
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
 
         var service = new EvidenceCacheService(
             fileSystem,
@@ -86,7 +88,9 @@ public sealed class EvidenceCacheServiceTests
             {
                 ["policy.mode"] = "EvidenceGated",
             },
-            Refresh: false);
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
 
         var callCount = 0;
         DateTimeOffset TimestampProvider()
@@ -153,7 +157,9 @@ public sealed class EvidenceCacheServiceTests
                 ["policy.mode"] = "EvidenceGated",
                 ["emission.concatenated"] = "false",
             },
-            Refresh: false);
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
 
         var service = new EvidenceCacheService(
             fileSystem,
@@ -198,7 +204,9 @@ public sealed class EvidenceCacheServiceTests
             DmmPath: null,
             ConfigPath: null,
             Metadata: new Dictionary<string, string?>(),
-            Refresh: false);
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
 
         var timestamps = new Queue<DateTimeOffset>(new[]
         {
@@ -250,7 +258,9 @@ public sealed class EvidenceCacheServiceTests
             {
                 ["cache.ttlSeconds"] = "3600",
             },
-            Refresh: false);
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
 
         var timestamps = new Queue<DateTimeOffset>(new[]
         {
@@ -276,6 +286,69 @@ public sealed class EvidenceCacheServiceTests
     }
 
     [Fact]
+    public async Task CacheAsync_ShouldPruneExpiredEntries_WhenRetentionMaxAgeConfigured()
+    {
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            ["/inputs/model.json"] = new MockFileData("{\"model\":true}"),
+        });
+
+        var request = new EvidenceCacheRequest(
+            RootDirectory: "/cache",
+            Command: "build-ssdt",
+            ModelPath: "/inputs/model.json",
+            ProfilePath: null,
+            DmmPath: null,
+            ConfigPath: null,
+            Metadata: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["cache.ttlSeconds"] = "3600",
+            },
+            Refresh: false,
+            RetentionMaxAge: TimeSpan.FromHours(1),
+            RetentionMaxEntries: null);
+
+        var timestamps = new Queue<DateTimeOffset>(new[]
+        {
+            new DateTimeOffset(2024, 08, 06, 08, 00, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 06, 10, 05, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 06, 10, 10, 00, TimeSpan.Zero),
+        });
+
+        var service = new EvidenceCacheService(fileSystem, () => timestamps.Dequeue());
+
+        var initial = await service.CacheAsync(request);
+        Assert.True(initial.IsSuccess);
+
+        var manifestPath = fileSystem.Path.Combine(initial.Value.CacheDirectory, "manifest.json");
+        var manifest = JsonSerializer.Deserialize<EvidenceCacheManifest>(fileSystem.File.ReadAllText(manifestPath))!;
+        var staleManifest = manifest with
+        {
+            CreatedAtUtc = new DateTimeOffset(2024, 08, 06, 08, 00, 00, TimeSpan.Zero),
+            LastValidatedAtUtc = new DateTimeOffset(2024, 08, 06, 08, 00, 00, TimeSpan.Zero)
+        };
+
+        fileSystem.File.WriteAllText(
+            manifestPath,
+            JsonSerializer.Serialize(staleManifest, new JsonSerializerOptions { WriteIndented = true }));
+
+        var rebuilt = await service.CacheAsync(request);
+
+        Assert.True(rebuilt.IsSuccess);
+        Assert.Equal(EvidenceCacheOutcome.Created, rebuilt.Value.Evaluation.Outcome);
+        Assert.Equal(new DateTimeOffset(2024, 08, 06, 10, 10, 00, TimeSpan.Zero), rebuilt.Value.Manifest.CreatedAtUtc);
+        Assert.Equal("1", rebuilt.Value.Evaluation.Metadata["pruned.total"]);
+        Assert.Equal("1", rebuilt.Value.Evaluation.Metadata["pruned.expired"]);
+        Assert.Equal("0", rebuilt.Value.Evaluation.Metadata["pruned.remaining"]);
+        Assert.Contains("expired:", rebuilt.Value.Evaluation.Metadata["pruned.entries"]);
+
+        var directories = fileSystem.Directory.EnumerateDirectories("/cache").ToArray();
+        Assert.Single(directories);
+        Assert.Equal(initial.Value.CacheDirectory, directories[0]);
+        Assert.Empty(timestamps);
+    }
+
+    [Fact]
     public async Task CacheAsync_ShouldInvalidateCache_WhenModuleSelectionChanges()
     {
         var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>
@@ -297,7 +370,9 @@ public sealed class EvidenceCacheServiceTests
             DmmPath: null,
             ConfigPath: null,
             Metadata: baseMetadata,
-            Refresh: false);
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
 
         var timestamps = new Queue<DateTimeOffset>(new[]
         {
@@ -375,7 +450,9 @@ public sealed class EvidenceCacheServiceTests
             DmmPath: null,
             ConfigPath: null,
             Metadata: baseMetadata,
-            Refresh: false);
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
 
         var timestamps = new Queue<DateTimeOffset>(new[]
         {
@@ -407,6 +484,63 @@ public sealed class EvidenceCacheServiceTests
     }
 
     [Fact]
+    public async Task CacheAsync_ShouldTrimOldestEntries_WhenCapacityExceeded()
+    {
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            ["/inputs/model.json"] = new MockFileData("{\"model\":true}"),
+        });
+
+        var baseRequest = new EvidenceCacheRequest(
+            RootDirectory: "/cache",
+            Command: "build-ssdt",
+            ModelPath: "/inputs/model.json",
+            ProfilePath: null,
+            DmmPath: null,
+            ConfigPath: null,
+            Metadata: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["policy.mode"] = "EvidenceGated",
+            },
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: 1);
+
+        var timestamps = new Queue<DateTimeOffset>(new[]
+        {
+            new DateTimeOffset(2024, 08, 07, 08, 00, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 07, 08, 05, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 07, 08, 10, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 07, 08, 10, 30, TimeSpan.Zero),
+        });
+
+        var service = new EvidenceCacheService(fileSystem, () => timestamps.Dequeue());
+
+        var first = await service.CacheAsync(baseRequest);
+        Assert.True(first.IsSuccess);
+
+        var alternateMetadata = new Dictionary<string, string?>(baseRequest.Metadata, StringComparer.Ordinal)
+        {
+            ["policy.mode"] = "Aggressive",
+        };
+
+        var second = await service.CacheAsync(baseRequest with { Metadata = alternateMetadata });
+        Assert.True(second.IsSuccess);
+
+        var reused = await service.CacheAsync(baseRequest);
+
+        Assert.True(reused.IsSuccess);
+        Assert.Equal(EvidenceCacheOutcome.Reused, reused.Value.Evaluation.Outcome);
+        Assert.Equal("1", reused.Value.Evaluation.Metadata["pruned.total"]);
+        Assert.Equal("1", reused.Value.Evaluation.Metadata["pruned.capacity"]);
+        Assert.Equal("1", reused.Value.Evaluation.Metadata["pruned.remaining"]);
+        Assert.Contains(second.Value.Manifest.Key, reused.Value.Evaluation.Metadata["pruned.entries"]);
+        Assert.False(fileSystem.Directory.Exists(second.Value.CacheDirectory));
+        Assert.Single(fileSystem.Directory.EnumerateDirectories("/cache"));
+        Assert.Empty(timestamps);
+    }
+
+    [Fact]
     public async Task CacheAsync_ShouldFail_WhenModelMissing()
     {
         var fileSystem = new MockFileSystem();
@@ -418,7 +552,9 @@ public sealed class EvidenceCacheServiceTests
             DmmPath: null,
             ConfigPath: null,
             Metadata: new Dictionary<string, string?>(),
-            Refresh: false);
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
 
         var service = new EvidenceCacheService(fileSystem, () => DateTimeOffset.UtcNow);
         var result = await service.CacheAsync(request);

@@ -101,7 +101,9 @@ public class EvidenceCacheCoordinatorTests
             ProfilePath: "profile.json",
             DmmPath: null,
             ConfigPath: null,
-            Metadata: new Dictionary<string, string?>());
+            Metadata: new Dictionary<string, string?>(),
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
     }
 
     private sealed class FakeEvidenceCacheService : IEvidenceCacheService

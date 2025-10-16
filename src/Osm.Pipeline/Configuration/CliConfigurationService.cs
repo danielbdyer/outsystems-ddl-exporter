@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +24,8 @@ public sealed class CliConfigurationService : ICliConfigurationService
     private const string EnvDmmPath = "OSM_CLI_DMM_PATH";
     private const string EnvCacheRoot = "OSM_CLI_CACHE_ROOT";
     private const string EnvRefreshCache = "OSM_CLI_REFRESH_CACHE";
+    private const string EnvCacheMaxAgeSeconds = "OSM_CLI_CACHE_MAX_AGE_SECONDS";
+    private const string EnvCacheMaxEntries = "OSM_CLI_CACHE_MAX_ENTRIES";
     private const string EnvProfilerProvider = "OSM_CLI_PROFILER_PROVIDER";
     private const string EnvProfilerMockFolder = "OSM_CLI_PROFILER_MOCK_FOLDER";
     private const string EnvSqlConnectionString = "OSM_CLI_CONNECTION_STRING";
@@ -182,6 +185,16 @@ public sealed class CliConfigurationService : ICliConfigurationService
             cache = cache with { Refresh = refreshCache };
         }
 
+        if (TryParseDouble(Environment.GetEnvironmentVariable(EnvCacheMaxAgeSeconds), out var maxAgeSeconds) && maxAgeSeconds > 0)
+        {
+            cache = cache with { MaxAge = TimeSpan.FromSeconds(maxAgeSeconds) };
+        }
+
+        if (TryParseInt(Environment.GetEnvironmentVariable(EnvCacheMaxEntries), out var maxEntries))
+        {
+            cache = cache with { MaxEntries = Math.Max(0, maxEntries) };
+        }
+
         result = result with { Cache = cache };
 
         var profiler = result.Profiler;
@@ -268,6 +281,18 @@ public sealed class CliConfigurationService : ICliConfigurationService
     private static bool TryParseInt(string? value, out int result)
     {
         if (!string.IsNullOrWhiteSpace(value) && int.TryParse(value, out var parsed))
+        {
+            result = parsed;
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    private static bool TryParseDouble(string? value, out double result)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
         {
             result = parsed;
             return true;

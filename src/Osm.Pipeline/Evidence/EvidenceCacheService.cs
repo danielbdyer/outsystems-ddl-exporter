@@ -77,6 +77,14 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
         var cacheDirectory = _fileSystem.Path.Combine(normalizedRoot, key);
         var requestedModuleSelection = BuildModuleSelection(metadata);
 
+        var retentionMetadata = await EnforceRetentionPoliciesAsync(
+            normalizedRoot,
+            cacheDirectory,
+            request.RetentionMaxAge,
+            request.RetentionMaxEntries,
+            request.Refresh,
+            cancellationToken).ConfigureAwait(false);
+
         EvidenceCacheInvalidationReason invalidationReason;
         IReadOnlyDictionary<string, string?> invalidationMetadata;
 
@@ -113,7 +121,7 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
                         evaluationTimestamp,
                         evaluation.Manifest,
                         requestedModuleSelection,
-                        evaluation.Metadata,
+                        CombineMetadata(evaluation.Metadata, retentionMetadata),
                         reuse: true,
                         EvidenceCacheInvalidationReason.None);
 
@@ -163,7 +171,7 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
             creationTimestamp,
             manifest,
             requestedModuleSelection,
-            invalidationMetadata,
+            CombineMetadata(invalidationMetadata, retentionMetadata),
             reuse: false,
             invalidationReason);
 
@@ -251,6 +259,214 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
             return null;
         }
     }
+
+    private async Task<IReadOnlyDictionary<string, string?>> EnforceRetentionPoliciesAsync(
+        string rootDirectory,
+        string cacheDirectory,
+        TimeSpan? maxAge,
+        int? maxEntries,
+        bool refreshRequested,
+        CancellationToken cancellationToken)
+    {
+        var hasAgePolicy = maxAge is { TotalSeconds: > 0 };
+        var hasCapacityPolicy = maxEntries is > 0;
+        if (!hasAgePolicy && !hasCapacityPolicy)
+        {
+            return EmptyMetadata;
+        }
+
+        if (!_fileSystem.Directory.Exists(rootDirectory))
+        {
+            return EmptyMetadata;
+        }
+
+        var entries = new List<CacheEntryInfo>();
+        try
+        {
+            foreach (var directory in _fileSystem.Directory.EnumerateDirectories(rootDirectory))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var manifestPath = _fileSystem.Path.Combine(directory, ManifestFileName);
+                if (!_fileSystem.File.Exists(manifestPath))
+                {
+                    continue;
+                }
+
+                var manifest = await TryReadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+                if (manifest is null)
+                {
+                    continue;
+                }
+
+                entries.Add(new CacheEntryInfo(directory, manifest));
+            }
+        }
+        catch
+        {
+            return EmptyMetadata;
+        }
+
+        if (entries.Count == 0)
+        {
+            return EmptyMetadata;
+        }
+
+        var removedEntries = new List<(CacheEntryInfo Entry, string Reason)>();
+        var failedRemovals = 0;
+        var referenceTime = _timestampProvider();
+
+        if (hasAgePolicy)
+        {
+            var cutoff = referenceTime.Subtract(maxAge!.Value);
+            foreach (var entry in entries.ToList())
+            {
+                if (entry.Manifest.CreatedAtUtc > cutoff)
+                {
+                    continue;
+                }
+
+                if (TryDeleteDirectory(entry.Directory))
+                {
+                    removedEntries.Add((entry, "expired"));
+                    entries.Remove(entry);
+                }
+                else
+                {
+                    failedRemovals++;
+                }
+            }
+        }
+
+        if (hasCapacityPolicy && entries.Count > 0)
+        {
+            var normalizedTarget = _fileSystem.Path.GetFullPath(cacheDirectory);
+            var targetExists = entries.Any(entry => string.Equals(entry.Directory, normalizedTarget, StringComparison.OrdinalIgnoreCase));
+            var reserveSlot = refreshRequested || !targetExists;
+            var allowedExisting = reserveSlot ? Math.Max(0, maxEntries!.Value - 1) : maxEntries!.Value;
+            if (allowedExisting < 0)
+            {
+                allowedExisting = 0;
+            }
+
+            var excess = entries.Count - allowedExisting;
+            if (excess > 0)
+            {
+                var ordered = entries
+                    .OrderBy(static entry => entry.Manifest.CreatedAtUtc)
+                    .ThenBy(static entry => entry.Directory, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                foreach (var entry in ordered)
+                {
+                    if (excess <= 0)
+                    {
+                        break;
+                    }
+
+                    if (!reserveSlot && string.Equals(entry.Directory, normalizedTarget, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (TryDeleteDirectory(entry.Directory))
+                    {
+                        removedEntries.Add((entry, "capacity"));
+                        entries.Remove(entry);
+                        excess--;
+                    }
+                    else
+                    {
+                        failedRemovals++;
+                    }
+                }
+            }
+        }
+
+        if (removedEntries.Count == 0 && failedRemovals == 0)
+        {
+            return EmptyMetadata;
+        }
+
+        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["pruned.total"] = removedEntries.Count.ToString(CultureInfo.InvariantCulture),
+            ["pruned.remaining"] = entries.Count.ToString(CultureInfo.InvariantCulture)
+        };
+
+        var expiredCount = removedEntries.Count(entry => entry.Reason == "expired");
+        if (expiredCount > 0)
+        {
+            metadata["pruned.expired"] = expiredCount.ToString(CultureInfo.InvariantCulture);
+        }
+
+        var capacityCount = removedEntries.Count(entry => entry.Reason == "capacity");
+        if (capacityCount > 0)
+        {
+            metadata["pruned.capacity"] = capacityCount.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (failedRemovals > 0)
+        {
+            metadata["pruned.failures"] = failedRemovals.ToString(CultureInfo.InvariantCulture);
+        }
+
+        var keySummaries = removedEntries
+            .Select(entry => string.Concat(entry.Reason, ':', entry.Entry.Manifest.Key))
+            .Take(10)
+            .ToArray();
+
+        if (keySummaries.Length > 0)
+        {
+            metadata["pruned.entries"] = string.Join(";", keySummaries);
+        }
+
+        return metadata;
+    }
+
+    private bool TryDeleteDirectory(string directory)
+    {
+        try
+        {
+            if (_fileSystem.Directory.Exists(directory))
+            {
+                _fileSystem.Directory.Delete(directory, recursive: true);
+            }
+
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string?> CombineMetadata(
+        IReadOnlyDictionary<string, string?> baseMetadata,
+        IReadOnlyDictionary<string, string?> additional)
+    {
+        if (additional.Count == 0)
+        {
+            return baseMetadata;
+        }
+
+        var combined = new Dictionary<string, string?>(baseMetadata, StringComparer.Ordinal);
+        foreach (var pair in additional)
+        {
+            combined[pair.Key] = pair.Value;
+        }
+
+        return combined;
+    }
+
+    private static readonly IReadOnlyDictionary<string, string?> EmptyMetadata
+        = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+    private sealed record CacheEntryInfo(string Directory, EvidenceCacheManifest Manifest);
 
     private static bool ArtifactsMatch(EvidenceCacheManifest manifest, IReadOnlyCollection<EvidenceArtifactDescriptor> descriptors)
     {

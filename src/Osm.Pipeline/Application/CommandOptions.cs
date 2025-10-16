@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
@@ -22,7 +23,11 @@ public sealed record ModuleFilterOverrides(
     IReadOnlyList<string> AllowMissingPrimaryKey,
     IReadOnlyList<string> AllowMissingSchema);
 
-public sealed record CacheOptionsOverrides(string? Root, bool? Refresh);
+public sealed record CacheOptionsOverrides(
+    string? Root,
+    bool? Refresh,
+    TimeSpan? MaxAge,
+    int? MaxEntries);
 
 public sealed record BuildSsdtOverrides(
     string? ModelPath,

@@ -230,7 +230,39 @@ public sealed class CliConfigurationLoader
             }
         }
 
-        cache = new CacheConfiguration(rootPath, refresh);
+        TimeSpan? maxAge = null;
+        if (element.TryGetProperty("maxAgeSeconds", out var maxAgeElement))
+        {
+            double? seconds = maxAgeElement.ValueKind switch
+            {
+                JsonValueKind.Number when maxAgeElement.TryGetDouble(out var parsed) => parsed,
+                JsonValueKind.String when double.TryParse(maxAgeElement.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) => parsed,
+                _ => null,
+            };
+
+            if (seconds.HasValue && seconds.Value > 0)
+            {
+                maxAge = TimeSpan.FromSeconds(seconds.Value);
+            }
+        }
+
+        int? maxEntries = null;
+        if (element.TryGetProperty("maxEntries", out var maxEntriesElement))
+        {
+            int? parsed = maxEntriesElement.ValueKind switch
+            {
+                JsonValueKind.Number when maxEntriesElement.TryGetInt32(out var value) => value,
+                JsonValueKind.String when int.TryParse(maxEntriesElement.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) => value,
+                _ => null,
+            };
+
+            if (parsed.HasValue)
+            {
+                maxEntries = parsed.Value < 0 ? 0 : parsed.Value;
+            }
+        }
+
+        cache = new CacheConfiguration(rootPath, refresh, maxAge, maxEntries);
         return true;
     }
 

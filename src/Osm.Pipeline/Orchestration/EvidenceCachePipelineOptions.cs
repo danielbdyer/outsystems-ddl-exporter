@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Osm.Pipeline.Orchestration;
@@ -10,4 +11,6 @@ public sealed record EvidenceCachePipelineOptions(
     string? ProfilePath,
     string? DmmPath,
     string? ConfigPath,
-    IReadOnlyDictionary<string, string?>? Metadata);
+    IReadOnlyDictionary<string, string?>? Metadata,
+    TimeSpan? RetentionMaxAge,
+    int? RetentionMaxEntries);

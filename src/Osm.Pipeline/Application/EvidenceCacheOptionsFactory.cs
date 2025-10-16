@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
@@ -38,7 +40,7 @@ internal static class EvidenceCacheOptionsFactory
             throw new ArgumentException("Model path must be provided.", nameof(modelPath));
         }
 
-        overrides ??= new CacheOptionsOverrides(null, null);
+        overrides ??= new CacheOptionsOverrides(null, null, null, null);
 
         var cacheRoot = overrides.Root ?? configuration.Cache.Root;
         if (string.IsNullOrWhiteSpace(cacheRoot))
@@ -47,13 +49,27 @@ internal static class EvidenceCacheOptionsFactory
         }
 
         var refresh = overrides.Refresh ?? configuration.Cache.Refresh ?? false;
-        var metadata = CacheMetadataBuilder.Build(
-            tightening,
-            moduleFilter,
-            configuration,
-            modelPath,
-            profilePath,
-            dmmPath);
+        var maxAge = overrides.MaxAge ?? configuration.Cache.MaxAge;
+        var maxEntries = overrides.MaxEntries ?? configuration.Cache.MaxEntries;
+        var metadata = new Dictionary<string, string?>(
+            CacheMetadataBuilder.Build(
+                tightening,
+                moduleFilter,
+                configuration,
+                modelPath,
+                profilePath,
+                dmmPath),
+            StringComparer.Ordinal);
+
+        if (maxAge is { } ttl)
+        {
+            metadata["cache.ttlSeconds"] = ttl.TotalSeconds.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (maxEntries.HasValue)
+        {
+            metadata["cache.maxEntries"] = maxEntries.Value.ToString(CultureInfo.InvariantCulture);
+        }
 
         return new EvidenceCachePipelineOptions(
             cacheRoot.Trim(),
@@ -63,6 +79,8 @@ internal static class EvidenceCacheOptionsFactory
             profilePath,
             dmmPath,
             configPath,
-            metadata);
+            metadata,
+            maxAge,
+            maxEntries);
     }
 }

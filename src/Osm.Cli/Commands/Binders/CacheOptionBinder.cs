@@ -13,11 +13,21 @@ internal sealed class CacheOptionBinder : BinderBase<CacheOptionsOverrides>
     {
         CacheRootOption = new Option<string?>("--cache-root", "Root directory for evidence caching.");
         RefreshCacheOption = new Option<bool>("--refresh-cache", "Force cache refresh for this execution.");
+        CacheMaxAgeSecondsOption = new Option<double?>(
+            "--cache-max-age-seconds",
+            description: "Maximum age (in seconds) to retain evidence cache entries.");
+        CacheMaxEntriesOption = new Option<int?>(
+            "--cache-max-entries",
+            description: "Maximum number of evidence cache entries to retain.");
     }
 
     public Option<string?> CacheRootOption { get; }
 
     public Option<bool> RefreshCacheOption { get; }
+
+    public Option<double?> CacheMaxAgeSecondsOption { get; }
+
+    public Option<int?> CacheMaxEntriesOption { get; }
 
     public IEnumerable<Option> Options
     {
@@ -25,6 +35,8 @@ internal sealed class CacheOptionBinder : BinderBase<CacheOptionsOverrides>
         {
             yield return CacheRootOption;
             yield return RefreshCacheOption;
+            yield return CacheMaxAgeSecondsOption;
+            yield return CacheMaxEntriesOption;
         }
     }
 
@@ -40,6 +52,19 @@ internal sealed class CacheOptionBinder : BinderBase<CacheOptionsOverrides>
 
         var root = parseResult.GetValueForOption(CacheRootOption);
         var refresh = parseResult.HasOption(RefreshCacheOption) ? true : (bool?)null;
-        return new CacheOptionsOverrides(root, refresh);
+        var maxAgeSeconds = parseResult.GetValueForOption(CacheMaxAgeSecondsOption);
+        TimeSpan? maxAge = null;
+        if (maxAgeSeconds.HasValue && maxAgeSeconds.Value > 0)
+        {
+            maxAge = TimeSpan.FromSeconds(maxAgeSeconds.Value);
+        }
+
+        var maxEntries = parseResult.GetValueForOption(CacheMaxEntriesOption);
+        if (maxEntries.HasValue && maxEntries.Value < 0)
+        {
+            maxEntries = 0;
+        }
+
+        return new CacheOptionsOverrides(root, refresh, maxAge, maxEntries);
     }
 }

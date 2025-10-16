@@ -30,7 +30,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
     public async Task BuildSsdt_UsesConfigurationCacheOptions_WhenOverridesMissing()
     {
         var configuration = CreateConfiguration(
-            cache: new CacheConfiguration("  config-root  ", true),
+            cache: new CacheConfiguration("  config-root  ", true, null, null),
             profiler: new ProfilerConfiguration("fixture", "config-profile.snapshot", null));
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
@@ -57,7 +57,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             overrides,
             moduleFilter,
             DefaultSqlOverrides,
-            new CacheOptionsOverrides(null, null)));
+            new CacheOptionsOverrides(null, null, null, null)));
 
         var request = dispatcher.BuildRequest;
         Assert.NotNull(request);
@@ -80,7 +80,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
     public async Task BuildSsdt_UsesOverrideCacheOptions_WhenProvided()
     {
         var configuration = CreateConfiguration(
-            cache: new CacheConfiguration(null, null),
+            cache: new CacheConfiguration(null, null, null, null),
             profiler: new ProfilerConfiguration("fixture", null, null));
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
@@ -107,7 +107,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             overrides,
             moduleFilter,
             DefaultSqlOverrides,
-            new CacheOptionsOverrides(" ./override ", true)));
+            new CacheOptionsOverrides(" ./override ", true, null, null)));
 
         var request = dispatcher.BuildRequest;
         Assert.NotNull(request);
@@ -122,7 +122,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
     public async Task BuildSsdt_SkipsEvidenceCache_WhenRootMissing()
     {
         var configuration = CreateConfiguration(
-            cache: new CacheConfiguration(null, false),
+            cache: new CacheConfiguration(null, false, null, null),
             profiler: new ProfilerConfiguration("fixture", null, null));
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
@@ -149,7 +149,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             overrides,
             moduleFilter,
             DefaultSqlOverrides,
-            new CacheOptionsOverrides(null, null)));
+            new CacheOptionsOverrides(null, null, null, null)));
 
         var request = dispatcher.BuildRequest;
         Assert.NotNull(request);
@@ -160,7 +160,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
     public async Task DmmCompare_UsesConfigurationCacheOptions_WhenOverridesMissing()
     {
         var configuration = CreateConfiguration(
-            cache: new CacheConfiguration("cache-root", false),
+            cache: new CacheConfiguration("cache-root", false, null, null),
             profiler: new ProfilerConfiguration("fixture", null, null),
             dmmPath: "config.dmm");
         var context = new CliConfigurationContext(configuration, "config.json");
@@ -186,7 +186,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             overrides,
             moduleFilter,
             DefaultSqlOverrides,
-            new CacheOptionsOverrides(null, null)));
+            new CacheOptionsOverrides(null, null, null, null)));
 
         var request = dispatcher.CompareRequest;
         Assert.NotNull(request);
@@ -203,7 +203,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
     public async Task DmmCompare_UsesOverrideCacheOptions_WhenProvided()
     {
         var configuration = CreateConfiguration(
-            cache: new CacheConfiguration("config-root", false),
+            cache: new CacheConfiguration("config-root", false, null, null),
             profiler: new ProfilerConfiguration("fixture", null, null));
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
@@ -228,7 +228,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             overrides,
             moduleFilter,
             DefaultSqlOverrides,
-            new CacheOptionsOverrides("overridden-root", true)));
+            new CacheOptionsOverrides("overridden-root", true, null, null)));
 
         var request = dispatcher.CompareRequest;
         Assert.NotNull(request);

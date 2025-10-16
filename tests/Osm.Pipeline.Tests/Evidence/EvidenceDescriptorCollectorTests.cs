@@ -29,7 +29,9 @@ public sealed class EvidenceDescriptorCollectorTests
             DmmPath: "/inputs/dmm",
             ConfigPath: null,
             Metadata: new Dictionary<string, string?>(),
-            Refresh: false);
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
 
         var result = await collector.CollectAsync(request, CancellationToken.None);
 
@@ -56,7 +58,9 @@ public sealed class EvidenceDescriptorCollectorTests
             DmmPath: null,
             ConfigPath: null,
             Metadata: new Dictionary<string, string?>(),
-            Refresh: false);
+            Refresh: false,
+            RetentionMaxAge: null,
+            RetentionMaxEntries: null);
 
         var result = await collector.CollectAsync(request, CancellationToken.None);
 

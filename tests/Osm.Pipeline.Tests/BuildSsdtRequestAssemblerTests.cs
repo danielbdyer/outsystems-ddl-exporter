@@ -50,7 +50,7 @@ public sealed class BuildSsdtRequestAssemblerTests
     {
         var assembler = new BuildSsdtRequestAssembler();
         var configuration = CreateConfiguration(
-            cache: new CacheConfiguration("  cache-root  ", true),
+            cache: new CacheConfiguration("  cache-root  ", true, null, null),
             profiler: new ProfilerConfiguration("fixture", "config.profile", null));
         var overrides = new BuildSsdtOverrides(
             ModelPath: null,
@@ -130,7 +130,7 @@ public sealed class BuildSsdtRequestAssemblerTests
             SmoBuildOptions.FromEmission(configuration.Tightening.Emission),
             modelPath,
             outputDirectory,
-            new CacheOptionsOverrides(null, null),
+            new CacheOptionsOverrides(null, null, null, null),
             "config.json");
     }
 

@@ -49,6 +49,28 @@ public sealed class EvidenceCacheCoordinator
                 ["metadataCount"] = metadata.Count.ToString(CultureInfo.InvariantCulture)
             });
 
+        if (cacheOptions.RetentionMaxAge is { } maxAge)
+        {
+            log.Record(
+                "evidence.cache.retention.maxAge",
+                "Applying evidence cache max age policy.",
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["maxAgeSeconds"] = maxAge.TotalSeconds.ToString(CultureInfo.InvariantCulture)
+                });
+        }
+
+        if (cacheOptions.RetentionMaxEntries is { } maxEntries)
+        {
+            log.Record(
+                "evidence.cache.retention.maxEntries",
+                "Applying evidence cache max entries policy.",
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["maxEntries"] = maxEntries.ToString(CultureInfo.InvariantCulture)
+                });
+        }
+
         var cacheRequest = new EvidenceCacheRequest(
             trimmedRoot,
             cacheOptions.Command,
@@ -57,7 +79,9 @@ public sealed class EvidenceCacheCoordinator
             cacheOptions.DmmPath,
             cacheOptions.ConfigPath,
             metadata,
-            cacheOptions.Refresh);
+            cacheOptions.Refresh,
+            cacheOptions.RetentionMaxAge,
+            cacheOptions.RetentionMaxEntries);
 
         var cacheExecution = await _cacheService.CacheAsync(cacheRequest, cancellationToken).ConfigureAwait(false);
         if (cacheExecution.IsFailure)

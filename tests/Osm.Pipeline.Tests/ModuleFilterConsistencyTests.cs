@@ -77,7 +77,7 @@ public sealed class ModuleFilterConsistencyTests
             buildOverrides,
             buildModuleFilter,
             DefaultSqlOverrides,
-            new CacheOptionsOverrides(null, null)));
+            new CacheOptionsOverrides(null, null, null, null)));
 
         var buildRequest = buildDispatcher.BuildRequest;
         Assert.NotNull(buildRequest);
@@ -105,7 +105,7 @@ public sealed class ModuleFilterConsistencyTests
             compareOverrides,
             compareModuleFilter,
             DefaultSqlOverrides,
-            new CacheOptionsOverrides(null, null)));
+            new CacheOptionsOverrides(null, null, null, null)));
 
         var compareRequest = compareDispatcher.CompareRequest;
         Assert.NotNull(compareRequest);
@@ -158,7 +158,7 @@ public sealed class ModuleFilterConsistencyTests
                 AllowMissingPrimaryKey: Array.Empty<string>(),
                 AllowMissingSchema: Array.Empty<string>()),
             DefaultSqlOverrides,
-            new CacheOptionsOverrides(null, null)));
+            new CacheOptionsOverrides(null, null, null, null)));
 
         var buildRequest = buildDispatcher.BuildRequest;
         Assert.NotNull(buildRequest);
@@ -185,7 +185,7 @@ public sealed class ModuleFilterConsistencyTests
                 AllowMissingPrimaryKey: Array.Empty<string>(),
                 AllowMissingSchema: Array.Empty<string>()),
             DefaultSqlOverrides,
-            new CacheOptionsOverrides(null, null)));
+            new CacheOptionsOverrides(null, null, null, null)));
 
         var compareRequest = compareDispatcher.CompareRequest;
         Assert.NotNull(compareRequest);
@@ -234,7 +234,7 @@ public sealed class ModuleFilterConsistencyTests
                 AllowMissingPrimaryKey: Array.Empty<string>(),
                 AllowMissingSchema: Array.Empty<string>()),
             DefaultSqlOverrides,
-            new CacheOptionsOverrides(null, null)));
+            new CacheOptionsOverrides(null, null, null, null)));
         AssertValidationOverrideFailure(buildResult);
 
         var compareService = new CompareWithDmmApplicationService(new RecordingDispatcher());
@@ -254,7 +254,7 @@ public sealed class ModuleFilterConsistencyTests
                 AllowMissingPrimaryKey: Array.Empty<string>(),
                 AllowMissingSchema: Array.Empty<string>()),
             DefaultSqlOverrides,
-            new CacheOptionsOverrides(null, null)));
+            new CacheOptionsOverrides(null, null, null, null)));
         AssertValidationOverrideFailure(compareResult);
     }
 
