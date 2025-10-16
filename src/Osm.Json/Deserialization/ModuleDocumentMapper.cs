@@ -41,7 +41,12 @@ internal sealed class ModuleDocumentMapper
         for (var i = 0; i < entities.Length; i++)
         {
             var entity = entities[i];
-            if (entity is null || !ShouldSkipInactiveEntity(entity))
+            if (entity is null)
+            {
+                return false;
+            }
+
+            if (!ShouldSkipInactiveEntity(entity))
             {
                 return false;
             }
@@ -105,13 +110,8 @@ internal sealed class ModuleDocumentMapper
         return Result<ModuleModel?>.Success(moduleResult.Value);
     }
 
-    private static bool ShouldSkipInactiveEntity(EntityDocument? doc)
+    private static bool ShouldSkipInactiveEntity(EntityDocument doc)
     {
-        if (doc is null)
-        {
-            return false;
-        }
-
         if (doc.IsActive)
         {
             return false;

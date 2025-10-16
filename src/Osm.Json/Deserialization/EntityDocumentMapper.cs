@@ -65,7 +65,7 @@ internal sealed class EntityDocumentMapper
                         path.Property("schema")));
             }
 
-            var fallbackSchemaResult = _context.Options.MissingSchemaFallbackSchema;
+            var fallbackSchemaResult = _context.Options.MissingSchemaFallbackSchemaResult;
             if (fallbackSchemaResult.IsFailure)
             {
                 serializedPayload ??= _context.SerializeEntityDocument(doc);
@@ -92,7 +92,7 @@ internal sealed class EntityDocumentMapper
                         AppendPayloadContext(errorsWithPath, moduleNameValue, entityNameValue, serializedPayload));
                 }
 
-                var fallbackSchemaResult = _context.Options.MissingSchemaFallbackSchema;
+                var fallbackSchemaResult = _context.Options.MissingSchemaFallbackSchemaResult;
                 if (fallbackSchemaResult.IsFailure)
                 {
                     serializedPayload ??= _context.SerializeEntityDocument(doc);

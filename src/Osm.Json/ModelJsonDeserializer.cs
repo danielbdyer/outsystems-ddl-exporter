@@ -32,7 +32,7 @@ public sealed class ModelJsonDeserializerOptions
             : missingSchemaFallback.Trim();
 
         var fallbackResult = SchemaName.Create(MissingSchemaFallback);
-        MissingSchemaFallbackSchema = fallbackResult.IsSuccess
+        MissingSchemaFallbackSchemaResult = fallbackResult.IsSuccess
             ? fallbackResult
             : Result<SchemaName>.Failure(fallbackResult.Errors.Select(error => ValidationError.Create(
                 error.Code,
@@ -43,7 +43,11 @@ public sealed class ModelJsonDeserializerOptions
 
     public string MissingSchemaFallback { get; }
 
-    public Result<SchemaName> MissingSchemaFallbackSchema { get; }
+    public Result<SchemaName> MissingSchemaFallbackSchemaResult { get; }
+
+    public SchemaName? MissingSchemaFallbackSchema => MissingSchemaFallbackSchemaResult.IsSuccess
+        ? MissingSchemaFallbackSchemaResult.Value
+        : null;
 
     public static ModelJsonDeserializerOptions Default { get; } = new();
 }
