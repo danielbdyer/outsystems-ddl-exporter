@@ -128,6 +128,33 @@ public class ResultSetReaderTests
         Assert.Equal(0, columnException.RowIndex);
     }
 
+    [Fact]
+    public async Task ReadAllAsync_ShouldReportRootCauseMessagesForColumnFailures()
+    {
+        var rows = new[]
+        {
+            new object?[] { "value" }
+        };
+
+        using var reader = new SingleResultSetDataReader(rows);
+        var resultSetReader = ResultSetReader<int>.Create(static _ => throw new ColumnReadException(
+            "RequiredColumn",
+            0,
+            typeof(string),
+            typeof(string),
+            null,
+            null,
+            new InvalidOperationException("Column 'RequiredColumn' (ordinal 0) contained NULL but a non-null value was required.")));
+
+        var exception = await Assert.ThrowsAsync<MetadataRowMappingException>(() =>
+            resultSetReader.ReadAllAsync(reader, "NullableSet", CancellationToken.None));
+
+        Assert.Contains("NullableSet", exception.Message);
+        Assert.Contains("RequiredColumn", exception.Message);
+        Assert.Contains("Root cause", exception.Message);
+        Assert.Contains("contained NULL", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed record TestRow(int Id, string Name, bool Flag, Guid? Token);
 
     private sealed record NullableRow(int Id, string? Name, bool? Flag);

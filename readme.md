@@ -715,6 +715,14 @@ Entries inside the `modules` array can be plain strings (include the entire modu
 
 `sql.sampling` tunes when the profiler switches to sampling and how many rows it inspects; `sql.authentication` plugs in Azure AD / managed identity authentication or per-connection ADO.NET overrides (e.g., application name, certificate trust) without polluting the connection string.
 
+### Metadata contract overrides (handling nullable metadata)
+
+The SQL metadata reader assumes specific columns (such as `AttributeJson.AttributesJson`) are always populated. When an OutSystems
+upgrade or in-flight module returns `NULL`, the extractor fails fast with a `MetadataRowMappingException`. Configure
+`sql.metadataContract.optionalColumns` to mark those columns as nullable for your environment and prevent the failure. The
+[Metadata contract overrides guide](docs/sql/metadata-contract-overrides.md) walks through the configuration steps and explains
+the enhanced error message that highlights the underlying NULL mismatch.
+
 ### Supplemental models (entity overrides)
 
 OutSystems modules frequently reference **system** or **external** tables (for example `OSSYS_User`) that the Advanced SQL export does not include. The CLI’s supplemental model loader lets you bring those table definitions along so the SMO factory can materialize them and allow foreign keys to resolve cleanly in the emitted SSDT project.

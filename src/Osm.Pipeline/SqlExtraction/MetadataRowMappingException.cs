@@ -45,10 +45,34 @@ internal sealed class MetadataRowMappingException : Exception
             var expectedDisplay = columnReadException.ExpectedClrType?.FullName ?? "unknown";
             var providerDisplay = columnReadException.ProviderFieldType?.FullName ?? "unknown";
             message += $" Column '{columnReadException.ColumnName}' (ordinal {columnReadException.Ordinal}) expected type '{expectedDisplay}' but provider type was '{providerDisplay}'.";
+
+            var rootCause = GetInnermostMessage(columnReadException.InnerException);
+            if (!string.IsNullOrWhiteSpace(rootCause))
+            {
+                message += $" Root cause: {rootCause}";
+            }
         }
         else if (!string.IsNullOrWhiteSpace(innerException.Message))
         {
             message += $" {innerException.Message}";
+        }
+
+        return message;
+    }
+
+    private static string? GetInnermostMessage(Exception? exception)
+    {
+        Exception? current = exception;
+        string? message = null;
+
+        while (current is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(current.Message))
+            {
+                message = current.Message;
+            }
+
+            current = current.InnerException;
         }
 
         return message;
