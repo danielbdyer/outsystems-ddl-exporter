@@ -94,9 +94,48 @@ internal sealed class EvidenceCacheWriter
             _fileSystem.Directory.CreateDirectory(directory);
         }
 
-        await using var source = _fileSystem.File.Open(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        await using var destination = _fileSystem.File.Open(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+        var temporaryPath = string.Concat(destinationPath, ".tmp-", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            await using var source = _fileSystem.File.Open(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            await using var destination = _fileSystem.File.Open(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None);
+
+            await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+            await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (_fileSystem.File.Exists(temporaryPath))
+            {
+                _fileSystem.File.Delete(temporaryPath);
+            }
+
+            throw;
+        }
+
+        try
+        {
+            if (_fileSystem.File.Exists(destinationPath))
+            {
+                _fileSystem.File.Delete(destinationPath);
+            }
+
+            _fileSystem.File.Move(temporaryPath, destinationPath);
+        }
+        catch
+        {
+            if (_fileSystem.File.Exists(temporaryPath))
+            {
+                _fileSystem.File.Delete(temporaryPath);
+            }
+
+            throw;
+        }
     }
 
     private async Task WriteManifestAsync(

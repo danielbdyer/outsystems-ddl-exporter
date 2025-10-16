@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Security.Cryptography;
@@ -75,6 +76,8 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
         var command = request.Command.Trim();
         var key = ComputeKey(command, descriptors, metadata);
         var cacheDirectory = _fileSystem.Path.Combine(normalizedRoot, key);
+        var lockFilePath = string.Concat(cacheDirectory, ".lock");
+        await using var cacheLock = await AcquireCacheLockAsync(lockFilePath, cancellationToken).ConfigureAwait(false);
         var requestedModuleSelection = BuildModuleSelection(metadata);
 
         EvidenceCacheInvalidationReason invalidationReason;
@@ -174,6 +177,34 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
             creationMetadata);
 
         return Result<EvidenceCacheResult>.Success(new EvidenceCacheResult(cacheDirectory, manifest, creationEvaluation));
+    }
+
+    private async ValueTask<CacheDirectoryLock> AcquireCacheLockAsync(string lockFilePath, CancellationToken cancellationToken)
+    {
+        var directory = _fileSystem.Path.GetDirectoryName(lockFilePath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            _fileSystem.Directory.CreateDirectory(directory);
+        }
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var stream = _fileSystem.File.Open(lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                return new CacheDirectoryLock(_fileSystem, lockFilePath, stream);
+            }
+            catch (IOException)
+            {
+                await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task<(EvidenceCacheInvalidationReason Reason, IReadOnlyDictionary<string, string?> Metadata)> DetermineMissingCacheReasonAsync(
@@ -423,5 +454,51 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
         }
 
         return defaultValue;
+    }
+
+    private sealed class CacheDirectoryLock : IAsyncDisposable
+    {
+        private readonly IFileSystem _fileSystem;
+        private readonly string _lockFilePath;
+        private readonly Stream _stream;
+        private bool _disposed;
+
+        public CacheDirectoryLock(IFileSystem fileSystem, string lockFilePath, Stream stream)
+        {
+            _fileSystem = fileSystem;
+            _lockFilePath = lockFilePath;
+            _stream = stream;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+
+            try
+            {
+                await _stream.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                try
+                {
+                    if (_fileSystem.File.Exists(_lockFilePath))
+                    {
+                        _fileSystem.File.Delete(_lockFilePath);
+                    }
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+            }
+        }
     }
 }

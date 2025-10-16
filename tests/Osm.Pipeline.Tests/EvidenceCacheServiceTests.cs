@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Osm.Pipeline.Evidence;
+using Tests.Support;
 
 namespace Osm.Pipeline.Tests;
 
@@ -426,5 +428,150 @@ public sealed class EvidenceCacheServiceTests
         Assert.True(result.IsFailure);
         var error = Assert.Single(result.Errors);
         Assert.Equal("cache.model.notFound", error.Code);
+    }
+
+    [Fact]
+    public async Task CacheAsync_ShouldSynchronizeConcurrentInvocations()
+    {
+        using var inputs = new TempDirectory();
+        using var cacheRoot = new TempDirectory();
+
+        var fileSystem = new FileSystem();
+        var modelPath = Path.Combine(inputs.Path, "model.json");
+        var profilePath = Path.Combine(inputs.Path, "profile.json");
+        const string modelContent = "{\"model\":\"concurrent\"}";
+        const string profileContent = "{\"profile\":\"concurrent\"}";
+
+        fileSystem.File.WriteAllText(modelPath, modelContent);
+        fileSystem.File.WriteAllText(profilePath, profileContent);
+
+        var request = new EvidenceCacheRequest(
+            RootDirectory: cacheRoot.Path,
+            Command: "build-ssdt",
+            ModelPath: modelPath,
+            ProfilePath: profilePath,
+            DmmPath: null,
+            ConfigPath: null,
+            Metadata: new Dictionary<string, string?>
+            {
+                ["policy.mode"] = "EvidenceGated",
+            },
+            Refresh: false);
+
+        var service = new EvidenceCacheService(
+            fileSystem,
+            () => new DateTimeOffset(2024, 08, 10, 12, 00, 00, TimeSpan.Zero));
+
+        var tasks = Enumerable.Range(0, 4)
+            .Select(_ => service.CacheAsync(request))
+            .ToArray();
+
+        var results = await Task.WhenAll(tasks);
+
+        Assert.All(results, static result => Assert.True(result.IsSuccess));
+
+        var cacheDirectories = results
+            .Select(result => result.Value.CacheDirectory)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var cacheDirectory = Assert.Single(cacheDirectories);
+        var manifestPath = fileSystem.Path.Combine(cacheDirectory, "manifest.json");
+
+        using var _ = JsonDocument.Parse(fileSystem.File.ReadAllText(manifestPath));
+
+        var cachedModel = fileSystem.File.ReadAllText(fileSystem.Path.Combine(cacheDirectory, "model.json"));
+        var cachedProfile = fileSystem.File.ReadAllText(fileSystem.Path.Combine(cacheDirectory, "profile.json"));
+
+        Assert.Equal(modelContent, cachedModel);
+        Assert.Equal(profileContent, cachedProfile);
+
+        Assert.Contains(results, static result => result.Value.Evaluation.Outcome == EvidenceCacheOutcome.Created);
+        Assert.Contains(results, static result => result.Value.Evaluation.Outcome == EvidenceCacheOutcome.Reused);
+
+        var lockFiles = fileSystem.Directory.GetFiles(cacheRoot.Path, "*.lock", SearchOption.AllDirectories);
+        Assert.Empty(lockFiles);
+    }
+
+    [Fact]
+    public async Task CacheAsync_ShouldWriteCompleteArtifacts_WhenConcurrentRefreshRequested()
+    {
+        using var inputs = new TempDirectory();
+        using var cacheRoot = new TempDirectory();
+
+        var fileSystem = new FileSystem();
+        var modelPath = Path.Combine(inputs.Path, "model.json");
+        var profilePath = Path.Combine(inputs.Path, "profile.json");
+        const string originalModel = "{\"model\":\"initial\"}";
+        const string originalProfile = "{\"profile\":\"initial\"}";
+
+        fileSystem.File.WriteAllText(modelPath, originalModel);
+        fileSystem.File.WriteAllText(profilePath, originalProfile);
+
+        var baseRequest = new EvidenceCacheRequest(
+            RootDirectory: cacheRoot.Path,
+            Command: "build-ssdt",
+            ModelPath: modelPath,
+            ProfilePath: profilePath,
+            DmmPath: null,
+            ConfigPath: null,
+            Metadata: new Dictionary<string, string?>
+            {
+                ["policy.mode"] = "EvidenceGated",
+            },
+            Refresh: false);
+
+        var timestamps = new Queue<DateTimeOffset>(new[]
+        {
+            new DateTimeOffset(2024, 08, 11, 09, 00, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 11, 09, 05, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 11, 09, 10, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 11, 09, 15, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 11, 09, 20, 00, TimeSpan.Zero),
+        });
+
+        var service = new EvidenceCacheService(fileSystem, () => timestamps.Dequeue());
+
+        var initial = await service.CacheAsync(baseRequest);
+        Assert.True(initial.IsSuccess);
+
+        const string updatedModel = "{\"model\":\"refreshed\"}";
+        const string updatedProfile = "{\"profile\":\"refreshed\"}";
+
+        fileSystem.File.WriteAllText(modelPath, updatedModel);
+        fileSystem.File.WriteAllText(profilePath, updatedProfile);
+
+        var refreshRequest = baseRequest with { Refresh = true };
+
+        var refreshTasks = new[]
+        {
+            service.CacheAsync(refreshRequest),
+            service.CacheAsync(baseRequest),
+            service.CacheAsync(baseRequest),
+            service.CacheAsync(baseRequest),
+        };
+
+        var results = await Task.WhenAll(refreshTasks);
+
+        Assert.All(results, static result => Assert.True(result.IsSuccess));
+
+        var finalCacheDirectory = results
+            .Select(result => result.Value.CacheDirectory)
+            .Distinct(StringComparer.Ordinal)
+            .Single();
+
+        var modelArtifactPath = fileSystem.Path.Combine(finalCacheDirectory, "model.json");
+        var profileArtifactPath = fileSystem.Path.Combine(finalCacheDirectory, "profile.json");
+        var manifestPath = fileSystem.Path.Combine(finalCacheDirectory, "manifest.json");
+
+        Assert.Equal(updatedModel, fileSystem.File.ReadAllText(modelArtifactPath));
+        Assert.Equal(updatedProfile, fileSystem.File.ReadAllText(profileArtifactPath));
+
+        using var _ = JsonDocument.Parse(fileSystem.File.ReadAllText(manifestPath));
+
+        Assert.Contains(results, static result => result.Value.Evaluation.Reason == EvidenceCacheInvalidationReason.RefreshRequested);
+
+        var lockFiles = fileSystem.Directory.GetFiles(cacheRoot.Path, "*.lock", SearchOption.AllDirectories);
+        Assert.Empty(lockFiles);
     }
 }
