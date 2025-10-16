@@ -60,25 +60,95 @@
     "ForeignKeyCount": 2,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
-      "DATA_NO_NULLS": 10,
+      "DEFAULT_PRESENT": 2,
+      "PHYSICAL_NOT_NULL": 4,
+      "MANDATORY": 10,
+      "DATA_HAS_ORPHANS": 1,
+      "DELETE_RULE_IGNORE": 1,
       "PROFILE_MISSING": 1,
       "PK": 4,
-      "DELETE_RULE_IGNORE": 1,
+      "FK_ENFORCED": 1,
       "UNIQUE_NO_NULLS": 2,
-      "MANDATORY": 10,
-      "DEFAULT_PRESENT": 2,
-      "DATA_HAS_ORPHANS": 1,
-      "PHYSICAL_NOT_NULL": 4,
-      "FK_ENFORCED": 1
+      "DATA_NO_NULLS": 10
     },
     "UniqueIndexRationales": {
       "PHYSICAL_UNIQUE_KEY": 2,
       "UNIQUE_NO_NULLS": 2
     },
     "ForeignKeyRationales": {
-      "DB_CONSTRAINT_PRESENT": 1,
+      "DATA_HAS_ORPHANS": 1,
       "DELETE_RULE_IGNORE": 1,
-      "DATA_HAS_ORPHANS": 1
+      "DB_CONSTRAINT_PRESENT": 1
+    },
+    "ModuleRollups": {
+      "Ops": {
+        "ColumnCount": 3,
+        "TightenedColumnCount": 2,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 0,
+        "UniqueIndexesEnforcedCount": 0,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 1,
+        "ForeignKeysCreatedCount": 0
+      },
+      "ExtBilling": {
+        "ColumnCount": 3,
+        "TightenedColumnCount": 2,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 1,
+        "UniqueIndexesEnforcedCount": 1,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 0,
+        "ForeignKeysCreatedCount": 0
+      },
+      "AppCore": {
+        "ColumnCount": 9,
+        "TightenedColumnCount": 6,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 1,
+        "UniqueIndexesEnforcedCount": 1,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 1,
+        "ForeignKeysCreatedCount": 1
+      }
+    },
+    "TogglePrecedence": {
+      "policy.mode": {
+        "Value": "EvidenceGated",
+        "Source": 0
+      },
+      "policy.nullBudget": {
+        "Value": 0,
+        "Source": 0
+      },
+      "foreignKeys.enableCreation": {
+        "Value": true,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossSchema": {
+        "Value": false,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossCatalog": {
+        "Value": false,
+        "Source": 0
+      },
+      "uniqueness.enforceSingleColumn": {
+        "Value": true,
+        "Source": 0
+      },
+      "uniqueness.enforceMultiColumn": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.generatePreScripts": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.maxRowsDefaultBackfill": {
+        "Value": 100000,
+        "Source": 0
+      }
     }
   },
   "Emission": {
