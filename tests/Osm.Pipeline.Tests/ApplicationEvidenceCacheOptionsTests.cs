@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,7 +34,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             profiler: new ProfilerConfiguration("fixture", "config-profile.snapshot", null));
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
-        var service = new BuildSsdtApplicationService(dispatcher);
+        var service = CreateBuildService(dispatcher);
 
         var overrides = new BuildSsdtOverrides(
             ModelPath: "model.json",
@@ -83,7 +84,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             profiler: new ProfilerConfiguration("fixture", null, null));
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
-        var service = new BuildSsdtApplicationService(dispatcher);
+        var service = CreateBuildService(dispatcher);
 
         var overrides = new BuildSsdtOverrides(
             ModelPath: "model.json",
@@ -125,7 +126,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             profiler: new ProfilerConfiguration("fixture", null, null));
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
-        var service = new BuildSsdtApplicationService(dispatcher);
+        var service = CreateBuildService(dispatcher);
 
         var overrides = new BuildSsdtOverrides(
             ModelPath: "model.json",
@@ -256,6 +257,13 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             SupplementalModelConfiguration.Empty);
     }
 
+    private static BuildSsdtApplicationService CreateBuildService(RecordingDispatcher dispatcher)
+    {
+        var assembler = new BuildSsdtRequestAssembler();
+        var modelResolution = new StubModelResolutionService();
+        return new BuildSsdtApplicationService(dispatcher, assembler, modelResolution);
+    }
+
     private sealed class RecordingDispatcher : ICommandDispatcher
     {
         public BuildSsdtPipelineRequest? BuildRequest { get; private set; }
@@ -278,6 +286,27 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             }
 
             return Task.FromResult(Result<TResponse>.Failure(ValidationError.Create("test.dispatch", "stub failure")));
+        }
+    }
+
+    private sealed class StubModelResolutionService : IModelResolutionService
+    {
+        public Task<Result<ModelResolutionResult>> ResolveModelAsync(
+            CliConfiguration configuration,
+            BuildSsdtOverrides overrides,
+            ModuleFilterOptions moduleFilter,
+            ResolvedSqlOptions sqlOptions,
+            string outputDirectory,
+            CancellationToken cancellationToken)
+        {
+            var path = overrides.ModelPath ?? configuration.ModelPath;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new InvalidOperationException("Tests must provide a model path override.");
+            }
+
+            var result = new ModelResolutionResult(path!, false, ImmutableArray<string>.Empty);
+            return Task.FromResult(Result<ModelResolutionResult>.Success(result));
         }
     }
 }
