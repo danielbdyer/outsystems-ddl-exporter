@@ -193,8 +193,20 @@ public class BuildSsdtPipelineTests
         var manifestJson = await File.ReadAllTextAsync(Path.Combine(output.Path, "manifest.json"));
         using var manifestDocument = JsonDocument.Parse(manifestJson);
         Assert.True(manifestDocument.RootElement.GetProperty("Tables").GetArrayLength() > 0);
+
         var coverageElement = manifestDocument.RootElement.GetProperty("Coverage");
-        Assert.True(coverageElement.GetProperty("Tables").GetProperty("Total").GetInt32() >= 0);
+        Assert.Equal(4, coverageElement.GetProperty("Tables").GetProperty("Emitted").GetInt32());
+        Assert.Equal(5, coverageElement.GetProperty("Tables").GetProperty("Total").GetInt32());
+        Assert.Equal(80.0, coverageElement.GetProperty("Tables").GetProperty("Percentage").GetDouble(), precision: 2);
+
+        Assert.Equal(14, coverageElement.GetProperty("Columns").GetProperty("Emitted").GetInt32());
+        Assert.Equal(17, coverageElement.GetProperty("Columns").GetProperty("Total").GetInt32());
+        Assert.Equal(82.35, coverageElement.GetProperty("Columns").GetProperty("Percentage").GetDouble(), precision: 2);
+
+        Assert.Equal(8, coverageElement.GetProperty("Constraints").GetProperty("Emitted").GetInt32());
+        Assert.Equal(9, coverageElement.GetProperty("Constraints").GetProperty("Total").GetInt32());
+        Assert.Equal(88.89, coverageElement.GetProperty("Constraints").GetProperty("Percentage").GetDouble(), precision: 2);
+
         Assert.Equal(JsonValueKind.Array, manifestDocument.RootElement.GetProperty("Unsupported").ValueKind);
     }
 
