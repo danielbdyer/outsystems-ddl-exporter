@@ -22,6 +22,7 @@ public sealed class SqlDataProfiler : IDataProfiler
     private readonly ITableMetadataLoader _metadataLoader;
     private readonly IProfilingPlanBuilder _planBuilder;
     private readonly IProfilingQueryExecutor _queryExecutor;
+    private readonly EntityProfilingLookup _entityLookup;
 
     public SqlDataProfiler(IDbConnectionFactory connectionFactory, OsmModel model, SqlProfilerOptions? options = null)
         : this(
@@ -45,8 +46,9 @@ public sealed class SqlDataProfiler : IDataProfiler
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _entityLookup = EntityProfilingLookup.Create(_model, _options.NamingOverrides);
         _metadataLoader = metadataLoader ?? new TableMetadataLoader(_options);
-        _planBuilder = planBuilder ?? new ProfilingPlanBuilder(_model);
+        _planBuilder = planBuilder ?? new ProfilingPlanBuilder(_model, _entityLookup);
         _queryExecutor = queryExecutor ?? new ProfilingQueryExecutor(_connectionFactory, _options);
     }
 
@@ -165,27 +167,21 @@ public sealed class SqlDataProfiler : IDataProfiler
 
                 foreach (var attribute in entity.Attributes)
                 {
-                    if (!attribute.Reference.IsReference || attribute.Reference.TargetEntity is null)
+                    if (!attribute.Reference.IsReference || attribute.Reference.TargetEntity is not EntityName targetName)
                     {
                         continue;
                     }
 
-                    var targetName = attribute.Reference.TargetEntity.Value;
-                    if (!TryFindEntity(targetName, out var targetEntity))
-                    {
-                        continue;
-                    }
-
-                    var targetIdentifier = GetPreferredIdentifier(targetEntity);
-                    if (targetIdentifier is null)
+                    if (!_entityLookup.TryGet(targetName, out var target) ||
+                        target.PreferredIdentifier is not AttributeModel targetIdentifier)
                     {
                         continue;
                     }
 
                     var foreignKeyKey = ProfilingPlanBuilder.BuildForeignKeyKey(
                         attribute.ColumnName.Value,
-                        targetEntity.Schema.Value,
-                        targetEntity.PhysicalName.Value,
+                        target.Entity.Schema.Value,
+                        target.Entity.PhysicalName.Value,
                         targetIdentifier.ColumnName.Value);
 
                     var hasOrphans = tableResults.ForeignKeys.TryGetValue(foreignKeyKey, out var orphaned) && orphaned;
@@ -194,8 +190,8 @@ public sealed class SqlDataProfiler : IDataProfiler
                         SchemaName.Create(schema).Value,
                         TableName.Create(table).Value,
                         ColumnName.Create(attribute.ColumnName.Value).Value,
-                        SchemaName.Create(targetEntity.Schema.Value).Value,
-                        TableName.Create(targetEntity.PhysicalName.Value).Value,
+                        SchemaName.Create(target.Entity.Schema.Value).Value,
+                        TableName.Create(target.Entity.PhysicalName.Value).Value,
                         ColumnName.Create(targetIdentifier.ColumnName.Value).Value,
                         attribute.Reference.HasDatabaseConstraint);
 
@@ -250,37 +246,6 @@ public sealed class SqlDataProfiler : IDataProfiler
         {
             gate.Release();
         }
-    }
-
-    private bool TryFindEntity(EntityName logicalName, out EntityModel entity)
-    {
-        foreach (var module in _model.Modules)
-        {
-            foreach (var candidate in module.Entities)
-            {
-                if (candidate.LogicalName.Equals(logicalName))
-                {
-                    entity = candidate;
-                    return true;
-                }
-            }
-        }
-
-        entity = null!;
-        return false;
-    }
-
-    private static AttributeModel? GetPreferredIdentifier(EntityModel entity)
-    {
-        foreach (var attribute in entity.Attributes)
-        {
-            if (attribute.IsIdentifier)
-            {
-                return attribute;
-            }
-        }
-
-        return null;
     }
 
     private static bool IsSingleColumnUnique(EntityModel entity, string columnName)

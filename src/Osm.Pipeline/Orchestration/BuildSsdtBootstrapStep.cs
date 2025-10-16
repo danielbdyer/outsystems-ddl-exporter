@@ -103,7 +103,8 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep
             var profilerOptions = SqlProfilerOptions.Default with
             {
                 CommandTimeoutSeconds = request.SqlOptions.CommandTimeoutSeconds,
-                Sampling = sampling
+                Sampling = sampling,
+                NamingOverrides = request.SmoOptions.NamingOverrides
             };
 
             var sqlProfiler = new SqlDataProfiler(

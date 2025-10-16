@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -142,11 +143,6 @@ internal sealed class RecordingDbCommand : DbCommand
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
         return new FakeDbDataReader(_rows);
-    }
-
-    public override Task<DbDataReader> ExecuteReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
-    {
-        return Task.FromResult<DbDataReader>(new FakeDbDataReader(_rows));
     }
 }
 
@@ -330,22 +326,115 @@ internal sealed class FakeDbDataReader : DbDataReader
 
     public override bool GetBoolean(int ordinal)
     {
-        return (bool)_rows[_position][ordinal]!;
+        return Convert.ToBoolean(_rows[_position][ordinal], CultureInfo.InvariantCulture);
+    }
+
+    public override byte GetByte(int ordinal)
+    {
+        return Convert.ToByte(_rows[_position][ordinal], CultureInfo.InvariantCulture);
+    }
+
+    public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
+    {
+        if (_rows[_position][ordinal] is not byte[] bytes || bytes.Length <= dataOffset)
+        {
+            return 0;
+        }
+
+        var available = bytes.Length - (int)dataOffset;
+        var toCopy = Math.Min(available, length);
+        if (buffer is not null && toCopy > 0)
+        {
+            Array.Copy(bytes, dataOffset, buffer, bufferOffset, toCopy);
+        }
+
+        return bytes.Length;
+    }
+
+    public override char GetChar(int ordinal)
+    {
+        return Convert.ToChar(_rows[_position][ordinal], CultureInfo.InvariantCulture);
+    }
+
+    public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
+    {
+        if (_rows[_position][ordinal] is not string text || text.Length <= dataOffset)
+        {
+            return 0;
+        }
+
+        var available = text.Length - (int)dataOffset;
+        var toCopy = Math.Min(available, length);
+        if (buffer is not null && toCopy > 0)
+        {
+            text.CopyTo((int)dataOffset, buffer, bufferOffset, toCopy);
+        }
+
+        return text.Length;
+    }
+
+    public override string GetDataTypeName(int ordinal)
+    {
+        return GetFieldType(ordinal).Name;
+    }
+
+    public override DateTime GetDateTime(int ordinal)
+    {
+        return Convert.ToDateTime(_rows[_position][ordinal], CultureInfo.InvariantCulture);
+    }
+
+    public override decimal GetDecimal(int ordinal)
+    {
+        return Convert.ToDecimal(_rows[_position][ordinal], CultureInfo.InvariantCulture);
+    }
+
+    public override double GetDouble(int ordinal)
+    {
+        return Convert.ToDouble(_rows[_position][ordinal], CultureInfo.InvariantCulture);
+    }
+
+    public override Type GetFieldType(int ordinal)
+    {
+        return _rows.Count > 0 && _rows[0][ordinal] is not null
+            ? _rows[0][ordinal]!.GetType()
+            : typeof(object);
+    }
+
+    public override float GetFloat(int ordinal)
+    {
+        return Convert.ToSingle(_rows[_position][ordinal], CultureInfo.InvariantCulture);
+    }
+
+    public override Guid GetGuid(int ordinal)
+    {
+        var value = _rows[_position][ordinal];
+        return value switch
+        {
+            Guid guid => guid,
+            string text => Guid.Parse(text),
+            byte[] bytes => new Guid(bytes),
+            _ => throw new InvalidCastException("Value cannot be converted to Guid.")
+        };
+    }
+
+    public override short GetInt16(int ordinal)
+    {
+        return Convert.ToInt16(_rows[_position][ordinal], CultureInfo.InvariantCulture);
     }
 
     public override int GetInt32(int ordinal)
     {
-        return Convert.ToInt32(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(_rows[_position][ordinal], CultureInfo.InvariantCulture);
     }
 
     public override long GetInt64(int ordinal)
     {
-        return Convert.ToInt64(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt64(_rows[_position][ordinal], CultureInfo.InvariantCulture);
     }
 
     public override string GetString(int ordinal)
     {
-        return (string)_rows[_position][ordinal]!;
+        return Convert.ToString(_rows[_position][ordinal], CultureInfo.InvariantCulture)!;
     }
 
     public override object GetValue(int ordinal)
@@ -389,13 +478,6 @@ internal sealed class FakeDbDataReader : DbDataReader
         throw new NotSupportedException();
     }
 
-    public override Type GetFieldType(int ordinal)
-    {
-        return _rows.Count > 0 && _rows[0][ordinal] is not null
-            ? _rows[0][ordinal]!.GetType()
-            : typeof(object);
-    }
-
     public override int GetValues(object[] values)
     {
         if (_rows.Count == 0)
@@ -415,5 +497,10 @@ internal sealed class FakeDbDataReader : DbDataReader
 
     public override void Close()
     {
+    }
+
+    public override IEnumerator GetEnumerator()
+    {
+        return new DbEnumerator(this, closeReader: false);
     }
 }

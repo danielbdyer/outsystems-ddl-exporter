@@ -10,10 +10,12 @@ namespace Osm.Pipeline.Profiling;
 internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
 {
     private readonly OsmModel _model;
+    private readonly EntityProfilingLookup _entityLookup;
 
-    public ProfilingPlanBuilder(OsmModel model)
+    public ProfilingPlanBuilder(OsmModel model, EntityProfilingLookup entityLookup)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
+        _entityLookup = entityLookup ?? throw new ArgumentNullException(nameof(entityLookup));
     }
 
     public Dictionary<(string Schema, string Table), TableProfilingPlan> BuildPlans(
@@ -52,20 +54,16 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
                     accumulator.AddColumn(columnName);
                 }
 
-                if (attribute.Reference.IsReference && attribute.Reference.TargetEntity is not null)
+                if (attribute.Reference.IsReference && attribute.Reference.TargetEntity is EntityName targetName)
                 {
-                    var targetName = attribute.Reference.TargetEntity.Value;
-                    if (TryFindEntity(targetName, out var targetEntity))
+                    if (_entityLookup.TryGet(targetName, out var target) &&
+                        target.PreferredIdentifier is AttributeModel targetIdentifier)
                     {
-                        var targetIdentifier = GetPreferredIdentifier(targetEntity);
-                        if (targetIdentifier is not null)
-                        {
-                            accumulator.AddForeignKey(
-                                columnName,
-                                targetEntity.Schema.Value,
-                                targetEntity.PhysicalName.Value,
-                                targetIdentifier.ColumnName.Value);
-                        }
+                        accumulator.AddForeignKey(
+                            columnName,
+                            target.Entity.Schema.Value,
+                            target.Entity.PhysicalName.Value,
+                            targetIdentifier.ColumnName.Value);
                     }
                 }
             }
@@ -105,37 +103,6 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
     internal static string BuildForeignKeyKey(string column, string targetSchema, string targetTable, string targetColumn)
     {
         return string.Join("|", new[] { column, targetSchema, targetTable, targetColumn }.Select(static value => value.ToLowerInvariant()));
-    }
-
-    private bool TryFindEntity(EntityName logicalName, out EntityModel entity)
-    {
-        foreach (var module in _model.Modules)
-        {
-            foreach (var candidate in module.Entities)
-            {
-                if (candidate.LogicalName.Equals(logicalName))
-                {
-                    entity = candidate;
-                    return true;
-                }
-            }
-        }
-
-        entity = null!;
-        return false;
-    }
-
-    private static AttributeModel? GetPreferredIdentifier(EntityModel entity)
-    {
-        foreach (var attribute in entity.Attributes)
-        {
-            if (attribute.IsIdentifier)
-            {
-                return attribute;
-            }
-        }
-
-        return null;
     }
 
     private sealed class TableProfilingPlanAccumulator

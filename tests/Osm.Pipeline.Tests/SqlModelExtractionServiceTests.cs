@@ -116,47 +116,45 @@ public class SqlModelExtractionServiceTests
     [Fact]
     public async Task ExtractAsync_ShouldSurfaceWarningsForModulesWithoutEntities()
     {
-        const string json = """
-        {
-          "exportedAtUtc": "2025-01-01T00:00:00Z",
-          "modules": [
-            {
-              "name": "EmptyModule",
-              "isSystem": false,
-              "isActive": true,
-              "entities": []
-            },
-            {
-              "name": "Inventory",
-              "isSystem": false,
-              "isActive": true,
-              "entities": [
-                {
-                  "name": "Product",
-                  "physicalName": "OSUSR_INV_PRODUCT",
-                  "db_schema": "dbo",
-                  "isStatic": false,
-                  "isExternal": false,
-                  "isActive": true,
-                  "attributes": [
-                    {
-                      "name": "Id",
-                      "physicalName": "ID",
-                      "dataType": "Identifier",
-                      "isMandatory": true,
-                      "isIdentifier": true,
-                      "isAutoNumber": true,
-                      "isActive": true
-                    }
-                  ],
-                  "indexes": [],
-                  "relationships": []
-                }
-              ]
-            }
-          ]
-        }
-        """;
+        const string json = "{\n" +
+            "  \"exportedAtUtc\": \"2025-01-01T00:00:00Z\",\n" +
+            "  \"modules\": [\n" +
+            "    {\n" +
+            "      \"name\": \"EmptyModule\",\n" +
+            "      \"isSystem\": false,\n" +
+            "      \"isActive\": true,\n" +
+            "      \"entities\": []\n" +
+            "    },\n" +
+            "    {\n" +
+            "      \"name\": \"Inventory\",\n" +
+            "      \"isSystem\": false,\n" +
+            "      \"isActive\": true,\n" +
+            "      \"entities\": [\n" +
+            "        {\n" +
+            "          \"name\": \"Product\",\n" +
+            "          \"physicalName\": \"OSUSR_INV_PRODUCT\",\n" +
+            "          \"db_schema\": \"dbo\",\n" +
+            "          \"isStatic\": false,\n" +
+            "          \"isExternal\": false,\n" +
+            "          \"isActive\": true,\n" +
+            "          \"attributes\": [\n" +
+            "            {\n" +
+            "              \"name\": \"Id\",\n" +
+            "              \"physicalName\": \"ID\",\n" +
+            "              \"dataType\": \"Identifier\",\n" +
+            "              \"isMandatory\": true,\n" +
+            "              \"isIdentifier\": true,\n" +
+            "              \"isAutoNumber\": true,\n" +
+            "              \"isActive\": true\n" +
+            "            }\n" +
+            "          ],\n" +
+            "          \"indexes\": [],\n" +
+            "          \"relationships\": []\n" +
+            "        }\n" +
+            "      ]\n" +
+            "    }\n" +
+            "  ]\n" +
+            "}\n";
 
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));

@@ -20,39 +20,37 @@ public class ModelIngestionServiceTests
     public async Task LoadFromFileAsync_ShouldReturnModel_WhenFileExists()
     {
         const string path = @"/data/model.json";
-        const string json = """
-        {
-          "exportedAtUtc": "2025-01-01T00:00:00Z",
-          "modules": [
-            {
-              "name": "Finance",
-              "isSystem": false,
-              "isActive": true,
-              "entities": [
-                {
-                  "name": "Invoice",
-                  "physicalName": "OSUSR_FIN_INVOICE",
-                  "isStatic": false,
-                  "isExternal": false,
-                  "isActive": true,
-                  "db_schema": "dbo",
-                  "attributes": [
-                    {
-                      "name": "Id",
-                      "physicalName": "ID",
-                      "dataType": "Identifier",
-                      "isMandatory": true,
-                      "isIdentifier": true,
-                      "isAutoNumber": true,
-                      "isActive": true
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-        """;
+        const string json = "{\n" +
+            "  \"exportedAtUtc\": \"2025-01-01T00:00:00Z\",\n" +
+            "  \"modules\": [\n" +
+            "    {\n" +
+            "      \"name\": \"Finance\",\n" +
+            "      \"isSystem\": false,\n" +
+            "      \"isActive\": true,\n" +
+            "      \"entities\": [\n" +
+            "        {\n" +
+            "          \"name\": \"Invoice\",\n" +
+            "          \"physicalName\": \"OSUSR_FIN_INVOICE\",\n" +
+            "          \"isStatic\": false,\n" +
+            "          \"isExternal\": false,\n" +
+            "          \"isActive\": true,\n" +
+            "          \"db_schema\": \"dbo\",\n" +
+            "          \"attributes\": [\n" +
+            "            {\n" +
+            "              \"name\": \"Id\",\n" +
+            "              \"physicalName\": \"ID\",\n" +
+            "              \"dataType\": \"Identifier\",\n" +
+            "              \"isMandatory\": true,\n" +
+            "              \"isIdentifier\": true,\n" +
+            "              \"isAutoNumber\": true,\n" +
+            "              \"isActive\": true\n" +
+            "            }\n" +
+            "          ]\n" +
+            "        }\n" +
+            "      ]\n" +
+            "    }\n" +
+            "  ]\n" +
+            "}\n";
 
         var deserializer = new ModelJsonDeserializer();
         var fileSystem = CreateFileSystem(path, json);
