@@ -1,0 +1,208 @@
+using System;
+using System.CommandLine;
+using System.CommandLine.Invocation;
+using System.IO;
+using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Osm.Cli.Commands.Binders;
+using Osm.Pipeline.Application;
+using Osm.Pipeline.Configuration;
+using Osm.Pipeline.Mediation;
+using Osm.Validation.Tightening;
+
+namespace Osm.Cli.Commands;
+
+internal sealed class BuildSsdtCommandModule : ICommandModule
+{
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly CliGlobalOptions _globalOptions;
+    private readonly ModuleFilterOptionBinder _moduleFilterBinder;
+    private readonly CacheOptionBinder _cacheOptionBinder;
+    private readonly SqlOptionBinder _sqlOptionBinder;
+
+    private readonly Option<string?> _modelOption = new("--model", "Path to the model JSON file.");
+    private readonly Option<string?> _profileOption = new("--profile", "Path to the profiling snapshot.");
+    private readonly Option<string?> _profilerProviderOption = new("--profiler-provider", "Profiler provider to use.");
+    private readonly Option<string?> _staticDataOption = new("--static-data", "Path to static data fixture.");
+    private readonly Option<string?> _outputOption = new("--out", () => "out", "Output directory for SSDT artifacts.");
+    private readonly Option<string?> _renameOption = new("--rename-table", "Rename tables using source=Override syntax.");
+    private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
+
+    public BuildSsdtCommandModule(
+        IServiceScopeFactory scopeFactory,
+        CliGlobalOptions globalOptions,
+        ModuleFilterOptionBinder moduleFilterBinder,
+        CacheOptionBinder cacheOptionBinder,
+        SqlOptionBinder sqlOptionBinder)
+    {
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
+        _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
+        _cacheOptionBinder = cacheOptionBinder ?? throw new ArgumentNullException(nameof(cacheOptionBinder));
+        _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
+    }
+
+    public Command BuildCommand()
+    {
+        var command = new Command("build-ssdt", "Emit SSDT artifacts from an OutSystems model.")
+        {
+            _modelOption,
+            _profileOption,
+            _profilerProviderOption,
+            _staticDataOption,
+            _outputOption,
+            _renameOption,
+            _openReportOption,
+            _globalOptions.MaxDegreeOfParallelism
+        };
+
+        command.AddGlobalOption(_globalOptions.ConfigPath);
+        foreach (var option in _moduleFilterBinder.Options)
+        {
+            command.AddOption(option);
+        }
+
+        foreach (var option in _cacheOptionBinder.Options)
+        {
+            command.AddOption(option);
+        }
+
+        foreach (var option in _sqlOptionBinder.Options)
+        {
+            command.AddOption(option);
+        }
+
+        command.SetHandler(async context => await ExecuteAsync(context).ConfigureAwait(false));
+        return command;
+    }
+
+    private async Task ExecuteAsync(InvocationContext context)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var services = scope.ServiceProvider;
+        var configurationService = services.GetRequiredService<ICliConfigurationService>();
+        var application = services.GetRequiredService<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>();
+
+        var cancellationToken = context.GetCancellationToken();
+        var configPath = context.ParseResult.GetValueForOption(_globalOptions.ConfigPath);
+        var configurationResult = await configurationService.LoadAsync(configPath, cancellationToken).ConfigureAwait(false);
+        if (configurationResult.IsFailure)
+        {
+            CommandConsole.WriteErrors(context.Console, configurationResult.Errors);
+            context.ExitCode = 1;
+            return;
+        }
+
+        var moduleFilter = _moduleFilterBinder.Bind(context.ParseResult);
+        var cache = _cacheOptionBinder.Bind(context.ParseResult);
+        var sqlOverrides = _sqlOptionBinder.Bind(context.ParseResult);
+
+        var overrides = new BuildSsdtOverrides(
+            context.ParseResult.GetValueForOption(_modelOption),
+            context.ParseResult.GetValueForOption(_profileOption),
+            context.ParseResult.GetValueForOption(_outputOption),
+            context.ParseResult.GetValueForOption(_profilerProviderOption),
+            context.ParseResult.GetValueForOption(_staticDataOption),
+            context.ParseResult.GetValueForOption(_renameOption),
+            context.ParseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism));
+
+        var input = new BuildSsdtApplicationInput(
+            configurationResult.Value,
+            overrides,
+            moduleFilter,
+            sqlOverrides,
+            cache);
+
+        var result = await application.RunAsync(input, cancellationToken).ConfigureAwait(false);
+        if (result.IsFailure)
+        {
+            CommandConsole.WriteErrors(context.Console, result.Errors);
+            context.ExitCode = 1;
+            return;
+        }
+
+        await EmitResultsAsync(context, result.Value).ConfigureAwait(false);
+        context.ExitCode = 0;
+    }
+
+    private async Task EmitResultsAsync(InvocationContext context, BuildSsdtApplicationResult applicationResult)
+    {
+        var pipelineResult = applicationResult.PipelineResult;
+
+        if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
+        {
+            var modelMessage = applicationResult.ModelWasExtracted
+                ? $"Extracted model to {applicationResult.ModelPath}."
+                : $"Using model at {applicationResult.ModelPath}.";
+            CommandConsole.WriteLine(context.Console, modelMessage);
+        }
+
+        if (!applicationResult.ModelExtractionWarnings.IsDefaultOrEmpty && applicationResult.ModelExtractionWarnings.Length > 0)
+        {
+            CommandConsole.EmitPipelineWarnings(context.Console, applicationResult.ModelExtractionWarnings);
+        }
+
+        if (IsSqlProfiler(applicationResult.ProfilerProvider))
+        {
+            CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
+        }
+
+        CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
+        CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
+
+        foreach (var diagnostic in pipelineResult.DecisionReport.Diagnostics)
+        {
+            if (diagnostic.Severity == TighteningDiagnosticSeverity.Warning)
+            {
+                CommandConsole.WriteErrorLine(context.Console, $"[warning] {diagnostic.Message}");
+            }
+        }
+
+        if (pipelineResult.EvidenceCache is { } cacheResult)
+        {
+            CommandConsole.WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");
+        }
+
+        if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty && pipelineResult.StaticSeedScriptPaths.Length > 0)
+        {
+            foreach (var seedPath in pipelineResult.StaticSeedScriptPaths)
+            {
+                CommandConsole.WriteLine(context.Console, $"Static entity seed script written to {seedPath}");
+            }
+        }
+
+        CommandConsole.WriteLine(context.Console, $"Emitted {pipelineResult.Manifest.Tables.Count} tables to {applicationResult.OutputDirectory}.");
+        CommandConsole.WriteLine(context.Console, $"Manifest written to {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
+        CommandConsole.WriteLine(context.Console, $"Columns tightened: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount}");
+        CommandConsole.WriteLine(context.Console, $"Unique indexes enforced: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount}");
+        CommandConsole.WriteLine(context.Console, $"Foreign keys created: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount}");
+
+        foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(pipelineResult.DecisionReport))
+        {
+            CommandConsole.WriteLine(context.Console, summary);
+        }
+
+        CommandConsole.WriteLine(context.Console, $"Decision log written to {pipelineResult.DecisionLogPath}");
+
+        if (context.ParseResult.GetValueForOption(_openReportOption))
+        {
+            try
+            {
+                var reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, context.GetCancellationToken()).ConfigureAwait(false);
+                CommandConsole.WriteLine(context.Console, $"Report written to {reportPath}");
+                PipelineReportLauncher.TryOpen(reportPath, context.Console);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                CommandConsole.WriteErrorLine(context.Console, $"[warning] Failed to open report: {ex.Message}");
+            }
+        }
+    }
+
+    private static bool IsSqlProfiler(string provider)
+        => string.Equals(provider, "sql", StringComparison.OrdinalIgnoreCase);
+}

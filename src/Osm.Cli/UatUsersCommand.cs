@@ -13,7 +13,12 @@ using Osm.Pipeline.UatUsers;
 
 namespace Osm.Cli;
 
-public sealed class UatUsersCommand
+public interface IUatUsersCommand
+{
+    Task<int> ExecuteAsync(UatUsersOptions options, CancellationToken cancellationToken);
+}
+
+public sealed class UatUsersCommand : IUatUsersCommand
 {
     private readonly IModelIngestionService _modelIngestionService;
     private readonly ILogger<UatUsersCommand> _logger;
