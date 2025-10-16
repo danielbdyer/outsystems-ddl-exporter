@@ -27,14 +27,14 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
             throw new ArgumentNullException(nameof(request));
         }
 
-        if (model is null)
-        {
-            throw new ArgumentNullException(nameof(model));
-        }
-
         var provider = request.ProfilerProvider;
         if (string.Equals(provider, "sql", StringComparison.OrdinalIgnoreCase))
         {
+            if (model is null)
+            {
+                throw new ArgumentNullException(nameof(model));
+            }
+
             return CreateSqlProfiler(request, model);
         }
 

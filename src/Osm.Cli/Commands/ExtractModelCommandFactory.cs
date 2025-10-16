@@ -8,7 +8,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Application;
-using Osm.Pipeline.Configuration;
+using Osm.Pipeline.Runtime;
+using Osm.Pipeline.Runtime.Verbs;
 
 namespace Osm.Cli.Commands;
 
@@ -61,18 +62,8 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
     {
         using var scope = _scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
-        var configurationService = services.GetRequiredService<ICliConfigurationService>();
-        var application = services.GetRequiredService<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>>();
-
-        var cancellationToken = context.GetCancellationToken();
-        var configPath = context.ParseResult.GetValueForOption(_globalOptions.ConfigPath);
-        var configurationResult = await configurationService.LoadAsync(configPath, cancellationToken).ConfigureAwait(false);
-        if (configurationResult.IsFailure)
-        {
-            CommandConsole.WriteErrors(context.Console, configurationResult.Errors);
-            context.ExitCode = 1;
-            return;
-        }
+        var registry = services.GetRequiredService<IVerbRegistry>();
+        var verb = registry.Get(ExtractModelVerb.VerbName);
 
         var parseResult = context.ParseResult;
         var moduleTokens = ModuleFilterOptionBinder.SplitList(parseResult.GetValueForOption(_modulesOption));
@@ -87,20 +78,29 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
             parseResult.GetValueForOption(_outputOption),
             parseResult.GetValueForOption(_mockSqlOption));
 
-        var input = new ExtractModelApplicationInput(
-            configurationResult.Value,
-            overrides,
-            _sqlOptionBinder.Bind(context.ParseResult));
-
-        var result = await application.RunAsync(input, cancellationToken).ConfigureAwait(false);
-        if (result.IsFailure)
+        var options = new ExtractModelVerbOptions
         {
-            CommandConsole.WriteErrors(context.Console, result.Errors);
+            ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
+            Overrides = overrides,
+            Sql = _sqlOptionBinder.Bind(parseResult)
+        };
+
+        var run = await verb.RunAsync(options, context.GetCancellationToken()).ConfigureAwait(false);
+        if (!run.IsSuccess)
+        {
+            CommandConsole.WriteErrors(context.Console, run.Errors);
             context.ExitCode = 1;
             return;
         }
 
-        await EmitResultsAsync(context, result.Value).ConfigureAwait(false);
+        if (run.Payload is not ExtractModelVerbResult payload)
+        {
+            CommandConsole.WriteErrorLine(context.Console, "[error] Unexpected result type for extract-model verb.");
+            context.ExitCode = 1;
+            return;
+        }
+
+        await EmitResultsAsync(context, payload).ConfigureAwait(false);
         context.ExitCode = 0;
     }
 
@@ -119,8 +119,9 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
         return null;
     }
 
-    private async Task EmitResultsAsync(InvocationContext context, ExtractModelApplicationResult result)
+    private async Task EmitResultsAsync(InvocationContext context, ExtractModelVerbResult payload)
     {
+        var result = payload.ApplicationResult;
         var outputPath = result.OutputPath ?? "model.extracted.json";
         var cancellationToken = context.GetCancellationToken();
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath)) ?? Directory.GetCurrentDirectory());
