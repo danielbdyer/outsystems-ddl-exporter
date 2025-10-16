@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Builder;
+using System.CommandLine.IO;
 using System.CommandLine.Parsing;
 using System.Linq;
 using System.Threading;
@@ -21,7 +22,8 @@ public class InspectCommandFactoryTests
     public async Task Invoke_LoadsModelAndWritesSummary()
     {
         var modelPath = FixtureFile.GetPath("model.micro-physical.json");
-        var ingestion = new FakeIngestionService(ModelFixtures.LoadModel("model.micro-physical.json"));
+        var model = ModelFixtures.LoadModel("model.micro-physical.json");
+        var ingestion = new FakeIngestionService(model);
 
         var services = new ServiceCollection();
         services.AddSingleton<IModelIngestionService>(ingestion);
@@ -37,10 +39,19 @@ public class InspectCommandFactoryTests
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
-        var exitCode = await parser.InvokeAsync($"inspect --model {modelPath}");
+        var console = new TestConsole();
+        var exitCode = await parser.InvokeAsync($"inspect --model {modelPath}", console);
 
         Assert.Equal(0, exitCode);
         Assert.Equal(modelPath, ingestion.LastPath);
+        Assert.Contains("[warning] test-warning", console.Error.ToString());
+
+        var output = console.Out.ToString() ?? string.Empty;
+        Assert.Contains($"Modules: {model.Modules.Length}", output);
+        var entityCount = model.Modules.Sum(static module => module.Entities.Length);
+        Assert.Contains($"Entities: {entityCount}", output);
+        var attributeCount = model.Modules.Sum(static module => module.Entities.Sum(static entity => entity.Attributes.Length));
+        Assert.Contains($"Attributes: {attributeCount}", output);
     }
 
     private sealed class FakeIngestionService : IModelIngestionService

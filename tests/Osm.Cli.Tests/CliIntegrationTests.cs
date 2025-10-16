@@ -14,6 +14,7 @@ namespace Osm.Cli.Tests;
 public class CliIntegrationTests
 {
     [Fact]
+    [Trait("Category", "Integration")]
     public async Task BuildSsdt_and_dmm_compare_complete_successfully()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
@@ -68,6 +69,7 @@ public class CliIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")]
     public async Task DmmCompare_writes_diff_artifact_when_drift_detected()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
@@ -103,6 +105,7 @@ public class CliIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")]
     public async Task BuildSsdt_honors_rename_table_overrides()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
@@ -139,6 +142,7 @@ public class CliIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")]
     public async Task BuildSsdt_honors_entity_override_from_configuration()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
@@ -200,6 +204,7 @@ public class CliIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")]
     public async Task BuildSsdt_AppliesModuleFilterFromCli()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
@@ -228,6 +233,7 @@ public class CliIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")]
     public async Task BuildSsdt_AppliesModuleFilterFromConfiguration()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
@@ -271,6 +277,7 @@ public class CliIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")]
     public async Task BuildSsdt_ShouldWriteEvidenceCacheManifest()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
@@ -302,6 +309,7 @@ public class CliIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")]
     public async Task BuildSsdt_UsesCliConfigurationDefaults()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
@@ -335,6 +343,7 @@ public class CliIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")]
     public async Task BuildSsdt_AllowsEnvironmentOverrides()
     {
         var repoRoot = FixtureFile.RepositoryRoot;
