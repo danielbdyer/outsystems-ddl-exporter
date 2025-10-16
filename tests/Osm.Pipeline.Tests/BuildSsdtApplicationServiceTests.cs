@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
+using Osm.Domain.Profiling.Insights;
 using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
@@ -108,6 +109,7 @@ public sealed class BuildSsdtApplicationServiceTests
             Array.Empty<string>());
         return new BuildSsdtPipelineResult(
             profileResult.Value,
+            ProfileInsightReport.Empty,
             report,
             manifest,
             "decision.log",

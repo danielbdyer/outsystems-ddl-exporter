@@ -15,6 +15,7 @@ using Osm.Cli.Commands.Binders;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
+using Osm.Domain.Profiling.Insights;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Pipeline.Application;
@@ -281,6 +282,7 @@ public class BuildSsdtCommandFactoryTests
 
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
+                ProfileInsightReport.Empty,
                 report,
                 manifest,
                 "decision.log",
@@ -291,6 +293,7 @@ public class BuildSsdtCommandFactoryTests
 
             return new BuildSsdtApplicationResult(
                 pipelineResult,
+                pipelineResult.ProfileInsights,
                 "fixture",
                 "profile.json",
                 "output",

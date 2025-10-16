@@ -133,6 +133,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
 
         return new BuildSsdtPipelineResult(
             finalState.Bootstrap.Profile!,
+            finalState.Bootstrap.Insights,
             finalState.Report,
             finalState.Manifest,
             finalState.DecisionLogPath,

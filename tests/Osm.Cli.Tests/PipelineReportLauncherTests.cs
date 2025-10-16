@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Pipeline.Application;
 using Osm.Domain.Profiling;
+using Osm.Domain.Profiling.Insights;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Pipeline.Orchestration;
@@ -80,6 +81,7 @@ public class PipelineReportLauncherTests
                 ImmutableArray<UniqueCandidateProfile>.Empty,
                 ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
                 ImmutableArray<ForeignKeyReality>.Empty),
+            ProfileInsightReport.Empty,
             decisionReport,
             manifest,
             Path.Combine(output.Path, "policy-decisions.json"),
@@ -99,6 +101,7 @@ public class PipelineReportLauncherTests
 
         var applicationResult = new BuildSsdtApplicationResult(
             pipelineResult,
+            pipelineResult.ProfileInsights,
             "fixture",
             Path.Combine(output.Path, "profile.json"),
             output.Path,

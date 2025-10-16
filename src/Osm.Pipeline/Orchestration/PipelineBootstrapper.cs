@@ -9,7 +9,9 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
+using Osm.Domain.Profiling.Insights;
 using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.Profiling;
 using Osm.Json;
 
 namespace Osm.Pipeline.Orchestration;
@@ -40,6 +42,7 @@ public sealed record PipelineBootstrapContext(
     OsmModel FilteredModel,
     ImmutableArray<EntityModel> SupplementalEntities,
     ProfileSnapshot Profile,
+    ProfileInsightReport Insights,
     ImmutableArray<string> Warnings);
 
 public sealed class PipelineBootstrapper : IPipelineBootstrapper
@@ -47,15 +50,18 @@ public sealed class PipelineBootstrapper : IPipelineBootstrapper
     private readonly IModelIngestionService _modelIngestionService;
     private readonly ModuleFilter _moduleFilter;
     private readonly SupplementalEntityLoader _supplementalLoader;
+    private readonly IProfileInsightAnalyzer _insightAnalyzer;
 
     public PipelineBootstrapper(
         IModelIngestionService? modelIngestionService = null,
         ModuleFilter? moduleFilter = null,
-        SupplementalEntityLoader? supplementalLoader = null)
+        SupplementalEntityLoader? supplementalLoader = null,
+        IProfileInsightAnalyzer? insightAnalyzer = null)
     {
         _modelIngestionService = modelIngestionService ?? new ModelIngestionService(new ModelJsonDeserializer());
         _moduleFilter = moduleFilter ?? new ModuleFilter();
         _supplementalLoader = supplementalLoader ?? new SupplementalEntityLoader();
+        _insightAnalyzer = insightAnalyzer ?? new ProfileInsightAnalyzer();
     }
 
     public async Task<Result<PipelineBootstrapContext>> BootstrapAsync(
@@ -190,6 +196,7 @@ public sealed class PipelineBootstrapper : IPipelineBootstrapper
         }
 
         var profile = profileResult.Value;
+        var insights = _insightAnalyzer.Analyze(filteredModel, profile);
         log.Record(
             "profiling.capture.completed",
             request.Telemetry.ProfilingCompletedMessage,
@@ -201,10 +208,19 @@ public sealed class PipelineBootstrapper : IPipelineBootstrapper
                 ["foreignKeys"] = profile.ForeignKeys.Length.ToString(CultureInfo.InvariantCulture)
             });
 
+        log.Record(
+            "profiling.insights.generated",
+            "Generated profiling insights for downstream consumers.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["insightCount"] = insights.Insights.Length.ToString(CultureInfo.InvariantCulture)
+            });
+
         return new PipelineBootstrapContext(
             filteredModel,
             supplementalEntities,
             profile,
+            insights,
             pipelineWarnings.ToImmutable());
     }
 }

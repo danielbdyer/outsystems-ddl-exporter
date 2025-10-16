@@ -403,6 +403,19 @@ FROM [dbo].[MyTable];
 
 The CLI defaults to the **fixture** profiler so local or CI runs can replay deterministic JSON snapshots. Point `--profile` to an on-disk snapshot (or configure `profile.path` / `profiler.profilePath` in `appsettings.json`) and the pipeline will hydrate `ProfileSnapshot` before policy evaluation and SMO emission.【F:src/Osm.Cli/Program.cs†L203-L286】【F:src/Osm.Cli/Program.cs†L1142-L1171】
 
+#### Insight report semantics
+
+Immediately after the snapshot is captured the bootstrapper now runs a `ProfileInsightAnalyzer` that translates raw counts into a structured `ProfileInsightReport`. Each `ProfileInsight` includes a stable code, severity, anchor (schema/table/column/relationship), and normalized metadata so downstream layers can surface the recommendation without re-deriving heuristics.【F:src/Osm.Domain/Profiling/Insights/ProfileInsight.cs†L1-L55】【F:src/Osm.Pipeline/Profiling/ProfileInsightAnalyzer.cs†L1-L209】【F:src/Osm.Pipeline/Orchestration/PipelineBootstrapper.cs†L33-L213】
+
+The analyzer currently emits insights for:
+
+* **Mandatory attribute drift** – logical `IsMandatory` columns with observed nulls (`profiling.nulls.mandatoryMismatch`, severity `Risk`).
+* **Optional attribute signals** – high null ratios hinting at rarely-populated fields and low/null ratios that suggest safe tightening once remaining nulls are remediated (`profiling.nulls.optional.high`, `profiling.nulls.optional.tighten`).
+* **Unique candidate hygiene** – duplicate values found in single-column or composite unique candidates preventing immediate constraint creation (`profiling.unique.duplicate.*`).
+* **Foreign key reliability** – modeled references lacking database constraints, reported as NOT TRUSTED, or returning orphaned rows (`profiling.foreignKey.*`).
+
+The end-to-end pipeline threads the report through `BuildSsdtPipelineResult` and `BuildSsdtApplicationResult`, making the insights available to the CLI and future policy visualizations without coupling to decision logic.【F:src/Osm.Pipeline/Orchestration/BuildSsdtPipelineResult.cs†L1-L22】【F:src/Osm.Pipeline/Application/BuildSsdtApplicationService.cs†L18-L177】
+
 #### Fixture-first loops
 
 ```bash

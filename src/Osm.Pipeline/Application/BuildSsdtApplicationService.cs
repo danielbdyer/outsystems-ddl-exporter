@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Domain.Profiling.Insights;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
@@ -21,6 +22,7 @@ public sealed record BuildSsdtApplicationInput(
 
 public sealed record BuildSsdtApplicationResult(
     BuildSsdtPipelineResult PipelineResult,
+    ProfileInsightReport ProfileInsights,
     string ProfilerProvider,
     string? ProfilePath,
     string OutputDirectory,
@@ -158,6 +160,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
 
         return new BuildSsdtApplicationResult(
             pipelineResult.Value,
+            pipelineResult.Value.ProfileInsights,
             assembly.ProfilerProvider,
             assembly.ProfilePath,
             assembly.OutputDirectory,
