@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -173,7 +174,13 @@ public sealed class ModelResolutionServiceTests
             Array.Empty<OutsystemsTriggerJsonRow>(),
             Array.Empty<OutsystemsModuleJsonRow>(),
             "database");
-        return new ModelExtractionResult(model, "{\"model\":true}", DateTimeOffset.UtcNow, new[] { "warning" }, metadata);
+        var buffer = new MemoryStream();
+        using var writer = new StreamWriter(buffer, Encoding.UTF8, leaveOpen: true);
+        writer.Write("{\"model\":true}");
+        writer.Flush();
+        buffer.Position = 0;
+        var payload = ModelJsonPayload.FromStream(buffer);
+        return new ModelExtractionResult(model, payload, DateTimeOffset.UtcNow, new[] { "warning" }, metadata);
     }
 
     private sealed class RecordingDispatcher : ICommandDispatcher

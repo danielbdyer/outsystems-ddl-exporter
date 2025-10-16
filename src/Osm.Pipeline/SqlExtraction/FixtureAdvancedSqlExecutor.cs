@@ -47,11 +47,29 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
             _entries.Count);
     }
 
-    public Task<Result<string>> ExecuteAsync(AdvancedSqlRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<long>> ExecuteAsync(
+        AdvancedSqlRequest request,
+        Stream destination,
+        CancellationToken cancellationToken = default)
     {
         if (request is null)
         {
             throw new ArgumentNullException(nameof(request));
+        }
+
+        if (destination is null)
+        {
+            throw new ArgumentNullException(nameof(destination));
+        }
+
+        if (!destination.CanWrite)
+        {
+            throw new ArgumentException("Destination stream must be writable.", nameof(destination));
+        }
+
+        if (!destination.CanSeek)
+        {
+            throw new ArgumentException("Destination stream must support seeking.", nameof(destination));
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -67,35 +85,50 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
         if (!_entries.TryGetValue(key, out var entry))
         {
             _logger.LogWarning("Advanced SQL fixture entry not found for key {FixtureKey}.", key);
-            return Task.FromResult(Result<string>.Failure(ValidationError.Create(
+            var moduleList = string.Join(",", request.ModuleNames.Select(static module => module.Value));
+            return Result<long>.Failure(ValidationError.Create(
                 "extraction.fixture.missing",
-                $"No fixture JSON registered for modules '{string.Join(",", request.ModuleNames.Select(static module => module.Value))}', includeSystem={request.IncludeSystemModules}, onlyActive={request.OnlyActiveAttributes}.")));
+                $"No fixture JSON registered for modules '{moduleList}', includeSystem={request.IncludeSystemModules}, onlyActive={request.OnlyActiveAttributes}."));
         }
 
         if (!_fileSystem.File.Exists(entry.JsonPath))
         {
             _logger.LogError("Advanced SQL fixture JSON '{JsonPath}' was not found on disk.", entry.JsonPath);
-            return Task.FromResult(Result<string>.Failure(ValidationError.Create(
+            return Result<long>.Failure(ValidationError.Create(
                 "extraction.fixture.jsonMissing",
-                $"Fixture JSON '{entry.JsonPath}' was not found.")));
+                $"Fixture JSON '{entry.JsonPath}' was not found."));
         }
 
-        using var reader = new StreamReader(_fileSystem.File.OpenRead(entry.JsonPath));
-        var json = reader.ReadToEnd();
-        if (string.IsNullOrWhiteSpace(json))
+        await using var sourceStream = _fileSystem.File.OpenRead(entry.JsonPath);
+        if (sourceStream.Length == 0)
         {
             _logger.LogError("Advanced SQL fixture JSON '{JsonPath}' was empty.", entry.JsonPath);
-            return Task.FromResult(Result<string>.Failure(ValidationError.Create(
+            return Result<long>.Failure(ValidationError.Create(
                 "extraction.fixture.jsonEmpty",
-                $"Fixture JSON '{entry.JsonPath}' is empty.")));
+                $"Fixture JSON '{entry.JsonPath}' is empty."));
+        }
+
+        destination.SetLength(0);
+        destination.Position = 0;
+        await sourceStream.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+
+        var bytesWritten = destination.Position;
+        destination.Position = 0;
+
+        if (bytesWritten == 0)
+        {
+            _logger.LogError("Advanced SQL fixture JSON '{JsonPath}' was empty after copy.", entry.JsonPath);
+            return Result<long>.Failure(ValidationError.Create(
+                "extraction.fixture.jsonEmpty",
+                $"Fixture JSON '{entry.JsonPath}' is empty."));
         }
 
         _logger.LogInformation(
-            "Resolved advanced SQL fixture JSON '{JsonPath}' with payload length {PayloadLength} characters.",
+            "Resolved advanced SQL fixture JSON '{JsonPath}' with payload length {PayloadLength} bytes.",
             entry.JsonPath,
-            json.Length);
+            bytesWritten);
 
-        return Task.FromResult(Result<string>.Success(json));
+        return Result<long>.Success(bytesWritten);
     }
 
     private IReadOnlyDictionary<string, FixtureEntry> LoadEntries(JsonElement root, string baseDirectory)

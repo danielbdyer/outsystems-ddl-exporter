@@ -7,6 +7,7 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -39,10 +40,18 @@ public class SqlClientAdvancedSqlExecutorTests
             SqlExecutionOptions.Default,
             NullLogger<SqlClientAdvancedSqlExecutor>.Instance);
 
-        var result = await executor.ExecuteAsync(request, CancellationToken.None);
+        await using var destination = new MemoryStream();
+
+        var result = await executor.ExecuteAsync(request, destination, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be("chunk-1chunk-2");
+        result.Value.Should().Be(destination.Length);
+
+        destination.Position = 0;
+        using var reader = new StreamReader(destination, Encoding.UTF8, leaveOpen: true);
+        var payload = await reader.ReadToEndAsync();
+        payload.Should().Be("chunk-1chunk-2");
+        destination.Position.Should().Be(0);
     }
 
     [Fact]
@@ -58,10 +67,13 @@ public class SqlClientAdvancedSqlExecutorTests
             SqlExecutionOptions.Default,
             NullLogger<SqlClientAdvancedSqlExecutor>.Instance);
 
-        var result = await executor.ExecuteAsync(request, CancellationToken.None);
+        await using var destination = new MemoryStream();
+
+        var result = await executor.ExecuteAsync(request, destination, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Errors.Should().ContainSingle(e => e.Code == "extraction.sql.emptyJson");
+        destination.Length.Should().Be(0);
     }
 
     private sealed class StubScriptProvider : IAdvancedSqlScriptProvider
@@ -430,7 +442,8 @@ public class SqlClientAdvancedSqlExecutorTests
 
         public override Stream GetStream(int ordinal) => throw new NotSupportedException();
 
-        public override TextReader GetTextReader(int ordinal) => throw new NotSupportedException();
+        public override TextReader GetTextReader(int ordinal)
+            => new StringReader(_chunks[_index] ?? string.Empty);
     }
 }
 #pragma warning restore CS8765

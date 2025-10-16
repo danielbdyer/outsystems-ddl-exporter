@@ -26,7 +26,7 @@ public class ExtractModelPipelineTests
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsSuccess);
-        Assert.NotNull(result.Value.Json);
+        Assert.NotNull(result.Value.JsonPayload);
         Assert.NotNull(result.Value.Model);
     }
 

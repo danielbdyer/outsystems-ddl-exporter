@@ -65,7 +65,7 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
             _loggerFactory.CreateLogger<SqlModelExtractionService>());
 
         var extractionResult = await extractionService
-            .ExtractAsync(request.Command, cancellationToken)
+            .ExtractAsync(request.Command, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (extractionResult.IsFailure)
