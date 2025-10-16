@@ -20,6 +20,239 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
     private readonly SqlExecutionOptions _options;
     private readonly ILogger<SqlClientOutsystemsMetadataReader> _logger;
 
+    private static readonly IReadOnlyList<IResultSetDefinition> ResultSets = new IResultSetDefinition[]
+    {
+        ResultSetDefinitionFactory.Create(
+            "Modules",
+            ResultSetReader<OutsystemsModuleRow>.Create(static row => new OutsystemsModuleRow(
+                row.GetInt32(0),
+                row.GetString(1),
+                row.GetBoolean(2),
+                row.GetBoolean(3),
+                row.GetStringOrNull(4),
+                row.GetGuidOrNull(5))),
+            static (accumulator, rows) => accumulator.SetModules(rows)),
+        ResultSetDefinitionFactory.Create(
+            "Entities",
+            ResultSetReader<OutsystemsEntityRow>.Create(static row => new OutsystemsEntityRow(
+                row.GetInt32(0),
+                row.GetString(1),
+                row.GetString(2),
+                row.GetInt32(3),
+                row.GetBoolean(4),
+                row.GetBoolean(5),
+                row.GetBoolean(6),
+                row.GetStringOrNull(7),
+                row.GetGuidOrNull(8),
+                row.GetGuidOrNull(9),
+                row.GetStringOrNull(10))),
+            static (accumulator, rows) => accumulator.SetEntities(rows)),
+        ResultSetDefinitionFactory.Create(
+            "Attributes",
+            ResultSetReader<OutsystemsAttributeRow>.Create(static row => new OutsystemsAttributeRow(
+                row.GetInt32(0),
+                row.GetInt32(1),
+                row.GetString(2),
+                row.GetGuidOrNull(3),
+                row.GetStringOrNull(4),
+                row.GetInt32OrNull(5),
+                row.GetInt32OrNull(6),
+                row.GetInt32OrNull(7),
+                row.GetStringOrNull(8),
+                row.GetBoolean(9),
+                row.GetBoolean(10),
+                row.GetBooleanOrNull(11),
+                row.GetBooleanOrNull(12),
+                row.GetInt32OrNull(13),
+                row.GetStringOrNull(14),
+                row.GetStringOrNull(15),
+                row.GetStringOrNull(16),
+                row.GetStringOrNull(17),
+                row.GetStringOrNull(18),
+                row.GetStringOrNull(19),
+                row.GetInt32OrNull(20),
+                row.GetStringOrNull(21),
+                row.GetStringOrNull(22))),
+            static (accumulator, rows) => accumulator.SetAttributes(rows)),
+        ResultSetDefinitionFactory.Create(
+            "References",
+            ResultSetReader<OutsystemsReferenceRow>.Create(static row => new OutsystemsReferenceRow(
+                row.GetInt32(0),
+                row.GetInt32OrNull(1),
+                row.GetStringOrNull(2),
+                row.GetStringOrNull(3))),
+            static (accumulator, rows) => accumulator.SetReferences(rows)),
+        ResultSetDefinitionFactory.Create(
+            "PhysicalTables",
+            ResultSetReader<OutsystemsPhysicalTableRow>.Create(static row => new OutsystemsPhysicalTableRow(
+                row.GetInt32(0),
+                row.GetString(1),
+                row.GetString(2),
+                row.GetInt32(3))),
+            static (accumulator, rows) => accumulator.SetPhysicalTables(rows)),
+        ResultSetDefinitionFactory.Create(
+            "ColumnReality",
+            ResultSetReader<OutsystemsColumnRealityRow>.Create(static row => new OutsystemsColumnRealityRow(
+                row.GetInt32(0),
+                row.GetBoolean(1),
+                row.GetString(2),
+                row.GetInt32OrNull(3),
+                row.GetInt32OrNull(4),
+                row.GetInt32OrNull(5),
+                row.GetStringOrNull(6),
+                row.GetBoolean(7),
+                row.GetBoolean(8),
+                row.GetStringOrNull(9),
+                row.GetStringOrNull(10),
+                row.GetStringOrNull(11),
+                row.GetString(12))),
+            static (accumulator, rows) => accumulator.SetColumnReality(rows)),
+        ResultSetDefinitionFactory.Create(
+            "ColumnChecks",
+            ResultSetReader<OutsystemsColumnCheckRow>.Create(static row => new OutsystemsColumnCheckRow(
+                row.GetInt32(0),
+                row.GetString(1),
+                row.GetString(2),
+                row.GetBoolean(3))),
+            static (accumulator, rows) => accumulator.SetColumnChecks(rows)),
+        ResultSetDefinitionFactory.Create(
+            "ColumnCheckJson",
+            ResultSetReader<OutsystemsColumnCheckJsonRow>.Create(static row => new OutsystemsColumnCheckJsonRow(
+                row.GetInt32(0),
+                row.GetString(1))),
+            static (accumulator, rows) => accumulator.SetColumnCheckJson(rows)),
+        ResultSetDefinitionFactory.Create(
+            "PhysicalColumnsPresent",
+            ResultSetReader<OutsystemsPhysicalColumnPresenceRow>.Create(static row => new OutsystemsPhysicalColumnPresenceRow(
+                row.GetInt32(0))),
+            static (accumulator, rows) => accumulator.SetPhysicalColumnsPresent(rows)),
+        ResultSetDefinitionFactory.Create(
+            "Indexes",
+            ResultSetReader<OutsystemsIndexRow>.Create(static row => new OutsystemsIndexRow(
+                row.GetInt32(0),
+                row.GetInt32(1),
+                row.GetInt32(2),
+                row.GetString(3),
+                row.GetBoolean(4),
+                row.GetBoolean(5),
+                row.GetString(6),
+                row.GetStringOrNull(7),
+                row.GetBoolean(8),
+                row.GetBoolean(9),
+                row.GetInt32OrNull(10),
+                row.GetBoolean(11),
+                row.GetBoolean(12),
+                row.GetBoolean(13),
+                row.GetBoolean(14),
+                row.GetStringOrNull(15),
+                row.GetStringOrNull(16),
+                row.GetStringOrNull(17),
+                row.GetStringOrNull(18))),
+            static (accumulator, rows) => accumulator.SetIndexes(rows)),
+        ResultSetDefinitionFactory.Create(
+            "IndexColumns",
+            ResultSetReader<OutsystemsIndexColumnRow>.Create(static row => new OutsystemsIndexColumnRow(
+                row.GetInt32(0),
+                row.GetString(1),
+                row.GetInt32(2),
+                row.GetString(3),
+                row.GetBoolean(4),
+                row.GetStringOrNull(5),
+                row.GetStringOrNull(6))),
+            static (accumulator, rows) => accumulator.SetIndexColumns(rows)),
+        ResultSetDefinitionFactory.Create(
+            "ForeignKeys",
+            ResultSetReader<OutsystemsForeignKeyRow>.Create(static row => new OutsystemsForeignKeyRow(
+                row.GetInt32(0),
+                row.GetInt32(1),
+                row.GetString(2),
+                row.GetString(3),
+                row.GetString(4),
+                row.GetInt32(5),
+                row.GetInt32OrNull(6),
+                row.GetString(7),
+                row.GetString(8),
+                row.GetBoolean(9))),
+            static (accumulator, rows) => accumulator.SetForeignKeys(rows)),
+        ResultSetDefinitionFactory.Create(
+            "ForeignKeyColumns",
+            ResultSetReader<OutsystemsForeignKeyColumnRow>.Create(static row => new OutsystemsForeignKeyColumnRow(
+                row.GetInt32(0),
+                row.GetInt32(1),
+                row.GetInt32(2),
+                row.GetString(3),
+                row.GetString(4),
+                row.GetInt32OrNull(5),
+                row.GetStringOrNull(6),
+                row.GetInt32OrNull(7),
+                row.GetStringOrNull(8))),
+            static (accumulator, rows) => accumulator.SetForeignKeyColumns(rows)),
+        ResultSetDefinitionFactory.Create(
+            "ForeignKeyAttrMap",
+            ResultSetReader<OutsystemsForeignKeyAttrMapRow>.Create(static row => new OutsystemsForeignKeyAttrMapRow(
+                row.GetInt32(0),
+                row.GetInt32(1))),
+            static (accumulator, rows) => accumulator.SetForeignKeyAttributeMap(rows)),
+        ResultSetDefinitionFactory.Create(
+            "AttributeHasFk",
+            ResultSetReader<OutsystemsAttributeHasFkRow>.Create(static row => new OutsystemsAttributeHasFkRow(
+                row.GetInt32(0),
+                row.GetBoolean(1))),
+            static (accumulator, rows) => accumulator.SetAttributeForeignKeys(rows)),
+        ResultSetDefinitionFactory.Create(
+            "ForeignKeyColumnsJson",
+            ResultSetReader<OutsystemsForeignKeyColumnsJsonRow>.Create(static row => new OutsystemsForeignKeyColumnsJsonRow(
+                row.GetInt32(0),
+                row.GetString(1))),
+            static (accumulator, rows) => accumulator.SetForeignKeyColumnsJson(rows)),
+        ResultSetDefinitionFactory.Create(
+            "ForeignKeyAttributeJson",
+            ResultSetReader<OutsystemsForeignKeyAttributeJsonRow>.Create(static row => new OutsystemsForeignKeyAttributeJsonRow(
+                row.GetInt32(0),
+                row.GetString(1))),
+            static (accumulator, rows) => accumulator.SetForeignKeyAttributeJson(rows)),
+        ResultSetDefinitionFactory.Create(
+            "Triggers",
+            ResultSetReader<OutsystemsTriggerRow>.Create(static row => new OutsystemsTriggerRow(
+                row.GetInt32(0),
+                row.GetString(1),
+                row.GetBoolean(2),
+                row.GetString(3))),
+            static (accumulator, rows) => accumulator.SetTriggers(rows)),
+        ResultSetDefinitionFactory.Create(
+            "AttributeJson",
+            ResultSetReader<OutsystemsAttributeJsonRow>.Create(static row => new OutsystemsAttributeJsonRow(
+                row.GetInt32(0),
+                row.GetString(1))),
+            static (accumulator, rows) => accumulator.SetAttributeJson(rows)),
+        ResultSetDefinitionFactory.Create(
+            "RelationshipJson",
+            ResultSetReader<OutsystemsRelationshipJsonRow>.Create(static row => new OutsystemsRelationshipJsonRow(
+                row.GetInt32(0),
+                row.GetString(1))),
+            static (accumulator, rows) => accumulator.SetRelationshipJson(rows)),
+        ResultSetDefinitionFactory.Create(
+            "IndexJson",
+            ResultSetReader<OutsystemsIndexJsonRow>.Create(static row => new OutsystemsIndexJsonRow(
+                row.GetInt32(0),
+                row.GetString(1))),
+            static (accumulator, rows) => accumulator.SetIndexJson(rows)),
+        ResultSetDefinitionFactory.Create(
+            "TriggerJson",
+            ResultSetReader<OutsystemsTriggerJsonRow>.Create(static row => new OutsystemsTriggerJsonRow(
+                row.GetInt32(0),
+                row.GetString(1))),
+            static (accumulator, rows) => accumulator.SetTriggerJson(rows)),
+        ResultSetDefinitionFactory.Create(
+            "ModuleJson",
+            ResultSetReader<OutsystemsModuleJsonRow>.Create(static row => new OutsystemsModuleJsonRow(
+                row.GetString(0),
+                row.GetBoolean(1),
+                row.GetBoolean(2),
+                row.GetString(3))),
+            static (accumulator, rows) => accumulator.SetModuleJson(rows)),
+    };
+
     public SqlClientOutsystemsMetadataReader(
         IDbConnectionFactory connectionFactory,
         IAdvancedSqlScriptProvider scriptProvider,
@@ -73,107 +306,37 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                 .ExecuteReaderAsync(CommandBehavior.SequentialAccess | CommandBehavior.SingleResult, cancellationToken)
                 .ConfigureAwait(false);
 
-            var modules = await ReadModulesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "Modules", modules.Count, "Entities", 1).ConfigureAwait(false);
+            var accumulator = new MetadataAccumulator();
 
-            var entities = await ReadEntitiesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "Entities", entities.Count, "Attributes", 2).ConfigureAwait(false);
+            for (var i = 0; i < ResultSets.Count; i++)
+            {
+                var definition = ResultSets[i];
+                var rowCount = await definition
+                    .ReadAsync(reader, cancellationToken, accumulator)
+                    .ConfigureAwait(false);
 
-            var attributes = await ReadAttributesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "Attributes", attributes.Count, "References", 3).ConfigureAwait(false);
-
-            var references = await ReadReferencesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "References", references.Count, "PhysicalTables", 4).ConfigureAwait(false);
-
-            var physicalTables = await ReadPhysicalTablesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "PhysicalTables", physicalTables.Count, "ColumnReality", 5).ConfigureAwait(false);
-
-            var columnReality = await ReadColumnRealityAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "ColumnReality", columnReality.Count, "ColumnChecks", 6).ConfigureAwait(false);
-
-            var columnChecks = await ReadColumnChecksAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "ColumnChecks", columnChecks.Count, "ColumnCheckJson", 7).ConfigureAwait(false);
-
-            var columnCheckJson = await ReadColumnCheckJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "ColumnCheckJson", columnCheckJson.Count, "PhysicalColumnsPresent", 8).ConfigureAwait(false);
-
-            var physicalColumnsPresent = await ReadPhysicalColumnsPresentAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "PhysicalColumnsPresent", physicalColumnsPresent.Count, "Indexes", 9).ConfigureAwait(false);
-
-            var indexes = await ReadIndexesAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "Indexes", indexes.Count, "IndexColumns", 10).ConfigureAwait(false);
-
-            var indexColumns = await ReadIndexColumnsAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "IndexColumns", indexColumns.Count, "ForeignKeys", 11).ConfigureAwait(false);
-
-            var foreignKeys = await ReadForeignKeysAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "ForeignKeys", foreignKeys.Count, "ForeignKeyColumns", 12).ConfigureAwait(false);
-
-            var foreignKeyColumns = await ReadForeignKeyColumnsAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "ForeignKeyColumns", foreignKeyColumns.Count, "ForeignKeyAttrMap", 13).ConfigureAwait(false);
-
-            var foreignKeyAttrMap = await ReadForeignKeyAttrMapAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "ForeignKeyAttrMap", foreignKeyAttrMap.Count, "AttributeHasFk", 14).ConfigureAwait(false);
-
-            var attributeHasFk = await ReadAttributeHasFkAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "AttributeHasFk", attributeHasFk.Count, "ForeignKeyColumnsJson", 15).ConfigureAwait(false);
-
-            var fkColumnsJson = await ReadForeignKeyColumnsJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "ForeignKeyColumnsJson", fkColumnsJson.Count, "ForeignKeyAttributeJson", 16).ConfigureAwait(false);
-
-            var fkAttrJson = await ReadForeignKeyAttributeJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "ForeignKeyAttributeJson", fkAttrJson.Count, "Triggers", 17).ConfigureAwait(false);
-
-            var triggers = await ReadTriggersAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "Triggers", triggers.Count, "AttributeJson", 18).ConfigureAwait(false);
-
-            var attributeJson = await ReadAttributeJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "AttributeJson", attributeJson.Count, "RelationshipJson", 19).ConfigureAwait(false);
-
-            var relationshipJson = await ReadRelationshipJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "RelationshipJson", relationshipJson.Count, "IndexJson", 20).ConfigureAwait(false);
-
-            var indexJson = await ReadIndexJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "IndexJson", indexJson.Count, "TriggerJson", 21).ConfigureAwait(false);
-
-            var triggerJson = await ReadTriggerJsonAsync(reader, cancellationToken).ConfigureAwait(false);
-            await EnsureNextResultSetAsync(reader, cancellationToken, "TriggerJson", triggerJson.Count, "ModuleJson", 22).ConfigureAwait(false);
-
-            var moduleJson = await ReadModuleJsonAsync(reader, cancellationToken).ConfigureAwait(false);
+                if (i < ResultSets.Count - 1)
+                {
+                    var nextDefinition = ResultSets[i + 1];
+                    await EnsureNextResultSetAsync(
+                        reader,
+                        cancellationToken,
+                        definition.Name,
+                        rowCount,
+                        nextDefinition.Name,
+                        i + 1).ConfigureAwait(false);
+                }
+            }
 
             stopwatch.Stop();
             _logger.LogInformation(
                 "Metadata snapshot script returned {ModuleCount} module(s), {EntityCount} entity rows, and {AttributeCount} attribute rows in {DurationMs} ms.",
-                moduleJson.Count,
-                entities.Count,
-                attributes.Count,
+                accumulator.ModuleJson.Count,
+                accumulator.Entities.Count,
+                accumulator.Attributes.Count,
                 stopwatch.Elapsed.TotalMilliseconds);
 
-            var snapshot = new OutsystemsMetadataSnapshot(
-                modules,
-                entities,
-                attributes,
-                references,
-                physicalTables,
-                columnReality,
-                columnChecks,
-                columnCheckJson,
-                physicalColumnsPresent,
-                indexes,
-                indexColumns,
-                foreignKeys,
-                foreignKeyColumns,
-                foreignKeyAttrMap,
-                attributeHasFk,
-                fkColumnsJson,
-                fkAttrJson,
-                triggers,
-                attributeJson,
-                relationshipJson,
-                indexJson,
-                triggerJson,
-                moduleJson,
-                databaseName ?? string.Empty);
+            var snapshot = accumulator.BuildSnapshot(databaseName ?? string.Empty);
 
             return Result<OutsystemsMetadataSnapshot>.Success(snapshot);
         }
@@ -239,377 +402,152 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
         return command;
     }
 
-    private static async Task<List<OutsystemsModuleRow>> ReadModulesAsync(DbDataReader reader, CancellationToken cancellationToken)
+    private interface IResultSetDefinition
     {
-        var rows = new List<OutsystemsModuleRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsModuleRow(
-                reader.GetInt32(0),
-                reader.GetString(1),
-                reader.GetBoolean(2),
-                reader.GetBoolean(3),
-                GetStringOrNull(reader, 4),
-                GetGuidOrNull(reader, 5)));
-        }
+        string Name { get; }
 
-        return rows;
+        Task<int> ReadAsync(DbDataReader reader, CancellationToken cancellationToken, MetadataAccumulator accumulator);
     }
 
-    private static async Task<List<OutsystemsEntityRow>> ReadEntitiesAsync(DbDataReader reader, CancellationToken cancellationToken)
+    private sealed class ResultSetDefinition<T> : IResultSetDefinition
     {
-        var rows = new List<OutsystemsEntityRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        private readonly ResultSetReader<T> _reader;
+        private readonly Action<MetadataAccumulator, List<T>> _assign;
+
+        public ResultSetDefinition(string name, ResultSetReader<T> reader, Action<MetadataAccumulator, List<T>> assign)
         {
-            rows.Add(new OutsystemsEntityRow(
-                reader.GetInt32(0),
-                reader.GetString(1),
-                reader.GetString(2),
-                reader.GetInt32(3),
-                reader.GetBoolean(4),
-                reader.GetBoolean(5),
-                reader.GetBoolean(6),
-                GetStringOrNull(reader, 7),
-                GetGuidOrNull(reader, 8),
-                GetGuidOrNull(reader, 9),
-                GetStringOrNull(reader, 10)));
+            Name = name ?? throw new ArgumentNullException(nameof(name));
+            _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+            _assign = assign ?? throw new ArgumentNullException(nameof(assign));
         }
 
-        return rows;
+        public string Name { get; }
+
+        public async Task<int> ReadAsync(DbDataReader reader, CancellationToken cancellationToken, MetadataAccumulator accumulator)
+        {
+            if (reader is null)
+            {
+                throw new ArgumentNullException(nameof(reader));
+            }
+
+            if (accumulator is null)
+            {
+                throw new ArgumentNullException(nameof(accumulator));
+            }
+
+            var rows = await _reader.ReadAllAsync(reader, cancellationToken).ConfigureAwait(false);
+            _assign(accumulator, rows);
+            return rows.Count;
+        }
     }
 
-    private static async Task<List<OutsystemsAttributeRow>> ReadAttributesAsync(DbDataReader reader, CancellationToken cancellationToken)
+    private static class ResultSetDefinitionFactory
     {
-        var rows = new List<OutsystemsAttributeRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsAttributeRow(
-                reader.GetInt32(0),
-                reader.GetInt32(1),
-                reader.GetString(2),
-                GetGuidOrNull(reader, 3),
-                GetStringOrNull(reader, 4),
-                GetInt32OrNull(reader, 5),
-                GetInt32OrNull(reader, 6),
-                GetInt32OrNull(reader, 7),
-                GetStringOrNull(reader, 8),
-                reader.GetBoolean(9),
-                reader.GetBoolean(10),
-                GetBooleanOrNull(reader, 11),
-                GetBooleanOrNull(reader, 12),
-                GetInt32OrNull(reader, 13),
-                GetStringOrNull(reader, 14),
-                GetStringOrNull(reader, 15),
-                GetStringOrNull(reader, 16),
-                GetStringOrNull(reader, 17),
-                GetStringOrNull(reader, 18),
-                GetStringOrNull(reader, 19),
-                GetInt32OrNull(reader, 20),
-                GetStringOrNull(reader, 21),
-                GetStringOrNull(reader, 22)));
-        }
-
-        return rows;
+        public static IResultSetDefinition Create<T>(
+            string name,
+            ResultSetReader<T> reader,
+            Action<MetadataAccumulator, List<T>> assign)
+            => new ResultSetDefinition<T>(name, reader, assign);
     }
 
-    private static async Task<List<OutsystemsReferenceRow>> ReadReferencesAsync(DbDataReader reader, CancellationToken cancellationToken)
+    private sealed class MetadataAccumulator
     {
-        var rows = new List<OutsystemsReferenceRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsReferenceRow(
-                reader.GetInt32(0),
-                GetInt32OrNull(reader, 1),
-                GetStringOrNull(reader, 2),
-                GetStringOrNull(reader, 3)));
-        }
+        public List<OutsystemsModuleRow> Modules { get; private set; } = new();
+        public List<OutsystemsEntityRow> Entities { get; private set; } = new();
+        public List<OutsystemsAttributeRow> Attributes { get; private set; } = new();
+        public List<OutsystemsReferenceRow> References { get; private set; } = new();
+        public List<OutsystemsPhysicalTableRow> PhysicalTables { get; private set; } = new();
+        public List<OutsystemsColumnRealityRow> ColumnReality { get; private set; } = new();
+        public List<OutsystemsColumnCheckRow> ColumnChecks { get; private set; } = new();
+        public List<OutsystemsColumnCheckJsonRow> ColumnCheckJson { get; private set; } = new();
+        public List<OutsystemsPhysicalColumnPresenceRow> PhysicalColumnsPresent { get; private set; } = new();
+        public List<OutsystemsIndexRow> Indexes { get; private set; } = new();
+        public List<OutsystemsIndexColumnRow> IndexColumns { get; private set; } = new();
+        public List<OutsystemsForeignKeyRow> ForeignKeys { get; private set; } = new();
+        public List<OutsystemsForeignKeyColumnRow> ForeignKeyColumns { get; private set; } = new();
+        public List<OutsystemsForeignKeyAttrMapRow> ForeignKeyAttributeMap { get; private set; } = new();
+        public List<OutsystemsAttributeHasFkRow> AttributeForeignKeys { get; private set; } = new();
+        public List<OutsystemsForeignKeyColumnsJsonRow> ForeignKeyColumnsJson { get; private set; } = new();
+        public List<OutsystemsForeignKeyAttributeJsonRow> ForeignKeyAttributeJson { get; private set; } = new();
+        public List<OutsystemsTriggerRow> Triggers { get; private set; } = new();
+        public List<OutsystemsAttributeJsonRow> AttributeJson { get; private set; } = new();
+        public List<OutsystemsRelationshipJsonRow> RelationshipJson { get; private set; } = new();
+        public List<OutsystemsIndexJsonRow> IndexJson { get; private set; } = new();
+        public List<OutsystemsTriggerJsonRow> TriggerJson { get; private set; } = new();
+        public List<OutsystemsModuleJsonRow> ModuleJson { get; private set; } = new();
 
-        return rows;
-    }
+        public void SetModules(List<OutsystemsModuleRow> rows) => Modules = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsPhysicalTableRow>> ReadPhysicalTablesAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsPhysicalTableRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsPhysicalTableRow(
-                reader.GetInt32(0),
-                reader.GetString(1),
-                reader.GetString(2),
-                reader.GetInt32(3)));
-        }
+        public void SetEntities(List<OutsystemsEntityRow> rows) => Entities = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetAttributes(List<OutsystemsAttributeRow> rows) => Attributes = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsColumnRealityRow>> ReadColumnRealityAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsColumnRealityRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsColumnRealityRow(
-                reader.GetInt32(0),
-                reader.GetBoolean(1),
-                reader.GetString(2),
-                GetInt32OrNull(reader, 3),
-                GetInt32OrNull(reader, 4),
-                GetInt32OrNull(reader, 5),
-                GetStringOrNull(reader, 6),
-                reader.GetBoolean(7),
-                reader.GetBoolean(8),
-                GetStringOrNull(reader, 9),
-                GetStringOrNull(reader, 10),
-                GetStringOrNull(reader, 11),
-                reader.GetString(12)));
-        }
+        public void SetReferences(List<OutsystemsReferenceRow> rows) => References = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetPhysicalTables(List<OutsystemsPhysicalTableRow> rows) => PhysicalTables = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsColumnCheckRow>> ReadColumnChecksAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsColumnCheckRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsColumnCheckRow(
-                reader.GetInt32(0),
-                reader.GetString(1),
-                reader.GetString(2),
-                reader.GetBoolean(3)));
-        }
+        public void SetColumnReality(List<OutsystemsColumnRealityRow> rows) => ColumnReality = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetColumnChecks(List<OutsystemsColumnCheckRow> rows) => ColumnChecks = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsColumnCheckJsonRow>> ReadColumnCheckJsonAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsColumnCheckJsonRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsColumnCheckJsonRow(
-                reader.GetInt32(0),
-                reader.GetString(1)));
-        }
+        public void SetColumnCheckJson(List<OutsystemsColumnCheckJsonRow> rows) => ColumnCheckJson = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetPhysicalColumnsPresent(List<OutsystemsPhysicalColumnPresenceRow> rows) => PhysicalColumnsPresent = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsPhysicalColumnPresenceRow>> ReadPhysicalColumnsPresentAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsPhysicalColumnPresenceRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsPhysicalColumnPresenceRow(reader.GetInt32(0)));
-        }
+        public void SetIndexes(List<OutsystemsIndexRow> rows) => Indexes = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetIndexColumns(List<OutsystemsIndexColumnRow> rows) => IndexColumns = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsIndexRow>> ReadIndexesAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsIndexRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsIndexRow(
-                reader.GetInt32(0),
-                reader.GetInt32(1),
-                reader.GetInt32(2),
-                reader.GetString(3),
-                reader.GetBoolean(4),
-                reader.GetBoolean(5),
-                reader.GetString(6),
-                GetStringOrNull(reader, 7),
-                reader.GetBoolean(8),
-                reader.GetBoolean(9),
-                GetInt32OrNull(reader, 10),
-                reader.GetBoolean(11),
-                reader.GetBoolean(12),
-                reader.GetBoolean(13),
-                reader.GetBoolean(14),
-                GetStringOrNull(reader, 15),
-                GetStringOrNull(reader, 16),
-                GetStringOrNull(reader, 17),
-                GetStringOrNull(reader, 18)));
-        }
+        public void SetForeignKeys(List<OutsystemsForeignKeyRow> rows) => ForeignKeys = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetForeignKeyColumns(List<OutsystemsForeignKeyColumnRow> rows) => ForeignKeyColumns = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsIndexColumnRow>> ReadIndexColumnsAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsIndexColumnRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsIndexColumnRow(
-                reader.GetInt32(0),
-                reader.GetString(1),
-                reader.GetInt32(2),
-                reader.GetString(3),
-                reader.GetBoolean(4),
-                GetStringOrNull(reader, 5),
-                GetStringOrNull(reader, 6)));
-        }
+        public void SetForeignKeyAttributeMap(List<OutsystemsForeignKeyAttrMapRow> rows) => ForeignKeyAttributeMap = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetAttributeForeignKeys(List<OutsystemsAttributeHasFkRow> rows) => AttributeForeignKeys = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsForeignKeyRow>> ReadForeignKeysAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsForeignKeyRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsForeignKeyRow(
-                reader.GetInt32(0),
-                reader.GetInt32(1),
-                reader.GetString(2),
-                reader.GetString(3),
-                reader.GetString(4),
-                reader.GetInt32(5),
-                GetInt32OrNull(reader, 6),
-                reader.GetString(7),
-                reader.GetString(8),
-                reader.GetBoolean(9)));
-        }
+        public void SetForeignKeyColumnsJson(List<OutsystemsForeignKeyColumnsJsonRow> rows) => ForeignKeyColumnsJson = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetForeignKeyAttributeJson(List<OutsystemsForeignKeyAttributeJsonRow> rows) => ForeignKeyAttributeJson = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsForeignKeyColumnRow>> ReadForeignKeyColumnsAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsForeignKeyColumnRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsForeignKeyColumnRow(
-                reader.GetInt32(0),
-                reader.GetInt32(1),
-                reader.GetInt32(2),
-                reader.GetString(3),
-                reader.GetString(4),
-                GetInt32OrNull(reader, 5),
-                GetStringOrNull(reader, 6),
-                GetInt32OrNull(reader, 7),
-                GetStringOrNull(reader, 8)));
-        }
+        public void SetTriggers(List<OutsystemsTriggerRow> rows) => Triggers = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetAttributeJson(List<OutsystemsAttributeJsonRow> rows) => AttributeJson = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsForeignKeyAttrMapRow>> ReadForeignKeyAttrMapAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsForeignKeyAttrMapRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsForeignKeyAttrMapRow(reader.GetInt32(0), reader.GetInt32(1)));
-        }
+        public void SetRelationshipJson(List<OutsystemsRelationshipJsonRow> rows) => RelationshipJson = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetIndexJson(List<OutsystemsIndexJsonRow> rows) => IndexJson = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsAttributeHasFkRow>> ReadAttributeHasFkAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsAttributeHasFkRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsAttributeHasFkRow(reader.GetInt32(0), reader.GetBoolean(1)));
-        }
+        public void SetTriggerJson(List<OutsystemsTriggerJsonRow> rows) => TriggerJson = rows ?? throw new ArgumentNullException(nameof(rows));
 
-        return rows;
-    }
+        public void SetModuleJson(List<OutsystemsModuleJsonRow> rows) => ModuleJson = rows ?? throw new ArgumentNullException(nameof(rows));
 
-    private static async Task<List<OutsystemsForeignKeyColumnsJsonRow>> ReadForeignKeyColumnsJsonAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsForeignKeyColumnsJsonRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsForeignKeyColumnsJsonRow(reader.GetInt32(0), reader.GetString(1)));
-        }
-
-        return rows;
-    }
-
-    private static async Task<List<OutsystemsForeignKeyAttributeJsonRow>> ReadForeignKeyAttributeJsonAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsForeignKeyAttributeJsonRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsForeignKeyAttributeJsonRow(reader.GetInt32(0), reader.GetString(1)));
-        }
-
-        return rows;
-    }
-
-    private static async Task<List<OutsystemsTriggerRow>> ReadTriggersAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsTriggerRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsTriggerRow(
-                reader.GetInt32(0),
-                reader.GetString(1),
-                reader.GetBoolean(2),
-                reader.GetString(3)));
-        }
-
-        return rows;
-    }
-
-    private static async Task<List<OutsystemsAttributeJsonRow>> ReadAttributeJsonAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsAttributeJsonRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsAttributeJsonRow(reader.GetInt32(0), reader.GetString(1)));
-        }
-
-        return rows;
-    }
-
-    private static async Task<List<OutsystemsRelationshipJsonRow>> ReadRelationshipJsonAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsRelationshipJsonRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsRelationshipJsonRow(reader.GetInt32(0), reader.GetString(1)));
-        }
-
-        return rows;
-    }
-
-    private static async Task<List<OutsystemsIndexJsonRow>> ReadIndexJsonAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsIndexJsonRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsIndexJsonRow(reader.GetInt32(0), reader.GetString(1)));
-        }
-
-        return rows;
-    }
-
-    private static async Task<List<OutsystemsTriggerJsonRow>> ReadTriggerJsonAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsTriggerJsonRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsTriggerJsonRow(reader.GetInt32(0), reader.GetString(1)));
-        }
-
-        return rows;
-    }
-
-    private static async Task<List<OutsystemsModuleJsonRow>> ReadModuleJsonAsync(DbDataReader reader, CancellationToken cancellationToken)
-    {
-        var rows = new List<OutsystemsModuleJsonRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(new OutsystemsModuleJsonRow(
-                reader.GetString(0),
-                reader.GetBoolean(1),
-                reader.GetBoolean(2),
-                reader.GetString(3)));
-        }
-
-        return rows;
+        public OutsystemsMetadataSnapshot BuildSnapshot(string databaseName)
+            => new(
+                Modules,
+                Entities,
+                Attributes,
+                References,
+                PhysicalTables,
+                ColumnReality,
+                ColumnChecks,
+                ColumnCheckJson,
+                PhysicalColumnsPresent,
+                Indexes,
+                IndexColumns,
+                ForeignKeys,
+                ForeignKeyColumns,
+                ForeignKeyAttributeMap,
+                AttributeForeignKeys,
+                ForeignKeyColumnsJson,
+                ForeignKeyAttributeJson,
+                Triggers,
+                AttributeJson,
+                RelationshipJson,
+                IndexJson,
+                TriggerJson,
+                ModuleJson,
+                databaseName);
     }
 
     private async Task EnsureNextResultSetAsync(
@@ -629,16 +567,4 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                 expectedNextResultSetIndex);
         }
     }
-
-    private static string? GetStringOrNull(DbDataReader reader, int ordinal)
-        => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
-
-    private static Guid? GetGuidOrNull(DbDataReader reader, int ordinal)
-        => reader.IsDBNull(ordinal) ? null : reader.GetGuid(ordinal);
-
-    private static int? GetInt32OrNull(DbDataReader reader, int ordinal)
-        => reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
-
-    private static bool? GetBooleanOrNull(DbDataReader reader, int ordinal)
-        => reader.IsDBNull(ordinal) ? null : reader.GetBoolean(ordinal);
 }
