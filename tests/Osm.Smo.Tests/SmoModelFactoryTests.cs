@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using SmoIndex = Microsoft.SqlServer.Management.Smo.Index;
@@ -15,20 +16,10 @@ namespace Osm.Smo.Tests;
 
 public class SmoModelFactoryTests
 {
-    private static (Osm.Domain.Model.OsmModel model, PolicyDecisionSet decisions, ProfileSnapshot snapshot) LoadEdgeCaseDecisions()
-    {
-        var model = ModelFixtures.LoadModel("model.edge-case.json");
-        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
-        var options = TighteningOptions.Default;
-        var policy = new TighteningPolicy();
-        var decisions = policy.Decide(model, snapshot, options);
-        return (model, decisions, snapshot);
-    }
-
     [Fact]
     public void Build_applies_custom_index_naming_prefixes()
     {
-        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
         var factory = new SmoModelFactory();
         var defaultOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
         var format = SmoFormatOptions.Default.WithIndexNaming(new IndexNamingOptions(
@@ -55,7 +46,7 @@ public class SmoModelFactoryTests
     [Fact]
     public void Build_creates_tables_with_policy_driven_nullability_and_foreign_keys()
     {
-        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
         var factory = new SmoModelFactory();
         var smoModel = factory.Create(
             model,
@@ -122,7 +113,7 @@ public class SmoModelFactoryTests
     [Fact]
     public void Build_aligns_reference_column_types_with_target_identifiers()
     {
-        var (model, _, snapshot) = LoadEdgeCaseDecisions();
+        var (model, _, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
         var module = model.Modules.First(m => m.Entities.Any(e => e.LogicalName.Value.Equals("Customer", StringComparison.Ordinal)));
         var customer = module.Entities.First(e => e.LogicalName.Value.Equals("Customer", StringComparison.Ordinal));
         var cityId = customer.Attributes.First(a => a.ColumnName.Value.Equals("CityId", StringComparison.OrdinalIgnoreCase));
@@ -159,7 +150,7 @@ public class SmoModelFactoryTests
     [Fact]
     public void Build_maps_on_disk_default_and_check_constraints()
     {
-        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
         var module = model.Modules.First();
         var entity = module.Entities.First();
         var attribute = entity.Attributes.First(a => !a.IsIdentifier);
@@ -197,9 +188,40 @@ public class SmoModelFactoryTests
     }
 
     [Fact]
+    public void Create_matches_edge_case_fixture_scripts()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
+        var writer = new PerTableWriter();
+
+        foreach (var table in smoModel.Tables)
+        {
+            var result = writer.Generate(table, options);
+            var expectedPath = Path.Combine(
+                "tests",
+                "Fixtures",
+                "emission",
+                "edge-case",
+                "Modules",
+                table.Module,
+                "Tables",
+                $"{table.Schema}.{table.LogicalName}.sql");
+
+            Assert.True(File.Exists(expectedPath), $"Expected fixture '{expectedPath}' to exist.");
+            var expected = File.ReadAllText(expectedPath);
+            Assert.Equal(Normalize(expected), Normalize(result.Script));
+        }
+    }
+
+    private static string Normalize(string value)
+        => value.Replace("\r\n", "\n").Trim();
+
+    [Fact]
     public void Build_excludes_platform_auto_indexes_when_disabled()
     {
-        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
         var factory = new SmoModelFactory();
         var smoOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
 
@@ -215,7 +237,7 @@ public class SmoModelFactoryTests
     [Fact]
     public void Build_respects_platform_auto_index_toggle()
     {
-        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
         var factory = new SmoModelFactory();
         var options = new SmoBuildOptions(
             "OutSystems",
@@ -430,7 +452,7 @@ public class SmoModelFactoryTests
     [Fact]
     public void CreateSmoTables_materializes_detached_smo_objects()
     {
-        var (model, decisions, snapshot) = LoadEdgeCaseDecisions();
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
         var factory = new SmoModelFactory();
         var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
 
