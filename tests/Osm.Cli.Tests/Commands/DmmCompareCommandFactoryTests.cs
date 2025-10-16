@@ -19,7 +19,7 @@ using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
 
-public class DmmCompareCommandModuleTests
+public class DmmCompareCommandFactoryTests
 {
     [Fact]
     public async Task Invoke_ParsesOptions()
@@ -34,11 +34,21 @@ public class DmmCompareCommandModuleTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
-        services.AddSingleton<DmmCompareCommandModule>();
+        services.AddSingleton<DmmCompareCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
-        var module = provider.GetRequiredService<DmmCompareCommandModule>();
-        var command = module.BuildCommand();
+        var factory = provider.GetRequiredService<DmmCompareCommandFactory>();
+        var command = factory.Create();
+        Assert.NotNull(command.Handler);
+
+        var moduleBinder = provider.GetRequiredService<ModuleFilterOptionBinder>();
+        Assert.Contains(moduleBinder.ModulesOption, command.Options);
+
+        var cacheBinder = provider.GetRequiredService<CacheOptionBinder>();
+        Assert.Contains(cacheBinder.CacheRootOption, command.Options);
+
+        var sqlBinder = provider.GetRequiredService<SqlOptionBinder>();
+        Assert.Contains(sqlBinder.ConnectionStringOption, command.Options);
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();

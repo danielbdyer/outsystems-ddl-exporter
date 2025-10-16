@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Parsing;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +15,7 @@ using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
 
-public class InspectCommandModuleTests
+public class InspectCommandFactoryTests
 {
     [Fact]
     public async Task Invoke_LoadsModelAndWritesSummary()
@@ -24,11 +25,15 @@ public class InspectCommandModuleTests
 
         var services = new ServiceCollection();
         services.AddSingleton<IModelIngestionService>(ingestion);
-        services.AddSingleton<InspectCommandModule>();
+        services.AddSingleton<InspectCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
-        var module = provider.GetRequiredService<InspectCommandModule>();
-        var command = module.BuildCommand();
+        var factory = provider.GetRequiredService<InspectCommandFactory>();
+        var command = factory.Create();
+        Assert.NotNull(command.Handler);
+
+        var modelOption = Assert.IsType<Option<string>>(command.Options.Single());
+        Assert.Contains("--in", modelOption.Aliases);
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();

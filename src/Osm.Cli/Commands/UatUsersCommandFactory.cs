@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Osm.Cli.Commands;
 
-internal sealed class UatUsersCommandModule : ICommandModule
+internal sealed class UatUsersCommandFactory : ICommandFactory
 {
     private readonly IServiceScopeFactory _scopeFactory;
 
@@ -34,12 +34,12 @@ internal sealed class UatUsersCommandModule : ICommandModule
     private readonly Option<string?> _snapshotOption = new("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
     private readonly Option<string?> _userEntityIdOption = new("--user-entity-id", "Optional override identifier for the user entity (accepts bt*GUID*GUID, physical name, or numeric id).");
 
-    public UatUsersCommandModule(IServiceScopeFactory scopeFactory)
+    public UatUsersCommandFactory(IServiceScopeFactory scopeFactory)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
     }
 
-    public Command BuildCommand()
+    public Command Create()
     {
         var command = new Command("uat-users", "Emit user remapping artifacts for UAT.")
         {

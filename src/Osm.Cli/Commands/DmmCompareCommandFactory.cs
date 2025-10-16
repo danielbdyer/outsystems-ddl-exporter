@@ -11,7 +11,7 @@ using Osm.Pipeline.Configuration;
 
 namespace Osm.Cli.Commands;
 
-internal sealed class DmmCompareCommandModule : ICommandModule
+internal sealed class DmmCompareCommandFactory : ICommandFactory
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly CliGlobalOptions _globalOptions;
@@ -24,7 +24,7 @@ internal sealed class DmmCompareCommandModule : ICommandModule
     private readonly Option<string?> _dmmOption = new("--dmm", "Path to the baseline DMM script.");
     private readonly Option<string?> _outputOption = new("--out", () => "out", "Output directory for comparison artifacts.");
 
-    public DmmCompareCommandModule(
+    public DmmCompareCommandFactory(
         IServiceScopeFactory scopeFactory,
         CliGlobalOptions globalOptions,
         ModuleFilterOptionBinder moduleFilterBinder,
@@ -38,7 +38,7 @@ internal sealed class DmmCompareCommandModule : ICommandModule
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
     }
 
-    public Command BuildCommand()
+    public Command Create()
     {
         var command = new Command("dmm-compare", "Compare the emitted SSDT artifacts with a DMM baseline.")
         {
@@ -50,20 +50,9 @@ internal sealed class DmmCompareCommandModule : ICommandModule
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
-        foreach (var option in _moduleFilterBinder.Options)
-        {
-            command.AddOption(option);
-        }
-
-        foreach (var option in _cacheOptionBinder.Options)
-        {
-            command.AddOption(option);
-        }
-
-        foreach (var option in _sqlOptionBinder.Options)
-        {
-            command.AddOption(option);
-        }
+        CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
+        CommandOptionBuilder.AddCacheOptions(command, _cacheOptionBinder);
+        CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
 
         command.SetHandler(async context => await ExecuteAsync(context).ConfigureAwait(false));
         return command;

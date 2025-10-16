@@ -3,6 +3,7 @@ using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Parsing;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,7 +13,7 @@ using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
 
-public class UatUsersCommandModuleTests
+public class UatUsersCommandFactoryTests
 {
     [Fact]
     public async Task Invoke_ParsesOptions()
@@ -21,11 +22,13 @@ public class UatUsersCommandModuleTests
 
         var services = new ServiceCollection();
         services.AddSingleton<IUatUsersCommand>(executor);
-        services.AddSingleton<UatUsersCommandModule>();
+        services.AddSingleton<UatUsersCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
-        var module = provider.GetRequiredService<UatUsersCommandModule>();
-        var command = module.BuildCommand();
+        var factory = provider.GetRequiredService<UatUsersCommandFactory>();
+        var command = factory.Create();
+        Assert.NotNull(command.Handler);
+        Assert.Contains(command.Options, option => string.Equals(option.Name, "user-map", StringComparison.Ordinal));
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
@@ -34,7 +37,7 @@ public class UatUsersCommandModuleTests
 
         Assert.Equal(5, exitCode);
         var options = executor.LastOptions!;
-        Assert.Equal("model.json", options.ModelPath);
+        Assert.Equal(Path.GetFullPath("model.json"), options.ModelPath);
         Assert.Equal("Server=.;Database=UAT;", options.UatConnectionString);
         Assert.False(options.FromLiveMetadata);
         Assert.Equal("dbo", options.UserSchema);

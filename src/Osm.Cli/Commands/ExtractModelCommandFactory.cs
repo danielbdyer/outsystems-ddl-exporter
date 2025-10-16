@@ -12,7 +12,7 @@ using Osm.Pipeline.Configuration;
 
 namespace Osm.Cli.Commands;
 
-internal sealed class ExtractModelCommandModule : ICommandModule
+internal sealed class ExtractModelCommandFactory : ICommandFactory
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly CliGlobalOptions _globalOptions;
@@ -26,7 +26,7 @@ internal sealed class ExtractModelCommandModule : ICommandModule
     private readonly Option<string?> _outputOption = new("--out", () => "model.extracted.json", "Output path for extracted model JSON.");
     private readonly Option<string?> _mockSqlOption = new("--mock-advanced-sql", "Path to advanced SQL manifest fixture.");
 
-    public ExtractModelCommandModule(
+    public ExtractModelCommandFactory(
         IServiceScopeFactory scopeFactory,
         CliGlobalOptions globalOptions,
         SqlOptionBinder sqlOptionBinder)
@@ -37,7 +37,7 @@ internal sealed class ExtractModelCommandModule : ICommandModule
         _modulesOption.AddAlias("--module");
     }
 
-    public Command BuildCommand()
+    public Command Create()
     {
         var command = new Command("extract-model", "Extract the OutSystems model using Advanced SQL.")
         {
@@ -51,10 +51,7 @@ internal sealed class ExtractModelCommandModule : ICommandModule
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
-        foreach (var option in _sqlOptionBinder.Options)
-        {
-            command.AddOption(option);
-        }
+        CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
 
         command.SetHandler(async context => await ExecuteAsync(context).ConfigureAwait(false));
         return command;
