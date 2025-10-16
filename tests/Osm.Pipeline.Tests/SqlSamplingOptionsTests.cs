@@ -1,4 +1,5 @@
 using System;
+using Osm.Domain.Configuration;
 using Osm.Pipeline.Sql;
 using Xunit;
 
@@ -51,6 +52,7 @@ public sealed class SqlSamplingOptionsTests
         Assert.Equal(SqlSamplingOptions.Default, options.Sampling);
         Assert.Equal(4, options.MaxConcurrentTableProfiles);
         Assert.Equal(SqlProfilerLimits.Default, options.Limits);
+        Assert.Equal(NamingOverrideOptions.Empty, options.NamingOverrides);
     }
 
     [Fact]
@@ -83,7 +85,13 @@ public sealed class SqlSamplingOptionsTests
     [InlineData(-4)]
     public void SqlProfilerOptions_ShouldThrow_WhenConcurrencyInvalid(int concurrency)
     {
-        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new SqlProfilerOptions(null, SqlSamplingOptions.Default, concurrency, SqlProfilerLimits.Default));
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new SqlProfilerOptions(
+                null,
+                SqlSamplingOptions.Default,
+                concurrency,
+                SqlProfilerLimits.Default,
+                NamingOverrideOptions.Empty));
         Assert.Equal("maxConcurrentTableProfiles", exception.ParamName);
     }
 }

@@ -8,7 +8,7 @@ using Osm.Domain.ValueObjects;
 
 namespace Osm.Validation.Tightening;
 
-internal static class EntityLookupResolver
+public static class EntityLookupResolver
 {
     public static EntityLookupResolution Resolve(OsmModel model, NamingOverrideOptions namingOverrides)
     {
@@ -153,6 +153,6 @@ internal static class EntityLookupResolver
     private sealed record DuplicateResolution(DuplicateCandidate Canonical, TighteningDiagnostic Diagnostic);
 }
 
-internal sealed record EntityLookupResolution(
+public sealed record EntityLookupResolution(
     IReadOnlyDictionary<EntityName, EntityModel> Lookup,
     ImmutableArray<TighteningDiagnostic> Diagnostics);

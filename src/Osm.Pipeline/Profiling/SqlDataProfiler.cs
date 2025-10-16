@@ -19,6 +19,7 @@ public sealed class SqlDataProfiler : IDataProfiler
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly OsmModel _model;
     private readonly SqlProfilerOptions _options;
+    private readonly EntityProfilingLookup _entityLookup;
     private readonly ITableMetadataLoader _metadataLoader;
     private readonly IProfilingPlanBuilder _planBuilder;
     private readonly IProfilingQueryExecutor _queryExecutor;
@@ -45,8 +46,9 @@ public sealed class SqlDataProfiler : IDataProfiler
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _entityLookup = EntityProfilingLookup.Create(_model, _options.NamingOverrides);
         _metadataLoader = metadataLoader ?? new TableMetadataLoader(_options);
-        _planBuilder = planBuilder ?? new ProfilingPlanBuilder(_model);
+        _planBuilder = planBuilder ?? new ProfilingPlanBuilder(_model, _entityLookup);
         _queryExecutor = queryExecutor ?? new ProfilingQueryExecutor(_connectionFactory, _options);
     }
 
@@ -171,16 +173,17 @@ public sealed class SqlDataProfiler : IDataProfiler
                     }
 
                     var targetName = attribute.Reference.TargetEntity.Value;
-                    if (!TryFindEntity(targetName, out var targetEntity))
+                    if (!_entityLookup.TryGet(targetName, out var targetEntry))
                     {
                         continue;
                     }
 
-                    var targetIdentifier = GetPreferredIdentifier(targetEntity);
-                    if (targetIdentifier is null)
+                    if (targetEntry.PreferredIdentifier is not { } targetIdentifier)
                     {
                         continue;
                     }
+
+                    var targetEntity = targetEntry.Entity;
 
                     var foreignKeyKey = ProfilingPlanBuilder.BuildForeignKeyKey(
                         attribute.ColumnName.Value,
@@ -251,37 +254,6 @@ public sealed class SqlDataProfiler : IDataProfiler
         {
             gate.Release();
         }
-    }
-
-    private bool TryFindEntity(EntityName logicalName, out EntityModel entity)
-    {
-        foreach (var module in _model.Modules)
-        {
-            foreach (var candidate in module.Entities)
-            {
-                if (candidate.LogicalName.Equals(logicalName))
-                {
-                    entity = candidate;
-                    return true;
-                }
-            }
-        }
-
-        entity = null!;
-        return false;
-    }
-
-    private static AttributeModel? GetPreferredIdentifier(EntityModel entity)
-    {
-        foreach (var attribute in entity.Attributes)
-        {
-            if (attribute.IsIdentifier)
-            {
-                return attribute;
-            }
-        }
-
-        return null;
     }
 
     private static bool IsSingleColumnUnique(EntityModel entity, string columnName)

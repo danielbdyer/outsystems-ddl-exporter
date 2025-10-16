@@ -62,7 +62,8 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
         var profilerOptions = SqlProfilerOptions.Default with
         {
             CommandTimeoutSeconds = request.SqlOptions.CommandTimeoutSeconds,
-            Sampling = sampling
+            Sampling = sampling,
+            NamingOverrides = request.SmoOptions.NamingOverrides
         };
 
         var connectionFactory = _connectionFactoryFactory(request.SqlOptions.ConnectionString!, connectionOptions);
