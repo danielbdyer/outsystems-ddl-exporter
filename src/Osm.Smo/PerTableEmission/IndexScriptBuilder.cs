@@ -1,0 +1,336 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using Microsoft.SqlServer.Management.Smo;
+using Microsoft.SqlServer.TransactSql.ScriptDom;
+using Osm.Smo;
+using ScriptDomSortOrder = Microsoft.SqlServer.TransactSql.ScriptDom.SortOrder;
+
+namespace Osm.Smo.PerTableEmission;
+
+internal sealed class IndexScriptBuilder
+{
+    private readonly SqlScriptFormatter _formatter;
+
+    public IndexScriptBuilder(SqlScriptFormatter formatter)
+    {
+        _formatter = formatter ?? throw new ArgumentNullException(nameof(formatter));
+    }
+
+    public CreateIndexStatement BuildCreateIndexStatement(
+        SmoTableDefinition table,
+        SmoIndexDefinition index,
+        string effectiveTableName,
+        string indexName,
+        SmoFormatOptions format)
+    {
+        if (table is null)
+        {
+            throw new ArgumentNullException(nameof(table));
+        }
+
+        if (index is null)
+        {
+            throw new ArgumentNullException(nameof(index));
+        }
+
+        if (effectiveTableName is null)
+        {
+            throw new ArgumentNullException(nameof(effectiveTableName));
+        }
+
+        if (indexName is null)
+        {
+            throw new ArgumentNullException(nameof(indexName));
+        }
+
+        if (format is null)
+        {
+            throw new ArgumentNullException(nameof(format));
+        }
+
+        var statement = new CreateIndexStatement
+        {
+            Name = _formatter.CreateIdentifier(indexName, format),
+            OnName = _formatter.BuildSchemaObjectName(table.Schema, effectiveTableName, format),
+            Unique = index.IsUnique,
+        };
+
+        foreach (var column in index.Columns.OrderBy(c => c.Ordinal))
+        {
+            if (column.IsIncluded)
+            {
+                statement.IncludeColumns.Add(_formatter.BuildColumnReference(column.Name, format));
+                continue;
+            }
+
+            var orderedColumn = new ColumnWithSortOrder
+            {
+                Column = _formatter.BuildColumnReference(column.Name, format),
+            };
+
+            if (column.IsDescending)
+            {
+                orderedColumn.SortOrder = ScriptDomSortOrder.Descending;
+            }
+
+            statement.Columns.Add(orderedColumn);
+        }
+
+        ApplyIndexMetadata(statement, index.Metadata, format);
+
+        return statement;
+    }
+
+    public AlterIndexStatement BuildDisableIndexStatement(
+        SmoTableDefinition table,
+        string effectiveTableName,
+        string indexName,
+        SmoFormatOptions format)
+    {
+        if (table is null)
+        {
+            throw new ArgumentNullException(nameof(table));
+        }
+
+        if (effectiveTableName is null)
+        {
+            throw new ArgumentNullException(nameof(effectiveTableName));
+        }
+
+        if (indexName is null)
+        {
+            throw new ArgumentNullException(nameof(indexName));
+        }
+
+        if (format is null)
+        {
+            throw new ArgumentNullException(nameof(format));
+        }
+
+        return new AlterIndexStatement
+        {
+            AlterIndexType = AlterIndexType.Disable,
+            Name = _formatter.CreateIdentifier(indexName, format),
+            OnName = _formatter.BuildSchemaObjectName(table.Schema, effectiveTableName, format),
+        };
+    }
+
+    private void ApplyIndexMetadata(CreateIndexStatement statement, SmoIndexMetadata metadata, SmoFormatOptions format)
+    {
+        if (!string.IsNullOrWhiteSpace(metadata.FilterDefinition))
+        {
+            var predicate = ParsePredicate(metadata.FilterDefinition);
+            if (predicate is not null)
+            {
+                BooleanExpression filter = predicate;
+                if (filter is not BooleanParenthesisExpression)
+                {
+                    filter = new BooleanParenthesisExpression { Expression = filter };
+                }
+
+                statement.FilterPredicate = filter;
+            }
+        }
+
+        foreach (var option in BuildIndexOptions(metadata))
+        {
+            statement.IndexOptions.Add(option);
+        }
+
+        var clause = BuildFileGroupOrPartitionScheme(metadata, format);
+        if (clause is not null)
+        {
+            statement.OnFileGroupOrPartitionScheme = clause;
+        }
+    }
+
+    private static IEnumerable<IndexOption> BuildIndexOptions(SmoIndexMetadata metadata)
+    {
+        var options = new List<IndexOption>();
+
+        if (metadata.FillFactor is int fillFactor)
+        {
+            options.Add(new IndexExpressionOption
+            {
+                OptionKind = IndexOptionKind.FillFactor,
+                Expression = new IntegerLiteral { Value = fillFactor.ToString(CultureInfo.InvariantCulture) },
+            });
+        }
+
+        if (metadata.IsPadded)
+        {
+            options.Add(new IndexStateOption
+            {
+                OptionKind = IndexOptionKind.PadIndex,
+                OptionState = OptionState.On,
+            });
+        }
+
+        options.Add(new IgnoreDupKeyIndexOption
+        {
+            OptionKind = IndexOptionKind.IgnoreDupKey,
+            OptionState = metadata.IgnoreDuplicateKey ? OptionState.On : OptionState.Off,
+        });
+
+        if (metadata.StatisticsNoRecompute)
+        {
+            options.Add(new IndexStateOption
+            {
+                OptionKind = IndexOptionKind.StatisticsNoRecompute,
+                OptionState = OptionState.On,
+            });
+        }
+
+        options.Add(new IndexStateOption
+        {
+            OptionKind = IndexOptionKind.AllowRowLocks,
+            OptionState = metadata.AllowRowLocks ? OptionState.On : OptionState.Off,
+        });
+
+        options.Add(new IndexStateOption
+        {
+            OptionKind = IndexOptionKind.AllowPageLocks,
+            OptionState = metadata.AllowPageLocks ? OptionState.On : OptionState.Off,
+        });
+
+        foreach (var compression in BuildCompressionOptions(metadata.DataCompression))
+        {
+            options.Add(compression);
+        }
+
+        return options;
+    }
+
+    private static IEnumerable<DataCompressionOption> BuildCompressionOptions(ImmutableArray<SmoIndexCompressionSetting> settings)
+    {
+        if (settings.IsDefaultOrEmpty)
+        {
+            yield break;
+        }
+
+        foreach (var group in settings.GroupBy(s => s.Compression, StringComparer.OrdinalIgnoreCase))
+        {
+            var level = MapCompressionLevel(group.Key);
+            if (level is null)
+            {
+                continue;
+            }
+
+            var option = new DataCompressionOption
+            {
+                OptionKind = IndexOptionKind.DataCompression,
+                CompressionLevel = level.Value,
+            };
+
+            foreach (var range in CollapseRanges(group.Select(s => s.PartitionNumber).OrderBy(n => n)))
+            {
+                var partitionRange = new CompressionPartitionRange
+                {
+                    From = new IntegerLiteral { Value = range.Start.ToString(CultureInfo.InvariantCulture) },
+                };
+
+                if (range.End > range.Start)
+                {
+                    partitionRange.To = new IntegerLiteral { Value = range.End.ToString(CultureInfo.InvariantCulture) };
+                }
+
+                option.PartitionRanges.Add(partitionRange);
+            }
+
+            yield return option;
+        }
+    }
+
+    private static DataCompressionLevel? MapCompressionLevel(string compression)
+    {
+        if (string.IsNullOrWhiteSpace(compression))
+        {
+            return null;
+        }
+
+        return compression.Trim().ToUpperInvariant() switch
+        {
+            "NONE" => DataCompressionLevel.None,
+            "ROW" => DataCompressionLevel.Row,
+            "PAGE" => DataCompressionLevel.Page,
+            "COLUMNSTORE" => DataCompressionLevel.ColumnStore,
+            "COLUMNSTORE_ARCHIVE" => DataCompressionLevel.ColumnStoreArchive,
+            _ => null,
+        };
+    }
+
+    private FileGroupOrPartitionScheme? BuildFileGroupOrPartitionScheme(SmoIndexMetadata metadata, SmoFormatOptions format)
+    {
+        if (metadata.DataSpace is null)
+        {
+            return null;
+        }
+
+        var clause = new FileGroupOrPartitionScheme
+        {
+            Name = new IdentifierOrValueExpression
+            {
+                Identifier = _formatter.CreateIdentifier(metadata.DataSpace.Name, format),
+            }
+        };
+
+        if (string.Equals(metadata.DataSpace.Type, "PARTITION_SCHEME", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var column in metadata.PartitionColumns.OrderBy(static c => c.Ordinal))
+            {
+                clause.PartitionSchemeColumns.Add(_formatter.CreateIdentifier(column.Name, format));
+            }
+        }
+
+        return clause;
+    }
+
+    private static IEnumerable<(int Start, int End)> CollapseRanges(IEnumerable<int> numbers)
+    {
+        using var enumerator = numbers.GetEnumerator();
+        if (!enumerator.MoveNext())
+        {
+            yield break;
+        }
+
+        var start = enumerator.Current;
+        var previous = start;
+
+        while (enumerator.MoveNext())
+        {
+            var current = enumerator.Current;
+            if (current == previous + 1)
+            {
+                previous = current;
+                continue;
+            }
+
+            yield return (Start: start, End: previous);
+            start = previous = current;
+        }
+
+        yield return (Start: start, End: previous);
+    }
+
+    private static BooleanExpression? ParsePredicate(string? predicate)
+    {
+        if (string.IsNullOrWhiteSpace(predicate))
+        {
+            return null;
+        }
+
+        var parser = new TSql150Parser(initialQuotedIdentifiers: false);
+        using var reader = new StringReader(predicate);
+        var fragment = parser.ParseBooleanExpression(reader, out var errors);
+        if (fragment is null || (errors is not null && errors.Count > 0))
+        {
+            return null;
+        }
+
+        return fragment;
+    }
+}
