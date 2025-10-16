@@ -30,7 +30,8 @@ hostBuilder.Services.AddSingleton<Func<string, SqlConnectionOptions, IDbConnecti
 hostBuilder.Services.AddSingleton<IDataProfilerFactory, DataProfilerFactory>();
 hostBuilder.Services.AddSingleton<IModelIngestionService, ModelIngestionService>();
 hostBuilder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
-hostBuilder.Services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
+hostBuilder.Services.AddSingleton<ICommandDispatcher>(
+    sp => new CommandDispatcher(sp.GetRequiredService<IServiceScopeFactory>()));
 hostBuilder.Services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
 hostBuilder.Services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();
 hostBuilder.Services.AddSingleton<ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>, ExtractModelPipeline>();
