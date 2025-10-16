@@ -261,6 +261,33 @@ public class DmmComparatorTests
     }
 
     [Fact]
+    public void Compare_detects_missing_unique_constraint_when_indexes_enabled()
+    {
+        var comparator = new DmmComparator(DmmComparisonFeatures.Columns | DmmComparisonFeatures.PrimaryKeys | DmmComparisonFeatures.Indexes);
+        var expectedScript = File.ReadAllText(FixtureFile.GetPath("dmm/unique-constraint.dmm.sql"));
+        var expectedTables = ParseScript(expectedScript)
+            .Where(table => string.Equals(table.Name, "CUSTOMERS", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        const string missingUniqueScript = @"CREATE TABLE [dbo].[CUSTOMERS](
+    [ID] INT NOT NULL,
+    [EMAIL] NVARCHAR(128) NOT NULL,
+    CONSTRAINT [PK_Customers] PRIMARY KEY ([ID])
+);";
+
+        var actualTables = ParseScript(missingUniqueScript);
+        var comparison = comparator.Compare(expectedTables, actualTables);
+
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(
+            comparison.ModelDifferences,
+            diff => string.Equals(diff.Property, "Presence", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Index, "UQ_Customers_Email", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Expected, "Present", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Actual, "Missing", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Compare_detects_foreign_key_drift_when_feature_enabled()
     {
         var comparator = new DmmComparator(DmmComparisonFeatures.Columns | DmmComparisonFeatures.PrimaryKeys | DmmComparisonFeatures.ForeignKeys);

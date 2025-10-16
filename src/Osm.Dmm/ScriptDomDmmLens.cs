@@ -187,6 +187,9 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
                     accumulator.PrimaryKeyColumns.Clear();
                     accumulator.PrimaryKeyColumns.AddRange(unique.Columns.Select(static c => c.Column.MultiPartIdentifier.Identifiers.Last().Value));
                     break;
+                case UniqueConstraintDefinition unique:
+                    ProcessUniqueConstraint(accumulator, unique);
+                    break;
                 case DefaultConstraintDefinition defaultConstraint:
                     ApplyDefaultConstraint(accumulator, defaultConstraint);
                     break;
@@ -194,6 +197,29 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
                     ProcessForeignKey(accumulator, foreignKey);
                     break;
             }
+        }
+
+        private void ProcessUniqueConstraint(DmmTableAccumulator accumulator, UniqueConstraintDefinition constraint)
+        {
+            var name = constraint.ConstraintIdentifier?.Value;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return;
+            }
+
+            var index = accumulator.GetOrCreateIndex(name);
+            index.Reset();
+            index.IsUnique = true;
+            index.IsDisabled = constraint.IsEnforced.HasValue && !constraint.IsEnforced.Value;
+
+            foreach (var column in constraint.Columns)
+            {
+                var columnName = column.Column.MultiPartIdentifier.Identifiers.Last().Value;
+                var isDescending = column.SortOrder == SortOrder.Descending;
+                index.KeyColumns.Add(new DmmIndexColumn(columnName, isDescending));
+            }
+
+            ApplyOptions(index, constraint.IndexOptions);
         }
 
         private void ApplyDefaultConstraint(DmmTableAccumulator accumulator, DefaultConstraintDefinition constraint)
@@ -543,6 +569,7 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
             KeyColumns.Clear();
             IncludedColumns.Clear();
             FilterDefinition = null;
+            IsUnique = false;
             PadIndex = null;
             FillFactor = null;
             IgnoreDuplicateKey = null;
