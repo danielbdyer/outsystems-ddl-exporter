@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
@@ -14,6 +16,51 @@ namespace Osm.Pipeline.Tests;
 
 public class DmmComparePipelineTests
 {
+    [Fact]
+    public async Task HandleAsync_uses_fixture_profile_strategy_via_bootstrapper()
+    {
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        using var workspace = new TempDirectory();
+        var scriptPath = Path.Combine(workspace.Path, "baseline.dmm.sql");
+        await File.WriteAllTextAsync(scriptPath, EdgeCaseScript);
+
+        var bootstrapper = new FakePipelineBootstrapper(async (_, request, token) =>
+        {
+            Assert.Equal(profilePath, request.Telemetry.ProfilingStartMetadata["profilePath"]);
+            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            Assert.True(captureResult.IsSuccess);
+
+            var error = ValidationError.Create("test.bootstrap.stop", "Bootstrapper halted pipeline for verification.");
+            return Result<PipelineBootstrapContext>.Failure(error);
+        });
+
+        var request = new DmmComparePipelineRequest(
+            modelPath,
+            ModuleFilterOptions.IncludeAll,
+            profilePath,
+            scriptPath,
+            TighteningOptions.Default,
+            SupplementalModelOptions.Default,
+            new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
+            TypeMappingPolicy.LoadDefault(),
+            Path.Combine(workspace.Path, "dmm-diff.json"),
+            null);
+
+        var pipeline = new DmmComparePipeline(bootstrapper: bootstrapper);
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("test.bootstrap.stop", error.Code);
+        Assert.NotNull(bootstrapper.LastRequest);
+    }
+
     [Fact]
     public async Task HandleAsync_confirms_parity_and_writes_diff()
     {
@@ -114,6 +161,28 @@ public class DmmComparePipelineTests
             diff => string.Equals(diff.Property, "FilePresence", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Table, "Customer", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed class FakePipelineBootstrapper : IPipelineBootstrapper
+    {
+        private readonly Func<PipelineExecutionLogBuilder, PipelineBootstrapRequest, CancellationToken, Task<Result<PipelineBootstrapContext>>> _callback;
+
+        public FakePipelineBootstrapper(
+            Func<PipelineExecutionLogBuilder, PipelineBootstrapRequest, CancellationToken, Task<Result<PipelineBootstrapContext>>> callback)
+        {
+            _callback = callback;
+        }
+
+        public PipelineBootstrapRequest? LastRequest { get; private set; }
+
+        public Task<Result<PipelineBootstrapContext>> BootstrapAsync(
+            PipelineExecutionLogBuilder log,
+            PipelineBootstrapRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return _callback(log, request, cancellationToken);
+        }
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
