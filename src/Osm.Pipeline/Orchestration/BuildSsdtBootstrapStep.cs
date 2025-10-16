@@ -6,23 +6,21 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
-using Osm.Json;
 using Osm.Pipeline.Profiling;
-using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Orchestration;
 
 public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep
 {
     private readonly IPipelineBootstrapper _bootstrapper;
-    private readonly ProfileSnapshotDeserializer _profileSnapshotDeserializer;
+    private readonly IDataProfilerFactory _profilerFactory;
 
     public BuildSsdtBootstrapStep(
         IPipelineBootstrapper bootstrapper,
-        ProfileSnapshotDeserializer profileSnapshotDeserializer)
+        IDataProfilerFactory profilerFactory)
     {
         _bootstrapper = bootstrapper ?? throw new ArgumentNullException(nameof(bootstrapper));
-        _profileSnapshotDeserializer = profileSnapshotDeserializer ?? throw new ArgumentNullException(nameof(profileSnapshotDeserializer));
+        _profilerFactory = profilerFactory ?? throw new ArgumentNullException(nameof(profilerFactory));
     }
 
     public async Task<Result<BuildSsdtPipelineContext>> ExecuteAsync(
@@ -89,55 +87,12 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep
         OsmModel model,
         CancellationToken cancellationToken)
     {
-        if (string.Equals(request.ProfilerProvider, "sql", StringComparison.OrdinalIgnoreCase))
+        var profilerResult = _profilerFactory.Create(request, model);
+        if (profilerResult.IsFailure)
         {
-            if (string.IsNullOrWhiteSpace(request.SqlOptions.ConnectionString))
-            {
-                return ValidationError.Create(
-                    "pipeline.buildSsdt.sql.connectionString.missing",
-                    "Connection string is required when using the SQL profiler.");
-            }
-
-            var sampling = CreateSamplingOptions(request.SqlOptions.Sampling);
-            var connectionOptions = CreateConnectionOptions(request.SqlOptions.Authentication);
-            var profilerOptions = SqlProfilerOptions.Default with
-            {
-                CommandTimeoutSeconds = request.SqlOptions.CommandTimeoutSeconds,
-                Sampling = sampling
-            };
-
-            var sqlProfiler = new SqlDataProfiler(
-                new SqlConnectionFactory(request.SqlOptions.ConnectionString!, connectionOptions),
-                model,
-                profilerOptions);
-
-            return await sqlProfiler.CaptureAsync(cancellationToken).ConfigureAwait(false);
+            return Result<ProfileSnapshot>.Failure(profilerResult.Errors);
         }
 
-        if (string.IsNullOrWhiteSpace(request.ProfilePath))
-        {
-            return ValidationError.Create(
-                "pipeline.buildSsdt.profile.path.missing",
-                "Profile path is required when using the fixture profiler.");
-        }
-
-        var fixtureProfiler = new FixtureDataProfiler(request.ProfilePath!, _profileSnapshotDeserializer);
-        return await fixtureProfiler.CaptureAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static SqlSamplingOptions CreateSamplingOptions(SqlSamplingSettings configuration)
-    {
-        var threshold = configuration.RowSamplingThreshold ?? SqlSamplingOptions.Default.RowCountSamplingThreshold;
-        var sampleSize = configuration.SampleSize ?? SqlSamplingOptions.Default.SampleSize;
-        return new SqlSamplingOptions(threshold, sampleSize);
-    }
-
-    private static SqlConnectionOptions CreateConnectionOptions(SqlAuthenticationSettings configuration)
-    {
-        return new SqlConnectionOptions(
-            configuration.Method,
-            configuration.TrustServerCertificate,
-            configuration.ApplicationName,
-            configuration.AccessToken);
+        return await profilerResult.Value.CaptureAsync(cancellationToken).ConfigureAwait(false);
     }
 }

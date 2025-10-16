@@ -10,6 +10,8 @@ using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Json;
@@ -26,7 +28,7 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var context = new BuildSsdtPipelineContext(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var step = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), new ProfileSnapshotDeserializer());
+        var step = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
 
         var result = await step.ExecuteAsync(context);
 
@@ -94,7 +96,7 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var context = new BuildSsdtPipelineContext(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), new ProfileSnapshotDeserializer());
+        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
         await bootstrapStep.ExecuteAsync(context);
         var step = new BuildSsdtPolicyDecisionStep(new TighteningPolicy());
 
@@ -113,7 +115,7 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var context = new BuildSsdtPipelineContext(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), new ProfileSnapshotDeserializer());
+        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
         await bootstrapStep.ExecuteAsync(context);
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy());
         await policyStep.ExecuteAsync(context);
@@ -138,7 +140,7 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
         var context = new BuildSsdtPipelineContext(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), new ProfileSnapshotDeserializer());
+        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
         await bootstrapStep.ExecuteAsync(context);
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy());
         await policyStep.ExecuteAsync(context);
@@ -180,6 +182,13 @@ public class BuildSsdtPipelineStepTests
             cacheOptions,
             staticDataProvider,
             null);
+    }
+
+    private static IDataProfilerFactory CreateProfilerFactory()
+    {
+        return new DataProfilerFactory(
+            new ProfileSnapshotDeserializer(),
+            static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
     }
 
     private sealed class FakeEvidenceCacheService : IEvidenceCacheService
