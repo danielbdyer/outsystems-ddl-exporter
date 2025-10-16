@@ -191,7 +191,7 @@ public sealed record OutsystemsForeignKeyAttributeJsonRow(int AttrId, string Con
 
 public sealed record OutsystemsTriggerRow(int EntityId, string TriggerName, bool IsDisabled, string TriggerDefinition);
 
-public sealed record OutsystemsAttributeJsonRow(int EntityId, string AttributesJson);
+public sealed record OutsystemsAttributeJsonRow(int EntityId, string? AttributesJson);
 
 public sealed record OutsystemsRelationshipJsonRow(int EntityId, string RelationshipsJson);
 

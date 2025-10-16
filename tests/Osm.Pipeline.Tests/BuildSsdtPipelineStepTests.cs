@@ -12,6 +12,7 @@ using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
+using Osm.Pipeline.SqlExtraction;
 using Osm.Json;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -200,7 +201,8 @@ public class BuildSsdtPipelineStepTests
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicy.LoadDefault(),
             cacheOptions,

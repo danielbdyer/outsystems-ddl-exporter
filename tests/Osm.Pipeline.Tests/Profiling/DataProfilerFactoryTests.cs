@@ -4,6 +4,7 @@ using Osm.Domain.Model;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
+using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Json;
@@ -18,7 +19,8 @@ public sealed class DataProfilerFactoryTests
         ConnectionString: "Server=(local);Database=Sample;Trusted_Connection=True;",
         CommandTimeoutSeconds: null,
         Sampling: new SqlSamplingSettings(null, null),
-        Authentication: new SqlAuthenticationSettings(null, null, null, null));
+        Authentication: new SqlAuthenticationSettings(null, null, null, null),
+        MetadataContract: MetadataContractOverrides.Strict);
 
     [Fact]
     public void Create_sql_provider_returns_sql_profiler()
@@ -33,7 +35,8 @@ public sealed class DataProfilerFactoryTests
                 SqlAuthenticationMethod.ActiveDirectoryPassword,
                 TrustServerCertificate: true,
                 ApplicationName: "Profiler",
-                AccessToken: "token"));
+                AccessToken: "token"),
+            MetadataContract: MetadataContractOverrides.Strict);
         var request = CreateRequest("sql", profilePath: null, sqlOptions);
 
         var result = factory.Create(request, Model);
@@ -68,7 +71,8 @@ public sealed class DataProfilerFactoryTests
             ConnectionString: null,
             CommandTimeoutSeconds: null,
             Sampling: new SqlSamplingSettings(null, null),
-            Authentication: new SqlAuthenticationSettings(null, null, null, null));
+            Authentication: new SqlAuthenticationSettings(null, null, null, null),
+            MetadataContract: MetadataContractOverrides.Strict);
         var request = CreateRequest("sql", profilePath: null, sqlOptions);
 
         var result = factory.Create(request, Model);

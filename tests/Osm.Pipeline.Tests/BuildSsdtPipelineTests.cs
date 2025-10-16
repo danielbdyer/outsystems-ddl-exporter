@@ -9,6 +9,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.SqlExtraction;
 using Osm.Validation.Tightening;
 using Osm.Smo;
 using Tests.Support;
@@ -33,7 +34,8 @@ public class BuildSsdtPipelineTests
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict),
             SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicy: TypeMappingPolicy.LoadDefault(),
             EvidenceCache: null,
@@ -63,7 +65,8 @@ public class BuildSsdtPipelineTests
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict),
             SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicy: TypeMappingPolicy.LoadDefault(),
             EvidenceCache: null,
@@ -108,7 +111,8 @@ public class BuildSsdtPipelineTests
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicy.LoadDefault(),
             null,
@@ -154,7 +158,8 @@ public class BuildSsdtPipelineTests
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicy.LoadDefault(),
             null,
@@ -190,7 +195,8 @@ public class BuildSsdtPipelineTests
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicy.LoadDefault(),
             new EvidenceCachePipelineOptions(

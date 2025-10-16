@@ -20,115 +20,148 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
     private readonly SqlExecutionOptions _options;
     private readonly ILogger<SqlClientOutsystemsMetadataReader> _logger;
     private readonly IDbCommandExecutor _commandExecutor;
-
-    private static readonly IReadOnlyList<IResultSetDefinition> ResultSets = new IResultSetDefinition[]
-    {
-        ResultSetDefinitionFactory.Create(
-            "Modules",
-            ResultSetReader<OutsystemsModuleRow>.Create(MetadataSchemas.Modules.MapRow),
-            static (accumulator, rows) => accumulator.SetModules(rows)),
-        ResultSetDefinitionFactory.Create(
-            "Entities",
-            ResultSetReader<OutsystemsEntityRow>.Create(MetadataSchemas.Entities.MapRow),
-            static (accumulator, rows) => accumulator.SetEntities(rows)),
-        ResultSetDefinitionFactory.Create(
-            "Attributes",
-            ResultSetReader<OutsystemsAttributeRow>.Create(MetadataSchemas.Attributes.MapRow),
-            static (accumulator, rows) => accumulator.SetAttributes(rows)),
-        ResultSetDefinitionFactory.Create(
-            "References",
-            ResultSetReader<OutsystemsReferenceRow>.Create(MetadataSchemas.References.MapRow),
-            static (accumulator, rows) => accumulator.SetReferences(rows)),
-        ResultSetDefinitionFactory.Create(
-            "PhysicalTables",
-            ResultSetReader<OutsystemsPhysicalTableRow>.Create(MetadataSchemas.PhysicalTables.MapRow),
-            static (accumulator, rows) => accumulator.SetPhysicalTables(rows)),
-        ResultSetDefinitionFactory.Create(
-            "ColumnReality",
-            ResultSetReader<OutsystemsColumnRealityRow>.Create(MetadataSchemas.ColumnReality.MapRow),
-            static (accumulator, rows) => accumulator.SetColumnReality(rows)),
-        ResultSetDefinitionFactory.Create(
-            "ColumnChecks",
-            ResultSetReader<OutsystemsColumnCheckRow>.Create(MetadataSchemas.ColumnChecks.MapRow),
-            static (accumulator, rows) => accumulator.SetColumnChecks(rows)),
-        ResultSetDefinitionFactory.Create(
-            "ColumnCheckJson",
-            ResultSetReader<OutsystemsColumnCheckJsonRow>.Create(MetadataSchemas.ColumnCheckJson.MapRow),
-            static (accumulator, rows) => accumulator.SetColumnCheckJson(rows)),
-        ResultSetDefinitionFactory.Create(
-            "PhysicalColumnsPresent",
-            ResultSetReader<OutsystemsPhysicalColumnPresenceRow>.Create(MetadataSchemas.PhysicalColumnsPresent.MapRow),
-            static (accumulator, rows) => accumulator.SetPhysicalColumnsPresent(rows)),
-        ResultSetDefinitionFactory.Create(
-            "Indexes",
-            ResultSetReader<OutsystemsIndexRow>.Create(MetadataSchemas.Indexes.MapRow),
-            static (accumulator, rows) => accumulator.SetIndexes(rows)),
-        ResultSetDefinitionFactory.Create(
-            "IndexColumns",
-            ResultSetReader<OutsystemsIndexColumnRow>.Create(MetadataSchemas.IndexColumns.MapRow),
-            static (accumulator, rows) => accumulator.SetIndexColumns(rows)),
-        ResultSetDefinitionFactory.Create(
-            "ForeignKeys",
-            ResultSetReader<OutsystemsForeignKeyRow>.Create(MetadataSchemas.ForeignKeys.MapRow),
-            static (accumulator, rows) => accumulator.SetForeignKeys(rows)),
-        ResultSetDefinitionFactory.Create(
-            "ForeignKeyColumns",
-            ResultSetReader<OutsystemsForeignKeyColumnRow>.Create(MetadataSchemas.ForeignKeyColumns.MapRow),
-            static (accumulator, rows) => accumulator.SetForeignKeyColumns(rows)),
-        ResultSetDefinitionFactory.Create(
-            "ForeignKeyAttrMap",
-            ResultSetReader<OutsystemsForeignKeyAttrMapRow>.Create(MetadataSchemas.ForeignKeyAttributeMap.MapRow),
-            static (accumulator, rows) => accumulator.SetForeignKeyAttributeMap(rows)),
-        ResultSetDefinitionFactory.Create(
-            "AttributeHasFk",
-            ResultSetReader<OutsystemsAttributeHasFkRow>.Create(MetadataSchemas.AttributeHasForeignKey.MapRow),
-            static (accumulator, rows) => accumulator.SetAttributeForeignKeys(rows)),
-        ResultSetDefinitionFactory.Create(
-            "ForeignKeyColumnsJson",
-            ResultSetReader<OutsystemsForeignKeyColumnsJsonRow>.Create(MetadataSchemas.ForeignKeyColumnsJson.MapRow),
-            static (accumulator, rows) => accumulator.SetForeignKeyColumnsJson(rows)),
-        ResultSetDefinitionFactory.Create(
-            "ForeignKeyAttributeJson",
-            ResultSetReader<OutsystemsForeignKeyAttributeJsonRow>.Create(MetadataSchemas.ForeignKeyAttributeJson.MapRow),
-            static (accumulator, rows) => accumulator.SetForeignKeyAttributeJson(rows)),
-        ResultSetDefinitionFactory.Create(
-            "Triggers",
-            ResultSetReader<OutsystemsTriggerRow>.Create(MetadataSchemas.Triggers.MapRow),
-            static (accumulator, rows) => accumulator.SetTriggers(rows)),
-        ResultSetDefinitionFactory.Create(
-            "AttributeJson",
-            ResultSetReader<OutsystemsAttributeJsonRow>.Create(MetadataSchemas.AttributeJson.MapRow),
-            static (accumulator, rows) => accumulator.SetAttributeJson(rows)),
-        ResultSetDefinitionFactory.Create(
-            "RelationshipJson",
-            ResultSetReader<OutsystemsRelationshipJsonRow>.Create(MetadataSchemas.RelationshipJson.MapRow),
-            static (accumulator, rows) => accumulator.SetRelationshipJson(rows)),
-        ResultSetDefinitionFactory.Create(
-            "IndexJson",
-            ResultSetReader<OutsystemsIndexJsonRow>.Create(MetadataSchemas.IndexJson.MapRow),
-            static (accumulator, rows) => accumulator.SetIndexJson(rows)),
-        ResultSetDefinitionFactory.Create(
-            "TriggerJson",
-            ResultSetReader<OutsystemsTriggerJsonRow>.Create(MetadataSchemas.TriggerJson.MapRow),
-            static (accumulator, rows) => accumulator.SetTriggerJson(rows)),
-        ResultSetDefinitionFactory.Create(
-            "ModuleJson",
-            ResultSetReader<OutsystemsModuleJsonRow>.Create(MetadataSchemas.ModuleJson.MapRow),
-            static (accumulator, rows) => accumulator.SetModuleJson(rows)),
-    };
+    private readonly MetadataContractOverrides _contractOverrides;
+    private readonly IReadOnlyList<IResultSetDefinition> _resultSets;
 
     public SqlClientOutsystemsMetadataReader(
         IDbConnectionFactory connectionFactory,
         IAdvancedSqlScriptProvider scriptProvider,
         SqlExecutionOptions? options = null,
         ILogger<SqlClientOutsystemsMetadataReader>? logger = null,
-        IDbCommandExecutor? commandExecutor = null)
+        IDbCommandExecutor? commandExecutor = null,
+        MetadataContractOverrides? contractOverrides = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _scriptProvider = scriptProvider ?? throw new ArgumentNullException(nameof(scriptProvider));
         _options = options ?? SqlExecutionOptions.Default;
         _logger = logger ?? NullLogger<SqlClientOutsystemsMetadataReader>.Instance;
         _commandExecutor = commandExecutor ?? DbCommandExecutor.Instance;
+        _contractOverrides = contractOverrides ?? MetadataContractOverrides.Strict;
+        _resultSets = CreateResultSets();
+
+        if (_contractOverrides.HasOverrides)
+        {
+            foreach (var pair in _contractOverrides.OptionalColumns)
+            {
+                var columnList = string.Join(", ", pair.Value);
+                _logger.LogInformation(
+                    "Metadata contract override active for result set {ResultSet}. Optional columns: {Columns}.",
+                    pair.Key,
+                    columnList);
+            }
+        }
+    }
+
+    private IReadOnlyList<IResultSetDefinition> CreateResultSets()
+        => new IResultSetDefinition[]
+        {
+            ResultSetDefinitionFactory.Create(
+                "Modules",
+                ResultSetReader<OutsystemsModuleRow>.Create(MetadataSchemas.Modules.MapRow),
+                static (accumulator, rows) => accumulator.SetModules(rows)),
+            ResultSetDefinitionFactory.Create(
+                "Entities",
+                ResultSetReader<OutsystemsEntityRow>.Create(MetadataSchemas.Entities.MapRow),
+                static (accumulator, rows) => accumulator.SetEntities(rows)),
+            ResultSetDefinitionFactory.Create(
+                "Attributes",
+                ResultSetReader<OutsystemsAttributeRow>.Create(MetadataSchemas.Attributes.MapRow),
+                static (accumulator, rows) => accumulator.SetAttributes(rows)),
+            ResultSetDefinitionFactory.Create(
+                "References",
+                ResultSetReader<OutsystemsReferenceRow>.Create(MetadataSchemas.References.MapRow),
+                static (accumulator, rows) => accumulator.SetReferences(rows)),
+            ResultSetDefinitionFactory.Create(
+                "PhysicalTables",
+                ResultSetReader<OutsystemsPhysicalTableRow>.Create(MetadataSchemas.PhysicalTables.MapRow),
+                static (accumulator, rows) => accumulator.SetPhysicalTables(rows)),
+            ResultSetDefinitionFactory.Create(
+                "ColumnReality",
+                ResultSetReader<OutsystemsColumnRealityRow>.Create(MetadataSchemas.ColumnReality.MapRow),
+                static (accumulator, rows) => accumulator.SetColumnReality(rows)),
+            ResultSetDefinitionFactory.Create(
+                "ColumnChecks",
+                ResultSetReader<OutsystemsColumnCheckRow>.Create(MetadataSchemas.ColumnChecks.MapRow),
+                static (accumulator, rows) => accumulator.SetColumnChecks(rows)),
+            ResultSetDefinitionFactory.Create(
+                "ColumnCheckJson",
+                ResultSetReader<OutsystemsColumnCheckJsonRow>.Create(MetadataSchemas.ColumnCheckJson.MapRow),
+                static (accumulator, rows) => accumulator.SetColumnCheckJson(rows)),
+            ResultSetDefinitionFactory.Create(
+                "PhysicalColumnsPresent",
+                ResultSetReader<OutsystemsPhysicalColumnPresenceRow>.Create(MetadataSchemas.PhysicalColumnsPresent.MapRow),
+                static (accumulator, rows) => accumulator.SetPhysicalColumnsPresent(rows)),
+            ResultSetDefinitionFactory.Create(
+                "Indexes",
+                ResultSetReader<OutsystemsIndexRow>.Create(MetadataSchemas.Indexes.MapRow),
+                static (accumulator, rows) => accumulator.SetIndexes(rows)),
+            ResultSetDefinitionFactory.Create(
+                "IndexColumns",
+                ResultSetReader<OutsystemsIndexColumnRow>.Create(MetadataSchemas.IndexColumns.MapRow),
+                static (accumulator, rows) => accumulator.SetIndexColumns(rows)),
+            ResultSetDefinitionFactory.Create(
+                "ForeignKeys",
+                ResultSetReader<OutsystemsForeignKeyRow>.Create(MetadataSchemas.ForeignKeys.MapRow),
+                static (accumulator, rows) => accumulator.SetForeignKeys(rows)),
+            ResultSetDefinitionFactory.Create(
+                "ForeignKeyColumns",
+                ResultSetReader<OutsystemsForeignKeyColumnRow>.Create(MetadataSchemas.ForeignKeyColumns.MapRow),
+                static (accumulator, rows) => accumulator.SetForeignKeyColumns(rows)),
+            ResultSetDefinitionFactory.Create(
+                "ForeignKeyAttrMap",
+                ResultSetReader<OutsystemsForeignKeyAttrMapRow>.Create(MetadataSchemas.ForeignKeyAttributeMap.MapRow),
+                static (accumulator, rows) => accumulator.SetForeignKeyAttributeMap(rows)),
+            ResultSetDefinitionFactory.Create(
+                "AttributeHasFk",
+                ResultSetReader<OutsystemsAttributeHasFkRow>.Create(MetadataSchemas.AttributeHasForeignKey.MapRow),
+                static (accumulator, rows) => accumulator.SetAttributeForeignKeys(rows)),
+            ResultSetDefinitionFactory.Create(
+                "ForeignKeyColumnsJson",
+                ResultSetReader<OutsystemsForeignKeyColumnsJsonRow>.Create(MetadataSchemas.ForeignKeyColumnsJson.MapRow),
+                static (accumulator, rows) => accumulator.SetForeignKeyColumnsJson(rows)),
+            ResultSetDefinitionFactory.Create(
+                "ForeignKeyAttributeJson",
+                ResultSetReader<OutsystemsForeignKeyAttributeJsonRow>.Create(MetadataSchemas.ForeignKeyAttributeJson.MapRow),
+                static (accumulator, rows) => accumulator.SetForeignKeyAttributeJson(rows)),
+            ResultSetDefinitionFactory.Create(
+                "Triggers",
+                ResultSetReader<OutsystemsTriggerRow>.Create(MetadataSchemas.Triggers.MapRow),
+                static (accumulator, rows) => accumulator.SetTriggers(rows)),
+            ResultSetDefinitionFactory.Create(
+                "AttributeJson",
+                ResultSetReader<OutsystemsAttributeJsonRow>.Create(MapAttributeJson),
+                static (accumulator, rows) => accumulator.SetAttributeJson(rows)),
+            ResultSetDefinitionFactory.Create(
+                "RelationshipJson",
+                ResultSetReader<OutsystemsRelationshipJsonRow>.Create(MetadataSchemas.RelationshipJson.MapRow),
+                static (accumulator, rows) => accumulator.SetRelationshipJson(rows)),
+            ResultSetDefinitionFactory.Create(
+                "IndexJson",
+                ResultSetReader<OutsystemsIndexJsonRow>.Create(MetadataSchemas.IndexJson.MapRow),
+                static (accumulator, rows) => accumulator.SetIndexJson(rows)),
+            ResultSetDefinitionFactory.Create(
+                "TriggerJson",
+                ResultSetReader<OutsystemsTriggerJsonRow>.Create(MetadataSchemas.TriggerJson.MapRow),
+                static (accumulator, rows) => accumulator.SetTriggerJson(rows)),
+            ResultSetDefinitionFactory.Create(
+                "ModuleJson",
+                ResultSetReader<OutsystemsModuleJsonRow>.Create(MetadataSchemas.ModuleJson.MapRow),
+                static (accumulator, rows) => accumulator.SetModuleJson(rows)),
+        };
+
+    private OutsystemsAttributeJsonRow MapAttributeJson(DbRow row)
+    {
+        var allowNull = _contractOverrides.IsColumnOptional("AttributeJson", "AttributesJson");
+        var record = MetadataSchemas.AttributeJson.MapRow(row, allowNull);
+
+        if (allowNull && record.AttributesJson is null)
+        {
+            _logger.LogDebug(
+                "AttributeJson result set row {RowIndex} returned NULL for AttributesJson and was accepted due to contract overrides.",
+                row.RowIndex);
+        }
+
+        return record;
     }
 
     public async Task<Result<OutsystemsMetadataSnapshot>> ReadAsync(AdvancedSqlRequest request, CancellationToken cancellationToken = default)
@@ -174,16 +207,16 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
 
             var accumulator = new MetadataAccumulator();
 
-            for (var i = 0; i < ResultSets.Count; i++)
+            for (var i = 0; i < _resultSets.Count; i++)
             {
-                var definition = ResultSets[i];
+                var definition = _resultSets[i];
                 var rowCount = await definition
                     .ReadAsync(reader, cancellationToken, accumulator)
                     .ConfigureAwait(false);
 
-                if (i < ResultSets.Count - 1)
+                if (i < _resultSets.Count - 1)
                 {
-                    var nextDefinition = ResultSets[i + 1];
+                    var nextDefinition = _resultSets[i + 1];
                     await EnsureNextResultSetAsync(
                         reader,
                         cancellationToken,
@@ -688,11 +721,19 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
         internal static class AttributeJson
         {
             private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
-            private static readonly ColumnDefinition<string> AttributesJson = Column.String(1, "AttributesJson");
+            private static readonly ColumnDefinition<string> AttributesJsonRequired = Column.String(1, "AttributesJson");
+            private static readonly ColumnDefinition<string?> AttributesJsonOptional = Column.StringOrNull(1, "AttributesJson");
 
-            public static OutsystemsAttributeJsonRow MapRow(DbRow row) => new(
-                EntityId.Read(row),
-                AttributesJson.Read(row));
+            public static OutsystemsAttributeJsonRow MapRow(DbRow row, bool allowNull = false)
+            {
+                var attributesJson = allowNull
+                    ? AttributesJsonOptional.Read(row)
+                    : AttributesJsonRequired.Read(row);
+
+                return new OutsystemsAttributeJsonRow(
+                    EntityId.Read(row),
+                    attributesJson);
+            }
         }
 
         internal static class RelationshipJson
