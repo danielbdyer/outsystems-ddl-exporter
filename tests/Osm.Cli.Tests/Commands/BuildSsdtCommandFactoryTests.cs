@@ -281,6 +281,7 @@ public class BuildSsdtCommandFactoryTests
 
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
+                ImmutableArray<ProfilingInsight>.Empty,
                 report,
                 manifest,
                 "decision.log",

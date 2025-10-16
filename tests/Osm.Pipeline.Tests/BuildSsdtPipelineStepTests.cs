@@ -36,6 +36,7 @@ public class BuildSsdtPipelineStepTests
         Assert.NotNull(state.Bootstrap);
         Assert.NotNull(state.Bootstrap.Profile);
         Assert.NotNull(state.Bootstrap.FilteredModel);
+        Assert.False(state.Bootstrap.Insights.IsDefault);
         var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "request.received");
         Assert.Contains(log.Entries, entry => entry.Step == "profiling.capture.completed");
