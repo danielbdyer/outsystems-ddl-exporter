@@ -87,37 +87,20 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         var log = new PipelineExecutionLogBuilder(_timeProvider);
         var initialized = new PipelineInitialized(request, log);
 
-        var bootstrapResult = await _bootstrapStep.ExecuteAsync(initialized, cancellationToken).ConfigureAwait(false);
-        if (bootstrapResult.IsFailure)
+        var finalStateResult = await _bootstrapStep
+            .ExecuteAsync(initialized, cancellationToken)
+            .BindAsync((bootstrap, token) => _evidenceCacheStep.ExecuteAsync(bootstrap, token), cancellationToken)
+            .BindAsync((evidence, token) => _policyStep.ExecuteAsync(evidence, token), cancellationToken)
+            .BindAsync((decisions, token) => _emissionStep.ExecuteAsync(decisions, token), cancellationToken)
+            .BindAsync((emission, token) => _staticSeedStep.ExecuteAsync(emission, token), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (finalStateResult.IsFailure)
         {
-            return Result<BuildSsdtPipelineResult>.Failure(bootstrapResult.Errors);
+            return Result<BuildSsdtPipelineResult>.Failure(finalStateResult.Errors);
         }
 
-        var evidenceResult = await _evidenceCacheStep.ExecuteAsync(bootstrapResult.Value, cancellationToken).ConfigureAwait(false);
-        if (evidenceResult.IsFailure)
-        {
-            return Result<BuildSsdtPipelineResult>.Failure(evidenceResult.Errors);
-        }
-
-        var decisionsResult = await _policyStep.ExecuteAsync(evidenceResult.Value, cancellationToken).ConfigureAwait(false);
-        if (decisionsResult.IsFailure)
-        {
-            return Result<BuildSsdtPipelineResult>.Failure(decisionsResult.Errors);
-        }
-
-        var emissionResult = await _emissionStep.ExecuteAsync(decisionsResult.Value, cancellationToken).ConfigureAwait(false);
-        if (emissionResult.IsFailure)
-        {
-            return Result<BuildSsdtPipelineResult>.Failure(emissionResult.Errors);
-        }
-
-        var seedsResult = await _staticSeedStep.ExecuteAsync(emissionResult.Value, cancellationToken).ConfigureAwait(false);
-        if (seedsResult.IsFailure)
-        {
-            return Result<BuildSsdtPipelineResult>.Failure(seedsResult.Errors);
-        }
-
-        var finalState = seedsResult.Value;
+        var finalState = finalStateResult.Value;
 
         finalState.Log.Record(
             "pipeline.completed",

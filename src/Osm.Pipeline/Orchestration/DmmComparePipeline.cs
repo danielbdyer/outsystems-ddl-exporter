@@ -133,29 +133,25 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             (_, token) => new FixtureDataProfiler(request.ProfilePath, _profileSnapshotDeserializer)
                 .CaptureAsync(token));
 
-        var bootstrapResult = await _bootstrapper
+        var bootstrapAndCacheResult = await _bootstrapper
             .BootstrapAsync(log, bootstrapRequest, cancellationToken)
+            .BindAsync(
+                (bootstrapContext, token) => _evidenceCacheCoordinator
+                    .CacheAsync(request.EvidenceCache, log, token)
+                    .MapAsync(cache => (bootstrapContext, cache)),
+                cancellationToken)
             .ConfigureAwait(false);
-        if (bootstrapResult.IsFailure)
+
+        if (bootstrapAndCacheResult.IsFailure)
         {
-            return Result<DmmComparePipelineResult>.Failure(bootstrapResult.Errors);
+            return Result<DmmComparePipelineResult>.Failure(bootstrapAndCacheResult.Errors);
         }
 
-        var bootstrapContext = bootstrapResult.Value;
+        var (bootstrapContext, evidenceCache) = bootstrapAndCacheResult.Value;
         var filteredModel = bootstrapContext.FilteredModel;
         var supplementalEntities = bootstrapContext.SupplementalEntities;
         var profile = bootstrapContext.Profile;
         var pipelineWarnings = bootstrapContext.Warnings;
-
-        var cacheResult = await _evidenceCacheCoordinator
-            .CacheAsync(request.EvidenceCache, log, cancellationToken)
-            .ConfigureAwait(false);
-        if (cacheResult.IsFailure)
-        {
-            return Result<DmmComparePipelineResult>.Failure(cacheResult.Errors);
-        }
-
-        var evidenceCache = cacheResult.Value;
 
         var decisions = _tighteningPolicy.Decide(filteredModel, profile, request.TighteningOptions);
         var smoModel = _smoModelFactory.Create(
