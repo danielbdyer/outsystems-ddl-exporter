@@ -19,6 +19,7 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
     private readonly IAdvancedSqlScriptProvider _scriptProvider;
     private readonly SqlExecutionOptions _options;
     private readonly ILogger<SqlClientOutsystemsMetadataReader> _logger;
+    private readonly IDbCommandExecutor _commandExecutor;
 
     private static readonly IReadOnlyList<IResultSetDefinition> ResultSets = new IResultSetDefinition[]
     {
@@ -257,12 +258,14 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
         IDbConnectionFactory connectionFactory,
         IAdvancedSqlScriptProvider scriptProvider,
         SqlExecutionOptions? options = null,
-        ILogger<SqlClientOutsystemsMetadataReader>? logger = null)
+        ILogger<SqlClientOutsystemsMetadataReader>? logger = null,
+        IDbCommandExecutor? commandExecutor = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _scriptProvider = scriptProvider ?? throw new ArgumentNullException(nameof(scriptProvider));
         _options = options ?? SqlExecutionOptions.Default;
         _logger = logger ?? NullLogger<SqlClientOutsystemsMetadataReader>.Instance;
+        _commandExecutor = commandExecutor ?? DbCommandExecutor.Instance;
     }
 
     public async Task<Result<OutsystemsMetadataSnapshot>> ReadAsync(AdvancedSqlRequest request, CancellationToken cancellationToken = default)
@@ -302,8 +305,8 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
             var databaseName = connection.Database;
 
             await using var command = CreateCommand(connection, script, moduleCsv, request, _options);
-            await using var reader = await command
-                .ExecuteReaderAsync(CommandBehavior.SequentialAccess | CommandBehavior.SingleResult, cancellationToken)
+            await using var reader = await _commandExecutor
+                .ExecuteReaderAsync(command, CommandBehavior.SequentialAccess, cancellationToken)
                 .ConfigureAwait(false);
 
             var accumulator = new MetadataAccumulator();
