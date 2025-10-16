@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Osm.Domain.Abstractions;
 
 namespace Osm.Pipeline.Mediation;
@@ -11,14 +12,14 @@ namespace Osm.Pipeline.Mediation;
 /// </summary>
 public sealed class CommandDispatcher : ICommandDispatcher
 {
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
 
-    public CommandDispatcher(IServiceProvider serviceProvider)
+    public CommandDispatcher(IServiceScopeFactory serviceScopeFactory)
     {
-        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+        _serviceScopeFactory = serviceScopeFactory ?? throw new ArgumentNullException(nameof(serviceScopeFactory));
     }
 
-    public Task<Result<TResponse>> DispatchAsync<TCommand, TResponse>(
+    public async Task<Result<TResponse>> DispatchAsync<TCommand, TResponse>(
         TCommand command,
         CancellationToken cancellationToken = default)
         where TCommand : ICommand<TResponse>
@@ -28,12 +29,14 @@ public sealed class CommandDispatcher : ICommandDispatcher
             throw new ArgumentNullException(nameof(command));
         }
 
-        var handler = (ICommandHandler<TCommand, TResponse>?)_serviceProvider.GetService(typeof(ICommandHandler<TCommand, TResponse>));
+        using var scope = _serviceScopeFactory.CreateScope();
+        var handler = scope.ServiceProvider.GetService<ICommandHandler<TCommand, TResponse>>();
         if (handler is null)
         {
             throw new InvalidOperationException($"No handler registered for command type {typeof(TCommand).FullName}.");
         }
 
-        return handler.HandleAsync(command, cancellationToken);
+        var result = await handler.HandleAsync(command, cancellationToken).ConfigureAwait(false);
+        return result;
     }
 }
