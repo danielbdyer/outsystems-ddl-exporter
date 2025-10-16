@@ -1109,4 +1109,83 @@ public class ModelJsonDeserializerTests
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, e => e.Code == "json.parse.failed");
     }
+
+    [Fact]
+    public void Deserialize_ShouldIncludeJsonPath_WhenAttributeNameInvalid()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "db_schema": "dbo",
+                  "isActive": true,
+                  "attributes": [
+                    {
+                      "name": "",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("Path: $['modules'][0]['entities'][0]['attributes'][0]['name']", error.Message);
+    }
+
+    [Fact]
+    public void Deserialize_ShouldIncludeJsonPath_WhenAttributesCollectionMissing()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "db_schema": "dbo",
+                  "isActive": true,
+                  "attributes": null
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("entity.attributes.missing", error.Code);
+        Assert.Contains("Path: $['modules'][0]['entities'][0]['attributes']", error.Message);
+    }
 }

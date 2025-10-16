@@ -102,20 +102,24 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             }
 
             var mapperContext = new DocumentMapperContext(options, warnings, PayloadSerializerOptions);
-            var extendedPropertyMapper = new ExtendedPropertyDocumentMapper();
-            var attributeMapper = new AttributeDocumentMapper(extendedPropertyMapper);
+            var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(mapperContext);
+            var attributeMapper = new AttributeDocumentMapper(mapperContext, extendedPropertyMapper);
             var entityMapper = new EntityDocumentMapper(mapperContext, attributeMapper, extendedPropertyMapper);
             var moduleMapper = new ModuleDocumentMapper(mapperContext, entityMapper, extendedPropertyMapper);
-            var sequenceMapper = new SequenceDocumentMapper(extendedPropertyMapper);
+            var sequenceMapper = new SequenceDocumentMapper(mapperContext, extendedPropertyMapper);
+            var rootPath = DocumentPathContext.Root;
 
             var modules = model.Modules ?? Array.Empty<ModuleDocument>();
             var moduleResults = new List<ModuleModel>(modules.Length);
-            foreach (var module in modules)
+            for (var moduleIndex = 0; moduleIndex < modules.Length; moduleIndex++)
             {
+                var module = modules[moduleIndex];
+                var modulePath = rootPath.Property("modules").Index(moduleIndex);
                 var moduleNameResult = ModuleName.Create(module.Name);
                 if (moduleNameResult.IsFailure)
                 {
-                    return Result<OsmModel>.Failure(moduleNameResult.Errors);
+                    return Result<OsmModel>.Failure(
+                        mapperContext.WithPath(modulePath.Property("name"), moduleNameResult.Errors));
                 }
 
                 if (moduleMapper.ShouldSkipInactiveModule(module))
@@ -123,7 +127,7 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
                     continue;
                 }
 
-                var moduleResult = moduleMapper.Map(module, moduleNameResult.Value);
+                var moduleResult = moduleMapper.Map(module, moduleNameResult.Value, modulePath);
                 if (moduleResult.IsFailure)
                 {
                     return Result<OsmModel>.Failure(moduleResult.Errors);
@@ -135,13 +139,15 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
                 }
             }
 
-            var sequencesResult = sequenceMapper.Map(model.Sequences);
+            var sequencesResult = sequenceMapper.Map(model.Sequences, rootPath.Property("sequences"));
             if (sequencesResult.IsFailure)
             {
                 return Result<OsmModel>.Failure(sequencesResult.Errors);
             }
 
-            var propertyResult = extendedPropertyMapper.Map(model.ExtendedProperties);
+            var propertyResult = extendedPropertyMapper.Map(
+                model.ExtendedProperties,
+                rootPath.Property("extendedProperties"));
             if (propertyResult.IsFailure)
             {
                 return Result<OsmModel>.Failure(propertyResult.Errors);

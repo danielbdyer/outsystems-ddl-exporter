@@ -37,12 +37,13 @@ internal sealed class EntityDocumentMapper
         _extendedPropertyMapper = extendedPropertyMapper;
     }
 
-    public Result<EntityModel> Map(ModuleName moduleName, EntityDocument doc)
+    public Result<EntityModel> Map(ModuleName moduleName, EntityDocument doc, DocumentPathContext path)
     {
         var logicalNameResult = EntityName.Create(doc.Name);
         if (logicalNameResult.IsFailure)
         {
-            return Result<EntityModel>.Failure(logicalNameResult.Errors);
+            return Result<EntityModel>.Failure(
+                _context.WithPath(path.Property("name"), logicalNameResult.Errors));
         }
 
         var moduleNameValue = moduleName.Value;
@@ -58,15 +59,16 @@ internal sealed class EntityDocumentMapper
             {
                 serializedPayload ??= _context.SerializeEntityDocument(doc);
                 return Result<EntityModel>.Failure(
-                    ValidationError.Create(
+                    _context.CreateError(
                         "entity.schema.missing",
-                        $"Entity '{moduleNameValue}::{entityNameValue}' is missing a schema name. Raw payload: {serializedPayload}"));
+                        $"Entity '{moduleNameValue}::{entityNameValue}' is missing a schema name. Raw payload: {serializedPayload}",
+                        path.Property("schema")));
             }
 
             schema = SchemaName.Create(_context.Options.MissingSchemaFallback).Value;
             serializedPayload ??= _context.SerializeEntityDocument(doc);
             _context.AddWarning(
-                $"Entity '{moduleNameValue}::{entityNameValue}' missing schema; using '{_context.Options.MissingSchemaFallback}'. Raw payload: {serializedPayload}");
+                $"Entity '{moduleNameValue}::{entityNameValue}' missing schema; using '{_context.Options.MissingSchemaFallback}'. Raw payload: {serializedPayload} (Path: {path.Property("schema")})");
         }
         else
         {
@@ -76,14 +78,15 @@ internal sealed class EntityDocumentMapper
                 if (!allowMissingSchema)
                 {
                     serializedPayload ??= _context.SerializeEntityDocument(doc);
+                    var errorsWithPath = _context.WithPath(path.Property("schema"), schemaResult.Errors);
                     return Result<EntityModel>.Failure(
-                        AppendPayloadContext(schemaResult.Errors, moduleNameValue, entityNameValue, serializedPayload));
+                        AppendPayloadContext(errorsWithPath, moduleNameValue, entityNameValue, serializedPayload));
                 }
 
                 schema = SchemaName.Create(_context.Options.MissingSchemaFallback).Value;
                 serializedPayload ??= _context.SerializeEntityDocument(doc);
                 _context.AddWarning(
-                    $"Entity '{moduleNameValue}::{entityNameValue}' schema '{doc.Schema}' invalid; using '{_context.Options.MissingSchemaFallback}'. Raw payload: {serializedPayload}");
+                    $"Entity '{moduleNameValue}::{entityNameValue}' schema '{doc.Schema}' invalid; using '{_context.Options.MissingSchemaFallback}'. Raw payload: {serializedPayload} (Path: {path.Property("schema")})");
             }
             else
             {
@@ -94,40 +97,43 @@ internal sealed class EntityDocumentMapper
         var tableResult = TableName.Create(doc.PhysicalName);
         if (tableResult.IsFailure)
         {
-            return Result<EntityModel>.Failure(tableResult.Errors);
+            return Result<EntityModel>.Failure(
+                _context.WithPath(path.Property("physicalName"), tableResult.Errors));
         }
 
-        var attributesResult = _attributeMapper.Map(doc.Attributes);
+        var attributesResult = _attributeMapper.Map(doc.Attributes, path.Property("attributes"));
         if (attributesResult.IsFailure)
         {
             return Result<EntityModel>.Failure(attributesResult.Errors);
         }
 
-        var indexesResult = MapIndexes(doc.Indexes);
+        var indexesResult = MapIndexes(doc.Indexes, path.Property("indexes"));
         if (indexesResult.IsFailure)
         {
             return Result<EntityModel>.Failure(indexesResult.Errors);
         }
 
-        var relationshipsResult = MapRelationships(doc.Relationships);
+        var relationshipsResult = MapRelationships(doc.Relationships, path.Property("relationships"));
         if (relationshipsResult.IsFailure)
         {
             return Result<EntityModel>.Failure(relationshipsResult.Errors);
         }
 
-        var triggersResult = MapTriggers(doc.Triggers);
+        var triggersResult = MapTriggers(doc.Triggers, path.Property("triggers"));
         if (triggersResult.IsFailure)
         {
             return Result<EntityModel>.Failure(triggersResult.Errors);
         }
 
-        var temporalResult = MapTemporalMetadata(doc.Temporal);
+        var temporalResult = MapTemporalMetadata(doc.Temporal, path.Property("temporal"));
         if (temporalResult.IsFailure)
         {
             return Result<EntityModel>.Failure(temporalResult.Errors);
         }
 
-        var propertyResult = _extendedPropertyMapper.Map(doc.ExtendedProperties);
+        var propertyResult = _extendedPropertyMapper.Map(
+            doc.ExtendedProperties,
+            path.Property("extendedProperties"));
         if (propertyResult.IsFailure)
         {
             return Result<EntityModel>.Failure(propertyResult.Errors);
@@ -143,16 +149,17 @@ internal sealed class EntityDocumentMapper
             if (!allowMissingPrimaryKey)
             {
                 return Result<EntityModel>.Failure(
-                    ValidationError.Create(
+                    _context.CreateError(
                         "entity.attributes.missingPrimaryKey",
-                        $"Entity '{moduleNameValue}::{entityNameValue}' does not define a primary key attribute. Raw payload: {serializedPayload}"));
+                        $"Entity '{moduleNameValue}::{entityNameValue}' does not define a primary key attribute. Raw payload: {serializedPayload}",
+                        path.Property("attributes")));
             }
 
             _context.AddWarning(
-                $"Entity '{moduleNameValue}::{entityNameValue}' missing primary key; override applied. Raw payload: {serializedPayload}");
+                $"Entity '{moduleNameValue}::{entityNameValue}' missing primary key; override applied. Raw payload: {serializedPayload} (Path: {path.Property("attributes")})");
         }
 
-        return EntityModel.Create(
+        var entityResult = EntityModel.Create(
             moduleName,
             logicalName,
             tableResult.Value,
@@ -167,9 +174,17 @@ internal sealed class EntityDocumentMapper
             triggersResult.Value,
             metadata,
             allowMissingPrimaryKey: allowMissingPrimaryKey);
+
+        if (entityResult.IsFailure)
+        {
+            return Result<EntityModel>.Failure(
+                _context.WithPath(path, entityResult.Errors));
+        }
+
+        return entityResult;
     }
 
-    private Result<ImmutableArray<IndexModel>> MapIndexes(IndexDocument[]? docs)
+    private Result<ImmutableArray<IndexModel>> MapIndexes(IndexDocument[]? docs, DocumentPathContext path)
     {
         if (docs is null || docs.Length == 0)
         {
@@ -177,27 +192,37 @@ internal sealed class EntityDocumentMapper
         }
 
         var builder = ImmutableArray.CreateBuilder<IndexModel>(docs.Length);
-        foreach (var doc in docs)
+        for (var i = 0; i < docs.Length; i++)
         {
+            var doc = docs[i];
+            if (doc is null)
+            {
+                continue;
+            }
+
+            var indexPath = path.Index(i);
             var nameResult = IndexName.Create(doc.Name);
             if (nameResult.IsFailure)
             {
-                return Result<ImmutableArray<IndexModel>>.Failure(nameResult.Errors);
+                return Result<ImmutableArray<IndexModel>>.Failure(
+                    _context.WithPath(indexPath.Property("name"), nameResult.Errors));
             }
 
-            var columnResult = MapIndexColumns(doc.Columns);
+            var columnResult = MapIndexColumns(doc.Columns, indexPath.Property("columns"));
             if (columnResult.IsFailure)
             {
                 return Result<ImmutableArray<IndexModel>>.Failure(columnResult.Errors);
             }
 
-            var onDiskResult = MapIndexOnDiskMetadata(doc);
+            var onDiskResult = MapIndexOnDiskMetadata(doc, indexPath);
             if (onDiskResult.IsFailure)
             {
                 return Result<ImmutableArray<IndexModel>>.Failure(onDiskResult.Errors);
             }
 
-            var propertyResult = _extendedPropertyMapper.Map(doc.ExtendedProperties);
+            var propertyResult = _extendedPropertyMapper.Map(
+                doc.ExtendedProperties,
+                indexPath.Property("extendedProperties"));
             if (propertyResult.IsFailure)
             {
                 return Result<ImmutableArray<IndexModel>>.Failure(propertyResult.Errors);
@@ -215,7 +240,8 @@ internal sealed class EntityDocumentMapper
 
             if (indexResult.IsFailure)
             {
-                return Result<ImmutableArray<IndexModel>>.Failure(indexResult.Errors);
+                return Result<ImmutableArray<IndexModel>>.Failure(
+                    _context.WithPath(indexPath, indexResult.Errors));
             }
 
             builder.Add(indexResult.Value);
@@ -224,27 +250,32 @@ internal sealed class EntityDocumentMapper
         return Result<ImmutableArray<IndexModel>>.Success(builder.ToImmutable());
     }
 
-    private Result<ImmutableArray<IndexColumnModel>> MapIndexColumns(IndexColumnDocument[]? docs)
+    private Result<ImmutableArray<IndexColumnModel>> MapIndexColumns(IndexColumnDocument[]? docs, DocumentPathContext path)
     {
         if (docs is null)
         {
             return Result<ImmutableArray<IndexColumnModel>>.Failure(
-                ValidationError.Create("index.columns.missing", "Index columns are required."));
+                _context.CreateError("index.columns.missing", "Index columns are required.", path));
         }
 
         var builder = ImmutableArray.CreateBuilder<IndexColumnModel>(docs.Length);
-        foreach (var doc in docs)
+        for (var i = 0; i < docs.Length; i++)
         {
+            var doc = docs[i];
+            var columnPath = path.Index(i);
+
             var attributeResult = AttributeName.Create(doc.Attribute);
             if (attributeResult.IsFailure)
             {
-                return Result<ImmutableArray<IndexColumnModel>>.Failure(attributeResult.Errors);
+                return Result<ImmutableArray<IndexColumnModel>>.Failure(
+                    _context.WithPath(columnPath.Property("attribute"), attributeResult.Errors));
             }
 
             var columnResult = ColumnName.Create(doc.PhysicalColumn);
             if (columnResult.IsFailure)
             {
-                return Result<ImmutableArray<IndexColumnModel>>.Failure(columnResult.Errors);
+                return Result<ImmutableArray<IndexColumnModel>>.Failure(
+                    _context.WithPath(columnPath.Property("physicalColumn"), columnResult.Errors));
             }
 
             var direction = ParseIndexDirection(doc.Direction);
@@ -256,7 +287,8 @@ internal sealed class EntityDocumentMapper
                 direction);
             if (columnModelResult.IsFailure)
             {
-                return Result<ImmutableArray<IndexColumnModel>>.Failure(columnModelResult.Errors);
+                return Result<ImmutableArray<IndexColumnModel>>.Failure(
+                    _context.WithPath(columnPath, columnModelResult.Errors));
             }
 
             builder.Add(columnModelResult.Value);
@@ -265,7 +297,7 @@ internal sealed class EntityDocumentMapper
         return Result<ImmutableArray<IndexColumnModel>>.Success(builder.ToImmutable());
     }
 
-    private Result<IndexOnDiskMetadata> MapIndexOnDiskMetadata(IndexDocument doc)
+    private Result<IndexOnDiskMetadata> MapIndexOnDiskMetadata(IndexDocument doc, DocumentPathContext path)
     {
         var kind = ParseIndexKind(doc.Kind);
         IndexDataSpace? dataSpace = null;
@@ -276,7 +308,8 @@ internal sealed class EntityDocumentMapper
             var dataSpaceResult = IndexDataSpace.Create(doc.DataSpace.Name, doc.DataSpace.Type);
             if (dataSpaceResult.IsFailure)
             {
-                return Result<IndexOnDiskMetadata>.Failure(dataSpaceResult.Errors);
+                return Result<IndexOnDiskMetadata>.Failure(
+                    _context.WithPath(path.Property("dataSpace"), dataSpaceResult.Errors));
             }
 
             dataSpace = dataSpaceResult.Value;
@@ -285,23 +318,27 @@ internal sealed class EntityDocumentMapper
         var partitionColumns = ImmutableArray.CreateBuilder<IndexPartitionColumn>();
         if (doc.PartitionColumns is not null)
         {
-            foreach (var column in doc.PartitionColumns)
+            for (var i = 0; i < doc.PartitionColumns.Length; i++)
             {
+                var column = doc.PartitionColumns[i];
                 if (column is null)
                 {
                     continue;
                 }
 
+                var columnPath = path.Property("partitionColumns").Index(i);
                 var columnNameResult = ColumnName.Create(column.Name);
                 if (columnNameResult.IsFailure)
                 {
-                    return Result<IndexOnDiskMetadata>.Failure(columnNameResult.Errors);
+                    return Result<IndexOnDiskMetadata>.Failure(
+                        _context.WithPath(columnPath.Property("name"), columnNameResult.Errors));
                 }
 
                 var partitionColumnResult = IndexPartitionColumn.Create(columnNameResult.Value, column.Ordinal);
                 if (partitionColumnResult.IsFailure)
                 {
-                    return Result<IndexOnDiskMetadata>.Failure(partitionColumnResult.Errors);
+                    return Result<IndexOnDiskMetadata>.Failure(
+                        _context.WithPath(columnPath, partitionColumnResult.Errors));
                 }
 
                 partitionColumns.Add(partitionColumnResult.Value);
@@ -311,17 +348,20 @@ internal sealed class EntityDocumentMapper
         var compressionSettings = ImmutableArray.CreateBuilder<IndexPartitionCompression>();
         if (doc.DataCompression is not null)
         {
-            foreach (var compression in doc.DataCompression)
+            for (var i = 0; i < doc.DataCompression.Length; i++)
             {
+                var compression = doc.DataCompression[i];
                 if (compression is null)
                 {
                     continue;
                 }
 
+                var compressionPath = path.Property("dataCompression").Index(i);
                 var settingResult = IndexPartitionCompression.Create(compression.Partition, compression.Compression);
                 if (settingResult.IsFailure)
                 {
-                    return Result<IndexOnDiskMetadata>.Failure(settingResult.Errors);
+                    return Result<IndexOnDiskMetadata>.Failure(
+                        _context.WithPath(compressionPath, settingResult.Errors));
                 }
 
                 compressionSettings.Add(settingResult.Value);
@@ -345,7 +385,7 @@ internal sealed class EntityDocumentMapper
         return Result<IndexOnDiskMetadata>.Success(metadata);
     }
 
-    private Result<ImmutableArray<TriggerModel>> MapTriggers(TriggerDocument[]? docs)
+    private Result<ImmutableArray<TriggerModel>> MapTriggers(TriggerDocument[]? docs, DocumentPathContext path)
     {
         if (docs is null || docs.Length == 0)
         {
@@ -353,18 +393,27 @@ internal sealed class EntityDocumentMapper
         }
 
         var builder = ImmutableArray.CreateBuilder<TriggerModel>(docs.Length);
-        foreach (var doc in docs)
+        for (var i = 0; i < docs.Length; i++)
         {
+            var doc = docs[i];
+            if (doc is null)
+            {
+                continue;
+            }
+
+            var triggerPath = path.Index(i);
             var nameResult = TriggerName.Create(doc.Name);
             if (nameResult.IsFailure)
             {
-                return Result<ImmutableArray<TriggerModel>>.Failure(nameResult.Errors);
+                return Result<ImmutableArray<TriggerModel>>.Failure(
+                    _context.WithPath(triggerPath.Property("name"), nameResult.Errors));
             }
 
             var triggerResult = TriggerModel.Create(nameResult.Value, doc.IsDisabled, doc.Definition);
             if (triggerResult.IsFailure)
             {
-                return Result<ImmutableArray<TriggerModel>>.Failure(triggerResult.Errors);
+                return Result<ImmutableArray<TriggerModel>>.Failure(
+                    _context.WithPath(triggerPath, triggerResult.Errors));
             }
 
             builder.Add(triggerResult.Value);
@@ -373,14 +422,16 @@ internal sealed class EntityDocumentMapper
         return Result<ImmutableArray<TriggerModel>>.Success(builder.ToImmutable());
     }
 
-    private Result<TemporalTableMetadata> MapTemporalMetadata(TemporalDocument? doc)
+    private Result<TemporalTableMetadata> MapTemporalMetadata(TemporalDocument? doc, DocumentPathContext path)
     {
         if (doc is null)
         {
             return TemporalTableMetadata.None;
         }
 
-        var propertiesResult = _extendedPropertyMapper.Map(doc.ExtendedProperties);
+        var propertiesResult = _extendedPropertyMapper.Map(
+            doc.ExtendedProperties,
+            path.Property("extendedProperties"));
         if (propertiesResult.IsFailure)
         {
             return Result<TemporalTableMetadata>.Failure(propertiesResult.Errors);
@@ -390,12 +441,14 @@ internal sealed class EntityDocumentMapper
         TableName? historyTable = null;
         if (doc.History is not null)
         {
+            var historyPath = path.Property("historyTable");
             if (!string.IsNullOrWhiteSpace(doc.History.Schema))
             {
                 var schemaResult = SchemaName.Create(doc.History.Schema);
                 if (schemaResult.IsFailure)
                 {
-                    return Result<TemporalTableMetadata>.Failure(schemaResult.Errors);
+                    return Result<TemporalTableMetadata>.Failure(
+                        _context.WithPath(historyPath.Property("schema"), schemaResult.Errors));
                 }
 
                 historySchema = schemaResult.Value;
@@ -406,7 +459,8 @@ internal sealed class EntityDocumentMapper
                 var tableResult = TableName.Create(doc.History.Name);
                 if (tableResult.IsFailure)
                 {
-                    return Result<TemporalTableMetadata>.Failure(tableResult.Errors);
+                    return Result<TemporalTableMetadata>.Failure(
+                        _context.WithPath(historyPath.Property("name"), tableResult.Errors));
                 }
 
                 historyTable = tableResult.Value;
@@ -419,7 +473,8 @@ internal sealed class EntityDocumentMapper
             var columnResult = ColumnName.Create(doc.PeriodStartColumn);
             if (columnResult.IsFailure)
             {
-                return Result<TemporalTableMetadata>.Failure(columnResult.Errors);
+                return Result<TemporalTableMetadata>.Failure(
+                    _context.WithPath(path.Property("periodStartColumn"), columnResult.Errors));
             }
 
             periodStart = columnResult.Value;
@@ -431,13 +486,14 @@ internal sealed class EntityDocumentMapper
             var columnResult = ColumnName.Create(doc.PeriodEndColumn);
             if (columnResult.IsFailure)
             {
-                return Result<TemporalTableMetadata>.Failure(columnResult.Errors);
+                return Result<TemporalTableMetadata>.Failure(
+                    _context.WithPath(path.Property("periodEndColumn"), columnResult.Errors));
             }
 
             periodEnd = columnResult.Value;
         }
 
-        var retentionResult = MapTemporalRetention(doc.Retention);
+        var retentionResult = MapTemporalRetention(doc.Retention, path.Property("retention"));
         if (retentionResult.IsFailure)
         {
             return Result<TemporalTableMetadata>.Failure(retentionResult.Errors);
@@ -455,7 +511,7 @@ internal sealed class EntityDocumentMapper
         return Result<TemporalTableMetadata>.Success(metadata);
     }
 
-    private Result<TemporalRetentionPolicy> MapTemporalRetention(TemporalRetentionDocument? doc)
+    private Result<TemporalRetentionPolicy> MapTemporalRetention(TemporalRetentionDocument? doc, DocumentPathContext path)
     {
         if (doc is null)
         {
@@ -468,7 +524,7 @@ internal sealed class EntityDocumentMapper
         return Result<TemporalRetentionPolicy>.Success(policy);
     }
 
-    private Result<ImmutableArray<RelationshipModel>> MapRelationships(RelationshipDocument[]? docs)
+    private Result<ImmutableArray<RelationshipModel>> MapRelationships(RelationshipDocument[]? docs, DocumentPathContext path)
     {
         if (docs is null || docs.Length == 0)
         {
@@ -476,24 +532,34 @@ internal sealed class EntityDocumentMapper
         }
 
         var builder = ImmutableArray.CreateBuilder<RelationshipModel>(docs.Length);
-        foreach (var doc in docs)
+        for (var i = 0; i < docs.Length; i++)
         {
+            var doc = docs[i];
+            if (doc is null)
+            {
+                continue;
+            }
+
+            var relationshipPath = path.Index(i);
             var attributeResult = AttributeName.Create(doc.ViaAttributeName);
             if (attributeResult.IsFailure)
             {
-                return Result<ImmutableArray<RelationshipModel>>.Failure(attributeResult.Errors);
+                return Result<ImmutableArray<RelationshipModel>>.Failure(
+                    _context.WithPath(relationshipPath.Property("viaAttributeName"), attributeResult.Errors));
             }
 
             var entityResult = EntityName.Create(doc.TargetEntityName);
             if (entityResult.IsFailure)
             {
-                return Result<ImmutableArray<RelationshipModel>>.Failure(entityResult.Errors);
+                return Result<ImmutableArray<RelationshipModel>>.Failure(
+                    _context.WithPath(relationshipPath.Property("toEntity_name"), entityResult.Errors));
             }
 
             var tableResult = TableName.Create(doc.TargetEntityPhysicalName);
             if (tableResult.IsFailure)
             {
-                return Result<ImmutableArray<RelationshipModel>>.Failure(tableResult.Errors);
+                return Result<ImmutableArray<RelationshipModel>>.Failure(
+                    _context.WithPath(relationshipPath.Property("toEntity_physicalName"), tableResult.Errors));
             }
 
             var hasConstraint = doc.HasDbConstraint switch
@@ -513,7 +579,8 @@ internal sealed class EntityDocumentMapper
 
             if (relationshipResult.IsFailure)
             {
-                return Result<ImmutableArray<RelationshipModel>>.Failure(relationshipResult.Errors);
+                return Result<ImmutableArray<RelationshipModel>>.Failure(
+                    _context.WithPath(relationshipPath, relationshipResult.Errors));
             }
 
             builder.Add(relationshipResult.Value);
