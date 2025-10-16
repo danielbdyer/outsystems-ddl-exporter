@@ -18,7 +18,7 @@ public sealed class FixtureDataProfilerTests
         var result = await profiler.CaptureAsync();
 
         Assert.True(result.IsSuccess);
-        var snapshot = result.Value;
+        var snapshot = result.Value.Snapshot;
         Assert.Equal(14, snapshot.Columns.Length);
 
         var triggered = snapshot.Columns.Single(c => c.Table.Value == "OSUSR_XYZ_JOBRUN" && c.Column.Value == "TRIGGEREDBYUSERID");
@@ -41,7 +41,7 @@ public sealed class FixtureDataProfilerTests
         var result = await profiler.CaptureAsync();
 
         Assert.True(result.IsSuccess);
-        var snapshot = result.Value;
+        var snapshot = result.Value.Snapshot;
 
         var externalColumns = snapshot.Columns
             .Where(c => string.Equals(c.Schema.Value, "billing", StringComparison.OrdinalIgnoreCase))
@@ -65,7 +65,7 @@ public sealed class FixtureDataProfilerTests
         var result = await profiler.CaptureAsync();
 
         Assert.True(result.IsSuccess);
-        var snapshot = result.Value;
+        var snapshot = result.Value.Snapshot;
 
         var ignoreReference = snapshot.ForeignKeys.Single(fk =>
             fk.Reference.FromTable.Value == "OSUSR_XYZ_JOBRUN" &&
@@ -85,7 +85,7 @@ public sealed class FixtureDataProfilerTests
         var result = await profiler.CaptureAsync();
 
         Assert.True(result.IsSuccess);
-        var snapshot = result.Value;
+        var snapshot = result.Value.Snapshot;
 
         var createdOn = snapshot.Columns.Single(c =>
             c.Table.Value == "OSUSR_XYZ_JOBRUN" &&

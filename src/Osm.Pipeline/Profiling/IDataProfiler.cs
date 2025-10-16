@@ -7,5 +7,5 @@ namespace Osm.Pipeline.Profiling;
 
 public interface IDataProfiler
 {
-    Task<Result<ProfileSnapshot>> CaptureAsync(CancellationToken cancellationToken = default);
+    Task<Result<ProfilingCaptureResult>> CaptureAsync(CancellationToken cancellationToken = default);
 }

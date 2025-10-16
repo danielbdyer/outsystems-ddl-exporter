@@ -181,7 +181,7 @@ public class EmissionPipelineTests
         var profiler = new FixtureDataProfiler(path, new ProfileSnapshotDeserializer());
         var result = await profiler.CaptureAsync();
         AssertResultSucceeded(result);
-        return result.Value;
+        return result.Value.Snapshot;
     }
 
     private static void AssertResultSucceeded<T>(Osm.Domain.Abstractions.Result<T> result)

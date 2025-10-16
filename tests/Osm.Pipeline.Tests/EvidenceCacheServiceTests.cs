@@ -401,9 +401,9 @@ public sealed class EvidenceCacheServiceTests
         var rebuilt = await service.CacheAsync(aggressiveRequest);
         Assert.True(rebuilt.IsSuccess);
         Assert.Equal(EvidenceCacheOutcome.Created, rebuilt.Value.Evaluation.Outcome);
-        Assert.Equal(EvidenceCacheInvalidationReason.MetadataMismatch, rebuilt.Value.Evaluation.Reason);
-        Assert.Equal("metadata.mismatch", rebuilt.Value.Evaluation.Metadata["reason"]);
-        Assert.Empty(timestamps);
+        Assert.Equal(EvidenceCacheInvalidationReason.ManifestMissing, rebuilt.Value.Evaluation.Reason);
+        Assert.Equal("manifest.missing", rebuilt.Value.Evaluation.Metadata["reason"]);
+        Assert.Single(timestamps);
     }
 
     [Fact]

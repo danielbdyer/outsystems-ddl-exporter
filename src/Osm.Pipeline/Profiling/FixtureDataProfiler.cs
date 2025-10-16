@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.IO;
 using System.IO.Abstractions;
 using System.Threading;
@@ -29,18 +30,25 @@ public sealed class FixtureDataProfiler : IDataProfiler
         _fileSystem = fileSystem ?? new FileSystem();
     }
 
-    public async Task<Result<ProfileSnapshot>> CaptureAsync(CancellationToken cancellationToken = default)
+    public async Task<Result<ProfilingCaptureResult>> CaptureAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_fileSystem.File.Exists(_fixturePath))
         {
-            return Result<ProfileSnapshot>.Failure(ValidationError.Create(
+            return Result<ProfilingCaptureResult>.Failure(ValidationError.Create(
                 "profiler.fixture.missing",
                 $"Profiling fixture '{_fixturePath}' was not found."));
         }
 
         await using var stream = _fileSystem.File.Open(_fixturePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return _deserializer.Deserialize(stream);
+        var snapshotResult = _deserializer.Deserialize(stream);
+        if (snapshotResult.IsFailure)
+        {
+            return Result<ProfilingCaptureResult>.Failure(snapshotResult.Errors);
+        }
+
+        var capture = new ProfilingCaptureResult(snapshotResult.Value, ImmutableArray<string>.Empty);
+        return Result<ProfilingCaptureResult>.Success(capture);
     }
 }

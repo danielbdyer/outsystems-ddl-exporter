@@ -16,7 +16,7 @@ This appendix complements `architecture-guardrails.md` by describing the executa
 
 ## Profiling (`FixtureDataProfiler` / future live `IDataProfiler`)
 - **Input**: Connection metadata (or fixture paths), the ingested model, and toggle-driven projections describing required statistics.
-- **Output**: `Result<ProfileSnapshot>` containing column null counts, duplicate probes for unique candidates, and FK orphan summaries.
+- **Output**: `Result<ProfilingCaptureResult>` containing the `ProfileSnapshot` (column null counts, duplicate probes for unique candidates, FK orphan summaries) plus human-readable warnings surfaced when conservative fallbacks were required (timeouts, permission denials, etc.).
 - **Invariants**:
   - Column references are matched on schema + physical table + physical column names; logical names are attached for reporting only.
   - Every statistic is timestamped and carries the sampling strategy so evidence cache keys can incorporate data freshness.
@@ -96,7 +96,7 @@ Keep this document synchronized with the code by updating it whenever an interfa
 | Boundary | Inputs | Outputs | Failure codes | Notes |
 | --- | --- | --- | --- | --- |
 | `IModelProvider` (pipeline ingestion) | Model path, module filter, supplemental entity hints | `Result<OsmModel>` | `pipeline.buildSsdt.model.missing`, `model.validation.*` | Consumers receive a fully validated domain graph; supplemental material must already satisfy identifier rules. |
-| `IDataProfiler` (`FixtureDataProfiler`, future SQL) | `OsmModel`, profiling options (`SqlProfilerOptions` or fixture manifest) | `Result<ProfileSnapshot>` | `pipeline.buildSsdt.profile.path.missing`, `profile.capture.*` | Snapshot rows are keyed by schema/table/column physical identifiers and carry timestamps + sampling metadata. |
+| `IDataProfiler` (`FixtureDataProfiler`, future SQL) | `OsmModel`, profiling options (`SqlProfilerOptions` or fixture manifest) | `Result<ProfilingCaptureResult>` | `pipeline.buildSsdt.profile.path.missing`, `profile.capture.*` | Snapshot rows are keyed by schema/table/column physical identifiers, carry timestamps + sampling metadata, and surface warning text when conservative fallbacks were used. |
 | `ITighteningPolicy` | `OsmModel`, `ProfileSnapshot`, `TighteningOptions` | `PolicyDecisionSet` | _none (pure function)_ | All consumers must treat results as immutable decisions and respect rationale codes for telemetry. |
 | `ISmoBuilder` (`SmoModelFactory` + `SmoObjectGraphFactory`) | Domain model, policy decisions, `SmoBuildOptions` | `SmoModel` definitions and detached SMO `Table` objects | _programming errors only_ | Definitions remain the canonical interchange; detached tables are for validation/scripting that requires SMO types. |
 | `IDdlEmitter` (`SsdtEmitter`) | `SmoModel`, emission directory, `SmoBuildOptions`, decision summaries | `SsdtManifest`, file system artifacts | `pipeline.buildSsdt.output.missing`, IO errors | Emits per-table artifacts plus concatenated optional outputs without mutating the model. |

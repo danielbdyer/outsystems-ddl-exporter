@@ -15,7 +15,7 @@ public sealed class FakeProfilerTests
         var result = await profiler.CaptureAsync();
 
         Assert.True(result.IsSuccess);
-        var snapshot = result.Value;
+        var snapshot = result.Value.Snapshot;
 
         Assert.Equal(14, snapshot.Columns.Length);
         var email = snapshot.Columns.Single(c => c.Table.Value == "OSUSR_ABC_CUSTOMER" && c.Column.Value == "EMAIL");

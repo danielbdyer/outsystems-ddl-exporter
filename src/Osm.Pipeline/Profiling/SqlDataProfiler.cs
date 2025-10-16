@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Data.Common;
 using System.Linq;
 using System.Threading;
@@ -50,7 +51,7 @@ public sealed class SqlDataProfiler : IDataProfiler
         _queryExecutor = queryExecutor ?? new ProfilingQueryExecutor(_connectionFactory, _options);
     }
 
-    public async Task<Result<ProfileSnapshot>> CaptureAsync(CancellationToken cancellationToken = default)
+    public async Task<Result<ProfilingCaptureResult>> CaptureAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -72,6 +73,22 @@ public sealed class SqlDataProfiler : IDataProfiler
             }
 
             await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            var warningBuilder = ImmutableArray.CreateBuilder<string>();
+            foreach (var plan in plans.Values
+                .OrderBy(static p => p.Schema, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static p => p.Table, StringComparer.OrdinalIgnoreCase))
+            {
+                if (!resultsLookup.TryGetValue((plan.Schema, plan.Table), out var tableResults))
+                {
+                    continue;
+                }
+
+                foreach (var warning in BuildTimeoutWarnings(plan, tableResults))
+                {
+                    warningBuilder.Add(warning);
+                }
+            }
 
             var columnProfiles = new List<ColumnProfile>();
             var uniqueProfiles = new List<UniqueCandidateProfile>();
@@ -212,11 +229,18 @@ public sealed class SqlDataProfiler : IDataProfiler
                 }
             }
 
-            return ProfileSnapshot.Create(columnProfiles, uniqueProfiles, compositeProfiles, foreignKeys);
+            var snapshotResult = ProfileSnapshot.Create(columnProfiles, uniqueProfiles, compositeProfiles, foreignKeys);
+            if (snapshotResult.IsFailure)
+            {
+                return Result<ProfilingCaptureResult>.Failure(snapshotResult.Errors);
+            }
+
+            var capture = new ProfilingCaptureResult(snapshotResult.Value, warningBuilder.ToImmutable());
+            return Result<ProfilingCaptureResult>.Success(capture);
         }
         catch (DbException ex)
         {
-            return Result<ProfileSnapshot>.Failure(ValidationError.Create(
+            return Result<ProfilingCaptureResult>.Failure(ValidationError.Create(
                 "profile.sql.executionFailed",
                 $"Failed to capture profiling snapshot: {ex.Message}"));
         }
@@ -308,5 +332,34 @@ public sealed class SqlDataProfiler : IDataProfiler
         string tableColumn)
     {
         return TableMetadataLoader.BuildTableFilterClause(command, tables, schemaColumn, tableColumn);
+    }
+
+    private static IEnumerable<string> BuildTimeoutWarnings(TableProfilingPlan plan, TableProfilingResults results)
+    {
+        var identifier = string.Format(CultureInfo.InvariantCulture, "[{0}].[{1}]", plan.Schema, plan.Table);
+
+        if (results.UsedNullCountFallback)
+        {
+            yield return string.Format(
+                CultureInfo.InvariantCulture,
+                "Null-count profiling timed out for table {0}; using conservative fallback values.",
+                identifier);
+        }
+
+        if (results.UsedUniqueFallback)
+        {
+            yield return string.Format(
+                CultureInfo.InvariantCulture,
+                "Unique candidate profiling timed out for table {0}; duplicate detection results may be incomplete.",
+                identifier);
+        }
+
+        if (results.UsedForeignKeyFallback)
+        {
+            yield return string.Format(
+                CultureInfo.InvariantCulture,
+                "Foreign key profiling timed out for table {0}; orphan detection results may be incomplete.",
+                identifier);
+        }
     }
 }

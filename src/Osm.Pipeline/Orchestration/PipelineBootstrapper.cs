@@ -10,6 +10,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.Profiling;
 using Osm.Json;
 
 namespace Osm.Pipeline.Orchestration;
@@ -27,7 +28,7 @@ public sealed record PipelineBootstrapRequest(
     ModuleFilterOptions ModuleFilter,
     SupplementalModelOptions SupplementalModels,
     PipelineBootstrapTelemetry Telemetry,
-    Func<OsmModel, CancellationToken, Task<Result<ProfileSnapshot>>> ProfileCaptureAsync);
+    Func<OsmModel, CancellationToken, Task<Result<ProfilingCaptureResult>>> ProfileCaptureAsync);
 
 public sealed record PipelineBootstrapTelemetry(
     string RequestMessage,
@@ -189,17 +190,31 @@ public sealed class PipelineBootstrapper : IPipelineBootstrapper
             return Result<PipelineBootstrapContext>.Failure(profileResult.Errors);
         }
 
-        var profile = profileResult.Value;
+        var profileCapture = profileResult.Value;
+        if (!profileCapture.Warnings.IsDefaultOrEmpty)
+        {
+            pipelineWarnings.AddRange(profileCapture.Warnings);
+        }
+
+        var profile = profileCapture.Snapshot;
+        var profilingMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["columnProfiles"] = profile.Columns.Length.ToString(CultureInfo.InvariantCulture),
+            ["uniqueCandidates"] = profile.UniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
+            ["compositeUniqueCandidates"] = profile.CompositeUniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
+            ["foreignKeys"] = profile.ForeignKeys.Length.ToString(CultureInfo.InvariantCulture)
+        };
+
+        if (!profileCapture.Warnings.IsDefaultOrEmpty)
+        {
+            profilingMetadata["warningCount"] = profileCapture.Warnings.Length.ToString(CultureInfo.InvariantCulture);
+            profilingMetadata["warningExample"] = profileCapture.Warnings[0];
+        }
+
         log.Record(
             "profiling.capture.completed",
             request.Telemetry.ProfilingCompletedMessage,
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["columnProfiles"] = profile.Columns.Length.ToString(CultureInfo.InvariantCulture),
-                ["uniqueCandidates"] = profile.UniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
-                ["compositeUniqueCandidates"] = profile.CompositeUniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeys"] = profile.ForeignKeys.Length.ToString(CultureInfo.InvariantCulture)
-            });
+            profilingMetadata);
 
         return new PipelineBootstrapContext(
             filteredModel,

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -15,9 +16,10 @@ public sealed class FakeProfiler : IDataProfiler
         _fixtureName = fixtureName;
     }
 
-    public Task<Result<ProfileSnapshot>> CaptureAsync(CancellationToken cancellationToken = default)
+    public Task<Result<ProfilingCaptureResult>> CaptureAsync(CancellationToken cancellationToken = default)
     {
         var snapshot = ProfileFixtures.LoadSnapshot(_fixtureName);
-        return Task.FromResult(Result<ProfileSnapshot>.Success(snapshot));
+        var capture = new ProfilingCaptureResult(snapshot, ImmutableArray<string>.Empty);
+        return Task.FromResult(Result<ProfilingCaptureResult>.Success(capture));
     }
 }

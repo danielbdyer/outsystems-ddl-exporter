@@ -349,7 +349,7 @@ Key metadata surfaced by the reconciled extractor:
 ```csharp
 public interface IModelProvider { Task<ModelRoot> LoadAsync(Stream json, CancellationToken ct = default); }
 public interface IModelValidator { ValidationReport Validate(ModelRoot model); }
-public interface IDataProfiler { Task<ProfileSnapshot> CaptureAsync(string conn, IEnumerable<TableRef> tables, IEnumerable<(LogicalFkRef Ref,bool IsDbConstraintPresent)> refs, IEnumerable<(TableRef Table,string Column)> uniqueSingles, CancellationToken ct = default); }
+public interface IDataProfiler { Task<Result<ProfilingCaptureResult>> CaptureAsync(string conn, IEnumerable<TableRef> tables, IEnumerable<(LogicalFkRef Ref,bool IsDbConstraintPresent)> refs, IEnumerable<(TableRef Table,string Column)> uniqueSingles, CancellationToken ct = default); }
 public interface ISqlServerObjectBuilder { Database Build(ModelRoot model, SmoBuildOptions options); }
 public interface IDdlEmitter { /* not used when we emit per-table via PerTableDdlEmitter */ }
 ```

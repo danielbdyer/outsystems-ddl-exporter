@@ -51,7 +51,10 @@ public sealed class SqlDataProfilerOrchestrationTests
             {
                 ["email"] = false
             },
-            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase));
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            UsedNullCountFallback: false,
+            UsedUniqueFallback: false,
+            UsedForeignKeyFallback: false);
 
         var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
         var planBuilder = new StubPlanBuilder(plan);
@@ -61,7 +64,68 @@ public sealed class SqlDataProfilerOrchestrationTests
         var snapshot = await profiler.CaptureAsync(CancellationToken.None);
 
         Assert.True(snapshot.IsSuccess, string.Join(", ", snapshot.Errors.Select(e => e.Code)));
-        Assert.Equal(expected, snapshot.Value);
+        var actual = snapshot.Value.Snapshot;
+        Assert.Equal(expected.Columns, actual.Columns);
+        Assert.Equal(expected.UniqueCandidates, actual.UniqueCandidates);
+        Assert.Equal(expected.CompositeUniqueCandidates, actual.CompositeUniqueCandidates);
+        Assert.Equal(expected.ForeignKeys, actual.ForeignKeys);
+        Assert.True(snapshot.Value.Warnings.IsDefaultOrEmpty);
+    }
+
+    [Fact]
+    public async Task CaptureAsync_EmitsWarningsWhenTimeoutFallbacksUsed()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+
+        var metadata = new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(ColumnKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_U_USER", "ID")] = new ColumnMetadata(false, false, true, null),
+            [("dbo", "OSUSR_U_USER", "EMAIL")] = new ColumnMetadata(true, false, false, null)
+        };
+        var rowCounts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_U_USER")] = 100
+        };
+
+        var plan = new TableProfilingPlan(
+            "dbo",
+            "OSUSR_U_USER",
+            100,
+            ImmutableArray.Create("EMAIL", "ID"),
+            ImmutableArray.Create(new UniqueCandidatePlan("email", ImmutableArray.Create("EMAIL"))),
+            ImmutableArray.Create(new ForeignKeyPlan("fk", "EMAIL", "dbo", "OSUSR_U_OTHER", "ID")));
+
+        var results = new TableProfilingResults(
+            new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ID"] = 100,
+                ["EMAIL"] = 100
+            },
+            new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["email"] = true
+            },
+            new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["fk"] = true
+            },
+            UsedNullCountFallback: true,
+            UsedUniqueFallback: true,
+            UsedForeignKeyFallback: true);
+
+        var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
+        var planBuilder = new StubPlanBuilder(plan);
+        var queryExecutor = new StubQueryExecutor(results);
+        var profiler = new SqlDataProfiler(new NullConnectionFactory(), model, SqlProfilerOptions.Default, metadataLoader, planBuilder, queryExecutor);
+
+        var snapshot = await profiler.CaptureAsync(CancellationToken.None);
+
+        Assert.True(snapshot.IsSuccess);
+        var warnings = snapshot.Value.Warnings;
+        Assert.Equal(3, warnings.Length);
+        Assert.Contains(warnings, warning => warning.Contains("Null-count", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(warnings, warning => warning.Contains("Unique", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(warnings, warning => warning.Contains("Foreign key", StringComparison.OrdinalIgnoreCase));
     }
 
     private sealed class StubMetadataLoader : ITableMetadataLoader
@@ -127,7 +191,7 @@ public sealed class SqlDataProfilerOrchestrationTests
     {
         public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken)
         {
-            throw new NotSupportedException("Query execution should be stubbed in this test.");
+            return Task.FromResult<DbConnection>(RecordingDbConnection.WithResultSets());
         }
     }
 }

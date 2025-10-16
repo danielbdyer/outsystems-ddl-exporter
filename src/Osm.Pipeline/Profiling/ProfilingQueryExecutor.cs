@@ -33,25 +33,31 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         using var tableCancellation = CreateTableCancellationSource(cancellationToken);
 
-        var nullCounts = await ExecuteWithTimeoutFallback(
+        var (nullCounts, usedNullFallback) = await ExecuteWithTimeoutFallback(
             ct => ComputeNullCountsAsync(connection, plan, ct),
             BuildConservativeNullCounts(plan),
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
-        var duplicateFlags = await ExecuteWithTimeoutFallback(
+        var (duplicateCandidates, usedDuplicateFallback) = await ExecuteWithTimeoutFallback(
             ct => ComputeDuplicateCandidatesAsync(connection, plan, ct),
             BuildConservativeUniqueResults(plan),
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
-        var orphanFlags = await ExecuteWithTimeoutFallback(
+        var (foreignKeys, usedForeignKeyFallback) = await ExecuteWithTimeoutFallback(
             ct => ComputeForeignKeyRealityAsync(connection, plan, ct),
             BuildConservativeForeignKeyResults(plan),
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
-        return new TableProfilingResults(nullCounts, duplicateFlags, orphanFlags);
+        return new TableProfilingResults(
+            nullCounts,
+            duplicateCandidates,
+            foreignKeys,
+            usedNullFallback,
+            usedDuplicateFallback,
+            usedForeignKeyFallback);
     }
 
     internal static string BuildUniqueCandidatesSql(
@@ -324,7 +330,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         return results.ToImmutable();
     }
 
-    private async Task<T> ExecuteWithTimeoutFallback<T>(
+    private async Task<(T Value, bool UsedFallback)> ExecuteWithTimeoutFallback<T>(
         Func<CancellationToken, Task<T>> operation,
         T fallback,
         CancellationTokenSource? tableCancellation,
@@ -333,15 +339,16 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         try
         {
             var token = tableCancellation?.Token ?? originalToken;
-            return await operation(token).ConfigureAwait(false);
+            var value = await operation(token).ConfigureAwait(false);
+            return (value, false);
         }
         catch (OperationCanceledException) when (IsTableTimeout(tableCancellation, originalToken))
         {
-            return fallback;
+            return (fallback, true);
         }
         catch (DbException ex) when (IsTimeoutException(ex))
         {
-            return fallback;
+            return (fallback, true);
         }
     }
 

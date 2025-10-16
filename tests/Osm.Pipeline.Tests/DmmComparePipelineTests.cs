@@ -30,6 +30,7 @@ public class DmmComparePipelineTests
             Assert.Equal(profilePath, request.Telemetry.ProfilingStartMetadata["profilePath"]);
             var captureResult = await request.ProfileCaptureAsync(default!, token);
             Assert.True(captureResult.IsSuccess);
+            Assert.NotNull(captureResult.Value.Snapshot);
 
             var error = ValidationError.Create("test.bootstrap.stop", "Bootstrapper halted pipeline for verification.");
             return Result<PipelineBootstrapContext>.Failure(error);

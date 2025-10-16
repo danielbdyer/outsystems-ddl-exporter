@@ -84,7 +84,7 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep
             "Captured profiling snapshot.");
     }
 
-    private async Task<Result<ProfileSnapshot>> CaptureProfileAsync(
+    private async Task<Result<ProfilingCaptureResult>> CaptureProfileAsync(
         BuildSsdtPipelineRequest request,
         OsmModel model,
         CancellationToken cancellationToken)

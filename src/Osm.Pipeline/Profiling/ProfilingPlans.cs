@@ -18,10 +18,16 @@ internal sealed record ForeignKeyPlan(string Key, string Column, string TargetSc
 internal sealed record TableProfilingResults(
     IReadOnlyDictionary<string, long> NullCounts,
     IReadOnlyDictionary<string, bool> UniqueDuplicates,
-    IReadOnlyDictionary<string, bool> ForeignKeys)
+    IReadOnlyDictionary<string, bool> ForeignKeys,
+    bool UsedNullCountFallback,
+    bool UsedUniqueFallback,
+    bool UsedForeignKeyFallback)
 {
     public static TableProfilingResults Empty { get; } = new(
         ImmutableDictionary<string, long>.Empty,
         ImmutableDictionary<string, bool>.Empty,
-        ImmutableDictionary<string, bool>.Empty);
+        ImmutableDictionary<string, bool>.Empty,
+        UsedNullCountFallback: false,
+        UsedUniqueFallback: false,
+        UsedForeignKeyFallback: false);
 }

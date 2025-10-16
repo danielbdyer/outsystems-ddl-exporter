@@ -32,6 +32,8 @@ public class BuildSsdtPipelineTests
 
             var captureResult = await request.ProfileCaptureAsync(default!, token);
             Assert.True(captureResult.IsSuccess);
+            Assert.NotNull(captureResult.Value.Snapshot);
+            Assert.True(captureResult.Value.Warnings.IsDefaultOrEmpty);
 
             var error = ValidationError.Create("test.bootstrap.stop", "Bootstrapper halted pipeline for verification.");
             return Result<PipelineBootstrapContext>.Failure(error);
