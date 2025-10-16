@@ -1,0 +1,96 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Osm.Domain.Configuration;
+using Osm.Domain.ValueObjects;
+using Osm.Json;
+using Osm.Json.Deserialization;
+
+namespace Osm.Json.Tests.Deserialization;
+
+using AttributeDocument = ModelJsonDeserializer.AttributeDocument;
+using EntityDocument = ModelJsonDeserializer.EntityDocument;
+
+public class EntityDocumentMapperTests
+{
+    private static DocumentMapperContext CreateContext(List<string> warnings, ModuleValidationOverrides? overrides = null)
+    {
+        var serializerOptions = new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+        var options = new ModelJsonDeserializerOptions(overrides);
+        return new DocumentMapperContext(options, warnings, serializerOptions);
+    }
+
+    private static AttributeDocument CreateIdentifierAttribute()
+        => new()
+        {
+            Name = "Id",
+            PhysicalName = "ID",
+            DataType = "Identifier",
+            IsMandatory = true,
+            IsIdentifier = true,
+            IsAutoNumber = true,
+            IsActive = true,
+            ExtendedProperties = Array.Empty<ModelJsonDeserializer.ExtendedPropertyDocument>()
+        };
+
+    [Fact]
+    public void Map_ShouldFail_WhenSchemaMissingAndNoOverride()
+    {
+        var warnings = new List<string>();
+        var context = CreateContext(warnings);
+        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper();
+        var attributeMapper = new AttributeDocumentMapper(extendedPropertyMapper);
+        var mapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
+
+        var document = new EntityDocument
+        {
+            Name = "Invoice",
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            IsActive = true,
+            Attributes = new[] { CreateIdentifierAttribute() }
+        };
+
+        var result = mapper.Map(ModuleName.Create("Finance").Value, document);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "entity.schema.missing");
+    }
+
+    [Fact]
+    public void Map_ShouldAllowMissingSchema_WhenOverrideExists()
+    {
+        var warnings = new List<string>();
+        var overridesResult = ModuleValidationOverrides.Create(new Dictionary<string, ModuleValidationOverrideConfiguration>
+        {
+            ["Finance"] = new ModuleValidationOverrideConfiguration(
+                Array.Empty<string>(),
+                false,
+                new[] { "Invoice" },
+                false)
+        });
+        Assert.True(overridesResult.IsSuccess, string.Join(", ", overridesResult.Errors.Select(e => e.Message)));
+
+        var context = CreateContext(warnings, overridesResult.Value);
+        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper();
+        var attributeMapper = new AttributeDocumentMapper(extendedPropertyMapper);
+        var mapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
+
+        var document = new EntityDocument
+        {
+            Name = "Invoice",
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            IsActive = true,
+            Attributes = new[] { CreateIdentifierAttribute() }
+        };
+
+        var result = mapper.Map(ModuleName.Create("Finance").Value, document);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.IsActive);
+        Assert.Contains(warnings, warning => warning.Contains("missing schema", StringComparison.OrdinalIgnoreCase));
+    }
+}
