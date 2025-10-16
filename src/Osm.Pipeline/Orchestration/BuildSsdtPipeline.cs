@@ -12,7 +12,6 @@ using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Pipeline.Evidence;
-using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.Mediation;
@@ -23,9 +22,7 @@ namespace Osm.Pipeline.Orchestration;
 
 public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>
 {
-    private readonly IModelIngestionService _modelIngestionService;
-    private readonly ModuleFilter _moduleFilter;
-    private readonly SupplementalEntityLoader _supplementalLoader;
+    private readonly IPipelineBootstrapper _bootstrapper;
     private readonly TighteningPolicy _tighteningPolicy;
     private readonly SmoModelFactory _smoModelFactory;
     private readonly SsdtEmitter _ssdtEmitter;
@@ -38,9 +35,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
     private readonly TimeProvider _timeProvider;
 
     public BuildSsdtPipeline(
-        IModelIngestionService? modelIngestionService = null,
-        ModuleFilter? moduleFilter = null,
-        SupplementalEntityLoader? supplementalLoader = null,
+        IPipelineBootstrapper? bootstrapper = null,
         TighteningPolicy? tighteningPolicy = null,
         SmoModelFactory? smoModelFactory = null,
         SsdtEmitter? ssdtEmitter = null,
@@ -52,9 +47,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         EmissionFingerprintCalculator? fingerprintCalculator = null,
         TimeProvider? timeProvider = null)
     {
-        _modelIngestionService = modelIngestionService ?? new ModelIngestionService(new ModelJsonDeserializer());
-        _moduleFilter = moduleFilter ?? new ModuleFilter();
-        _supplementalLoader = supplementalLoader ?? new SupplementalEntityLoader();
+        _bootstrapper = bootstrapper ?? new PipelineBootstrapper();
         _tighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
         _smoModelFactory = smoModelFactory ?? new SmoModelFactory();
         _ssdtEmitter = ssdtEmitter ?? new SsdtEmitter();
@@ -91,9 +84,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         }
 
         var log = new PipelineExecutionLogBuilder(_timeProvider);
-        var pipelineWarnings = ImmutableArray.CreateBuilder<string>();
-        log.Record(
-            "request.received",
+        var telemetry = new PipelineBootstrapTelemetry(
             "Received build-ssdt pipeline request.",
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -110,128 +101,35 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 ["emission.emitBareTableOnly"] = request.SmoOptions.EmitBareTableOnly ? "true" : "false",
                 ["emission.sanitizeModuleNames"] = request.SmoOptions.SanitizeModuleNames ? "true" : "false",
                 ["emission.moduleParallelism"] = request.SmoOptions.ModuleParallelism.ToString(CultureInfo.InvariantCulture)
-            });
-
-        var ingestionWarnings = new List<string>();
-        var ingestionOptions = new ModelIngestionOptions(request.ModuleFilter.ValidationOverrides, null);
-        var modelResult = await _modelIngestionService
-            .LoadFromFileAsync(request.ModelPath, ingestionWarnings, cancellationToken, ingestionOptions)
-            .ConfigureAwait(false);
-        if (modelResult.IsFailure)
-        {
-            return Result<BuildSsdtPipelineResult>.Failure(modelResult.Errors);
-        }
-
-        if (ingestionWarnings.Count > 0)
-        {
-            pipelineWarnings.AddRange(ingestionWarnings);
-            var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["summary"] = ingestionWarnings[0],
-                ["lineCount"] = ingestionWarnings.Count.ToString(CultureInfo.InvariantCulture)
-            };
-
-            if (ingestionWarnings.Count > 1)
-            {
-                metadata["example1"] = ingestionWarnings[1];
-            }
-
-            if (ingestionWarnings.Count > 2)
-            {
-                metadata["example2"] = ingestionWarnings[2];
-            }
-
-            if (ingestionWarnings.Count > 3)
-            {
-                metadata["example3"] = ingestionWarnings[3];
-            }
-
-            if (ingestionWarnings.Count > 4)
-            {
-                metadata["suppressed"] = ingestionWarnings[^1];
-            }
-
-            log.Record(
-                "model.schema.warnings",
-                "Model JSON schema validation produced warnings.",
-                metadata);
-        }
-
-        var model = modelResult.Value;
-        var moduleCount = model.Modules.Length;
-        var entityCount = model.Modules.Sum(static module => module.Entities.Length);
-        var attributeCount = model.Modules.Sum(static module => module.Entities.Sum(entity => entity.Attributes.Length));
-        log.Record(
-            "model.ingested",
-            "Loaded OutSystems model from disk.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["modules"] = moduleCount.ToString(CultureInfo.InvariantCulture),
-                ["entities"] = entityCount.ToString(CultureInfo.InvariantCulture),
-                ["attributes"] = attributeCount.ToString(CultureInfo.InvariantCulture),
-                ["exportedAtUtc"] = model.ExportedAtUtc.ToString("O", CultureInfo.InvariantCulture)
-            });
-
-        var filteredResult = _moduleFilter.Apply(model, request.ModuleFilter);
-        if (filteredResult.IsFailure)
-        {
-            return Result<BuildSsdtPipelineResult>.Failure(filteredResult.Errors);
-        }
-
-        var filteredModel = filteredResult.Value;
-        log.Record(
-            "model.filtered",
-            "Applied module filter options.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["originalModules"] = moduleCount.ToString(CultureInfo.InvariantCulture),
-                ["filteredModules"] = filteredModel.Modules.Length.ToString(CultureInfo.InvariantCulture),
-                ["filter.includeSystemModules"] = request.ModuleFilter.IncludeSystemModules ? "true" : "false",
-                ["filter.includeInactiveModules"] = request.ModuleFilter.IncludeInactiveModules ? "true" : "false"
-            });
-
-        var supplementalResult = await _supplementalLoader.LoadAsync(request.SupplementalModels, cancellationToken).ConfigureAwait(false);
-        if (supplementalResult.IsFailure)
-        {
-            return Result<BuildSsdtPipelineResult>.Failure(supplementalResult.Errors);
-        }
-
-        log.Record(
-            "supplemental.loaded",
-            "Loaded supplemental entity definitions.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["supplementalEntityCount"] = supplementalResult.Value.Length.ToString(CultureInfo.InvariantCulture),
-                ["requestedPaths"] = request.SupplementalModels.Paths.Count.ToString(CultureInfo.InvariantCulture)
-            });
-
-        log.Record(
-            "profiling.capture.start",
+            },
             "Capturing profiling snapshot.",
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 ["provider"] = request.ProfilerProvider,
                 ["profilePath"] = request.ProfilePath
-            });
+            },
+            "Captured profiling snapshot.");
 
-        var profileResult = await CaptureProfileAsync(request, filteredResult.Value, cancellationToken).ConfigureAwait(false);
-        if (profileResult.IsFailure)
+        var bootstrapRequest = new PipelineBootstrapRequest(
+            request.ModelPath,
+            request.ModuleFilter,
+            request.SupplementalModels,
+            telemetry,
+            (model, token) => CaptureProfileAsync(request, model, token));
+
+        var bootstrapResult = await _bootstrapper
+            .BootstrapAsync(log, bootstrapRequest, cancellationToken)
+            .ConfigureAwait(false);
+        if (bootstrapResult.IsFailure)
         {
-            return Result<BuildSsdtPipelineResult>.Failure(profileResult.Errors);
+            return Result<BuildSsdtPipelineResult>.Failure(bootstrapResult.Errors);
         }
 
-        var profile = profileResult.Value;
-        log.Record(
-            "profiling.capture.completed",
-            "Captured profiling snapshot.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["provider"] = request.ProfilerProvider,
-                ["columnProfiles"] = profile.Columns.Length.ToString(CultureInfo.InvariantCulture),
-                ["uniqueCandidates"] = profile.UniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
-                ["compositeUniqueCandidates"] = profile.CompositeUniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeys"] = profile.ForeignKeys.Length.ToString(CultureInfo.InvariantCulture)
-            });
+        var bootstrapContext = bootstrapResult.Value;
+        var filteredModel = bootstrapContext.FilteredModel;
+        var supplementalEntities = bootstrapContext.SupplementalEntities;
+        var profile = bootstrapContext.Profile;
+        var pipelineWarnings = bootstrapContext.Warnings;
 
         EvidenceCacheResult? cacheResult = null;
         if (request.EvidenceCache is { } cacheOptions && !string.IsNullOrWhiteSpace(cacheOptions.RootDirectory))
@@ -301,7 +199,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             decisions,
             profile,
             request.SmoOptions,
-            supplementalResult.Value,
+            supplementalEntities,
             request.TypeMappingPolicy);
         var smoTableCount = smoModel.Tables.Length;
         var smoColumnCount = smoModel.Tables.Sum(static table => table.Columns.Length);
@@ -338,7 +236,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
 
         var coverageResult = EmissionCoverageCalculator.Compute(
             filteredModel,
-            supplementalResult.Value,
+            supplementalEntities,
             decisions,
             smoModel,
             emissionSmoOptions);
@@ -477,7 +375,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             seedPaths,
             cacheResult,
             log.Build(),
-            pipelineWarnings.ToImmutable());
+            pipelineWarnings);
     }
 
     private async Task<Result<ProfileSnapshot>> CaptureProfileAsync(

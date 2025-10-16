@@ -18,6 +18,98 @@ namespace Osm.Pipeline.Tests;
 public class BuildSsdtPipelineTests
 {
     [Fact]
+    public async Task HandleAsync_uses_fixture_profile_strategy_via_bootstrapper()
+    {
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        var outputDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+
+        var bootstrapper = new FakePipelineBootstrapper(async (_, request, token) =>
+        {
+            Assert.Equal("Received build-ssdt pipeline request.", request.Telemetry.RequestMessage);
+            Assert.Equal("fixture", request.Telemetry.ProfilingStartMetadata["provider"]);
+
+            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            Assert.True(captureResult.IsSuccess);
+
+            var error = ValidationError.Create("test.bootstrap.stop", "Bootstrapper halted pipeline for verification.");
+            return Result<PipelineBootstrapContext>.Failure(error);
+        });
+
+        var request = new BuildSsdtPipelineRequest(
+            modelPath,
+            ModuleFilterOptions.IncludeAll,
+            outputDirectory,
+            TighteningOptions.Default,
+            SupplementalModelOptions.Default,
+            "fixture",
+            profilePath,
+            new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicy.LoadDefault(),
+            null,
+            null,
+            null);
+
+        var pipeline = new BuildSsdtPipeline(bootstrapper: bootstrapper);
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("test.bootstrap.stop", error.Code);
+        Assert.NotNull(bootstrapper.LastRequest);
+    }
+
+    [Fact]
+    public async Task HandleAsync_uses_sql_profile_strategy_via_bootstrapper()
+    {
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var outputDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+
+        var bootstrapper = new FakePipelineBootstrapper(async (_, request, token) =>
+        {
+            Assert.Equal("sql", request.Telemetry.ProfilingStartMetadata["provider"]);
+
+            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            Assert.True(captureResult.IsFailure);
+            var captureError = Assert.Single(captureResult.Errors);
+            Assert.Equal("pipeline.buildSsdt.sql.connectionString.missing", captureError.Code);
+
+            return Result<PipelineBootstrapContext>.Failure(captureResult.Errors);
+        });
+
+        var request = new BuildSsdtPipelineRequest(
+            modelPath,
+            ModuleFilterOptions.IncludeAll,
+            outputDirectory,
+            TighteningOptions.Default,
+            SupplementalModelOptions.Default,
+            "sql",
+            null,
+            new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicy.LoadDefault(),
+            null,
+            null,
+            null);
+
+        var pipeline = new BuildSsdtPipeline(bootstrapper: bootstrapper);
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "pipeline.buildSsdt.sql.connectionString.missing");
+        Assert.NotNull(bootstrapper.LastRequest);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_emits_manifest_seed_and_cache()
     {
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
@@ -83,6 +175,28 @@ public class BuildSsdtPipelineTests
         var coverageElement = manifestDocument.RootElement.GetProperty("Coverage");
         Assert.True(coverageElement.GetProperty("Tables").GetProperty("Total").GetInt32() >= 0);
         Assert.Equal(JsonValueKind.Array, manifestDocument.RootElement.GetProperty("Unsupported").ValueKind);
+    }
+
+    private sealed class FakePipelineBootstrapper : IPipelineBootstrapper
+    {
+        private readonly Func<PipelineExecutionLogBuilder, PipelineBootstrapRequest, CancellationToken, Task<Result<PipelineBootstrapContext>>> _callback;
+
+        public FakePipelineBootstrapper(
+            Func<PipelineExecutionLogBuilder, PipelineBootstrapRequest, CancellationToken, Task<Result<PipelineBootstrapContext>>> callback)
+        {
+            _callback = callback;
+        }
+
+        public PipelineBootstrapRequest? LastRequest { get; private set; }
+
+        public Task<Result<PipelineBootstrapContext>> BootstrapAsync(
+            PipelineExecutionLogBuilder log,
+            PipelineBootstrapRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return _callback(log, request, cancellationToken);
+        }
     }
 
     private sealed class EmptyStaticEntityDataProvider : IStaticEntityDataProvider

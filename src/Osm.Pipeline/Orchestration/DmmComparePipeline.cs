@@ -10,7 +10,6 @@ using Osm.Domain.Profiling;
 using Osm.Dmm;
 using Osm.Json;
 using Osm.Pipeline.Evidence;
-using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Profiling;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -20,9 +19,7 @@ namespace Osm.Pipeline.Orchestration;
 
 public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>
 {
-    private readonly IModelIngestionService _modelIngestionService;
-    private readonly ModuleFilter _moduleFilter;
-    private readonly SupplementalEntityLoader _supplementalLoader;
+    private readonly IPipelineBootstrapper _bootstrapper;
     private readonly TighteningPolicy _tighteningPolicy;
     private readonly SmoModelFactory _smoModelFactory;
     private readonly IDmmLens<TextReader> _dmmScriptLens;
@@ -36,9 +33,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
     private readonly TimeProvider _timeProvider;
 
     public DmmComparePipeline(
-        IModelIngestionService? modelIngestionService = null,
-        ModuleFilter? moduleFilter = null,
-        SupplementalEntityLoader? supplementalLoader = null,
+        IPipelineBootstrapper? bootstrapper = null,
         TighteningPolicy? tighteningPolicy = null,
         SmoModelFactory? smoModelFactory = null,
         IDmmLens<TextReader>? dmmScriptLens = null,
@@ -51,9 +46,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
         TimeProvider? timeProvider = null)
     {
-        _modelIngestionService = modelIngestionService ?? new ModelIngestionService(new ModelJsonDeserializer());
-        _moduleFilter = moduleFilter ?? new ModuleFilter();
-        _supplementalLoader = supplementalLoader ?? new SupplementalEntityLoader();
+        _bootstrapper = bootstrapper ?? new PipelineBootstrapper();
         _tighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
         _smoModelFactory = smoModelFactory ?? new SmoModelFactory();
         _dmmScriptLens = dmmScriptLens ?? new ScriptDomDmmLens();
@@ -108,9 +101,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         }
 
         var log = new PipelineExecutionLogBuilder(_timeProvider);
-        var pipelineWarnings = ImmutableArray.CreateBuilder<string>();
-        log.Record(
-            "request.received",
+        var telemetry = new PipelineBootstrapTelemetry(
             "Received dmm-compare pipeline request.",
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -125,128 +116,35 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 ["emission.includePlatformAutoIndexes"] = request.SmoOptions.IncludePlatformAutoIndexes ? "true" : "false",
                 ["emission.emitBareTableOnly"] = request.SmoOptions.EmitBareTableOnly ? "true" : "false",
                 ["emission.sanitizeModuleNames"] = request.SmoOptions.SanitizeModuleNames ? "true" : "false"
-            });
-
-        var ingestionWarnings = new List<string>();
-        var ingestionOptions = new ModelIngestionOptions(request.ModuleFilter.ValidationOverrides, null);
-        var modelResult = await _modelIngestionService
-            .LoadFromFileAsync(request.ModelPath, ingestionWarnings, cancellationToken, ingestionOptions)
-            .ConfigureAwait(false);
-        if (modelResult.IsFailure)
-        {
-            return Result<DmmComparePipelineResult>.Failure(modelResult.Errors);
-        }
-
-        if (ingestionWarnings.Count > 0)
-        {
-            pipelineWarnings.AddRange(ingestionWarnings);
-            var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["summary"] = ingestionWarnings[0],
-                ["lineCount"] = ingestionWarnings.Count.ToString(CultureInfo.InvariantCulture)
-            };
-
-            if (ingestionWarnings.Count > 1)
-            {
-                metadata["example1"] = ingestionWarnings[1];
-            }
-
-            if (ingestionWarnings.Count > 2)
-            {
-                metadata["example2"] = ingestionWarnings[2];
-            }
-
-            if (ingestionWarnings.Count > 3)
-            {
-                metadata["example3"] = ingestionWarnings[3];
-            }
-
-            if (ingestionWarnings.Count > 4)
-            {
-                metadata["suppressed"] = ingestionWarnings[^1];
-            }
-
-            log.Record(
-                "model.schema.warnings",
-                "Model JSON schema validation produced warnings.",
-                metadata);
-        }
-
-        var model = modelResult.Value;
-        var moduleCount = model.Modules.Length;
-        var entityCount = model.Modules.Sum(static module => module.Entities.Length);
-        var attributeCount = model.Modules.Sum(static module => module.Entities.Sum(entity => entity.Attributes.Length));
-        log.Record(
-            "model.ingested",
-            "Loaded OutSystems model from disk.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["modules"] = moduleCount.ToString(CultureInfo.InvariantCulture),
-                ["entities"] = entityCount.ToString(CultureInfo.InvariantCulture),
-                ["attributes"] = attributeCount.ToString(CultureInfo.InvariantCulture),
-                ["exportedAtUtc"] = model.ExportedAtUtc.ToString("O", CultureInfo.InvariantCulture)
-            });
-
-        var filteredResult = _moduleFilter.Apply(model, request.ModuleFilter);
-        if (filteredResult.IsFailure)
-        {
-            return Result<DmmComparePipelineResult>.Failure(filteredResult.Errors);
-        }
-
-        var filteredModel = filteredResult.Value;
-        log.Record(
-            "model.filtered",
-            "Applied module filter options.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["originalModules"] = moduleCount.ToString(CultureInfo.InvariantCulture),
-                ["filteredModules"] = filteredModel.Modules.Length.ToString(CultureInfo.InvariantCulture),
-                ["filter.includeSystemModules"] = request.ModuleFilter.IncludeSystemModules ? "true" : "false",
-                ["filter.includeInactiveModules"] = request.ModuleFilter.IncludeInactiveModules ? "true" : "false"
-            });
-
-        var supplementalResult = await _supplementalLoader.LoadAsync(request.SupplementalModels, cancellationToken).ConfigureAwait(false);
-        if (supplementalResult.IsFailure)
-        {
-            return Result<DmmComparePipelineResult>.Failure(supplementalResult.Errors);
-        }
-
-        log.Record(
-            "supplemental.loaded",
-            "Loaded supplemental entity definitions.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["supplementalEntityCount"] = supplementalResult.Value.Length.ToString(CultureInfo.InvariantCulture),
-                ["requestedPaths"] = request.SupplementalModels.Paths.Count.ToString(CultureInfo.InvariantCulture)
-            });
-
-        log.Record(
-            "profiling.capture.start",
+            },
             "Loading profiling snapshot from fixtures.",
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 ["profilePath"] = request.ProfilePath
-            });
+            },
+            "Loaded profiling snapshot.");
 
-        var profileResult = await new FixtureDataProfiler(request.ProfilePath, _profileSnapshotDeserializer)
-            .CaptureAsync(cancellationToken)
+        var bootstrapRequest = new PipelineBootstrapRequest(
+            request.ModelPath,
+            request.ModuleFilter,
+            request.SupplementalModels,
+            telemetry,
+            (_, token) => new FixtureDataProfiler(request.ProfilePath, _profileSnapshotDeserializer)
+                .CaptureAsync(token));
+
+        var bootstrapResult = await _bootstrapper
+            .BootstrapAsync(log, bootstrapRequest, cancellationToken)
             .ConfigureAwait(false);
-        if (profileResult.IsFailure)
+        if (bootstrapResult.IsFailure)
         {
-            return Result<DmmComparePipelineResult>.Failure(profileResult.Errors);
+            return Result<DmmComparePipelineResult>.Failure(bootstrapResult.Errors);
         }
 
-        var profile = profileResult.Value;
-        log.Record(
-            "profiling.capture.completed",
-            "Loaded profiling snapshot.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["columnProfiles"] = profile.Columns.Length.ToString(CultureInfo.InvariantCulture),
-                ["uniqueCandidates"] = profile.UniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
-                ["compositeUniqueCandidates"] = profile.CompositeUniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeys"] = profile.ForeignKeys.Length.ToString(CultureInfo.InvariantCulture)
-            });
+        var bootstrapContext = bootstrapResult.Value;
+        var filteredModel = bootstrapContext.FilteredModel;
+        var supplementalEntities = bootstrapContext.SupplementalEntities;
+        var profile = bootstrapContext.Profile;
+        var pipelineWarnings = bootstrapContext.Warnings;
 
         EvidenceCacheResult? cacheResult = null;
         if (request.EvidenceCache is { } cacheOptions && !string.IsNullOrWhiteSpace(cacheOptions.RootDirectory))
@@ -301,7 +199,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             decisions,
             profile,
             request.SmoOptions,
-            supplementalResult.Value,
+            supplementalEntities,
             request.TypeMappingPolicy);
         var smoTableCount = smoModel.Tables.Length;
         var smoColumnCount = smoModel.Tables.Sum(static table => table.Columns.Length);
@@ -452,6 +350,6 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             diffPath,
             cacheResult,
             log.Build(),
-            pipelineWarnings.ToImmutable());
+            pipelineWarnings);
     }
 }
