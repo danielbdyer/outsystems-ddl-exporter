@@ -33,6 +33,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
     private readonly DmmDiffLogWriter _diffLogWriter;
     private readonly IEvidenceCacheService _evidenceCacheService;
     private readonly ProfileSnapshotDeserializer _profileSnapshotDeserializer;
+    private readonly TimeProvider _timeProvider;
 
     public DmmComparePipeline(
         IModelIngestionService? modelIngestionService = null,
@@ -47,7 +48,8 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         SsdtTableLayoutComparator? ssdtLayoutComparator = null,
         DmmDiffLogWriter? diffLogWriter = null,
         IEvidenceCacheService? evidenceCacheService = null,
-        ProfileSnapshotDeserializer? profileSnapshotDeserializer = null)
+        ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
+        TimeProvider? timeProvider = null)
     {
         _modelIngestionService = modelIngestionService ?? new ModelIngestionService(new ModelJsonDeserializer());
         _moduleFilter = moduleFilter ?? new ModuleFilter();
@@ -62,6 +64,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         _diffLogWriter = diffLogWriter ?? new DmmDiffLogWriter();
         _evidenceCacheService = evidenceCacheService ?? new EvidenceCacheService();
         _profileSnapshotDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<Result<DmmComparePipelineResult>> HandleAsync(
@@ -104,7 +107,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 $"DMM script or SSDT directory '{request.DmmPath}' was not found.");
         }
 
-        var log = new PipelineExecutionLogBuilder();
+        var log = new PipelineExecutionLogBuilder(_timeProvider);
         var pipelineWarnings = ImmutableArray.CreateBuilder<string>();
         log.Record(
             "request.received",

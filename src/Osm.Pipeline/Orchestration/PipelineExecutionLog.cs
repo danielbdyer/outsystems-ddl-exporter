@@ -27,7 +27,13 @@ public sealed record PipelineLogEntry(
 
 public sealed class PipelineExecutionLogBuilder
 {
+    private readonly TimeProvider _timeProvider;
     private readonly List<PipelineLogEntry> _entries = new();
+
+    public PipelineExecutionLogBuilder(TimeProvider? timeProvider = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
 
     public void Record(
         string step,
@@ -52,7 +58,7 @@ public sealed class PipelineExecutionLogBuilder
                 StringComparer.Ordinal);
 
         _entries.Add(new PipelineLogEntry(
-            DateTimeOffset.UtcNow,
+            _timeProvider.GetUtcNow(),
             step,
             message,
             entryMetadata));
