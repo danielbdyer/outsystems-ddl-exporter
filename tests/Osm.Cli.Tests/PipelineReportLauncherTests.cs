@@ -11,6 +11,7 @@ using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
 using Tests.Support;
 using Xunit;
+using Osm.Domain.Configuration;
 
 namespace Osm.Cli.Tests;
 
@@ -63,7 +64,11 @@ public class PipelineReportLauncherTests
             ImmutableDictionary<string, int>.Empty,
             ImmutableDictionary<string, int>.Empty,
             ImmutableDictionary<string, int>.Empty,
-            ImmutableArray<TighteningDiagnostic>.Empty);
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<string, ModuleDecisionRollup>.Empty.Add(
+                "AppCore",
+                new ModuleDecisionRollup(1, 1, 0, 0, 0, 0, 0, 0)),
+            TighteningToggleSnapshot.Create(TighteningOptions.Default));
 
         var seedPaths = ImmutableArray.Create(
             Path.Combine(output.Path, "Seeds", "AppCore", "StaticEntities.seed.sql"),

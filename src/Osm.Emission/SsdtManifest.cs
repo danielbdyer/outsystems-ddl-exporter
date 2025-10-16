@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Osm.Validation.Tightening;
 namespace Osm.Emission;
 
 public sealed record SsdtManifest(
@@ -45,7 +46,9 @@ public sealed record SsdtPolicySummary(
     int ForeignKeysCreatedCount,
     IReadOnlyDictionary<string, int> ColumnRationales,
     IReadOnlyDictionary<string, int> UniqueIndexRationales,
-    IReadOnlyDictionary<string, int> ForeignKeyRationales);
+    IReadOnlyDictionary<string, int> ForeignKeyRationales,
+    IReadOnlyDictionary<string, ModuleDecisionRollup> ModuleRollups,
+    IReadOnlyDictionary<string, ToggleExportValue> TogglePrecedence);
 
 public sealed record SsdtCoverageSummary(
     CoverageBreakdown Tables,

@@ -137,7 +137,9 @@ public sealed class SsdtEmitter
                 decisionReport.ForeignKeysCreatedCount,
                 decisionReport.ColumnRationaleCounts,
                 decisionReport.UniqueIndexRationaleCounts,
-                decisionReport.ForeignKeyRationaleCounts);
+                decisionReport.ForeignKeyRationaleCounts,
+                decisionReport.ModuleRollups,
+                decisionReport.Toggles.ToExportDictionary());
         }
 
         var preRemediationEntries = preRemediation ?? Array.Empty<PreRemediationManifestEntry>();

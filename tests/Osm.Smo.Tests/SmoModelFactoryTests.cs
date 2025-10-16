@@ -356,7 +356,10 @@ public class SmoModelFactoryTests
             ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(fkCoordinate, foreignKeyDecision),
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
-            ImmutableArray<TighteningDiagnostic>.Empty);
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<ColumnCoordinate, string>.Empty.Add(fkCoordinate, productEntity.Module.Value),
+            ImmutableDictionary<IndexCoordinate, string>.Empty,
+            TighteningOptions.Default);
 
         var factory = new SmoModelFactory();
         var smoOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
@@ -431,7 +434,10 @@ public class SmoModelFactoryTests
             ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(columnCoordinate, fkDecision),
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
-            ImmutableArray<TighteningDiagnostic>.Empty);
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<ColumnCoordinate, string>.Empty.Add(columnCoordinate, auditEntity.Module.Value),
+            ImmutableDictionary<IndexCoordinate, string>.Empty,
+            TighteningOptions.Default);
 
         var factory = new SmoModelFactory();
         var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
