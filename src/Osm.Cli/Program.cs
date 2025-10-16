@@ -35,15 +35,15 @@ hostBuilder.Services.AddSingleton<Func<string, SqlConnectionOptions, IDbConnecti
     _ => (connectionString, options) => new SqlConnectionFactory(connectionString, options));
 hostBuilder.Services.AddSingleton<IDataProfilerFactory, DataProfilerFactory>();
 hostBuilder.Services.AddSingleton<IPipelineBootstrapper, PipelineBootstrapper>();
-hostBuilder.Services.AddSingleton<ITighteningPolicy, TighteningPolicy>();
-hostBuilder.Services.AddSingleton<ISmoModelFactory, SmoModelFactory>();
-hostBuilder.Services.AddSingleton<ISsdtEmitter, SsdtEmitter>();
-hostBuilder.Services.AddSingleton<IPolicyDecisionLogWriter, PolicyDecisionLogWriter>();
-hostBuilder.Services.AddSingleton<IEmissionFingerprintCalculator, EmissionFingerprintCalculator>();
-hostBuilder.Services.AddSingleton<IStaticEntitySeedScriptGenerator, StaticEntitySeedScriptGenerator>();
+hostBuilder.Services.AddSingleton<TighteningPolicy>();
+hostBuilder.Services.AddSingleton<SmoModelFactory>();
+hostBuilder.Services.AddSingleton<SsdtEmitter>();
+hostBuilder.Services.AddSingleton<PolicyDecisionLogWriter>();
+hostBuilder.Services.AddSingleton<EmissionFingerprintCalculator>();
+hostBuilder.Services.AddSingleton<StaticEntitySeedScriptGenerator>();
 hostBuilder.Services.AddSingleton<StaticEntitySeedTemplate>(_ => StaticEntitySeedTemplate.Load());
 hostBuilder.Services.AddSingleton<IEvidenceCacheService, EvidenceCacheService>();
-hostBuilder.Services.AddSingleton<IEvidenceCacheCoordinator, EvidenceCacheCoordinator>();
+hostBuilder.Services.AddSingleton<EvidenceCacheCoordinator>();
 hostBuilder.Services.AddSingleton<IBuildSsdtStep<PipelineInitialized, BootstrapCompleted>, BuildSsdtBootstrapStep>();
 hostBuilder.Services.AddSingleton<IBuildSsdtStep<BootstrapCompleted, EvidencePrepared>, BuildSsdtEvidenceCacheStep>();
 hostBuilder.Services.AddSingleton<IBuildSsdtStep<EvidencePrepared, DecisionsSynthesized>, BuildSsdtPolicyDecisionStep>();
@@ -52,9 +52,9 @@ hostBuilder.Services.AddSingleton<IBuildSsdtStep<EmissionReady, StaticSeedsGener
 hostBuilder.Services.AddSingleton<IDmmLens<TextReader>, ScriptDomDmmLens>();
 hostBuilder.Services.AddSingleton<IDmmLens<SmoDmmLensRequest>, SmoDmmLens>();
 hostBuilder.Services.AddSingleton<IDmmLens<string>, SsdtProjectDmmLens>();
-hostBuilder.Services.AddSingleton<IDmmComparator>(static _ => new DmmComparator());
-hostBuilder.Services.AddSingleton<ISsdtTableLayoutComparator, SsdtTableLayoutComparator>();
-hostBuilder.Services.AddSingleton<IDmmDiffLogWriter, DmmDiffLogWriter>();
+hostBuilder.Services.AddSingleton<DmmComparator>();
+hostBuilder.Services.AddSingleton<SsdtTableLayoutComparator>();
+hostBuilder.Services.AddSingleton<DmmDiffLogWriter>();
 hostBuilder.Services.AddSingleton<IModelIngestionService, ModelIngestionService>();
 hostBuilder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 hostBuilder.Services.AddSingleton<ICommandDispatcher>(

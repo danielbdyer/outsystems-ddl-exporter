@@ -66,6 +66,7 @@ public class BuildSsdtPipelineStepTests
             });
         var cacheResult = new EvidenceCacheResult(cacheDirectory.Path, manifest, evaluation);
         var cacheService = new FakeEvidenceCacheService(Result<EvidenceCacheResult>.Success(cacheResult));
+        var cacheCoordinator = new EvidenceCacheCoordinator(cacheService);
 
         var cacheOptions = new EvidenceCachePipelineOptions(
             cacheDirectory.Path,
@@ -81,7 +82,7 @@ public class BuildSsdtPipelineStepTests
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
         var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var step = new BuildSsdtEvidenceCacheStep(cacheService);
+        var step = new BuildSsdtEvidenceCacheStep(cacheCoordinator);
 
         var result = await step.ExecuteAsync(bootstrapState);
 
