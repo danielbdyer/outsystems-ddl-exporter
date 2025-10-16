@@ -83,7 +83,8 @@ public class BuildSsdtPipelineStepTests
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
         var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var step = new BuildSsdtEvidenceCacheStep(cacheService);
+        var coordinator = new EvidenceCacheCoordinator(cacheService);
+        var step = new BuildSsdtEvidenceCacheStep(coordinator);
 
         var result = await step.ExecuteAsync(bootstrapState);
 

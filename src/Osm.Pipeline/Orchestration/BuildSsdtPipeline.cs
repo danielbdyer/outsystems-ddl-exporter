@@ -31,10 +31,11 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         SmoModelFactory? smoModelFactory = null,
         SsdtEmitter? ssdtEmitter = null,
         PolicyDecisionLogWriter? decisionLogWriter = null,
+        EvidenceCacheCoordinator? evidenceCacheCoordinator = null,
         IEvidenceCacheService? evidenceCacheService = null,
         StaticEntitySeedScriptGenerator? seedGenerator = null,
         StaticEntitySeedTemplate? seedTemplate = null,
-        ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
+        IProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
         EmissionFingerprintCalculator? fingerprintCalculator = null,
         TimeProvider? timeProvider = null,
         IDataProfilerFactory? dataProfilerFactory = null)
@@ -44,7 +45,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         var resolvedSmoModelFactory = smoModelFactory ?? new SmoModelFactory();
         var resolvedEmitter = ssdtEmitter ?? new SsdtEmitter(new PerTableWriter(), new FileSystem());
         var resolvedDecisionLogWriter = decisionLogWriter ?? new PolicyDecisionLogWriter();
-        var resolvedCacheService = evidenceCacheService ?? new EvidenceCacheService();
+        var resolvedCacheCoordinator = evidenceCacheCoordinator
+            ?? new EvidenceCacheCoordinator(evidenceCacheService ?? new EvidenceCacheService());
         var resolvedSeedGenerator = seedGenerator ?? new StaticEntitySeedScriptGenerator();
         var resolvedSeedTemplate = seedTemplate ?? StaticEntitySeedTemplate.Load();
         var resolvedProfileDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
@@ -55,7 +57,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
 
         _bootstrapStep = new BuildSsdtBootstrapStep(resolvedBootstrapper, resolvedProfilerFactory);
-        _evidenceCacheStep = new BuildSsdtEvidenceCacheStep(resolvedCacheService);
+        _evidenceCacheStep = new BuildSsdtEvidenceCacheStep(resolvedCacheCoordinator);
         _policyStep = new BuildSsdtPolicyDecisionStep(resolvedTighteningPolicy);
         _emissionStep = new BuildSsdtEmissionStep(resolvedSmoModelFactory, resolvedEmitter, resolvedDecisionLogWriter, resolvedFingerprintCalculator);
         _staticSeedStep = new BuildSsdtStaticSeedStep(resolvedSeedGenerator, resolvedSeedTemplate);
