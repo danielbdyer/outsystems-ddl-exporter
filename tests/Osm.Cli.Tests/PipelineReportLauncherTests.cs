@@ -8,6 +8,7 @@ using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using Tests.Support;
 using Xunit;
@@ -80,6 +81,7 @@ public class PipelineReportLauncherTests
                 ImmutableArray<UniqueCandidateProfile>.Empty,
                 ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
                 ImmutableArray<ForeignKeyReality>.Empty),
+            ImmutableArray<SqlProfilerInsight>.Empty,
             decisionReport,
             manifest,
             Path.Combine(output.Path, "policy-decisions.json"),

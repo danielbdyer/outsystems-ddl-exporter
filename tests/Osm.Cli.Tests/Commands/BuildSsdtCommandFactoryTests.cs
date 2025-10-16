@@ -21,6 +21,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using Xunit;
 
@@ -56,6 +57,8 @@ public class BuildSsdtCommandFactoryTests
 
         var sqlBinder = provider.GetRequiredService<SqlOptionBinder>();
         Assert.Contains(sqlBinder.ConnectionStringOption, command.Options);
+        Assert.Contains(command.Options, option => option.HasAlias("--profile-insights-page-size"));
+        Assert.Contains(command.Options, option => option.HasAlias("--profile-insights-verbose"));
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
@@ -203,6 +206,8 @@ public class BuildSsdtCommandFactoryTests
 
         public IReadOnlyList<ValidationError>? FailureErrors { get; init; }
 
+        public Func<BuildSsdtApplicationResult>? ResultFactory { get; init; }
+
         public Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
         {
             LastInput = input;
@@ -211,7 +216,7 @@ public class BuildSsdtCommandFactoryTests
                 return Task.FromResult(Result<BuildSsdtApplicationResult>.Failure(FailureErrors ?? Array.Empty<ValidationError>()));
             }
 
-            LastResult = CreateResult();
+            LastResult = ResultFactory?.Invoke() ?? CreateResult();
             return Task.FromResult(Result<BuildSsdtApplicationResult>.Success(LastResult));
         }
 
@@ -281,6 +286,7 @@ public class BuildSsdtCommandFactoryTests
 
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
+                ImmutableArray<SqlProfilerInsight>.Empty,
                 report,
                 manifest,
                 "decision.log",

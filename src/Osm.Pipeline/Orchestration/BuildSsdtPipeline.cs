@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.IO.Abstractions;
@@ -120,6 +121,12 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
 
         var finalState = seedsResult.Value;
 
+        var insights = ImmutableArray<SqlProfilerInsight>.Empty;
+        if (string.Equals(finalState.Request.ProfilerProvider, "sql", StringComparison.OrdinalIgnoreCase))
+        {
+            insights = SqlProfilerInsightBuilder.FromSnapshot(finalState.Bootstrap.Profile);
+        }
+
         finalState.Log.Record(
             "pipeline.completed",
             "Build-SSDT pipeline completed successfully.",
@@ -133,6 +140,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
 
         return new BuildSsdtPipelineResult(
             finalState.Bootstrap.Profile!,
+            insights,
             finalState.Report,
             finalState.Manifest,
             finalState.DecisionLogPath,

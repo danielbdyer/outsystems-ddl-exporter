@@ -7,6 +7,7 @@ using Osm.Cli;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 
 namespace Osm.Cli.Commands;
@@ -76,9 +77,81 @@ internal static class CommandConsole
         }
     }
 
-    public static void EmitSqlProfilerSnapshot(IConsole console, ProfileSnapshot snapshot)
+    public static void EmitSqlProfilerSnapshot(
+        IConsole console,
+        string? snapshotPath,
+        ProfileSnapshot snapshot,
+        ImmutableArray<SqlProfilerInsight> insights,
+        int pageSize,
+        bool verbose)
     {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        if (pageSize <= 0)
+        {
+            pageSize = 5;
+        }
+
+        if (insights.IsDefault)
+        {
+            insights = ImmutableArray<SqlProfilerInsight>.Empty;
+        }
+
         WriteLine(console, "SQL profiler snapshot:");
+        var sourceMessage = string.IsNullOrWhiteSpace(snapshotPath)
+            ? "captured live (no snapshot persisted)."
+            : snapshotPath!;
+        WriteLine(console, $"  Source: {sourceMessage}");
+
+        if (insights.Length == 0)
+        {
+            WriteLine(console, "  No insights were produced.");
+        }
+        else
+        {
+            foreach (var group in insights
+                .GroupBy(static insight => insight.Severity)
+                .OrderByDescending(static group => group.Key))
+            {
+                var insightCount = group.Count();
+                WriteLine(console, $"  {group.Key}: {insightCount} insight(s).");
+
+                var emitted = 0;
+                foreach (var insight in group.Take(pageSize))
+                {
+                    emitted++;
+                    WriteLine(console, $"    - {insight.Message}");
+                    if (!insight.Details.IsDefaultOrEmpty)
+                    {
+                        foreach (var detail in insight.Details)
+                        {
+                            WriteLine(console, $"      • {detail}");
+                        }
+                    }
+                }
+
+                if (insightCount > emitted)
+                {
+                    WriteLine(console, $"    … {insightCount - emitted} additional insight(s) suppressed (increase --profile-insights-page-size to view more).");
+                }
+            }
+        }
+
+        if (!verbose)
+        {
+            WriteLine(console, "  (Use --profile-insights-verbose to include raw snapshot JSON.)");
+            return;
+        }
+
+        WriteLine(console, "  Raw snapshot JSON:");
         WriteLine(console, ProfileSnapshotDebugFormatter.ToJson(snapshot));
     }
 

@@ -12,6 +12,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using Xunit;
 
@@ -108,6 +109,7 @@ public sealed class BuildSsdtApplicationServiceTests
             Array.Empty<string>());
         return new BuildSsdtPipelineResult(
             profileResult.Value,
+            ImmutableArray<SqlProfilerInsight>.Empty,
             report,
             manifest,
             "decision.log",

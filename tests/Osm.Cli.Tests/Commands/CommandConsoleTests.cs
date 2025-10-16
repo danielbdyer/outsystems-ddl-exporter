@@ -8,6 +8,7 @@ using Osm.Cli.Commands;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Tests.Support;
 
 namespace Osm.Cli.Tests.Commands;
@@ -126,21 +127,43 @@ public class CommandConsoleTests
     }
 
     [Fact]
-    public void EmitSqlProfilerSnapshot_WritesHeaderAndFormatterOutput()
+    public void EmitSqlProfilerSnapshot_WritesSummaryAndSource()
     {
         var console = new TestConsole();
         var snapshot = ProfileFixtures.LoadSnapshot("profiling/profile.micro-unique.json");
-        var expectedJson = ProfileSnapshotDebugFormatter.ToJson(snapshot);
+        var insights = ImmutableArray.Create(
+            SqlProfilerInsight.Create(SqlProfilerInsightSeverity.Warning, "Duplicate unique value detected.", Array.Empty<string>()),
+            SqlProfilerInsight.Create(SqlProfilerInsightSeverity.Info, "Sampling threshold reached.", Array.Empty<string>()));
 
-        CommandConsole.EmitSqlProfilerSnapshot(console, snapshot);
+        CommandConsole.EmitSqlProfilerSnapshot(console, "path/to/snapshot.json", snapshot, insights, pageSize: 5, verbose: false);
 
-        var expected = string.Join(Environment.NewLine, new[]
-        {
-            "SQL profiler snapshot:",
-            expectedJson,
-        }) + Environment.NewLine;
+        var output = console.Out!.ToString() ?? string.Empty;
+        Assert.Contains("SQL profiler snapshot:", output);
+        Assert.Contains("Source: path/to/snapshot.json", output);
+        Assert.Contains("Warning: 1 insight(s).", output);
+        Assert.Contains("Info: 1 insight(s).", output);
+        Assert.Contains("(Use --profile-insights-verbose to include raw snapshot JSON.)", output);
+        Assert.DoesNotContain("Raw snapshot JSON", output);
+    }
 
-        Assert.Equal(expected, console.Out!.ToString());
+    [Fact]
+    public void EmitSqlProfilerSnapshot_HonorsPaginationAndVerboseFlag()
+    {
+        var console = new TestConsole();
+        var snapshot = ProfileFixtures.LoadSnapshot("profiling/profile.micro-unique.json");
+        var insights = ImmutableArray.Create(
+            SqlProfilerInsight.Create(SqlProfilerInsightSeverity.Error, "Foreign key has orphan rows.", Array.Empty<string>()),
+            SqlProfilerInsight.Create(SqlProfilerInsightSeverity.Error, "Another orphan detected.", Array.Empty<string>()),
+            SqlProfilerInsight.Create(SqlProfilerInsightSeverity.Warning, "Constraint not trusted.", Array.Empty<string>()));
+
+        CommandConsole.EmitSqlProfilerSnapshot(console, null, snapshot, insights, pageSize: 1, verbose: true);
+
+        var output = console.Out!.ToString() ?? string.Empty;
+        Assert.Contains("Source: captured live (no snapshot persisted).", output);
+        Assert.Contains("Error: 2 insight(s).", output);
+        Assert.Contains("… 1 additional insight(s) suppressed", output);
+        Assert.Contains("Raw snapshot JSON:", output);
+        Assert.Contains(ProfileSnapshotDebugFormatter.ToJson(snapshot), output);
     }
 
     private static PipelineExecutionLog CreateExecutionLog(IReadOnlyList<PipelineLogEntry> entries)

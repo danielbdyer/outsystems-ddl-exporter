@@ -27,6 +27,13 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
     private readonly Option<string?> _outputOption = new("--out", () => "out", "Output directory for SSDT artifacts.");
     private readonly Option<string?> _renameOption = new("--rename-table", "Rename tables using source=Override syntax.");
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
+    private readonly Option<int> _profilerInsightPageSizeOption = new(
+        "--profile-insights-page-size",
+        () => 5,
+        "Number of profiler insights to display per severity group.");
+    private readonly Option<bool> _profilerInsightVerboseOption = new(
+        "--profile-insights-verbose",
+        "Include raw profiler snapshot JSON alongside the insight summary.");
 
     public BuildSsdtCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -53,6 +60,8 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             _outputOption,
             _renameOption,
             _openReportOption,
+            _profilerInsightPageSizeOption,
+            _profilerInsightVerboseOption,
             _globalOptions.MaxDegreeOfParallelism
         };
 
@@ -133,7 +142,20 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
 
         if (IsSqlProfiler(applicationResult.ProfilerProvider))
         {
-            CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
+            var pageSize = context.ParseResult.GetValueForOption(_profilerInsightPageSizeOption);
+            if (pageSize <= 0)
+            {
+                pageSize = 5;
+            }
+
+            var verbose = context.ParseResult.GetValueForOption(_profilerInsightVerboseOption);
+            CommandConsole.EmitSqlProfilerSnapshot(
+                context.Console,
+                applicationResult.ProfilePath,
+                pipelineResult.Profile,
+                pipelineResult.Insights,
+                pageSize,
+                verbose);
         }
 
         CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
