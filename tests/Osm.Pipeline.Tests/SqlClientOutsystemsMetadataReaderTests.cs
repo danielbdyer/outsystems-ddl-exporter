@@ -7,8 +7,10 @@ using System.Data.Common;
 using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Sql;
@@ -96,6 +98,80 @@ public class SqlClientOutsystemsMetadataReaderTests
         Assert.Equal("extraction.metadata.resultSets.missing", error.Code);
         Assert.NotNull(executor.LastReader);
         Assert.Equal(1, executor.LastReader!.NextResultCalls);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ShouldLogAndReturnFailure_WhenRequiredColumnIsNull()
+    {
+        var resultSets = CreateDefaultResultSets();
+        var moduleColumns = resultSets[0].Columns.ToArray();
+        var moduleRow = resultSets[0].Rows[0].ToArray();
+        moduleRow[1] = null; // EspaceName is required.
+        resultSets[0] = ResultSet.Create(moduleColumns, new[] { moduleRow });
+
+        var command = new StubCommand(resultSets);
+        var connection = new StubConnection(command);
+        var factory = new StubConnectionFactory(connection);
+        var scriptProvider = new StubScriptProvider("SELECT 1");
+        var logger = new ListLogger<SqlClientOutsystemsMetadataReader>();
+        var reader = new SqlClientOutsystemsMetadataReader(
+            factory,
+            scriptProvider,
+            SqlExecutionOptions.Default,
+            logger);
+
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+
+        var result = await reader.ReadAsync(request, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("extraction.metadata.rowMapping", error.Code);
+
+        var logEntry = Assert.Single(logger.Entries.Where(entry => entry.LogLevel == LogLevel.Error));
+        Assert.Contains("Modules", logEntry.Message);
+        Assert.Contains("Column: EspaceName", logEntry.Message);
+        var exception = Assert.IsType<MetadataRowMappingException>(logEntry.Exception);
+        Assert.Equal("Modules", exception.ResultSetName);
+        Assert.Equal(0, exception.RowIndex);
+        Assert.Equal("EspaceName", exception.ColumnName);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ShouldLogAndReturnFailure_WhenColumnValueIsInvalid()
+    {
+        var resultSets = CreateDefaultResultSets();
+        var entityColumns = resultSets[1].Columns.ToArray();
+        var entityRow = resultSets[1].Rows[0].ToArray();
+        entityRow[0] = "not-an-int"; // EntityId should be an int.
+        resultSets[1] = ResultSet.Create(entityColumns, new[] { entityRow });
+
+        var command = new StubCommand(resultSets);
+        var connection = new StubConnection(command);
+        var factory = new StubConnectionFactory(connection);
+        var scriptProvider = new StubScriptProvider("SELECT 1");
+        var logger = new ListLogger<SqlClientOutsystemsMetadataReader>();
+        var reader = new SqlClientOutsystemsMetadataReader(
+            factory,
+            scriptProvider,
+            SqlExecutionOptions.Default,
+            logger);
+
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+
+        var result = await reader.ReadAsync(request, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("extraction.metadata.rowMapping", error.Code);
+
+        var logEntry = Assert.Single(logger.Entries.Where(entry => entry.LogLevel == LogLevel.Error));
+        Assert.Contains("Entities", logEntry.Message);
+        Assert.Contains("Column: EntityId", logEntry.Message);
+        var exception = Assert.IsType<MetadataRowMappingException>(logEntry.Exception);
+        Assert.Equal("Entities", exception.ResultSetName);
+        Assert.Equal(0, exception.RowIndex);
+        Assert.Equal("EntityId", exception.ColumnName);
     }
 
     private sealed class TrackingCommandExecutor : IDbCommandExecutor
@@ -630,6 +706,39 @@ public class SqlClientOutsystemsMetadataReaderTests
 
             return CurrentSet.Rows[_rowIndex];
         }
+    }
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose()
+            {
+            }
+        }
+
+        private readonly List<LogEntry> _entries = new();
+
+        public IReadOnlyList<LogEntry> Entries => _entries;
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) where TState : notnull
+        {
+            if (formatter is null)
+            {
+                throw new ArgumentNullException(nameof(formatter));
+            }
+
+            var message = formatter(state, exception);
+            _entries.Add(new LogEntry(logLevel, message, exception, eventId));
+        }
+
+        public sealed record LogEntry(LogLevel LogLevel, string Message, Exception? Exception, EventId EventId);
     }
 
     private sealed record ResultSet(string[] Columns, object?[][] Rows)

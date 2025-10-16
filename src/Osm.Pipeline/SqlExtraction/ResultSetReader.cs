@@ -23,18 +23,37 @@ internal sealed class ResultSetReader<T>
     public static ResultSetReader<T> Create(Func<DbRow, T> rowFactory)
         => new(rowFactory);
 
-    public async Task<List<T>> ReadAllAsync(DbDataReader reader, CancellationToken cancellationToken)
+    public async Task<List<T>> ReadAllAsync(DbDataReader reader, string resultSetName, CancellationToken cancellationToken)
     {
         if (reader is null)
         {
             throw new ArgumentNullException(nameof(reader));
         }
 
+        if (string.IsNullOrWhiteSpace(resultSetName))
+        {
+            throw new ArgumentException("Result set name must be provided.", nameof(resultSetName));
+        }
+
         var results = new List<T>();
+        var rowIndex = 0;
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            results.Add(_rowFactory(new DbRow(reader)));
+            try
+            {
+                results.Add(_rowFactory(new DbRow(reader, resultSetName, rowIndex)));
+            }
+            catch (Exception ex)
+            {
+                var failure = ex is ColumnReadException columnReadException
+                    ? columnReadException.WithContext(resultSetName, rowIndex)
+                    : ex;
+
+                throw new MetadataRowMappingException(resultSetName, rowIndex, failure);
+            }
+
+            rowIndex++;
         }
 
         return results;
@@ -44,11 +63,19 @@ internal sealed class ResultSetReader<T>
 internal readonly struct DbRow
 {
     private readonly DbDataReader _reader;
+    private readonly string _resultSetName;
+    private readonly int _rowIndex;
 
-    public DbRow(DbDataReader reader)
+    public DbRow(DbDataReader reader, string resultSetName, int rowIndex)
     {
         _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+        _resultSetName = resultSetName ?? throw new ArgumentNullException(nameof(resultSetName));
+        _rowIndex = rowIndex;
     }
+
+    public string ResultSetName => _resultSetName;
+
+    public int RowIndex => _rowIndex;
 
     public int GetInt32(int ordinal) => _reader.GetInt32(ordinal);
 
