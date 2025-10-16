@@ -7,14 +7,21 @@ public sealed record UniqueCandidateProfile(
     SchemaName Schema,
     TableName Table,
     ColumnName Column,
-    bool HasDuplicate)
+    bool HasDuplicate,
+    ProfilingProbeStatus ProbeStatus)
 {
     public static Result<UniqueCandidateProfile> Create(
         SchemaName schema,
         TableName table,
         ColumnName column,
-        bool hasDuplicate)
+        bool hasDuplicate,
+        ProfilingProbeStatus probeStatus)
     {
-        return Result<UniqueCandidateProfile>.Success(new UniqueCandidateProfile(schema, table, column, hasDuplicate));
+        if (probeStatus is null)
+        {
+            throw new ArgumentNullException(nameof(probeStatus));
+        }
+
+        return Result<UniqueCandidateProfile>.Success(new UniqueCandidateProfile(schema, table, column, hasDuplicate, probeStatus));
     }
 }

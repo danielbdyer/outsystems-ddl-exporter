@@ -13,7 +13,8 @@ public sealed record ColumnProfile(
     bool IsUniqueKey,
     string? DefaultDefinition,
     long RowCount,
-    long NullCount)
+    long NullCount,
+    ProfilingProbeStatus NullCountStatus)
 {
     public static Result<ColumnProfile> Create(
         SchemaName schema,
@@ -25,8 +26,14 @@ public sealed record ColumnProfile(
         bool isUniqueKey,
         string? defaultDefinition,
         long rowCount,
-        long nullCount)
+        long nullCount,
+        ProfilingProbeStatus nullCountStatus)
     {
+        if (nullCountStatus is null)
+        {
+            throw new ArgumentNullException(nameof(nullCountStatus));
+        }
+
         if (rowCount < 0)
         {
             return Result<ColumnProfile>.Failure(ValidationError.Create("profile.column.rowCount.invalid", "Row count cannot be negative."));
@@ -54,6 +61,7 @@ public sealed record ColumnProfile(
             isUniqueKey,
             trimmedDefault,
             rowCount,
-            nullCount));
+            nullCount,
+            nullCountStatus));
     }
 }

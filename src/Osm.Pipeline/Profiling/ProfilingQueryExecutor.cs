@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
+using Osm.Domain.Profiling;
 using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Profiling;
@@ -16,6 +17,8 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly SqlProfilerOptions _options;
+
+    private readonly record struct ProfilingProbeResult<T>(T Value, ProfilingProbeStatus Status);
 
     public ProfilingQueryExecutor(IDbConnectionFactory connectionFactory, SqlProfilerOptions options)
     {
@@ -33,29 +36,51 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         using var tableCancellation = CreateTableCancellationSource(cancellationToken);
 
+        var shouldSample = ShouldSample(plan.RowCount);
+        var nullCountSample = DetermineSampleSize(plan.RowCount, shouldSample);
         var nullCounts = await ExecuteWithTimeoutFallback(
             ct => ComputeNullCountsAsync(connection, plan, ct),
             BuildConservativeNullCounts(plan),
+            nullCountSample,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
+        var nullCountStatuses = BuildStatusDictionary(nullCounts.Value.Keys, nullCounts.Status);
+
+        var duplicateSample = DetermineSampleSize(plan.RowCount, shouldSample);
         var duplicateFlags = await ExecuteWithTimeoutFallback(
             ct => ComputeDuplicateCandidatesAsync(connection, plan, ct),
             BuildConservativeUniqueResults(plan),
+            duplicateSample,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
+
+        var duplicateStatuses = BuildStatusDictionary(duplicateFlags.Value.Keys, duplicateFlags.Status);
 
         var foreignKeyFallback = (
             Orphans: BuildConservativeForeignKeyResults(plan),
             IsNoCheck: BuildConservativeForeignKeyNoCheckResults(plan));
 
+        var foreignKeySample = DetermineSampleSize(plan.RowCount, shouldSample);
         var foreignKeyReality = await ExecuteWithTimeoutFallback(
             ct => ComputeForeignKeyRealityAsync(connection, plan, ct),
             foreignKeyFallback,
+            foreignKeySample,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
-        return new TableProfilingResults(nullCounts, duplicateFlags, foreignKeyReality.Orphans, foreignKeyReality.IsNoCheck);
+        var foreignKeyStatuses = BuildStatusDictionary(foreignKeyReality.Value.Orphans.Keys, foreignKeyReality.Status);
+        var foreignKeyNoCheckStatuses = BuildStatusDictionary(foreignKeyReality.Value.IsNoCheck.Keys, foreignKeyReality.Status);
+
+        return new TableProfilingResults(
+            nullCounts.Value,
+            nullCountStatuses,
+            duplicateFlags.Value,
+            duplicateStatuses,
+            foreignKeyReality.Value.Orphans,
+            foreignKeyStatuses,
+            foreignKeyReality.Value.IsNoCheck,
+            foreignKeyNoCheckStatuses);
     }
 
     internal static string BuildUniqueCandidatesSql(
@@ -403,25 +428,55 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
         return results.ToImmutable();
     }
 
-    private async Task<T> ExecuteWithTimeoutFallback<T>(
+    private async Task<ProfilingProbeResult<T>> ExecuteWithTimeoutFallback<T>(
         Func<CancellationToken, Task<T>> operation,
         T fallback,
+        long sampleSize,
         CancellationTokenSource? tableCancellation,
         CancellationToken originalToken)
     {
         try
         {
             var token = tableCancellation?.Token ?? originalToken;
-            return await operation(token).ConfigureAwait(false);
+            var result = await operation(token).ConfigureAwait(false);
+            return new ProfilingProbeResult<T>(result, ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UtcNow, sampleSize));
         }
         catch (OperationCanceledException) when (IsTableTimeout(tableCancellation, originalToken))
         {
-            return fallback;
+            return new ProfilingProbeResult<T>(fallback, ProfilingProbeStatus.CreateCancelled(DateTimeOffset.UtcNow, sampleSize));
         }
         catch (DbException ex) when (IsTimeoutException(ex))
         {
-            return fallback;
+            return new ProfilingProbeResult<T>(fallback, ProfilingProbeStatus.CreateFallbackTimeout(DateTimeOffset.UtcNow, sampleSize));
         }
+    }
+
+    private static IReadOnlyDictionary<string, ProfilingProbeStatus> BuildStatusDictionary(
+        IEnumerable<string> keys,
+        ProfilingProbeStatus status)
+    {
+        if (status is null)
+        {
+            return ImmutableDictionary<string, ProfilingProbeStatus>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, ProfilingProbeStatus>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in keys)
+        {
+            builder[key] = status;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private long DetermineSampleSize(long rowCount, bool useSampling)
+    {
+        if (!useSampling)
+        {
+            return Math.Max(0, rowCount);
+        }
+
+        return GetSampleSize(rowCount);
     }
 
     private CancellationTokenSource? CreateTableCancellationSource(CancellationToken cancellationToken)
@@ -559,7 +614,7 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
             }
         }
 
-        return false;
+        return exception.ErrorCode == -2;
     }
 
     private static string BuildNullCountSql(string schema, string table, ImmutableArray<string> columns, bool useSampling)

@@ -1,14 +1,114 @@
 {
   "columns": [
-    { "Schema": "dbo", "Table": "OSUSR_POLICY_CUSTOMER", "Column": "ID",          "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 5 },
-    { "Schema": "dbo", "Table": "OSUSR_POLICY_CUSTOMER", "Column": "EMAIL",       "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 5 },
-    { "Schema": "dbo", "Table": "OSUSR_POLICY_CUSTOMER", "Column": "EXTERNALID",  "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 2, "RowCount": 5 },
-    { "Schema": "dbo", "Table": "OSUSR_POLICY_ORDER",    "Column": "ID",          "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 8 },
-    { "Schema": "dbo", "Table": "OSUSR_POLICY_ORDER",    "Column": "CUSTOMERID",  "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 1, "RowCount": 8 }
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_POLICY_CUSTOMER",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 5,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 5,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_POLICY_CUSTOMER",
+      "Column": "EMAIL",
+      "IsNullablePhysical": true,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 5,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 5,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_POLICY_CUSTOMER",
+      "Column": "EXTERNALID",
+      "IsNullablePhysical": true,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 2,
+      "RowCount": 5,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 5,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_POLICY_ORDER",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 8,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 8,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_POLICY_ORDER",
+      "Column": "CUSTOMERID",
+      "IsNullablePhysical": true,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 1,
+      "RowCount": 8,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 8,
+        "Outcome": "Succeeded"
+      }
+    }
   ],
   "uniqueCandidates": [
-    { "Schema": "dbo", "Table": "OSUSR_POLICY_CUSTOMER", "Column": "EMAIL",      "HasDuplicate": false },
-    { "Schema": "dbo", "Table": "OSUSR_POLICY_CUSTOMER", "Column": "EXTERNALID", "HasDuplicate": true }
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_POLICY_CUSTOMER",
+      "Column": "EMAIL",
+      "HasDuplicate": false,
+      "ProbeStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 0,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_POLICY_CUSTOMER",
+      "Column": "EXTERNALID",
+      "HasDuplicate": true,
+      "ProbeStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 0,
+        "Outcome": "Succeeded"
+      }
+    }
   ],
   "compositeUniqueCandidates": [],
   "fkReality": [
@@ -23,7 +123,12 @@
         "HasDbConstraint": false
       },
       "HasOrphan": false,
-      "IsNoCheck": false
+      "IsNoCheck": false,
+      "ProbeStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 0,
+        "Outcome": "Succeeded"
+      }
     }
   ]
 }

@@ -1,8 +1,56 @@
 {
   "columns": [
-    { "Schema": "dbo", "Table": "OSUSR_P_PARENT", "Column": "ID",       "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 500 },
-    { "Schema": "dbo", "Table": "OSUSR_C_CHILD",  "Column": "ID",       "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 5000 },
-    { "Schema": "dbo", "Table": "OSUSR_C_CHILD",  "Column": "PARENTID", "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 5000 }
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_P_PARENT",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 500,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 500,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_C_CHILD",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 5000,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 5000,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_C_CHILD",
+      "Column": "PARENTID",
+      "IsNullablePhysical": true,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 5000,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 5000,
+        "Outcome": "Succeeded"
+      }
+    }
   ],
   "uniqueCandidates": [],
   "fkReality": [
@@ -17,7 +65,12 @@
         "HasDbConstraint": true
       },
       "HasOrphan": false,
-      "IsNoCheck": false
+      "IsNoCheck": false,
+      "ProbeStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 0,
+        "Outcome": "Succeeded"
+      }
     }
   ]
 }

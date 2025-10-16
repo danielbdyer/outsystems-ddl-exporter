@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -18,7 +19,8 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
     {
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true
+        AllowTrailingCommas = true,
+        Converters = { new JsonStringEnumConverter() }
     };
 
     public Result<ProfileSnapshot> Deserialize(Stream jsonStream)
@@ -95,6 +97,8 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
             return Result<ColumnProfile>.Failure(columnResult.Errors);
         }
 
+        var status = MapProbeStatus(doc.NullCountStatus, doc.RowCount);
+
         return ColumnProfile.Create(
             schemaResult.Value,
             tableResult.Value,
@@ -105,7 +109,8 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
             doc.IsUniqueKey,
             doc.DefaultDefinition,
             doc.RowCount,
-            doc.NullCount);
+            doc.NullCount,
+            status);
     }
 
     private static Result<UniqueCandidateProfile> MapUniqueCandidate(UniqueCandidateDocument doc)
@@ -128,7 +133,14 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
             return Result<UniqueCandidateProfile>.Failure(columnResult.Errors);
         }
 
-        return UniqueCandidateProfile.Create(schemaResult.Value, tableResult.Value, columnResult.Value, doc.HasDuplicate);
+        var status = MapProbeStatus(doc.ProbeStatus, defaultSampleSize: 0);
+
+        return UniqueCandidateProfile.Create(
+            schemaResult.Value,
+            tableResult.Value,
+            columnResult.Value,
+            doc.HasDuplicate,
+            status);
     }
 
     private static Result<ForeignKeyReality> MapForeignKey(ForeignKeyDocument doc)
@@ -188,7 +200,9 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
             return Result<ForeignKeyReality>.Failure(referenceResult.Errors);
         }
 
-        return ForeignKeyReality.Create(referenceResult.Value, doc.HasOrphan, doc.IsNoCheck);
+        var status = MapProbeStatus(doc.ProbeStatus, defaultSampleSize: 0);
+
+        return ForeignKeyReality.Create(referenceResult.Value, doc.HasOrphan, doc.IsNoCheck, status);
     }
 
     private static Result<CompositeUniqueCandidateProfile> MapCompositeUnique(CompositeUniqueCandidateDocument doc)
@@ -218,6 +232,20 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         }
 
         return CompositeUniqueCandidateProfile.Create(schemaResult.Value, tableResult.Value, columnResults.Value, doc.HasDuplicate);
+    }
+
+    private static ProfilingProbeStatus MapProbeStatus(ProfilingProbeStatusDocument? document, long defaultSampleSize)
+    {
+        if (document is null)
+        {
+            return ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, defaultSampleSize);
+        }
+
+        var capturedAt = document.CapturedAtUtc ?? DateTimeOffset.UnixEpoch;
+        var sampleSize = document.SampleSize ?? defaultSampleSize;
+        var outcome = document.Outcome ?? ProfilingProbeOutcome.Succeeded;
+
+        return new ProfilingProbeStatus(capturedAt, sampleSize, outcome);
     }
 
     private sealed record ProfileSnapshotDocument
@@ -266,6 +294,9 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
         [JsonPropertyName("NullCount")]
         public long NullCount { get; init; }
+
+        [JsonPropertyName("NullCountStatus")]
+        public ProfilingProbeStatusDocument? NullCountStatus { get; init; }
     }
 
     private sealed record UniqueCandidateDocument
@@ -281,6 +312,9 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
         [JsonPropertyName("HasDuplicate")]
         public bool HasDuplicate { get; init; }
+
+        [JsonPropertyName("ProbeStatus")]
+        public ProfilingProbeStatusDocument? ProbeStatus { get; init; }
     }
 
     private sealed record CompositeUniqueCandidateDocument
@@ -308,6 +342,9 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
         [JsonPropertyName("IsNoCheck")]
         public bool IsNoCheck { get; init; }
+
+        [JsonPropertyName("ProbeStatus")]
+        public ProfilingProbeStatusDocument? ProbeStatus { get; init; }
     }
 
     private sealed record ForeignKeyReferenceDocument
@@ -332,5 +369,17 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
         [JsonPropertyName("HasDbConstraint")]
         public bool HasDbConstraint { get; init; }
+    }
+
+    private sealed record ProfilingProbeStatusDocument
+    {
+        [JsonPropertyName("CapturedAtUtc")]
+        public DateTimeOffset? CapturedAtUtc { get; init; }
+
+        [JsonPropertyName("SampleSize")]
+        public long? SampleSize { get; init; }
+
+        [JsonPropertyName("Outcome")]
+        public ProfilingProbeOutcome? Outcome { get; init; }
     }
 }

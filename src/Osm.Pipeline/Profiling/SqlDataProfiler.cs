@@ -100,6 +100,9 @@ public sealed class SqlDataProfiler : IDataProfiler
                     }
 
                     var nullCount = tableResults.NullCounts.TryGetValue(columnName, out var value) ? value : 0L;
+                    var nullStatus = tableResults.NullCountStatuses.TryGetValue(columnName, out var status)
+                        ? status
+                        : ProfilingProbeStatus.Unknown;
 
                     var columnProfileResult = ColumnProfile.Create(
                         SchemaName.Create(schema).Value,
@@ -111,7 +114,8 @@ public sealed class SqlDataProfiler : IDataProfiler
                         IsSingleColumnUnique(entity, columnName),
                         meta.DefaultDefinition,
                         tableRowCount,
-                        nullCount);
+                        nullCount,
+                        nullStatus);
 
                     if (columnProfileResult.IsSuccess)
                     {
@@ -133,6 +137,9 @@ public sealed class SqlDataProfiler : IDataProfiler
 
                     var candidateKey = ProfilingPlanBuilder.BuildUniqueKey(orderedColumns);
                     var hasDuplicates = tableResults.UniqueDuplicates.TryGetValue(candidateKey, out var duplicate) && duplicate;
+                    var uniqueStatus = tableResults.UniqueDuplicateStatuses.TryGetValue(candidateKey, out var uniqueProbe)
+                        ? uniqueProbe
+                        : ProfilingProbeStatus.Unknown;
 
                     if (orderedColumns.Length == 1)
                     {
@@ -140,7 +147,8 @@ public sealed class SqlDataProfiler : IDataProfiler
                             SchemaName.Create(schema).Value,
                             TableName.Create(table).Value,
                             ColumnName.Create(orderedColumns[0]).Value,
-                            hasDuplicates);
+                            hasDuplicates,
+                            uniqueStatus);
 
                         if (profileResult.IsSuccess)
                         {
@@ -193,6 +201,11 @@ public sealed class SqlDataProfiler : IDataProfiler
 
                     var hasOrphans = tableResults.ForeignKeys.TryGetValue(foreignKeyKey, out var orphaned) && orphaned;
                     var isNoCheck = tableResults.ForeignKeyIsNoCheck.TryGetValue(foreignKeyKey, out var noCheck) && noCheck;
+                    var foreignKeyStatus = tableResults.ForeignKeyStatuses.TryGetValue(foreignKeyKey, out var fkStatus)
+                        ? fkStatus
+                        : tableResults.ForeignKeyNoCheckStatuses.TryGetValue(foreignKeyKey, out var noCheckStatus)
+                            ? noCheckStatus
+                            : ProfilingProbeStatus.Unknown;
 
                     var referenceResult = ForeignKeyReference.Create(
                         SchemaName.Create(schema).Value,
@@ -208,7 +221,7 @@ public sealed class SqlDataProfiler : IDataProfiler
                         continue;
                     }
 
-                    var realityResult = ForeignKeyReality.Create(referenceResult.Value, hasOrphans, isNoCheck);
+                    var realityResult = ForeignKeyReality.Create(referenceResult.Value, hasOrphans, isNoCheck, foreignKeyStatus);
                     if (realityResult.IsSuccess)
                     {
                         foreignKeys.Add(realityResult.Value);
