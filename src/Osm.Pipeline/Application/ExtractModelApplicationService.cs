@@ -50,66 +50,68 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
 
         var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
         var overrides = input.Overrides ?? new ExtractModelOverrides(null, null, null, null, null);
-        var moduleFilter = configuration.ModuleFilter ?? ModuleFilterConfiguration.Empty;
+        var moduleFilterConfiguration = configuration.ModuleFilter ?? ModuleFilterConfiguration.Empty;
+        bool? includeInactiveOverride = overrides.OnlyActiveAttributes.HasValue
+            ? !overrides.OnlyActiveAttributes.Value
+            : null;
 
-        var overrideModules = overrides.Modules ?? Array.Empty<string>();
-        var configModules = moduleFilter.Modules ?? Array.Empty<string>();
-        var moduleSource = overrideModules.Count > 0
+        var moduleFilterOverrides = new ModuleFilterOverrides(
+            overrides.Modules ?? Array.Empty<string>(),
+            overrides.IncludeSystemModules,
+            includeInactiveOverride,
+            Array.Empty<string>(),
+            Array.Empty<string>());
+
+        var moduleFilterResult = ModuleFilterResolver.Resolve(configuration, moduleFilterOverrides);
+        if (moduleFilterResult.IsFailure)
+        {
+            _logger.LogError(
+                "Failed to resolve module filter: {Errors}.",
+                string.Join(", ", moduleFilterResult.Errors.Select(static error => error.Code)));
+            return Result<ExtractModelApplicationResult>.Failure(moduleFilterResult.Errors);
+        }
+
+        var moduleFilter = moduleFilterResult.Value;
+        var moduleNames = moduleFilter.Modules.IsDefaultOrEmpty
+            ? Array.Empty<string>()
+            : moduleFilter.Modules.Select(static module => module.Value).ToArray();
+
+        var moduleSource = overrides.Modules is { Count: > 0 }
             ? "cli"
-            : configModules.Count > 0 ? "config" : "default";
-        var resolvedModules = moduleSource == "cli"
-            ? overrideModules.Where(static module => !string.IsNullOrWhiteSpace(module)).Select(static module => module.Trim()).ToArray()
-            : configModules.Where(static module => !string.IsNullOrWhiteSpace(module)).Select(static module => module.Trim()).ToArray();
+            : moduleFilterConfiguration.Modules is { Count: > 0 }
+                ? "config"
+                : "default";
 
-        bool includeSystem;
-        var includeSystemSource = "default";
-        if (overrides.IncludeSystemModules.HasValue)
-        {
-            includeSystem = overrides.IncludeSystemModules.Value;
-            includeSystemSource = "cli";
-        }
-        else if (moduleFilter.IncludeSystemModules.HasValue)
-        {
-            includeSystem = moduleFilter.IncludeSystemModules.Value;
-            includeSystemSource = "config";
-        }
-        else
-        {
-            includeSystem = false;
-        }
+        var includeSystemSource = overrides.IncludeSystemModules.HasValue
+            ? "cli"
+            : moduleFilterConfiguration.IncludeSystemModules.HasValue
+                ? "config"
+                : "default";
 
-        bool onlyActiveAttributes;
-        var onlyActiveSource = "default";
-        if (overrides.OnlyActiveAttributes.HasValue)
-        {
-            onlyActiveAttributes = overrides.OnlyActiveAttributes.Value;
-            onlyActiveSource = "cli";
-        }
-        else if (moduleFilter.IncludeInactiveModules.HasValue)
-        {
-            onlyActiveAttributes = !moduleFilter.IncludeInactiveModules.Value;
-            onlyActiveSource = "config";
-        }
-        else
-        {
-            onlyActiveAttributes = false;
-        }
+        var includeInactiveSource = overrides.OnlyActiveAttributes.HasValue
+            ? "cli"
+            : moduleFilterConfiguration.IncludeInactiveModules.HasValue
+                ? "config"
+                : "default";
+
+        var onlyActiveAttributes = overrides.OnlyActiveAttributes
+            ?? !moduleFilter.IncludeInactiveModules;
 
         var fixtureProvided = !string.IsNullOrWhiteSpace(overrides.MockAdvancedSqlManifest);
 
         _logger.LogDebug(
-            "extract-model configuration resolved (configPath: {ConfigPath}, moduleSource: {ModuleSource}, includeSystemSource: {IncludeSource}, onlyActiveSource: {OnlyActiveSource}).",
+            "extract-model configuration resolved (configPath: {ConfigPath}, moduleSource: {ModuleSource}, includeSystemSource: {IncludeSource}, includeInactiveSource: {IncludeInactiveSource}).",
             configurationContext.ConfigPath ?? "<none>",
             moduleSource,
             includeSystemSource,
-            onlyActiveSource);
+            includeInactiveSource);
 
-        if (resolvedModules.Length > 0)
+        if (moduleNames.Length > 0)
         {
             _logger.LogInformation(
                 "extract-model modules ({Source}): {Modules}.",
                 moduleSource,
-                string.Join(",", resolvedModules));
+                string.Join(",", moduleNames));
         }
         else
         {
@@ -117,13 +119,14 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
         }
 
         _logger.LogInformation(
-            "extract-model options: includeSystem={IncludeSystem}, onlyActiveAttributes={OnlyActive}, fixtureProvided={FixtureProvided}.",
-            includeSystem,
+            "extract-model options: includeSystem={IncludeSystem}, includeInactiveModules={IncludeInactive}, onlyActiveAttributes={OnlyActive}, fixtureProvided={FixtureProvided}.",
+            moduleFilter.IncludeSystemModules,
+            moduleFilter.IncludeInactiveModules,
             onlyActiveAttributes,
             fixtureProvided);
 
-        var commandModules = resolvedModules.Length > 0 ? resolvedModules : null;
-        var commandResult = ModelExtractionCommand.Create(commandModules, includeSystem, onlyActiveAttributes);
+        var commandModules = moduleNames.Length > 0 ? moduleNames : null;
+        var commandResult = ModelExtractionCommand.Create(commandModules, moduleFilter.IncludeSystemModules, onlyActiveAttributes);
         if (commandResult.IsFailure)
         {
             _logger.LogError(
