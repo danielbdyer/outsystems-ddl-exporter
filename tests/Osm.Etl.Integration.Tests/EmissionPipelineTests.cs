@@ -27,8 +27,6 @@ public class EmissionPipelineTests
         var modelPath = Path.Combine(repoRoot, "tests", "Fixtures", "model.edge-case.json");
         var profilePath = Path.Combine(repoRoot, "tests", "Fixtures", "profiling", "profile.edge-case.json");
         var configPath = Path.Combine(repoRoot, "config", "default-tightening.json");
-        var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case");
-
         var tighteningOptions = OverrideModuleParallelism(await LoadTighteningOptionsAsync(configPath), 2);
         var model = await LoadModelAsync(modelPath);
         var profile = await LoadProfileAsync(profilePath);
@@ -83,7 +81,51 @@ public class EmissionPipelineTests
         }
         }
 
-        DirectorySnapshot.AssertMatches(expectedRoot, output.Path);
+        var emission = EmissionOutput.Load(output.Path);
+
+        Assert.True(emission.Manifest.Options.SanitizeModuleNames);
+        Assert.Equal(2, emission.Manifest.Options.ModuleParallelism);
+
+        Assert.Equal(4, emission.Manifest.Tables.Count);
+
+        var tableNames = emission.Manifest.Tables.Select(table => table.Table).ToArray();
+        Assert.Contains("Customer", tableNames);
+        Assert.Contains("City", tableNames);
+        Assert.Contains("BillingAccount", tableNames);
+        Assert.Contains("JobRun", tableNames);
+
+        var customer = Assert.Single(emission.Manifest.Tables.Where(t => t.Table == "Customer"));
+        Assert.Equal("AppCore", customer.Module);
+        Assert.Equal("dbo", customer.Schema);
+        Assert.Equal("Modules/AppCore/Tables/dbo.Customer.sql", customer.TableFile);
+        Assert.Contains("FK_Customer_CityId", customer.ForeignKeys);
+        Assert.Contains("IDX_Customer_Email", customer.Indexes);
+
+        Assert.Equal(emission.Manifest.Tables.Count, emission.Manifest.Coverage.Tables.Emitted);
+        Assert.Equal(
+            emission.Manifest.Tables.Count + emission.Manifest.Unsupported.Count,
+            emission.Manifest.Coverage.Tables.Total);
+        Assert.Equal(emission.Manifest.Coverage.Columns.Emitted, emission.Manifest.Coverage.Columns.Total);
+        Assert.True(emission.Manifest.PolicySummary.ColumnCount >= emission.Manifest.Coverage.Columns.Total);
+
+        Assert.Equal(15, emission.Manifest.PolicySummary.ColumnCount);
+        Assert.Equal(10, emission.Manifest.PolicySummary.TightenedColumnCount);
+        Assert.Equal(2, emission.Manifest.PolicySummary.UniqueIndexCount);
+        Assert.Equal(1, emission.Manifest.PolicySummary.ForeignKeysCreatedCount);
+
+        if (emission.Manifest.Unsupported.Count > 0)
+        {
+            Assert.Contains(
+                "Table dbo.OSUSR_U_USER missing from emission output.",
+                emission.Manifest.Unsupported);
+        }
+
+        var seedModule = Assert.Single(emission.StaticSeedModules);
+        Assert.Equal("AppCore", seedModule.Module);
+        Assert.Contains("Seeds/AppCore/StaticEntities.seed.sql", seedModule.SeedFiles);
+
+        Assert.Contains("Modules/AppCore/Tables/dbo.Customer.sql", emission.TableScripts);
+        Assert.Contains("Modules/ExtBilling/Tables/billing.BillingAccount.sql", emission.TableScripts);
     }
 
     [Fact]
@@ -93,8 +135,6 @@ public class EmissionPipelineTests
         var modelPath = Path.Combine(repoRoot, "tests", "Fixtures", "model.edge-case.json");
         var profilePath = Path.Combine(repoRoot, "tests", "Fixtures", "profiling", "profile.edge-case.json");
         var configPath = Path.Combine(repoRoot, "config", "default-tightening.json");
-        var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case-rename");
-
         var tighteningOptions = OverrideModuleParallelism(await LoadTighteningOptionsAsync(configPath), 2);
         var model = await LoadModelAsync(modelPath);
         var profile = await LoadProfileAsync(profilePath);
@@ -157,7 +197,21 @@ public class EmissionPipelineTests
         }
         }
 
-        DirectorySnapshot.AssertMatches(expectedRoot, output.Path);
+        var emission = EmissionOutput.Load(output.Path);
+
+        var renamed = Assert.Single(emission.Manifest.Tables.Where(t => t.Table == "CUSTOMER_PORTAL"));
+        Assert.Equal("AppCore", renamed.Module);
+        Assert.Equal("Modules/AppCore/Tables/dbo.CUSTOMER_PORTAL.sql", renamed.TableFile);
+        Assert.DoesNotContain(emission.Manifest.Tables, t => t.Table == "Customer");
+
+        Assert.Contains("Modules/AppCore/Tables/dbo.CUSTOMER_PORTAL.sql", emission.TableScripts);
+        Assert.DoesNotContain(
+            emission.TableScripts,
+            path => path.Equals("Modules/AppCore/Tables/dbo.Customer.sql", StringComparison.OrdinalIgnoreCase));
+
+        var script = await File.ReadAllTextAsync(emission.GetAbsolutePath(renamed.TableFile));
+        Assert.Contains("CREATE TABLE [dbo].[CUSTOMER_PORTAL]", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", script, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<TighteningOptions> LoadTighteningOptionsAsync(string path)

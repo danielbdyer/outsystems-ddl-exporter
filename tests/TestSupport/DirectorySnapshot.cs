@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using Xunit;
+using Xunit.Sdk;
 
 namespace Tests.Support;
 
@@ -25,15 +26,66 @@ public static class DirectorySnapshot
         var expectedFiles = ReadAllFiles(expectedRoot);
         var actualFiles = ReadAllFiles(actualRoot);
 
-        Assert.Empty(expectedFiles.Keys.Except(actualFiles.Keys, StringComparer.OrdinalIgnoreCase));
-        Assert.Empty(actualFiles.Keys.Except(expectedFiles.Keys, StringComparer.OrdinalIgnoreCase));
+        var missingFiles = expectedFiles.Keys
+            .Except(actualFiles.Keys, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var unexpectedFiles = actualFiles.Keys
+            .Except(expectedFiles.Keys, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
+        var mismatchedFiles = new List<FileDifference>();
         foreach (var (relativePath, expectedContent) in expectedFiles)
         {
-            Assert.True(actualFiles.TryGetValue(relativePath, out var actualContent),
-                $"Missing file '{relativePath}' in actual output.");
-            Assert.Equal(expectedContent, actualContent);
+            if (!actualFiles.TryGetValue(relativePath, out var actualContent))
+            {
+                continue;
+            }
+
+            if (!string.Equals(expectedContent, actualContent, StringComparison.Ordinal))
+            {
+                mismatchedFiles.Add(new FileDifference(relativePath, DescribeDifference(expectedContent, actualContent)));
+            }
         }
+
+        if (missingFiles.Length == 0 && unexpectedFiles.Length == 0 && mismatchedFiles.Count == 0)
+        {
+            return;
+        }
+
+        var message = new StringBuilder();
+        message.AppendLine("Directory snapshot mismatch.");
+
+        if (missingFiles.Length > 0)
+        {
+            message.AppendLine("Missing files:");
+            foreach (var path in missingFiles)
+            {
+                message.Append("  - ").AppendLine(path);
+            }
+        }
+
+        if (unexpectedFiles.Length > 0)
+        {
+            message.AppendLine("Unexpected files:");
+            foreach (var path in unexpectedFiles)
+            {
+                message.Append("  - ").AppendLine(path);
+            }
+        }
+
+        if (mismatchedFiles.Count > 0)
+        {
+            message.AppendLine("Content differences:");
+            foreach (var difference in mismatchedFiles)
+            {
+                message.Append("  - ").AppendLine(difference.RelativePath);
+                message.AppendLine(Indent(difference.Details, "    "));
+            }
+        }
+
+        throw new XunitException(message.ToString());
     }
 
     private static IReadOnlyDictionary<string, string> ReadAllFiles(string root)
@@ -93,4 +145,36 @@ public static class DirectorySnapshot
                 break;
         }
     }
+
+    private static string DescribeDifference(string expected, string actual)
+    {
+        var expectedLines = expected.Split('\n');
+        var actualLines = actual.Split('\n');
+        var length = Math.Min(expectedLines.Length, actualLines.Length);
+
+        for (var i = 0; i < length; i++)
+        {
+            if (!string.Equals(expectedLines[i], actualLines[i], StringComparison.Ordinal))
+            {
+                return $"First difference at line {i + 1}{Environment.NewLine}" +
+                       $"expected: {expectedLines[i]}{Environment.NewLine}" +
+                       $"actual  : {actualLines[i]}";
+            }
+        }
+
+        if (expectedLines.Length != actualLines.Length)
+        {
+            return $"Line count differs. Expected {expectedLines.Length}, actual {actualLines.Length}.";
+        }
+
+        return "Files differ but no line-level difference could be identified.";
+    }
+
+    private static string Indent(string value, string prefix)
+    {
+        var lines = value.Replace("\r", string.Empty).Split('\n');
+        return string.Join(Environment.NewLine, lines.Select(line => prefix + line));
+    }
+
+    private sealed record FileDifference(string RelativePath, string Details);
 }
