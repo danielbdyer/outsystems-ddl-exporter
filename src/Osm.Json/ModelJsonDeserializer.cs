@@ -21,19 +21,26 @@ public interface IModelJsonDeserializer
 
 public sealed class ModelJsonDeserializerOptions
 {
+    private const string DefaultSchemaFallback = "dbo";
+
     public ModelJsonDeserializerOptions(
         ModuleValidationOverrides? validationOverrides = null,
         string? missingSchemaFallback = null)
     {
         ValidationOverrides = validationOverrides ?? ModuleValidationOverrides.Empty;
-        MissingSchemaFallback = string.IsNullOrWhiteSpace(missingSchemaFallback)
-            ? "dbo"
+
+        MissingSchemaFallbackRaw = string.IsNullOrWhiteSpace(missingSchemaFallback)
+            ? DefaultSchemaFallback
             : missingSchemaFallback.Trim();
+
+        MissingSchemaFallback = SchemaName.Create(MissingSchemaFallbackRaw);
     }
 
     public ModuleValidationOverrides ValidationOverrides { get; }
 
-    public string MissingSchemaFallback { get; }
+    public Result<SchemaName> MissingSchemaFallback { get; }
+
+    public string MissingSchemaFallbackRaw { get; }
 
     public static ModelJsonDeserializerOptions Default { get; } = new();
 }

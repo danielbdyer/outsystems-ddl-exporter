@@ -53,6 +53,7 @@ internal sealed class EntityDocumentMapper
 
         SchemaName schema;
         var allowMissingSchema = _context.Options.ValidationOverrides.AllowsMissingSchema(moduleNameValue, entityNameValue);
+        var schemaPath = path.Property("schema");
         if (string.IsNullOrWhiteSpace(doc.Schema))
         {
             if (!allowMissingSchema)
@@ -62,13 +63,24 @@ internal sealed class EntityDocumentMapper
                     _context.CreateError(
                         "entity.schema.missing",
                         $"Entity '{moduleNameValue}::{entityNameValue}' is missing a schema name. Raw payload: {serializedPayload}",
-                        path.Property("schema")));
+                        schemaPath));
             }
 
-            schema = SchemaName.Create(_context.Options.MissingSchemaFallback).Value;
-            serializedPayload ??= _context.SerializeEntityDocument(doc);
-            _context.AddWarning(
-                $"Entity '{moduleNameValue}::{entityNameValue}' missing schema; using '{_context.Options.MissingSchemaFallback}'. Raw payload: {serializedPayload} (Path: {path.Property("schema")})");
+            var fallbackResult = ResolveSchemaFallback(
+                doc,
+                schemaPath,
+                moduleNameValue,
+                entityNameValue,
+                "missing schema",
+                "is missing a schema name",
+                ref serializedPayload);
+
+            if (fallbackResult.IsFailure)
+            {
+                return Result<EntityModel>.Failure(fallbackResult.Errors);
+            }
+
+            schema = fallbackResult.Value;
         }
         else
         {
@@ -78,15 +90,26 @@ internal sealed class EntityDocumentMapper
                 if (!allowMissingSchema)
                 {
                     serializedPayload ??= _context.SerializeEntityDocument(doc);
-                    var errorsWithPath = _context.WithPath(path.Property("schema"), schemaResult.Errors);
+                    var errorsWithPath = _context.WithPath(schemaPath, schemaResult.Errors);
                     return Result<EntityModel>.Failure(
                         AppendPayloadContext(errorsWithPath, moduleNameValue, entityNameValue, serializedPayload));
                 }
 
-                schema = SchemaName.Create(_context.Options.MissingSchemaFallback).Value;
-                serializedPayload ??= _context.SerializeEntityDocument(doc);
-                _context.AddWarning(
-                    $"Entity '{moduleNameValue}::{entityNameValue}' schema '{doc.Schema}' invalid; using '{_context.Options.MissingSchemaFallback}'. Raw payload: {serializedPayload} (Path: {path.Property("schema")})");
+                var fallbackResult = ResolveSchemaFallback(
+                    doc,
+                    schemaPath,
+                    moduleNameValue,
+                    entityNameValue,
+                    $"schema '{doc.Schema}' invalid",
+                    $"schema '{doc.Schema}' is invalid",
+                    ref serializedPayload);
+
+                if (fallbackResult.IsFailure)
+                {
+                    return Result<EntityModel>.Failure(fallbackResult.Errors);
+                }
+
+                schema = fallbackResult.Value;
             }
             else
             {
@@ -182,6 +205,40 @@ internal sealed class EntityDocumentMapper
         }
 
         return entityResult;
+    }
+
+    private Result<SchemaName> ResolveSchemaFallback(
+        EntityDocument doc,
+        DocumentPathContext schemaPath,
+        string moduleNameValue,
+        string entityNameValue,
+        string warningDetail,
+        string errorDetail,
+        ref string? serializedPayload)
+    {
+        var fallbackResult = _context.Options.MissingSchemaFallback;
+        if (fallbackResult.IsSuccess)
+        {
+            serializedPayload ??= _context.SerializeEntityDocument(doc);
+            _context.AddWarning(
+                $"Entity '{moduleNameValue}::{entityNameValue}' {warningDetail}; using '{fallbackResult.Value.Value}'. Raw payload: {serializedPayload} (Path: {schemaPath})");
+            return fallbackResult;
+        }
+
+        serializedPayload ??= _context.SerializeEntityDocument(doc);
+        var builder = ImmutableArray.CreateBuilder<ValidationError>();
+        builder.Add(
+            _context.CreateError(
+                "entity.schema.fallback.invalid",
+                $"Entity '{moduleNameValue}::{entityNameValue}' {errorDetail} but configured schema fallback '{_context.Options.MissingSchemaFallbackRaw}' is invalid. Raw payload: {serializedPayload}",
+                schemaPath));
+
+        if (!fallbackResult.Errors.IsDefaultOrEmpty)
+        {
+            builder.AddRange(_context.WithPath(schemaPath, fallbackResult.Errors));
+        }
+
+        return Result<SchemaName>.Failure(builder.ToImmutable());
     }
 
     private Result<ImmutableArray<IndexModel>> MapIndexes(IndexDocument[]? docs, DocumentPathContext path)
@@ -735,3 +792,4 @@ internal sealed class EntityDocumentMapper
         return IndexColumnDirection.Unspecified;
     }
 }
+
