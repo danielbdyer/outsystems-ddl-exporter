@@ -10,7 +10,14 @@ using ExtendedPropertyDocument = ModelJsonDeserializer.ExtendedPropertyDocument;
 
 internal sealed class ExtendedPropertyDocumentMapper
 {
-    public Result<ImmutableArray<ExtendedProperty>> Map(ExtendedPropertyDocument[]? docs)
+    private readonly DocumentMapperContext _context;
+
+    public ExtendedPropertyDocumentMapper(DocumentMapperContext context)
+    {
+        _context = context;
+    }
+
+    public Result<ImmutableArray<ExtendedProperty>> Map(ExtendedPropertyDocument[]? docs, DocumentPathContext path)
     {
         if (docs is null || docs.Length == 0)
         {
@@ -18,13 +25,15 @@ internal sealed class ExtendedPropertyDocumentMapper
         }
 
         var builder = ImmutableArray.CreateBuilder<ExtendedProperty>(docs.Length);
-        foreach (var doc in docs)
+        for (var i = 0; i < docs.Length; i++)
         {
+            var doc = docs[i];
             if (doc is null)
             {
                 continue;
             }
 
+            var propertyPath = path.Index(i);
             var value = doc.Value.ValueKind switch
             {
                 JsonValueKind.Undefined => null,
@@ -36,7 +45,8 @@ internal sealed class ExtendedPropertyDocumentMapper
             var propertyResult = ExtendedProperty.Create(doc.Name, value);
             if (propertyResult.IsFailure)
             {
-                return Result<ImmutableArray<ExtendedProperty>>.Failure(propertyResult.Errors);
+                return Result<ImmutableArray<ExtendedProperty>>.Failure(
+                    _context.WithPath(propertyPath, propertyResult.Errors));
             }
 
             builder.Add(propertyResult.Value);

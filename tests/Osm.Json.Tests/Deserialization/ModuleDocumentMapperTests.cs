@@ -15,12 +15,11 @@ public class ModuleDocumentMapperTests
 {
     private static DocumentMapperContext CreateContext(List<string> warnings)
     {
-        var options = ModelJsonDeserializerOptions.Default;
         var serializerOptions = new JsonSerializerOptions
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
-        return new DocumentMapperContext(options, warnings, serializerOptions);
+        return new DocumentMapperContext(ModelJsonDeserializerOptions.Default, warnings, serializerOptions);
     }
 
     private static AttributeDocument CreateAttribute(string name, bool isIdentifier)
@@ -52,8 +51,8 @@ public class ModuleDocumentMapperTests
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper();
-        var attributeMapper = new AttributeDocumentMapper(extendedPropertyMapper);
+        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
+        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
         var entityMapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
         var moduleMapper = new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);
 
@@ -63,7 +62,10 @@ public class ModuleDocumentMapperTests
             Entities = new[] { CreateEntity("Invoice") }
         };
 
-        var result = moduleMapper.Map(moduleDocument, ModuleName.Create("Finance").Value);
+        var result = moduleMapper.Map(
+            moduleDocument,
+            ModuleName.Create("Finance").Value,
+            DocumentPathContext.Root.Property("modules").Index(0));
 
         Assert.True(result.IsSuccess);
         var module = result.Value!;
@@ -78,8 +80,8 @@ public class ModuleDocumentMapperTests
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper();
-        var attributeMapper = new AttributeDocumentMapper(extendedPropertyMapper);
+        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
+        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
         var entityMapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
         var moduleMapper = new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);
 
@@ -99,7 +101,10 @@ public class ModuleDocumentMapperTests
             }
         };
 
-        var result = moduleMapper.Map(moduleDocument, ModuleName.Create("Finance").Value);
+        var result = moduleMapper.Map(
+            moduleDocument,
+            ModuleName.Create("Finance").Value,
+            DocumentPathContext.Root.Property("modules").Index(0));
 
         Assert.True(result.IsSuccess);
         Assert.Null(result.Value);
