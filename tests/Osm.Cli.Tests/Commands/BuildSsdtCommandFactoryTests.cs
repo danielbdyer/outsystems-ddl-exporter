@@ -284,6 +284,7 @@ public class BuildSsdtCommandFactoryTests
                 ImmutableArray<ProfilingInsight>.Empty,
                 report,
                 manifest,
+                ImmutableArray<PipelineInsight>.Empty,
                 "decision.log",
                 ImmutableArray<string>.Empty,
                 null,

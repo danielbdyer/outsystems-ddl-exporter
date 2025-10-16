@@ -1,5 +1,6 @@
 using System;
 using System.CommandLine;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -10,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Pipeline.Application;
 using Osm.Emission;
+using Osm.Pipeline.Orchestration;
 
 namespace Osm.Cli;
 
@@ -61,6 +63,7 @@ internal static class PipelineReportLauncher
             totalTables,
             totalIndexes,
             totalForeignKeys,
+            pipelineResult.Insights,
             hasDiff,
             staticSeedPaths);
 
@@ -120,11 +123,15 @@ internal static class PipelineReportLauncher
         int totalTables,
         int totalIndexes,
         int totalForeignKeys,
+        ImmutableArray<PipelineInsight> insights,
         bool hasDiff,
         IReadOnlyList<string> staticSeedPaths)
     {
         var builder = new StringBuilder();
         var outputDirectory = applicationResult.OutputDirectory;
+        var insightItems = insights.IsDefaultOrEmpty
+            ? Array.Empty<PipelineInsight>()
+            : insights.Where(static insight => insight is not null).ToArray();
         builder.AppendLine("<!DOCTYPE html>");
         builder.AppendLine("<html lang=\"en\">");
         builder.AppendLine("<head>");
@@ -141,6 +148,23 @@ internal static class PipelineReportLauncher
         builder.AppendLine("    .card .label { font-size: 0.9rem; color: #52606d; text-transform: uppercase; letter-spacing: 0.08em; }");
         builder.AppendLine("    .decision-summary { background: #ffffff; border-radius: 10px; padding: 1rem 1.5rem; box-shadow: 0 10px 25px -20px rgba(15, 23, 42, 0.6); }");
         builder.AppendLine("    .decision-summary li { margin: 0.35rem 0; }");
+        builder.AppendLine("    .insights-section { margin-top: 2rem; }");
+        builder.AppendLine("    .insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin: 0; padding: 0; list-style: none; }");
+        builder.AppendLine("    .insight-card { background: #ffffff; border-radius: 12px; padding: 1rem 1.25rem; box-shadow: 0 18px 30px -22px rgba(15, 23, 42, 0.65); display: flex; flex-direction: column; gap: 0.75rem; }");
+        builder.AppendLine("    .insight-header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }");
+        builder.AppendLine("    .insight-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.08em; padding: 0.25rem 0.6rem; border-radius: 999px; text-transform: uppercase; }");
+        builder.AppendLine("    .insight-code { font-size: 0.85rem; color: #52606d; font-weight: 500; }");
+        builder.AppendLine("    .insight-summary { margin: 0; color: #334e68; }");
+        builder.AppendLine("    .insight-meta { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 0.75rem; margin: 0; }");
+        builder.AppendLine("    .insight-meta dt { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: #52606d; }");
+        builder.AppendLine("    .insight-meta dd { margin: 0; color: #102a43; }");
+        builder.AppendLine("    .insight-doc { align-self: flex-start; font-weight: 600; color: #0b7285; }");
+        builder.AppendLine("    .insight-doc:hover { text-decoration: underline; }");
+        builder.AppendLine("    .insights-empty { color: #52606d; font-style: italic; }");
+        builder.AppendLine("    .severity-info { background: rgba(59, 130, 246, 0.12); color: #1d4ed8; }");
+        builder.AppendLine("    .severity-advisory { background: rgba(14, 165, 233, 0.12); color: #0f766e; }");
+        builder.AppendLine("    .severity-warning { background: rgba(251, 191, 36, 0.2); color: #b45309; }");
+        builder.AppendLine("    .severity-critical { background: rgba(248, 113, 113, 0.2); color: #b91c1c; }");
         builder.AppendLine("    table { border-collapse: collapse; width: 100%; background: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 10px 25px -20px rgba(15, 23, 42, 0.6); }");
         builder.AppendLine("    th, td { padding: 0.65rem 0.9rem; text-align: left; border-bottom: 1px solid #d9e2ec; }");
         builder.AppendLine("    th { background: #0b7285; color: #ffffff; font-weight: 600; letter-spacing: 0.05em; }");
@@ -177,6 +201,23 @@ internal static class PipelineReportLauncher
             builder.AppendLine($"      <li><strong>Diagnostics:</strong> {decisionReport.Diagnostics.Length:N0} (see policy-decisions.json)</li>");
         }
         builder.AppendLine("    </ul>");
+        builder.AppendLine("  </section>");
+
+        builder.AppendLine("  <section class=\"insights-section\">");
+        builder.AppendLine("    <h2>Pipeline insights</h2>");
+        if (insightItems.Length == 0)
+        {
+            builder.AppendLine("    <p class=\"insights-empty\">No pipeline insights were generated for this run.</p>");
+        }
+        else
+        {
+            builder.AppendLine("    <ul class=\"insight-grid\">");
+            foreach (var insight in insightItems)
+            {
+                builder.Append(RenderInsightCard(insight));
+            }
+            builder.AppendLine("    </ul>");
+        }
         builder.AppendLine("  </section>");
 
         builder.AppendLine("  <section>");
@@ -239,6 +280,70 @@ internal static class PipelineReportLauncher
 
     private static string RenderCard(string label, int value)
         => $"      <li class=\"card\"><div class=\"value\">{value.ToString("N0", CultureInfo.InvariantCulture)}</div><div class=\"label\">{HtmlEncode(label)}</div></li>";
+
+    private static string RenderInsightCard(PipelineInsight insight)
+    {
+        if (insight is null)
+        {
+            throw new ArgumentNullException(nameof(insight));
+        }
+
+        var builder = new StringBuilder();
+        var badgeClass = GetSeverityBadgeClass(insight.Severity);
+        var badgeText = HtmlEncode(insight.Severity.ToString());
+        var icon = GetSeverityIcon(insight.Severity);
+        var code = HtmlEncode(insight.Code);
+        var title = HtmlEncode(insight.Title);
+        var summary = HtmlEncode(insight.Summary);
+        var affectedObjects = insight.AffectedObjects.IsDefaultOrEmpty
+            ? "—"
+            : string.Join(", ", insight.AffectedObjects
+                .Where(static o => !string.IsNullOrWhiteSpace(o))
+                .Select(HtmlEncode));
+
+        if (string.IsNullOrWhiteSpace(affectedObjects))
+        {
+            affectedObjects = "—";
+        }
+
+        var action = HtmlEncode(insight.SuggestedAction);
+
+        builder.AppendLine("      <li class=\"insight-card\">");
+        builder.AppendLine($"        <div class=\"insight-header\"><span class=\"insight-badge {badgeClass}\">{icon}{badgeText}</span><span class=\"insight-code\">{code}</span></div>");
+        builder.AppendLine($"        <h3>{title}</h3>");
+        builder.AppendLine($"        <p class=\"insight-summary\">{summary}</p>");
+        builder.AppendLine("        <dl class=\"insight-meta\">");
+        builder.AppendLine($"          <dt>Affected objects</dt><dd>{affectedObjects}</dd>");
+        builder.AppendLine($"          <dt>Suggested action</dt><dd>{action}</dd>");
+        builder.AppendLine("        </dl>");
+        if (insight.DocumentationUri is { Length: > 0 } documentationUri)
+        {
+            var link = HtmlEncode(documentationUri);
+            builder.AppendLine($"        <a class=\"insight-doc\" href=\"{link}\">View guidance ↗</a>");
+        }
+        builder.AppendLine("      </li>");
+        return builder.ToString();
+    }
+
+    private static string GetSeverityBadgeClass(PipelineInsightSeverity severity)
+        => severity switch
+        {
+            PipelineInsightSeverity.Info => "severity-info",
+            PipelineInsightSeverity.Advisory => "severity-advisory",
+            PipelineInsightSeverity.Warning => "severity-warning",
+            PipelineInsightSeverity.Critical => "severity-critical",
+            _ => "severity-info"
+        };
+
+    private static string GetSeverityIcon(PipelineInsightSeverity severity)
+        => severity switch
+        {
+            PipelineInsightSeverity.Info => "ℹ️ \u2009",
+            PipelineInsightSeverity.Advisory => "💡 \u2009",
+            PipelineInsightSeverity.Warning => "⚠️ \u2009",
+            PipelineInsightSeverity.Critical => "🚨 \u2009",
+            _ => string.Empty
+        };
 
     private static string Relativize(string baseDirectory, string path)
     {
