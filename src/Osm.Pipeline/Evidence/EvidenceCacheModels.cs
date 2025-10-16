@@ -18,12 +18,53 @@ public sealed record EvidenceCacheManifest(
     string Key,
     string Command,
     DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? LastValidatedAtUtc,
+    DateTimeOffset? ExpiresAtUtc,
+    EvidenceCacheModuleSelection? ModuleSelection,
     IReadOnlyDictionary<string, string?> Metadata,
     IReadOnlyList<EvidenceCacheArtifact> Artifacts);
 
 public sealed record EvidenceCacheResult(
     string CacheDirectory,
-    EvidenceCacheManifest Manifest);
+    EvidenceCacheManifest Manifest,
+    EvidenceCacheEvaluation Evaluation);
+
+public sealed record EvidenceCacheModuleSelection(
+    bool IncludeSystemModules,
+    bool IncludeInactiveModules,
+    int ModuleCount,
+    string? ModulesHash,
+    IReadOnlyList<string> Modules)
+{
+    public static EvidenceCacheModuleSelection Empty { get; } = new(true, true, 0, null, Array.Empty<string>());
+}
+
+public enum EvidenceCacheOutcome
+{
+    Created,
+    Reused
+}
+
+public enum EvidenceCacheInvalidationReason
+{
+    None,
+    ManifestMissing,
+    ManifestInvalid,
+    ManifestVersionMismatch,
+    KeyMismatch,
+    CommandMismatch,
+    ManifestExpired,
+    ModuleSelectionChanged,
+    MetadataMismatch,
+    ArtifactsMismatch,
+    RefreshRequested
+}
+
+public sealed record EvidenceCacheEvaluation(
+    EvidenceCacheOutcome Outcome,
+    EvidenceCacheInvalidationReason Reason,
+    DateTimeOffset EvaluatedAtUtc,
+    IReadOnlyDictionary<string, string?> Metadata);
 
 public sealed record EvidenceCacheRequest(
     string RootDirectory,
