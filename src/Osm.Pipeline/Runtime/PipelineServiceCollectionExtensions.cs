@@ -1,8 +1,11 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
@@ -10,6 +13,8 @@ using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Smo;
+using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Runtime;
 
@@ -36,6 +41,16 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IDataProfilerFactory, DataProfilerFactory>();
         services.AddSingleton<IModelIngestionService, ModelIngestionService>();
         services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
+
+        services.AddSingleton<TighteningPolicy>();
+        services.AddSingleton<SmoModelFactory>();
+        services.AddSingleton<SsdtEmitter>();
+        services.AddSingleton<PolicyDecisionLogWriter>();
+        services.AddSingleton<EmissionFingerprintCalculator>();
+        services.AddSingleton<StaticEntitySeedScriptGenerator>();
+        services.AddSingleton(static _ => StaticEntitySeedTemplate.Load());
+        services.AddSingleton<IEvidenceCacheService, EvidenceCacheService>();
+        services.AddSingleton<EvidenceCacheCoordinator>();
 
         services.AddSingleton<BuildSsdtRequestAssembler>();
         services.AddSingleton<IModelResolutionService, ModelResolutionService>();

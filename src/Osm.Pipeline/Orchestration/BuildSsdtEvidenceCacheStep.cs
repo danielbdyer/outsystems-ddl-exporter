@@ -10,14 +10,9 @@ public sealed class BuildSsdtEvidenceCacheStep : IBuildSsdtStep<BootstrapComplet
 {
     private readonly EvidenceCacheCoordinator _cacheCoordinator;
 
-    public BuildSsdtEvidenceCacheStep(IEvidenceCacheService cacheService)
+    public BuildSsdtEvidenceCacheStep(EvidenceCacheCoordinator cacheCoordinator)
     {
-        if (cacheService is null)
-        {
-            throw new ArgumentNullException(nameof(cacheService));
-        }
-
-        _cacheCoordinator = new EvidenceCacheCoordinator(cacheService);
+        _cacheCoordinator = cacheCoordinator ?? throw new ArgumentNullException(nameof(cacheCoordinator));
     }
 
     public async Task<Result<EvidencePrepared>> ExecuteAsync(
