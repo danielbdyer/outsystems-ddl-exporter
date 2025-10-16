@@ -65,7 +65,16 @@ internal sealed class EntityDocumentMapper
                         path.Property("schema")));
             }
 
-            schema = SchemaName.Create(_context.Options.MissingSchemaFallback).Value;
+            var fallbackSchemaResult = _context.Options.MissingSchemaFallbackSchema;
+            if (fallbackSchemaResult.IsFailure)
+            {
+                serializedPayload ??= _context.SerializeEntityDocument(doc);
+                var errorsWithPath = _context.WithPath(path.Property("schema"), fallbackSchemaResult.Errors);
+                return Result<EntityModel>.Failure(
+                    AppendPayloadContext(errorsWithPath, moduleNameValue, entityNameValue, serializedPayload));
+            }
+
+            schema = fallbackSchemaResult.Value;
             serializedPayload ??= _context.SerializeEntityDocument(doc);
             _context.AddWarning(
                 $"Entity '{moduleNameValue}::{entityNameValue}' missing schema; using '{_context.Options.MissingSchemaFallback}'. Raw payload: {serializedPayload} (Path: {path.Property("schema")})");
@@ -83,7 +92,16 @@ internal sealed class EntityDocumentMapper
                         AppendPayloadContext(errorsWithPath, moduleNameValue, entityNameValue, serializedPayload));
                 }
 
-                schema = SchemaName.Create(_context.Options.MissingSchemaFallback).Value;
+                var fallbackSchemaResult = _context.Options.MissingSchemaFallbackSchema;
+                if (fallbackSchemaResult.IsFailure)
+                {
+                    serializedPayload ??= _context.SerializeEntityDocument(doc);
+                    var errorsWithPath = _context.WithPath(path.Property("schema"), fallbackSchemaResult.Errors);
+                    return Result<EntityModel>.Failure(
+                        AppendPayloadContext(errorsWithPath, moduleNameValue, entityNameValue, serializedPayload));
+                }
+
+                schema = fallbackSchemaResult.Value;
                 serializedPayload ??= _context.SerializeEntityDocument(doc);
                 _context.AddWarning(
                     $"Entity '{moduleNameValue}::{entityNameValue}' schema '{doc.Schema}' invalid; using '{_context.Options.MissingSchemaFallback}'. Raw payload: {serializedPayload} (Path: {path.Property("schema")})");

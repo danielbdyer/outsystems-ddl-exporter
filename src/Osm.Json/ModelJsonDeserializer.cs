@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Osm.Domain.Abstractions;
@@ -29,11 +30,20 @@ public sealed class ModelJsonDeserializerOptions
         MissingSchemaFallback = string.IsNullOrWhiteSpace(missingSchemaFallback)
             ? "dbo"
             : missingSchemaFallback.Trim();
+
+        var fallbackResult = SchemaName.Create(MissingSchemaFallback);
+        MissingSchemaFallbackSchema = fallbackResult.IsSuccess
+            ? fallbackResult
+            : Result<SchemaName>.Failure(fallbackResult.Errors.Select(error => ValidationError.Create(
+                error.Code,
+                $"Invalid missing schema fallback '{MissingSchemaFallback}': {error.Message}")));
     }
 
     public ModuleValidationOverrides ValidationOverrides { get; }
 
     public string MissingSchemaFallback { get; }
+
+    public Result<SchemaName> MissingSchemaFallbackSchema { get; }
 
     public static ModelJsonDeserializerOptions Default { get; } = new();
 }
