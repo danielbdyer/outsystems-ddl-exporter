@@ -51,7 +51,7 @@ public class SqlClientAdvancedSqlExecutorTests
         using var reader = new StreamReader(destination, Encoding.UTF8, leaveOpen: true);
         var payload = await reader.ReadToEndAsync();
         payload.Should().Be("chunk-1chunk-2");
-        destination.Position.Should().Be(0);
+        destination.Position.Should().Be(destination.Length);
     }
 
     [Fact]

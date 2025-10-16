@@ -37,7 +37,7 @@ public class CliIntegrationTests
         var decisionLogPath = Path.Combine(output.Path, "policy-decisions.json");
         Assert.True(File.Exists(decisionLogPath));
 
-        var expectedDecisionLogPath = Path.Combine(expectedEmissionRoot, "policy-decisions.json");
+        var expectedDecisionLogPath = Path.Combine(smokeSnapshotRoot, "policy-decisions.json");
         Assert.True(File.Exists(expectedDecisionLogPath));
 
         using (var decisionStream = File.OpenRead(decisionLogPath))

@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics.CodeAnalysis;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
@@ -80,7 +81,8 @@ public sealed class ProfilingQueryExecutorTests
 
         var sql = ProfilingQueryExecutor.BuildForeignKeyMetadataSql("dbo", "ORDERS", command);
 
-        var expected = """SELECT
+        var expected = """
+SELECT
     parentColumn.name AS ColumnName,
     targetSchema.name AS TargetSchema,
     targetTable.name AS TargetTable,
@@ -95,7 +97,8 @@ JOIN sys.columns AS parentColumn ON fkc.parent_object_id = parentColumn.object_i
 JOIN sys.tables AS targetTable ON fk.referenced_object_id = targetTable.object_id
 JOIN sys.schemas AS targetSchema ON targetTable.schema_id = targetSchema.schema_id
 JOIN sys.columns AS targetColumn ON fkc.referenced_object_id = targetColumn.object_id AND fkc.referenced_column_id = targetColumn.column_id
-WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;""";
+WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;
+""";
 
         Assert.Equal(expected, sql);
         Assert.Collection(
@@ -180,8 +183,14 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;""";
     private abstract class FakeDbConnectionBase : DbConnection
     {
         private ConnectionState _state = ConnectionState.Open;
+        private string _connectionString = string.Empty;
 
-        public override string ConnectionString { get; set; } = string.Empty;
+        [AllowNull]
+        public override string ConnectionString
+        {
+            get => _connectionString;
+            set => _connectionString = value ?? string.Empty;
+        }
 
         public override string Database => string.Empty;
 
@@ -238,13 +247,19 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;""";
     {
         private readonly RecordingDbParameterCollection _parameters = new();
         private DbConnection? _connection;
+        private string _commandText = string.Empty;
 
         public TimeoutDbCommand(DbConnection connection)
         {
             _connection = connection;
         }
 
-        public override string CommandText { get; set; } = string.Empty;
+        [AllowNull]
+        public override string CommandText
+        {
+            get => _commandText;
+            set => _commandText = value ?? string.Empty;
+        }
 
         public override int CommandTimeout { get; set; }
 
@@ -254,6 +269,7 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;""";
 
         public override UpdateRowSource UpdatedRowSource { get; set; } = UpdateRowSource.Both;
 
+        [AllowNull]
         protected override DbConnection DbConnection
         {
             get => _connection ?? throw new InvalidOperationException("Connection not set.");
@@ -302,13 +318,19 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;""";
     {
         private readonly RecordingDbParameterCollection _parameters = new();
         private readonly DbConnection _connection;
+        private string _commandText = string.Empty;
 
         public CancellableDbCommand(DbConnection connection)
         {
             _connection = connection;
         }
 
-        public override string CommandText { get; set; } = string.Empty;
+        [AllowNull]
+        public override string CommandText
+        {
+            get => _commandText;
+            set => _commandText = value ?? string.Empty;
+        }
 
         public override int CommandTimeout { get; set; }
 
@@ -318,6 +340,7 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;""";
 
         public override UpdateRowSource UpdatedRowSource { get; set; } = UpdateRowSource.Both;
 
+        [AllowNull]
         protected override DbConnection DbConnection
         {
             get => _connection;

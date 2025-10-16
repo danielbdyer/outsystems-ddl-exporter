@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace Tests.Support;
@@ -12,6 +13,11 @@ public sealed class TempDirectory : IDisposable
     }
 
     public string Path { get; }
+
+    public IEnumerable<string> GetFiles(string searchPattern, SearchOption searchOption = SearchOption.AllDirectories)
+        => Directory.Exists(Path)
+            ? Directory.GetFiles(Path, searchPattern, searchOption)
+            : Array.Empty<string>();
 
     public void Dispose()
     {

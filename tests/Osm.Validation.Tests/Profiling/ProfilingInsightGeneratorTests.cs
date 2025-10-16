@@ -26,7 +26,8 @@ public sealed class ProfilingInsightGeneratorTests
                 isUniqueKey: false,
                 defaultDefinition: null,
                 rowCount: 128,
-                nullCount: 0)
+                nullCount: 0,
+                ProfilingProbeStatus.Unknown)
             .Value;
 
         var snapshot = ProfileSnapshot
@@ -45,7 +46,7 @@ public sealed class ProfilingInsightGeneratorTests
     public void Generate_emits_duplicate_warning_for_unique_candidate_with_duplicates()
     {
         var candidate = UniqueCandidateProfile
-            .Create(DefaultSchema, DefaultTable, DefaultColumn, hasDuplicate: true)
+            .Create(DefaultSchema, DefaultTable, DefaultColumn, hasDuplicate: true, ProfilingProbeStatus.Unknown)
             .Value;
 
         var snapshot = ProfileSnapshot
@@ -74,7 +75,7 @@ public sealed class ProfilingInsightGeneratorTests
             .Value;
 
         var reality = ForeignKeyReality
-            .Create(reference, hasOrphan: true, isNoCheck: false)
+            .Create(reference, hasOrphan: true, isNoCheck: false, ProfilingProbeStatus.Unknown)
             .Value;
 
         var snapshot = ProfileSnapshot

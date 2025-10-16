@@ -43,6 +43,6 @@ public sealed class NamingOverridesBinderTests
         Assert.True(result.IsSuccess);
         var hasOverride = result.Value.TryGetEntityOverride("Module", "Entity", out var tableName);
         Assert.True(hasOverride);
-        Assert.Equal("CustomTable", tableName.Value.Value);
+        Assert.Equal("CustomTable", tableName.Value);
     }
 }
