@@ -64,6 +64,8 @@ public sealed class TighteningPolicy
         var nullabilityBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, NullabilityDecision>();
         var foreignKeyBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ForeignKeyDecision>();
         var uniqueIndexBuilder = ImmutableDictionary.CreateBuilder<IndexCoordinate, UniqueIndexDecision>();
+        var columnModuleBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, string>();
+        var indexModuleBuilder = ImmutableDictionary.CreateBuilder<IndexCoordinate, string>();
 
         foreach (var entity in model.Modules.SelectMany(m => m.Entities))
         {
@@ -91,6 +93,7 @@ public sealed class TighteningPolicy
                     compositeUniqueDuplicates);
 
                 nullabilityBuilder[coordinate] = nullability;
+                columnModuleBuilder[coordinate] = entity.Module.Value;
 
                 if (attribute.Reference.IsReference)
                 {
@@ -112,6 +115,7 @@ public sealed class TighteningPolicy
                 var uniqueDecision = uniqueStrategy.Decide(entity, index);
 
                 uniqueIndexBuilder[indexCoordinate] = uniqueDecision;
+                indexModuleBuilder[indexCoordinate] = entity.Module.Value;
             }
         }
 
@@ -119,7 +123,10 @@ public sealed class TighteningPolicy
             nullabilityBuilder.ToImmutable(),
             foreignKeyBuilder.ToImmutable(),
             uniqueIndexBuilder.ToImmutable(),
-            lookupResolution.Diagnostics);
+            lookupResolution.Diagnostics,
+            columnModuleBuilder.ToImmutable(),
+            indexModuleBuilder.ToImmutable(),
+            options);
     }
 
     private static TighteningOptions CreateKernelOptions(TighteningMode mode)

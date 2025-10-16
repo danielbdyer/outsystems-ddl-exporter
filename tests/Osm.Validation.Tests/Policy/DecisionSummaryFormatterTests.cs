@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Osm.Domain.Configuration;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
 using Xunit;
@@ -69,7 +70,9 @@ public class DecisionSummaryFormatterTests
             ImmutableDictionary<string, int>.Empty,
             ImmutableDictionary<string, int>.Empty,
             ImmutableDictionary<string, int>.Empty,
-            ImmutableArray<TighteningDiagnostic>.Empty);
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<string, ModuleDecisionRollup>.Empty,
+            TighteningToggleSnapshot.Create(TighteningOptions.Default));
 
     private static ColumnDecisionReport CreateColumn(
         string schema,

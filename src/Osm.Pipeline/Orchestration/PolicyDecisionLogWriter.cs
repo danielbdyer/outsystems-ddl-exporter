@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Osm.Validation.Tightening;
@@ -18,6 +19,12 @@ public sealed class PolicyDecisionLogWriter
             throw new ArgumentNullException(nameof(report));
         }
 
+        var moduleRollups = report.ModuleRollups.ToDictionary(
+            static pair => pair.Key,
+            static pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase);
+        var togglePrecedence = report.Toggles.ToExportDictionary();
+
         var log = new PolicyDecisionLog(
             report.ColumnCount,
             report.TightenedColumnCount,
@@ -30,6 +37,8 @@ public sealed class PolicyDecisionLogWriter
             report.ColumnRationaleCounts,
             report.UniqueIndexRationaleCounts,
             report.ForeignKeyRationaleCounts,
+            moduleRollups,
+            togglePrecedence,
             report.Columns.Select(static c => new PolicyDecisionLogColumn(
                 c.Column.Schema.Value,
                 c.Column.Table.Value,
@@ -83,6 +92,8 @@ public sealed class PolicyDecisionLogWriter
         IReadOnlyDictionary<string, int> ColumnRationales,
         IReadOnlyDictionary<string, int> UniqueIndexRationales,
         IReadOnlyDictionary<string, int> ForeignKeyRationales,
+        IReadOnlyDictionary<string, ModuleDecisionRollup> ModuleRollups,
+        IReadOnlyDictionary<string, ToggleExportValue> TogglePrecedence,
         IReadOnlyList<PolicyDecisionLogColumn> Columns,
         IReadOnlyList<PolicyDecisionLogUniqueIndex> UniqueIndexes,
         IReadOnlyList<PolicyDecisionLogForeignKey> ForeignKeys,

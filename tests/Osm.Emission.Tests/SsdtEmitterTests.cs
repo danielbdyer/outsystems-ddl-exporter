@@ -45,6 +45,20 @@ public class SsdtEmitterTests
         Assert.Equal(report.TightenedColumnCount, manifest.PolicySummary!.TightenedColumnCount);
         Assert.Equal(report.UniqueIndexCount, manifest.PolicySummary!.UniqueIndexCount);
         Assert.Equal(report.UniqueIndexesEnforcedCount, manifest.PolicySummary!.UniqueIndexesEnforcedCount);
+        Assert.Equal(report.ModuleRollups.Count, manifest.PolicySummary.ModuleRollups.Count);
+        foreach (var pair in report.ModuleRollups)
+        {
+            var entry = Assert.Contains(pair.Key, manifest.PolicySummary.ModuleRollups);
+            Assert.Equal(pair.Value.ColumnCount, entry.ColumnCount);
+            Assert.Equal(pair.Value.UniqueIndexCount, entry.UniqueIndexCount);
+            Assert.Equal(pair.Value.ForeignKeyCount, entry.ForeignKeyCount);
+        }
+
+        var toggleExpectation = report.Toggles.ToExportDictionary();
+        Assert.True(manifest.PolicySummary.TogglePrecedence.ContainsKey(TighteningToggleKeys.PolicyMode));
+        var modeToggle = manifest.PolicySummary.TogglePrecedence[TighteningToggleKeys.PolicyMode];
+        Assert.Equal(toggleExpectation[TighteningToggleKeys.PolicyMode].Value, modeToggle.Value);
+        Assert.Equal(toggleExpectation[TighteningToggleKeys.PolicyMode].Source, modeToggle.Source);
         Assert.Equal(manifest.Tables.Count, manifest.Coverage.Tables.Emitted);
         Assert.Equal(manifest.Tables.Count, manifest.Coverage.Tables.Total);
 
