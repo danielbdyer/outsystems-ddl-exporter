@@ -272,7 +272,13 @@ public class DmmComparatorTests
             Array.Empty<DmmIndex>(),
             new[]
             {
-                new DmmForeignKey("FK_Orders_Customers", "CustomerId", "dbo", "Customers", "Id", "NoAction", false)
+                new DmmForeignKey(
+                    "FK_Orders_Customers",
+                    new[] { new DmmForeignKeyColumn("CustomerId", "Id") },
+                    "dbo",
+                    "Customers",
+                    "NoAction",
+                    false)
             },
             null);
         var actualTable = expectedTable with { ForeignKeys = new[] { expectedTable.ForeignKeys[0] with { ReferencedTable = "Customers_Archive" } } };
@@ -412,6 +418,43 @@ ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
         var tables = ParseScript(script);
         var table = Assert.Single(tables, t => string.Equals(t.Name, "OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(new[] { "ID" }, table.PrimaryKeyColumns);
+    }
+
+    [Fact]
+    public void Parser_captures_composite_foreign_keys()
+    {
+        const string script = @"CREATE TABLE [dbo].[PARENT](
+    [ID] INT NOT NULL,
+    [TENANTID] INT NOT NULL,
+    CONSTRAINT [PK_PARENT] PRIMARY KEY ([ID], [TENANTID])
+);
+CREATE TABLE [dbo].[CHILD](
+    [ID] INT NOT NULL,
+    [TENANTID] INT NOT NULL,
+    [PARENTID] INT NOT NULL,
+    CONSTRAINT [PK_CHILD] PRIMARY KEY ([ID], [TENANTID])
+);
+ALTER TABLE [dbo].[CHILD]
+    ADD CONSTRAINT [FK_CHILD_PARENT]
+    FOREIGN KEY ([PARENTID], [TENANTID])
+    REFERENCES [dbo].[PARENT]([ID], [TENANTID]);";
+
+        var tables = ParseScript(script);
+        var table = Assert.Single(tables, t => string.Equals(t.Name, "CHILD", StringComparison.OrdinalIgnoreCase));
+        var foreignKey = Assert.Single(table.ForeignKeys);
+        Assert.Equal("FK_CHILD_PARENT", foreignKey.Name);
+        Assert.Collection(
+            foreignKey.Columns,
+            pair =>
+            {
+                Assert.Equal("PARENTID", pair.Column, StringComparer.OrdinalIgnoreCase);
+                Assert.Equal("ID", pair.ReferencedColumn, StringComparer.OrdinalIgnoreCase);
+            },
+            pair =>
+            {
+                Assert.Equal("TENANTID", pair.Column, StringComparer.OrdinalIgnoreCase);
+                Assert.Equal("TENANTID", pair.ReferencedColumn, StringComparer.OrdinalIgnoreCase);
+            });
     }
 
     private static IReadOnlyList<DmmTable> ParseScript(string script)

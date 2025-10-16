@@ -451,17 +451,6 @@ public sealed class DmmComparator
 
             seen.Add(expectedForeignKey.Name);
 
-            if (!string.Equals(expectedForeignKey.Column, actualForeignKey.Column, StringComparison.OrdinalIgnoreCase))
-            {
-                ssdtDifferences.Add(Difference.ForeignKey(
-                    expected.Schema,
-                    expected.Name,
-                    expectedForeignKey.Name,
-                    "Column",
-                    expectedForeignKey.Column,
-                    actualForeignKey.Column));
-            }
-
             if (!string.Equals(expectedForeignKey.ReferencedSchema, actualForeignKey.ReferencedSchema, StringComparison.OrdinalIgnoreCase))
             {
                 ssdtDifferences.Add(Difference.ForeignKey(
@@ -484,15 +473,29 @@ public sealed class DmmComparator
                     actualForeignKey.ReferencedTable));
             }
 
-            if (!string.Equals(expectedForeignKey.ReferencedColumn, actualForeignKey.ReferencedColumn, StringComparison.OrdinalIgnoreCase))
+            var expectedColumns = expectedForeignKey.Columns.ToArray();
+            var actualColumns = actualForeignKey.Columns.ToArray();
+
+            if (expectedColumns.Length != actualColumns.Length)
             {
                 ssdtDifferences.Add(Difference.ForeignKey(
                     expected.Schema,
                     expected.Name,
                     expectedForeignKey.Name,
-                    "ReferencedColumn",
-                    expectedForeignKey.ReferencedColumn,
-                    actualForeignKey.ReferencedColumn));
+                    "ColumnCount",
+                    expectedColumns.Length.ToString(CultureInfo.InvariantCulture),
+                    actualColumns.Length.ToString(CultureInfo.InvariantCulture)));
+            }
+
+            if (!expectedColumns.SequenceEqual(actualColumns, ForeignKeyColumnComparer.Instance))
+            {
+                ssdtDifferences.Add(Difference.ForeignKey(
+                    expected.Schema,
+                    expected.Name,
+                    expectedForeignKey.Name,
+                    "Columns",
+                    string.Join(", ", expectedColumns.Select(FormatForeignKeyColumn)),
+                    string.Join(", ", actualColumns.Select(FormatForeignKeyColumn))));
             }
 
             if (!string.Equals(expectedForeignKey.DeleteAction, actualForeignKey.DeleteAction, StringComparison.OrdinalIgnoreCase))
@@ -560,6 +563,9 @@ public sealed class DmmComparator
     private static string FormatIndexColumn(DmmIndexColumn column)
         => column.IsDescending ? $"{column.Name} DESC" : column.Name;
 
+    private static string FormatForeignKeyColumn(DmmForeignKeyColumn column)
+        => $"{column.Column} -> {column.ReferencedColumn}";
+
     private static bool IndexColumnEquals(DmmIndexColumn expected, DmmIndexColumn actual)
         => string.Equals(expected.Name, actual.Name, StringComparison.OrdinalIgnoreCase) && expected.IsDescending == actual.IsDescending;
 
@@ -590,5 +596,38 @@ public sealed class DmmComparator
 
         public static DmmDifference ForeignKey(string schema, string table, string foreignKey, string property, string? expected, string? actual)
             => new(schema, table, property, ForeignKey: foreignKey, Expected: ValueOrNull(expected), Actual: ValueOrNull(actual));
+    }
+
+    private sealed class ForeignKeyColumnComparer : IEqualityComparer<DmmForeignKeyColumn>
+    {
+        public static ForeignKeyColumnComparer Instance { get; } = new();
+
+        public bool Equals(DmmForeignKeyColumn? x, DmmForeignKeyColumn? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null)
+            {
+                return false;
+            }
+
+            return string.Equals(x.Column, y.Column, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.ReferencedColumn, y.ReferencedColumn, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int GetHashCode(DmmForeignKeyColumn obj)
+        {
+            if (obj is null)
+            {
+                return 0;
+            }
+
+            var columnHash = StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Column ?? string.Empty);
+            var referencedHash = StringComparer.OrdinalIgnoreCase.GetHashCode(obj.ReferencedColumn ?? string.Empty);
+            return HashCode.Combine(columnHash, referencedHash);
+        }
     }
 }
