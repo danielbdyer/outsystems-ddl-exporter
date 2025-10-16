@@ -17,7 +17,7 @@ public interface IModelResolutionService
         BuildSsdtOverrides overrides,
         ModuleFilterOptions moduleFilter,
         ResolvedSqlOptions sqlOptions,
-        string outputDirectory,
+        OutputDirectoryResolution outputResolution,
         CancellationToken cancellationToken);
 }
 

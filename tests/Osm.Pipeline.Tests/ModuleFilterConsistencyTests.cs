@@ -341,7 +341,7 @@ public sealed class ModuleFilterConsistencyTests
             BuildSsdtOverrides overrides,
             ModuleFilterOptions moduleFilter,
             ResolvedSqlOptions sqlOptions,
-            string outputDirectory,
+            OutputDirectoryResolution outputResolution,
             CancellationToken cancellationToken)
         {
             var path = overrides.ModelPath ?? configuration.ModelPath;

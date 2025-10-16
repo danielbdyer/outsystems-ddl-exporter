@@ -27,12 +27,17 @@ public sealed class ModelResolutionService : IModelResolutionService
         BuildSsdtOverrides overrides,
         ModuleFilterOptions moduleFilter,
         ResolvedSqlOptions sqlOptions,
-        string outputDirectory,
+        OutputDirectoryResolution outputResolution,
         CancellationToken cancellationToken)
     {
         if (configuration is null)
         {
             throw new ArgumentNullException(nameof(configuration));
+        }
+
+        if (outputResolution is null)
+        {
+            throw new ArgumentNullException(nameof(outputResolution));
         }
 
         overrides ??= new BuildSsdtOverrides(null, null, null, null, null, null, null);
@@ -77,18 +82,13 @@ public sealed class ModelResolutionService : IModelResolutionService
         }
 
         var extraction = extractionResult.Value;
-        var resolvedOutputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
-            ? Directory.GetCurrentDirectory()
-            : Path.GetFullPath(outputDirectory);
-
-        Directory.CreateDirectory(resolvedOutputDirectory);
-        var modelPath = Path.Combine(resolvedOutputDirectory, "model.extracted.json");
-        await File.WriteAllTextAsync(modelPath, extraction.Json, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(outputResolution.ExtractedModelPath, extraction.Json, cancellationToken)
+            .ConfigureAwait(false);
 
         var warnings = extraction.Warnings.Count == 0
             ? ImmutableArray<string>.Empty
             : ImmutableArray.CreateRange(extraction.Warnings);
 
-        return new ModelResolutionResult(Path.GetFullPath(modelPath), true, warnings);
+        return new ModelResolutionResult(Path.GetFullPath(outputResolution.ExtractedModelPath), true, warnings);
     }
 }

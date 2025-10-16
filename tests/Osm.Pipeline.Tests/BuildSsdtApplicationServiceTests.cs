@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -74,7 +75,7 @@ public sealed class BuildSsdtApplicationServiceTests
         Assert.True(result.IsSuccess);
         Assert.NotNull(dispatcher.Request);
         Assert.Same(staticDataProvider, dispatcher.Request!.StaticDataProvider);
-        Assert.Equal("out", result.Value.OutputDirectory);
+        Assert.Equal(Path.GetFullPath("out"), result.Value.OutputDirectory);
         Assert.Equal("model.json", result.Value.ModelPath);
         Assert.False(result.Value.ModelWasExtracted);
     }
@@ -158,7 +159,7 @@ public sealed class BuildSsdtApplicationServiceTests
             BuildSsdtOverrides overrides,
             ModuleFilterOptions moduleFilter,
             ResolvedSqlOptions sqlOptions,
-            string outputDirectory,
+            OutputDirectoryResolution outputResolution,
             CancellationToken cancellationToken)
         {
             var model = new ModelResolutionResult(overrides.ModelPath!, false, ImmutableArray<string>.Empty);
@@ -168,7 +169,12 @@ public sealed class BuildSsdtApplicationServiceTests
 
     private sealed class TestOutputDirectoryResolver : IOutputDirectoryResolver
     {
-        public string Resolve(BuildSsdtOverrides overrides) => overrides.OutputDirectory ?? "out";
+        public OutputDirectoryResolution Resolve(BuildSsdtOverrides overrides)
+        {
+            var directory = overrides.OutputDirectory ?? "out";
+            var resolved = Path.GetFullPath(directory);
+            return new OutputDirectoryResolution(resolved, Path.Combine(resolved, "model.extracted.json"));
+        }
     }
 
     private sealed class TestNamingOverridesBinder : INamingOverridesBinder

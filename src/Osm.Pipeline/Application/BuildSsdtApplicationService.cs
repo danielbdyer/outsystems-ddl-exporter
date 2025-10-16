@@ -84,14 +84,14 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
         }
 
         var typeMappingPolicy = typeMappingResult.Value;
-        var outputDirectory = _outputDirectoryResolver.Resolve(input.Overrides);
+        var outputResolution = _outputDirectoryResolver.Resolve(input.Overrides);
 
         var modelResolutionResult = await _modelResolutionService.ResolveModelAsync(
             configuration,
             input.Overrides,
             moduleFilter,
             sqlOptionsResult.Value,
-            outputDirectory,
+            outputResolution,
             cancellationToken).ConfigureAwait(false);
         if (modelResolutionResult.IsFailure)
         {
@@ -137,7 +137,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             typeMappingPolicy,
             smoOptions,
             modelResolution.ModelPath,
-            outputDirectory,
+            outputResolution.OutputDirectory,
             staticDataProviderResult.Value,
             input.Cache,
             input.ConfigurationContext.ConfigPath));

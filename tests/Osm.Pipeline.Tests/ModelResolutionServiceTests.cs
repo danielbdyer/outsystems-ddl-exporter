@@ -46,7 +46,7 @@ public sealed class ModelResolutionServiceTests
             overrides,
             ModuleFilterOptions.IncludeAll,
             DefaultSqlOptions,
-            outputDirectory: "out",
+            new OutputDirectoryResolution("out", Path.Combine("out", "model.extracted.json")),
             cancellationToken: CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -69,7 +69,7 @@ public sealed class ModelResolutionServiceTests
             overrides,
             ModuleFilterOptions.IncludeAll,
             DefaultSqlOptions,
-            outputDirectory: "out",
+            new OutputDirectoryResolution("out", Path.Combine("out", "model.extracted.json")),
             cancellationToken: CancellationToken.None);
 
         Assert.True(result.IsFailure);
@@ -92,7 +92,7 @@ public sealed class ModelResolutionServiceTests
             overrides,
             ModuleFilterOptions.IncludeAll,
             sqlOptions,
-            output.Path,
+            new OutputDirectoryResolution(output.Path, Path.Combine(output.Path, "model.extracted.json")),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
