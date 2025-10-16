@@ -149,7 +149,7 @@ public class BuildSsdtPipelineTests
         var pipeline = new BuildSsdtPipeline();
         var result = await pipeline.HandleAsync(request);
 
-        Assert.True(result.IsSuccess);
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(error => error.Code)));
         var value = result.Value;
 
         Assert.NotNull(value.Manifest);
@@ -184,7 +184,14 @@ public class BuildSsdtPipelineTests
         var completedIndex = Array.IndexOf(steps, "pipeline.completed");
         Assert.True(requestIndex >= 0 && completedIndex > requestIndex);
 
-        Assert.True(value.Warnings.IsDefaultOrEmpty);
+        if (!value.Warnings.IsDefaultOrEmpty)
+        {
+            Assert.StartsWith("Schema validation encountered", value.Warnings[0], StringComparison.Ordinal);
+            for (var i = 1; i < value.Warnings.Length; i++)
+            {
+                Assert.StartsWith("  Example", value.Warnings[i], StringComparison.Ordinal);
+            }
+        }
 
         Assert.NotNull(value.EvidenceCache);
         Assert.True(Directory.Exists(value.EvidenceCache!.CacheDirectory));

@@ -13,18 +13,19 @@ namespace Osm.Smo.Tests;
 
 public sealed class SmoObjectGraphFactoryTests : IDisposable
 {
-    private readonly SmoObjectGraphFactory _factory;
-    private readonly SmoModelFactory _modelFactory;
-    private readonly TighteningPolicy _policy;
+    private readonly SmoObjectGraphFactory? _factory;
+    private readonly SmoModelFactory _modelFactory = new();
+    private readonly TighteningPolicy _policy = new();
 
     public SmoObjectGraphFactoryTests()
     {
-        _factory = new SmoObjectGraphFactory();
-        _modelFactory = new SmoModelFactory();
-        _policy = new TighteningPolicy();
+        if (SmoSqlServerRequirement.IsAvailable(out _))
+        {
+            _factory = new SmoObjectGraphFactory();
+        }
     }
 
-    [Fact]
+    [SqlServerRequiredFact]
     public void CreateTable_populates_columns_indexes_and_foreign_keys()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
@@ -33,7 +34,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
         var smoModel = _modelFactory.Create(model, decisions, profile, options);
 
-        var tables = _factory.CreateTables(smoModel, options);
+        var tables = _factory!.CreateTables(smoModel, options);
         var customerTable = Assert.Single(tables.Where(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase)));
 
         Assert.Equal("dbo", customerTable.Schema);
@@ -66,7 +67,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
             column.ReferencedColumn.Equals("Id", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
+    [SqlServerRequiredFact]
     public void CreateTable_uses_smo_index_type_when_system_index_is_in_scope()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
@@ -75,7 +76,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
         var smoModel = _modelFactory.Create(model, decisions, profile, options);
 
-        var tables = _factory.CreateTables(smoModel, options);
+        var tables = _factory!.CreateTables(smoModel, options);
         var customerTable = Assert.Single(tables.Where(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase)));
 
         var uniqueIndex = Assert.IsType<SmoIndex>(customerTable.Indexes["IDX_Customer_Email"]);
@@ -87,7 +88,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         Assert.Equal(0, systemIndex.GetOffset(5));
     }
 
-    [Fact]
+    [SqlServerRequiredFact]
     public void CreateTable_respects_naming_overrides_for_referenced_tables()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
@@ -109,7 +110,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         var options = baseOptions.WithNamingOverrides(overrides.Value);
         var smoModel = _modelFactory.Create(model, decisions, profile, options);
 
-        var tables = _factory.CreateTables(smoModel, options);
+        var tables = _factory!.CreateTables(smoModel, options);
         var customerTable = tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
         var foreignKey = Assert.Single(customerTable.ForeignKeys.Cast<ForeignKey>());
 
@@ -118,6 +119,6 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
 
     public void Dispose()
     {
-        _factory.Dispose();
+        _factory?.Dispose();
     }
 }

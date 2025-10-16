@@ -1,4 +1,5 @@
 using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -206,12 +207,41 @@ public class BuildSsdtPipelineStepTests
                     definition,
                     new[]
                     {
-                        StaticEntityRow.Create(new object?[] { 1, "Sample" })
+                        CreateRow(definition)
                     }))
                 .Cast<StaticEntityTableData>()
                 .ToList();
 
             return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success(tables));
+        }
+
+        private static StaticEntityRow CreateRow(StaticEntitySeedTableDefinition definition)
+        {
+            var values = new object?[definition.Columns.Length];
+            for (var i = 0; i < definition.Columns.Length; i++)
+            {
+                var column = definition.Columns[i];
+                var type = column.DataType ?? string.Empty;
+
+                if (column.IsPrimaryKey || column.IsIdentity || type.Contains("int", StringComparison.OrdinalIgnoreCase) || type.Contains("decimal", StringComparison.OrdinalIgnoreCase) || type.Contains("numeric", StringComparison.OrdinalIgnoreCase))
+                {
+                    values[i] = i + 1;
+                }
+                else if (type.Contains("bit", StringComparison.OrdinalIgnoreCase))
+                {
+                    values[i] = i % 2 == 0;
+                }
+                else if (type.Contains("date", StringComparison.OrdinalIgnoreCase) || type.Contains("time", StringComparison.OrdinalIgnoreCase))
+                {
+                    values[i] = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                }
+                else
+                {
+                    values[i] = $"Sample{i}";
+                }
+            }
+
+            return StaticEntityRow.Create(values);
         }
     }
 }

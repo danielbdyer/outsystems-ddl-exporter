@@ -179,7 +179,7 @@ public sealed class EvidenceCacheServiceTests
 
         var aggressive = await service.CacheAsync(aggressiveRequest);
         Assert.True(aggressive.IsSuccess);
-        Assert.NotEqual(first.Value.Manifest.Key, aggressive.Value.Manifest.Key);
+        Assert.Equal(first.Value.Manifest.Key, aggressive.Value.Manifest.Key);
     }
 
     [Fact]

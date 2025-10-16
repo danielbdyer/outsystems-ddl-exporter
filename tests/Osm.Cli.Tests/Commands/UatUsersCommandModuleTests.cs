@@ -34,7 +34,7 @@ public class UatUsersCommandModuleTests
 
         Assert.Equal(5, exitCode);
         var options = executor.LastOptions!;
-        Assert.Equal("model.json", options.ModelPath);
+        Assert.Equal(Path.GetFullPath("model.json"), options.ModelPath);
         Assert.Equal("Server=.;Database=UAT;", options.UatConnectionString);
         Assert.False(options.FromLiveMetadata);
         Assert.Equal("dbo", options.UserSchema);

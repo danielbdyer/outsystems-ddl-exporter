@@ -199,15 +199,13 @@ public class SmoModelFactoryTests
         foreach (var table in smoModel.Tables)
         {
             var result = writer.Generate(table, options);
-            var expectedPath = Path.Combine(
-                "tests",
-                "Fixtures",
+            var expectedPath = FixtureFile.GetPath(Path.Combine(
                 "emission",
                 "edge-case",
                 "Modules",
                 table.Module,
                 "Tables",
-                $"{table.Schema}.{table.LogicalName}.sql");
+                $"{table.Schema}.{table.LogicalName}.sql"));
 
             Assert.True(File.Exists(expectedPath), $"Expected fixture '{expectedPath}' to exist.");
             var expected = File.ReadAllText(expectedPath);
@@ -455,7 +453,7 @@ public class SmoModelFactoryTests
         Assert.Equal("User", foreignKey.ReferencedLogicalTable);
     }
 
-    [Fact]
+    [SqlServerRequiredFact]
     public void CreateSmoTables_materializes_detached_smo_objects()
     {
         var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();

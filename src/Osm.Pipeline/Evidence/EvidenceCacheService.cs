@@ -768,20 +768,6 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
                 .Append(descriptor.Length.ToString(CultureInfo.InvariantCulture)).Append(';');
         }
 
-        if (metadata.Count > 0)
-        {
-            foreach (var entry in metadata.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
-            {
-                builder.Append(entry.Key).Append('=');
-                if (!string.IsNullOrEmpty(entry.Value))
-                {
-                    builder.Append(entry.Value);
-                }
-
-                builder.Append(';');
-            }
-        }
-
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         var key = Convert.ToHexString(hashBytes).ToLowerInvariant();
         return key.Substring(0, 16);

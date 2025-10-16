@@ -107,9 +107,9 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
                 "Connection string is required for live extraction. Provide --connection-string or configure sql.connectionString.");
         }
 
-        var samplingOptions = CreateSamplingOptions(sqlOptions.Sampling);
-        var connectionOptions = CreateConnectionOptions(sqlOptions.Authentication);
-        var executionOptions = new SqlExecutionOptions(sqlOptions.CommandTimeoutSeconds, samplingOptions);
+        var samplingOptions = sqlOptions.ToSamplingOptions();
+        var connectionOptions = sqlOptions.ToConnectionOptions();
+        var executionOptions = sqlOptions.ToExecutionOptions();
 
         _logger.LogInformation(
             "Configuring live metadata reader (timeoutSeconds: {TimeoutSeconds}, samplingThreshold: {SamplingThreshold}, sampleSize: {SampleSize}).",
@@ -126,19 +126,4 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
         return Result<IOutsystemsMetadataReader>.Success(reader);
     }
 
-    private static SqlSamplingOptions CreateSamplingOptions(SqlSamplingSettings settings)
-    {
-        var threshold = settings.RowSamplingThreshold ?? SqlSamplingOptions.Default.RowCountSamplingThreshold;
-        var sampleSize = settings.SampleSize ?? SqlSamplingOptions.Default.SampleSize;
-        return new SqlSamplingOptions(threshold, sampleSize);
-    }
-
-    private static SqlConnectionOptions CreateConnectionOptions(SqlAuthenticationSettings settings)
-    {
-        return new SqlConnectionOptions(
-            settings.Method,
-            settings.TrustServerCertificate,
-            settings.ApplicationName,
-            settings.AccessToken);
-    }
 }

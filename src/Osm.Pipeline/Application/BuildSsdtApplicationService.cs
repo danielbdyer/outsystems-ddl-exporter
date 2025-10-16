@@ -311,12 +311,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
 
         if (!string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
         {
-            var connectionOptions = new SqlConnectionOptions(
-                sqlOptions.Authentication.Method,
-                sqlOptions.Authentication.TrustServerCertificate,
-                sqlOptions.Authentication.ApplicationName,
-                sqlOptions.Authentication.AccessToken);
-
+            var connectionOptions = sqlOptions.ToConnectionOptions();
             var factory = new SqlConnectionFactory(sqlOptions.ConnectionString!, connectionOptions);
             return new SqlStaticEntityDataProvider(factory, sqlOptions.CommandTimeoutSeconds);
         }

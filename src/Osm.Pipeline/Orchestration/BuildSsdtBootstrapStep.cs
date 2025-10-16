@@ -98,8 +98,8 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep
                     "Connection string is required when using the SQL profiler.");
             }
 
-            var sampling = CreateSamplingOptions(request.SqlOptions.Sampling);
-            var connectionOptions = CreateConnectionOptions(request.SqlOptions.Authentication);
+            var sampling = request.SqlOptions.ToSamplingOptions();
+            var connectionOptions = request.SqlOptions.ToConnectionOptions();
             var profilerOptions = SqlProfilerOptions.Default with
             {
                 CommandTimeoutSeconds = request.SqlOptions.CommandTimeoutSeconds,
@@ -123,21 +123,5 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep
 
         var fixtureProfiler = new FixtureDataProfiler(request.ProfilePath!, _profileSnapshotDeserializer);
         return await fixtureProfiler.CaptureAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static SqlSamplingOptions CreateSamplingOptions(SqlSamplingSettings configuration)
-    {
-        var threshold = configuration.RowSamplingThreshold ?? SqlSamplingOptions.Default.RowCountSamplingThreshold;
-        var sampleSize = configuration.SampleSize ?? SqlSamplingOptions.Default.SampleSize;
-        return new SqlSamplingOptions(threshold, sampleSize);
-    }
-
-    private static SqlConnectionOptions CreateConnectionOptions(SqlAuthenticationSettings configuration)
-    {
-        return new SqlConnectionOptions(
-            configuration.Method,
-            configuration.TrustServerCertificate,
-            configuration.ApplicationName,
-            configuration.AccessToken);
     }
 }

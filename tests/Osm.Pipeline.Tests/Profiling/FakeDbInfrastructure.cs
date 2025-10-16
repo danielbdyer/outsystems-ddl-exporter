@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,7 +26,14 @@ internal sealed class RecordingDbConnection : DbConnection
 
     public RecordingDbCommand? LastCommand { get; private set; }
 
-    public override string ConnectionString { get; set; } = string.Empty;
+    private string _connectionString = string.Empty;
+
+    [AllowNull]
+    public override string ConnectionString
+    {
+        get => _connectionString;
+        set => _connectionString = value ?? string.Empty;
+    }
 
     public override string Database => string.Empty;
 
@@ -94,7 +102,14 @@ internal sealed class RecordingDbCommand : DbCommand
         _rows = rows;
     }
 
-    public override string CommandText { get; set; } = string.Empty;
+    private string _commandText = string.Empty;
+
+    [AllowNull]
+    public override string CommandText
+    {
+        get => _commandText;
+        set => _commandText = value ?? string.Empty;
+    }
 
     public override int CommandTimeout { get; set; }
 
@@ -104,7 +119,7 @@ internal sealed class RecordingDbCommand : DbCommand
 
     public override UpdateRowSource UpdatedRowSource { get; set; } = UpdateRowSource.Both;
 
-    protected override DbConnection DbConnection
+    protected override DbConnection? DbConnection
     {
         get => _connection;
         set => throw new NotSupportedException();
@@ -144,7 +159,7 @@ internal sealed class RecordingDbCommand : DbCommand
         return new FakeDbDataReader(_rows);
     }
 
-    public override Task<DbDataReader> ExecuteReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
+    protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
     {
         return Task.FromResult<DbDataReader>(new FakeDbDataReader(_rows));
     }
@@ -289,9 +304,23 @@ internal sealed class RecordingDbParameter : DbParameter
 
     public override bool IsNullable { get; set; }
 
-    public override string ParameterName { get; set; } = string.Empty;
+    private string _parameterName = string.Empty;
 
-    public override string SourceColumn { get; set; } = string.Empty;
+    [AllowNull]
+    public override string ParameterName
+    {
+        get => _parameterName;
+        set => _parameterName = value ?? string.Empty;
+    }
+
+    private string _sourceColumn = string.Empty;
+
+    [AllowNull]
+    public override string SourceColumn
+    {
+        get => _sourceColumn;
+        set => _sourceColumn = value ?? string.Empty;
+    }
 
     public override object? Value { get; set; }
 
@@ -328,34 +357,105 @@ internal sealed class FakeDbDataReader : DbDataReader
 
     public override object this[string name] => throw new NotSupportedException();
 
-    public override bool GetBoolean(int ordinal)
+    public override bool GetBoolean(int ordinal) => Convert.ToBoolean(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override byte GetByte(int ordinal) => Convert.ToByte(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
     {
-        return (bool)_rows[_position][ordinal]!;
+        if (GetValue(ordinal) is not byte[] data)
+        {
+            throw new InvalidCastException("Field is not a byte array.");
+        }
+
+        var available = Math.Max(0, data.Length - (int)dataOffset);
+        var toCopy = Math.Min(Math.Max(available, 0), length);
+
+        if (buffer is not null && toCopy > 0)
+        {
+            Array.Copy(data, dataOffset, buffer, bufferOffset, toCopy);
+        }
+
+        return toCopy;
     }
 
-    public override int GetInt32(int ordinal)
+    public override char GetChar(int ordinal) => Convert.ToChar(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
     {
-        return Convert.ToInt32(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+        var value = GetString(ordinal);
+        var available = Math.Max(0, value.Length - (int)dataOffset);
+        var toCopy = Math.Min(Math.Max(available, 0), length);
+
+        if (buffer is not null && toCopy > 0)
+        {
+            value.CopyTo((int)dataOffset, buffer, bufferOffset, toCopy);
+        }
+
+        return toCopy;
     }
 
-    public override long GetInt64(int ordinal)
+    public override DateTime GetDateTime(int ordinal) => Convert.ToDateTime(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override decimal GetDecimal(int ordinal) => Convert.ToDecimal(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override double GetDouble(int ordinal) => Convert.ToDouble(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override Type GetFieldType(int ordinal)
     {
-        return Convert.ToInt64(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+        return _rows.Count > 0 && _rows[0][ordinal] is not null
+            ? _rows[0][ordinal]!.GetType()
+            : typeof(object);
     }
 
-    public override string GetString(int ordinal)
+    public override float GetFloat(int ordinal) => Convert.ToSingle(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override Guid GetGuid(int ordinal)
     {
-        return (string)_rows[_position][ordinal]!;
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            Guid guid => guid,
+            string text => Guid.Parse(text),
+            _ => new Guid(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)!),
+        };
     }
+
+    public override short GetInt16(int ordinal) => Convert.ToInt16(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override int GetInt32(int ordinal) => Convert.ToInt32(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override long GetInt64(int ordinal) => Convert.ToInt64(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override string GetDataTypeName(int ordinal) => GetFieldType(ordinal).Name;
+
+    public override string GetString(int ordinal) => Convert.ToString(GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
 
     public override object GetValue(int ordinal)
     {
         return _rows[_position][ordinal] ?? DBNull.Value;
     }
 
+    public override int GetValues(object[] values)
+    {
+        if (_rows.Count == 0)
+        {
+            return 0;
+        }
+
+        var current = _rows[_position];
+        var length = Math.Min(values.Length, current.Length);
+        for (var i = 0; i < length; i++)
+        {
+            values[i] = current[i] ?? DBNull.Value;
+        }
+
+        return length;
+    }
+
     public override bool IsDBNull(int ordinal)
     {
-        return _rows[_position][ordinal] is null;
+        return _rows[_position][ordinal] is null || GetValue(ordinal) is DBNull;
     }
 
     public override Task<bool> ReadAsync(CancellationToken cancellationToken)
@@ -389,31 +489,15 @@ internal sealed class FakeDbDataReader : DbDataReader
         throw new NotSupportedException();
     }
 
-    public override Type GetFieldType(int ordinal)
-    {
-        return _rows.Count > 0 && _rows[0][ordinal] is not null
-            ? _rows[0][ordinal]!.GetType()
-            : typeof(object);
-    }
-
-    public override int GetValues(object[] values)
-    {
-        if (_rows.Count == 0)
-        {
-            return 0;
-        }
-
-        var current = _rows[_position];
-        var length = Math.Min(values.Length, current.Length);
-        for (var i = 0; i < length; i++)
-        {
-            values[i] = current[i] ?? DBNull.Value;
-        }
-
-        return length;
-    }
-
     public override void Close()
     {
+    }
+
+    public override IEnumerator GetEnumerator()
+    {
+        while (Read())
+        {
+            yield return this;
+        }
     }
 }
