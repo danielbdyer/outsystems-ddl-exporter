@@ -183,6 +183,44 @@ public sealed class EvidenceCacheServiceTests
     }
 
     [Fact]
+    public async Task CacheAsync_ShouldNormalizeCommandAndRoot()
+    {
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            ["/inputs/model.json"] = new MockFileData("{\"model\":true}"),
+        });
+
+        var metadata = new Dictionary<string, string?>
+        {
+            ["policy.mode"] = "EvidenceGated",
+        };
+
+        var request = new EvidenceCacheRequest(
+            RootDirectory: "  /cache  ",
+            Command: "  build-ssdt  ",
+            ModelPath: "/inputs/model.json",
+            ProfilePath: null,
+            DmmPath: null,
+            ConfigPath: null,
+            Metadata: metadata,
+            Refresh: false);
+
+        var service = new EvidenceCacheService(
+            fileSystem,
+            () => new DateTimeOffset(2024, 08, 01, 14, 00, 00, TimeSpan.Zero));
+
+        var result = await service.CacheAsync(request);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("build-ssdt", result.Value.Manifest.Command);
+        Assert.StartsWith("/cache/", result.Value.CacheDirectory, StringComparison.Ordinal);
+        Assert.True(fileSystem.Directory.Exists("/cache"));
+
+        metadata["policy.mode"] = "Aggressive";
+        Assert.Equal("EvidenceGated", result.Value.Manifest.Metadata["policy.mode"]);
+    }
+
+    [Fact]
     public async Task CacheAsync_ShouldRebuildCache_WhenRefreshRequested()
     {
         var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>
