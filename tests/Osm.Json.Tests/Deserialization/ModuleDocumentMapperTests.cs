@@ -110,4 +110,31 @@ public class ModuleDocumentMapperTests
         Assert.Null(result.Value);
         Assert.Contains(warnings, message => message.Contains("contains no entities"));
     }
+
+    [Fact]
+    public void Map_ShouldFail_WhenEntityEntryIsNull()
+    {
+        var warnings = new List<string>();
+        var context = CreateContext(warnings);
+        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
+        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
+        var entityMapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
+        var moduleMapper = new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);
+
+        var moduleDocument = new ModuleDocument
+        {
+            Name = "Finance",
+            Entities = new EntityDocument[] { null! }
+        };
+
+        var result = moduleMapper.Map(
+            moduleDocument,
+            ModuleName.Create("Finance").Value,
+            DocumentPathContext.Root.Property("modules").Index(0));
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("module.entities.null", error.Code);
+        Assert.Contains("Path: $['modules'][0]['entities'][0]", error.Message);
+    }
 }

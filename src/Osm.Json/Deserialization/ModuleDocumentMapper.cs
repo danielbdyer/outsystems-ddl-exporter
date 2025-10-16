@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
@@ -56,12 +57,22 @@ internal sealed class ModuleDocumentMapper
         for (var i = 0; i < entities.Length; i++)
         {
             var entity = entities[i];
+            var entityPath = path.Property("entities").Index(i);
+            if (entity is null)
+            {
+                var error = _context.CreateError(
+                    "module.entities.null",
+                    "Entity entry cannot be null.",
+                    entityPath);
+                return Result<ModuleModel?>.Failure(ImmutableArray.Create(error));
+            }
+
             if (ShouldSkipInactiveEntity(entity))
             {
                 continue;
             }
 
-            var entityResult = _entityMapper.Map(moduleName, entity, path.Property("entities").Index(i));
+            var entityResult = _entityMapper.Map(moduleName, entity, entityPath);
             if (entityResult.IsFailure)
             {
                 return Result<ModuleModel?>.Failure(entityResult.Errors);
@@ -94,11 +105,11 @@ internal sealed class ModuleDocumentMapper
         return Result<ModuleModel?>.Success(moduleResult.Value);
     }
 
-    private static bool ShouldSkipInactiveEntity(EntityDocument doc)
+    private static bool ShouldSkipInactiveEntity(EntityDocument? doc)
     {
         if (doc is null)
         {
-            return false;
+            return true;
         }
 
         if (doc.IsActive)
