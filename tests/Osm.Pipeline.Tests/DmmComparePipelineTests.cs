@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
@@ -114,6 +116,63 @@ public class DmmComparePipelineTests
             diff => string.Equals(diff.Property, "FilePresence", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Table, "Customer", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task HandleAsync_passes_fixture_strategy_to_bootstrapper()
+    {
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        using var workspace = new TempDirectory();
+        var dmmPath = Path.Combine(workspace.Path, "baseline.dmm.sql");
+        await File.WriteAllTextAsync(dmmPath, string.Empty);
+        var diffPath = Path.Combine(workspace.Path, "diff.json");
+
+        var bootstrapper = new RecordingBootstrapper();
+        var pipeline = new DmmComparePipeline(bootstrapper: bootstrapper);
+
+        var request = new DmmComparePipelineRequest(
+            "model.json",
+            ModuleFilterOptions.IncludeAll,
+            profilePath,
+            dmmPath,
+            TighteningOptions.Default,
+            SupplementalModelOptions.Default,
+            new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
+            TypeMappingPolicy.LoadDefault(),
+            diffPath,
+            null);
+
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        var captured = Assert.NotNull(bootstrapper.LastRequest);
+        Assert.Equal("Loading profiling snapshot from fixtures.", captured.ProfilingStrategy.StartMessage);
+        var metadata = Assert.NotNull(captured.ProfilingStrategy.StartMetadataFactory?.Invoke());
+        Assert.Equal(profilePath, metadata["profilePath"]);
+
+        var captureResult = await captured.ProfilingStrategy.CaptureAsync(default!, CancellationToken.None);
+        Assert.True(captureResult.IsSuccess);
+    }
+
+    private sealed class RecordingBootstrapper : IPipelineBootstrapper
+    {
+        private static readonly Result<PipelineBootstrapContext> FailureResult = Result<PipelineBootstrapContext>.Failure(
+            ValidationError.Create("test.bootstrapper", "Bootstrapper short-circuited for inspection."));
+
+        public PipelineBootstrapRequest? LastRequest { get; private set; }
+
+        public Task<Result<PipelineBootstrapContext>> BootstrapAsync(
+            PipelineBootstrapRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return Task.FromResult(FailureResult);
+        }
     }
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](

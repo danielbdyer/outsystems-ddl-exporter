@@ -85,6 +85,83 @@ public class BuildSsdtPipelineTests
         Assert.Equal(JsonValueKind.Array, manifestDocument.RootElement.GetProperty("Unsupported").ValueKind);
     }
 
+    [Fact]
+    public async Task HandleAsync_passes_fixture_profiling_strategy_to_bootstrapper()
+    {
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        var bootstrapper = new RecordingBootstrapper();
+        var pipeline = new BuildSsdtPipeline(bootstrapper: bootstrapper);
+
+        var request = new BuildSsdtPipelineRequest(
+            "model.json",
+            ModuleFilterOptions.IncludeAll,
+            "output",
+            TighteningOptions.Default,
+            SupplementalModelOptions.Default,
+            "fixture",
+            profilePath,
+            new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicy.LoadDefault(),
+            null,
+            null,
+            null);
+
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        var captured = Assert.NotNull(bootstrapper.LastRequest);
+        Assert.Equal("Capturing profiling snapshot.", captured.ProfilingStrategy.StartMessage);
+        var metadata = Assert.NotNull(captured.ProfilingStrategy.StartMetadataFactory?.Invoke());
+        Assert.Equal("fixture", metadata["provider"]);
+        Assert.Equal(profilePath, metadata["profilePath"]);
+
+        var captureResult = await captured.ProfilingStrategy.CaptureAsync(default!, CancellationToken.None);
+        Assert.True(captureResult.IsSuccess);
+    }
+
+    [Fact]
+    public async Task HandleAsync_passes_sql_profiling_strategy_to_bootstrapper()
+    {
+        var bootstrapper = new RecordingBootstrapper();
+        var pipeline = new BuildSsdtPipeline(bootstrapper: bootstrapper);
+
+        var request = new BuildSsdtPipelineRequest(
+            "model.json",
+            ModuleFilterOptions.IncludeAll,
+            "output",
+            TighteningOptions.Default,
+            SupplementalModelOptions.Default,
+            "sql",
+            null,
+            new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicy.LoadDefault(),
+            null,
+            null,
+            null);
+
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        var captured = Assert.NotNull(bootstrapper.LastRequest);
+        var metadata = Assert.NotNull(captured.ProfilingStrategy.StartMetadataFactory?.Invoke());
+        Assert.Equal("sql", metadata["provider"]);
+
+        var captureResult = await captured.ProfilingStrategy.CaptureAsync(default!, CancellationToken.None);
+        Assert.True(captureResult.IsFailure);
+        var error = Assert.Single(captureResult.Errors);
+        Assert.Equal("pipeline.buildSsdt.sql.connectionString.missing", error.Code);
+    }
+
     private sealed class EmptyStaticEntityDataProvider : IStaticEntityDataProvider
     {
         public Task<Result<IReadOnlyList<StaticEntityTableData>>> GetDataAsync(
@@ -95,6 +172,22 @@ public class BuildSsdtPipelineTests
                 .Select(definition => StaticEntityTableData.Create(definition, Enumerable.Empty<StaticEntityRow>()))
                 .ToArray();
             return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success((IReadOnlyList<StaticEntityTableData>)data));
+        }
+    }
+
+    private sealed class RecordingBootstrapper : IPipelineBootstrapper
+    {
+        private static readonly Result<PipelineBootstrapContext> FailureResult = Result<PipelineBootstrapContext>.Failure(
+            ValidationError.Create("test.bootstrapper", "Bootstrapper short-circuited for inspection."));
+
+        public PipelineBootstrapRequest? LastRequest { get; private set; }
+
+        public Task<Result<PipelineBootstrapContext>> BootstrapAsync(
+            PipelineBootstrapRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return Task.FromResult(FailureResult);
         }
     }
 }
