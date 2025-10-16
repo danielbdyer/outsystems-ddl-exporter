@@ -11,6 +11,7 @@ using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Json;
+using Osm.Validation.Profiling;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -40,6 +41,7 @@ public sealed record PipelineBootstrapContext(
     OsmModel FilteredModel,
     ImmutableArray<EntityModel> SupplementalEntities,
     ProfileSnapshot Profile,
+    ImmutableArray<ProfilingInsight> Insights,
     ImmutableArray<string> Warnings);
 
 public sealed class PipelineBootstrapper : IPipelineBootstrapper
@@ -47,15 +49,18 @@ public sealed class PipelineBootstrapper : IPipelineBootstrapper
     private readonly IModelIngestionService _modelIngestionService;
     private readonly ModuleFilter _moduleFilter;
     private readonly SupplementalEntityLoader _supplementalLoader;
+    private readonly IProfilingInsightGenerator _insightGenerator;
 
     public PipelineBootstrapper(
         IModelIngestionService? modelIngestionService = null,
         ModuleFilter? moduleFilter = null,
-        SupplementalEntityLoader? supplementalLoader = null)
+        SupplementalEntityLoader? supplementalLoader = null,
+        IProfilingInsightGenerator? insightGenerator = null)
     {
         _modelIngestionService = modelIngestionService ?? new ModelIngestionService(new ModelJsonDeserializer());
         _moduleFilter = moduleFilter ?? new ModuleFilter();
         _supplementalLoader = supplementalLoader ?? new SupplementalEntityLoader();
+        _insightGenerator = insightGenerator ?? new ProfilingInsightGenerator();
     }
 
     public async Task<Result<PipelineBootstrapContext>> BootstrapAsync(
@@ -201,10 +206,13 @@ public sealed class PipelineBootstrapper : IPipelineBootstrapper
                 ["foreignKeys"] = profile.ForeignKeys.Length.ToString(CultureInfo.InvariantCulture)
             });
 
+        var insights = _insightGenerator.Generate(profile);
+
         return new PipelineBootstrapContext(
             filteredModel,
             supplementalEntities,
             profile,
+            insights,
             pipelineWarnings.ToImmutable());
     }
 }

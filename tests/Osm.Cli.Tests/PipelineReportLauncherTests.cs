@@ -80,6 +80,7 @@ public class PipelineReportLauncherTests
                 ImmutableArray<UniqueCandidateProfile>.Empty,
                 ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
                 ImmutableArray<ForeignKeyReality>.Empty),
+            ImmutableArray<ProfilingInsight>.Empty,
             decisionReport,
             manifest,
             Path.Combine(output.Path, "policy-decisions.json"),

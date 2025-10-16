@@ -108,6 +108,7 @@ public sealed class BuildSsdtApplicationServiceTests
             Array.Empty<string>());
         return new BuildSsdtPipelineResult(
             profileResult.Value,
+            ImmutableArray<ProfilingInsight>.Empty,
             report,
             manifest,
             "decision.log",
