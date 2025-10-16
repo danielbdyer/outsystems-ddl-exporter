@@ -10,14 +10,16 @@ using SequenceDocument = ModelJsonDeserializer.SequenceDocument;
 
 internal sealed class SequenceDocumentMapper
 {
+    private readonly DocumentMapperContext _context;
     private readonly ExtendedPropertyDocumentMapper _extendedPropertyMapper;
 
-    public SequenceDocumentMapper(ExtendedPropertyDocumentMapper extendedPropertyMapper)
+    public SequenceDocumentMapper(DocumentMapperContext context, ExtendedPropertyDocumentMapper extendedPropertyMapper)
     {
+        _context = context;
         _extendedPropertyMapper = extendedPropertyMapper;
     }
 
-    public Result<ImmutableArray<SequenceModel>> Map(SequenceDocument[]? docs)
+    public Result<ImmutableArray<SequenceModel>> Map(SequenceDocument[]? docs, DocumentPathContext path)
     {
         if (docs is null || docs.Length == 0)
         {
@@ -25,26 +27,32 @@ internal sealed class SequenceDocumentMapper
         }
 
         var builder = ImmutableArray.CreateBuilder<SequenceModel>(docs.Length);
-        foreach (var doc in docs)
+        for (var i = 0; i < docs.Length; i++)
         {
+            var doc = docs[i];
             if (doc is null)
             {
                 continue;
             }
 
+            var sequencePath = path.Index(i);
             var schemaResult = SchemaName.Create(doc.Schema);
             if (schemaResult.IsFailure)
             {
-                return Result<ImmutableArray<SequenceModel>>.Failure(schemaResult.Errors);
+                return Result<ImmutableArray<SequenceModel>>.Failure(
+                    _context.WithPath(sequencePath.Property("schema"), schemaResult.Errors));
             }
 
             var nameResult = SequenceName.Create(doc.Name);
             if (nameResult.IsFailure)
             {
-                return Result<ImmutableArray<SequenceModel>>.Failure(nameResult.Errors);
+                return Result<ImmutableArray<SequenceModel>>.Failure(
+                    _context.WithPath(sequencePath.Property("name"), nameResult.Errors));
             }
 
-            var propertiesResult = _extendedPropertyMapper.Map(doc.ExtendedProperties);
+            var propertiesResult = _extendedPropertyMapper.Map(
+                doc.ExtendedProperties,
+                sequencePath.Property("extendedProperties"));
             if (propertiesResult.IsFailure)
             {
                 return Result<ImmutableArray<SequenceModel>>.Failure(propertiesResult.Errors);
@@ -65,7 +73,8 @@ internal sealed class SequenceDocumentMapper
 
             if (modelResult.IsFailure)
             {
-                return Result<ImmutableArray<SequenceModel>>.Failure(modelResult.Errors);
+                return Result<ImmutableArray<SequenceModel>>.Failure(
+                    _context.WithPath(sequencePath, modelResult.Errors));
             }
 
             builder.Add(modelResult.Value);

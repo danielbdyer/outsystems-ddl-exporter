@@ -11,37 +11,46 @@ using AttributeDocument = ModelJsonDeserializer.AttributeDocument;
 
 internal sealed class AttributeDocumentMapper
 {
+    private readonly DocumentMapperContext _context;
     private readonly ExtendedPropertyDocumentMapper _extendedPropertyMapper;
 
-    public AttributeDocumentMapper(ExtendedPropertyDocumentMapper extendedPropertyMapper)
+    public AttributeDocumentMapper(
+        DocumentMapperContext context,
+        ExtendedPropertyDocumentMapper extendedPropertyMapper)
     {
+        _context = context;
         _extendedPropertyMapper = extendedPropertyMapper;
     }
 
-    public Result<ImmutableArray<AttributeModel>> Map(AttributeDocument[]? docs)
+    public Result<ImmutableArray<AttributeModel>> Map(AttributeDocument[]? docs, DocumentPathContext path)
     {
         if (docs is null)
         {
             return Result<ImmutableArray<AttributeModel>>.Failure(
-                ValidationError.Create("entity.attributes.missing", "Attributes collection is required."));
+                _context.CreateError("entity.attributes.missing", "Attributes collection is required.", path));
         }
 
         var builder = ImmutableArray.CreateBuilder<AttributeModel>(docs.Length);
-        foreach (var doc in docs)
+        for (var i = 0; i < docs.Length; i++)
         {
+            var doc = docs[i];
+            var attributePath = path.Index(i);
+
             var logicalNameResult = AttributeName.Create(doc.Name);
             if (logicalNameResult.IsFailure)
             {
-                return Result<ImmutableArray<AttributeModel>>.Failure(logicalNameResult.Errors);
+                return Result<ImmutableArray<AttributeModel>>.Failure(
+                    _context.WithPath(attributePath.Property("name"), logicalNameResult.Errors));
             }
 
             var columnResult = ColumnName.Create(doc.PhysicalName);
             if (columnResult.IsFailure)
             {
-                return Result<ImmutableArray<AttributeModel>>.Failure(columnResult.Errors);
+                return Result<ImmutableArray<AttributeModel>>.Failure(
+                    _context.WithPath(attributePath.Property("physicalName"), columnResult.Errors));
             }
 
-            var referenceResult = MapAttributeReference(doc);
+            var referenceResult = MapAttributeReference(doc, attributePath);
             if (referenceResult.IsFailure)
             {
                 return Result<ImmutableArray<AttributeModel>>.Failure(referenceResult.Errors);
@@ -49,7 +58,9 @@ internal sealed class AttributeDocumentMapper
 
             var reality = BuildReality(doc);
 
-            var propertyResult = _extendedPropertyMapper.Map(doc.ExtendedProperties);
+            var propertyResult = _extendedPropertyMapper.Map(
+                doc.ExtendedProperties,
+                attributePath.Property("extendedProperties"));
             if (propertyResult.IsFailure)
             {
                 return Result<ImmutableArray<AttributeModel>>.Failure(propertyResult.Errors);
@@ -79,7 +90,8 @@ internal sealed class AttributeDocumentMapper
 
             if (attributeResult.IsFailure)
             {
-                return Result<ImmutableArray<AttributeModel>>.Failure(attributeResult.Errors);
+                return Result<ImmutableArray<AttributeModel>>.Failure(
+                    _context.WithPath(attributePath, attributeResult.Errors));
             }
 
             builder.Add(attributeResult.Value);
@@ -94,7 +106,7 @@ internal sealed class AttributeDocumentMapper
         return baseReality with { IsPresentButInactive = doc.PhysicalIsPresentButInactive == 1 };
     }
 
-    private static Result<AttributeReference> MapAttributeReference(AttributeDocument doc)
+    private Result<AttributeReference> MapAttributeReference(AttributeDocument doc, DocumentPathContext path)
     {
         var isReference = doc.IsReference == 1;
         EntityName? targetEntity = null;
@@ -103,7 +115,8 @@ internal sealed class AttributeDocumentMapper
             var entityResult = EntityName.Create(doc.ReferenceEntityName);
             if (entityResult.IsFailure)
             {
-                return Result<AttributeReference>.Failure(entityResult.Errors);
+                return Result<AttributeReference>.Failure(
+                    _context.WithPath(path.Property("refEntity_name"), entityResult.Errors));
             }
 
             targetEntity = entityResult.Value;
@@ -115,7 +128,8 @@ internal sealed class AttributeDocumentMapper
             var tableResult = TableName.Create(doc.ReferenceEntityPhysicalName);
             if (tableResult.IsFailure)
             {
-                return Result<AttributeReference>.Failure(tableResult.Errors);
+                return Result<AttributeReference>.Failure(
+                    _context.WithPath(path.Property("refEntity_physicalName"), tableResult.Errors));
             }
 
             targetPhysicalName = tableResult.Value;

@@ -49,18 +49,19 @@ internal sealed class ModuleDocumentMapper
         return true;
     }
 
-    public Result<ModuleModel?> Map(ModuleDocument doc, ModuleName moduleName)
+    public Result<ModuleModel?> Map(ModuleDocument doc, ModuleName moduleName, DocumentPathContext path)
     {
         var entities = doc.Entities ?? Array.Empty<EntityDocument>();
         var entityResults = new List<EntityModel>(entities.Length);
-        foreach (var entity in entities)
+        for (var i = 0; i < entities.Length; i++)
         {
+            var entity = entities[i];
             if (ShouldSkipInactiveEntity(entity))
             {
                 continue;
             }
 
-            var entityResult = _entityMapper.Map(moduleName, entity);
+            var entityResult = _entityMapper.Map(moduleName, entity, path.Property("entities").Index(i));
             if (entityResult.IsFailure)
             {
                 return Result<ModuleModel?>.Failure(entityResult.Errors);
@@ -75,7 +76,9 @@ internal sealed class ModuleDocumentMapper
             return Result<ModuleModel?>.Success(null);
         }
 
-        var propertiesResult = _extendedPropertyMapper.Map(doc.ExtendedProperties);
+        var propertiesResult = _extendedPropertyMapper.Map(
+            doc.ExtendedProperties,
+            path.Property("extendedProperties"));
         if (propertiesResult.IsFailure)
         {
             return Result<ModuleModel?>.Failure(propertiesResult.Errors);
@@ -84,7 +87,8 @@ internal sealed class ModuleDocumentMapper
         var moduleResult = ModuleModel.Create(moduleName, doc.IsSystem, doc.IsActive, entityResults, propertiesResult.Value);
         if (moduleResult.IsFailure)
         {
-            return Result<ModuleModel?>.Failure(moduleResult.Errors);
+            return Result<ModuleModel?>.Failure(
+                _context.WithPath(path, moduleResult.Errors));
         }
 
         return Result<ModuleModel?>.Success(moduleResult.Value);
