@@ -85,44 +85,59 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         }
 
         var log = new PipelineExecutionLogBuilder(_timeProvider);
-        var context = new BuildSsdtPipelineContext(request, log);
-        var steps = new IBuildSsdtStep[]
-        {
-            _bootstrapStep,
-            _evidenceCacheStep,
-            _policyStep,
-            _emissionStep,
-            _staticSeedStep,
-        };
+        var initialized = new PipelineInitialized(request, log);
 
-        foreach (var step in steps)
+        var bootstrapResult = await _bootstrapStep.ExecuteAsync(initialized, cancellationToken).ConfigureAwait(false);
+        if (bootstrapResult.IsFailure)
         {
-            var result = await step.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
-            if (result.IsFailure)
-            {
-                return Result<BuildSsdtPipelineResult>.Failure(result.Errors);
-            }
+            return Result<BuildSsdtPipelineResult>.Failure(bootstrapResult.Errors);
         }
 
-        context.Log.Record(
+        var evidenceResult = await _evidenceCacheStep.ExecuteAsync(bootstrapResult.Value, cancellationToken).ConfigureAwait(false);
+        if (evidenceResult.IsFailure)
+        {
+            return Result<BuildSsdtPipelineResult>.Failure(evidenceResult.Errors);
+        }
+
+        var decisionsResult = await _policyStep.ExecuteAsync(evidenceResult.Value, cancellationToken).ConfigureAwait(false);
+        if (decisionsResult.IsFailure)
+        {
+            return Result<BuildSsdtPipelineResult>.Failure(decisionsResult.Errors);
+        }
+
+        var emissionResult = await _emissionStep.ExecuteAsync(decisionsResult.Value, cancellationToken).ConfigureAwait(false);
+        if (emissionResult.IsFailure)
+        {
+            return Result<BuildSsdtPipelineResult>.Failure(emissionResult.Errors);
+        }
+
+        var seedsResult = await _staticSeedStep.ExecuteAsync(emissionResult.Value, cancellationToken).ConfigureAwait(false);
+        if (seedsResult.IsFailure)
+        {
+            return Result<BuildSsdtPipelineResult>.Failure(seedsResult.Errors);
+        }
+
+        var finalState = seedsResult.Value;
+
+        finalState.Log.Record(
             "pipeline.completed",
             "Build-SSDT pipeline completed successfully.",
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 ["manifestPath"] = Path.Combine(request.OutputDirectory, "manifest.json"),
-                ["decisionLogPath"] = context.DecisionLogPath,
-                ["seedScriptPaths"] = context.StaticSeedScriptPaths.IsDefaultOrEmpty ? "<none>" : string.Join(";", context.StaticSeedScriptPaths),
-                ["cacheDirectory"] = context.EvidenceCache?.CacheDirectory
+                ["decisionLogPath"] = finalState.DecisionLogPath,
+                ["seedScriptPaths"] = finalState.StaticSeedScriptPaths.IsDefaultOrEmpty ? "<none>" : string.Join(";", finalState.StaticSeedScriptPaths),
+                ["cacheDirectory"] = finalState.EvidenceCache?.CacheDirectory
             });
 
         return new BuildSsdtPipelineResult(
-            context.Profile!,
-            context.DecisionReport!,
-            context.Manifest!,
-            context.DecisionLogPath!,
-            context.StaticSeedScriptPaths,
-            context.EvidenceCache,
-            context.Log.Build(),
-            context.PipelineWarnings);
+            finalState.Bootstrap.Profile!,
+            finalState.Report,
+            finalState.Manifest,
+            finalState.DecisionLogPath,
+            finalState.StaticSeedScriptPaths,
+            finalState.EvidenceCache,
+            finalState.Log.Build(),
+            finalState.Bootstrap.Warnings);
     }
 }

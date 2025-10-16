@@ -8,7 +8,7 @@ using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep
+public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepared, DecisionsSynthesized>
 {
     private readonly TighteningPolicy _tighteningPolicy;
 
@@ -17,22 +17,24 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep
         _tighteningPolicy = tighteningPolicy ?? throw new ArgumentNullException(nameof(tighteningPolicy));
     }
 
-    public Task<Result<BuildSsdtPipelineContext>> ExecuteAsync(
-        BuildSsdtPipelineContext context,
+    public Task<Result<DecisionsSynthesized>> ExecuteAsync(
+        EvidencePrepared state,
         CancellationToken cancellationToken = default)
     {
-        if (context is null)
+        if (state is null)
         {
-            throw new ArgumentNullException(nameof(context));
+            throw new ArgumentNullException(nameof(state));
         }
 
-        var model = context.FilteredModel ?? throw new InvalidOperationException("Pipeline bootstrap step must execute before policy decisions.");
-        var profile = context.Profile ?? throw new InvalidOperationException("Profiling must complete before policy decisions.");
+        var model = state.Bootstrap.FilteredModel
+            ?? throw new InvalidOperationException("Pipeline bootstrap step must execute before policy decisions.");
+        var profile = state.Bootstrap.Profile
+            ?? throw new InvalidOperationException("Profiling must complete before policy decisions.");
 
-        var decisions = _tighteningPolicy.Decide(model, profile, context.Request.TighteningOptions);
+        var decisions = _tighteningPolicy.Decide(model, profile, state.Request.TighteningOptions);
         var report = PolicyDecisionReporter.Create(decisions);
 
-        context.Log.Record(
+        state.Log.Record(
             "policy.decisions.synthesized",
             "Synthesized tightening decisions.",
             new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -46,7 +48,12 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep
                 ["foreignKeysCreated"] = report.ForeignKeysCreatedCount.ToString(CultureInfo.InvariantCulture)
             });
 
-        context.SetPolicyDecisions(decisions, report);
-        return Task.FromResult(Result<BuildSsdtPipelineContext>.Success(context));
+        return Task.FromResult(Result<DecisionsSynthesized>.Success(new DecisionsSynthesized(
+            state.Request,
+            state.Log,
+            state.Bootstrap,
+            state.EvidenceCache,
+            decisions,
+            report)));
     }
 }

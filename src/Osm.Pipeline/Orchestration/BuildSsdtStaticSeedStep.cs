@@ -13,7 +13,7 @@ using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep
+public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<EmissionReady, StaticSeedsGenerated>
 {
     private readonly StaticEntitySeedScriptGenerator _seedGenerator;
     private readonly StaticEntitySeedTemplate _seedTemplate;
@@ -26,47 +26,56 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep
         _seedTemplate = seedTemplate ?? throw new ArgumentNullException(nameof(seedTemplate));
     }
 
-    public async Task<Result<BuildSsdtPipelineContext>> ExecuteAsync(
-        BuildSsdtPipelineContext context,
+    public async Task<Result<StaticSeedsGenerated>> ExecuteAsync(
+        EmissionReady state,
         CancellationToken cancellationToken = default)
     {
-        if (context is null)
+        if (state is null)
         {
-            throw new ArgumentNullException(nameof(context));
+            throw new ArgumentNullException(nameof(state));
         }
 
-        var model = context.FilteredModel ?? throw new InvalidOperationException("Pipeline bootstrap step must execute before static seed generation.");
-        var seedDefinitions = StaticEntitySeedDefinitionBuilder.Build(model, context.Request.SmoOptions.NamingOverrides);
+        var model = state.Bootstrap.FilteredModel
+            ?? throw new InvalidOperationException("Pipeline bootstrap step must execute before static seed generation.");
+        var seedDefinitions = StaticEntitySeedDefinitionBuilder.Build(model, state.Request.SmoOptions.NamingOverrides);
         if (seedDefinitions.IsDefaultOrEmpty)
         {
-            context.SetStaticSeedScriptPaths(ImmutableArray<string>.Empty);
-            context.Log.Record(
+            state.Log.Record(
                 "staticData.seed.skipped",
                 "No static entity seeds required for request.");
-            return Result<BuildSsdtPipelineContext>.Success(context);
+            return Result<StaticSeedsGenerated>.Success(new StaticSeedsGenerated(
+                state.Request,
+                state.Log,
+                state.Bootstrap,
+                state.EvidenceCache,
+                state.Decisions,
+                state.Report,
+                state.Manifest,
+                state.DecisionLogPath,
+                ImmutableArray<string>.Empty));
         }
 
-        if (context.Request.StaticDataProvider is null)
+        if (state.Request.StaticDataProvider is null)
         {
-            return Result<BuildSsdtPipelineContext>.Failure(ValidationError.Create(
+            return Result<StaticSeedsGenerated>.Failure(ValidationError.Create(
                 "pipeline.buildSsdt.staticData.missingProvider",
                 "Static entity data provider is required when the model includes static entities."));
         }
 
-        var staticDataResult = await context.Request.StaticDataProvider
+        var staticDataResult = await state.Request.StaticDataProvider
             .GetDataAsync(seedDefinitions, cancellationToken)
             .ConfigureAwait(false);
         if (staticDataResult.IsFailure)
         {
-            return Result<BuildSsdtPipelineContext>.Failure(staticDataResult.Errors);
+            return Result<StaticSeedsGenerated>.Failure(staticDataResult.Errors);
         }
 
         var deterministicData = StaticEntitySeedDeterminizer.Normalize(staticDataResult.Value);
-        var seedOptions = context.Request.TighteningOptions.Emission.StaticSeeds;
-        var seedsRoot = context.Request.SeedOutputDirectoryHint;
+        var seedOptions = state.Request.TighteningOptions.Emission.StaticSeeds;
+        var seedsRoot = state.Request.SeedOutputDirectoryHint;
         if (string.IsNullOrWhiteSpace(seedsRoot))
         {
-            seedsRoot = Path.Combine(context.Request.OutputDirectory, "Seeds");
+            seedsRoot = Path.Combine(state.Request.OutputDirectory, "Seeds");
         }
 
         Directory.CreateDirectory(seedsRoot!);
@@ -80,7 +89,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep
 
             foreach (var group in grouped)
             {
-                var sanitizedModule = context.Request.SmoOptions.SanitizeModuleNames
+                var sanitizedModule = state.Request.SmoOptions.SanitizeModuleNames
                     ? ModuleNameSanitizer.Sanitize(group.Key)
                     : group.Key;
 
@@ -109,8 +118,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep
         }
 
         var seedPaths = seedPathBuilder.ToImmutable();
-        context.SetStaticSeedScriptPaths(seedPaths);
-        context.Log.Record(
+        state.Log.Record(
             "staticData.seed.generated",
             "Generated static entity seed scripts.",
             new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -119,6 +127,15 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep
                 ["tableCount"] = seedDefinitions.Length.ToString(CultureInfo.InvariantCulture)
             });
 
-        return Result<BuildSsdtPipelineContext>.Success(context);
+        return Result<StaticSeedsGenerated>.Success(new StaticSeedsGenerated(
+            state.Request,
+            state.Log,
+            state.Bootstrap,
+            state.EvidenceCache,
+            state.Decisions,
+            state.Report,
+            state.Manifest,
+            state.DecisionLogPath,
+            seedPaths));
     }
 }
