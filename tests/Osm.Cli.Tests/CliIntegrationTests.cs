@@ -45,6 +45,15 @@ public class CliIntegrationTests
             Assert.True(root.GetProperty("UniqueIndexes").GetArrayLength() >= 0);
         }
 
+        var pipelineLogPath = Path.Combine(output.Path, "pipeline-log.json");
+        Assert.True(File.Exists(pipelineLogPath));
+        using (var logStream = File.OpenRead(pipelineLogPath))
+        using (var logJson = JsonDocument.Parse(logStream))
+        {
+            var entries = logJson.RootElement.GetProperty("Entries");
+            Assert.True(entries.GetArrayLength() > 0);
+        }
+
         DirectorySnapshot.AssertMatches(expectedEmissionRoot, output.Path);
 
         var dmmScriptPath = Path.Combine(comparisonWorkspace.Path, "edge-case.dmm.sql");

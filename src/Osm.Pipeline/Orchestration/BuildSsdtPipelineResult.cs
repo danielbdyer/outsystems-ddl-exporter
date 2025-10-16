@@ -11,6 +11,7 @@ public sealed record BuildSsdtPipelineResult(
     PolicyDecisionReport DecisionReport,
     SsdtManifest Manifest,
     string DecisionLogPath,
+    string PipelineLogPath,
     ImmutableArray<string> StaticSeedScriptPaths,
     EvidenceCacheResult? EvidenceCache,
     PipelineExecutionLog ExecutionLog,

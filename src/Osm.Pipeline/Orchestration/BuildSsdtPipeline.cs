@@ -27,6 +27,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
     private readonly SmoModelFactory _smoModelFactory;
     private readonly SsdtEmitter _ssdtEmitter;
     private readonly PolicyDecisionLogWriter _decisionLogWriter;
+    private readonly PipelineExecutionLogWriter _pipelineLogWriter;
     private readonly IEvidenceCacheService _evidenceCacheService;
     private readonly StaticEntitySeedScriptGenerator _seedGenerator;
     private readonly StaticEntitySeedTemplate _seedTemplate;
@@ -40,6 +41,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         SmoModelFactory? smoModelFactory = null,
         SsdtEmitter? ssdtEmitter = null,
         PolicyDecisionLogWriter? decisionLogWriter = null,
+        PipelineExecutionLogWriter? pipelineLogWriter = null,
         IEvidenceCacheService? evidenceCacheService = null,
         StaticEntitySeedScriptGenerator? seedGenerator = null,
         StaticEntitySeedTemplate? seedTemplate = null,
@@ -52,6 +54,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         _smoModelFactory = smoModelFactory ?? new SmoModelFactory();
         _ssdtEmitter = ssdtEmitter ?? new SsdtEmitter();
         _decisionLogWriter = decisionLogWriter ?? new PolicyDecisionLogWriter();
+        _pipelineLogWriter = pipelineLogWriter ?? new PipelineExecutionLogWriter();
         _evidenceCacheService = evidenceCacheService ?? new EvidenceCacheService();
         _seedGenerator = seedGenerator ?? new StaticEntitySeedScriptGenerator();
         _seedTemplate = seedTemplate ?? StaticEntitySeedTemplate.Load();
@@ -382,14 +385,20 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 ["cacheDirectory"] = cacheResult?.CacheDirectory
             });
 
+        var executionLog = log.Build();
+        var pipelineLogPath = await _pipelineLogWriter
+            .WriteAsync(request.OutputDirectory, executionLog, cancellationToken)
+            .ConfigureAwait(false);
+
         return new BuildSsdtPipelineResult(
             profile,
             decisionReport,
             manifest,
             decisionLogPath,
+            pipelineLogPath,
             seedPaths,
             cacheResult,
-            log.Build(),
+            executionLog,
             pipelineWarnings);
     }
 

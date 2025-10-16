@@ -74,6 +74,8 @@ public class PipelineReportLauncherTests
             Path.Combine(output.Path, "Seeds", "AppCore", "StaticEntities.seed.sql"),
             Path.Combine(output.Path, "Seeds", "ExtBilling", "StaticEntities.seed.sql"));
 
+        var pipelineLogPath = Path.Combine(output.Path, "pipeline-log.json");
+
         var pipelineResult = new BuildSsdtPipelineResult(
             new ProfileSnapshot(
                 ImmutableArray<ColumnProfile>.Empty,
@@ -83,6 +85,7 @@ public class PipelineReportLauncherTests
             decisionReport,
             manifest,
             Path.Combine(output.Path, "policy-decisions.json"),
+            pipelineLogPath,
             seedPaths,
             null,
             PipelineExecutionLog.Empty,
@@ -96,6 +99,7 @@ public class PipelineReportLauncherTests
 
         await File.WriteAllTextAsync(Path.Combine(output.Path, "policy-decisions.json"), "{}");
         await File.WriteAllTextAsync(Path.Combine(output.Path, "dmm-diff.json"), "{}");
+        await File.WriteAllTextAsync(pipelineLogPath, "{}");
 
         var applicationResult = new BuildSsdtApplicationResult(
             pipelineResult,

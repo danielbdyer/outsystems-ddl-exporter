@@ -154,6 +154,8 @@ public class BuildSsdtPipelineTests
         Assert.NotNull(value.Manifest);
         Assert.True(File.Exists(Path.Combine(output.Path, "manifest.json")));
         Assert.True(File.Exists(value.DecisionLogPath));
+        Assert.False(string.IsNullOrWhiteSpace(value.PipelineLogPath));
+        Assert.True(File.Exists(value.PipelineLogPath));
         Assert.False(value.StaticSeedScriptPaths.IsDefaultOrEmpty);
         Assert.NotEmpty(value.StaticSeedScriptPaths);
         foreach (var path in value.StaticSeedScriptPaths)
@@ -161,6 +163,7 @@ public class BuildSsdtPipelineTests
             Assert.True(File.Exists(path));
         }
         Assert.True(File.Exists(Path.Combine(output.Path, "policy-decisions.json")));
+        Assert.True(File.Exists(Path.Combine(output.Path, "pipeline-log.json")));
         Assert.NotNull(value.ExecutionLog);
         Assert.True(value.ExecutionLog.Entries.Count > 0);
         Assert.Contains(value.ExecutionLog.Entries, entry => entry.Step == "pipeline.completed");

@@ -353,6 +353,10 @@ Command CreateBuildCommand()
         }
 
         EmitPipelineLog(context, pipelineResult.ExecutionLog);
+        if (!string.IsNullOrWhiteSpace(pipelineResult.PipelineLogPath))
+        {
+            WriteLine(context.Console, $"Pipeline log written to {pipelineResult.PipelineLogPath}");
+        }
         EmitPipelineWarnings(context, pipelineResult.Warnings);
 
         foreach (var diagnostic in pipelineResult.DecisionReport.Diagnostics)
