@@ -1275,4 +1275,68 @@ public class ModelJsonDeserializerTests
         Assert.Equal("entity.attributes.missing", error.Code);
         Assert.Contains("Path: $['modules'][0]['entities'][0]['attributes']", error.Message);
     }
+
+    [Fact]
+    public void Deserialize_ShouldFail_WhenModuleEntityEntryIsNull()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isActive": true,
+              "entities": [ null ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("module.entities.nullEntry", error.Code);
+        Assert.Contains("$['modules'][0]['entities'][0]", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deserialize_ShouldFail_WhenEntityAttributeEntryIsNull()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "db_schema": "dbo",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "attributes": [ null ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("entity.attributes.nullEntry", error.Code);
+        Assert.Contains("$['modules'][0]['entities'][0]['attributes'][0]", error.Message, StringComparison.Ordinal);
+    }
 }
