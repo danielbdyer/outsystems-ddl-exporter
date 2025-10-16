@@ -1,64 +1,35 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using Osm.Domain.Abstractions;
-using Osm.Emission;
-using Osm.Emission.Seeds;
-using Osm.Json;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Mediation;
-using Osm.Pipeline.Profiling;
-using Osm.Pipeline.Sql;
-using Osm.Smo;
-using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
 public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>
 {
     private readonly TimeProvider _timeProvider;
-    private readonly BuildSsdtBootstrapStep _bootstrapStep;
-    private readonly BuildSsdtEvidenceCacheStep _evidenceCacheStep;
-    private readonly BuildSsdtPolicyDecisionStep _policyStep;
-    private readonly BuildSsdtEmissionStep _emissionStep;
-    private readonly BuildSsdtStaticSeedStep _staticSeedStep;
+    private readonly IBuildSsdtStep<PipelineInitialized, BootstrapCompleted> _bootstrapStep;
+    private readonly IBuildSsdtStep<BootstrapCompleted, EvidencePrepared> _evidenceCacheStep;
+    private readonly IBuildSsdtStep<EvidencePrepared, DecisionsSynthesized> _policyStep;
+    private readonly IBuildSsdtStep<DecisionsSynthesized, EmissionReady> _emissionStep;
+    private readonly IBuildSsdtStep<EmissionReady, StaticSeedsGenerated> _staticSeedStep;
 
     public BuildSsdtPipeline(
-        IPipelineBootstrapper? bootstrapper = null,
-        TighteningPolicy? tighteningPolicy = null,
-        SmoModelFactory? smoModelFactory = null,
-        SsdtEmitter? ssdtEmitter = null,
-        PolicyDecisionLogWriter? decisionLogWriter = null,
-        IEvidenceCacheService? evidenceCacheService = null,
-        StaticEntitySeedScriptGenerator? seedGenerator = null,
-        StaticEntitySeedTemplate? seedTemplate = null,
-        ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
-        EmissionFingerprintCalculator? fingerprintCalculator = null,
-        TimeProvider? timeProvider = null,
-        IDataProfilerFactory? dataProfilerFactory = null)
+        IBuildSsdtStep<PipelineInitialized, BootstrapCompleted> bootstrapStep,
+        IBuildSsdtStep<BootstrapCompleted, EvidencePrepared> evidenceCacheStep,
+        IBuildSsdtStep<EvidencePrepared, DecisionsSynthesized> policyStep,
+        IBuildSsdtStep<DecisionsSynthesized, EmissionReady> emissionStep,
+        IBuildSsdtStep<EmissionReady, StaticSeedsGenerated> staticSeedStep,
+        TimeProvider timeProvider)
     {
-        var resolvedBootstrapper = bootstrapper ?? new PipelineBootstrapper();
-        var resolvedTighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
-        var resolvedSmoModelFactory = smoModelFactory ?? new SmoModelFactory();
-        var resolvedEmitter = ssdtEmitter ?? new SsdtEmitter();
-        var resolvedDecisionLogWriter = decisionLogWriter ?? new PolicyDecisionLogWriter();
-        var resolvedCacheService = evidenceCacheService ?? new EvidenceCacheService();
-        var resolvedSeedGenerator = seedGenerator ?? new StaticEntitySeedScriptGenerator();
-        var resolvedSeedTemplate = seedTemplate ?? StaticEntitySeedTemplate.Load();
-        var resolvedProfileDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
-        var resolvedFingerprintCalculator = fingerprintCalculator ?? new EmissionFingerprintCalculator();
-        var resolvedProfilerFactory = dataProfilerFactory
-            ?? new DataProfilerFactory(
-                resolvedProfileDeserializer,
-                static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
-
-        _bootstrapStep = new BuildSsdtBootstrapStep(resolvedBootstrapper, resolvedProfilerFactory);
-        _evidenceCacheStep = new BuildSsdtEvidenceCacheStep(resolvedCacheService);
-        _policyStep = new BuildSsdtPolicyDecisionStep(resolvedTighteningPolicy);
-        _emissionStep = new BuildSsdtEmissionStep(resolvedSmoModelFactory, resolvedEmitter, resolvedDecisionLogWriter, resolvedFingerprintCalculator);
-        _staticSeedStep = new BuildSsdtStaticSeedStep(resolvedSeedGenerator, resolvedSeedTemplate);
-        _timeProvider = timeProvider ?? TimeProvider.System;
+        _bootstrapStep = bootstrapStep ?? throw new ArgumentNullException(nameof(bootstrapStep));
+        _evidenceCacheStep = evidenceCacheStep ?? throw new ArgumentNullException(nameof(evidenceCacheStep));
+        _policyStep = policyStep ?? throw new ArgumentNullException(nameof(policyStep));
+        _emissionStep = emissionStep ?? throw new ArgumentNullException(nameof(emissionStep));
+        _staticSeedStep = staticSeedStep ?? throw new ArgumentNullException(nameof(staticSeedStep));
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     public async Task<Result<BuildSsdtPipelineResult>> HandleAsync(

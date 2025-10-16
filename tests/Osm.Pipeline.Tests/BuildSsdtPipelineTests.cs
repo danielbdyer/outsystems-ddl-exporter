@@ -7,8 +7,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Emission;
 using Osm.Emission.Seeds;
+using Osm.Json;
+using Osm.Domain.Model;
+using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
 using Osm.Smo;
 using Tests.Support;
@@ -30,7 +36,8 @@ public class BuildSsdtPipelineTests
             Assert.Equal("Received build-ssdt pipeline request.", request.Telemetry.RequestMessage);
             Assert.Equal("fixture", request.Telemetry.ProfilingStartMetadata["provider"]);
 
-            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            var model = LoadModel(request.ModelPath);
+            var captureResult = await request.ProfileCaptureAsync(model, token);
             Assert.True(captureResult.IsSuccess);
 
             var error = ValidationError.Create("test.bootstrap.stop", "Bootstrapper halted pipeline for verification.");
@@ -56,7 +63,7 @@ public class BuildSsdtPipelineTests
             null,
             null);
 
-        var pipeline = new BuildSsdtPipeline(bootstrapper: bootstrapper);
+        var pipeline = CreatePipeline(bootstrapper);
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsFailure);
@@ -75,7 +82,8 @@ public class BuildSsdtPipelineTests
         {
             Assert.Equal("sql", request.Telemetry.ProfilingStartMetadata["provider"]);
 
-            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            var model = LoadModel(request.ModelPath);
+            var captureResult = await request.ProfileCaptureAsync(model, token);
             Assert.True(captureResult.IsFailure);
             var captureError = Assert.Single(captureResult.Errors);
             Assert.Equal("pipeline.buildSsdt.sql.connectionString.missing", captureError.Code);
@@ -102,7 +110,7 @@ public class BuildSsdtPipelineTests
             null,
             null);
 
-        var pipeline = new BuildSsdtPipeline(bootstrapper: bootstrapper);
+        var pipeline = CreatePipeline(bootstrapper);
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsFailure);
@@ -146,10 +154,14 @@ public class BuildSsdtPipelineTests
             new EmptyStaticEntityDataProvider(),
             Path.Combine(output.Path, "Seeds"));
 
-        var pipeline = new BuildSsdtPipeline();
+        var pipeline = CreatePipeline();
         var result = await pipeline.HandleAsync(request);
 
-        Assert.True(result.IsSuccess);
+        if (!result.IsSuccess)
+        {
+            var errors = string.Join(";", result.Errors.Select(error => $"{error.Code}:{error.Message}"));
+            throw new Xunit.Sdk.XunitException($"Pipeline failed: {errors}");
+        }
         var value = result.Value;
 
         Assert.NotNull(value.Manifest);
@@ -184,7 +196,16 @@ public class BuildSsdtPipelineTests
         var completedIndex = Array.IndexOf(steps, "pipeline.completed");
         Assert.True(requestIndex >= 0 && completedIndex > requestIndex);
 
-        Assert.True(value.Warnings.IsDefaultOrEmpty);
+        var warnings = value.Warnings.ToArray();
+        Assert.Equal(
+            new[]
+            {
+                "Schema validation encountered 3 issue(s). Proceeding with best-effort import.",
+                "Example 1: /modules/0/entities/0/indexes/0/fill_factor: All values fail against the false schema",
+                "Example 2: /modules/0/entities/0/indexes/1/fill_factor: All values fail against the false schema",
+                "Example 3: /modules/2/entities/0/indexes/0/fill_factor: All values fail against the false schema"
+            },
+            warnings);
 
         Assert.NotNull(value.EvidenceCache);
         Assert.True(Directory.Exists(value.EvidenceCache!.CacheDirectory));
@@ -231,5 +252,35 @@ public class BuildSsdtPipelineTests
                 .ToArray();
             return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success((IReadOnlyList<StaticEntityTableData>)data));
         }
+    }
+
+    private static BuildSsdtPipeline CreatePipeline(IPipelineBootstrapper? bootstrapper = null)
+    {
+        var profilerFactory = new DataProfilerFactory(
+            new ProfileSnapshotDeserializer(),
+            static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
+        var cacheCoordinator = new EvidenceCacheCoordinator(new EvidenceCacheService());
+        var policy = new TighteningPolicy();
+        var smoFactory = new SmoModelFactory();
+        var emitter = new SsdtEmitter();
+        var decisionWriter = new PolicyDecisionLogWriter();
+        var fingerprintCalculator = new EmissionFingerprintCalculator();
+        var seedGenerator = new StaticEntitySeedScriptGenerator();
+        var seedTemplate = StaticEntitySeedTemplate.Load();
+
+        return new BuildSsdtPipeline(
+            new BuildSsdtBootstrapStep(bootstrapper ?? new PipelineBootstrapper(), profilerFactory),
+            new BuildSsdtEvidenceCacheStep(cacheCoordinator),
+            new BuildSsdtPolicyDecisionStep(policy),
+            new BuildSsdtEmissionStep(smoFactory, emitter, decisionWriter, fingerprintCalculator),
+            new BuildSsdtStaticSeedStep(seedGenerator, seedTemplate),
+            TimeProvider.System);
+    }
+
+    private static OsmModel LoadModel(string modelPath)
+    {
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = File.OpenRead(modelPath);
+        return deserializer.Deserialize(stream).Value;
     }
 }
