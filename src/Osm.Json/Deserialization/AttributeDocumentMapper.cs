@@ -33,8 +33,16 @@ internal sealed class AttributeDocumentMapper
         var builder = ImmutableArray.CreateBuilder<AttributeModel>(docs.Length);
         for (var i = 0; i < docs.Length; i++)
         {
-            var doc = docs[i];
             var attributePath = path.Index(i);
+            var doc = docs[i];
+            if (doc is null)
+            {
+                return Result<ImmutableArray<AttributeModel>>.Failure(
+                    _context.CreateError(
+                        "entity.attributes.null",
+                        "Attribute entry must be an object.",
+                        attributePath));
+            }
 
             var logicalNameResult = AttributeName.Create(doc.Name);
             if (logicalNameResult.IsFailure)
