@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -164,6 +165,26 @@ public class BuildSsdtPipelineTests
         Assert.NotNull(value.ExecutionLog);
         Assert.True(value.ExecutionLog.Entries.Count > 0);
         Assert.Contains(value.ExecutionLog.Entries, entry => entry.Step == "pipeline.completed");
+
+        var steps = value.ExecutionLog.Entries.Select(entry => entry.Step).ToArray();
+        Assert.Contains("request.received", steps);
+        Assert.Contains("model.ingested", steps);
+        Assert.Contains("model.filtered", steps);
+        Assert.Contains("supplemental.loaded", steps);
+        Assert.Contains("profiling.capture.start", steps);
+        Assert.Contains("profiling.capture.completed", steps);
+        Assert.Contains("policy.decisions.synthesized", steps);
+        Assert.Contains("smo.model.created", steps);
+        Assert.Contains("ssdt.emission.completed", steps);
+        Assert.Contains("policy.log.persisted", steps);
+        Assert.Contains("staticData.seed.generated", steps);
+        Assert.Contains(steps, step => step is "evidence.cache.persisted" or "evidence.cache.reused");
+
+        var requestIndex = Array.IndexOf(steps, "request.received");
+        var completedIndex = Array.IndexOf(steps, "pipeline.completed");
+        Assert.True(requestIndex >= 0 && completedIndex > requestIndex);
+
+        Assert.True(value.Warnings.IsDefaultOrEmpty);
 
         Assert.NotNull(value.EvidenceCache);
         Assert.True(Directory.Exists(value.EvidenceCache!.CacheDirectory));
