@@ -10,7 +10,7 @@ using Osm.Pipeline.Profiling;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep
+public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized, BootstrapCompleted>
 {
     private readonly IPipelineBootstrapper _bootstrapper;
     private readonly IDataProfilerFactory _profilerFactory;
@@ -23,16 +23,16 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep
         _profilerFactory = profilerFactory ?? throw new ArgumentNullException(nameof(profilerFactory));
     }
 
-    public async Task<Result<BuildSsdtPipelineContext>> ExecuteAsync(
-        BuildSsdtPipelineContext context,
+    public async Task<Result<BootstrapCompleted>> ExecuteAsync(
+        PipelineInitialized state,
         CancellationToken cancellationToken = default)
     {
-        if (context is null)
+        if (state is null)
         {
-            throw new ArgumentNullException(nameof(context));
+            throw new ArgumentNullException(nameof(state));
         }
 
-        var request = context.Request;
+        var request = state.Request;
         var telemetry = CreateTelemetry(request);
         var bootstrapRequest = new PipelineBootstrapRequest(
             request.ModelPath,
@@ -42,15 +42,17 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep
             (model, token) => CaptureProfileAsync(request, model, token));
 
         var bootstrapResult = await _bootstrapper
-            .BootstrapAsync(context.Log, bootstrapRequest, cancellationToken)
+            .BootstrapAsync(state.Log, bootstrapRequest, cancellationToken)
             .ConfigureAwait(false);
         if (bootstrapResult.IsFailure)
         {
-            return Result<BuildSsdtPipelineContext>.Failure(bootstrapResult.Errors);
+            return Result<BootstrapCompleted>.Failure(bootstrapResult.Errors);
         }
 
-        context.SetBootstrapContext(bootstrapResult.Value);
-        return Result<BuildSsdtPipelineContext>.Success(context);
+        return Result<BootstrapCompleted>.Success(new BootstrapCompleted(
+            state.Request,
+            state.Log,
+            bootstrapResult.Value));
     }
 
     private static PipelineBootstrapTelemetry CreateTelemetry(BuildSsdtPipelineRequest request)

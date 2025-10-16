@@ -14,7 +14,6 @@ using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
-using Osm.Json;
 using Tests.Support;
 using Xunit;
 
@@ -23,20 +22,21 @@ namespace Osm.Pipeline.Tests;
 public class BuildSsdtPipelineStepTests
 {
     [Fact]
-    public async Task BootstrapStep_populates_context_and_logs_request()
+    public async Task BootstrapStep_populates_state_and_logs_request()
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
-        var context = new BuildSsdtPipelineContext(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
         var step = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
 
-        var result = await step.ExecuteAsync(context);
+        var result = await step.ExecuteAsync(initial);
 
         Assert.True(result.IsSuccess);
-        Assert.NotNull(context.BootstrapContext);
-        Assert.NotNull(context.Profile);
-        Assert.NotNull(context.FilteredModel);
-        var log = context.Log.Build();
+        var state = result.Value;
+        Assert.NotNull(state.Bootstrap);
+        Assert.NotNull(state.Bootstrap.Profile);
+        Assert.NotNull(state.Bootstrap.FilteredModel);
+        var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "request.received");
         Assert.Contains(log.Entries, entry => entry.Step == "profiling.capture.completed");
     }
@@ -78,14 +78,17 @@ public class BuildSsdtPipelineStepTests
             Metadata: new Dictionary<string, string?>());
 
         var request = CreateRequest(output.Path, cacheOptions: cacheOptions);
-        var context = new BuildSsdtPipelineContext(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var step = new BuildSsdtEvidenceCacheStep(cacheService);
 
-        var result = await step.ExecuteAsync(context);
+        var result = await step.ExecuteAsync(bootstrapState);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(cacheResult, context.EvidenceCache);
-        var log = context.Log.Build();
+        var state = result.Value;
+        Assert.Equal(cacheResult, state.EvidenceCache);
+        var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "evidence.cache.requested");
         Assert.Contains(log.Entries, entry => entry.Step == "evidence.cache.persisted" || entry.Step == "evidence.cache.reused");
     }
@@ -95,17 +98,23 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
-        var context = new BuildSsdtPipelineContext(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
         var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
-        await bootstrapStep.ExecuteAsync(context);
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
+        var evidenceState = new EvidencePrepared(
+            bootstrapState.Request,
+            bootstrapState.Log,
+            bootstrapState.Bootstrap,
+            EvidenceCache: null);
         var step = new BuildSsdtPolicyDecisionStep(new TighteningPolicy());
 
-        var result = await step.ExecuteAsync(context);
+        var result = await step.ExecuteAsync(evidenceState);
 
         Assert.True(result.IsSuccess);
-        Assert.NotNull(context.DecisionReport);
-        Assert.True(context.DecisionReport!.ColumnCount > 0);
-        var log = context.Log.Build();
+        var state = result.Value;
+        Assert.NotNull(state.Report);
+        Assert.True(state.Report.ColumnCount > 0);
+        var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "policy.decisions.synthesized");
     }
 
@@ -114,22 +123,28 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
-        var context = new BuildSsdtPipelineContext(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
         var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
-        await bootstrapStep.ExecuteAsync(context);
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
+        var evidenceState = new EvidencePrepared(
+            bootstrapState.Request,
+            bootstrapState.Log,
+            bootstrapState.Bootstrap,
+            EvidenceCache: null);
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy());
-        await policyStep.ExecuteAsync(context);
+        var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
         var step = new BuildSsdtEmissionStep(new SmoModelFactory(), new SsdtEmitter(), new PolicyDecisionLogWriter(), new EmissionFingerprintCalculator());
 
-        var result = await step.ExecuteAsync(context);
+        var result = await step.ExecuteAsync(decisionState);
 
         Assert.True(result.IsSuccess);
-        Assert.NotNull(context.Manifest);
-        Assert.False(context.Manifest!.Tables.Count == 0);
-        Assert.NotNull(context.DecisionLogPath);
+        var state = result.Value;
+        Assert.NotNull(state.Manifest);
+        Assert.False(state.Manifest.Tables.Count == 0);
+        Assert.NotNull(state.DecisionLogPath);
         Assert.True(File.Exists(Path.Combine(output.Path, "manifest.json")));
-        Assert.True(File.Exists(context.DecisionLogPath));
-        var log = context.Log.Build();
+        Assert.True(File.Exists(state.DecisionLogPath));
+        var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "ssdt.emission.completed");
         Assert.Contains(log.Entries, entry => entry.Step == "policy.log.persisted");
     }
@@ -139,21 +154,27 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
-        var context = new BuildSsdtPipelineContext(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
         var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
-        await bootstrapStep.ExecuteAsync(context);
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
+        var evidenceState = new EvidencePrepared(
+            bootstrapState.Request,
+            bootstrapState.Log,
+            bootstrapState.Bootstrap,
+            EvidenceCache: null);
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy());
-        await policyStep.ExecuteAsync(context);
+        var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
         var emissionStep = new BuildSsdtEmissionStep(new SmoModelFactory(), new SsdtEmitter(), new PolicyDecisionLogWriter(), new EmissionFingerprintCalculator());
-        await emissionStep.ExecuteAsync(context);
+        var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
         var step = new BuildSsdtStaticSeedStep(new StaticEntitySeedScriptGenerator(), StaticEntitySeedTemplate.Load());
 
-        var result = await step.ExecuteAsync(context);
+        var result = await step.ExecuteAsync(emissionState);
 
         Assert.True(result.IsSuccess);
-        Assert.False(context.StaticSeedScriptPaths.IsDefaultOrEmpty);
-        Assert.All(context.StaticSeedScriptPaths, path => Assert.True(File.Exists(path)));
-        var log = context.Log.Build();
+        var state = result.Value;
+        Assert.False(state.StaticSeedScriptPaths.IsDefaultOrEmpty);
+        Assert.All(state.StaticSeedScriptPaths, path => Assert.True(File.Exists(path)));
+        var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "staticData.seed.generated");
     }
 

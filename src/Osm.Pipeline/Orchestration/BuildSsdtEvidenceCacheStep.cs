@@ -6,7 +6,7 @@ using Osm.Pipeline.Evidence;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtEvidenceCacheStep : IBuildSsdtStep
+public sealed class BuildSsdtEvidenceCacheStep : IBuildSsdtStep<BootstrapCompleted, EvidencePrepared>
 {
     private readonly EvidenceCacheCoordinator _cacheCoordinator;
 
@@ -20,24 +20,27 @@ public sealed class BuildSsdtEvidenceCacheStep : IBuildSsdtStep
         _cacheCoordinator = new EvidenceCacheCoordinator(cacheService);
     }
 
-    public async Task<Result<BuildSsdtPipelineContext>> ExecuteAsync(
-        BuildSsdtPipelineContext context,
+    public async Task<Result<EvidencePrepared>> ExecuteAsync(
+        BootstrapCompleted state,
         CancellationToken cancellationToken = default)
     {
-        if (context is null)
+        if (state is null)
         {
-            throw new ArgumentNullException(nameof(context));
+            throw new ArgumentNullException(nameof(state));
         }
 
         var cacheResult = await _cacheCoordinator
-            .CacheAsync(context.Request.EvidenceCache, context.Log, cancellationToken)
+            .CacheAsync(state.Request.EvidenceCache, state.Log, cancellationToken)
             .ConfigureAwait(false);
         if (cacheResult.IsFailure)
         {
-            return Result<BuildSsdtPipelineContext>.Failure(cacheResult.Errors);
+            return Result<EvidencePrepared>.Failure(cacheResult.Errors);
         }
 
-        context.SetEvidenceCache(cacheResult.Value);
-        return Result<BuildSsdtPipelineContext>.Success(context);
+        return Result<EvidencePrepared>.Success(new EvidencePrepared(
+            state.Request,
+            state.Log,
+            state.Bootstrap,
+            cacheResult.Value));
     }
 }

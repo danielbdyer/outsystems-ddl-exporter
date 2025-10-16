@@ -12,7 +12,7 @@ using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtEmissionStep : IBuildSsdtStep
+public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized, EmissionReady>
 {
     private readonly SmoModelFactory _smoModelFactory;
     private readonly SsdtEmitter _ssdtEmitter;
@@ -31,34 +31,36 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep
         _fingerprintCalculator = fingerprintCalculator ?? throw new ArgumentNullException(nameof(fingerprintCalculator));
     }
 
-    public async Task<Result<BuildSsdtPipelineContext>> ExecuteAsync(
-        BuildSsdtPipelineContext context,
+    public async Task<Result<EmissionReady>> ExecuteAsync(
+        DecisionsSynthesized state,
         CancellationToken cancellationToken = default)
     {
-        if (context is null)
+        if (state is null)
         {
-            throw new ArgumentNullException(nameof(context));
+            throw new ArgumentNullException(nameof(state));
         }
 
-        var model = context.FilteredModel ?? throw new InvalidOperationException("Pipeline bootstrap step must execute before emission.");
-        var profile = context.Profile ?? throw new InvalidOperationException("Profiling must complete before emission.");
-        var decisions = context.Decisions ?? throw new InvalidOperationException("Policy decisions must be synthesized before emission.");
-        var report = context.DecisionReport ?? throw new InvalidOperationException("Policy decision report must be synthesized before emission.");
+        var model = state.Bootstrap.FilteredModel
+            ?? throw new InvalidOperationException("Pipeline bootstrap step must execute before emission.");
+        var profile = state.Bootstrap.Profile
+            ?? throw new InvalidOperationException("Profiling must complete before emission.");
+        var supplementalEntities = state.Bootstrap.SupplementalEntities;
+        var decisions = state.Decisions;
+        var report = state.Report;
 
-        var supplementalEntities = context.SupplementalEntities;
         var smoModel = _smoModelFactory.Create(
             model,
             decisions,
             profile,
-            context.Request.SmoOptions,
+            state.Request.SmoOptions,
             supplementalEntities,
-            context.Request.TypeMappingPolicy);
+            state.Request.TypeMappingPolicy);
 
         var smoTableCount = smoModel.Tables.Length;
         var smoColumnCount = smoModel.Tables.Sum(static table => table.Columns.Length);
         var smoIndexCount = smoModel.Tables.Sum(static table => table.Indexes.Length);
         var smoForeignKeyCount = smoModel.Tables.Sum(static table => table.ForeignKeys.Length);
-        context.Log.Record(
+        state.Log.Record(
             "smo.model.created",
             "Materialized SMO table graph.",
             new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -69,8 +71,8 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep
                 ["foreignKeys"] = smoForeignKeyCount.ToString(CultureInfo.InvariantCulture)
             });
 
-        var emissionMetadata = _fingerprintCalculator.Compute(smoModel, decisions, context.Request.SmoOptions);
-        var emissionOptions = BuildEmissionOptions(context, report, emissionMetadata);
+        var emissionMetadata = _fingerprintCalculator.Compute(smoModel, decisions, state.Request.SmoOptions);
+        var emissionOptions = BuildEmissionOptions(state, report, emissionMetadata);
 
         var coverageResult = EmissionCoverageCalculator.Compute(
             model,
@@ -82,7 +84,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep
         var manifest = await _ssdtEmitter
             .EmitAsync(
                 smoModel,
-                context.Request.OutputDirectory,
+                state.Request.OutputDirectory,
                 emissionOptions,
                 emissionMetadata,
                 report,
@@ -91,21 +93,21 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        context.Log.Record(
+        state.Log.Record(
             "ssdt.emission.completed",
             "Emitted SSDT artifacts.",
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                ["outputDirectory"] = context.Request.OutputDirectory,
+                ["outputDirectory"] = state.Request.OutputDirectory,
                 ["tableArtifacts"] = manifest.Tables.Count.ToString(CultureInfo.InvariantCulture),
                 ["includesPolicySummary"] = (manifest.PolicySummary is not null) ? "true" : "false"
             });
 
         var decisionLogPath = await _decisionLogWriter
-            .WriteAsync(context.Request.OutputDirectory, report, cancellationToken)
+            .WriteAsync(state.Request.OutputDirectory, report, cancellationToken)
             .ConfigureAwait(false);
 
-        context.Log.Record(
+        state.Log.Record(
             "policy.log.persisted",
             "Persisted policy decision log.",
             new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -114,16 +116,23 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep
                 ["diagnostics"] = report.Diagnostics.Length.ToString(CultureInfo.InvariantCulture)
             });
 
-        context.SetEmissionArtifacts(manifest, decisionLogPath);
-        return Result<BuildSsdtPipelineContext>.Success(context);
+        return Result<EmissionReady>.Success(new EmissionReady(
+            state.Request,
+            state.Log,
+            state.Bootstrap,
+            state.EvidenceCache,
+            state.Decisions,
+            state.Report,
+            manifest,
+            decisionLogPath));
     }
 
     private SmoBuildOptions BuildEmissionOptions(
-        BuildSsdtPipelineContext context,
+        DecisionsSynthesized state,
         PolicyDecisionReport report,
         SsdtEmissionMetadata metadata)
     {
-        var emissionOptions = context.Request.SmoOptions;
+        var emissionOptions = state.Request.SmoOptions;
         if (!emissionOptions.Header.Enabled)
         {
             return emissionOptions;
@@ -131,9 +140,9 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep
 
         var headerOptions = emissionOptions.Header with
         {
-            Source = context.Request.ModelPath,
-            Profile = context.Request.ProfilePath ?? context.Request.ProfilerProvider,
-            Decisions = BuildDecisionSummary(context.Request.TighteningOptions, report),
+            Source = state.Request.ModelPath,
+            Profile = state.Request.ProfilePath ?? state.Request.ProfilerProvider,
+            Decisions = BuildDecisionSummary(state.Request.TighteningOptions, report),
             FingerprintAlgorithm = metadata.Algorithm,
             FingerprintHash = metadata.Hash,
             AdditionalItems = emissionOptions.Header.AdditionalItems,

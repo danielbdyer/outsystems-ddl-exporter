@@ -4,9 +4,7 @@ using Osm.Domain.Abstractions;
 
 namespace Osm.Pipeline.Orchestration;
 
-public interface IBuildSsdtStep
+public interface IBuildSsdtStep<in TState, TNextState>
 {
-    Task<Result<BuildSsdtPipelineContext>> ExecuteAsync(
-        BuildSsdtPipelineContext context,
-        CancellationToken cancellationToken = default);
+    Task<Result<TNextState>> ExecuteAsync(TState state, CancellationToken cancellationToken = default);
 }
