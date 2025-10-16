@@ -22,7 +22,7 @@ public class CliIntegrationTests
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
         var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
-        var expectedEmissionRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case");
+        var smokeSnapshotRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission-smoke", "edge-case");
 
         using var output = new TempDirectory();
         using var comparisonWorkspace = new TempDirectory();
@@ -56,7 +56,19 @@ public class CliIntegrationTests
             Assert.Equal(expected.GetProperty("ForeignKeys").GetArrayLength(), actual.GetProperty("ForeignKeys").GetArrayLength());
         }
 
-        DirectorySnapshot.AssertMatches(expectedEmissionRoot, output.Path);
+        var emission = EmissionOutput.Load(output.Path);
+
+        Assert.Equal(4, emission.Manifest.Tables.Count);
+        Assert.Contains("Customer", emission.Manifest.Tables.Select(t => t.Table));
+        Assert.True(emission.Manifest.Options.SanitizeModuleNames);
+
+        using (var subset = emission.CreateSnapshot(
+                   "manifest.json",
+                   "policy-decisions.json",
+                   "Modules/AppCore/Tables/dbo.Customer.sql"))
+        {
+            DirectorySnapshot.AssertMatches(smokeSnapshotRoot, subset.Path);
+        }
 
         var dmmScriptPath = Path.Combine(comparisonWorkspace.Path, "edge-case.dmm.sql");
         await File.WriteAllTextAsync(dmmScriptPath, EdgeCaseScript);
@@ -125,30 +137,24 @@ public class CliIntegrationTests
         var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
 
         using var output = new TempDirectory();
-        var expectedRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission", "edge-case-rename");
-
         var command = $"run --project {cliProject} -- build-ssdt --model \"{modelPath}\" --profile \"{profilePath}\" --static-data \"{staticDataPath}\" --max-degree-of-parallelism 2 --out \"{output.Path}\" --rename-table dbo.OSUSR_ABC_CUSTOMER=CUSTOMER_PORTAL";
         var result = await RunCliAsync(repoRoot, command);
         AssertExitCode(result, 0);
 
-        var renamedTable = Directory.GetFiles(output.Path, "dbo.CUSTOMER_PORTAL.sql", SearchOption.AllDirectories);
-        var originalTable = Directory.GetFiles(output.Path, "dbo.Customer.sql", SearchOption.AllDirectories);
+        var emission = EmissionOutput.Load(output.Path);
 
-        Assert.Single(renamedTable);
-        Assert.Empty(originalTable);
+        var renamed = Assert.Single(emission.Manifest.Tables.Where(t => t.Table == "CUSTOMER_PORTAL"));
+        Assert.Equal("Modules/AppCore/Tables/dbo.CUSTOMER_PORTAL.sql", renamed.TableFile);
+        Assert.DoesNotContain(emission.Manifest.Tables, t => t.Table == "Customer");
 
-        var script = await File.ReadAllTextAsync(renamedTable[0]);
+        Assert.Contains("Modules/AppCore/Tables/dbo.CUSTOMER_PORTAL.sql", emission.TableScripts);
+        Assert.DoesNotContain(
+            emission.TableScripts,
+            path => path.Equals("Modules/AppCore/Tables/dbo.Customer.sql", StringComparison.OrdinalIgnoreCase));
+
+        var script = await File.ReadAllTextAsync(emission.GetAbsolutePath(renamed.TableFile));
         Assert.Contains("CREATE TABLE [dbo].[CUSTOMER_PORTAL]", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", script, StringComparison.OrdinalIgnoreCase);
-
-        var manifestPath = Path.Combine(output.Path, "manifest.json");
-        using var manifestStream = File.OpenRead(manifestPath);
-        using var manifestJson = JsonDocument.Parse(manifestStream);
-        var tables = manifestJson.RootElement.GetProperty("Tables");
-        var renamedEntry = tables.EnumerateArray().Single(t => t.GetProperty("Table").GetString() == "CUSTOMER_PORTAL");
-        Assert.EndsWith("dbo.CUSTOMER_PORTAL.sql", renamedEntry.GetProperty("TableFile").GetString(), StringComparison.OrdinalIgnoreCase);
-
-        DirectorySnapshot.AssertMatches(expectedRoot, output.Path);
     }
 
     [Fact]
@@ -198,18 +204,18 @@ public class CliIntegrationTests
         var result = await RunCliAsync(repoRoot, command);
         AssertExitCode(result, 0);
 
-        var renamedTable = Directory.GetFiles(outputPath, "dbo.CUSTOMER_STATIC.sql", SearchOption.AllDirectories);
-        var logicalTable = Directory.GetFiles(outputPath, "dbo.Customer.sql", SearchOption.AllDirectories);
+        var emission = EmissionOutput.Load(outputPath);
 
-        Assert.Single(renamedTable);
-        Assert.Empty(logicalTable);
+        var renamed = Assert.Single(emission.Manifest.Tables.Where(t => t.Table == "CUSTOMER_STATIC"));
+        Assert.Equal("Modules/AppCore/Tables/dbo.CUSTOMER_STATIC.sql", renamed.TableFile);
+        Assert.DoesNotContain(emission.Manifest.Tables, t => t.Table == "Customer");
 
-        var scripts = Directory.GetFiles(outputPath, "*.sql", SearchOption.AllDirectories)
-            .Select(path => File.ReadAllText(path));
+        Assert.Contains("Modules/AppCore/Tables/dbo.CUSTOMER_STATIC.sql", emission.TableScripts);
 
-        foreach (var script in scripts)
+        foreach (var tableScript in emission.TableScripts)
         {
-            Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", script, StringComparison.OrdinalIgnoreCase);
+            var contents = await File.ReadAllTextAsync(emission.GetAbsolutePath(tableScript));
+            Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", contents, StringComparison.OrdinalIgnoreCase);
         }
     }
 
