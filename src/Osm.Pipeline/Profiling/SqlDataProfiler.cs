@@ -189,6 +189,7 @@ public sealed class SqlDataProfiler : IDataProfiler
                         targetIdentifier.ColumnName.Value);
 
                     var hasOrphans = tableResults.ForeignKeys.TryGetValue(foreignKeyKey, out var orphaned) && orphaned;
+                    var isNoCheck = tableResults.ForeignKeyIsNoCheck.TryGetValue(foreignKeyKey, out var noCheck) && noCheck;
 
                     var referenceResult = ForeignKeyReference.Create(
                         SchemaName.Create(schema).Value,
@@ -204,7 +205,7 @@ public sealed class SqlDataProfiler : IDataProfiler
                         continue;
                     }
 
-                    var realityResult = ForeignKeyReality.Create(referenceResult.Value, hasOrphans, isNoCheck: false);
+                    var realityResult = ForeignKeyReality.Create(referenceResult.Value, hasOrphans, isNoCheck);
                     if (realityResult.IsSuccess)
                     {
                         foreignKeys.Add(realityResult.Value);

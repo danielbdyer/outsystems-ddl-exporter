@@ -51,6 +51,7 @@ public sealed class SqlDataProfilerOrchestrationTests
             {
                 ["email"] = false
             },
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase));
 
         var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
@@ -62,6 +63,65 @@ public sealed class SqlDataProfilerOrchestrationTests
 
         Assert.True(snapshot.IsSuccess, string.Join(", ", snapshot.Errors.Select(e => e.Code)));
         Assert.Equal(expected, snapshot.Value);
+    }
+
+    [Fact]
+    public async Task CaptureAsync_ShouldPopulateForeignKeyNoCheckFromResults()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-fk-protect.json");
+
+        var metadata = new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(ColumnKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_P_PARENT", "ID")] = new ColumnMetadata(false, false, true, null),
+            [("dbo", "OSUSR_C_CHILD", "ID")] = new ColumnMetadata(false, false, true, null),
+            [("dbo", "OSUSR_C_CHILD", "PARENTID")] = new ColumnMetadata(true, false, false, null)
+        };
+
+        var rowCounts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_P_PARENT")] = 5,
+            [("dbo", "OSUSR_C_CHILD")] = 10
+        };
+
+        var foreignKeyKey = ProfilingPlanBuilder.BuildForeignKeyKey("PARENTID", "dbo", "OSUSR_P_PARENT", "ID");
+        var plan = new TableProfilingPlan(
+            "dbo",
+            "OSUSR_C_CHILD",
+            10,
+            ImmutableArray.Create("ID", "PARENTID"),
+            ImmutableArray<UniqueCandidatePlan>.Empty,
+            ImmutableArray.Create(new ForeignKeyPlan(foreignKeyKey, "PARENTID", "dbo", "OSUSR_P_PARENT", "ID")));
+
+        var results = new TableProfilingResults(
+            new Dictionary<string, long>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                ["ID"] = 0,
+                ["PARENTID"] = 0
+            },
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                [foreignKeyKey] = false
+            },
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                [foreignKeyKey] = true
+            });
+
+        var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
+        var planBuilder = new StubPlanBuilder(new Dictionary<(string Schema, string Table), TableProfilingPlan>(TableKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_C_CHILD")] = plan
+        });
+        var queryExecutor = new StubQueryExecutor(results);
+        var profiler = new SqlDataProfiler(new NullConnectionFactory(), model, SqlProfilerOptions.Default, metadataLoader, planBuilder, queryExecutor);
+
+        var snapshot = await profiler.CaptureAsync(CancellationToken.None);
+
+        Assert.True(snapshot.IsSuccess, string.Join(", ", snapshot.Errors.Select(e => e.Code)));
+        var foreignKey = Assert.Single(snapshot.Value.ForeignKeys, fk => fk.Reference.FromTable.Value == "OSUSR_C_CHILD");
+        Assert.True(foreignKey.IsNoCheck);
+        Assert.False(foreignKey.HasOrphan);
     }
 
     private sealed class StubMetadataLoader : ITableMetadataLoader
@@ -90,21 +150,26 @@ public sealed class SqlDataProfilerOrchestrationTests
 
     private sealed class StubPlanBuilder : IProfilingPlanBuilder
     {
-        private readonly TableProfilingPlan _plan;
+        private readonly Dictionary<(string Schema, string Table), TableProfilingPlan> _plans;
 
         public StubPlanBuilder(TableProfilingPlan plan)
         {
-            _plan = plan;
+            _plans = new Dictionary<(string Schema, string Table), TableProfilingPlan>(TableKeyComparer.Instance)
+            {
+                [(plan.Schema, plan.Table)] = plan
+            };
+        }
+
+        public StubPlanBuilder(Dictionary<(string Schema, string Table), TableProfilingPlan> plans)
+        {
+            _plans = new Dictionary<(string Schema, string Table), TableProfilingPlan>(plans, TableKeyComparer.Instance);
         }
 
         public Dictionary<(string Schema, string Table), TableProfilingPlan> BuildPlans(
             IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
             IReadOnlyDictionary<(string Schema, string Table), long> rowCounts)
         {
-            return new Dictionary<(string Schema, string Table), TableProfilingPlan>(TableKeyComparer.Instance)
-            {
-                [("dbo", "OSUSR_U_USER")] = _plan
-            };
+            return new Dictionary<(string Schema, string Table), TableProfilingPlan>(_plans, TableKeyComparer.Instance);
         }
     }
 
