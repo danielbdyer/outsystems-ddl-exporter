@@ -29,11 +29,14 @@ public sealed class ModelJsonDeserializerOptions
         MissingSchemaFallback = string.IsNullOrWhiteSpace(missingSchemaFallback)
             ? "dbo"
             : missingSchemaFallback.Trim();
+        MissingSchemaFallbackResult = SchemaName.Create(MissingSchemaFallback);
     }
 
     public ModuleValidationOverrides ValidationOverrides { get; }
 
     public string MissingSchemaFallback { get; }
+
+    public Result<SchemaName> MissingSchemaFallbackResult { get; }
 
     public static ModelJsonDeserializerOptions Default { get; } = new();
 }
