@@ -2,6 +2,7 @@ using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.StaticData;
 using Xunit;
 
@@ -27,8 +28,22 @@ public sealed class StaticDataProviderFactoryTests
             RenameOverrides: null,
             MaxDegreeOfParallelism: null);
         var seeds = StaticSeedOptions.Create(groupByModule: true, StaticSeedSynchronizationMode.Authoritative).Value;
-        var emission = TighteningOptions.Default.Emission with { StaticSeeds = seeds };
-        var options = TighteningOptions.Default with { Emission = emission };
+        var emission = EmissionOptions.Create(
+            TighteningOptions.Default.Emission.PerTableFiles,
+            TighteningOptions.Default.Emission.IncludePlatformAutoIndexes,
+            TighteningOptions.Default.Emission.SanitizeModuleNames,
+            TighteningOptions.Default.Emission.EmitBareTableOnly,
+            TighteningOptions.Default.Emission.EmitTableHeaders,
+            TighteningOptions.Default.Emission.ModuleParallelism,
+            TighteningOptions.Default.Emission.NamingOverrides,
+            seeds).Value;
+        var options = TighteningOptions.Create(
+            TighteningOptions.Default.Policy,
+            TighteningOptions.Default.ForeignKeys,
+            TighteningOptions.Default.Uniqueness,
+            TighteningOptions.Default.Remediation,
+            emission,
+            TighteningOptions.Default.Mocking).Value;
         var factory = new StaticDataProviderFactory();
 
         var result = factory.Create(overrides, DefaultSqlOptions, options);

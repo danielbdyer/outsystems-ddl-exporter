@@ -162,7 +162,7 @@ internal sealed class RecordingDbParameterCollection : DbParameterCollection
 
     public override object SyncRoot => ((ICollection)_parameters).SyncRoot ?? this;
 
-    public override int Add(object? value)
+    public override int Add(object value)
     {
         if (value is not DbParameter parameter)
         {
@@ -186,7 +186,7 @@ internal sealed class RecordingDbParameterCollection : DbParameterCollection
         _parameters.Clear();
     }
 
-    public override bool Contains(object? value)
+    public override bool Contains(object value)
     {
         return value is DbParameter parameter && _parameters.Contains(parameter);
     }
@@ -217,7 +217,7 @@ internal sealed class RecordingDbParameterCollection : DbParameterCollection
         return _parameters[index];
     }
 
-    public override int IndexOf(object? value)
+    public override int IndexOf(object value)
     {
         return value is DbParameter parameter ? _parameters.IndexOf(parameter) : -1;
     }
@@ -235,7 +235,7 @@ internal sealed class RecordingDbParameterCollection : DbParameterCollection
         return -1;
     }
 
-    public override void Insert(int index, object? value)
+    public override void Insert(int index, object value)
     {
         if (value is not DbParameter parameter)
         {
@@ -245,7 +245,7 @@ internal sealed class RecordingDbParameterCollection : DbParameterCollection
         _parameters.Insert(index, parameter);
     }
 
-    public override void Remove(object? value)
+    public override void Remove(object value)
     {
         if (value is DbParameter parameter)
         {
@@ -298,7 +298,7 @@ internal sealed class RecordingDbParameter : DbParameter
 
     public override string SourceColumn { get; set; } = string.Empty;
 
-    public override object? Value { get; set; }
+    public override object Value { get; set; } = default!;
 
     public override bool SourceColumnNullMapping { get; set; }
 

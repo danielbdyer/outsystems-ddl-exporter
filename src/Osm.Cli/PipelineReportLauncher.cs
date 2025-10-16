@@ -63,7 +63,7 @@ internal static class PipelineReportLauncher
             totalTables,
             totalIndexes,
             totalForeignKeys,
-            pipelineResult.Insights,
+            pipelineResult.PipelineInsights,
             hasDiff,
             staticSeedPaths);
 

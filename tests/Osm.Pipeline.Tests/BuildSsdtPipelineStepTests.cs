@@ -12,6 +12,7 @@ using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
+using Osm.Json;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;

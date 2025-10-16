@@ -5,6 +5,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
+using Osm.Validation.Tightening.Signals;
 
 namespace Osm.Validation.Tightening;
 
@@ -19,6 +20,7 @@ internal sealed class NullabilityEvaluator
     private readonly ISet<ColumnCoordinate> _singleUniqueDuplicates;
     private readonly ISet<ColumnCoordinate> _compositeUniqueClean;
     private readonly ISet<ColumnCoordinate> _compositeUniqueDuplicates;
+    private readonly NullabilityPolicyDefinition _policyDefinition;
 
     public NullabilityEvaluator(
         TighteningOptions options,
@@ -40,6 +42,7 @@ internal sealed class NullabilityEvaluator
         _singleUniqueDuplicates = singleUniqueDuplicates ?? throw new ArgumentNullException(nameof(singleUniqueDuplicates));
         _compositeUniqueClean = compositeUniqueClean ?? throw new ArgumentNullException(nameof(compositeUniqueClean));
         _compositeUniqueDuplicates = compositeUniqueDuplicates ?? throw new ArgumentNullException(nameof(compositeUniqueDuplicates));
+        _policyDefinition = NullabilitySignalFactory.Create(_options.Policy.Mode);
     }
 
     public NullabilityDecision Evaluate(EntityModel entity, AttributeModel attribute, ColumnCoordinate coordinate)
@@ -54,25 +57,33 @@ internal sealed class NullabilityEvaluator
             throw new ArgumentNullException(nameof(attribute));
         }
 
-        var rationales = new SortedSet<string>(StringComparer.Ordinal);
-        var makeNotNull = false;
-        var requiresRemediation = false;
-
-        if (attribute.IsIdentifier)
-        {
-            makeNotNull = true;
-            rationales.Add(TighteningRationales.PrimaryKey);
-        }
-
         var columnProfile = _columnProfiles.TryGetValue(coordinate, out var profile) ? profile : null;
         var uniqueProfile = _uniqueProfiles.TryGetValue(coordinate, out var uniqueCandidate) ? uniqueCandidate : null;
         var fkReality = _foreignKeys.TryGetValue(coordinate, out var fk) ? fk : null;
         var foreignKeyTarget = _foreignKeyTargets.GetTarget(coordinate);
 
-        if (columnProfile is ColumnProfile physical && !physical.IsNullablePhysical)
+        var context = new NullabilitySignalContext(
+            _options,
+            entity,
+            attribute,
+            coordinate,
+            columnProfile,
+            uniqueProfile,
+            fkReality,
+            foreignKeyTarget,
+            _singleUniqueClean.Contains(coordinate),
+            _singleUniqueDuplicates.Contains(coordinate),
+            _compositeUniqueClean.Contains(coordinate),
+            _compositeUniqueDuplicates.Contains(coordinate));
+
+        var signalTrace = _policyDefinition.Root.Evaluate(context);
+        var dataTrace = _policyDefinition.Evidence.Evaluate(context);
+        var rationales = new SortedSet<string>(StringComparer.Ordinal);
+        var supplementalTraces = new List<SignalEvaluation>();
+
+        foreach (var rationale in signalTrace.CollectRationales())
         {
-            makeNotNull = true;
-            rationales.Add(TighteningRationales.PhysicalNotNull);
+            rationales.Add(rationale);
         }
 
         if (columnProfile is null)
@@ -80,179 +91,58 @@ internal sealed class NullabilityEvaluator
             rationales.Add(TighteningRationales.ProfileMissing);
         }
 
-        var dataWithinBudget = false;
-        var budgetUsed = false;
-        if (columnProfile is ColumnProfile prof)
+        var supplementaryEvaluations = new[]
         {
-            dataWithinBudget = IsWithinNullBudget(prof, _options.Policy.NullBudget, out budgetUsed);
-        }
+            _policyDefinition.UniqueSignal.Evaluate(context),
+            _policyDefinition.MandatorySignal.Evaluate(context),
+            _policyDefinition.DefaultSignal.Evaluate(context),
+            _policyDefinition.ForeignKeySignal.Evaluate(context)
+        };
 
-        if (budgetUsed)
+        foreach (var supplementary in supplementaryEvaluations)
         {
-            rationales.Add(TighteningRationales.NullBudgetEpsilon);
-        }
-
-        var singleUniqueSignal = _singleUniqueClean.Contains(coordinate);
-        if (singleUniqueSignal)
-        {
-            rationales.Add(TighteningRationales.UniqueNoNulls);
-        }
-        else if (_singleUniqueDuplicates.Contains(coordinate) || uniqueProfile?.HasDuplicate == true)
-        {
-            rationales.Add(TighteningRationales.UniqueDuplicatesPresent);
-        }
-
-        var compositeUniqueSignal = _compositeUniqueClean.Contains(coordinate);
-        if (compositeUniqueSignal)
-        {
-            rationales.Add(TighteningRationales.CompositeUniqueNoNulls);
-        }
-
-        if (_compositeUniqueDuplicates.Contains(coordinate))
-        {
-            rationales.Add(TighteningRationales.CompositeUniqueDuplicatesPresent);
-        }
-
-        var uniqueSignal = singleUniqueSignal || compositeUniqueSignal;
-        var mandatorySignal = attribute.IsMandatory;
-        if (mandatorySignal)
-        {
-            rationales.Add(TighteningRationales.Mandatory);
-            if (!string.IsNullOrEmpty(attribute.DefaultValue))
+            foreach (var rationale in supplementary.CollectRationales())
             {
-                rationales.Add(TighteningRationales.DefaultPresent);
+                rationales.Add(rationale);
+            }
+
+            if (!signalTrace.ContainsCode(supplementary.Code))
+            {
+                supplementalTraces.Add(supplementary);
             }
         }
 
-        if (attribute.Reference.IsReference)
-        {
-            if (IsIgnoreRule(attribute.Reference.DeleteRuleCode))
-            {
-                rationales.Add(TighteningRationales.DeleteRuleIgnore);
-            }
+        var conditionalTriggered = signalTrace.ContainsSatisfiedCode(_policyDefinition.ConditionalSignalCodes);
 
-            if (fkReality?.HasOrphan == true)
+        if (_options.Policy.Mode != TighteningMode.Cautious && conditionalTriggered)
+        {
+            foreach (var rationale in dataTrace.CollectRationales())
             {
-                rationales.Add(TighteningRationales.DataHasOrphans);
+                rationales.Add(rationale);
             }
         }
 
-        var fkSupports = attribute.Reference.IsReference
-            && fkReality is ForeignKeyReality fkRealityProfile
-            && !fkRealityProfile.HasOrphan
-            && !IsIgnoreRule(attribute.Reference.DeleteRuleCode)
-            && ForeignKeySupportsTightening(entity, fkRealityProfile, _options.ForeignKeys, foreignKeyTarget);
+        var makeNotNull = signalTrace.Result;
+        var requiresRemediation = false;
 
-        if (fkSupports)
+        if (_options.Policy.Mode == TighteningMode.Aggressive && makeNotNull && conditionalTriggered && !dataTrace.Result)
         {
-            rationales.Add(TighteningRationales.ForeignKeyEnforced);
+            requiresRemediation = true;
+            rationales.Add(TighteningRationales.RemediateBeforeTighten);
         }
 
-        var conditionalSignal = uniqueSignal || mandatorySignal || fkSupports;
+        var trace = _policyDefinition.EvidenceEmbeddedInRoot ? signalTrace : signalTrace.AppendChild(dataTrace);
 
-        if (conditionalSignal)
+        foreach (var supplementary in supplementalTraces)
         {
-            switch (_options.Policy.Mode)
-            {
-                case TighteningMode.Cautious:
-                    break;
-                case TighteningMode.EvidenceGated:
-                    if (dataWithinBudget && columnProfile is not null)
-                    {
-                        makeNotNull = true;
-                        rationales.Add(TighteningRationales.DataNoNulls);
-                    }
-
-                    break;
-                case TighteningMode.Aggressive:
-                    if (dataWithinBudget && columnProfile is not null)
-                    {
-                        makeNotNull = true;
-                        rationales.Add(TighteningRationales.DataNoNulls);
-                    }
-                    else
-                    {
-                        makeNotNull = true;
-                        requiresRemediation = true;
-                        rationales.Add(TighteningRationales.RemediateBeforeTighten);
-                    }
-
-                    break;
-            }
+            trace = trace.AppendChild(supplementary);
         }
 
-        return NullabilityDecision.Create(coordinate, makeNotNull, requiresRemediation, rationales.ToImmutableArray());
+        return NullabilityDecision.Create(
+            coordinate,
+            makeNotNull,
+            requiresRemediation,
+            rationales.ToImmutableArray(),
+            trace);
     }
-
-    private static bool IsWithinNullBudget(ColumnProfile profile, double nullBudget, out bool usedBudget)
-    {
-        usedBudget = false;
-
-        if (profile.NullCount == 0)
-        {
-            return true;
-        }
-
-        if (profile.RowCount == 0)
-        {
-            return true;
-        }
-
-        if (nullBudget <= 0)
-        {
-            return false;
-        }
-
-        var allowed = profile.RowCount * nullBudget;
-        if (profile.NullCount <= allowed)
-        {
-            usedBudget = true;
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool ForeignKeySupportsTightening(
-        EntityModel entity,
-        ForeignKeyReality fkReality,
-        ForeignKeyOptions options,
-        EntityModel? target)
-    {
-        if (fkReality.Reference.HasDatabaseConstraint)
-        {
-            return true;
-        }
-
-        if (!options.EnableCreation)
-        {
-            return false;
-        }
-
-        if (target is null)
-        {
-            return false;
-        }
-
-        if (!options.AllowCrossSchema && !SchemaEquals(entity.Schema, target.Schema))
-        {
-            return false;
-        }
-
-        if (!options.AllowCrossCatalog && !CatalogEquals(entity.Catalog, target.Catalog))
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool IsIgnoreRule(string? deleteRule)
-        => string.IsNullOrWhiteSpace(deleteRule) || string.Equals(deleteRule, "Ignore", StringComparison.OrdinalIgnoreCase);
-
-    private static bool SchemaEquals(SchemaName left, SchemaName right)
-        => string.Equals(left.Value, right.Value, StringComparison.OrdinalIgnoreCase);
-
-    private static bool CatalogEquals(string? left, string? right)
-        => string.Equals(left ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase);
 }
