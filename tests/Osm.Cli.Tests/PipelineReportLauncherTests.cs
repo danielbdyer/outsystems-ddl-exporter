@@ -74,12 +74,14 @@ public class PipelineReportLauncherTests
             Path.Combine(output.Path, "Seeds", "AppCore", "StaticEntities.seed.sql"),
             Path.Combine(output.Path, "Seeds", "ExtBilling", "StaticEntities.seed.sql"));
 
+        var snapshot = new ProfileSnapshot(
+            ImmutableArray<ColumnProfile>.Empty,
+            ImmutableArray<UniqueCandidateProfile>.Empty,
+            ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
+            ImmutableArray<ForeignKeyReality>.Empty);
         var pipelineResult = new BuildSsdtPipelineResult(
-            new ProfileSnapshot(
-                ImmutableArray<ColumnProfile>.Empty,
-                ImmutableArray<UniqueCandidateProfile>.Empty,
-                ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
-                ImmutableArray<ForeignKeyReality>.Empty),
+            snapshot,
+            new ProfileInsightAnalyzer().Analyze(snapshot),
             decisionReport,
             manifest,
             Path.Combine(output.Path, "policy-decisions.json"),

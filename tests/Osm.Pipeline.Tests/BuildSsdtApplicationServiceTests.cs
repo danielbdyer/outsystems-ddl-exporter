@@ -106,8 +106,12 @@ public sealed class BuildSsdtApplicationServiceTests
             Array.Empty<PreRemediationManifestEntry>(),
             SsdtCoverageSummary.CreateComplete(0, 0, 0),
             Array.Empty<string>());
+        var analyzer = new ProfileInsightAnalyzer();
+        var insights = analyzer.Analyze(profileResult.Value);
+
         return new BuildSsdtPipelineResult(
             profileResult.Value,
+            insights,
             report,
             manifest,
             "decision.log",

@@ -8,6 +8,7 @@ namespace Osm.Pipeline.Orchestration;
 
 public sealed record BuildSsdtPipelineResult(
     ProfileSnapshot Profile,
+    ProfileInsightReport ProfileInsights,
     PolicyDecisionReport DecisionReport,
     SsdtManifest Manifest,
     string DecisionLogPath,

@@ -23,6 +23,7 @@ using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
 using Xunit;
+using Tests.Support;
 
 namespace Osm.Cli.Tests.Commands;
 
@@ -140,6 +141,47 @@ public class BuildSsdtCommandFactoryTests
     }
 
     [Fact]
+    public async Task Invoke_WithSqlProfilerEmitsSummaryAndJson()
+    {
+        var configurationService = new FakeConfigurationService();
+        var application = new FakeBuildApplicationService();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<BuildSsdtCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        using var tempDirectory = new TempDirectory();
+        var profileOutput = Path.Combine(tempDirectory.Path, "captured.json");
+        var args = $"build-ssdt --model model.json --profile profile.json --profiler-provider sql --profile-output {profileOutput} --dump-profile-json";
+
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(0, exitCode);
+        Assert.True(File.Exists(profileOutput));
+
+        var output = console.Out.ToString() ?? string.Empty;
+        Assert.Contains("SQL profiler snapshot:", output);
+        Assert.Contains("  (no profiler insights captured)", output);
+        Assert.Contains($"Raw profiler snapshot written to {profileOutput}", output);
+
+        var expectedJson = ProfileSnapshotDebugFormatter.ToJson(application.LastResult!.PipelineResult.Profile);
+        Assert.Contains(expectedJson, output);
+    }
+
+    [Fact]
     public async Task Invoke_WritesErrorsWhenConfigurationFails()
     {
         var configurationService = new FakeConfigurationService
@@ -211,11 +253,12 @@ public class BuildSsdtCommandFactoryTests
                 return Task.FromResult(Result<BuildSsdtApplicationResult>.Failure(FailureErrors ?? Array.Empty<ValidationError>()));
             }
 
-            LastResult = CreateResult();
+            var profilerProvider = input.Overrides.ProfilerProvider ?? "fixture";
+            LastResult = CreateResult(profilerProvider);
             return Task.FromResult(Result<BuildSsdtApplicationResult>.Success(LastResult));
         }
 
-        private static BuildSsdtApplicationResult CreateResult()
+        private static BuildSsdtApplicationResult CreateResult(string profilerProvider)
         {
             var snapshot = ProfileSnapshot.Create(
                 Array.Empty<ColumnProfile>(),
@@ -279,8 +322,12 @@ public class BuildSsdtCommandFactoryTests
                 SsdtCoverageSummary.CreateComplete(0, 0, 0),
                 Array.Empty<string>());
 
+            var analyzer = new ProfileInsightAnalyzer();
+            var insightReport = analyzer.Analyze(snapshot);
+
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
+                insightReport,
                 report,
                 manifest,
                 "decision.log",
@@ -291,7 +338,7 @@ public class BuildSsdtCommandFactoryTests
 
             return new BuildSsdtApplicationResult(
                 pipelineResult,
-                "fixture",
+                profilerProvider,
                 "profile.json",
                 "output",
                 "model.json",

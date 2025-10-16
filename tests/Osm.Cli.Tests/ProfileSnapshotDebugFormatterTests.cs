@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Osm.Cli;
 using Osm.Domain.Profiling;
@@ -82,5 +83,24 @@ public class ProfileSnapshotDebugFormatterTests
         Assert.Equal("Tenant", foreignKeys[0].GetProperty("ToTable").GetString());
         Assert.True(foreignKeys[0].GetProperty("HasDatabaseConstraint").GetBoolean());
         Assert.True(foreignKeys[0].GetProperty("IsNoCheck").GetBoolean());
+    }
+
+    [Fact]
+    public void ToSummaryLines_FormatsInsightReport()
+    {
+        var insights = ImmutableArray.Create(
+            new ProfileInsight(ProfileInsightSeverity.Info, "Profile scanned 42 row(s) across 5 column(s)."),
+            new ProfileInsight(ProfileInsightSeverity.Warning, "Foreign key CustomerId -> dbo.Customer.Id is not constrained in the database; tightening will create it."));
+        var module = new ProfileInsightModule("dbo", "Orders", insights);
+        var report = new ProfileInsightReport(ImmutableArray.Create(module));
+
+        var lines = ProfileSnapshotDebugFormatter.ToSummaryLines(report);
+
+        Assert.Equal(3, lines.Length);
+        Assert.Equal("dbo.Orders:", lines[0]);
+        Assert.Equal("  [info] Profile scanned 42 row(s) across 5 column(s).", lines[1]);
+        Assert.Equal(
+            "  [warning] Foreign key CustomerId -> dbo.Customer.Id is not constrained in the database; tightening will create it.",
+            lines[2]);
     }
 }

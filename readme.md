@@ -428,12 +428,8 @@ dotnet run --project src/Osm.Cli -- build-ssdt \
 ```
 
 * Supplying `--profiler-provider sql` switches to the live profiler, requiring a connection string (via CLI flag, configuration, or `OSM_CLI_CONNECTION_STRING`). Optional authentication and sampling knobs mirror the `sql.*` configuration section so you can pin timeouts, Azure AD credentials, or table sampling thresholds without editing secrets into source control.【F:src/Osm.Cli/Program.cs†L1127-L1171】【F:src/Osm.Pipeline/Configuration/CliConfigurationLoader.cs†L215-L334】
-* When a live run completes the CLI emits the captured snapshot to STDOUT (`SQL profiler snapshot:` …). Redirect the output to persist the JSON and reuse it for later fixture-style runs:
-
-  ```bash
-  dotnet run --project src/Osm.Cli -- build-ssdt --profiler-provider sql ... \
-    | tee profile.latest.json
-  ```
+* When a live run completes the CLI emits a summarized insight report (`SQL profiler snapshot:` …) grouped by `schema.table`. Severity badges (`[critical]`, `[warning]`, `[info]`) call out duplicate unique candidates, orphaned foreign keys, nullable columns with data violations, and other signals so operators can review evidence without scrolling through raw JSON.【F:src/Osm.Cli/ProfileSnapshotDebugFormatter.cs†L15-L45】【F:src/Osm.Domain/Profiling/ProfileInsightAnalyzer.cs†L20-L161】
+* Append the raw payload after the summary with `--dump-profile-json` or persist it directly via `--profile-output profile.latest.json`. Both options can be combined, keeping the concise insight view as the default console output.【F:src/Osm.Cli/Commands/BuildSsdtCommandFactory.cs†L42-L56】【F:src/Osm.Cli/Commands/CommandConsole.cs†L84-L129】
 
 #### How the profile influences emission
 

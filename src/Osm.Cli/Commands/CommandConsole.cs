@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.CommandLine;
+using System.IO;
 using System.Linq;
 using Osm.Cli;
 using Osm.Domain.Abstractions;
@@ -76,10 +77,58 @@ internal static class CommandConsole
         }
     }
 
-    public static void EmitSqlProfilerSnapshot(IConsole console, ProfileSnapshot snapshot)
+    public static void EmitSqlProfilerSnapshot(
+        IConsole console,
+        ProfileInsightReport insightReport,
+        ProfileSnapshot snapshot,
+        bool emitJson = false,
+        string? jsonOutputPath = null)
     {
+        if (insightReport is null)
+        {
+            throw new ArgumentNullException(nameof(insightReport));
+        }
+
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
         WriteLine(console, "SQL profiler snapshot:");
-        WriteLine(console, ProfileSnapshotDebugFormatter.ToJson(snapshot));
+        foreach (var line in ProfileSnapshotDebugFormatter.ToSummaryLines(insightReport))
+        {
+            WriteLine(console, line);
+        }
+
+        string? json = null;
+
+        if (!string.IsNullOrWhiteSpace(jsonOutputPath))
+        {
+            json ??= ProfileSnapshotDebugFormatter.ToJson(snapshot);
+
+            try
+            {
+                var directory = Path.GetDirectoryName(jsonOutputPath);
+                if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory!);
+                }
+
+                File.WriteAllText(jsonOutputPath!, json);
+                WriteLine(console, $"Raw profiler snapshot written to {jsonOutputPath}.");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                WriteErrorLine(console, $"[warning] Failed to write profiler snapshot to {jsonOutputPath}: {ex.Message}");
+            }
+        }
+
+        if (emitJson)
+        {
+            json ??= ProfileSnapshotDebugFormatter.ToJson(snapshot);
+            WriteLine(console, string.Empty);
+            WriteLine(console, json);
+        }
     }
 
     public static void EmitPipelineLog(IConsole console, PipelineExecutionLog log)

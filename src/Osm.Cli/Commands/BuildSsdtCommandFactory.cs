@@ -27,6 +27,8 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
     private readonly Option<string?> _outputOption = new("--out", () => "out", "Output directory for SSDT artifacts.");
     private readonly Option<string?> _renameOption = new("--rename-table", "Rename tables using source=Override syntax.");
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
+    private readonly Option<string?> _profileOutputOption = new("--profile-output", "Write the raw SQL profiler snapshot JSON to the specified path.");
+    private readonly Option<bool> _dumpProfileJsonOption = new("--dump-profile-json", "Emit the raw SQL profiler snapshot JSON after the summary.");
 
     public BuildSsdtCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -53,6 +55,8 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             _outputOption,
             _renameOption,
             _openReportOption,
+            _profileOutputOption,
+            _dumpProfileJsonOption,
             _globalOptions.MaxDegreeOfParallelism
         };
 
@@ -131,9 +135,33 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             CommandConsole.EmitPipelineWarnings(context.Console, applicationResult.ModelExtractionWarnings);
         }
 
+        var profileOutputPath = context.ParseResult.GetValueForOption(_profileOutputOption);
+        var dumpProfileJson = context.ParseResult.GetValueForOption(_dumpProfileJsonOption);
+
         if (IsSqlProfiler(applicationResult.ProfilerProvider))
         {
-            CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
+            CommandConsole.EmitSqlProfilerSnapshot(
+                context.Console,
+                pipelineResult.ProfileInsights,
+                pipelineResult.Profile,
+                dumpProfileJson,
+                profileOutputPath);
+        }
+        else
+        {
+            if (!string.IsNullOrWhiteSpace(profileOutputPath))
+            {
+                CommandConsole.WriteErrorLine(
+                    context.Console,
+                    "[warning] --profile-output is only supported when --profiler-provider sql is active.");
+            }
+
+            if (dumpProfileJson)
+            {
+                CommandConsole.WriteErrorLine(
+                    context.Console,
+                    "[warning] --dump-profile-json is only supported when --profiler-provider sql is active.");
+            }
         }
 
         CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);

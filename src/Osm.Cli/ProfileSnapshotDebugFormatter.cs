@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
 using Osm.Domain.Profiling;
@@ -12,6 +13,33 @@ internal static class ProfileSnapshotDebugFormatter
     {
         WriteIndented = true,
     };
+
+    public static ImmutableArray<string> ToSummaryLines(ProfileInsightReport report)
+    {
+        if (report is null)
+        {
+            throw new ArgumentNullException(nameof(report));
+        }
+
+        if (report.Modules.IsDefaultOrEmpty || report.Modules.Length == 0)
+        {
+            return ImmutableArray.Create("  (no profiler insights captured)");
+        }
+
+        var builder = ImmutableArray.CreateBuilder<string>();
+
+        foreach (var module in report.Modules)
+        {
+            builder.Add($"{module.Schema}.{module.Table}:");
+
+            foreach (var insight in module.Insights)
+            {
+                builder.Add($"  {FormatSeverity(insight.Severity)} {insight.Message}");
+            }
+        }
+
+        return builder.ToImmutable();
+    }
 
     public static string ToJson(ProfileSnapshot snapshot)
     {
@@ -96,4 +124,12 @@ internal static class ProfileSnapshotDebugFormatter
         bool HasDatabaseConstraint,
         bool HasOrphan,
         bool IsNoCheck);
+
+    private static string FormatSeverity(ProfileInsightSeverity severity)
+        => severity switch
+        {
+            ProfileInsightSeverity.Critical => "[critical]",
+            ProfileInsightSeverity.Warning => "[warning]",
+            _ => "[info]",
+        };
 }

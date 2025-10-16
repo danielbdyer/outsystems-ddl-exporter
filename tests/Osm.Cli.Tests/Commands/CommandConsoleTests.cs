@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.CommandLine.IO;
+using System.IO;
 using System.Reflection;
 using Osm.Cli;
 using Osm.Cli.Commands;
@@ -126,21 +127,64 @@ public class CommandConsoleTests
     }
 
     [Fact]
-    public void EmitSqlProfilerSnapshot_WritesHeaderAndFormatterOutput()
+    public void EmitSqlProfilerSnapshot_WritesHeaderAndSummary()
     {
         var console = new TestConsole();
         var snapshot = ProfileFixtures.LoadSnapshot("profiling/profile.micro-unique.json");
-        var expectedJson = ProfileSnapshotDebugFormatter.ToJson(snapshot);
+        var insights = new ProfileInsightAnalyzer().Analyze(snapshot);
+        var summaryLines = ProfileSnapshotDebugFormatter.ToSummaryLines(insights);
 
-        CommandConsole.EmitSqlProfilerSnapshot(console, snapshot);
+        CommandConsole.EmitSqlProfilerSnapshot(console, insights, snapshot);
 
-        var expected = string.Join(Environment.NewLine, new[]
-        {
-            "SQL profiler snapshot:",
-            expectedJson,
-        }) + Environment.NewLine;
+        var expected = string.Join(
+            Environment.NewLine,
+            new[] { "SQL profiler snapshot:" }.Concat(summaryLines)) + Environment.NewLine;
 
         Assert.Equal(expected, console.Out!.ToString());
+    }
+
+    [Fact]
+    public void EmitSqlProfilerSnapshot_AppendsJsonWhenRequested()
+    {
+        var console = new TestConsole();
+        var snapshot = ProfileFixtures.LoadSnapshot("profiling/profile.micro-unique.json");
+        var insights = new ProfileInsightAnalyzer().Analyze(snapshot);
+        var summaryLines = ProfileSnapshotDebugFormatter.ToSummaryLines(insights);
+        var expectedJson = ProfileSnapshotDebugFormatter.ToJson(snapshot);
+
+        CommandConsole.EmitSqlProfilerSnapshot(console, insights, snapshot, emitJson: true);
+
+        var expectedLines = new List<string> { "SQL profiler snapshot:" };
+        expectedLines.AddRange(summaryLines);
+        expectedLines.Add(string.Empty);
+        expectedLines.Add(expectedJson);
+
+        var expected = string.Join(Environment.NewLine, expectedLines) + Environment.NewLine;
+
+        Assert.Equal(expected, console.Out!.ToString());
+    }
+
+    [Fact]
+    public void EmitSqlProfilerSnapshot_WritesFileWhenPathProvided()
+    {
+        var console = new TestConsole();
+        var snapshot = ProfileFixtures.LoadSnapshot("profiling/profile.micro-unique.json");
+        var insights = new ProfileInsightAnalyzer().Analyze(snapshot);
+        var summaryLines = ProfileSnapshotDebugFormatter.ToSummaryLines(insights);
+        var expectedJson = ProfileSnapshotDebugFormatter.ToJson(snapshot);
+
+        using var tempDirectory = new TempDirectory();
+        var filePath = Path.Combine(tempDirectory.Path, "snapshot.json");
+
+        CommandConsole.EmitSqlProfilerSnapshot(console, insights, snapshot, emitJson: false, jsonOutputPath: filePath);
+
+        var expectedLines = new List<string> { "SQL profiler snapshot:" };
+        expectedLines.AddRange(summaryLines);
+        expectedLines.Add($"Raw profiler snapshot written to {filePath}.");
+        var expected = string.Join(Environment.NewLine, expectedLines) + Environment.NewLine;
+
+        Assert.Equal(expected, console.Out!.ToString());
+        Assert.Equal(expectedJson, File.ReadAllText(filePath));
     }
 
     private static PipelineExecutionLog CreateExecutionLog(IReadOnlyList<PipelineLogEntry> entries)
