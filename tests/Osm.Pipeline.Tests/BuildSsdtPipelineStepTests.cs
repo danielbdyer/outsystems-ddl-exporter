@@ -238,12 +238,23 @@ public class BuildSsdtPipelineStepTests
                     definition,
                     new[]
                     {
-                        StaticEntityRow.Create(new object?[] { 1, "Sample" })
+                        StaticEntityRow.Create(GenerateValues(definition))
                     }))
                 .Cast<StaticEntityTableData>()
                 .ToList();
 
             return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success(tables));
+        }
+
+        private static object?[] GenerateValues(StaticEntitySeedTableDefinition definition)
+        {
+            var values = new object?[definition.Columns.Length];
+            for (var i = 0; i < definition.Columns.Length; i++)
+            {
+                values[i] = i == 0 ? 1 : $"Sample{i}";
+            }
+
+            return values;
         }
     }
 }

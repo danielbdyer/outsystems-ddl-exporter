@@ -1,13 +1,12 @@
 using System;
 using System.CommandLine;
 using System.CommandLine.Invocation;
-using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
-using Osm.Dmm;
 using Osm.Pipeline.Application;
-using Osm.Pipeline.Configuration;
+using Osm.Pipeline.Runtime;
+using Osm.Pipeline.Runtime.Verbs;
 
 namespace Osm.Cli.Commands;
 
@@ -62,19 +61,10 @@ internal sealed class DmmCompareCommandFactory : ICommandFactory
     {
         using var scope = _scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
-        var configurationService = services.GetRequiredService<ICliConfigurationService>();
-        var application = services.GetRequiredService<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>>();
+        var registry = services.GetRequiredService<IVerbRegistry>();
+        var verb = registry.Get(DmmCompareVerb.VerbName);
 
         var cancellationToken = context.GetCancellationToken();
-        var configPath = context.ParseResult.GetValueForOption(_globalOptions.ConfigPath);
-        var configurationResult = await configurationService.LoadAsync(configPath, cancellationToken).ConfigureAwait(false);
-        if (configurationResult.IsFailure)
-        {
-            CommandConsole.WriteErrors(context.Console, configurationResult.Errors);
-            context.ExitCode = 1;
-            return;
-        }
-
         var moduleFilter = _moduleFilterBinder.Bind(context.ParseResult);
         var cache = _cacheOptionBinder.Bind(context.ParseResult);
         var sqlOverrides = _sqlOptionBinder.Bind(context.ParseResult);
@@ -86,26 +76,36 @@ internal sealed class DmmCompareCommandFactory : ICommandFactory
             context.ParseResult.GetValueForOption(_outputOption),
             context.ParseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism));
 
-        var input = new CompareWithDmmApplicationInput(
-            configurationResult.Value,
-            overrides,
-            moduleFilter,
-            sqlOverrides,
-            cache);
-
-        var result = await application.RunAsync(input, cancellationToken).ConfigureAwait(false);
-        if (result.IsFailure)
+        var options = new DmmCompareVerbOptions
         {
-            CommandConsole.WriteErrors(context.Console, result.Errors);
+            ConfigurationPath = context.ParseResult.GetValueForOption(_globalOptions.ConfigPath),
+            Overrides = overrides,
+            ModuleFilter = moduleFilter,
+            Sql = sqlOverrides,
+            Cache = cache
+        };
+
+        var run = await verb.RunAsync(options, cancellationToken).ConfigureAwait(false);
+        if (!run.IsSuccess)
+        {
+            CommandConsole.WriteErrors(context.Console, run.Errors);
             context.ExitCode = 1;
             return;
         }
 
-        EmitResults(context, result.Value);
+        if (run.Payload is not DmmCompareVerbResult payload)
+        {
+            CommandConsole.WriteErrorLine(context.Console, "[error] Unexpected result type for dmm-compare verb.");
+            context.ExitCode = 1;
+            return;
+        }
+
+        EmitResults(context, payload);
     }
 
-    private void EmitResults(InvocationContext context, CompareWithDmmApplicationResult applicationResult)
+    private void EmitResults(InvocationContext context, DmmCompareVerbResult payload)
     {
+        var applicationResult = payload.ApplicationResult;
         var pipelineResult = applicationResult.PipelineResult;
         CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
         CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
@@ -144,7 +144,7 @@ internal sealed class DmmCompareCommandFactory : ICommandFactory
         context.ExitCode = 2;
     }
 
-    private static string FormatDifference(DmmDifference difference)
+    private static string FormatDifference(Osm.Dmm.DmmDifference difference)
     {
         if (difference is null)
         {

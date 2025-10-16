@@ -6,8 +6,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Application;
-using Osm.Pipeline.Configuration;
-using Osm.Pipeline.Mediation;
+using Osm.Pipeline.Runtime;
+using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
 
 namespace Osm.Cli.Commands;
@@ -69,19 +69,10 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
     {
         using var scope = _scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
-        var configurationService = services.GetRequiredService<ICliConfigurationService>();
-        var application = services.GetRequiredService<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>();
+        var registry = services.GetRequiredService<IVerbRegistry>();
+        var verb = registry.Get(BuildSsdtVerb.VerbName);
 
         var cancellationToken = context.GetCancellationToken();
-        var configPath = context.ParseResult.GetValueForOption(_globalOptions.ConfigPath);
-        var configurationResult = await configurationService.LoadAsync(configPath, cancellationToken).ConfigureAwait(false);
-        if (configurationResult.IsFailure)
-        {
-            CommandConsole.WriteErrors(context.Console, configurationResult.Errors);
-            context.ExitCode = 1;
-            return;
-        }
-
         var moduleFilter = _moduleFilterBinder.Bind(context.ParseResult);
         var cache = _cacheOptionBinder.Bind(context.ParseResult);
         var sqlOverrides = _sqlOptionBinder.Bind(context.ParseResult);
@@ -95,27 +86,37 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             context.ParseResult.GetValueForOption(_renameOption),
             context.ParseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism));
 
-        var input = new BuildSsdtApplicationInput(
-            configurationResult.Value,
-            overrides,
-            moduleFilter,
-            sqlOverrides,
-            cache);
-
-        var result = await application.RunAsync(input, cancellationToken).ConfigureAwait(false);
-        if (result.IsFailure)
+        var options = new BuildSsdtVerbOptions
         {
-            CommandConsole.WriteErrors(context.Console, result.Errors);
+            ConfigurationPath = context.ParseResult.GetValueForOption(_globalOptions.ConfigPath),
+            Overrides = overrides,
+            ModuleFilter = moduleFilter,
+            Sql = sqlOverrides,
+            Cache = cache
+        };
+
+        var run = await verb.RunAsync(options, cancellationToken).ConfigureAwait(false);
+        if (!run.IsSuccess)
+        {
+            CommandConsole.WriteErrors(context.Console, run.Errors);
             context.ExitCode = 1;
             return;
         }
 
-        await EmitResultsAsync(context, result.Value).ConfigureAwait(false);
+        if (run.Payload is not BuildSsdtVerbResult payload)
+        {
+            CommandConsole.WriteErrorLine(context.Console, "[error] Unexpected result type for build-ssdt verb.");
+            context.ExitCode = 1;
+            return;
+        }
+
+        await EmitResultsAsync(context, payload).ConfigureAwait(false);
         context.ExitCode = 0;
     }
 
-    private async Task EmitResultsAsync(InvocationContext context, BuildSsdtApplicationResult applicationResult)
+    private async Task EmitResultsAsync(InvocationContext context, BuildSsdtVerbResult payload)
     {
+        var applicationResult = payload.ApplicationResult;
         var pipelineResult = applicationResult.PipelineResult;
 
         if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
@@ -173,22 +174,24 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
 
         CommandConsole.WriteLine(context.Console, $"Decision log written to {pipelineResult.DecisionLogPath}");
 
-        if (context.ParseResult.GetValueForOption(_openReportOption))
+        if (!context.ParseResult.GetValueForOption(_openReportOption))
         {
-            try
-            {
-                var reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, context.GetCancellationToken()).ConfigureAwait(false);
-                CommandConsole.WriteLine(context.Console, $"Report written to {reportPath}");
-                PipelineReportLauncher.TryOpen(reportPath, context.Console);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                CommandConsole.WriteErrorLine(context.Console, $"[warning] Failed to open report: {ex.Message}");
-            }
+            return;
+        }
+
+        try
+        {
+            var reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, context.GetCancellationToken()).ConfigureAwait(false);
+            CommandConsole.WriteLine(context.Console, $"Report written to {reportPath}");
+            PipelineReportLauncher.TryOpen(reportPath, context.Console);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            CommandConsole.WriteErrorLine(context.Console, $"[warning] Failed to open report: {ex.Message}");
         }
     }
 

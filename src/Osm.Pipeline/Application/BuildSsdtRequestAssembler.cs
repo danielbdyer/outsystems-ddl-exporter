@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
@@ -59,6 +62,16 @@ public sealed class BuildSsdtRequestAssembler
             context.CacheOverrides,
             context.ConfigPath);
 
+        if (cacheOptions is not null && !string.IsNullOrWhiteSpace(context.SqlOptions.ConnectionString))
+        {
+            var metadata = cacheOptions.Metadata is null
+                ? new Dictionary<string, string?>(StringComparer.Ordinal)
+                : new Dictionary<string, string?>(cacheOptions.Metadata, StringComparer.Ordinal);
+
+            metadata["sql.connectionHash"] = ComputeSha256(context.SqlOptions.ConnectionString!);
+            cacheOptions = cacheOptions with { Metadata = metadata };
+        }
+
         var request = new BuildSsdtPipelineRequest(
             context.ModelPath,
             context.ModuleFilter,
@@ -75,6 +88,13 @@ public sealed class BuildSsdtRequestAssembler
             Path.Combine(context.OutputDirectory, "Seeds"));
 
         return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory);
+    }
+
+    private static string ComputeSha256(string value)
+    {
+        using var sha = SHA256.Create();
+        var bytes = Encoding.UTF8.GetBytes(value);
+        return Convert.ToHexString(sha.ComputeHash(bytes));
     }
 
     private static string ResolveProfilerProvider(CliConfiguration configuration, BuildSsdtOverrides overrides)
