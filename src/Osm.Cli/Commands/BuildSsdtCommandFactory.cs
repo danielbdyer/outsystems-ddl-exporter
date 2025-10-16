@@ -1,20 +1,18 @@
 using System;
 using System.CommandLine;
 using System.CommandLine.Invocation;
-using System.IO;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
-using Osm.Pipeline.Mediation;
-using Osm.Validation.Tightening;
+using Osm.Pipeline.Hosting;
+using Osm.Pipeline.Hosting.Verbs;
 
 namespace Osm.Cli.Commands;
 
 internal sealed class BuildSsdtCommandFactory : ICommandFactory
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IPipelineVerb<BuildSsdtVerbOptions> _verb;
     private readonly CliGlobalOptions _globalOptions;
     private readonly ModuleFilterOptionBinder _moduleFilterBinder;
     private readonly CacheOptionBinder _cacheOptionBinder;
@@ -29,13 +27,13 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
 
     public BuildSsdtCommandFactory(
-        IServiceScopeFactory scopeFactory,
+        IPipelineVerb<BuildSsdtVerbOptions> verb,
         CliGlobalOptions globalOptions,
         ModuleFilterOptionBinder moduleFilterBinder,
         CacheOptionBinder cacheOptionBinder,
         SqlOptionBinder sqlOptionBinder)
     {
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _verb = verb ?? throw new ArgumentNullException(nameof(verb));
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
         _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
         _cacheOptionBinder = cacheOptionBinder ?? throw new ArgumentNullException(nameof(cacheOptionBinder));
@@ -67,21 +65,7 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
 
     private async Task ExecuteAsync(InvocationContext context)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var services = scope.ServiceProvider;
-        var configurationService = services.GetRequiredService<ICliConfigurationService>();
-        var application = services.GetRequiredService<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>();
-
         var cancellationToken = context.GetCancellationToken();
-        var configPath = context.ParseResult.GetValueForOption(_globalOptions.ConfigPath);
-        var configurationResult = await configurationService.LoadAsync(configPath, cancellationToken).ConfigureAwait(false);
-        if (configurationResult.IsFailure)
-        {
-            CommandConsole.WriteErrors(context.Console, configurationResult.Errors);
-            context.ExitCode = 1;
-            return;
-        }
-
         var moduleFilter = _moduleFilterBinder.Bind(context.ParseResult);
         var cache = _cacheOptionBinder.Bind(context.ParseResult);
         var sqlOverrides = _sqlOptionBinder.Bind(context.ParseResult);
@@ -95,103 +79,15 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             context.ParseResult.GetValueForOption(_renameOption),
             context.ParseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism));
 
-        var input = new BuildSsdtApplicationInput(
-            configurationResult.Value,
+        var verbOptions = new BuildSsdtVerbOptions(
+            context.ParseResult.GetValueForOption(_globalOptions.ConfigPath),
             overrides,
             moduleFilter,
             sqlOverrides,
-            cache);
+            cache,
+            context.ParseResult.GetValueForOption(_openReportOption));
 
-        var result = await application.RunAsync(input, cancellationToken).ConfigureAwait(false);
-        if (result.IsFailure)
-        {
-            CommandConsole.WriteErrors(context.Console, result.Errors);
-            context.ExitCode = 1;
-            return;
-        }
-
-        await EmitResultsAsync(context, result.Value).ConfigureAwait(false);
-        context.ExitCode = 0;
+        var result = await _verb.RunAsync(verbOptions, cancellationToken).ConfigureAwait(false);
+        context.ExitCode = result.ExitCode;
     }
-
-    private async Task EmitResultsAsync(InvocationContext context, BuildSsdtApplicationResult applicationResult)
-    {
-        var pipelineResult = applicationResult.PipelineResult;
-
-        if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
-        {
-            var modelMessage = applicationResult.ModelWasExtracted
-                ? $"Extracted model to {applicationResult.ModelPath}."
-                : $"Using model at {applicationResult.ModelPath}.";
-            CommandConsole.WriteLine(context.Console, modelMessage);
-        }
-
-        if (!applicationResult.ModelExtractionWarnings.IsDefaultOrEmpty && applicationResult.ModelExtractionWarnings.Length > 0)
-        {
-            CommandConsole.EmitPipelineWarnings(context.Console, applicationResult.ModelExtractionWarnings);
-        }
-
-        if (IsSqlProfiler(applicationResult.ProfilerProvider))
-        {
-            CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
-        }
-
-        CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
-        CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
-
-        foreach (var diagnostic in pipelineResult.DecisionReport.Diagnostics)
-        {
-            if (diagnostic.Severity == TighteningDiagnosticSeverity.Warning)
-            {
-                CommandConsole.WriteErrorLine(context.Console, $"[warning] {diagnostic.Message}");
-            }
-        }
-
-        if (pipelineResult.EvidenceCache is { } cacheResult)
-        {
-            CommandConsole.WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");
-        }
-
-        if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty && pipelineResult.StaticSeedScriptPaths.Length > 0)
-        {
-            foreach (var seedPath in pipelineResult.StaticSeedScriptPaths)
-            {
-                CommandConsole.WriteLine(context.Console, $"Static entity seed script written to {seedPath}");
-            }
-        }
-
-        CommandConsole.WriteLine(context.Console, $"Emitted {pipelineResult.Manifest.Tables.Count} tables to {applicationResult.OutputDirectory}.");
-        CommandConsole.WriteLine(context.Console, $"Manifest written to {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
-        CommandConsole.WriteLine(context.Console, $"Columns tightened: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount}");
-        CommandConsole.WriteLine(context.Console, $"Unique indexes enforced: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount}");
-        CommandConsole.WriteLine(context.Console, $"Foreign keys created: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount}");
-
-        foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(pipelineResult.DecisionReport))
-        {
-            CommandConsole.WriteLine(context.Console, summary);
-        }
-
-        CommandConsole.WriteLine(context.Console, $"Decision log written to {pipelineResult.DecisionLogPath}");
-
-        if (context.ParseResult.GetValueForOption(_openReportOption))
-        {
-            try
-            {
-                var reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, context.GetCancellationToken()).ConfigureAwait(false);
-                CommandConsole.WriteLine(context.Console, $"Report written to {reportPath}");
-                PipelineReportLauncher.TryOpen(reportPath, context.Console);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                CommandConsole.WriteErrorLine(context.Console, $"[warning] Failed to open report: {ex.Message}");
-            }
-        }
-    }
-
-    private static bool IsSqlProfiler(string provider)
-        => string.Equals(provider, "sql", StringComparison.OrdinalIgnoreCase);
 }

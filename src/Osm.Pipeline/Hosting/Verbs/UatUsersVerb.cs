@@ -11,35 +11,32 @@ using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.UatUsers;
 
-namespace Osm.Cli;
+namespace Osm.Pipeline.Hosting.Verbs;
 
-public interface IUatUsersCommand
-{
-    Task<int> ExecuteAsync(UatUsersOptions options, CancellationToken cancellationToken);
-}
-
-public sealed class UatUsersCommand : IUatUsersCommand
+public sealed class UatUsersVerb : PipelineVerb<UatUsersVerbOptions>
 {
     private readonly IModelIngestionService _modelIngestionService;
-    private readonly ILogger<UatUsersCommand> _logger;
+    private readonly ILogger<UatUsersVerb> _logger;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly TimeProvider _timeProvider;
 
-    public UatUsersCommand(
+    public UatUsersVerb(
         IModelIngestionService modelIngestionService,
-        ILogger<UatUsersCommand> logger,
-        ILoggerFactory? loggerFactory = null)
+        ILogger<UatUsersVerb> logger,
+        ILoggerFactory? loggerFactory,
+        TimeProvider timeProvider)
     {
         _modelIngestionService = modelIngestionService ?? throw new ArgumentNullException(nameof(modelIngestionService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
-    public async Task<int> ExecuteAsync(UatUsersOptions options, CancellationToken cancellationToken)
+    public override string Name => "uat-users";
+
+    protected override async Task<PipelineVerbResult> RunInternalAsync(UatUsersVerbOptions options, CancellationToken cancellationToken)
     {
-        if (options is null)
-        {
-            throw new ArgumentNullException(nameof(options));
-        }
+        var startedAt = _timeProvider.GetUtcNow();
 
         try
         {
@@ -63,7 +60,7 @@ public sealed class UatUsersCommand : IUatUsersCommand
             if (string.IsNullOrWhiteSpace(options.UatConnectionString))
             {
                 _logger.LogError("--uat-conn must be supplied.");
-                return 1;
+                return new PipelineVerbResult(1);
             }
 
             var sqlOptions = new SqlConnectionOptions(null, null, "osm-uat-users", null);
@@ -80,21 +77,21 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 if (string.IsNullOrWhiteSpace(options.ModelPath))
                 {
                     _logger.LogError("--model is required unless --from-live is specified.");
-                    return 1;
+                    return new PipelineVerbResult(1);
                 }
 
                 _logger.LogInformation("Loading schema graph from model file {ModelPath}.", options.ModelPath);
-                var loadResult = await _modelIngestionService.LoadFromFileAsync(options.ModelPath!, cancellationToken: cancellationToken).ConfigureAwait(false);
+                var loadResult = await _modelIngestionService
+                    .LoadFromFileAsync(options.ModelPath!, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
                 if (loadResult.IsFailure)
                 {
-                    LogErrors(loadResult.Errors);
-                    return 1;
+                    VerbLogging.LogErrors(_logger, loadResult.Errors);
+                    return new PipelineVerbResult(1);
                 }
 
                 schemaGraph = new ModelSchemaGraph(loadResult.Value);
-                _logger.LogInformation(
-                    "Model file {ModelPath} loaded successfully.",
-                    options.ModelPath ?? "<unspecified>");
+                _logger.LogInformation("Model file {ModelPath} loaded successfully.", options.ModelPath ?? "<unspecified>");
             }
 
             var artifacts = new UatUsersArtifacts(options.OutputDirectory);
@@ -125,8 +122,17 @@ public sealed class UatUsersCommand : IUatUsersCommand
             _logger.LogInformation("Invoking uat-users pipeline.");
             await pipeline.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation("uat-users artifacts written to {Path}.", Path.Combine(artifacts.Root, "uat-users"));
-            return 0;
+            var artifactRoot = Path.Combine(artifacts.Root, "uat-users");
+            _logger.LogInformation("uat-users artifacts written to {Path}.", artifactRoot);
+
+            var completedAt = _timeProvider.GetUtcNow();
+            var runArtifacts = new List<ArtifactRef>
+            {
+                new("uat-users", artifactRoot)
+            };
+
+            var run = new PipelineRun(Name, startedAt, completedAt, runArtifacts);
+            return new PipelineVerbResult(0, run);
         }
         catch (OperationCanceledException)
         {
@@ -136,15 +142,7 @@ public sealed class UatUsersCommand : IUatUsersCommand
         catch (Exception ex)
         {
             _logger.LogError(ex, "uat-users command failed.");
-            return 1;
-        }
-    }
-
-    private void LogErrors(IReadOnlyCollection<ValidationError> errors)
-    {
-        foreach (var error in errors)
-        {
-            _logger.LogError("{Code}: {Message}", error.Code, error.Message);
+            return new PipelineVerbResult(1);
         }
     }
 

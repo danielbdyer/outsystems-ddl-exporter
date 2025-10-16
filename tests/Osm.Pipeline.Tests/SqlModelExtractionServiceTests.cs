@@ -196,7 +196,10 @@ public class SqlModelExtractionServiceTests
 
         using var expectedDocument = JsonDocument.Parse(expectedJson);
 
-        Assert.Equal(expectedDocument.RootElement.GetRawText(), actualDocument.RootElement.GetRawText());
+        var actualCanonical = Canonicalize(actualDocument.RootElement);
+        var expectedCanonical = Canonicalize(expectedDocument.RootElement);
+
+        Assert.Equal(expectedCanonical, actualCanonical);
     }
 
     [Fact]
@@ -372,6 +375,17 @@ public class SqlModelExtractionServiceTests
         writer.WriteEndArray();
         writer.WriteEndObject();
         writer.Flush();
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static string Canonicalize(JsonElement element)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            element.WriteTo(writer);
+        }
 
         return Encoding.UTF8.GetString(stream.ToArray());
     }

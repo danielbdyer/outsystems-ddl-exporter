@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Cli.Commands;
 
 namespace Osm.Cli.Tests;
 
@@ -222,7 +223,7 @@ internal static class DotNetCli
 
     private static async Task<int> InvokeEntryPointAsync(IReadOnlyList<string> cliArguments)
     {
-        var assembly = typeof(Osm.Cli.ProfileSnapshotDebugFormatter).Assembly;
+        var assembly = typeof(BuildSsdtCommandFactory).Assembly;
         var entryPoint = assembly.EntryPoint
             ?? throw new InvalidOperationException("CLI assembly does not define an entry point.");
 

@@ -25,10 +25,11 @@ public class DmmComparePipelineTests
         var scriptPath = Path.Combine(workspace.Path, "baseline.dmm.sql");
         await File.WriteAllTextAsync(scriptPath, EdgeCaseScript);
 
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
         var bootstrapper = new FakePipelineBootstrapper(async (_, request, token) =>
         {
             Assert.Equal(profilePath, request.Telemetry.ProfilingStartMetadata["profilePath"]);
-            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            var captureResult = await request.ProfileCaptureAsync(model, token);
             Assert.True(captureResult.IsSuccess);
 
             var error = ValidationError.Create("test.bootstrap.stop", "Bootstrapper halted pipeline for verification.");

@@ -23,6 +23,7 @@ public class CliIntegrationTests
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
         var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
         var smokeSnapshotRoot = Path.Combine(repoRoot, "tests", "Fixtures", "emission-smoke", "edge-case");
+        var expectedEmissionRoot = smokeSnapshotRoot;
 
         using var output = new TempDirectory();
         using var comparisonWorkspace = new TempDirectory();

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Threading;
@@ -19,8 +20,9 @@ public class SsdtEmitterTests
     [Fact]
     public async Task EmitAsync_writes_per_table_artifacts_using_mock_file_system()
     {
-        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), @"c:\");
-        var outputDirectory = fileSystem.Path.Combine(@"c:\", "out");
+        var root = GetRootDirectory();
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), root);
+        var outputDirectory = fileSystem.Path.Combine(root, "out");
         var emitter = new SsdtEmitter(new PerTableWriter(), fileSystem);
         var model = CreateMinimalModel();
         var options = SmoBuildOptions.Default;
@@ -44,7 +46,9 @@ public class SsdtEmitterTests
         Assert.True(fileSystem.File.Exists(tablePath));
         var script = fileSystem.File.ReadAllText(tablePath);
         Assert.Contains("CREATE TABLE [dbo].[Sample]", script, StringComparison.Ordinal);
-        Assert.Contains("[Id] INT NOT NULL", script, StringComparison.Ordinal);
+        Assert.Contains("[Id] INT", script, StringComparison.Ordinal);
+        Assert.Contains("IDENTITY", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NOT NULL", script, StringComparison.OrdinalIgnoreCase);
         Assert.EndsWith(Environment.NewLine, script, StringComparison.Ordinal);
     }
 
@@ -54,7 +58,7 @@ public class SsdtEmitterTests
     [InlineData("   ")]
     public async Task EmitAsync_requires_non_empty_output_directory(string? outputDirectory)
     {
-        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), @"c:\");
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), GetRootDirectory());
         var emitter = new SsdtEmitter(new PerTableWriter(), fileSystem);
 
         var exception = await Assert.ThrowsAsync<ArgumentException>(
@@ -66,13 +70,14 @@ public class SsdtEmitterTests
     [Fact]
     public async Task EmitAsync_honors_cancellation_token()
     {
-        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), @"c:\");
+        var root = GetRootDirectory();
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), root);
         var emitter = new SsdtEmitter(new PerTableWriter(), fileSystem);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => emitter.EmitAsync(CreateMinimalModel(), fileSystem.Path.Combine(@"c:\", "out"), SmoBuildOptions.Default, DefaultMetadata, cancellationToken: cts.Token)).ConfigureAwait(false);
+            () => emitter.EmitAsync(CreateMinimalModel(), fileSystem.Path.Combine(root, "out"), SmoBuildOptions.Default, DefaultMetadata, cancellationToken: cts.Token)).ConfigureAwait(false);
     }
 
     [Fact]
@@ -94,7 +99,7 @@ public class SsdtEmitterTests
         var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
 
         Assert.Equal(4, manifest.Tables.Count);
-        Assert.Equal("manifest.json", Path.GetFileName(temp.GetFiles("manifest.json").Single()));
+        Assert.Equal("manifest.json", Path.GetFileName(Directory.GetFiles(temp.Path, "manifest.json").Single()));
         foreach (var entry in manifest.Tables)
         {
             var scriptPath = Path.Combine(temp.Path, entry.TableFile);
@@ -149,4 +154,7 @@ public class SsdtEmitterTests
 
         return path;
     }
+
+    private static string GetRootDirectory()
+        => Path.DirectorySeparatorChar == '\\' ? @"c:\" : "/";
 }

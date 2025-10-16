@@ -11,38 +11,13 @@ using Osm.Cli.Commands.Binders;
 using Osm.Domain.Abstractions;
 using Osm.Json;
 using Osm.Dmm;
-using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
-using Osm.Pipeline.ModelIngestion;
-using Osm.Pipeline.Orchestration;
-using Osm.Pipeline.Profiling;
-using Osm.Pipeline.Sql;
-using Osm.Pipeline.SqlExtraction;
-using Osm.Pipeline.Mediation;
+using Osm.Pipeline.Hosting;
+using Osm.Pipeline.Hosting.Verbs;
 
 var hostBuilder = Host.CreateApplicationBuilder(args);
 hostBuilder.Services.AddLogging(static builder => builder.AddSimpleConsole());
-hostBuilder.Services.AddSingleton<ICliConfigurationService, CliConfigurationService>();
-hostBuilder.Services.AddSingleton<IModelJsonDeserializer, ModelJsonDeserializer>();
-hostBuilder.Services.AddSingleton<IProfileSnapshotDeserializer, ProfileSnapshotDeserializer>();
-hostBuilder.Services.AddSingleton<Func<string, SqlConnectionOptions, IDbConnectionFactory>>(
-    _ => (connectionString, options) => new SqlConnectionFactory(connectionString, options));
-hostBuilder.Services.AddSingleton<IDataProfilerFactory, DataProfilerFactory>();
-hostBuilder.Services.AddSingleton<IModelIngestionService, ModelIngestionService>();
-hostBuilder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
-hostBuilder.Services.AddSingleton<ICommandDispatcher>(
-    sp => new CommandDispatcher(sp.GetRequiredService<IServiceScopeFactory>()));
-hostBuilder.Services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
-hostBuilder.Services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();
-hostBuilder.Services.AddSingleton<ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>, ExtractModelPipeline>();
-hostBuilder.Services.AddSingleton<BuildSsdtRequestAssembler>();
-hostBuilder.Services.AddSingleton<IModelResolutionService, ModelResolutionService>();
-hostBuilder.Services.AddSingleton<IOutputDirectoryResolver, OutputDirectoryResolver>();
-hostBuilder.Services.AddSingleton<INamingOverridesBinder, NamingOverridesBinder>();
-hostBuilder.Services.AddSingleton<IStaticDataProviderFactory, StaticDataProviderFactory>();
-hostBuilder.Services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>, BuildSsdtApplicationService>();
-hostBuilder.Services.AddSingleton<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>, CompareWithDmmApplicationService>();
-hostBuilder.Services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();
+hostBuilder.Services.AddOsmPipeline();
 hostBuilder.Services.AddSingleton<CliGlobalOptions>();
 hostBuilder.Services.AddSingleton<ModuleFilterOptionBinder>();
 hostBuilder.Services.AddSingleton<CacheOptionBinder>();
@@ -57,7 +32,6 @@ var enableUatUsers = remapUsersToggle is null || string.Equals(remapUsersToggle,
 
 if (enableUatUsers)
 {
-    hostBuilder.Services.AddSingleton<IUatUsersCommand, UatUsersCommand>();
     hostBuilder.Services.AddSingleton<ICommandFactory, UatUsersCommandFactory>();
 }
 

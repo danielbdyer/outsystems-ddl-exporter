@@ -1,43 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.CommandLine;
 using System.Linq;
-using Osm.Cli;
+using Microsoft.Extensions.Logging;
 using Osm.Domain.Abstractions;
-using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
-using Osm.Validation.Tightening;
 
-namespace Osm.Cli.Commands;
+namespace Osm.Pipeline.Hosting;
 
-internal static class CommandConsole
+internal static class VerbLogging
 {
-    public static void WriteLine(IConsole console, string message)
+    public static void LogErrors(ILogger logger, IReadOnlyCollection<ValidationError> errors)
     {
-        if (console is null)
+        if (logger is null)
         {
-            throw new ArgumentNullException(nameof(console));
-        }
-
-        console.Out.Write(message + Environment.NewLine);
-    }
-
-    public static void WriteErrorLine(IConsole console, string message)
-    {
-        if (console is null)
-        {
-            throw new ArgumentNullException(nameof(console));
-        }
-
-        console.Error.Write(message + Environment.NewLine);
-    }
-
-    public static void WriteErrors(IConsole console, IEnumerable<ValidationError> errors)
-    {
-        if (console is null)
-        {
-            throw new ArgumentNullException(nameof(console));
+            throw new ArgumentNullException(nameof(logger));
         }
 
         if (errors is null)
@@ -47,12 +24,17 @@ internal static class CommandConsole
 
         foreach (var error in errors)
         {
-            WriteErrorLine(console, $"{error.Code}: {error.Message}");
+            logger.LogError("{Code}: {Message}", error.Code, error.Message);
         }
     }
 
-    public static void EmitPipelineWarnings(IConsole console, ImmutableArray<string> warnings)
+    public static void LogWarnings(ILogger logger, ImmutableArray<string> warnings)
     {
+        if (logger is null)
+        {
+            throw new ArgumentNullException(nameof(logger));
+        }
+
         if (warnings.IsDefaultOrEmpty || warnings.Length == 0)
         {
             return;
@@ -65,31 +47,22 @@ internal static class CommandConsole
                 continue;
             }
 
-            if (char.IsWhiteSpace(warning[0]))
-            {
-                WriteErrorLine(console, warning);
-            }
-            else
-            {
-                WriteErrorLine(console, $"[warning] {warning}");
-            }
+            logger.LogWarning("{Warning}", warning);
         }
     }
 
-    public static void EmitSqlProfilerSnapshot(IConsole console, ProfileSnapshot snapshot)
+    public static void LogPipelineLog(ILogger logger, PipelineExecutionLog log)
     {
-        WriteLine(console, "SQL profiler snapshot:");
-        WriteLine(console, ProfileSnapshotDebugFormatter.ToJson(snapshot));
-    }
+        if (logger is null)
+        {
+            throw new ArgumentNullException(nameof(logger));
+        }
 
-    public static void EmitPipelineLog(IConsole console, PipelineExecutionLog log)
-    {
         if (log is null || log.Entries.Count == 0)
         {
             return;
         }
 
-        WriteLine(console, "Pipeline execution log:");
         var order = new List<(string Step, string Message)>();
         var grouped = new Dictionary<(string Step, string Message), List<PipelineLogEntry>>();
 
@@ -111,24 +84,29 @@ internal static class CommandConsole
             var entries = grouped[key];
             if (entries.Count == 1)
             {
-                WriteLine(console, FormatLogEntry(entries[0]));
+                logger.LogInformation("{Entry}", FormatLogEntry(entries[0]));
                 continue;
             }
 
             var first = entries[0];
             var last = entries[^1];
-            WriteLine(console, $"[{first.Step}] {first.Message} – {entries.Count} occurrence(s) between {first.TimestampUtc:O} and {last.TimestampUtc:O}.");
+            logger.LogInformation(
+                "[{Step}] {Message} – {Count} occurrence(s) between {First} and {Last}.",
+                first.Step,
+                first.Message,
+                entries.Count,
+                first.TimestampUtc.ToString("O"),
+                last.TimestampUtc.ToString("O"));
 
             var sampleCount = Math.Min(3, entries.Count);
-            WriteLine(console, "  Examples:");
             for (var i = 0; i < sampleCount; i++)
             {
-                WriteLine(console, $"    {FormatLogSample(entries[i])}");
+                logger.LogInformation("    {Sample}", FormatLogSample(entries[i]));
             }
 
             if (entries.Count > sampleCount)
             {
-                WriteLine(console, $"    … {entries.Count - sampleCount} additional occurrence(s) suppressed.");
+                logger.LogInformation("    … {Additional} additional occurrence(s) suppressed.", entries.Count - sampleCount);
             }
         }
     }

@@ -3,13 +3,14 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
+using Osm.Pipeline.Hosting;
+using Osm.Pipeline.Hosting.Verbs;
 
 namespace Osm.Cli.Commands;
 
 internal sealed class UatUsersCommandFactory : ICommandFactory
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IPipelineVerb<UatUsersVerbOptions> _verb;
 
     private readonly Option<string?> _modelOption = new("--model", "Path to the UAT model JSON file.");
     private readonly Option<bool> _fromLiveOption = new("--from-live", "Discover catalog from live metadata.");
@@ -34,9 +35,9 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
     private readonly Option<string?> _snapshotOption = new("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
     private readonly Option<string?> _userEntityIdOption = new("--user-entity-id", "Optional override identifier for the user entity (accepts bt*GUID*GUID, physical name, or numeric id).");
 
-    public UatUsersCommandFactory(IServiceScopeFactory scopeFactory)
+    public UatUsersCommandFactory(IPipelineVerb<UatUsersVerbOptions> verb)
     {
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _verb = verb ?? throw new ArgumentNullException(nameof(verb));
     }
 
     public Command Create()
@@ -76,48 +77,47 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
 
         var allowedDdl = parseResult.GetValueForOption(_userDdlOption);
         var allowedIds = parseResult.GetValueForOption(_userIdsOption);
-        if (string.IsNullOrWhiteSpace(allowedDdl) && string.IsNullOrWhiteSpace(allowedIds))
+        UatUsersVerbOptions options;
+        try
         {
+            options = new UatUsersVerbOptions(
+                parseResult.GetValueForOption(_modelOption),
+                parseResult.GetValueForOption(_uatConnectionOption),
+                parseResult.GetValueForOption(_fromLiveOption),
+                userSchema,
+                tableValue,
+                parseResult.GetValueForOption(_userIdOption) ?? "Id",
+                parseResult.GetValueForOption(_includeColumnsOption),
+                parseResult.GetValueForOption(_outputOption) ?? "./_artifacts",
+                parseResult.GetValueForOption(_userMapOption),
+                allowedDdl,
+                allowedIds,
+                parseResult.GetValueForOption(_snapshotOption),
+                parseResult.GetValueForOption(_userEntityIdOption));
+        }
+        catch (ArgumentException ex)
+        {
+            context.Console.Error.Write(ex.Message + Environment.NewLine);
             context.ExitCode = 1;
-            CommandConsole.WriteErrorLine(context.Console, "Either --user-ddl or --user-ids must be supplied.");
             return;
         }
 
-        var options = new UatUsersOptions(
-            parseResult.GetValueForOption(_modelOption),
-            parseResult.GetValueForOption(_uatConnectionOption),
-            parseResult.GetValueForOption(_fromLiveOption),
-            userSchema,
-            tableValue,
-            parseResult.GetValueForOption(_userIdOption) ?? "Id",
-            parseResult.GetValueForOption(_includeColumnsOption),
-            parseResult.GetValueForOption(_outputOption) ?? "./_artifacts",
-            parseResult.GetValueForOption(_userMapOption),
-            allowedDdl,
-            allowedIds,
-            parseResult.GetValueForOption(_snapshotOption),
-            parseResult.GetValueForOption(_userEntityIdOption));
-
         if (!options.FromLiveMetadata && string.IsNullOrWhiteSpace(options.ModelPath))
         {
+            context.Console.Error.Write("--model is required when --from-live is not specified." + Environment.NewLine);
             context.ExitCode = 1;
-            CommandConsole.WriteErrorLine(context.Console, "--model is required when --from-live is not specified.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(options.UatConnectionString))
         {
+            context.Console.Error.Write("--uat-conn is required." + Environment.NewLine);
             context.ExitCode = 1;
-            CommandConsole.WriteErrorLine(context.Console, "--uat-conn is required.");
             return;
         }
 
-        var cancellationToken = context.GetCancellationToken();
-        using var scope = _scopeFactory.CreateScope();
-        var services = scope.ServiceProvider;
-        var handler = services.GetRequiredService<IUatUsersCommand>();
-        var exitCode = await handler.ExecuteAsync(options, cancellationToken).ConfigureAwait(false);
-        context.ExitCode = exitCode;
+        var result = await _verb.RunAsync(options, context.GetCancellationToken()).ConfigureAwait(false);
+        context.ExitCode = result.ExitCode;
     }
 
     private static (string Schema, string Table) SplitTableIdentifier(string identifier)

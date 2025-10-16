@@ -80,22 +80,24 @@ public sealed class ProfilingQueryExecutorTests
 
         var sql = ProfilingQueryExecutor.BuildForeignKeyMetadataSql("dbo", "ORDERS", command);
 
-        var expected = """SELECT
-    parentColumn.name AS ColumnName,
-    targetSchema.name AS TargetSchema,
-    targetTable.name AS TargetTable,
-    targetColumn.name AS TargetColumn,
-    fk.is_not_trusted AS IsNotTrusted,
-    fk.is_disabled AS IsDisabled
-FROM sys.foreign_keys AS fk
-JOIN sys.tables AS parentTable ON fk.parent_object_id = parentTable.object_id
-JOIN sys.schemas AS parentSchema ON parentTable.schema_id = parentSchema.schema_id
-JOIN sys.foreign_key_columns AS fkc ON fk.object_id = fkc.constraint_object_id
-JOIN sys.columns AS parentColumn ON fkc.parent_object_id = parentColumn.object_id AND fkc.parent_column_id = parentColumn.column_id
-JOIN sys.tables AS targetTable ON fk.referenced_object_id = targetTable.object_id
-JOIN sys.schemas AS targetSchema ON targetTable.schema_id = targetSchema.schema_id
-JOIN sys.columns AS targetColumn ON fkc.referenced_object_id = targetColumn.object_id AND fkc.referenced_column_id = targetColumn.column_id
-WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;""";
+        var expected = """
+            SELECT
+                parentColumn.name AS ColumnName,
+                targetSchema.name AS TargetSchema,
+                targetTable.name AS TargetTable,
+                targetColumn.name AS TargetColumn,
+                fk.is_not_trusted AS IsNotTrusted,
+                fk.is_disabled AS IsDisabled
+            FROM sys.foreign_keys AS fk
+            JOIN sys.tables AS parentTable ON fk.parent_object_id = parentTable.object_id
+            JOIN sys.schemas AS parentSchema ON parentTable.schema_id = parentSchema.schema_id
+            JOIN sys.foreign_key_columns AS fkc ON fk.object_id = fkc.constraint_object_id
+            JOIN sys.columns AS parentColumn ON fkc.parent_object_id = parentColumn.object_id AND fkc.parent_column_id = parentColumn.column_id
+            JOIN sys.tables AS targetTable ON fk.referenced_object_id = targetTable.object_id
+            JOIN sys.schemas AS targetSchema ON targetTable.schema_id = targetSchema.schema_id
+            JOIN sys.columns AS targetColumn ON fkc.referenced_object_id = targetColumn.object_id AND fkc.referenced_column_id = targetColumn.column_id
+            WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;
+            """;
 
         Assert.Equal(expected, sql);
         Assert.Collection(

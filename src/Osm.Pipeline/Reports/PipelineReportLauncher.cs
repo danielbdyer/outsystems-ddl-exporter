@@ -1,5 +1,4 @@
 using System;
-using System.CommandLine;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
@@ -9,17 +8,31 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Osm.Pipeline.Application;
+using Microsoft.Extensions.Logging;
 using Osm.Emission;
+using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 
-namespace Osm.Cli;
+namespace Osm.Pipeline.Reports;
 
-internal static class PipelineReportLauncher
+public interface IPipelineReportLauncher
+{
+    Task<string> GenerateAsync(BuildSsdtApplicationResult applicationResult, CancellationToken cancellationToken);
+
+    void Open(string reportPath);
+}
+
+public sealed class PipelineReportLauncher : IPipelineReportLauncher
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+    private readonly ILogger<PipelineReportLauncher> _logger;
 
-    public static async Task<string> GenerateAsync(BuildSsdtApplicationResult applicationResult, CancellationToken cancellationToken)
+    public PipelineReportLauncher(ILogger<PipelineReportLauncher> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public async Task<string> GenerateAsync(BuildSsdtApplicationResult applicationResult, CancellationToken cancellationToken)
     {
         if (applicationResult is null)
         {
@@ -49,9 +62,9 @@ internal static class PipelineReportLauncher
         var diffPath = Path.Combine(outputDirectory, "dmm-diff.json");
         var hasDiff = File.Exists(diffPath);
 
-        var staticSeedPaths = applicationResult.PipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty
+        var staticSeedPaths = pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty
             ? Array.Empty<string>()
-            : applicationResult.PipelineResult.StaticSeedScriptPaths
+            : pipelineResult.StaticSeedScriptPaths
                 .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path!))
                 .ToArray();
 
@@ -63,7 +76,7 @@ internal static class PipelineReportLauncher
             totalTables,
             totalIndexes,
             totalForeignKeys,
-            pipelineResult.Insights,
+            pipelineResult.PipelineInsights,
             hasDiff,
             staticSeedPaths);
 
@@ -73,7 +86,7 @@ internal static class PipelineReportLauncher
         return reportPath;
     }
 
-    public static void TryOpen(string reportPath, IConsole console)
+    public void Open(string reportPath)
     {
         if (string.IsNullOrWhiteSpace(reportPath))
         {
@@ -82,7 +95,7 @@ internal static class PipelineReportLauncher
 
         if (!File.Exists(reportPath))
         {
-            WriteError(console, $"Report '{reportPath}' does not exist.");
+            _logger.LogWarning("Report '{ReportPath}' does not exist.", reportPath);
             return;
         }
 
@@ -106,12 +119,12 @@ internal static class PipelineReportLauncher
             }
             else
             {
-                WriteError(console, "Opening reports is not supported on this platform.");
+                _logger.LogWarning("Opening reports is not supported on this platform.");
             }
         }
         catch (Exception ex)
         {
-            WriteError(console, $"Failed to open report: {ex.Message}");
+            _logger.LogWarning(ex, "Failed to open pipeline report.");
         }
     }
 
@@ -198,78 +211,86 @@ internal static class PipelineReportLauncher
         builder.AppendLine($"      <li><strong>Foreign keys created:</strong> {decisionReport.ForeignKeysCreatedCount:N0} of {decisionReport.ForeignKeyCount:N0}</li>");
         if (decisionReport.Diagnostics.Length > 0)
         {
-            builder.AppendLine($"      <li><strong>Diagnostics:</strong> {decisionReport.Diagnostics.Length:N0} (see policy-decisions.json)</li>");
+            builder.AppendLine("      <li><strong>Diagnostics:</strong></li>");
+            builder.AppendLine("      <ul>");
+            foreach (var diagnostic in decisionReport.Diagnostics)
+            {
+                builder.AppendLine($"        <li>{diagnostic.Code}: {WebUtility.HtmlEncode(diagnostic.Message)}</li>");
+            }
+            builder.AppendLine("      </ul>");
         }
         builder.AppendLine("    </ul>");
         builder.AppendLine("  </section>");
 
+        builder.AppendLine("  <section>");
+        builder.AppendLine("    <h2>Artifacts</h2>");
+        builder.AppendLine("    <dl>");
+        builder.AppendLine($"      <dt>Output directory</dt><dd>{WebUtility.HtmlEncode(outputDirectory)}</dd>");
+        builder.AppendLine($"      <dt>Manifest</dt><dd><a href=\"manifest.json\">manifest.json</a></dd>");
+        builder.AppendLine($"      <dt>Decision log</dt><dd><a href=\"policy-decisions.json\">policy-decisions.json</a></dd>");
+        if (staticSeedPaths.Count > 0)
+        {
+            builder.AppendLine("      <dt>Static seed scripts</dt>");
+            builder.AppendLine("      <dd><ul>");
+            foreach (var path in staticSeedPaths)
+            {
+                var fileName = Path.GetFileName(path);
+                builder.AppendLine($"        <li><a href=\"{WebUtility.HtmlEncode(fileName)}\">{WebUtility.HtmlEncode(fileName)}</a></li>");
+            }
+            builder.AppendLine("      </ul></dd>");
+        }
+        if (hasDiff)
+        {
+            builder.AppendLine("      <dt>DMM diff</dt><dd><a href=\"dmm-diff.json\">dmm-diff.json</a></dd>");
+        }
+        builder.AppendLine("    </dl>");
+        builder.AppendLine("  </section>");
+
         builder.AppendLine("  <section class=\"insights-section\">");
-        builder.AppendLine("    <h2>Pipeline insights</h2>");
+        builder.AppendLine("    <h2>Insights</h2>");
         if (insightItems.Length == 0)
         {
-            builder.AppendLine("    <p class=\"insights-empty\">No pipeline insights were generated for this run.</p>");
+            builder.AppendLine("    <p class=\"insights-empty\">No insights were recorded for this run.</p>");
         }
         else
         {
             builder.AppendLine("    <ul class=\"insight-grid\">");
             foreach (var insight in insightItems)
             {
-                builder.Append(RenderInsightCard(insight));
+                var severityClass = insight.Severity switch
+                {
+                    PipelineInsightSeverity.Advisory => "severity-advisory",
+                    PipelineInsightSeverity.Warning => "severity-warning",
+                    PipelineInsightSeverity.Critical => "severity-critical",
+                    _ => "severity-info"
+                };
+
+                builder.AppendLine("      <li class=\"insight-card\">");
+                builder.AppendLine("        <div class=\"insight-header\">");
+                builder.AppendLine($"          <span class=\"insight-badge {severityClass}\">{insight.Severity}</span>");
+                builder.AppendLine($"          <span class=\"insight-code\">{WebUtility.HtmlEncode(insight.Code)}</span>");
+                builder.AppendLine("        </div>");
+                builder.AppendLine($"        <p class=\"insight-summary\">{WebUtility.HtmlEncode(insight.Summary ?? string.Empty)}</p>");
+                builder.AppendLine("        <dl class=\"insight-meta\">");
+                var scope = insight.AffectedObjects.Length > 0
+                    ? string.Join(", ", insight.AffectedObjects)
+                    : null;
+                if (!string.IsNullOrWhiteSpace(scope))
+                {
+                    builder.AppendLine($"          <dt>Scope</dt><dd>{WebUtility.HtmlEncode(scope)}</dd>");
+                }
+                if (!string.IsNullOrWhiteSpace(insight.SuggestedAction))
+                {
+                    builder.AppendLine($"          <dt>Action</dt><dd>{WebUtility.HtmlEncode(insight.SuggestedAction)}</dd>");
+                }
+                builder.AppendLine("        </dl>");
+                if (!string.IsNullOrWhiteSpace(insight.DocumentationUri))
+                {
+                    builder.AppendLine($"        <a class=\"insight-doc\" href=\"{WebUtility.HtmlEncode(insight.DocumentationUri)}\">Documentation</a>");
+                }
+                builder.AppendLine("      </li>");
             }
             builder.AppendLine("    </ul>");
-        }
-        builder.AppendLine("  </section>");
-
-        builder.AppendLine("  <section>");
-        builder.AppendLine("    <h2>Artifacts</h2>");
-        builder.AppendLine("    <ul class=\"decision-summary\">");
-        builder.AppendLine("      <li><a href=\"manifest.json\">manifest.json</a> – Table and index manifest snapshot.</li>");
-        builder.AppendLine("      <li><a href=\"policy-decisions.json\">policy-decisions.json</a> – Full tightening decision log.</li>");
-        if (hasDiff)
-        {
-            builder.AppendLine("      <li><a href=\"dmm-diff.json\">dmm-diff.json</a> – Latest DMM comparison result.</li>");
-        }
-        if (staticSeedPaths is { Count: > 0 })
-        {
-            foreach (var seedPath in staticSeedPaths)
-            {
-                var relativeSeedPath = Relativize(outputDirectory, seedPath);
-                builder.AppendLine($"      <li><a href=\"{relativeSeedPath}\">{HtmlEncode(relativeSeedPath)}</a> – Static entity seed script.</li>");
-            }
-        }
-        builder.AppendLine("    </ul>");
-        builder.AppendLine("  </section>");
-
-        builder.AppendLine("  <section>");
-        builder.AppendLine("    <h2>Execution context</h2>");
-        builder.AppendLine("    <dl>");
-        builder.AppendLine($"      <dt>Profiler</dt><dd>{HtmlEncode(applicationResult.ProfilerProvider)}</dd>");
-        if (!string.IsNullOrWhiteSpace(applicationResult.ProfilePath))
-        {
-            builder.AppendLine($"      <dt>Profile snapshot</dt><dd>{HtmlEncode(Relativize(outputDirectory, applicationResult.ProfilePath))}</dd>");
-        }
-        builder.AppendLine($"      <dt>Emission hash</dt><dd>{HtmlEncode(manifest.Emission.Hash)}</dd>");
-        builder.AppendLine($"      <dt>Manifest algorithm</dt><dd>{HtmlEncode(manifest.Emission.Algorithm)}</dd>");
-        builder.AppendLine("    </dl>");
-        builder.AppendLine("  </section>");
-
-        builder.AppendLine("  <section>");
-        builder.AppendLine("    <h2>Module coverage</h2>");
-        if (moduleSummaries.Length == 0)
-        {
-            builder.AppendLine("    <p>No modules were emitted for this run.</p>");
-        }
-        else
-        {
-            builder.AppendLine("    <table>");
-            builder.AppendLine("      <thead><tr><th>Module</th><th>Tables</th><th>Indexes</th><th>Foreign Keys</th></tr></thead>");
-            builder.AppendLine("      <tbody>");
-            foreach (var summary in moduleSummaries)
-            {
-                builder.AppendLine($"        <tr><td>{HtmlEncode(summary.Module)}</td><td>{summary.Tables:N0}</td><td>{summary.Indexes:N0}</td><td>{summary.ForeignKeys:N0}</td></tr>");
-            }
-            builder.AppendLine("      </tbody>");
-            builder.AppendLine("    </table>");
         }
         builder.AppendLine("  </section>");
 
@@ -279,97 +300,7 @@ internal static class PipelineReportLauncher
     }
 
     private static string RenderCard(string label, int value)
-        => $"      <li class=\"card\"><div class=\"value\">{value.ToString("N0", CultureInfo.InvariantCulture)}</div><div class=\"label\">{HtmlEncode(label)}</div></li>";
+        => $"    <li class=\"card\"><div class=\"value\">{value:N0}</div><div class=\"label\">{label}</div></li>";
 
-    private static string RenderInsightCard(PipelineInsight insight)
-    {
-        if (insight is null)
-        {
-            throw new ArgumentNullException(nameof(insight));
-        }
-
-        var builder = new StringBuilder();
-        var badgeClass = GetSeverityBadgeClass(insight.Severity);
-        var badgeText = HtmlEncode(insight.Severity.ToString());
-        var icon = GetSeverityIcon(insight.Severity);
-        var code = HtmlEncode(insight.Code);
-        var title = HtmlEncode(insight.Title);
-        var summary = HtmlEncode(insight.Summary);
-        var affectedObjects = insight.AffectedObjects.IsDefaultOrEmpty
-            ? "—"
-            : string.Join(", ", insight.AffectedObjects
-                .Where(static o => !string.IsNullOrWhiteSpace(o))
-                .Select(HtmlEncode));
-
-        if (string.IsNullOrWhiteSpace(affectedObjects))
-        {
-            affectedObjects = "—";
-        }
-
-        var action = HtmlEncode(insight.SuggestedAction);
-
-        builder.AppendLine("      <li class=\"insight-card\">");
-        builder.AppendLine($"        <div class=\"insight-header\"><span class=\"insight-badge {badgeClass}\">{icon}{badgeText}</span><span class=\"insight-code\">{code}</span></div>");
-        builder.AppendLine($"        <h3>{title}</h3>");
-        builder.AppendLine($"        <p class=\"insight-summary\">{summary}</p>");
-        builder.AppendLine("        <dl class=\"insight-meta\">");
-        builder.AppendLine($"          <dt>Affected objects</dt><dd>{affectedObjects}</dd>");
-        builder.AppendLine($"          <dt>Suggested action</dt><dd>{action}</dd>");
-        builder.AppendLine("        </dl>");
-        if (insight.DocumentationUri is { Length: > 0 } documentationUri)
-        {
-            var link = HtmlEncode(documentationUri);
-            builder.AppendLine($"        <a class=\"insight-doc\" href=\"{link}\">View guidance ↗</a>");
-        }
-        builder.AppendLine("      </li>");
-        return builder.ToString();
-    }
-
-    private static string GetSeverityBadgeClass(PipelineInsightSeverity severity)
-        => severity switch
-        {
-            PipelineInsightSeverity.Info => "severity-info",
-            PipelineInsightSeverity.Advisory => "severity-advisory",
-            PipelineInsightSeverity.Warning => "severity-warning",
-            PipelineInsightSeverity.Critical => "severity-critical",
-            _ => "severity-info"
-        };
-
-    private static string GetSeverityIcon(PipelineInsightSeverity severity)
-        => severity switch
-        {
-            PipelineInsightSeverity.Info => "ℹ️ \u2009",
-            PipelineInsightSeverity.Advisory => "💡 \u2009",
-            PipelineInsightSeverity.Warning => "⚠️ \u2009",
-            PipelineInsightSeverity.Critical => "🚨 \u2009",
-            _ => string.Empty
-        };
-
-    private static string Relativize(string baseDirectory, string path)
-    {
-        try
-        {
-            var relative = Path.GetRelativePath(baseDirectory, path);
-            return string.IsNullOrWhiteSpace(relative) ? Path.GetFileName(path) : relative;
-        }
-        catch
-        {
-            return Path.GetFileName(path);
-        }
-    }
-
-    private static string HtmlEncode(string? value)
-        => WebUtility.HtmlEncode(value ?? string.Empty);
-
-    private static void WriteError(IConsole console, string message)
-    {
-        if (console is null)
-        {
-            return;
-        }
-
-        console.Error.Write(message + Environment.NewLine);
-    }
-
-    private sealed record ModuleSummary(string Module, int Tables, int Indexes, int ForeignKeys);
+    private sealed record ModuleSummary(string Module, int TableCount, int IndexCount, int ForeignKeyCount);
 }

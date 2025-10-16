@@ -8,6 +8,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Emission;
 using Osm.Emission.Seeds;
+using Osm.Json;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
@@ -237,12 +238,30 @@ public class BuildSsdtPipelineStepTests
                     definition,
                     new[]
                     {
-                        StaticEntityRow.Create(new object?[] { 1, "Sample" })
+                        StaticEntityRow.Create(BuildRowValues(definition))
                     }))
                 .Cast<StaticEntityTableData>()
                 .ToList();
 
             return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success(tables));
+        }
+
+        private static object?[] BuildRowValues(StaticEntitySeedTableDefinition definition)
+        {
+            var values = new object?[definition.Columns.Length];
+            for (var i = 0; i < definition.Columns.Length; i++)
+            {
+                var column = definition.Columns[i];
+                if (column.IsIdentity || column.IsPrimaryKey)
+                {
+                    values[i] = i + 1;
+                    continue;
+                }
+
+                values[i] = $"{column.TargetColumnName}_Value";
+            }
+
+            return values;
         }
     }
 }

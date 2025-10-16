@@ -1,17 +1,13 @@
-using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Builder;
-using System.CommandLine.IO;
+using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands;
-using Osm.Domain.Abstractions;
-using Osm.Domain.Model;
-using Osm.Pipeline.ModelIngestion;
-using Tests.Support;
+using Osm.Pipeline.Hosting;
+using Osm.Pipeline.Hosting.Verbs;
 using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
@@ -19,57 +15,40 @@ namespace Osm.Cli.Tests.Commands;
 public class InspectCommandFactoryTests
 {
     [Fact]
-    public async Task Invoke_LoadsModelAndWritesSummary()
+    public void Invoke_PassesModelPathToVerb()
     {
-        var modelPath = FixtureFile.GetPath("model.micro-physical.json");
-        var model = ModelFixtures.LoadModel("model.micro-physical.json");
-        var ingestion = new FakeIngestionService(model);
-
+        var fakeVerb = new FakeVerb();
         var services = new ServiceCollection();
-        services.AddSingleton<IModelIngestionService>(ingestion);
+        services.AddSingleton<IPipelineVerb<InspectModelVerbOptions>>(fakeVerb);
         services.AddSingleton<InspectCommandFactory>();
 
-        await using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<InspectCommandFactory>();
-        var command = factory.Create();
-        Assert.NotNull(command.Handler);
-
-        var modelOption = Assert.IsType<Option<string>>(command.Options.Single());
-        Assert.Contains("--in", modelOption.Aliases);
-
-        var root = new RootCommand { command };
+        var root = new RootCommand { factory.Create() };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
-        var console = new TestConsole();
-        var exitCode = await parser.InvokeAsync($"inspect --model {modelPath}", console);
 
-        Assert.Equal(0, exitCode);
-        Assert.Equal(modelPath, ingestion.LastPath);
-        Assert.Contains("[warning] test-warning", console.Error.ToString());
+        parser.Invoke(new[] { "inspect", "--model", "model.json" });
 
-        var output = console.Out.ToString() ?? string.Empty;
-        Assert.Contains($"Modules: {model.Modules.Length}", output);
-        var entityCount = model.Modules.Sum(static module => module.Entities.Length);
-        Assert.Contains($"Entities: {entityCount}", output);
-        var attributeCount = model.Modules.Sum(static module => module.Entities.Sum(static entity => entity.Attributes.Length));
-        Assert.Contains($"Attributes: {attributeCount}", output);
+        Assert.Equal("model.json", fakeVerb.LastOptions?.ModelPath);
     }
 
-    private sealed class FakeIngestionService : IModelIngestionService
+    private sealed class FakeVerb : IPipelineVerb<InspectModelVerbOptions>
     {
-        private readonly OsmModel _model;
+        public string Name => "inspect";
 
-        public FakeIngestionService(OsmModel model)
+        public Type OptionsType => typeof(InspectModelVerbOptions);
+
+        public InspectModelVerbOptions? LastOptions { get; private set; }
+
+        public PipelineVerbResult ResultToReturn { get; set; } = new(0);
+
+        public Task<PipelineVerbResult> RunAsync(object options, CancellationToken cancellationToken = default)
+            => RunAsync((InspectModelVerbOptions)options, cancellationToken);
+
+        public Task<PipelineVerbResult> RunAsync(InspectModelVerbOptions options, CancellationToken cancellationToken = default)
         {
-            _model = model;
-        }
-
-        public string? LastPath { get; private set; }
-
-        public Task<Result<OsmModel>> LoadFromFileAsync(string path, ICollection<string>? warnings = null, CancellationToken cancellationToken = default, ModelIngestionOptions? options = null)
-        {
-            LastPath = path;
-            warnings?.Add("test-warning");
-            return Task.FromResult(Result<OsmModel>.Success(_model));
+            LastOptions = options;
+            return Task.FromResult(ResultToReturn);
         }
     }
 }

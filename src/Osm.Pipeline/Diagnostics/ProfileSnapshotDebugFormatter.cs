@@ -4,9 +4,9 @@ using System.Linq;
 using System.Text.Json;
 using Osm.Domain.Profiling;
 
-namespace Osm.Cli;
+namespace Osm.Pipeline.Diagnostics;
 
-internal static class ProfileSnapshotDebugFormatter
+public static class ProfileSnapshotDebugFormatter
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

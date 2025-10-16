@@ -84,12 +84,13 @@ public class BuildSsdtPipelineTests
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
         var outputDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
 
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
         var bootstrapper = new FakePipelineBootstrapper(async (_, request, token) =>
         {
             Assert.Equal("Received build-ssdt pipeline request.", request.Telemetry.RequestMessage);
             Assert.Equal("fixture", request.Telemetry.ProfilingStartMetadata["provider"]);
 
-            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            var captureResult = await request.ProfileCaptureAsync(model, token);
             Assert.True(captureResult.IsSuccess);
 
             var error = ValidationError.Create("test.bootstrap.stop", "Bootstrapper halted pipeline for verification.");
@@ -130,11 +131,12 @@ public class BuildSsdtPipelineTests
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var outputDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
 
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
         var bootstrapper = new FakePipelineBootstrapper(async (_, request, token) =>
         {
             Assert.Equal("sql", request.Telemetry.ProfilingStartMetadata["provider"]);
 
-            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            var captureResult = await request.ProfileCaptureAsync(model, token);
             Assert.True(captureResult.IsFailure);
             var captureError = Assert.Single(captureResult.Errors);
             Assert.Equal("pipeline.buildSsdt.sql.connectionString.missing", captureError.Code);
@@ -243,7 +245,9 @@ public class BuildSsdtPipelineTests
         var completedIndex = Array.IndexOf(steps, "pipeline.completed");
         Assert.True(requestIndex >= 0 && completedIndex > requestIndex);
 
-        Assert.True(value.Warnings.IsDefaultOrEmpty);
+        Assert.False(value.Warnings.IsDefaultOrEmpty);
+        Assert.Contains(value.Warnings, warning =>
+            warning.Contains("Schema validation", StringComparison.OrdinalIgnoreCase));
 
         Assert.NotNull(value.EvidenceCache);
         Assert.True(Directory.Exists(value.EvidenceCache!.CacheDirectory));

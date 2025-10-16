@@ -60,27 +60,37 @@
     "ForeignKeyCount": 2,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
-      "DATA_HAS_ORPHANS": 1,
-      "DELETE_RULE_IGNORE": 1,
-      "DEFAULT_PRESENT": 2,
-      "UNIQUE_NO_NULLS": 2,
-      "FK_ENFORCED": 1,
+      "PHYSICAL_NOT_NULL": 4,
       "DATA_NO_NULLS": 10,
       "PK": 4,
+      "DEFAULT_PRESENT": 2,
       "MANDATORY": 10,
-      "PHYSICAL_NOT_NULL": 4,
-      "PROFILE_MISSING": 1
+      "PROFILE_MISSING": 1,
+      "FK_ENFORCED": 1,
+      "DATA_HAS_ORPHANS": 1,
+      "UNIQUE_NO_NULLS": 2,
+      "DELETE_RULE_IGNORE": 1
     },
     "UniqueIndexRationales": {
-      "UNIQUE_NO_NULLS": 2,
-      "PHYSICAL_UNIQUE_KEY": 2
+      "PHYSICAL_UNIQUE_KEY": 2,
+      "UNIQUE_NO_NULLS": 2
     },
     "ForeignKeyRationales": {
       "DATA_HAS_ORPHANS": 1,
-      "DELETE_RULE_IGNORE": 1,
-      "DB_CONSTRAINT_PRESENT": 1
+      "DB_CONSTRAINT_PRESENT": 1,
+      "DELETE_RULE_IGNORE": 1
     },
     "ModuleRollups": {
+      "AppCore": {
+        "ColumnCount": 9,
+        "TightenedColumnCount": 6,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 1,
+        "UniqueIndexesEnforcedCount": 1,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 1,
+        "ForeignKeysCreatedCount": 1
+      },
       "ExtBilling": {
         "ColumnCount": 3,
         "TightenedColumnCount": 2,
@@ -100,16 +110,6 @@
         "UniqueIndexesRequireRemediationCount": 0,
         "ForeignKeyCount": 1,
         "ForeignKeysCreatedCount": 0
-      },
-      "AppCore": {
-        "ColumnCount": 9,
-        "TightenedColumnCount": 6,
-        "RemediationColumnCount": 0,
-        "UniqueIndexCount": 1,
-        "UniqueIndexesEnforcedCount": 1,
-        "UniqueIndexesRequireRemediationCount": 0,
-        "ForeignKeyCount": 1,
-        "ForeignKeysCreatedCount": 1
       }
     },
     "TogglePrecedence": {
@@ -153,7 +153,7 @@
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "13ab16133d53404175eeb5a7d281696e9db2b3fba42cb85c1129d3c44d6d2291"
+    "Hash": "a22d6cf03f191e51d1512cc75577bb77c7716a6e2cd8029b37485d1bd07ca5af"
   },
   "PreRemediation": [],
   "Coverage": {

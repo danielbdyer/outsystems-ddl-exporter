@@ -4,11 +4,11 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 
-namespace Osm.Cli;
+namespace Osm.Pipeline.Hosting.Verbs;
 
-public sealed class UatUsersOptions
+public sealed class UatUsersVerbOptions
 {
-    public UatUsersOptions(
+    public UatUsersVerbOptions(
         string? modelPath,
         string? uatConnectionString,
         bool fromLiveMetadata,

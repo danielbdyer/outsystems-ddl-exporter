@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -53,9 +54,15 @@ public sealed class BuildSsdtRequestAssemblerTests
     public void Assemble_ComposesCacheMetadata()
     {
         var assembler = new BuildSsdtRequestAssembler();
+        var sqlConfiguration = new SqlConfiguration(
+            "Server=.;Database=Osm;",
+            CommandTimeoutSeconds: null,
+            SqlSamplingConfiguration.Empty,
+            SqlAuthenticationConfiguration.Empty);
         var configuration = CreateConfiguration(
             cache: new CacheConfiguration("  cache-root  ", true),
-            profiler: new ProfilerConfiguration("fixture", "config.profile", null));
+            profiler: new ProfilerConfiguration("fixture", "config.profile", null),
+            sql: sqlConfiguration);
         var overrides = new BuildSsdtOverrides(
             ModelPath: null,
             ProfilePath: "override.profile",
@@ -69,6 +76,7 @@ public sealed class BuildSsdtRequestAssemblerTests
         var moduleFilterResult = ModuleFilterOptions.Create(new[] { "AppCore", "Ops" }, includeSystemModules: false, includeInactiveModules: false);
         Assert.True(moduleFilterResult.IsSuccess);
         var moduleFilter = moduleFilterResult.Value;
+        Assert.False(moduleFilter.Modules.IsDefaultOrEmpty);
 
         var context = CreateContext(
             configuration,
@@ -88,8 +96,24 @@ public sealed class BuildSsdtRequestAssemblerTests
         Assert.Equal("model.json", cache.ModelPath);
         Assert.Equal("override.profile", cache.ProfilePath);
         Assert.NotNull(cache.Metadata);
-        Assert.Equal("filtered", cache.Metadata!["moduleFilter.selectionScope"]);
-        var connectionHash = cache.Metadata["sql.connectionHash"];
+        Assert.True(cache.Metadata!.TryGetValue("moduleFilter.selectionScope", out var selectionScope));
+        Assert.Equal("filtered", selectionScope);
+        Assert.True(cache.Metadata.TryGetValue("moduleFilter.modules", out var moduleList));
+        Assert.Equal("AppCore,Ops", moduleList);
+        Assert.True(cache.Metadata.TryGetValue("moduleFilter.moduleCount", out var moduleCount));
+        Assert.Equal("2", moduleCount);
+        Assert.True(cache.Metadata.TryGetValue("moduleFilter.modulesHash", out var moduleHash));
+        Assert.False(string.IsNullOrWhiteSpace(moduleHash));
+        Assert.Equal(64, moduleHash!.Length);
+        Assert.True(cache.Metadata.TryGetValue("inputs.model", out var modelInput));
+        Assert.Equal(Path.GetFullPath("model.json"), modelInput);
+        Assert.True(cache.Metadata.TryGetValue("inputs.profile", out var profileInput));
+        Assert.Equal(Path.GetFullPath("override.profile"), profileInput);
+        Assert.True(cache.Metadata.TryGetValue("cache.root", out var cacheRoot));
+        Assert.Equal(Path.GetFullPath("  cache-root  "), cacheRoot);
+        Assert.True(cache.Metadata.TryGetValue("cache.refreshRequested", out var refreshRequested));
+        Assert.Equal(bool.TrueString, refreshRequested);
+        Assert.True(cache.Metadata.TryGetValue("sql.connectionHash", out var connectionHash));
         Assert.False(string.IsNullOrWhiteSpace(connectionHash));
         Assert.Equal(64, connectionHash!.Length);
     }
@@ -150,7 +174,8 @@ public sealed class BuildSsdtRequestAssemblerTests
 
     private static CliConfiguration CreateConfiguration(
         CacheConfiguration? cache = null,
-        ProfilerConfiguration? profiler = null)
+        ProfilerConfiguration? profiler = null,
+        SqlConfiguration? sql = null)
     {
         return new CliConfiguration(
             TighteningOptions.Default,
@@ -159,7 +184,7 @@ public sealed class BuildSsdtRequestAssemblerTests
             DmmPath: null,
             cache ?? CacheConfiguration.Empty,
             profiler ?? ProfilerConfiguration.Empty,
-            SqlConfiguration.Empty,
+            sql ?? SqlConfiguration.Empty,
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty);

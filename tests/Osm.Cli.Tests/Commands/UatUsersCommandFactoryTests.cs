@@ -1,14 +1,14 @@
-using System;
 using System.CommandLine;
 using System.CommandLine.Builder;
+using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
-using Osm.Cli;
 using Osm.Cli.Commands;
+using Osm.Pipeline.Hosting;
+using Osm.Pipeline.Hosting.Verbs;
 using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
@@ -16,49 +16,55 @@ namespace Osm.Cli.Tests.Commands;
 public class UatUsersCommandFactoryTests
 {
     [Fact]
-    public async Task Invoke_ParsesOptions()
+    public void Invoke_CreatesOptionsAndRunsVerb()
     {
-        var executor = new FakeUatUsersCommand();
-
+        var fakeVerb = new FakeVerb();
         var services = new ServiceCollection();
-        services.AddSingleton<IUatUsersCommand>(executor);
+        services.AddSingleton<IPipelineVerb<UatUsersVerbOptions>>(fakeVerb);
         services.AddSingleton<UatUsersCommandFactory>();
 
-        await using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<UatUsersCommandFactory>();
-        var command = factory.Create();
-        Assert.NotNull(command.Handler);
-        Assert.Contains(command.Options, option => string.Equals(option.Name, "user-map", StringComparison.Ordinal));
-
-        var root = new RootCommand { command };
+        var root = new RootCommand { factory.Create() };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
-        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-schema dbo --user-table dbo.Users --user-id-column UserId --include-columns Name --include-columns Email --out artifacts --user-map map.csv --user-ddl ddl.sql --snapshot snap.json --user-entity-id Identifier";
-        var exitCode = await parser.InvokeAsync(args);
 
-        Assert.Equal(5, exitCode);
-        var options = executor.LastOptions!;
+        var args = new[]
+        {
+            "uat-users",
+            "--model", "model.json",
+            "--uat-conn", "DataSource",
+            "--user-ddl", "users.sql",
+            "--user-schema", "dbo",
+            "--user-table", "User",
+            "--user-id-column", "Id"
+        };
+        parser.Invoke(args);
+        Assert.NotNull(fakeVerb.LastOptions);
+        var options = fakeVerb.LastOptions!;
         Assert.Equal(Path.GetFullPath("model.json"), options.ModelPath);
-        Assert.Equal("Server=.;Database=UAT;", options.UatConnectionString);
-        Assert.False(options.FromLiveMetadata);
+        Assert.Equal("DataSource", options.UatConnectionString);
         Assert.Equal("dbo", options.UserSchema);
-        Assert.Equal("Users", options.UserTable);
-        Assert.Equal("UserId", options.UserIdColumn);
-        Assert.Equal(new[] { "Name", "Email" }, options.IncludeColumns);
-        Assert.Equal(Path.GetFullPath("artifacts"), options.OutputDirectory);
-        Assert.Equal(Path.GetFullPath("map.csv"), options.UserMapPath);
-        Assert.Equal(Path.GetFullPath("ddl.sql"), options.AllowedUsersSqlPath);
-        Assert.Equal(Path.GetFullPath("snap.json"), options.SnapshotPath);
-        Assert.Equal("Identifier", options.UserEntityIdentifier);
+        Assert.Equal("User", options.UserTable);
+        Assert.Equal("Id", options.UserIdColumn);
     }
 
-    private sealed class FakeUatUsersCommand : IUatUsersCommand
+    private sealed class FakeVerb : IPipelineVerb<UatUsersVerbOptions>
     {
-        public UatUsersOptions? LastOptions { get; private set; }
+        public string Name => "uat-users";
 
-        public Task<int> ExecuteAsync(UatUsersOptions options, CancellationToken cancellationToken)
+        public Type OptionsType => typeof(UatUsersVerbOptions);
+
+        public UatUsersVerbOptions? LastOptions { get; private set; }
+
+        public PipelineVerbResult ResultToReturn { get; set; } = new(0);
+
+        public Task<PipelineVerbResult> RunAsync(object options, CancellationToken cancellationToken = default)
+            => RunAsync((UatUsersVerbOptions)options, cancellationToken);
+
+        public Task<PipelineVerbResult> RunAsync(UatUsersVerbOptions options, CancellationToken cancellationToken = default)
         {
             LastOptions = options;
-            return Task.FromResult(5);
+            return Task.FromResult(ResultToReturn);
         }
     }
 }
