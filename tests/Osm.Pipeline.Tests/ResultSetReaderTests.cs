@@ -58,6 +58,24 @@ public class ResultSetReaderTests
         Assert.Null(result[0].Flag);
     }
 
+    [Fact]
+    public void GetRequiredString_ShouldThrowInvalidOperationException_WhenColumnIsNull()
+    {
+        var rows = new[]
+        {
+            new object?[] { null }
+        };
+
+        using var reader = new SingleResultSetDataReader(rows);
+        Assert.True(reader.Read());
+        var row = new DbRow(reader);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => row.GetRequiredString(0, "TestColumn"));
+
+        Assert.Contains("TestColumn", exception.Message);
+        Assert.Contains("ordinal 0", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed record TestRow(int Id, string Name, bool Flag, Guid? Token);
 
     private sealed record NullableRow(int Id, string? Name, bool? Flag);
