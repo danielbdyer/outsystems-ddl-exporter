@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Osm.Pipeline.Evidence;
 
@@ -44,6 +46,11 @@ public sealed class EvidenceCacheServiceTests
         Assert.False(string.IsNullOrWhiteSpace(cache.Manifest.Key));
         Assert.Equal("build-ssdt", cache.Manifest.Command);
         Assert.Equal(new DateTimeOffset(2024, 08, 01, 12, 30, 00, TimeSpan.Zero), cache.Manifest.CreatedAtUtc);
+        Assert.Equal(cache.Manifest.CreatedAtUtc, cache.Manifest.LastValidatedAtUtc);
+        Assert.Null(cache.Manifest.ExpiresAtUtc);
+        Assert.Equal(EvidenceCacheOutcome.Created, cache.Evaluation.Outcome);
+        Assert.Equal(EvidenceCacheInvalidationReason.ManifestMissing, cache.Evaluation.Reason);
+        Assert.Equal("manifest.missing", cache.Evaluation.Metadata["reason"]);
         Assert.Equal("EvidenceGated", cache.Manifest.Metadata["policy.mode"]);
 
         var modelArtifact = Assert.Single(cache.Manifest.Artifacts.Where(static a => a.Type == EvidenceArtifactType.Model));
@@ -108,6 +115,7 @@ public sealed class EvidenceCacheServiceTests
         Assert.Equal(first.Value.Manifest.Key, second.Value.Manifest.Key);
         Assert.Equal(first.Value.Manifest.Command, second.Value.Manifest.Command);
         Assert.Equal(first.Value.Manifest.CreatedAtUtc, second.Value.Manifest.CreatedAtUtc);
+        Assert.Equal(new DateTimeOffset(2024, 08, 02, 10, 01, 00, TimeSpan.Zero), second.Value.Manifest.LastValidatedAtUtc);
         Assert.Equal(
             first.Value.Manifest.Metadata.OrderBy(static pair => pair.Key, StringComparer.Ordinal),
             second.Value.Manifest.Metadata.OrderBy(static pair => pair.Key, StringComparer.Ordinal));
@@ -116,7 +124,12 @@ public sealed class EvidenceCacheServiceTests
             second.Value.Manifest.Artifacts.OrderBy(static artifact => artifact.Type));
         Assert.Equal(initialManifestTimestamp, fileSystem.File.GetLastWriteTimeUtc(manifestPath));
         Assert.Equal(initialModelTimestamp, fileSystem.File.GetLastWriteTimeUtc(modelArtifactPath));
-        Assert.Equal(1, callCount);
+        Assert.Equal(2, callCount);
+
+        Assert.Equal(EvidenceCacheOutcome.Created, first.Value.Evaluation.Outcome);
+        Assert.Equal(EvidenceCacheOutcome.Reused, second.Value.Evaluation.Outcome);
+        Assert.Equal(EvidenceCacheInvalidationReason.None, second.Value.Evaluation.Reason);
+        Assert.Equal("cache.reused", second.Value.Evaluation.Metadata["reason"]);
     }
 
     [Fact]
@@ -153,6 +166,8 @@ public sealed class EvidenceCacheServiceTests
         Assert.True(second.IsSuccess);
         Assert.Equal(first.Value.Manifest.Key, second.Value.Manifest.Key);
         Assert.Equal(first.Value.CacheDirectory, second.Value.CacheDirectory);
+        Assert.Equal(EvidenceCacheOutcome.Created, first.Value.Evaluation.Outcome);
+        Assert.Equal(EvidenceCacheOutcome.Reused, second.Value.Evaluation.Outcome);
 
         var aggressiveRequest = baseRequest with
         {
@@ -199,6 +214,7 @@ public sealed class EvidenceCacheServiceTests
         var cacheDir = initial.Value.CacheDirectory;
         var modelPath = fileSystem.Path.Combine(cacheDir, "model.json");
         var initialModelTimestamp = fileSystem.File.GetLastWriteTimeUtc(modelPath);
+        Assert.Equal(EvidenceCacheOutcome.Created, initial.Value.Evaluation.Outcome);
 
         fileSystem.AddFile(fileSystem.Path.Combine(cacheDir, "stale.tmp"), new MockFileData("old"));
 
@@ -206,9 +222,187 @@ public sealed class EvidenceCacheServiceTests
         Assert.True(refreshed.IsSuccess);
         Assert.False(fileSystem.File.Exists(fileSystem.Path.Combine(cacheDir, "stale.tmp")));
         Assert.Equal(new DateTimeOffset(2024, 08, 02, 12, 00, 00, TimeSpan.Zero), refreshed.Value.Manifest.CreatedAtUtc);
+        Assert.Equal(EvidenceCacheOutcome.Created, refreshed.Value.Evaluation.Outcome);
+        Assert.Equal(EvidenceCacheInvalidationReason.RefreshRequested, refreshed.Value.Evaluation.Reason);
+        Assert.Equal("refresh.requested", refreshed.Value.Evaluation.Metadata["reason"]);
 
         var refreshedModelTimestamp = fileSystem.File.GetLastWriteTimeUtc(modelPath);
         Assert.NotEqual(initialModelTimestamp, refreshedModelTimestamp);
+        Assert.Empty(timestamps);
+    }
+
+    [Fact]
+    public async Task CacheAsync_ShouldExpireCache_WhenTtlElapsed()
+    {
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            ["/inputs/model.json"] = new MockFileData("{\"model\":true}"),
+        });
+
+        var request = new EvidenceCacheRequest(
+            RootDirectory: "/cache",
+            Command: "build-ssdt",
+            ModelPath: "/inputs/model.json",
+            ProfilePath: null,
+            DmmPath: null,
+            ConfigPath: null,
+            Metadata: new Dictionary<string, string?>
+            {
+                ["cache.ttlSeconds"] = "3600",
+            },
+            Refresh: false);
+
+        var timestamps = new Queue<DateTimeOffset>(new[]
+        {
+            new DateTimeOffset(2024, 08, 03, 08, 00, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 03, 10, 00, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 03, 11, 00, 00, TimeSpan.Zero),
+        });
+
+        var service = new EvidenceCacheService(fileSystem, () => timestamps.Dequeue());
+
+        var initial = await service.CacheAsync(request);
+        Assert.True(initial.IsSuccess);
+        Assert.Equal(new DateTimeOffset(2024, 08, 03, 09, 00, 00, TimeSpan.Zero), initial.Value.Manifest.ExpiresAtUtc);
+        Assert.Equal(EvidenceCacheInvalidationReason.ManifestMissing, initial.Value.Evaluation.Reason);
+
+        var expired = await service.CacheAsync(request);
+        Assert.True(expired.IsSuccess);
+        Assert.Equal(EvidenceCacheOutcome.Created, expired.Value.Evaluation.Outcome);
+        Assert.Equal(EvidenceCacheInvalidationReason.ManifestExpired, expired.Value.Evaluation.Reason);
+        Assert.Equal("manifest.expired", expired.Value.Evaluation.Metadata["reason"]);
+        Assert.Equal(new DateTimeOffset(2024, 08, 03, 12, 00, 00, TimeSpan.Zero), expired.Value.Manifest.ExpiresAtUtc);
+        Assert.Empty(timestamps);
+    }
+
+    [Fact]
+    public async Task CacheAsync_ShouldInvalidateCache_WhenModuleSelectionChanges()
+    {
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            ["/inputs/model.json"] = new MockFileData("{\"model\":true}"),
+        });
+
+        var baseMetadata = new Dictionary<string, string?>
+        {
+            ["moduleFilter.modules"] = "ModuleA,ModuleB",
+            ["moduleFilter.moduleCount"] = "2",
+        };
+
+        var request = new EvidenceCacheRequest(
+            RootDirectory: "/cache",
+            Command: "build-ssdt",
+            ModelPath: "/inputs/model.json",
+            ProfilePath: null,
+            DmmPath: null,
+            ConfigPath: null,
+            Metadata: baseMetadata,
+            Refresh: false);
+
+        var timestamps = new Queue<DateTimeOffset>(new[]
+        {
+            new DateTimeOffset(2024, 08, 04, 08, 00, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 04, 09, 30, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 04, 09, 45, 00, TimeSpan.Zero),
+        });
+
+        var service = new EvidenceCacheService(fileSystem, () => timestamps.Dequeue());
+
+        var initial = await service.CacheAsync(request);
+        Assert.True(initial.IsSuccess);
+        Assert.Equal(EvidenceCacheInvalidationReason.ManifestMissing, initial.Value.Evaluation.Reason);
+
+        var manifestPath = fileSystem.Path.Combine(initial.Value.CacheDirectory, "manifest.json");
+        var manifestJson = fileSystem.File.ReadAllText(manifestPath);
+        var manifest = JsonSerializer.Deserialize<EvidenceCacheManifest>(manifestJson)!;
+
+        var tamperedSelection = new EvidenceCacheModuleSelection(
+            manifest.ModuleSelection?.IncludeSystemModules ?? true,
+            manifest.ModuleSelection?.IncludeInactiveModules ?? true,
+            1,
+            manifest.ModuleSelection?.ModulesHash,
+            new[] { "ModuleA" });
+
+        var tamperedManifest = manifest with { ModuleSelection = tamperedSelection };
+        fileSystem.File.WriteAllText(
+            manifestPath,
+            JsonSerializer.Serialize(tamperedManifest, new JsonSerializerOptions { WriteIndented = true }));
+
+        Assert.True(fileSystem.File.Exists(manifestPath));
+        var reloaded = JsonSerializer.Deserialize<EvidenceCacheManifest>(fileSystem.File.ReadAllText(manifestPath));
+        Assert.NotNull(reloaded);
+        Assert.Equal(1, reloaded!.ModuleSelection?.ModuleCount);
+        await using (var stream = fileSystem.File.Open(manifestPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            var asyncReloaded = await JsonSerializer.DeserializeAsync<EvidenceCacheManifest>(stream);
+            Assert.NotNull(asyncReloaded);
+            Assert.Equal(1, asyncReloaded!.ModuleSelection?.ModuleCount);
+        }
+
+        var narrowed = await service.CacheAsync(request);
+
+        Assert.True(narrowed.IsSuccess);
+        Assert.Equal(initial.Value.CacheDirectory, narrowed.Value.CacheDirectory);
+        Assert.Equal(initial.Value.Manifest.Key, narrowed.Value.Manifest.Key);
+        Assert.Equal(EvidenceCacheOutcome.Created, narrowed.Value.Evaluation.Outcome);
+        var actualReason = narrowed.Value.Evaluation.Reason;
+        var metadataReason = narrowed.Value.Evaluation.Metadata.TryGetValue("reason", out var reasonValue)
+            ? reasonValue
+            : null;
+        Assert.Equal(EvidenceCacheInvalidationReason.ModuleSelectionChanged, actualReason);
+        Assert.Equal("module.selection.changed", metadataReason);
+        Assert.Empty(timestamps);
+    }
+
+    [Fact]
+    public async Task CacheAsync_ShouldInvalidateCache_WhenMetadataDiffers()
+    {
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            ["/inputs/model.json"] = new MockFileData("{\"model\":true}"),
+        });
+
+        var baseMetadata = new Dictionary<string, string?>
+        {
+            ["policy.mode"] = "EvidenceGated",
+        };
+
+        var request = new EvidenceCacheRequest(
+            RootDirectory: "/cache",
+            Command: "build-ssdt",
+            ModelPath: "/inputs/model.json",
+            ProfilePath: null,
+            DmmPath: null,
+            ConfigPath: null,
+            Metadata: baseMetadata,
+            Refresh: false);
+
+        var timestamps = new Queue<DateTimeOffset>(new[]
+        {
+            new DateTimeOffset(2024, 08, 05, 07, 00, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 05, 08, 00, 00, TimeSpan.Zero),
+            new DateTimeOffset(2024, 08, 05, 08, 15, 00, TimeSpan.Zero),
+        });
+
+        var service = new EvidenceCacheService(fileSystem, () => timestamps.Dequeue());
+
+        var initial = await service.CacheAsync(request);
+        Assert.True(initial.IsSuccess);
+        Assert.Equal(EvidenceCacheInvalidationReason.ManifestMissing, initial.Value.Evaluation.Reason);
+
+        var aggressiveRequest = request with
+        {
+            Metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["policy.mode"] = "Aggressive",
+            }
+        };
+
+        var rebuilt = await service.CacheAsync(aggressiveRequest);
+        Assert.True(rebuilt.IsSuccess);
+        Assert.Equal(EvidenceCacheOutcome.Created, rebuilt.Value.Evaluation.Outcome);
+        Assert.Equal(EvidenceCacheInvalidationReason.MetadataMismatch, rebuilt.Value.Evaluation.Reason);
+        Assert.Equal("metadata.mismatch", rebuilt.Value.Evaluation.Metadata["reason"]);
         Assert.Empty(timestamps);
     }
 

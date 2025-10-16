@@ -45,7 +45,21 @@ internal static class CacheMetadataBuilder
 
         if (!moduleFilter.Modules.IsDefaultOrEmpty)
         {
-            metadata["moduleFilter.modules"] = string.Join(",", moduleFilter.Modules.Select(static module => module.Value));
+            var normalizedModules = moduleFilter.Modules
+                .Select(static module => module.Value)
+                .OrderBy(static module => module, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            metadata["moduleFilter.modules"] = string.Join(",", normalizedModules);
+            metadata["moduleFilter.moduleCount"] = normalizedModules.Length.ToString(CultureInfo.InvariantCulture);
+            metadata["moduleFilter.modulesHash"] = ComputeSha256(string.Join(";", normalizedModules));
+            metadata["moduleFilter.selectionScope"] = "filtered";
+        }
+        else
+        {
+            metadata["moduleFilter.moduleCount"] = "0";
+            metadata["moduleFilter.modulesHash"] = ComputeSha256("::all-modules::");
+            metadata["moduleFilter.selectionScope"] = "all";
         }
 
         if (!string.IsNullOrWhiteSpace(options.Mocking.ProfileMockFolder))

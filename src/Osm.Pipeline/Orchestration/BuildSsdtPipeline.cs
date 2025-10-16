@@ -161,15 +161,30 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             }
 
             cacheResult = cacheExecution.Value;
-            log.Record(
-                "evidence.cache.persisted",
-                "Persisted evidence cache manifest.",
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["cacheDirectory"] = cacheResult.CacheDirectory,
-                    ["artifactCount"] = cacheResult.Manifest.Artifacts.Count.ToString(CultureInfo.InvariantCulture),
-                    ["cacheKey"] = cacheResult.Manifest.Key
-                });
+            var cacheEvaluation = cacheResult.Evaluation;
+            var cacheMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["cacheDirectory"] = cacheResult.CacheDirectory,
+                ["artifactCount"] = cacheResult.Manifest.Artifacts.Count.ToString(CultureInfo.InvariantCulture),
+                ["cacheKey"] = cacheResult.Manifest.Key,
+                ["cacheOutcome"] = cacheEvaluation.Outcome.ToString(),
+                ["cacheReason"] = cacheEvaluation.Reason.ToString(),
+            };
+
+            foreach (var pair in cacheEvaluation.Metadata)
+            {
+                cacheMetadata[pair.Key] = pair.Value;
+            }
+
+            var cacheEvent = cacheEvaluation.Outcome == EvidenceCacheOutcome.Reused
+                ? "evidence.cache.reused"
+                : "evidence.cache.persisted";
+
+            var cacheMessage = cacheEvaluation.Outcome == EvidenceCacheOutcome.Reused
+                ? "Reused evidence cache manifest."
+                : "Persisted evidence cache manifest.";
+
+            log.Record(cacheEvent, cacheMessage, cacheMetadata);
         }
         else
         {
