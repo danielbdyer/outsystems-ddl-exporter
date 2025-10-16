@@ -23,6 +23,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
     private readonly BuildSsdtPolicyDecisionStep _policyStep;
     private readonly BuildSsdtEmissionStep _emissionStep;
     private readonly BuildSsdtStaticSeedStep _staticSeedStep;
+    private readonly PipelineExecutionLogWriter _logWriter;
 
     public BuildSsdtPipeline(
         IPipelineBootstrapper? bootstrapper = null,
@@ -36,7 +37,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
         EmissionFingerprintCalculator? fingerprintCalculator = null,
         TimeProvider? timeProvider = null,
-        IDataProfilerFactory? dataProfilerFactory = null)
+        IDataProfilerFactory? dataProfilerFactory = null,
+        PipelineExecutionLogWriter? logWriter = null)
     {
         var resolvedBootstrapper = bootstrapper ?? new PipelineBootstrapper();
         var resolvedTighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
@@ -59,6 +61,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         _emissionStep = new BuildSsdtEmissionStep(resolvedSmoModelFactory, resolvedEmitter, resolvedDecisionLogWriter, resolvedFingerprintCalculator);
         _staticSeedStep = new BuildSsdtStaticSeedStep(resolvedSeedGenerator, resolvedSeedTemplate);
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _logWriter = logWriter ?? new PipelineExecutionLogWriter();
     }
 
     public async Task<Result<BuildSsdtPipelineResult>> HandleAsync(
@@ -115,6 +118,13 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 ["cacheDirectory"] = context.EvidenceCache?.CacheDirectory
             });
 
+        var executionLog = context.Log.Build();
+        var logWriteResult = await _logWriter.WriteAsync(
+            context.TelemetryDirectory,
+            executionLog,
+            context.PipelineWarnings,
+            cancellationToken).ConfigureAwait(false);
+
         return new BuildSsdtPipelineResult(
             context.Profile!,
             context.DecisionReport!,
@@ -122,7 +132,9 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             context.DecisionLogPath!,
             context.StaticSeedScriptPaths,
             context.EvidenceCache,
-            context.Log.Build(),
-            context.PipelineWarnings);
+            executionLog,
+            context.PipelineWarnings,
+            logWriteResult.LogPath,
+            logWriteResult.WarningsPath);
     }
 }

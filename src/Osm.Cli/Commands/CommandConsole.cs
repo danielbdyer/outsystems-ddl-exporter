@@ -76,6 +76,24 @@ internal static class CommandConsole
         }
     }
 
+    public static void EmitPipelineTelemetryArtifacts(IConsole console, string executionLogPath, string warningsPath)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (!string.IsNullOrWhiteSpace(executionLogPath))
+        {
+            WriteLine(console, $"Pipeline log written to {executionLogPath}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(warningsPath))
+        {
+            WriteLine(console, $"Pipeline warnings written to {warningsPath}");
+        }
+    }
+
     public static void EmitSqlProfilerSnapshot(IConsole console, ProfileSnapshot snapshot)
     {
         WriteLine(console, "SQL profiler snapshot:");

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using System.IO;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Emission;
@@ -14,11 +15,20 @@ public sealed class BuildSsdtPipelineContext
     {
         Request = request ?? throw new ArgumentNullException(nameof(request));
         Log = log ?? throw new ArgumentNullException(nameof(log));
+        TelemetryDirectory = Path.Combine(Request.OutputDirectory, "telemetry");
+        PipelineLogPath = Path.Combine(TelemetryDirectory, PipelineExecutionLogWriter.LogFileName);
+        PipelineWarningsPath = Path.Combine(TelemetryDirectory, PipelineExecutionLogWriter.WarningsFileName);
     }
 
     public BuildSsdtPipelineRequest Request { get; }
 
     public PipelineExecutionLogBuilder Log { get; }
+
+    public string TelemetryDirectory { get; }
+
+    public string PipelineLogPath { get; }
+
+    public string PipelineWarningsPath { get; }
 
     public PipelineBootstrapContext? BootstrapContext { get; private set; }
 

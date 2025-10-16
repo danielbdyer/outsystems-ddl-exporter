@@ -138,6 +138,10 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
 
         CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
         CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
+        CommandConsole.EmitPipelineTelemetryArtifacts(
+            context.Console,
+            pipelineResult.ExecutionLogPath,
+            pipelineResult.PipelineWarningsPath);
 
         foreach (var diagnostic in pipelineResult.DecisionReport.Diagnostics)
         {

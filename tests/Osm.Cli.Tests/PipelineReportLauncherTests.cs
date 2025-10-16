@@ -86,13 +86,19 @@ public class PipelineReportLauncherTests
             seedPaths,
             null,
             PipelineExecutionLog.Empty,
-            ImmutableArray<string>.Empty);
+            ImmutableArray<string>.Empty,
+            Path.Combine(output.Path, "telemetry", "pipeline-log.json"),
+            Path.Combine(output.Path, "telemetry", "pipeline-warnings.json"));
 
         foreach (var seedPath in seedPaths)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(seedPath)!);
             await File.WriteAllTextAsync(seedPath, string.Empty);
         }
+
+        Directory.CreateDirectory(Path.Combine(output.Path, "telemetry"));
+        await File.WriteAllTextAsync(Path.Combine(output.Path, "telemetry", "pipeline-log.json"), "{}");
+        await File.WriteAllTextAsync(Path.Combine(output.Path, "telemetry", "pipeline-warnings.json"), "[]");
 
         await File.WriteAllTextAsync(Path.Combine(output.Path, "policy-decisions.json"), "{}");
         await File.WriteAllTextAsync(Path.Combine(output.Path, "dmm-diff.json"), "{}");

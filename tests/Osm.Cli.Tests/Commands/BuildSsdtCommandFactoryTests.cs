@@ -135,7 +135,9 @@ public class BuildSsdtCommandFactoryTests
                 ImmutableArray<string>.Empty,
                 null,
                 PipelineExecutionLog.Empty,
-                ImmutableArray<string>.Empty);
+                ImmutableArray<string>.Empty,
+                "telemetry/pipeline-log.json",
+                "telemetry/pipeline-warnings.json");
 
             return new BuildSsdtApplicationResult(
                 pipelineResult,

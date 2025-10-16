@@ -165,6 +165,10 @@ public class BuildSsdtPipelineTests
         Assert.NotNull(value.ExecutionLog);
         Assert.True(value.ExecutionLog.Entries.Count > 0);
         Assert.Contains(value.ExecutionLog.Entries, entry => entry.Step == "pipeline.completed");
+        Assert.Equal(Path.Combine(output.Path, "telemetry", "pipeline-log.json"), value.ExecutionLogPath);
+        Assert.Equal(Path.Combine(output.Path, "telemetry", "pipeline-warnings.json"), value.PipelineWarningsPath);
+        Assert.True(File.Exists(value.ExecutionLogPath));
+        Assert.True(File.Exists(value.PipelineWarningsPath));
 
         var steps = value.ExecutionLog.Entries.Select(entry => entry.Step).ToArray();
         Assert.Contains("request.received", steps);
@@ -185,6 +189,22 @@ public class BuildSsdtPipelineTests
         Assert.True(requestIndex >= 0 && completedIndex > requestIndex);
 
         Assert.True(value.Warnings.IsDefaultOrEmpty);
+
+        var logJson = await File.ReadAllTextAsync(value.ExecutionLogPath);
+        using var logDocument = JsonDocument.Parse(logJson);
+        var entriesElement = logDocument.RootElement.GetProperty("Entries");
+        Assert.Equal(JsonValueKind.Array, entriesElement.ValueKind);
+        Assert.True(entriesElement.GetArrayLength() > 0);
+        var firstEntry = entriesElement[0];
+        Assert.Equal(JsonValueKind.String, firstEntry.GetProperty("TimestampUtc").ValueKind);
+        Assert.Equal(JsonValueKind.String, firstEntry.GetProperty("Step").ValueKind);
+        Assert.Equal(JsonValueKind.String, firstEntry.GetProperty("Message").ValueKind);
+        Assert.Equal(JsonValueKind.Object, firstEntry.GetProperty("Metadata").ValueKind);
+
+        var warningsJson = await File.ReadAllTextAsync(value.PipelineWarningsPath);
+        using var warningsDocument = JsonDocument.Parse(warningsJson);
+        Assert.Equal(JsonValueKind.Array, warningsDocument.RootElement.ValueKind);
+        Assert.Equal(0, warningsDocument.RootElement.GetArrayLength());
 
         Assert.NotNull(value.EvidenceCache);
         Assert.True(Directory.Exists(value.EvidenceCache!.CacheDirectory));
