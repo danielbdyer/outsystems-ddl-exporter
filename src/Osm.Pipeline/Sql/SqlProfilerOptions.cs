@@ -1,4 +1,5 @@
 using System;
+using Osm.Domain.Configuration;
 
 namespace Osm.Pipeline.Sql;
 
@@ -8,10 +9,12 @@ public sealed record SqlProfilerOptions
         int? commandTimeoutSeconds,
         SqlSamplingOptions sampling,
         int maxConcurrentTableProfiles,
-        SqlProfilerLimits limits)
+        SqlProfilerLimits limits,
+        NamingOverrideOptions namingOverrides)
     {
         Sampling = sampling ?? throw new ArgumentNullException(nameof(sampling));
         Limits = limits ?? throw new ArgumentNullException(nameof(limits));
+        NamingOverrides = namingOverrides ?? throw new ArgumentNullException(nameof(namingOverrides));
 
         if (maxConcurrentTableProfiles <= 0)
         {
@@ -30,5 +33,12 @@ public sealed record SqlProfilerOptions
 
     public SqlProfilerLimits Limits { get; init; }
 
-    public static SqlProfilerOptions Default { get; } = new(null, SqlSamplingOptions.Default, 4, SqlProfilerLimits.Default);
+    public NamingOverrideOptions NamingOverrides { get; init; }
+
+    public static SqlProfilerOptions Default { get; } = new(
+        null,
+        SqlSamplingOptions.Default,
+        4,
+        SqlProfilerLimits.Default,
+        NamingOverrideOptions.Empty);
 }
