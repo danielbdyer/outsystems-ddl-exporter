@@ -27,7 +27,7 @@ public class ResultSetReaderTests
             row.GetBoolean(2),
             row.GetGuidOrNull(3)));
 
-        var result = await resultSetReader.ReadAllAsync(reader, CancellationToken.None);
+        var result = await resultSetReader.ReadAllAsync(reader, "TestResultSet", CancellationToken.None);
 
         Assert.Single(result);
         Assert.Equal(1, result[0].Id);
@@ -50,7 +50,7 @@ public class ResultSetReaderTests
             row.GetStringOrNull(1),
             row.GetBooleanOrNull(2)));
 
-        var result = await resultSetReader.ReadAllAsync(reader, CancellationToken.None);
+        var result = await resultSetReader.ReadAllAsync(reader, "TestResultSet", CancellationToken.None);
 
         Assert.Single(result);
         Assert.Equal(2, result[0].Id);
@@ -68,12 +68,64 @@ public class ResultSetReaderTests
 
         using var reader = new SingleResultSetDataReader(rows);
         Assert.True(reader.Read());
-        var row = new DbRow(reader);
+        var row = new DbRow(reader, "TestResultSet", 0);
 
         var exception = Assert.Throws<InvalidOperationException>(() => row.GetRequiredString(0, "TestColumn"));
 
         Assert.Contains("TestColumn", exception.Message);
         Assert.Contains("ordinal 0", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReadAllAsync_ShouldWrapFactoryExceptions()
+    {
+        var rows = new[]
+        {
+            new object?[] { "bad-int" }
+        };
+
+        using var reader = new SingleResultSetDataReader(rows);
+        var resultSetReader = ResultSetReader<int>.Create(static row => row.GetInt32(0));
+
+        var exception = await Assert.ThrowsAsync<MetadataRowMappingException>(() =>
+            resultSetReader.ReadAllAsync(reader, "BrokenSet", CancellationToken.None));
+
+        Assert.Equal("BrokenSet", exception.ResultSetName);
+        Assert.Equal(0, exception.RowIndex);
+        Assert.Null(exception.ColumnName);
+        Assert.IsType<FormatException>(exception.InnerException);
+    }
+
+    [Fact]
+    public async Task ReadAllAsync_ShouldPropagateColumnMetadata()
+    {
+        var rows = new[]
+        {
+            new object?[] { "value" }
+        };
+
+        using var reader = new SingleResultSetDataReader(rows);
+        var resultSetReader = ResultSetReader<int>.Create(static _ => throw new ColumnReadException(
+            "TestColumn",
+            0,
+            typeof(int),
+            typeof(string),
+            null,
+            null,
+            new InvalidOperationException("boom")));
+
+        var exception = await Assert.ThrowsAsync<MetadataRowMappingException>(() =>
+            resultSetReader.ReadAllAsync(reader, "ColumnSet", CancellationToken.None));
+
+        Assert.Equal("ColumnSet", exception.ResultSetName);
+        Assert.Equal(0, exception.RowIndex);
+        Assert.Equal("TestColumn", exception.ColumnName);
+        Assert.Equal(0, exception.Ordinal);
+        Assert.Equal(typeof(int), exception.ExpectedClrType);
+        Assert.Equal(typeof(string), exception.ProviderFieldType);
+        var columnException = Assert.IsType<ColumnReadException>(exception.InnerException);
+        Assert.Equal("ColumnSet", columnException.ResultSetName);
+        Assert.Equal(0, columnException.RowIndex);
     }
 
     private sealed record TestRow(int Id, string Name, bool Flag, Guid? Token);

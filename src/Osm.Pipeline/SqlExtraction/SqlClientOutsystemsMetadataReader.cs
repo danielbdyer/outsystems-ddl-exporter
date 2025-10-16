@@ -206,6 +206,25 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
 
             return Result<OutsystemsMetadataSnapshot>.Success(snapshot);
         }
+        catch (MetadataRowMappingException ex)
+        {
+            stopwatch.Stop();
+
+            _logger.LogError(
+                ex,
+                "Failed to map row {RowIndex} in result set '{ResultSetName}'. Column: {ColumnName}, Ordinal: {ColumnOrdinal}, ExpectedClrType: {ExpectedClrType}, ProviderType: {ProviderType}. DurationMs: {DurationMs}",
+                ex.RowIndex,
+                ex.ResultSetName,
+                ex.ColumnName ?? "unknown",
+                ex.Ordinal ?? -1,
+                ex.ExpectedClrType?.FullName ?? "unknown",
+                ex.ProviderFieldType?.FullName ?? "unknown",
+                stopwatch.Elapsed.TotalMilliseconds);
+
+            return Result<OutsystemsMetadataSnapshot>.Failure(ValidationError.Create(
+                "extraction.metadata.rowMapping",
+                ex.Message));
+        }
         catch (MetadataResultSetMissingException ex)
         {
             stopwatch.Stop();
@@ -301,7 +320,7 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                 throw new ArgumentNullException(nameof(accumulator));
             }
 
-            var rows = await _reader.ReadAllAsync(reader, cancellationToken).ConfigureAwait(false);
+            var rows = await _reader.ReadAllAsync(reader, Name, cancellationToken).ConfigureAwait(false);
             _assign(accumulator, rows);
             return rows.Count;
         }
@@ -768,12 +787,24 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                 {
                     return _reader(row);
                 }
-                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
+                catch (ColumnReadException)
                 {
-                    var providerType = row.GetFieldType(Ordinal);
-                    throw new InvalidOperationException(
-                        $"Unable to read column '{Name}' (ordinal {Ordinal}) as type '{typeof(T).Name}'. Provider type: {providerType?.FullName ?? "unknown"}.",
-                        ex);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Type? providerType = null;
+
+                    try
+                    {
+                        providerType = row.GetFieldType(Ordinal);
+                    }
+                    catch
+                    {
+                        // Preserve the original exception when the provider type cannot be determined.
+                    }
+
+                    throw new ColumnReadException(Name, Ordinal, typeof(T), providerType, row.ResultSetName, row.RowIndex, ex);
                 }
             }
         }
