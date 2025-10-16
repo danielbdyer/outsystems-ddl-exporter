@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Immutable;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Application;
@@ -55,7 +56,7 @@ public sealed class ModuleFilterConsistencyTests
         Assert.True(extractCommand.OnlyActiveAttributes);
 
         var buildDispatcher = new RecordingDispatcher();
-        var buildService = new BuildSsdtApplicationService(buildDispatcher);
+        var buildService = CreateBuildService(buildDispatcher);
         var buildModuleFilter = new ModuleFilterOverrides(
             new[] { "Ops", "AppCore", "ops" },
             IncludeSystemModules: false,
@@ -137,7 +138,7 @@ public sealed class ModuleFilterConsistencyTests
         Assert.True(extractCommand.OnlyActiveAttributes);
 
         var buildDispatcher = new RecordingDispatcher();
-        var buildService = new BuildSsdtApplicationService(buildDispatcher);
+        var buildService = CreateBuildService(buildDispatcher);
         var buildOverrides = new BuildSsdtOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
@@ -214,7 +215,7 @@ public sealed class ModuleFilterConsistencyTests
             DefaultSqlOverrides));
         AssertValidationOverrideFailure(extractResult);
 
-        var buildService = new BuildSsdtApplicationService(new RecordingDispatcher());
+        var buildService = CreateBuildService(new RecordingDispatcher());
         var buildOverrides = new BuildSsdtOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
@@ -287,6 +288,13 @@ public sealed class ModuleFilterConsistencyTests
             SupplementalModelConfiguration.Empty);
     }
 
+    private static BuildSsdtApplicationService CreateBuildService(RecordingDispatcher dispatcher)
+    {
+        var assembler = new BuildSsdtRequestAssembler();
+        var modelResolution = new StubModelResolutionService();
+        return new BuildSsdtApplicationService(dispatcher, assembler, modelResolution);
+    }
+
     private sealed class RecordingDispatcher : ICommandDispatcher
     {
         public ExtractModelPipelineRequest? ExtractRequest { get; private set; }
@@ -314,6 +322,27 @@ public sealed class ModuleFilterConsistencyTests
             }
 
             return Task.FromResult(Result<TResponse>.Failure(ValidationError.Create("test.dispatch", "stub failure")));
+        }
+    }
+
+    private sealed class StubModelResolutionService : IModelResolutionService
+    {
+        public Task<Result<ModelResolutionResult>> ResolveModelAsync(
+            CliConfiguration configuration,
+            BuildSsdtOverrides overrides,
+            ModuleFilterOptions moduleFilter,
+            ResolvedSqlOptions sqlOptions,
+            string outputDirectory,
+            CancellationToken cancellationToken)
+        {
+            var path = overrides.ModelPath ?? configuration.ModelPath;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new InvalidOperationException("Tests must provide a model path override.");
+            }
+
+            var result = new ModelResolutionResult(path!, false, ImmutableArray<string>.Empty);
+            return Task.FromResult(Result<ModelResolutionResult>.Success(result));
         }
     }
 }
