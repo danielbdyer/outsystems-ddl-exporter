@@ -113,8 +113,17 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             var moduleResults = new List<ModuleModel>(modules.Length);
             for (var moduleIndex = 0; moduleIndex < modules.Length; moduleIndex++)
             {
-                var module = modules[moduleIndex];
                 var modulePath = rootPath.Property("modules").Index(moduleIndex);
+                var module = modules[moduleIndex];
+                if (module is null)
+                {
+                    return Result<OsmModel>.Failure(
+                        mapperContext.CreateError(
+                            "json.module.null",
+                            "Modules array cannot contain null entries.",
+                            modulePath));
+                }
+
                 var moduleNameResult = ModuleName.Create(module.Name);
                 if (moduleNameResult.IsFailure)
                 {

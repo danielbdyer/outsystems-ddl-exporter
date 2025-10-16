@@ -1111,6 +1111,30 @@ public class ModelJsonDeserializerTests
     }
 
     [Fact]
+    public void Deserialize_ShouldFail_WhenModuleEntryNull()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            null
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("json.module.null", error.Code);
+        Assert.Contains("Modules array cannot contain null entries", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Path: $['modules'][0]", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Deserialize_ShouldIncludeJsonPath_WhenAttributeNameInvalid()
     {
         const string json = """
