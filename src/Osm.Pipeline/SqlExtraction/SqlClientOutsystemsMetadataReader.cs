@@ -726,12 +726,13 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
 
             public static OutsystemsAttributeJsonRow MapRow(DbRow row, bool allowNull = false)
             {
+                var entityId = EntityId.Read(row);
                 var attributesJson = allowNull
                     ? AttributesJsonOptional.Read(row)
                     : AttributesJsonRequired.Read(row);
 
                 return new OutsystemsAttributeJsonRow(
-                    EntityId.Read(row),
+                    entityId,
                     attributesJson);
             }
         }
