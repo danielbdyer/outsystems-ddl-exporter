@@ -19,6 +19,65 @@ namespace Osm.Pipeline.Tests;
 public class BuildSsdtPipelineTests
 {
     [Fact]
+    public async Task HandleAsync_returns_failure_when_model_path_missing()
+    {
+        var request = new BuildSsdtPipelineRequest(
+            ModelPath: null!,
+            ModuleFilter: ModuleFilterOptions.IncludeAll,
+            OutputDirectory: Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
+            TighteningOptions: TighteningOptions.Default,
+            SupplementalModels: SupplementalModelOptions.Default,
+            ProfilerProvider: "fixture",
+            ProfilePath: null,
+            SqlOptions: new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+            SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicy: TypeMappingPolicy.LoadDefault(),
+            EvidenceCache: null,
+            StaticDataProvider: null,
+            SeedOutputDirectoryHint: null);
+
+        var pipeline = new BuildSsdtPipeline();
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("pipeline.buildSsdt.model.missing", error.Code);
+    }
+
+    [Fact]
+    public async Task HandleAsync_returns_failure_when_output_directory_missing()
+    {
+        var request = new BuildSsdtPipelineRequest(
+            ModelPath: Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
+            ModuleFilter: ModuleFilterOptions.IncludeAll,
+            OutputDirectory: string.Empty,
+            TighteningOptions: TighteningOptions.Default,
+            SupplementalModels: SupplementalModelOptions.Default,
+            ProfilerProvider: "fixture",
+            ProfilePath: null,
+            SqlOptions: new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null)),
+            SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicy: TypeMappingPolicy.LoadDefault(),
+            EvidenceCache: null,
+            StaticDataProvider: null,
+            SeedOutputDirectoryHint: null);
+
+        var pipeline = new BuildSsdtPipeline();
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "pipeline.buildSsdt.output.missing");
+    }
+
+    [Fact]
     public async Task HandleAsync_uses_fixture_profile_strategy_via_bootstrapper()
     {
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
