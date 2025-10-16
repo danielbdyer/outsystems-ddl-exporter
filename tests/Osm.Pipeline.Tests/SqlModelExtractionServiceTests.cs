@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text.Json;
@@ -173,6 +175,28 @@ public class SqlModelExtractionServiceTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldMatchLegacyJsonSnapshot()
+    {
+        var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.edge-case.json"));
+        var snapshot = CreateSnapshotFromJson(json);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: true, onlyActiveAttributes: false).Value;
+
+        var result = await service.ExtractAsync(command);
+
+        Assert.True(result.IsSuccess);
+
+        using var actualDocument = JsonDocument.Parse(result.Value.Json);
+        var exportedAtUtc = actualDocument.RootElement.GetProperty("exportedAtUtc").GetDateTime();
+        var expectedJson = BuildLegacyJson(snapshot, exportedAtUtc);
+
+        using var expectedDocument = JsonDocument.Parse(expectedJson);
+
+        Assert.Equal(expectedDocument.RootElement.GetRawText(), actualDocument.RootElement.GetRawText());
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldExposeUserReferencesWhenSystemModulesExcluded()
     {
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.edge-case.json"));
@@ -264,6 +288,41 @@ public class SqlModelExtractionServiceTests
             Assert.True(actualEntityDoc.RootElement.TryGetProperty("name", out var actualName));
             Assert.Equal(expectedName.GetString(), actualName.GetString());
         }
+    }
+
+    private static string BuildLegacyJson(OutsystemsMetadataSnapshot snapshot, DateTime exportedAtUtc)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+
+        writer.WriteStartObject();
+        writer.WriteString("exportedAtUtc", exportedAtUtc.ToString("O", CultureInfo.InvariantCulture));
+        writer.WritePropertyName("modules");
+        writer.WriteStartArray();
+
+        foreach (var module in snapshot.ModuleJson)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", module.ModuleName);
+            writer.WriteBoolean("isSystem", module.IsSystem);
+            writer.WriteBoolean("isActive", module.IsActive);
+            writer.WritePropertyName("entities");
+
+            var entitiesPayload = string.IsNullOrWhiteSpace(module.ModuleEntitiesJson)
+                ? "[]"
+                : module.ModuleEntitiesJson;
+
+            using var entities = JsonDocument.Parse(entitiesPayload);
+            entities.RootElement.WriteTo(writer);
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+        writer.Flush();
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private sealed class StubMetadataReader : IOutsystemsMetadataReader

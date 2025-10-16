@@ -76,19 +76,21 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
 
         var snapshot = metadataResult.Value;
         var exportedAtUtc = DateTimeOffset.UtcNow;
-        var json = BuildJsonFromSnapshot(snapshot, exportedAtUtc.UtcDateTime);
 
-        if (string.IsNullOrWhiteSpace(json))
+        await using var jsonBuffer = new MemoryStream();
+        BuildJsonFromSnapshot(snapshot, exportedAtUtc.UtcDateTime, jsonBuffer);
+
+        if (jsonBuffer.Length == 0)
         {
             _logger.LogError("Metadata reader produced an empty JSON payload.");
             return Result<ModelExtractionResult>.Failure(ValidationError.Create("extraction.sql.emptyJson", "Metadata reader produced no JSON payload."));
         }
 
-        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
         var warnings = new List<string>();
 
         var deserializeTimer = Stopwatch.StartNew();
-        var modelResult = _deserializer.Deserialize(stream, warnings);
+        jsonBuffer.Position = 0;
+        var modelResult = _deserializer.Deserialize(jsonBuffer, warnings);
         deserializeTimer.Stop();
 
         if (modelResult.IsFailure)
@@ -106,7 +108,8 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                     ExtendedProperty.EmptyArray);
 
                 warnings.Add("Advanced SQL returned no modules for the requested filter.");
-                var emptyResult = new ModelExtractionResult(emptyModel, json, exportedAtUtc, warnings, snapshot);
+                var emptyJson = MaterializeJson(jsonBuffer);
+                var emptyResult = new ModelExtractionResult(emptyModel, emptyJson, exportedAtUtc, warnings, snapshot);
                 return Result<ModelExtractionResult>.Success(emptyResult);
             }
 
@@ -131,7 +134,8 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                 deserializeTimer.Elapsed.TotalMilliseconds);
         }
 
-        var result = new ModelExtractionResult(modelResult.Value, json, exportedAtUtc, warnings, snapshot);
+        var materializedJson = MaterializeJson(jsonBuffer);
+        var result = new ModelExtractionResult(modelResult.Value, materializedJson, exportedAtUtc, warnings, snapshot);
         _logger.LogInformation(
             "Model extraction finished in {TotalDurationMs} ms (metadata: {MetadataMs} ms, deserialize: {DeserializeMs} ms).",
             metadataTimer.Elapsed.TotalMilliseconds + deserializeTimer.Elapsed.TotalMilliseconds,
@@ -141,10 +145,16 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         return Result<ModelExtractionResult>.Success(result);
     }
 
-    private static string BuildJsonFromSnapshot(OutsystemsMetadataSnapshot snapshot, DateTime exportedAtUtc)
+    private static void BuildJsonFromSnapshot(OutsystemsMetadataSnapshot snapshot, DateTime exportedAtUtc, Stream destination)
     {
-        using var stream = new MemoryStream();
-        using var writer = new Utf8JsonWriter(stream);
+        if (destination is null)
+        {
+            throw new ArgumentNullException(nameof(destination));
+        }
+
+        destination.SetLength(0);
+
+        using var writer = new Utf8JsonWriter(destination);
 
         writer.WriteStartObject();
         writer.WriteString("exportedAtUtc", exportedAtUtc.ToString("O", CultureInfo.InvariantCulture));
@@ -163,17 +173,28 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                 ? "[]"
                 : module.ModuleEntitiesJson;
 
-            using var entities = JsonDocument.Parse(entitiesPayload);
-            entities.RootElement.WriteTo(writer);
+            writer.WriteRawValue(entitiesPayload, skipInputValidation: true);
 
             writer.WriteEndObject();
         }
 
         writer.WriteEndArray();
         writer.WriteEndObject();
-        writer.Flush();
+    }
 
-        return Encoding.UTF8.GetString(stream.ToArray());
+    private static string MaterializeJson(MemoryStream buffer)
+    {
+        if (buffer is null)
+        {
+            throw new ArgumentNullException(nameof(buffer));
+        }
+
+        if (!buffer.TryGetBuffer(out var segment))
+        {
+            return Encoding.UTF8.GetString(buffer.ToArray());
+        }
+
+        return Encoding.UTF8.GetString(segment.Array!, segment.Offset, segment.Count);
     }
 }
 
