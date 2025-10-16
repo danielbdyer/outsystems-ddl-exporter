@@ -22,9 +22,9 @@ public class ResultSetReaderTests
 
         using var reader = new SingleResultSetDataReader(rows);
         var resultSetReader = ResultSetReader<TestRow>.Create(static row => new TestRow(
-            row.GetInt32(0),
-            row.GetString(1),
-            row.GetBoolean(2),
+            row.GetInt32FlexibleRequired(0, nameof(TestRow.Id)),
+            row.GetRequiredString(1, nameof(TestRow.Name)),
+            row.GetRequiredBoolean(2, nameof(TestRow.Flag)),
             row.GetGuidOrNull(3)));
 
         var result = await resultSetReader.ReadAllAsync(reader, CancellationToken.None);

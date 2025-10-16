@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Data.SqlTypes;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -25,232 +26,95 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
     {
         ResultSetDefinitionFactory.Create(
             "Modules",
-            ResultSetReader<OutsystemsModuleRow>.Create(static row => new OutsystemsModuleRow(
-                row.GetInt32(0),
-                row.GetString(1),
-                row.GetBoolean(2),
-                row.GetBoolean(3),
-                row.GetStringOrNull(4),
-                row.GetGuidOrNull(5))),
+            ResultSetReader<OutsystemsModuleRow>.Create(MetadataSchemas.Modules.MapRow),
             static (accumulator, rows) => accumulator.SetModules(rows)),
         ResultSetDefinitionFactory.Create(
             "Entities",
-            ResultSetReader<OutsystemsEntityRow>.Create(static row => new OutsystemsEntityRow(
-                row.GetInt32(0),
-                row.GetString(1),
-                row.GetString(2),
-                row.GetInt32(3),
-                row.GetBoolean(4),
-                row.GetBoolean(5),
-                row.GetBoolean(6),
-                row.GetStringOrNull(7),
-                row.GetGuidOrNull(8),
-                row.GetGuidOrNull(9),
-                row.GetStringOrNull(10))),
+            ResultSetReader<OutsystemsEntityRow>.Create(MetadataSchemas.Entities.MapRow),
             static (accumulator, rows) => accumulator.SetEntities(rows)),
         ResultSetDefinitionFactory.Create(
             "Attributes",
-            ResultSetReader<OutsystemsAttributeRow>.Create(static row => new OutsystemsAttributeRow(
-                row.GetInt32(0),
-                row.GetInt32(1),
-                row.GetString(2),
-                row.GetGuidOrNull(3),
-                row.GetStringOrNull(4),
-                row.GetInt32OrNull(5),
-                row.GetInt32OrNull(6),
-                row.GetInt32OrNull(7),
-                row.GetStringOrNull(8),
-                row.GetBoolean(9),
-                row.GetBoolean(10),
-                row.GetBooleanOrNull(11),
-                row.GetBooleanOrNull(12),
-                row.GetInt32OrNull(13),
-                row.GetStringOrNull(14),
-                row.GetStringOrNull(15),
-                row.GetStringOrNull(16),
-                row.GetStringOrNull(17),
-                row.GetStringOrNull(18),
-                row.GetStringOrNull(19),
-                row.GetInt32OrNull(20),
-                row.GetStringOrNull(21),
-                row.GetStringOrNull(22))),
+            ResultSetReader<OutsystemsAttributeRow>.Create(MetadataSchemas.Attributes.MapRow),
             static (accumulator, rows) => accumulator.SetAttributes(rows)),
         ResultSetDefinitionFactory.Create(
             "References",
-            ResultSetReader<OutsystemsReferenceRow>.Create(static row => new OutsystemsReferenceRow(
-                row.GetInt32(0),
-                row.GetInt32OrNull(1),
-                row.GetStringOrNull(2),
-                row.GetStringOrNull(3))),
+            ResultSetReader<OutsystemsReferenceRow>.Create(MetadataSchemas.References.MapRow),
             static (accumulator, rows) => accumulator.SetReferences(rows)),
         ResultSetDefinitionFactory.Create(
             "PhysicalTables",
-            ResultSetReader<OutsystemsPhysicalTableRow>.Create(static row => new OutsystemsPhysicalTableRow(
-                row.GetInt32(0),
-                row.GetString(1),
-                row.GetString(2),
-                row.GetInt32(3))),
+            ResultSetReader<OutsystemsPhysicalTableRow>.Create(MetadataSchemas.PhysicalTables.MapRow),
             static (accumulator, rows) => accumulator.SetPhysicalTables(rows)),
         ResultSetDefinitionFactory.Create(
             "ColumnReality",
-            ResultSetReader<OutsystemsColumnRealityRow>.Create(static row => new OutsystemsColumnRealityRow(
-                row.GetInt32(0),
-                row.GetBoolean(1),
-                row.GetString(2),
-                row.GetInt32OrNull(3),
-                row.GetInt32OrNull(4),
-                row.GetInt32OrNull(5),
-                row.GetStringOrNull(6),
-                row.GetBoolean(7),
-                row.GetBoolean(8),
-                row.GetStringOrNull(9),
-                row.GetStringOrNull(10),
-                row.GetStringOrNull(11),
-                row.GetString(12))),
+            ResultSetReader<OutsystemsColumnRealityRow>.Create(MetadataSchemas.ColumnReality.MapRow),
             static (accumulator, rows) => accumulator.SetColumnReality(rows)),
         ResultSetDefinitionFactory.Create(
             "ColumnChecks",
-            ResultSetReader<OutsystemsColumnCheckRow>.Create(static row => new OutsystemsColumnCheckRow(
-                row.GetInt32(0),
-                row.GetString(1),
-                row.GetString(2),
-                row.GetBoolean(3))),
+            ResultSetReader<OutsystemsColumnCheckRow>.Create(MetadataSchemas.ColumnChecks.MapRow),
             static (accumulator, rows) => accumulator.SetColumnChecks(rows)),
         ResultSetDefinitionFactory.Create(
             "ColumnCheckJson",
-            ResultSetReader<OutsystemsColumnCheckJsonRow>.Create(static row => new OutsystemsColumnCheckJsonRow(
-                row.GetInt32(0),
-                row.GetString(1))),
+            ResultSetReader<OutsystemsColumnCheckJsonRow>.Create(MetadataSchemas.ColumnCheckJson.MapRow),
             static (accumulator, rows) => accumulator.SetColumnCheckJson(rows)),
         ResultSetDefinitionFactory.Create(
             "PhysicalColumnsPresent",
-            ResultSetReader<OutsystemsPhysicalColumnPresenceRow>.Create(static row => new OutsystemsPhysicalColumnPresenceRow(
-                row.GetInt32(0))),
+            ResultSetReader<OutsystemsPhysicalColumnPresenceRow>.Create(MetadataSchemas.PhysicalColumnsPresent.MapRow),
             static (accumulator, rows) => accumulator.SetPhysicalColumnsPresent(rows)),
         ResultSetDefinitionFactory.Create(
             "Indexes",
-            ResultSetReader<OutsystemsIndexRow>.Create(static row => new OutsystemsIndexRow(
-                row.GetInt32(0),
-                row.GetInt32(1),
-                row.GetInt32(2),
-                row.GetString(3),
-                row.GetBoolean(4),
-                row.GetBoolean(5),
-                row.GetString(6),
-                row.GetStringOrNull(7),
-                row.GetBoolean(8),
-                row.GetBoolean(9),
-                row.GetInt32OrNull(10),
-                row.GetBoolean(11),
-                row.GetBoolean(12),
-                row.GetBoolean(13),
-                row.GetBoolean(14),
-                row.GetStringOrNull(15),
-                row.GetStringOrNull(16),
-                row.GetStringOrNull(17),
-                row.GetStringOrNull(18))),
+            ResultSetReader<OutsystemsIndexRow>.Create(MetadataSchemas.Indexes.MapRow),
             static (accumulator, rows) => accumulator.SetIndexes(rows)),
         ResultSetDefinitionFactory.Create(
             "IndexColumns",
-            ResultSetReader<OutsystemsIndexColumnRow>.Create(static row => new OutsystemsIndexColumnRow(
-                row.GetInt32(0),
-                row.GetString(1),
-                row.GetInt32(2),
-                row.GetString(3),
-                row.GetBoolean(4),
-                row.GetStringOrNull(5),
-                row.GetStringOrNull(6))),
+            ResultSetReader<OutsystemsIndexColumnRow>.Create(MetadataSchemas.IndexColumns.MapRow),
             static (accumulator, rows) => accumulator.SetIndexColumns(rows)),
         ResultSetDefinitionFactory.Create(
             "ForeignKeys",
-            ResultSetReader<OutsystemsForeignKeyRow>.Create(static row => new OutsystemsForeignKeyRow(
-                row.GetInt32(0),
-                row.GetInt32(1),
-                row.GetString(2),
-                row.GetString(3),
-                row.GetString(4),
-                row.GetInt32(5),
-                row.GetInt32OrNull(6),
-                row.GetString(7),
-                row.GetString(8),
-                row.GetBoolean(9))),
+            ResultSetReader<OutsystemsForeignKeyRow>.Create(MetadataSchemas.ForeignKeys.MapRow),
             static (accumulator, rows) => accumulator.SetForeignKeys(rows)),
         ResultSetDefinitionFactory.Create(
             "ForeignKeyColumns",
-            ResultSetReader<OutsystemsForeignKeyColumnRow>.Create(static row => new OutsystemsForeignKeyColumnRow(
-                row.GetInt32(0),
-                row.GetInt32(1),
-                row.GetInt32(2),
-                row.GetString(3),
-                row.GetString(4),
-                row.GetInt32OrNull(5),
-                row.GetStringOrNull(6),
-                row.GetInt32OrNull(7),
-                row.GetStringOrNull(8))),
+            ResultSetReader<OutsystemsForeignKeyColumnRow>.Create(MetadataSchemas.ForeignKeyColumns.MapRow),
             static (accumulator, rows) => accumulator.SetForeignKeyColumns(rows)),
         ResultSetDefinitionFactory.Create(
             "ForeignKeyAttrMap",
-            ResultSetReader<OutsystemsForeignKeyAttrMapRow>.Create(static row => new OutsystemsForeignKeyAttrMapRow(
-                row.GetInt32(0),
-                row.GetInt32(1))),
+            ResultSetReader<OutsystemsForeignKeyAttrMapRow>.Create(MetadataSchemas.ForeignKeyAttributeMap.MapRow),
             static (accumulator, rows) => accumulator.SetForeignKeyAttributeMap(rows)),
         ResultSetDefinitionFactory.Create(
             "AttributeHasFk",
-            ResultSetReader<OutsystemsAttributeHasFkRow>.Create(static row => new OutsystemsAttributeHasFkRow(
-                row.GetInt32(0),
-                row.GetBoolean(1))),
+            ResultSetReader<OutsystemsAttributeHasFkRow>.Create(MetadataSchemas.AttributeHasForeignKey.MapRow),
             static (accumulator, rows) => accumulator.SetAttributeForeignKeys(rows)),
         ResultSetDefinitionFactory.Create(
             "ForeignKeyColumnsJson",
-            ResultSetReader<OutsystemsForeignKeyColumnsJsonRow>.Create(static row => new OutsystemsForeignKeyColumnsJsonRow(
-                row.GetInt32(0),
-                row.GetString(1))),
+            ResultSetReader<OutsystemsForeignKeyColumnsJsonRow>.Create(MetadataSchemas.ForeignKeyColumnsJson.MapRow),
             static (accumulator, rows) => accumulator.SetForeignKeyColumnsJson(rows)),
         ResultSetDefinitionFactory.Create(
             "ForeignKeyAttributeJson",
-            ResultSetReader<OutsystemsForeignKeyAttributeJsonRow>.Create(static row => new OutsystemsForeignKeyAttributeJsonRow(
-                row.GetInt32(0),
-                row.GetString(1))),
+            ResultSetReader<OutsystemsForeignKeyAttributeJsonRow>.Create(MetadataSchemas.ForeignKeyAttributeJson.MapRow),
             static (accumulator, rows) => accumulator.SetForeignKeyAttributeJson(rows)),
         ResultSetDefinitionFactory.Create(
             "Triggers",
-            ResultSetReader<OutsystemsTriggerRow>.Create(static row => new OutsystemsTriggerRow(
-                row.GetInt32(0),
-                row.GetString(1),
-                row.GetBoolean(2),
-                row.GetString(3))),
+            ResultSetReader<OutsystemsTriggerRow>.Create(MetadataSchemas.Triggers.MapRow),
             static (accumulator, rows) => accumulator.SetTriggers(rows)),
         ResultSetDefinitionFactory.Create(
             "AttributeJson",
-            ResultSetReader<OutsystemsAttributeJsonRow>.Create(static row => new OutsystemsAttributeJsonRow(
-                row.GetInt32(0),
-                row.GetString(1))),
+            ResultSetReader<OutsystemsAttributeJsonRow>.Create(MetadataSchemas.AttributeJson.MapRow),
             static (accumulator, rows) => accumulator.SetAttributeJson(rows)),
         ResultSetDefinitionFactory.Create(
             "RelationshipJson",
-            ResultSetReader<OutsystemsRelationshipJsonRow>.Create(static row => new OutsystemsRelationshipJsonRow(
-                row.GetInt32(0),
-                row.GetString(1))),
+            ResultSetReader<OutsystemsRelationshipJsonRow>.Create(MetadataSchemas.RelationshipJson.MapRow),
             static (accumulator, rows) => accumulator.SetRelationshipJson(rows)),
         ResultSetDefinitionFactory.Create(
             "IndexJson",
-            ResultSetReader<OutsystemsIndexJsonRow>.Create(static row => new OutsystemsIndexJsonRow(
-                row.GetInt32(0),
-                row.GetString(1))),
+            ResultSetReader<OutsystemsIndexJsonRow>.Create(MetadataSchemas.IndexJson.MapRow),
             static (accumulator, rows) => accumulator.SetIndexJson(rows)),
         ResultSetDefinitionFactory.Create(
             "TriggerJson",
-            ResultSetReader<OutsystemsTriggerJsonRow>.Create(static row => new OutsystemsTriggerJsonRow(
-                row.GetInt32(0),
-                row.GetString(1))),
+            ResultSetReader<OutsystemsTriggerJsonRow>.Create(MetadataSchemas.TriggerJson.MapRow),
             static (accumulator, rows) => accumulator.SetTriggerJson(rows)),
         ResultSetDefinitionFactory.Create(
             "ModuleJson",
-            ResultSetReader<OutsystemsModuleJsonRow>.Create(static row => new OutsystemsModuleJsonRow(
-                row.GetString(0),
-                row.GetBoolean(1),
-                row.GetBoolean(2),
-                row.GetString(3))),
+            ResultSetReader<OutsystemsModuleJsonRow>.Create(MetadataSchemas.ModuleJson.MapRow),
             static (accumulator, rows) => accumulator.SetModuleJson(rows)),
     };
 
@@ -342,6 +206,39 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
             var snapshot = accumulator.BuildSnapshot(databaseName ?? string.Empty);
 
             return Result<OutsystemsMetadataSnapshot>.Success(snapshot);
+        }
+        catch (MetadataResultSetReadException ex)
+        {
+            stopwatch.Stop();
+
+            if (ex.ColumnError is { } column)
+            {
+                _logger.LogError(
+                    ex,
+                    "Metadata snapshot failed to materialize row {RowIndex} of result set '{ResultSetName}'. Column '{ColumnName}' (ordinal {Ordinal}) expected {TargetType} but encountered a {FailureKind} issue. Provider type: {ProviderType}. Duration: {DurationMs} ms.",
+                    ex.RowNumber,
+                    ex.ResultSetName,
+                    column.ColumnName,
+                    column.Ordinal,
+                    column.TargetType.Name,
+                    column.FailureKind,
+                    column.ProviderType?.FullName ?? "unknown",
+                    stopwatch.Elapsed.TotalMilliseconds);
+            }
+            else
+            {
+                _logger.LogError(
+                    ex,
+                    "Metadata snapshot failed to materialize row {RowIndex} of result set '{ResultSetName}' after {DurationMs} ms: {ErrorMessage}",
+                    ex.RowNumber,
+                    ex.ResultSetName,
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    ex.InnerException?.Message ?? ex.Message);
+            }
+
+            return Result<OutsystemsMetadataSnapshot>.Failure(ValidationError.Create(
+                "extraction.metadata.resultSets.rowReadFailed",
+                ex.UserMessage));
         }
         catch (MetadataResultSetMissingException ex)
         {
@@ -438,9 +335,496 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                 throw new ArgumentNullException(nameof(accumulator));
             }
 
-            var rows = await _reader.ReadAllAsync(reader, cancellationToken).ConfigureAwait(false);
-            _assign(accumulator, rows);
-            return rows.Count;
+            try
+            {
+                var rows = await _reader.ReadAllAsync(reader, cancellationToken).ConfigureAwait(false);
+                _assign(accumulator, rows);
+                return rows.Count;
+            }
+            catch (MetadataRowReadException ex)
+            {
+                throw new MetadataResultSetReadException(Name, ex.RowIndex, ex.ColumnError, ex.InnerException ?? ex);
+            }
+        }
+    }
+
+    private static class MetadataSchemas
+    {
+        internal static class Modules
+        {
+            private static readonly ColumnDefinition<int> EspaceId = Column.Int32(0, "EspaceId");
+            private static readonly ColumnDefinition<string> EspaceName = Column.String(1, "EspaceName");
+            private static readonly ColumnDefinition<bool> IsSystemModule = Column.Boolean(2, "IsSystemModule");
+            private static readonly ColumnDefinition<bool> ModuleIsActive = Column.Boolean(3, "ModuleIsActive");
+            private static readonly ColumnDefinition<string?> EspaceKind = Column.StringOrNull(4, "EspaceKind");
+            private static readonly ColumnDefinition<Guid?> EspaceSsKey = Column.GuidOrNull(5, "EspaceSSKey");
+
+            public static OutsystemsModuleRow MapRow(DbRow row) => new(
+                EspaceId.Read(row),
+                EspaceName.Read(row),
+                IsSystemModule.Read(row),
+                ModuleIsActive.Read(row),
+                EspaceKind.Read(row),
+                EspaceSsKey.Read(row));
+        }
+
+        internal static class Entities
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<string> EntityName = Column.String(1, "EntityName");
+            private static readonly ColumnDefinition<string> PhysicalTableName = Column.String(2, "PhysicalTableName");
+            private static readonly ColumnDefinition<int> EspaceId = Column.Int32(3, "EspaceId");
+            private static readonly ColumnDefinition<bool> EntityIsActive = Column.Boolean(4, "EntityIsActive");
+            private static readonly ColumnDefinition<bool> IsSystemEntity = Column.Boolean(5, "IsSystemEntity");
+            private static readonly ColumnDefinition<bool> IsExternalEntity = Column.Boolean(6, "IsExternalEntity");
+            private static readonly ColumnDefinition<string?> DataKind = Column.StringOrNull(7, "DataKind");
+            private static readonly ColumnDefinition<Guid?> PrimaryKeySsKey = Column.GuidOrNull(8, "PrimaryKeySSKey");
+            private static readonly ColumnDefinition<Guid?> EntitySsKey = Column.GuidOrNull(9, "EntitySSKey");
+            private static readonly ColumnDefinition<string?> EntityDescription = Column.StringOrNull(10, "EntityDescription");
+
+            public static OutsystemsEntityRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                EntityName.Read(row),
+                PhysicalTableName.Read(row),
+                EspaceId.Read(row),
+                EntityIsActive.Read(row),
+                IsSystemEntity.Read(row),
+                IsExternalEntity.Read(row),
+                DataKind.Read(row),
+                PrimaryKeySsKey.Read(row),
+                EntitySsKey.Read(row),
+                EntityDescription.Read(row));
+        }
+
+        internal static class Attributes
+        {
+            private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(1, "EntityId");
+            private static readonly ColumnDefinition<string> AttrName = Column.String(2, "AttrName");
+            private static readonly ColumnDefinition<Guid?> AttrSsKey = Column.GuidOrNull(3, "AttrSSKey");
+            private static readonly ColumnDefinition<string?> DataType = Column.StringOrNull(4, "DataType");
+            private static readonly ColumnDefinition<int?> Length = Column.Int32OrNull(5, "Length");
+            private static readonly ColumnDefinition<int?> Precision = Column.Int32OrNull(6, "Precision");
+            private static readonly ColumnDefinition<int?> Scale = Column.Int32OrNull(7, "Scale");
+            private static readonly ColumnDefinition<string?> DefaultValue = Column.StringOrNull(8, "DefaultValue");
+            private static readonly ColumnDefinition<bool> IsMandatory = Column.Boolean(9, "IsMandatory");
+            private static readonly ColumnDefinition<bool> AttrIsActive = Column.Boolean(10, "AttrIsActive");
+            private static readonly ColumnDefinition<bool?> IsAutoNumber = Column.BooleanOrNull(11, "IsAutoNumber");
+            private static readonly ColumnDefinition<bool?> IsIdentifier = Column.BooleanOrNull(12, "IsIdentifier");
+            private static readonly ColumnDefinition<int?> RefEntityId = Column.Int32OrNull(13, "RefEntityId");
+            private static readonly ColumnDefinition<string?> OriginalName = Column.StringOrNull(14, "OriginalName");
+            private static readonly ColumnDefinition<string?> ExternalColumnType = Column.StringOrNull(15, "ExternalColumnType");
+            private static readonly ColumnDefinition<string?> DeleteRule = Column.StringOrNull(16, "DeleteRule");
+            private static readonly ColumnDefinition<string?> PhysicalColumnName = Column.StringOrNull(17, "PhysicalColumnName");
+            private static readonly ColumnDefinition<string?> DatabaseColumnName = Column.StringOrNull(18, "DatabaseColumnName");
+            private static readonly ColumnDefinition<string?> LegacyType = Column.StringOrNull(19, "LegacyType");
+            private static readonly ColumnDefinition<int?> Decimals = Column.Int32OrNull(20, "Decimals");
+            private static readonly ColumnDefinition<string?> OriginalType = Column.StringOrNull(21, "OriginalType");
+            private static readonly ColumnDefinition<string?> AttrDescription = Column.StringOrNull(22, "AttrDescription");
+
+            public static OutsystemsAttributeRow MapRow(DbRow row) => new(
+                AttrId.Read(row),
+                EntityId.Read(row),
+                AttrName.Read(row),
+                AttrSsKey.Read(row),
+                DataType.Read(row),
+                Length.Read(row),
+                Precision.Read(row),
+                Scale.Read(row),
+                DefaultValue.Read(row),
+                IsMandatory.Read(row),
+                AttrIsActive.Read(row),
+                IsAutoNumber.Read(row),
+                IsIdentifier.Read(row),
+                RefEntityId.Read(row),
+                OriginalName.Read(row),
+                ExternalColumnType.Read(row),
+                DeleteRule.Read(row),
+                PhysicalColumnName.Read(row),
+                DatabaseColumnName.Read(row),
+                LegacyType.Read(row),
+                Decimals.Read(row),
+                OriginalType.Read(row),
+                AttrDescription.Read(row));
+        }
+
+        internal static class References
+        {
+            private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
+            private static readonly ColumnDefinition<int?> RefEntityId = Column.Int32OrNull(1, "RefEntityId");
+            private static readonly ColumnDefinition<string?> RefEntityName = Column.StringOrNull(2, "RefEntityName");
+            private static readonly ColumnDefinition<string?> RefPhysicalName = Column.StringOrNull(3, "RefPhysicalName");
+
+            public static OutsystemsReferenceRow MapRow(DbRow row) => new(
+                AttrId.Read(row),
+                RefEntityId.Read(row),
+                RefEntityName.Read(row),
+                RefPhysicalName.Read(row));
+        }
+
+        internal static class PhysicalTables
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<string> SchemaName = Column.String(1, "SchemaName");
+            private static readonly ColumnDefinition<string> TableName = Column.String(2, "TableName");
+            private static readonly ColumnDefinition<int> ObjectId = Column.Int32(3, "object_id");
+
+            public static OutsystemsPhysicalTableRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                SchemaName.Read(row),
+                TableName.Read(row),
+                ObjectId.Read(row));
+        }
+
+        internal static class ColumnReality
+        {
+            private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
+            private static readonly ColumnDefinition<bool> IsNullable = Column.Boolean(1, "IsNullable");
+            private static readonly ColumnDefinition<string> SqlType = Column.String(2, "SqlType");
+            private static readonly ColumnDefinition<int?> MaxLength = Column.Int32OrNull(3, "MaxLength");
+            private static readonly ColumnDefinition<int?> Precision = Column.Int32OrNull(4, "Precision");
+            private static readonly ColumnDefinition<int?> Scale = Column.Int32OrNull(5, "Scale");
+            private static readonly ColumnDefinition<string?> CollationName = Column.StringOrNull(6, "CollationName");
+            private static readonly ColumnDefinition<bool> IsIdentity = Column.Boolean(7, "IsIdentity");
+            private static readonly ColumnDefinition<bool> IsComputed = Column.Boolean(8, "IsComputed");
+            private static readonly ColumnDefinition<string?> ComputedDefinition = Column.StringOrNull(9, "ComputedDefinition");
+            private static readonly ColumnDefinition<string?> DefaultConstraintName = Column.StringOrNull(10, "DefaultConstraintName");
+            private static readonly ColumnDefinition<string?> DefaultDefinition = Column.StringOrNull(11, "DefaultDefinition");
+            private static readonly ColumnDefinition<string> PhysicalColumn = Column.String(12, "PhysicalColumn");
+
+            public static OutsystemsColumnRealityRow MapRow(DbRow row) => new(
+                AttrId.Read(row),
+                IsNullable.Read(row),
+                SqlType.Read(row),
+                MaxLength.Read(row),
+                Precision.Read(row),
+                Scale.Read(row),
+                CollationName.Read(row),
+                IsIdentity.Read(row),
+                IsComputed.Read(row),
+                ComputedDefinition.Read(row),
+                DefaultConstraintName.Read(row),
+                DefaultDefinition.Read(row),
+                PhysicalColumn.Read(row));
+        }
+
+        internal static class ColumnChecks
+        {
+            private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
+            private static readonly ColumnDefinition<string> ConstraintName = Column.String(1, "ConstraintName");
+            private static readonly ColumnDefinition<string> Definition = Column.String(2, "Definition");
+            private static readonly ColumnDefinition<bool> IsNotTrusted = Column.Boolean(3, "IsNotTrusted");
+
+            public static OutsystemsColumnCheckRow MapRow(DbRow row) => new(
+                AttrId.Read(row),
+                ConstraintName.Read(row),
+                Definition.Read(row),
+                IsNotTrusted.Read(row));
+        }
+
+        internal static class ColumnCheckJson
+        {
+            private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
+            private static readonly ColumnDefinition<string> CheckJson = Column.String(1, "CheckJson");
+
+            public static OutsystemsColumnCheckJsonRow MapRow(DbRow row) => new(
+                AttrId.Read(row),
+                CheckJson.Read(row));
+        }
+
+        internal static class PhysicalColumnsPresent
+        {
+            private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
+
+            public static OutsystemsPhysicalColumnPresenceRow MapRow(DbRow row) => new(AttrId.Read(row));
+        }
+
+        internal static class Indexes
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<int> ObjectId = Column.Int32(1, "object_id");
+            private static readonly ColumnDefinition<int> IndexId = Column.Int32(2, "index_id");
+            private static readonly ColumnDefinition<string> IndexName = Column.String(3, "IndexName");
+            private static readonly ColumnDefinition<bool> IsUnique = Column.Boolean(4, "IsUnique");
+            private static readonly ColumnDefinition<bool> IsPrimary = Column.Boolean(5, "IsPrimary");
+            private static readonly ColumnDefinition<string> Kind = Column.String(6, "Kind");
+            private static readonly ColumnDefinition<string?> FilterDefinition = Column.StringOrNull(7, "FilterDefinition");
+            private static readonly ColumnDefinition<bool> IsDisabled = Column.Boolean(8, "IsDisabled");
+            private static readonly ColumnDefinition<bool> IsPadded = Column.Boolean(9, "IsPadded");
+            private static readonly ColumnDefinition<int?> FillFactor = Column.Int32OrNull(10, "Fill_Factor");
+            private static readonly ColumnDefinition<bool> IgnoreDupKey = Column.Boolean(11, "IgnoreDupKey");
+            private static readonly ColumnDefinition<bool> AllowRowLocks = Column.Boolean(12, "AllowRowLocks");
+            private static readonly ColumnDefinition<bool> AllowPageLocks = Column.Boolean(13, "AllowPageLocks");
+            private static readonly ColumnDefinition<bool> NoRecompute = Column.Boolean(14, "NoRecompute");
+            private static readonly ColumnDefinition<string?> DataSpaceName = Column.StringOrNull(15, "DataSpaceName");
+            private static readonly ColumnDefinition<string?> DataSpaceType = Column.StringOrNull(16, "DataSpaceType");
+            private static readonly ColumnDefinition<string?> PartitionColumnsJson = Column.StringOrNull(17, "PartitionColumnsJson");
+            private static readonly ColumnDefinition<string?> DataCompressionJson = Column.StringOrNull(18, "DataCompressionJson");
+
+            public static OutsystemsIndexRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                ObjectId.Read(row),
+                IndexId.Read(row),
+                IndexName.Read(row),
+                IsUnique.Read(row),
+                IsPrimary.Read(row),
+                Kind.Read(row),
+                FilterDefinition.Read(row),
+                IsDisabled.Read(row),
+                IsPadded.Read(row),
+                FillFactor.Read(row),
+                IgnoreDupKey.Read(row),
+                AllowRowLocks.Read(row),
+                AllowPageLocks.Read(row),
+                NoRecompute.Read(row),
+                DataSpaceName.Read(row),
+                DataSpaceType.Read(row),
+                PartitionColumnsJson.Read(row),
+                DataCompressionJson.Read(row));
+        }
+
+        internal static class IndexColumns
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<string> IndexName = Column.String(1, "IndexName");
+            private static readonly ColumnDefinition<int> Ordinal = Column.Int32(2, "Ordinal");
+            private static readonly ColumnDefinition<string> PhysicalColumn = Column.String(3, "PhysicalColumn");
+            private static readonly ColumnDefinition<bool> IsIncluded = Column.Boolean(4, "IsIncluded");
+            private static readonly ColumnDefinition<string?> Direction = Column.StringOrNull(5, "Direction");
+            private static readonly ColumnDefinition<string?> HumanAttr = Column.StringOrNull(6, "HumanAttr");
+
+            public static OutsystemsIndexColumnRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                IndexName.Read(row),
+                Ordinal.Read(row),
+                PhysicalColumn.Read(row),
+                IsIncluded.Read(row),
+                Direction.Read(row),
+                HumanAttr.Read(row));
+        }
+
+        internal static class ForeignKeys
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<int> FkObjectId = Column.Int32(1, "FkObjectId");
+            private static readonly ColumnDefinition<string> FkName = Column.String(2, "FkName");
+            private static readonly ColumnDefinition<string> DeleteAction = Column.String(3, "DeleteAction");
+            private static readonly ColumnDefinition<string> UpdateAction = Column.String(4, "UpdateAction");
+            private static readonly ColumnDefinition<int> ReferencedObjectId = Column.Int32(5, "ReferencedObjectId");
+            private static readonly ColumnDefinition<int?> ReferencedEntityId = Column.Int32OrNull(6, "ReferencedEntityId");
+            private static readonly ColumnDefinition<string> ReferencedSchema = Column.String(7, "ReferencedSchema");
+            private static readonly ColumnDefinition<string> ReferencedTable = Column.String(8, "ReferencedTable");
+            private static readonly ColumnDefinition<bool> IsNoCheck = Column.Boolean(9, "IsNoCheck");
+
+            public static OutsystemsForeignKeyRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                FkObjectId.Read(row),
+                FkName.Read(row),
+                DeleteAction.Read(row),
+                UpdateAction.Read(row),
+                ReferencedObjectId.Read(row),
+                ReferencedEntityId.Read(row),
+                ReferencedSchema.Read(row),
+                ReferencedTable.Read(row),
+                IsNoCheck.Read(row));
+        }
+
+        internal static class ForeignKeyColumns
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<int> FkObjectId = Column.Int32(1, "FkObjectId");
+            private static readonly ColumnDefinition<int> Ordinal = Column.Int32(2, "Ordinal");
+            private static readonly ColumnDefinition<string> ParentColumn = Column.String(3, "ParentColumn");
+            private static readonly ColumnDefinition<string> ReferencedColumn = Column.String(4, "ReferencedColumn");
+            private static readonly ColumnDefinition<int?> ParentAttrId = Column.Int32OrNull(5, "ParentAttrId");
+            private static readonly ColumnDefinition<string?> ParentAttrName = Column.StringOrNull(6, "ParentAttrName");
+            private static readonly ColumnDefinition<int?> ReferencedAttrId = Column.Int32OrNull(7, "ReferencedAttrId");
+            private static readonly ColumnDefinition<string?> ReferencedAttrName = Column.StringOrNull(8, "ReferencedAttrName");
+
+            public static OutsystemsForeignKeyColumnRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                FkObjectId.Read(row),
+                Ordinal.Read(row),
+                ParentColumn.Read(row),
+                ReferencedColumn.Read(row),
+                ParentAttrId.Read(row),
+                ParentAttrName.Read(row),
+                ReferencedAttrId.Read(row),
+                ReferencedAttrName.Read(row));
+        }
+
+        internal static class ForeignKeyAttributeMap
+        {
+            private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
+            private static readonly ColumnDefinition<int> FkObjectId = Column.Int32(1, "FkObjectId");
+
+            public static OutsystemsForeignKeyAttrMapRow MapRow(DbRow row) => new(
+                AttrId.Read(row),
+                FkObjectId.Read(row));
+        }
+
+        internal static class AttributeHasForeignKey
+        {
+            private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
+            private static readonly ColumnDefinition<bool> HasForeignKey = Column.Boolean(1, "HasFk");
+
+            public static OutsystemsAttributeHasFkRow MapRow(DbRow row) => new(
+                AttrId.Read(row),
+                HasForeignKey.Read(row));
+        }
+
+        internal static class ForeignKeyColumnsJson
+        {
+            private static readonly ColumnDefinition<int> FkObjectId = Column.Int32(0, "FkObjectId");
+            private static readonly ColumnDefinition<string> ColumnsJson = Column.String(1, "ColumnsJson");
+
+            public static OutsystemsForeignKeyColumnsJsonRow MapRow(DbRow row) => new(
+                FkObjectId.Read(row),
+                ColumnsJson.Read(row));
+        }
+
+        internal static class ForeignKeyAttributeJson
+        {
+            private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
+            private static readonly ColumnDefinition<string> ConstraintJson = Column.String(1, "ConstraintJson");
+
+            public static OutsystemsForeignKeyAttributeJsonRow MapRow(DbRow row) => new(
+                AttrId.Read(row),
+                ConstraintJson.Read(row));
+        }
+
+        internal static class Triggers
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<string> TriggerName = Column.String(1, "TriggerName");
+            private static readonly ColumnDefinition<bool> IsDisabled = Column.Boolean(2, "IsDisabled");
+            private static readonly ColumnDefinition<string> TriggerDefinition = Column.String(3, "TriggerDefinition");
+
+            public static OutsystemsTriggerRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                TriggerName.Read(row),
+                IsDisabled.Read(row),
+                TriggerDefinition.Read(row));
+        }
+
+        internal static class AttributeJson
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<string> AttributesJson = Column.String(1, "AttributesJson");
+
+            public static OutsystemsAttributeJsonRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                AttributesJson.Read(row));
+        }
+
+        internal static class RelationshipJson
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<string> RelationshipsJson = Column.String(1, "RelationshipsJson");
+
+            public static OutsystemsRelationshipJsonRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                RelationshipsJson.Read(row));
+        }
+
+        internal static class IndexJson
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<string> IndexesJson = Column.String(1, "IndexesJson");
+
+            public static OutsystemsIndexJsonRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                IndexesJson.Read(row));
+        }
+
+        internal static class TriggerJson
+        {
+            private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
+            private static readonly ColumnDefinition<string> TriggersJson = Column.String(1, "TriggersJson");
+
+            public static OutsystemsTriggerJsonRow MapRow(DbRow row) => new(
+                EntityId.Read(row),
+                TriggersJson.Read(row));
+        }
+
+        internal static class ModuleJson
+        {
+            private static readonly ColumnDefinition<string> ModuleName = Column.String(0, "module.name");
+            private static readonly ColumnDefinition<bool> IsSystem = Column.Boolean(1, "module.isSystem");
+            private static readonly ColumnDefinition<bool> IsActive = Column.Boolean(2, "module.isActive");
+            private static readonly ColumnDefinition<string> ModuleEntities = Column.String(3, "module.entities");
+
+            public static OutsystemsModuleJsonRow MapRow(DbRow row) => new(
+                ModuleName.Read(row),
+                IsSystem.Read(row),
+                IsActive.Read(row),
+                ModuleEntities.Read(row));
+        }
+
+        private static class Column
+        {
+            public static ColumnDefinition<int> Int32(int ordinal, string name)
+                => new(ordinal, name, row => row.GetInt32FlexibleRequired(ordinal, name));
+
+            public static ColumnDefinition<int?> Int32OrNull(int ordinal, string name)
+                => new(ordinal, name, row => row.GetInt32FlexibleOrNull(ordinal));
+
+            public static ColumnDefinition<string> String(int ordinal, string name)
+                => new(ordinal, name, row => row.GetRequiredString(ordinal, name));
+
+            public static ColumnDefinition<string?> StringOrNull(int ordinal, string name)
+                => new(ordinal, name, row => row.GetStringOrNull(ordinal));
+
+            public static ColumnDefinition<bool> Boolean(int ordinal, string name)
+                => new(ordinal, name, row => row.GetRequiredBoolean(ordinal, name));
+
+            public static ColumnDefinition<bool?> BooleanOrNull(int ordinal, string name)
+                => new(ordinal, name, row => row.GetBooleanOrNull(ordinal));
+
+            public static ColumnDefinition<Guid> Guid(int ordinal, string name)
+                => new(ordinal, name, row => row.GetRequiredGuid(ordinal, name));
+
+            public static ColumnDefinition<Guid?> GuidOrNull(int ordinal, string name)
+                => new(ordinal, name, row => row.GetGuidOrNull(ordinal));
+        }
+
+        private sealed class ColumnDefinition<T>
+        {
+            private readonly Func<DbRow, T> _reader;
+
+            public ColumnDefinition(int ordinal, string name, Func<DbRow, T> reader)
+            {
+                Ordinal = ordinal;
+                Name = name ?? throw new ArgumentNullException(nameof(name));
+                _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+            }
+
+            public int Ordinal { get; }
+
+            public string Name { get; }
+
+            public T Read(DbRow row)
+            {
+                try
+                {
+                    return _reader(row);
+                }
+                catch (MetadataColumnReadException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException or SqlNullValueException)
+                {
+                    var providerType = row.TryGetFieldType(Ordinal);
+                    row.TryGetValue(Ordinal, out var rawValue);
+                    throw MetadataColumnReadException.Conversion(Name, Ordinal, typeof(T), providerType, rawValue, ex);
+                }
+                catch (Exception ex)
+                {
+                    var providerType = row.TryGetFieldType(Ordinal);
+                    throw MetadataColumnReadException.Unexpected(Name, Ordinal, typeof(T), providerType, ex);
+                }
+            }
         }
     }
 
