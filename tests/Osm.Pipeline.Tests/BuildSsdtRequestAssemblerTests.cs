@@ -9,6 +9,7 @@ using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Xunit;
@@ -21,7 +22,8 @@ public sealed class BuildSsdtRequestAssemblerTests
         ConnectionString: null,
         CommandTimeoutSeconds: null,
         Sampling: new SqlSamplingSettings(null, null),
-        Authentication: new SqlAuthenticationSettings(null, null, null, null));
+        Authentication: new SqlAuthenticationSettings(null, null, null, null),
+        MetadataContract: MetadataContractOverrides.Strict);
 
     [Fact]
     public void Assemble_PrefersOverrideProfilerProvider()

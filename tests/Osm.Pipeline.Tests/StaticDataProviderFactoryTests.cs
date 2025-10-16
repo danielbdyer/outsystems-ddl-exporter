@@ -4,6 +4,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.StaticData;
+using Osm.Pipeline.SqlExtraction;
 using Xunit;
 
 namespace Osm.Pipeline.Tests;
@@ -14,7 +15,8 @@ public sealed class StaticDataProviderFactoryTests
         ConnectionString: null,
         CommandTimeoutSeconds: null,
         Sampling: new SqlSamplingSettings(null, null),
-        Authentication: new SqlAuthenticationSettings(null, null, null, null));
+        Authentication: new SqlAuthenticationSettings(null, null, null, null),
+        MetadataContract: MetadataContractOverrides.Strict);
 
     [Fact]
     public void Create_FailsWhenStaticDataRequiredButUnavailable()

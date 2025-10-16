@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -355,7 +356,47 @@ public sealed class CliConfigurationLoader
             authentication = new SqlAuthenticationConfiguration(method, trustServerCertificate, applicationName, accessToken);
         }
 
-        configuration = new SqlConfiguration(connectionString, commandTimeout, sampling, authentication);
+        var metadataContract = MetadataContractConfiguration.Empty;
+        if (element.TryGetProperty("metadataContract", out var contractElement) && contractElement.ValueKind == JsonValueKind.Object)
+        {
+            var optionalColumns = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+            if (contractElement.TryGetProperty("optionalColumns", out var optionalElement) && optionalElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in optionalElement.EnumerateObject())
+                {
+                    if (property.Value.ValueKind != JsonValueKind.Array)
+                    {
+                        continue;
+                    }
+
+                    var resultSetName = property.Name?.Trim();
+                    if (string.IsNullOrWhiteSpace(resultSetName))
+                    {
+                        continue;
+                    }
+
+                    var columns = property.Value
+                        .EnumerateArray()
+                        .Where(static item => item.ValueKind == JsonValueKind.String)
+                        .Select(static item => item.GetString())
+                        .Where(static name => !string.IsNullOrWhiteSpace(name))
+                        .Select(static name => name!.Trim())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+
+                    if (columns.Length > 0)
+                    {
+                        optionalColumns[resultSetName] = columns;
+                    }
+                }
+            }
+
+            metadataContract = optionalColumns.Count > 0
+                ? new MetadataContractConfiguration(optionalColumns)
+                : MetadataContractConfiguration.Empty;
+        }
+
+        configuration = new SqlConfiguration(connectionString, commandTimeout, sampling, authentication, metadataContract);
         return true;
     }
 

@@ -2,6 +2,7 @@ using System;
 using Osm.Domain.Abstractions;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.SqlExtraction;
 
 namespace Osm.Pipeline.Application;
 
@@ -67,10 +68,18 @@ internal static class SqlOptionsResolver
             authentication = authentication with { AccessToken = overrides.AccessToken };
         }
 
+        var metadataContract = configuration.Sql.MetadataContract ?? MetadataContractConfiguration.Empty;
+        var contractOverrides = MetadataContractOverrides.Strict;
+        foreach (var pair in metadataContract.OptionalColumns)
+        {
+            contractOverrides = contractOverrides.WithOptionalColumns(pair.Key, pair.Value);
+        }
+
         return new ResolvedSqlOptions(
             connection?.Trim(),
             timeout,
             new SqlSamplingSettings(sampling.RowSamplingThreshold, sampling.SampleSize),
-            new SqlAuthenticationSettings(authentication.Method, authentication.TrustServerCertificate, authentication.ApplicationName, authentication.AccessToken));
+            new SqlAuthenticationSettings(authentication.Method, authentication.TrustServerCertificate, authentication.ApplicationName, authentication.AccessToken),
+            contractOverrides);
     }
 }

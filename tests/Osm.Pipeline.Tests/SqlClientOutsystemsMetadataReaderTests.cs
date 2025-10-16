@@ -174,6 +174,73 @@ public class SqlClientOutsystemsMetadataReaderTests
         Assert.Equal("EntityId", exception.ColumnName);
     }
 
+    [Fact]
+    public async Task ReadAsync_ShouldLogAndReturnFailure_WhenAttributeJsonNullWithoutOverride()
+    {
+        var resultSets = CreateDefaultResultSets();
+        var attributeIndex = Array.FindIndex(resultSets, set => set.Columns.SequenceEqual(new[] { "EntityId", "AttributesJson" }));
+        Assert.NotEqual(-1, attributeIndex);
+
+        var attributeRow = resultSets[attributeIndex].Rows[0].ToArray();
+        attributeRow[1] = null;
+        resultSets[attributeIndex] = ResultSet.Create(resultSets[attributeIndex].Columns, new[] { attributeRow });
+
+        var command = new StubCommand(resultSets);
+        var connection = new StubConnection(command);
+        var factory = new StubConnectionFactory(connection);
+        var scriptProvider = new StubScriptProvider("SELECT 1");
+        var logger = new ListLogger<SqlClientOutsystemsMetadataReader>();
+        var reader = new SqlClientOutsystemsMetadataReader(
+            factory,
+            scriptProvider,
+            SqlExecutionOptions.Default,
+            logger);
+
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+
+        var result = await reader.ReadAsync(request, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("extraction.metadata.rowMapping", error.Code);
+        var logEntry = Assert.Single(logger.Entries.Where(entry => entry.LogLevel == LogLevel.Error));
+        Assert.Contains("AttributeJson", logEntry.Message);
+        Assert.Contains("AttributesJson", logEntry.Message);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ShouldAllowNullableAttributeJson_WhenOverrideConfigured()
+    {
+        var resultSets = CreateDefaultResultSets();
+        var attributeIndex = Array.FindIndex(resultSets, set => set.Columns.SequenceEqual(new[] { "EntityId", "AttributesJson" }));
+        Assert.NotEqual(-1, attributeIndex);
+
+        var attributeRow = resultSets[attributeIndex].Rows[0].ToArray();
+        attributeRow[1] = null;
+        resultSets[attributeIndex] = ResultSet.Create(resultSets[attributeIndex].Columns, new[] { attributeRow });
+
+        var command = new StubCommand(resultSets);
+        var connection = new StubConnection(command);
+        var factory = new StubConnectionFactory(connection);
+        var scriptProvider = new StubScriptProvider("SELECT 1");
+        var overrides = MetadataContractOverrides.Strict.WithOptionalColumn("AttributeJson", "AttributesJson");
+        var reader = new SqlClientOutsystemsMetadataReader(
+            factory,
+            scriptProvider,
+            SqlExecutionOptions.Default,
+            NullLogger<SqlClientOutsystemsMetadataReader>.Instance,
+            commandExecutor: null,
+            contractOverrides: overrides);
+
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+
+        var result = await reader.ReadAsync(request, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var attributeRowResult = Assert.Single(result.Value.AttributeJson);
+        Assert.Null(attributeRowResult.AttributesJson);
+    }
+
     private sealed class TrackingCommandExecutor : IDbCommandExecutor
     {
         private readonly ResultSet[] _resultSets;

@@ -121,7 +121,9 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
             new SqlConnectionFactory(sqlOptions.ConnectionString!, connectionOptions),
             new EmbeddedOutsystemsMetadataScriptProvider(),
             executionOptions,
-            _loggerFactory.CreateLogger<SqlClientOutsystemsMetadataReader>());
+            _loggerFactory.CreateLogger<SqlClientOutsystemsMetadataReader>(),
+            commandExecutor: null,
+            contractOverrides: sqlOptions.MetadataContract);
 
         return Result<IOutsystemsMetadataReader>.Success(reader);
     }

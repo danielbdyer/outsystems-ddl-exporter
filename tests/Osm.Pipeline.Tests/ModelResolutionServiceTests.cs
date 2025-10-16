@@ -25,7 +25,8 @@ public sealed class ModelResolutionServiceTests
         ConnectionString: null,
         CommandTimeoutSeconds: null,
         Sampling: new SqlSamplingSettings(null, null),
-        Authentication: new SqlAuthenticationSettings(null, null, null, null));
+        Authentication: new SqlAuthenticationSettings(null, null, null, null),
+        MetadataContract: MetadataContractOverrides.Strict);
 
     [Fact]
     public async Task ResolveModelAsync_ReturnsExistingModelPath_WhenOverrideProvided()

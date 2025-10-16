@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using Osm.Pipeline.Configuration;
 using Osm.Domain.Configuration;
@@ -172,6 +173,42 @@ public sealed class CliConfigurationLoaderTests
         Assert.True(result.IsSuccess);
         Assert.False(result.Value.SupplementalModels.IncludeUsers);
         Assert.Single(result.Value.SupplementalModels.Paths, Path.GetFullPath(supplementalPath));
+    }
+
+    [Fact]
+    public async Task LoadAsync_ReadsSqlMetadataContract()
+    {
+        using var directory = new TempDirectory();
+        var configPath = Path.Combine(directory.Path, "appsettings.json");
+
+        var config = new
+        {
+            sql = new
+            {
+                metadataContract = new
+                {
+                    optionalColumns = new
+                    {
+                        AttributeJson = new[] { "AttributesJson", "  Extra  " },
+                        ForeignKeyColumnsJson = new[] { "ColumnsJson" }
+                    }
+                }
+            }
+        };
+
+        await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
+
+        var loader = new CliConfigurationLoader();
+        var result = await loader.LoadAsync(configPath);
+
+        Assert.True(result.IsSuccess);
+        var optionalColumns = result.Value.Sql.MetadataContract.OptionalColumns;
+        Assert.Equal(2, optionalColumns.Count);
+        Assert.True(optionalColumns.ContainsKey("AttributeJson"));
+        Assert.True(optionalColumns.ContainsKey("ForeignKeyColumnsJson"));
+        Assert.Contains("AttributesJson", optionalColumns["AttributeJson"]);
+        Assert.Contains("Extra", optionalColumns["AttributeJson"]);
+        Assert.Contains("ColumnsJson", optionalColumns["ForeignKeyColumnsJson"]);
     }
 
     private static string CreateLegacyTighteningJson()

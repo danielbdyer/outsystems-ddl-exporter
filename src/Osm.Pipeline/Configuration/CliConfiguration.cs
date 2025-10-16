@@ -45,9 +45,15 @@ public sealed record SqlConfiguration(
     string? ConnectionString,
     int? CommandTimeoutSeconds,
     SqlSamplingConfiguration Sampling,
-    SqlAuthenticationConfiguration Authentication)
+    SqlAuthenticationConfiguration Authentication,
+    MetadataContractConfiguration MetadataContract)
 {
-    public static SqlConfiguration Empty { get; } = new(null, null, SqlSamplingConfiguration.Empty, SqlAuthenticationConfiguration.Empty);
+    public static SqlConfiguration Empty { get; } = new(
+        null,
+        null,
+        SqlSamplingConfiguration.Empty,
+        SqlAuthenticationConfiguration.Empty,
+        MetadataContractConfiguration.Empty);
 }
 
 public sealed record SqlSamplingConfiguration(long? RowSamplingThreshold, int? SampleSize)
@@ -62,6 +68,13 @@ public sealed record SqlAuthenticationConfiguration(
     string? AccessToken)
 {
     public static SqlAuthenticationConfiguration Empty { get; } = new(null, null, null, null);
+}
+
+public sealed record MetadataContractConfiguration(
+    IReadOnlyDictionary<string, IReadOnlyList<string>> OptionalColumns)
+{
+    public static MetadataContractConfiguration Empty { get; }
+        = new MetadataContractConfiguration(new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase));
 }
 
 public sealed record ModuleFilterConfiguration(
