@@ -45,13 +45,17 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
-        var orphanFlags = await ExecuteWithTimeoutFallback(
+        var foreignKeyFallback = (
+            Orphans: BuildConservativeForeignKeyResults(plan),
+            IsNoCheck: BuildConservativeForeignKeyNoCheckResults(plan));
+
+        var foreignKeyReality = await ExecuteWithTimeoutFallback(
             ct => ComputeForeignKeyRealityAsync(connection, plan, ct),
-            BuildConservativeForeignKeyResults(plan),
+            foreignKeyFallback,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
-        return new TableProfilingResults(nullCounts, duplicateFlags, orphanFlags);
+        return new TableProfilingResults(nullCounts, duplicateFlags, foreignKeyReality.Orphans, foreignKeyReality.IsNoCheck);
     }
 
     internal static string BuildUniqueCandidatesSql(
@@ -169,6 +173,43 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         return builder.ToString();
     }
 
+    internal static string BuildForeignKeyMetadataSql(string schema, string table, DbCommand command)
+    {
+        if (command is null)
+        {
+            throw new ArgumentNullException(nameof(command));
+        }
+
+        var schemaParameter = command.CreateParameter();
+        schemaParameter.ParameterName = "@SchemaName";
+        schemaParameter.DbType = DbType.String;
+        schemaParameter.Value = schema;
+        command.Parameters.Add(schemaParameter);
+
+        var tableParameter = command.CreateParameter();
+        tableParameter.ParameterName = "@TableName";
+        tableParameter.DbType = DbType.String;
+        tableParameter.Value = table;
+        command.Parameters.Add(tableParameter);
+
+        return @"SELECT
+    parentColumn.name AS ColumnName,
+    targetSchema.name AS TargetSchema,
+    targetTable.name AS TargetTable,
+    targetColumn.name AS TargetColumn,
+    fk.is_not_trusted AS IsNotTrusted,
+    fk.is_disabled AS IsDisabled
+FROM sys.foreign_keys AS fk
+JOIN sys.tables AS parentTable ON fk.parent_object_id = parentTable.object_id
+JOIN sys.schemas AS parentSchema ON parentTable.schema_id = parentSchema.schema_id
+JOIN sys.foreign_key_columns AS fkc ON fk.object_id = fkc.constraint_object_id
+JOIN sys.columns AS parentColumn ON fkc.parent_object_id = parentColumn.object_id AND fkc.parent_column_id = parentColumn.column_id
+JOIN sys.tables AS targetTable ON fk.referenced_object_id = targetTable.object_id
+JOIN sys.schemas AS targetSchema ON targetTable.schema_id = targetSchema.schema_id
+JOIN sys.columns AS targetColumn ON fkc.referenced_object_id = targetColumn.object_id AND fkc.referenced_column_id = targetColumn.column_id
+WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
+    }
+
     private async Task<IReadOnlyDictionary<string, long>> ComputeNullCountsAsync(
         DbConnection connection,
         TableProfilingPlan plan,
@@ -277,14 +318,14 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         return results.ToImmutable();
     }
 
-    private async Task<IReadOnlyDictionary<string, bool>> ComputeForeignKeyRealityAsync(
+    private async Task<(IReadOnlyDictionary<string, bool> Orphans, IReadOnlyDictionary<string, bool> IsNoCheck)> ComputeForeignKeyRealityAsync(
         DbConnection connection,
         TableProfilingPlan plan,
         CancellationToken cancellationToken)
     {
         if (plan.ForeignKeys.IsDefaultOrEmpty)
         {
-            return ImmutableDictionary<string, bool>.Empty;
+            return (ImmutableDictionary<string, bool>.Empty, ImmutableDictionary<string, bool>.Empty);
         }
 
         var useSampling = ShouldSample(plan.RowCount);
@@ -311,6 +352,44 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             var key = reader.GetString(0);
             var hasOrphans = !reader.IsDBNull(1) && reader.GetBoolean(1);
             results[key] = hasOrphans;
+        }
+
+        foreach (var candidate in plan.ForeignKeys)
+        {
+            if (!results.ContainsKey(candidate.Key))
+            {
+                results[candidate.Key] = false;
+            }
+        }
+
+        var metadata = await LoadForeignKeyMetadataAsync(connection, plan, cancellationToken).ConfigureAwait(false);
+
+        return (results.ToImmutable(), metadata);
+    }
+
+    private async Task<IReadOnlyDictionary<string, bool>> LoadForeignKeyMetadataAsync(
+        DbConnection connection,
+        TableProfilingPlan plan,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = BuildForeignKeyMetadataSql(plan.Schema, plan.Table, command);
+
+        ApplyCommandTimeout(command);
+
+        var results = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var column = reader.GetString(0);
+            var targetSchema = reader.GetString(1);
+            var targetTable = reader.GetString(2);
+            var targetColumn = reader.GetString(3);
+            var isNotTrusted = !reader.IsDBNull(4) && reader.GetBoolean(4);
+            var isDisabled = !reader.IsDBNull(5) && reader.GetBoolean(5);
+            var key = ProfilingPlanBuilder.BuildForeignKeyKey(column, targetSchema, targetTable, targetColumn);
+            results[key] = isNotTrusted || isDisabled;
         }
 
         foreach (var candidate in plan.ForeignKeys)
@@ -431,6 +510,22 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
     }
 
     private static IReadOnlyDictionary<string, bool> BuildConservativeForeignKeyResults(TableProfilingPlan plan)
+    {
+        if (plan.ForeignKeys.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<string, bool>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in plan.ForeignKeys)
+        {
+            builder[candidate.Key] = true;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static IReadOnlyDictionary<string, bool> BuildConservativeForeignKeyNoCheckResults(TableProfilingPlan plan)
     {
         if (plan.ForeignKeys.IsDefaultOrEmpty)
         {
