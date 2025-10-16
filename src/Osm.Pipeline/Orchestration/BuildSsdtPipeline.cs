@@ -8,6 +8,8 @@ using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Mediation;
+using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
@@ -33,7 +35,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         StaticEntitySeedTemplate? seedTemplate = null,
         ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
         EmissionFingerprintCalculator? fingerprintCalculator = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IDataProfilerFactory? dataProfilerFactory = null)
     {
         var resolvedBootstrapper = bootstrapper ?? new PipelineBootstrapper();
         var resolvedTighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
@@ -45,8 +48,12 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         var resolvedSeedTemplate = seedTemplate ?? StaticEntitySeedTemplate.Load();
         var resolvedProfileDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
         var resolvedFingerprintCalculator = fingerprintCalculator ?? new EmissionFingerprintCalculator();
+        var resolvedProfilerFactory = dataProfilerFactory
+            ?? new DataProfilerFactory(
+                resolvedProfileDeserializer,
+                static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
 
-        _bootstrapStep = new BuildSsdtBootstrapStep(resolvedBootstrapper, resolvedProfileDeserializer);
+        _bootstrapStep = new BuildSsdtBootstrapStep(resolvedBootstrapper, resolvedProfilerFactory);
         _evidenceCacheStep = new BuildSsdtEvidenceCacheStep(resolvedCacheService);
         _policyStep = new BuildSsdtPolicyDecisionStep(resolvedTighteningPolicy);
         _emissionStep = new BuildSsdtEmissionStep(resolvedSmoModelFactory, resolvedEmitter, resolvedDecisionLogWriter, resolvedFingerprintCalculator);
