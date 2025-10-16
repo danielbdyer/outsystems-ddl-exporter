@@ -38,9 +38,10 @@ internal sealed class ModuleDocumentMapper
             return true;
         }
 
-        foreach (var entity in entities)
+        for (var i = 0; i < entities.Length; i++)
         {
-            if (!ShouldSkipInactiveEntity(entity))
+            var entity = entities[i];
+            if (entity is null || !ShouldSkipInactiveEntity(entity))
             {
                 return false;
             }
@@ -55,13 +56,23 @@ internal sealed class ModuleDocumentMapper
         var entityResults = new List<EntityModel>(entities.Length);
         for (var i = 0; i < entities.Length; i++)
         {
+            var entityPath = path.Property("entities").Index(i);
             var entity = entities[i];
+            if (entity is null)
+            {
+                return Result<ModuleModel?>.Failure(
+                    _context.CreateError(
+                        "module.entities.nullEntry",
+                        $"Module '{moduleName.Value}' contains a null entity definition.",
+                        entityPath));
+            }
+
             if (ShouldSkipInactiveEntity(entity))
             {
                 continue;
             }
 
-            var entityResult = _entityMapper.Map(moduleName, entity, path.Property("entities").Index(i));
+            var entityResult = _entityMapper.Map(moduleName, entity, entityPath);
             if (entityResult.IsFailure)
             {
                 return Result<ModuleModel?>.Failure(entityResult.Errors);
@@ -94,7 +105,7 @@ internal sealed class ModuleDocumentMapper
         return Result<ModuleModel?>.Success(moduleResult.Value);
     }
 
-    private static bool ShouldSkipInactiveEntity(EntityDocument doc)
+    private static bool ShouldSkipInactiveEntity(EntityDocument? doc)
     {
         if (doc is null)
         {

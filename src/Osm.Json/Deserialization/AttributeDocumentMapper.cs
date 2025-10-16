@@ -36,6 +36,15 @@ internal sealed class AttributeDocumentMapper
             var doc = docs[i];
             var attributePath = path.Index(i);
 
+            if (doc is null)
+            {
+                return Result<ImmutableArray<AttributeModel>>.Failure(
+                    _context.CreateError(
+                        "entity.attributes.nullEntry",
+                        "Entity contains a null attribute definition.",
+                        attributePath));
+            }
+
             var logicalNameResult = AttributeName.Create(doc.Name);
             if (logicalNameResult.IsFailure)
             {

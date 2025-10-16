@@ -59,4 +59,18 @@ public class AttributeDocumentMapperTests
         Assert.Contains(result.Errors, error => error.Code.Contains("attribute"));
         Assert.Contains(result.Errors, error => error.Message.Contains("Path: $['attributes'][0]['name']", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void Map_ShouldFail_WhenAttributeCollectionContainsNullEntry()
+    {
+        var context = CreateContext();
+        var mapper = new AttributeDocumentMapper(context, new ExtendedPropertyDocumentMapper(context));
+
+        var result = mapper.Map(new AttributeDocument[] { null! }, DocumentPathContext.Root.Property("attributes"));
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("entity.attributes.nullEntry", error.Code);
+        Assert.Contains("$['attributes'][0]", error.Message);
+    }
 }
