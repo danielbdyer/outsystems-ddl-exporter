@@ -35,14 +35,24 @@ public class CliIntegrationTests
 
         var decisionLogPath = Path.Combine(output.Path, "policy-decisions.json");
         Assert.True(File.Exists(decisionLogPath));
+
+        var expectedDecisionLogPath = Path.Combine(expectedEmissionRoot, "policy-decisions.json");
+        Assert.True(File.Exists(expectedDecisionLogPath));
+
         using (var decisionStream = File.OpenRead(decisionLogPath))
-        using (var document = System.Text.Json.JsonDocument.Parse(decisionStream))
+        using (var expectedStream = File.OpenRead(expectedDecisionLogPath))
+        using (var decisionDocument = JsonDocument.Parse(decisionStream))
+        using (var expectedDocument = JsonDocument.Parse(expectedStream))
         {
-            var root = document.RootElement;
-            Assert.True(root.GetProperty("TightenedColumnCount").GetInt32() >= 0);
-            Assert.True(root.GetProperty("UniqueIndexCount").GetInt32() >= 0);
-            Assert.True(root.GetProperty("Columns").GetArrayLength() > 0);
-            Assert.True(root.GetProperty("UniqueIndexes").GetArrayLength() >= 0);
+            var actual = decisionDocument.RootElement;
+            var expected = expectedDocument.RootElement;
+
+            Assert.Equal(expected.GetProperty("TightenedColumnCount").GetInt32(), actual.GetProperty("TightenedColumnCount").GetInt32());
+            Assert.Equal(expected.GetProperty("UniqueIndexCount").GetInt32(), actual.GetProperty("UniqueIndexCount").GetInt32());
+
+            Assert.Equal(expected.GetProperty("Columns").GetArrayLength(), actual.GetProperty("Columns").GetArrayLength());
+            Assert.Equal(expected.GetProperty("UniqueIndexes").GetArrayLength(), actual.GetProperty("UniqueIndexes").GetArrayLength());
+            Assert.Equal(expected.GetProperty("ForeignKeys").GetArrayLength(), actual.GetProperty("ForeignKeys").GetArrayLength());
         }
 
         DirectorySnapshot.AssertMatches(expectedEmissionRoot, output.Path);
