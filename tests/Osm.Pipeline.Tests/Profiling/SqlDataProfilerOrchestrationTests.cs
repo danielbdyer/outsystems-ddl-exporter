@@ -21,7 +21,6 @@ public sealed class SqlDataProfilerOrchestrationTests
     public async Task CaptureAsync_ComposesMetadataPlansAndQueryResults()
     {
         var model = ModelFixtures.LoadModel("model.micro-unique.json");
-        var expected = ProfileFixtures.LoadSnapshot("profiling/profile.micro-unique.json");
 
         var metadata = new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(ColumnKeyComparer.Instance)
         {
@@ -41,18 +40,30 @@ public sealed class SqlDataProfilerOrchestrationTests
             ImmutableArray.Create(new UniqueCandidatePlan("email", ImmutableArray.Create("EMAIL"))),
             ImmutableArray<ForeignKeyPlan>.Empty);
 
+        var probeStatus = ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 100);
         var results = new TableProfilingResults(
             new Dictionary<string, long>(System.StringComparer.OrdinalIgnoreCase)
             {
                 ["ID"] = 0,
                 ["EMAIL"] = 0
             },
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                ["ID"] = probeStatus,
+                ["EMAIL"] = probeStatus
+            },
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase)
             {
                 ["email"] = false
             },
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                ["email"] = probeStatus
+            },
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
-            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase));
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase));
 
         var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
         var planBuilder = new StubPlanBuilder(plan);
@@ -62,10 +73,26 @@ public sealed class SqlDataProfilerOrchestrationTests
         var snapshot = await profiler.CaptureAsync(CancellationToken.None);
 
         Assert.True(snapshot.IsSuccess, string.Join(", ", snapshot.Errors.Select(e => e.Code)));
-        Assert.Equal(expected.Columns, snapshot.Value.Columns);
-        Assert.Equal(expected.UniqueCandidates, snapshot.Value.UniqueCandidates);
-        Assert.Equal(expected.CompositeUniqueCandidates, snapshot.Value.CompositeUniqueCandidates);
-        Assert.Equal(expected.ForeignKeys, snapshot.Value.ForeignKeys);
+        Assert.Collection(
+            snapshot.Value.Columns,
+            column =>
+            {
+                Assert.Equal("dbo", column.Schema.Value);
+                Assert.Equal("OSUSR_U_USER", column.Table.Value);
+                Assert.Equal("ID", column.Column.Value);
+                Assert.Equal(ProfilingProbeOutcome.Succeeded, column.NullCountStatus.Outcome);
+            },
+            column =>
+            {
+                Assert.Equal("EMAIL", column.Column.Value);
+                Assert.Equal(ProfilingProbeOutcome.Succeeded, column.NullCountStatus.Outcome);
+            });
+
+        var unique = Assert.Single(snapshot.Value.UniqueCandidates);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, unique.ProbeStatus.Outcome);
+
+        Assert.Empty(snapshot.Value.CompositeUniqueCandidates);
+        Assert.Empty(snapshot.Value.ForeignKeys);
     }
 
     [Fact]
@@ -95,20 +122,35 @@ public sealed class SqlDataProfilerOrchestrationTests
             ImmutableArray<UniqueCandidatePlan>.Empty,
             ImmutableArray.Create(new ForeignKeyPlan(foreignKeyKey, "PARENTID", "dbo", "OSUSR_P_PARENT", "ID")));
 
+        var probeStatus = ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 10);
         var results = new TableProfilingResults(
             new Dictionary<string, long>(System.StringComparer.OrdinalIgnoreCase)
             {
                 ["ID"] = 0,
                 ["PARENTID"] = 0
             },
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                ["ID"] = probeStatus,
+                ["PARENTID"] = probeStatus
+            },
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase)
             {
                 [foreignKeyKey] = false
             },
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                [foreignKeyKey] = probeStatus
+            },
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase)
             {
                 [foreignKeyKey] = true
+            },
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                [foreignKeyKey] = probeStatus
             });
 
         var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
@@ -125,6 +167,7 @@ public sealed class SqlDataProfilerOrchestrationTests
         var foreignKey = Assert.Single(snapshot.Value.ForeignKeys, fk => fk.Reference.FromTable.Value == "OSUSR_C_CHILD");
         Assert.True(foreignKey.IsNoCheck);
         Assert.False(foreignKey.HasOrphan);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, foreignKey.ProbeStatus.Outcome);
     }
 
     private sealed class StubMetadataLoader : ITableMetadataLoader

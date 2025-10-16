@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using Osm.Cli;
 using Osm.Domain.Profiling;
@@ -25,13 +26,15 @@ public class ProfileSnapshotDebugFormatterTests
             isUniqueKey: true,
             defaultDefinition: "((0))",
             rowCount: 10,
-            nullCount: 0).Value;
+            nullCount: 0,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 10)).Value;
 
         var uniqueProfile = UniqueCandidateProfile.Create(
             schema,
             table,
             column,
-            hasDuplicate: false).Value;
+            hasDuplicate: false,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0)).Value;
 
         var compositeProfile = CompositeUniqueCandidateProfile.Create(
             schema,
@@ -51,7 +54,8 @@ public class ProfileSnapshotDebugFormatterTests
         var foreignKeyReality = ForeignKeyReality.Create(
             foreignKeyReference,
             hasOrphan: false,
-            isNoCheck: true).Value;
+            isNoCheck: true,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0)).Value;
 
         var snapshot = ProfileSnapshot.Create(
             new[] { columnProfile },

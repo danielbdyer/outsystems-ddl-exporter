@@ -1,10 +1,52 @@
 {
   "columns": [
-    { "Schema": "dbo", "Table": "OSUSR_U_USER", "Column": "ID",    "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0,  "RowCount": 100 },
-    { "Schema": "dbo", "Table": "OSUSR_U_USER", "Column": "EMAIL", "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": true,  "DefaultDefinition": null, "NullCount": 5,  "RowCount": 100 }
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_U_USER",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 100,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 100,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_U_USER",
+      "Column": "EMAIL",
+      "IsNullablePhysical": true,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": true,
+      "DefaultDefinition": null,
+      "NullCount": 5,
+      "RowCount": 100,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 100,
+        "Outcome": "Succeeded"
+      }
+    }
   ],
   "uniqueCandidates": [
-    { "Schema": "dbo", "Table": "OSUSR_U_USER", "Column": "EMAIL", "HasDuplicate": false }
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_U_USER",
+      "Column": "EMAIL",
+      "HasDuplicate": false,
+      "ProbeStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 0,
+        "Outcome": "Succeeded"
+      }
+    }
   ],
   "fkReality": []
 }

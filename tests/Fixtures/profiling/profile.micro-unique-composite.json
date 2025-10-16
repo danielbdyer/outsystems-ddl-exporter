@@ -1,13 +1,85 @@
 {
   "columns": [
-    { "Schema": "dbo", "Table": "OSUSR_A_ORDERALLOCATION", "Column": "ID",         "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 1200 },
-    { "Schema": "dbo", "Table": "OSUSR_A_ORDERALLOCATION", "Column": "COUNTRYID",  "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 1200 },
-    { "Schema": "dbo", "Table": "OSUSR_A_ORDERALLOCATION", "Column": "DOCUMENTID", "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 1200 },
-    { "Schema": "dbo", "Table": "OSUSR_A_ORDERALLOCATION", "Column": "QTY",        "IsNullablePhysical": true,  "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": "(0)", "NullCount": 34, "RowCount": 1200 }
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 1200,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 1200,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "Column": "COUNTRYID",
+      "IsNullablePhysical": true,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 1200,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 1200,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "Column": "DOCUMENTID",
+      "IsNullablePhysical": true,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 1200,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 1200,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "Column": "QTY",
+      "IsNullablePhysical": true,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": "(0)",
+      "NullCount": 34,
+      "RowCount": 1200,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 1200,
+        "Outcome": "Succeeded"
+      }
+    }
   ],
   "uniqueCandidates": [],
   "compositeUniqueCandidates": [
-    { "Schema": "dbo", "Table": "OSUSR_A_ORDERALLOCATION", "Columns": ["COUNTRYID", "DOCUMENTID"], "HasDuplicate": false }
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "Columns": [
+        "COUNTRYID",
+        "DOCUMENTID"
+      ],
+      "HasDuplicate": false
+    }
   ],
   "fkReality": []
 }

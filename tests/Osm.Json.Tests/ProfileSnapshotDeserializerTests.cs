@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Text;
+using Osm.Domain.Profiling;
 using Osm.Json;
 using Tests.Support;
 
@@ -23,17 +24,21 @@ public sealed class ProfileSnapshotDeserializerTests
         var email = snapshot.Columns.Single(c => c.Table.Value == "OSUSR_ABC_CUSTOMER" && c.Column.Value == "EMAIL");
         Assert.True(email.IsUniqueKey);
         Assert.Equal(0, email.NullCount);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, email.NullCountStatus.Outcome);
 
         var triggered = snapshot.Columns.Single(c => c.Table.Value == "OSUSR_XYZ_JOBRUN" && c.Column.Value == "TRIGGEREDBYUSERID");
         Assert.Equal(950_000, triggered.NullCount);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, triggered.NullCountStatus.Outcome);
 
         var fk = snapshot.ForeignKeys.Single(f => f.Reference.FromTable.Value == "OSUSR_XYZ_JOBRUN");
         Assert.True(fk.HasOrphan);
         Assert.False(fk.Reference.HasDatabaseConstraint);
         Assert.True(fk.IsNoCheck);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, fk.ProbeStatus.Outcome);
 
         var accountNumber = snapshot.UniqueCandidates.Single(u => u.Table.Value == "BILLING_ACCOUNT");
         Assert.False(accountNumber.HasDuplicate);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, accountNumber.ProbeStatus.Outcome);
 
         Assert.Empty(snapshot.CompositeUniqueCandidates);
     }

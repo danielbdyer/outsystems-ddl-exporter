@@ -49,6 +49,9 @@ public static class ProfileFixtures
             : element.GetProperty("DefaultDefinition").GetString();
         var nullCount = element.GetProperty("NullCount").GetInt64();
         var rowCount = element.GetProperty("RowCount").GetInt64();
+        var status = element.TryGetProperty("NullCountStatus", out var statusElement)
+            ? ParseProbeStatus(statusElement, rowCount)
+            : ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, rowCount);
 
         return ColumnProfile.Create(
             schema,
@@ -60,7 +63,8 @@ public static class ProfileFixtures
             uniqueKey,
             defaultDefinition,
             rowCount,
-            nullCount).Value;
+            nullCount,
+            status).Value;
     }
 
     private static UniqueCandidateProfile ParseUnique(JsonElement element)
@@ -69,7 +73,10 @@ public static class ProfileFixtures
         var table = TableName.Create(element.GetProperty("Table").GetString()).Value;
         var column = ColumnName.Create(element.GetProperty("Column").GetString()).Value;
         var hasDuplicate = element.GetProperty("HasDuplicate").GetBoolean();
-        return UniqueCandidateProfile.Create(schema, table, column, hasDuplicate).Value;
+        var status = element.TryGetProperty("ProbeStatus", out var statusElement)
+            ? ParseProbeStatus(statusElement, defaultSampleSize: 0)
+            : ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0);
+        return UniqueCandidateProfile.Create(schema, table, column, hasDuplicate, status).Value;
     }
 
     private static CompositeUniqueCandidateProfile ParseCompositeUnique(JsonElement element)
@@ -104,6 +111,29 @@ public static class ProfileFixtures
             hasDbConstraint).Value;
         var hasOrphan = element.GetProperty("HasOrphan").GetBoolean();
         var isNoCheck = element.TryGetProperty("IsNoCheck", out var isNoCheckProperty) && isNoCheckProperty.GetBoolean();
-        return ForeignKeyReality.Create(reference, hasOrphan, isNoCheck).Value;
+        var status = element.TryGetProperty("ProbeStatus", out var statusElement)
+            ? ParseProbeStatus(statusElement, defaultSampleSize: 0)
+            : ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0);
+        return ForeignKeyReality.Create(reference, hasOrphan, isNoCheck, status).Value;
+    }
+
+    private static ProfilingProbeStatus ParseProbeStatus(JsonElement element, long defaultSampleSize)
+    {
+        var capturedAt = element.TryGetProperty("CapturedAtUtc", out var capturedProperty)
+            && capturedProperty.ValueKind == JsonValueKind.String
+            && DateTimeOffset.TryParse(capturedProperty.GetString(), out var parsedTimestamp)
+            ? parsedTimestamp
+            : DateTimeOffset.UnixEpoch;
+
+        var sampleSize = element.TryGetProperty("SampleSize", out var sampleElement)
+            ? sampleElement.GetInt64()
+            : defaultSampleSize;
+
+        var outcome = element.TryGetProperty("Outcome", out var outcomeElement) && outcomeElement.ValueKind == JsonValueKind.String
+            && Enum.TryParse<ProfilingProbeOutcome>(outcomeElement.GetString(), true, out var parsedOutcome)
+                ? parsedOutcome
+                : ProfilingProbeOutcome.Succeeded;
+
+        return new ProfilingProbeStatus(capturedAt, sampleSize, outcome);
     }
 }

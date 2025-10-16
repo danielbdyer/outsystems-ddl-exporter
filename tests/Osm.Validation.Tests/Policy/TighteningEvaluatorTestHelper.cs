@@ -120,10 +120,16 @@ internal static class TighteningEvaluatorTestHelper
             isUniqueKey: false,
             defaultDefinition: null,
             rowCount,
-            nullCount).Value;
+            nullCount,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, rowCount)).Value;
 
     public static UniqueCandidateProfile CreateUniqueCandidate(ColumnCoordinate coordinate, bool hasDuplicate)
-        => UniqueCandidateProfile.Create(coordinate.Schema, coordinate.Table, coordinate.Column, hasDuplicate).Value;
+        => UniqueCandidateProfile.Create(
+            coordinate.Schema,
+            coordinate.Table,
+            coordinate.Column,
+            hasDuplicate,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0)).Value;
 
     public static ForeignKeyReality CreateForeignKeyReality(
         ColumnCoordinate from,
@@ -140,6 +146,10 @@ internal static class TighteningEvaluatorTestHelper
             to.Column,
             hasConstraint).Value;
 
-        return ForeignKeyReality.Create(reference, hasOrphan, isNoCheck: false).Value;
+        return ForeignKeyReality.Create(
+            reference,
+            hasOrphan,
+            isNoCheck: false,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0)).Value;
     }
 }

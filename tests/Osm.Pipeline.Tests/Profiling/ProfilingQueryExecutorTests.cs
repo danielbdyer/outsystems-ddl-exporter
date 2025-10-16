@@ -2,7 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data;
+using System.Data.Common;
+using System.Threading;
+using System.Threading.Tasks;
+using Osm.Domain.Profiling;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Sql;
 using Xunit;
 
 namespace Osm.Pipeline.Tests.Profiling;
@@ -107,5 +112,265 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;""";
                 Assert.Equal(DbType.String, parameter.DbType);
                 Assert.Equal("ORDERS", parameter.Value);
             });
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldReturnTimeoutStatusesWhenSqlTimeoutOccurs()
+    {
+        var plan = new TableProfilingPlan(
+            "dbo",
+            "CUSTOMER",
+            100,
+            ImmutableArray.Create("ID", "TENANTID"),
+            ImmutableArray.Create(new UniqueCandidatePlan("unique", ImmutableArray.Create("ID"))),
+            ImmutableArray.Create(new ForeignKeyPlan("fk", "TENANTID", "dbo", "TENANT", "ID")));
+
+        var executor = new ProfilingQueryExecutor(new ThrowingConnectionFactory(static () => new TimeoutDbConnection()), SqlProfilerOptions.Default);
+
+        var results = await executor.ExecuteAsync(plan, CancellationToken.None);
+
+        Assert.Equal(100, results.NullCounts["ID"]);
+        Assert.Equal(ProfilingProbeOutcome.FallbackTimeout, results.NullCountStatuses["ID"].Outcome);
+        Assert.True(results.UniqueDuplicates["unique"]);
+        Assert.Equal(ProfilingProbeOutcome.FallbackTimeout, results.UniqueDuplicateStatuses["unique"].Outcome);
+        Assert.True(results.ForeignKeys["fk"]);
+        Assert.Equal(ProfilingProbeOutcome.FallbackTimeout, results.ForeignKeyStatuses["fk"].Outcome);
+        Assert.True(results.ForeignKeyIsNoCheck["fk"]);
+        Assert.Equal(ProfilingProbeOutcome.FallbackTimeout, results.ForeignKeyNoCheckStatuses["fk"].Outcome);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldReturnCancelledStatusesWhenTableTimeoutTriggers()
+    {
+        var plan = new TableProfilingPlan(
+            "dbo",
+            "CUSTOMER",
+            100,
+            ImmutableArray.Create("ID"),
+            ImmutableArray.Create(new UniqueCandidatePlan("unique", ImmutableArray.Create("ID"))),
+            ImmutableArray<ForeignKeyPlan>.Empty);
+
+        var limits = new SqlProfilerLimits(SqlProfilerOptions.Default.Limits.MaxRowsPerTable, TimeSpan.FromMilliseconds(1));
+        var options = SqlProfilerOptions.Default with { Limits = limits };
+        var executor = new ProfilingQueryExecutor(new ThrowingConnectionFactory(static () => new CancellableDbConnection()), options);
+
+        var results = await executor.ExecuteAsync(plan, CancellationToken.None);
+
+        Assert.Equal(100, results.NullCounts["ID"]);
+        Assert.Equal(ProfilingProbeOutcome.Cancelled, results.NullCountStatuses["ID"].Outcome);
+        Assert.True(results.UniqueDuplicates["unique"]);
+        Assert.Equal(ProfilingProbeOutcome.Cancelled, results.UniqueDuplicateStatuses["unique"].Outcome);
+    }
+
+    private sealed class ThrowingConnectionFactory : IDbConnectionFactory
+    {
+        private readonly Func<DbConnection> _factory;
+
+        public ThrowingConnectionFactory(Func<DbConnection> factory)
+        {
+            _factory = factory;
+        }
+
+        public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_factory());
+        }
+    }
+
+    private abstract class FakeDbConnectionBase : DbConnection
+    {
+        private ConnectionState _state = ConnectionState.Open;
+
+        public override string ConnectionString { get; set; } = string.Empty;
+
+        public override string Database => string.Empty;
+
+        public override string DataSource => string.Empty;
+
+        public override string ServerVersion => string.Empty;
+
+        public override ConnectionState State => _state;
+
+        public override void ChangeDatabase(string databaseName)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Close()
+        {
+            _state = ConnectionState.Closed;
+        }
+
+        public override void Open()
+        {
+            _state = ConnectionState.Open;
+        }
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+        {
+            throw new NotSupportedException();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            _state = ConnectionState.Closed;
+        }
+    }
+
+    private sealed class TimeoutDbConnection : FakeDbConnectionBase
+    {
+        protected override DbCommand CreateDbCommand()
+        {
+            return new TimeoutDbCommand(this);
+        }
+    }
+
+    private sealed class CancellableDbConnection : FakeDbConnectionBase
+    {
+        protected override DbCommand CreateDbCommand()
+        {
+            return new CancellableDbCommand(this);
+        }
+    }
+
+    private sealed class TimeoutDbCommand : DbCommand
+    {
+        private readonly RecordingDbParameterCollection _parameters = new();
+        private DbConnection? _connection;
+
+        public TimeoutDbCommand(DbConnection connection)
+        {
+            _connection = connection;
+        }
+
+        public override string CommandText { get; set; } = string.Empty;
+
+        public override int CommandTimeout { get; set; }
+
+        public override CommandType CommandType { get; set; } = CommandType.Text;
+
+        public override bool DesignTimeVisible { get; set; }
+
+        public override UpdateRowSource UpdatedRowSource { get; set; } = UpdateRowSource.Both;
+
+        protected override DbConnection DbConnection
+        {
+            get => _connection ?? throw new InvalidOperationException("Connection not set.");
+            set => _connection = value;
+        }
+
+        protected override DbParameterCollection DbParameterCollection => _parameters;
+
+        protected override DbTransaction? DbTransaction { get; set; }
+
+        public override void Cancel()
+        {
+        }
+
+        public override int ExecuteNonQuery()
+        {
+            throw new NotSupportedException();
+        }
+
+        public override object? ExecuteScalar()
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Prepare()
+        {
+        }
+
+        protected override DbParameter CreateDbParameter()
+        {
+            return new RecordingDbParameter();
+        }
+
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+        {
+            throw new FakeTimeoutDbException();
+        }
+
+        protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
+        {
+            return Task.FromException<DbDataReader>(new FakeTimeoutDbException());
+        }
+    }
+
+    private sealed class CancellableDbCommand : DbCommand
+    {
+        private readonly RecordingDbParameterCollection _parameters = new();
+        private readonly DbConnection _connection;
+
+        public CancellableDbCommand(DbConnection connection)
+        {
+            _connection = connection;
+        }
+
+        public override string CommandText { get; set; } = string.Empty;
+
+        public override int CommandTimeout { get; set; }
+
+        public override CommandType CommandType { get; set; } = CommandType.Text;
+
+        public override bool DesignTimeVisible { get; set; }
+
+        public override UpdateRowSource UpdatedRowSource { get; set; } = UpdateRowSource.Both;
+
+        protected override DbConnection DbConnection
+        {
+            get => _connection;
+            set => throw new NotSupportedException();
+        }
+
+        protected override DbParameterCollection DbParameterCollection => _parameters;
+
+        protected override DbTransaction? DbTransaction { get; set; }
+
+        public override void Cancel()
+        {
+        }
+
+        public override int ExecuteNonQuery()
+        {
+            throw new NotSupportedException();
+        }
+
+        public override object? ExecuteScalar()
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Prepare()
+        {
+        }
+
+        protected override DbParameter CreateDbParameter()
+        {
+            return new RecordingDbParameter();
+        }
+
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+        {
+            throw new OperationCanceledException();
+        }
+
+        protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
+        {
+            var tcs = new TaskCompletionSource<DbDataReader>(TaskCreationOptions.RunContinuationsAsynchronously);
+            cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken), useSynchronizationContext: false);
+            return tcs.Task;
+        }
+    }
+
+    private sealed class FakeTimeoutDbException : DbException
+    {
+        public FakeTimeoutDbException()
+            : base("Timeout occurred.")
+        {
+        }
+
+        public override int ErrorCode => -2;
     }
 }

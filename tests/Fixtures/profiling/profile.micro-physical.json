@@ -1,7 +1,39 @@
 {
   "columns": [
-    { "Schema": "dbo", "Table": "OSUSR_PH_RECORD", "Column": "ID",           "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": true,  "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 10 },
-    { "Schema": "dbo", "Table": "OSUSR_PH_RECORD", "Column": "EXTERNALCODE", "IsNullablePhysical": false, "IsComputed": false, "IsPrimaryKey": false, "IsUniqueKey": false, "DefaultDefinition": null, "NullCount": 0, "RowCount": 10 }
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_PH_RECORD",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 10,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 10,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_PH_RECORD",
+      "Column": "EXTERNALCODE",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 10,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 10,
+        "Outcome": "Succeeded"
+      }
+    }
   ],
   "uniqueCandidates": [],
   "fkReality": []
