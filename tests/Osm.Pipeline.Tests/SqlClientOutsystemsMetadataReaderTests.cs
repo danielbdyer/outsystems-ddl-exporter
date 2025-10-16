@@ -22,7 +22,111 @@ public class SqlClientOutsystemsMetadataReaderTests
     [Fact]
     public async Task ReadAsync_ShouldMaterializeSnapshot()
     {
-        var resultSets = new[]
+        var resultSets = CreateDefaultResultSets();
+
+        var command = new StubCommand(resultSets);
+        var connection = new StubConnection(command);
+        var factory = new StubConnectionFactory(connection);
+        var scriptProvider = new StubScriptProvider("SELECT 1");
+        var reader = new SqlClientOutsystemsMetadataReader(
+            factory,
+            scriptProvider,
+            SqlExecutionOptions.Default,
+            NullLogger<SqlClientOutsystemsMetadataReader>.Instance);
+
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+
+        var result = await reader.ReadAsync(request, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Value.ModuleJson);
+        Assert.Equal("ModuleA", result.Value.ModuleJson[0].ModuleName);
+        Assert.Equal("Fixture", result.Value.DatabaseName);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ShouldUseSequentialAccessCommandBehavior()
+    {
+        var resultSets = CreateDefaultResultSets();
+        var command = new StubCommand(resultSets);
+        var connection = new StubConnection(command);
+        var factory = new StubConnectionFactory(connection);
+        var scriptProvider = new StubScriptProvider("SELECT 1");
+        var executor = new TrackingCommandExecutor(resultSets);
+        var reader = new SqlClientOutsystemsMetadataReader(
+            factory,
+            scriptProvider,
+            SqlExecutionOptions.Default,
+            NullLogger<SqlClientOutsystemsMetadataReader>.Instance,
+            executor);
+
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+
+        var result = await reader.ReadAsync(request, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(CommandBehavior.SequentialAccess, executor.LastBehavior);
+        Assert.NotNull(executor.LastReader);
+        Assert.Equal(resultSets.Length - 1, executor.LastReader!.NextResultCalls);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ShouldReturnFailureWhenResultSetMissing()
+    {
+        var resultSets = CreateDefaultResultSets();
+        var truncated = new[] { resultSets[0] };
+        var command = new StubCommand(truncated);
+        var connection = new StubConnection(command);
+        var factory = new StubConnectionFactory(connection);
+        var scriptProvider = new StubScriptProvider("SELECT 1");
+        var executor = new TrackingCommandExecutor(truncated);
+        var reader = new SqlClientOutsystemsMetadataReader(
+            factory,
+            scriptProvider,
+            SqlExecutionOptions.Default,
+            NullLogger<SqlClientOutsystemsMetadataReader>.Instance,
+            executor);
+
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+
+        var result = await reader.ReadAsync(request, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("extraction.metadata.resultSets.missing", error.Code);
+        Assert.NotNull(executor.LastReader);
+        Assert.Equal(1, executor.LastReader!.NextResultCalls);
+    }
+
+    private sealed class TrackingCommandExecutor : IDbCommandExecutor
+    {
+        private readonly ResultSet[] _resultSets;
+
+        public TrackingCommandExecutor(ResultSet[] resultSets)
+        {
+            _resultSets = resultSets ?? throw new ArgumentNullException(nameof(resultSets));
+        }
+
+        public CommandBehavior LastBehavior { get; private set; }
+
+        public StubDataReader? LastReader { get; private set; }
+
+        public Task<DbDataReader> ExecuteReaderAsync(DbCommand command, CommandBehavior behavior, CancellationToken cancellationToken)
+        {
+            if (command is null)
+            {
+                throw new ArgumentNullException(nameof(command));
+            }
+
+            LastBehavior = behavior;
+            var reader = new StubDataReader(_resultSets);
+            LastReader = reader;
+            return Task.FromResult<DbDataReader>(reader);
+        }
+    }
+
+    private static ResultSet[] CreateDefaultResultSets()
+        => new[]
         {
             ResultSet.Create(
                 new[] { "EspaceId", "EspaceName", "IsSystemModule", "ModuleIsActive", "EspaceKind", "EspaceSSKey" },
@@ -69,7 +173,7 @@ public class SqlClientOutsystemsMetadataReaderTests
                         "Legacy",
                         null,
                         "Type",
-                        "Primary key"
+                        "Primary key",
                     }
                 }),
             ResultSet.Create(
@@ -108,26 +212,6 @@ public class SqlClientOutsystemsMetadataReaderTests
             ResultSet.Create(new[] { "EntityId", "TriggersJson" }, new object?[][] { new object?[] { 10, "[]" } }),
             ResultSet.Create(new[] { "module.name", "module.isSystem", "module.isActive", "module.entities" }, new object?[][] { new object?[] { "ModuleA", false, true, "[{\"name\":\"EntityA\"}]" } })
         };
-
-        var command = new StubCommand(resultSets);
-        var connection = new StubConnection(command);
-        var factory = new StubConnectionFactory(connection);
-        var scriptProvider = new StubScriptProvider("SELECT 1");
-        var reader = new SqlClientOutsystemsMetadataReader(
-            factory,
-            scriptProvider,
-            SqlExecutionOptions.Default,
-            NullLogger<SqlClientOutsystemsMetadataReader>.Instance);
-
-        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
-
-        var result = await reader.ReadAsync(request, CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        Assert.Single(result.Value.ModuleJson);
-        Assert.Equal("ModuleA", result.Value.ModuleJson[0].ModuleName);
-        Assert.Equal("Fixture", result.Value.DatabaseName);
-    }
 
     private sealed class StubScriptProvider : IAdvancedSqlScriptProvider
     {
@@ -354,6 +438,7 @@ public class SqlClientOutsystemsMetadataReaderTests
         private readonly ResultSet[] _resultSets;
         private int _resultIndex;
         private int _rowIndex = -1;
+        private int _nextResultCalls;
 
         public StubDataReader(ResultSet[] resultSets) => _resultSets = resultSets;
 
@@ -372,6 +457,8 @@ public class SqlClientOutsystemsMetadataReaderTests
         public override int RecordsAffected => -1;
 
         public override int Depth => 0;
+
+        public int NextResultCalls => _nextResultCalls;
 
         public override string GetName(int ordinal) => FieldCount > ordinal ? CurrentSet.Columns[ordinal] : string.Empty;
 
@@ -485,6 +572,7 @@ public class SqlClientOutsystemsMetadataReaderTests
 
         public override bool NextResult()
         {
+            _nextResultCalls++;
             if (_resultIndex + 1 >= _resultSets.Length)
             {
                 return false;
