@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using Osm.Pipeline.Profiling;
@@ -21,16 +22,18 @@ public sealed class ProfilingQueryExecutorTests
             useSampling: true,
             command);
 
-        var expected = """WITH Source AS (
-    SELECT TOP (@SampleSize) [ID], [EMAIL]
-    FROM [dbo].[OSUSR_U_USER] WITH (NOLOCK)
-    ORDER BY (SELECT NULL)
-)
-SELECT CandidateId, HasDuplicates
-FROM (
-    SELECT @candidate0 AS CandidateId, CASE WHEN EXISTS (SELECT 1 FROM Source GROUP BY [EMAIL] HAVING COUNT(*) > 1) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasDuplicates
-) AS results;
-""";
+        var expected = string.Join(Environment.NewLine, new[]
+        {
+            "WITH Source AS (",
+            "    SELECT TOP (@SampleSize) [ID], [EMAIL]",
+            "    FROM [dbo].[OSUSR_U_USER] WITH (NOLOCK)",
+            "    ORDER BY (SELECT NULL)",
+            ")",
+            "SELECT CandidateId, HasDuplicates",
+            "FROM (",
+            "    SELECT @candidate0 AS CandidateId, CASE WHEN EXISTS (SELECT 1 FROM Source GROUP BY [EMAIL] HAVING COUNT(*) > 1) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasDuplicates",
+            ") AS results;"
+        }) + Environment.NewLine;
         Assert.Equal(expected, sql);
         Assert.Single(command.ParametersCollection.Items, parameter => parameter.ParameterName == "@candidate0");
     }
@@ -49,15 +52,16 @@ FROM (
             useSampling: false,
             command);
 
-        var expected = """WITH Source AS (
-    SELECT [CUSTOMER_ID]
-    FROM [dbo].[ORDERS] WITH (NOLOCK)
-)
-SELECT CandidateId, HasOrphans
-FROM (
-    SELECT @fk0 AS CandidateId, CASE WHEN EXISTS (SELECT 1 FROM Source AS source LEFT JOIN [dbo].[CUSTOMER] AS target WITH (NOLOCK) ON source.[CUSTOMER_ID] = target.[ID] WHERE source.[CUSTOMER_ID] IS NOT NULL AND target.[ID] IS NULL) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasOrphans
-) AS results;
-""";
+        var expected = string.Join(Environment.NewLine, new[]
+        {
+            "WITH Source AS (",
+            "    SELECT [CUSTOMER_ID]",
+            "    FROM [dbo].[ORDERS] WITH (NOLOCK))",
+            "SELECT CandidateId, HasOrphans",
+            "FROM (",
+            "    SELECT @fk0 AS CandidateId, CASE WHEN EXISTS (SELECT 1 FROM Source AS source LEFT JOIN [dbo].[CUSTOMER] AS target WITH (NOLOCK) ON source.[CUSTOMER_ID] = target.[ID] WHERE source.[CUSTOMER_ID] IS NOT NULL AND target.[ID] IS NULL) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasOrphans",
+            ") AS results;"
+        }) + Environment.NewLine;
         Assert.Equal(expected, sql);
         Assert.Single(command.ParametersCollection.Items, parameter => parameter.ParameterName == "@fk0");
     }

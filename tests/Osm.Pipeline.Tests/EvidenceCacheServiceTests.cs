@@ -403,7 +403,7 @@ public sealed class EvidenceCacheServiceTests
         Assert.Equal(EvidenceCacheOutcome.Created, rebuilt.Value.Evaluation.Outcome);
         Assert.Equal(EvidenceCacheInvalidationReason.MetadataMismatch, rebuilt.Value.Evaluation.Reason);
         Assert.Equal("metadata.mismatch", rebuilt.Value.Evaluation.Metadata["reason"]);
-        Assert.Empty(timestamps);
+        Assert.Single(timestamps, new DateTimeOffset(2024, 08, 05, 08, 15, 00, TimeSpan.Zero));
     }
 
     [Fact]
