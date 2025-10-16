@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -61,7 +62,9 @@ public sealed class SqlDataProfilerOrchestrationTests
         var snapshot = await profiler.CaptureAsync(CancellationToken.None);
 
         Assert.True(snapshot.IsSuccess, string.Join(", ", snapshot.Errors.Select(e => e.Code)));
-        Assert.Equal(expected, snapshot.Value);
+        var actualJson = JsonSerializer.Serialize(snapshot.Value);
+        var expectedJson = JsonSerializer.Serialize(expected);
+        Assert.Equal(expectedJson, actualJson);
     }
 
     private sealed class StubMetadataLoader : ITableMetadataLoader
@@ -127,7 +130,7 @@ public sealed class SqlDataProfilerOrchestrationTests
     {
         public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken)
         {
-            throw new NotSupportedException("Query execution should be stubbed in this test.");
+            return Task.FromResult<DbConnection>(RecordingDbConnection.WithResultSets());
         }
     }
 }

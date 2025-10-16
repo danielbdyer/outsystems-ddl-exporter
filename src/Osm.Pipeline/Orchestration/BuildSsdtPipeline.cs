@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using Osm.Domain.Abstractions;
 using Osm.Emission;
@@ -29,6 +28,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         SsdtEmitter? ssdtEmitter = null,
         PolicyDecisionLogWriter? decisionLogWriter = null,
         IEvidenceCacheService? evidenceCacheService = null,
+        EvidenceCacheCoordinator? evidenceCacheCoordinator = null,
         StaticEntitySeedScriptGenerator? seedGenerator = null,
         StaticEntitySeedTemplate? seedTemplate = null,
         ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
@@ -40,14 +40,15 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         var resolvedSmoModelFactory = smoModelFactory ?? new SmoModelFactory();
         var resolvedEmitter = ssdtEmitter ?? new SsdtEmitter();
         var resolvedDecisionLogWriter = decisionLogWriter ?? new PolicyDecisionLogWriter();
-        var resolvedCacheService = evidenceCacheService ?? new EvidenceCacheService();
+        var resolvedCacheCoordinator = evidenceCacheCoordinator
+            ?? new EvidenceCacheCoordinator(evidenceCacheService ?? new EvidenceCacheService());
         var resolvedSeedGenerator = seedGenerator ?? new StaticEntitySeedScriptGenerator();
         var resolvedSeedTemplate = seedTemplate ?? StaticEntitySeedTemplate.Load();
         var resolvedProfileDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
         var resolvedFingerprintCalculator = fingerprintCalculator ?? new EmissionFingerprintCalculator();
 
         _bootstrapStep = new BuildSsdtBootstrapStep(resolvedBootstrapper, resolvedProfileDeserializer);
-        _evidenceCacheStep = new BuildSsdtEvidenceCacheStep(resolvedCacheService);
+        _evidenceCacheStep = new BuildSsdtEvidenceCacheStep(resolvedCacheCoordinator);
         _policyStep = new BuildSsdtPolicyDecisionStep(resolvedTighteningPolicy);
         _emissionStep = new BuildSsdtEmissionStep(resolvedSmoModelFactory, resolvedEmitter, resolvedDecisionLogWriter, resolvedFingerprintCalculator);
         _staticSeedStep = new BuildSsdtStaticSeedStep(resolvedSeedGenerator, resolvedSeedTemplate);

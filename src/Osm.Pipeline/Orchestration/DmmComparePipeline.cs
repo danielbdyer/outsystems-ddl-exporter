@@ -28,7 +28,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
     private readonly DmmComparator _dmmComparator;
     private readonly SsdtTableLayoutComparator _ssdtLayoutComparator;
     private readonly DmmDiffLogWriter _diffLogWriter;
-    private readonly IEvidenceCacheService _evidenceCacheService;
+    private readonly EvidenceCacheCoordinator _evidenceCacheCoordinator;
     private readonly ProfileSnapshotDeserializer _profileSnapshotDeserializer;
     private readonly TimeProvider _timeProvider;
 
@@ -43,6 +43,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         SsdtTableLayoutComparator? ssdtLayoutComparator = null,
         DmmDiffLogWriter? diffLogWriter = null,
         IEvidenceCacheService? evidenceCacheService = null,
+        EvidenceCacheCoordinator? evidenceCacheCoordinator = null,
         ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
         TimeProvider? timeProvider = null)
     {
@@ -55,7 +56,8 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         _dmmComparator = dmmComparator ?? new DmmComparator();
         _ssdtLayoutComparator = ssdtLayoutComparator ?? new SsdtTableLayoutComparator();
         _diffLogWriter = diffLogWriter ?? new DmmDiffLogWriter();
-        _evidenceCacheService = evidenceCacheService ?? new EvidenceCacheService();
+        _evidenceCacheCoordinator = evidenceCacheCoordinator
+            ?? new EvidenceCacheCoordinator(evidenceCacheService ?? new EvidenceCacheService());
         _profileSnapshotDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -146,67 +148,16 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         var profile = bootstrapContext.Profile;
         var pipelineWarnings = bootstrapContext.Warnings;
 
-        EvidenceCacheResult? cacheResult = null;
-        if (request.EvidenceCache is { } cacheOptions && !string.IsNullOrWhiteSpace(cacheOptions.RootDirectory))
+        var cacheCoordination = await _evidenceCacheCoordinator
+            .CoordinateAsync(request.EvidenceCache, log, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (cacheCoordination.IsFailure)
         {
-            var metadata = cacheOptions.Metadata ?? new Dictionary<string, string?>(StringComparer.Ordinal);
-            log.Record(
-                "evidence.cache.requested",
-                "Caching pipeline inputs.",
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["rootDirectory"] = cacheOptions.RootDirectory?.Trim(),
-                    ["refresh"] = cacheOptions.Refresh ? "true" : "false",
-                    ["metadataCount"] = metadata.Count.ToString(CultureInfo.InvariantCulture)
-                });
-            var cacheRequest = new EvidenceCacheRequest(
-                cacheOptions.RootDirectory!.Trim(),
-                cacheOptions.Command,
-                cacheOptions.ModelPath,
-                cacheOptions.ProfilePath,
-                cacheOptions.DmmPath,
-                cacheOptions.ConfigPath,
-                metadata,
-                cacheOptions.Refresh);
-
-            var cacheExecution = await _evidenceCacheService.CacheAsync(cacheRequest, cancellationToken).ConfigureAwait(false);
-            if (cacheExecution.IsFailure)
-            {
-                return Result<DmmComparePipelineResult>.Failure(cacheExecution.Errors);
-            }
-
-            cacheResult = cacheExecution.Value;
-            var cacheEvaluation = cacheResult.Evaluation;
-            var cacheMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["cacheDirectory"] = cacheResult.CacheDirectory,
-                ["artifactCount"] = cacheResult.Manifest.Artifacts.Count.ToString(CultureInfo.InvariantCulture),
-                ["cacheKey"] = cacheResult.Manifest.Key,
-                ["cacheOutcome"] = cacheEvaluation.Outcome.ToString(),
-                ["cacheReason"] = cacheEvaluation.Reason.ToString(),
-            };
-
-            foreach (var pair in cacheEvaluation.Metadata)
-            {
-                cacheMetadata[pair.Key] = pair.Value;
-            }
-
-            var cacheEvent = cacheEvaluation.Outcome == EvidenceCacheOutcome.Reused
-                ? "evidence.cache.reused"
-                : "evidence.cache.persisted";
-
-            var cacheMessage = cacheEvaluation.Outcome == EvidenceCacheOutcome.Reused
-                ? "Reused evidence cache manifest."
-                : "Persisted evidence cache manifest.";
-
-            log.Record(cacheEvent, cacheMessage, cacheMetadata);
+            return Result<DmmComparePipelineResult>.Failure(cacheCoordination.Errors);
         }
-        else
-        {
-            log.Record(
-                "evidence.cache.skipped",
-                "Evidence cache disabled for request.");
-        }
+
+        var cacheResult = cacheCoordination.Value;
 
         var decisions = _tighteningPolicy.Decide(filteredModel, profile, request.TighteningOptions);
         var smoModel = _smoModelFactory.Create(

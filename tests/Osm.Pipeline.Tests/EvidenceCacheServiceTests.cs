@@ -390,15 +390,21 @@ public sealed class EvidenceCacheServiceTests
         Assert.True(initial.IsSuccess);
         Assert.Equal(EvidenceCacheInvalidationReason.ManifestMissing, initial.Value.Evaluation.Reason);
 
-        var aggressiveRequest = request with
+        var manifestPath = fileSystem.Path.Combine(
+            request.RootDirectory!,
+            initial.Value.Manifest.Key,
+            "manifest.json");
+        var manifestJson = fileSystem.File.ReadAllText(manifestPath);
+        var manifest = JsonSerializer.Deserialize<EvidenceCacheManifest>(manifestJson);
+        Assert.NotNull(manifest);
+        var mutatedMetadata = new Dictionary<string, string?>(manifest!.Metadata, StringComparer.Ordinal)
         {
-            Metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["policy.mode"] = "Aggressive",
-            }
+            ["policy.mode"] = "Aggressive",
         };
+        var mutatedManifest = manifest with { Metadata = mutatedMetadata };
+        fileSystem.File.WriteAllText(manifestPath, JsonSerializer.Serialize(mutatedManifest));
 
-        var rebuilt = await service.CacheAsync(aggressiveRequest);
+        var rebuilt = await service.CacheAsync(request);
         Assert.True(rebuilt.IsSuccess);
         Assert.Equal(EvidenceCacheOutcome.Created, rebuilt.Value.Evaluation.Outcome);
         Assert.Equal(EvidenceCacheInvalidationReason.MetadataMismatch, rebuilt.Value.Evaluation.Reason);

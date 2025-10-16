@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -180,11 +181,35 @@ public class BuildSsdtPipelineTests
         Assert.Contains("staticData.seed.generated", steps);
         Assert.Contains(steps, step => step is "evidence.cache.persisted" or "evidence.cache.reused");
 
+        var requestedEntry = Assert.Single(
+            value.ExecutionLog.Entries,
+            entry => entry.Step == "evidence.cache.requested");
+        Assert.Equal("Caching pipeline inputs.", requestedEntry.Message);
+        Assert.Equal(cache.Path, requestedEntry.Metadata["rootDirectory"]);
+        Assert.Equal("false", requestedEntry.Metadata["refresh"]);
+        Assert.Equal("0", requestedEntry.Metadata["metadataCount"]);
+
+        var completionEntry = Assert.Single(
+            value.ExecutionLog.Entries,
+            entry => entry.Step is "evidence.cache.persisted" or "evidence.cache.reused");
+        Assert.Equal(value.EvidenceCache!.CacheDirectory, completionEntry.Metadata["cacheDirectory"]);
+        Assert.Equal(
+            value.EvidenceCache.Manifest.Artifacts.Count.ToString(CultureInfo.InvariantCulture),
+            completionEntry.Metadata["artifactCount"]);
+        Assert.Equal(value.EvidenceCache.Manifest.Key, completionEntry.Metadata["cacheKey"]);
+        Assert.Equal(
+            value.EvidenceCache.Evaluation.Outcome.ToString(),
+            completionEntry.Metadata["cacheOutcome"]);
+        Assert.Equal(
+            value.EvidenceCache.Evaluation.Reason.ToString(),
+            completionEntry.Metadata["cacheReason"]);
+
         var requestIndex = Array.IndexOf(steps, "request.received");
         var completedIndex = Array.IndexOf(steps, "pipeline.completed");
         Assert.True(requestIndex >= 0 && completedIndex > requestIndex);
 
-        Assert.True(value.Warnings.IsDefaultOrEmpty);
+        Assert.NotEmpty(value.Warnings);
+        Assert.StartsWith("Schema validation encountered", value.Warnings[0], StringComparison.Ordinal);
 
         Assert.NotNull(value.EvidenceCache);
         Assert.True(Directory.Exists(value.EvidenceCache!.CacheDirectory));

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -111,6 +112,29 @@ public class DmmComparePipelineTests
         Assert.NotNull(value.ExecutionLog);
         Assert.True(value.ExecutionLog.Entries.Count > 0);
         Assert.Contains(value.ExecutionLog.Entries, entry => entry.Step == "pipeline.completed");
+
+        var requestedEntry = Assert.Single(
+            value.ExecutionLog.Entries,
+            entry => entry.Step == "evidence.cache.requested");
+        Assert.Equal("Caching pipeline inputs.", requestedEntry.Message);
+        Assert.Equal(cache.Path, requestedEntry.Metadata["rootDirectory"]);
+        Assert.Equal("false", requestedEntry.Metadata["refresh"]);
+        Assert.Equal("0", requestedEntry.Metadata["metadataCount"]);
+
+        var completionEntry = Assert.Single(
+            value.ExecutionLog.Entries,
+            entry => entry.Step is "evidence.cache.persisted" or "evidence.cache.reused");
+        Assert.Equal(value.EvidenceCache.CacheDirectory, completionEntry.Metadata["cacheDirectory"]);
+        Assert.Equal(
+            value.EvidenceCache.Manifest.Artifacts.Count.ToString(CultureInfo.InvariantCulture),
+            completionEntry.Metadata["artifactCount"]);
+        Assert.Equal(value.EvidenceCache.Manifest.Key, completionEntry.Metadata["cacheKey"]);
+        Assert.Equal(
+            value.EvidenceCache.Evaluation.Outcome.ToString(),
+            completionEntry.Metadata["cacheOutcome"]);
+        Assert.Equal(
+            value.EvidenceCache.Evaluation.Reason.ToString(),
+            completionEntry.Metadata["cacheReason"]);
     }
 
     [Fact]

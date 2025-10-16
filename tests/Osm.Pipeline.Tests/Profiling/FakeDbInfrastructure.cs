@@ -5,6 +5,9 @@ using System.Data;
 using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Linq;
+
+#pragma warning disable CS8765 // Nullability of type of parameter 'value' doesn't match overridden member
 
 namespace Osm.Pipeline.Tests.Profiling;
 
@@ -144,7 +147,9 @@ internal sealed class RecordingDbCommand : DbCommand
         return new FakeDbDataReader(_rows);
     }
 
-    public override Task<DbDataReader> ExecuteReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
+    protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
+        CommandBehavior behavior,
+        CancellationToken cancellationToken)
     {
         return Task.FromResult<DbDataReader>(new FakeDbDataReader(_rows));
     }
@@ -333,14 +338,74 @@ internal sealed class FakeDbDataReader : DbDataReader
         return (bool)_rows[_position][ordinal]!;
     }
 
+    public override byte GetByte(int ordinal)
+    {
+        return Convert.ToByte(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
+    {
+        throw new NotSupportedException();
+    }
+
+    public override char GetChar(int ordinal)
+    {
+        return Convert.ToChar(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
+    {
+        throw new NotSupportedException();
+    }
+
+    public override string GetDataTypeName(int ordinal)
+    {
+        return GetFieldType(ordinal).Name;
+    }
+
+    public override DateTime GetDateTime(int ordinal)
+    {
+        return Convert.ToDateTime(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override decimal GetDecimal(int ordinal)
+    {
+        return Convert.ToDecimal(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override double GetDouble(int ordinal)
+    {
+        return Convert.ToDouble(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     public override int GetInt32(int ordinal)
     {
         return Convert.ToInt32(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    public override short GetInt16(int ordinal)
+    {
+        return Convert.ToInt16(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     public override long GetInt64(int ordinal)
     {
         return Convert.ToInt64(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override float GetFloat(int ordinal)
+    {
+        return Convert.ToSingle(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override Guid GetGuid(int ordinal)
+    {
+        return _rows[_position][ordinal] switch
+        {
+            Guid guid => guid,
+            string text => Guid.Parse(text),
+            _ => throw new InvalidOperationException("Value cannot be converted to Guid."),
+        };
     }
 
     public override string GetString(int ordinal)
@@ -416,4 +481,11 @@ internal sealed class FakeDbDataReader : DbDataReader
     public override void Close()
     {
     }
+
+    public override IEnumerator GetEnumerator()
+    {
+        return Enumerable.Empty<object>().GetEnumerator();
+    }
 }
+
+#pragma warning restore CS8765

@@ -64,6 +64,7 @@ public class BuildSsdtPipelineStepTests
             });
         var cacheResult = new EvidenceCacheResult(cacheDirectory.Path, manifest, evaluation);
         var cacheService = new FakeEvidenceCacheService(Result<EvidenceCacheResult>.Success(cacheResult));
+        var coordinator = new EvidenceCacheCoordinator(cacheService);
 
         var cacheOptions = new EvidenceCachePipelineOptions(
             cacheDirectory.Path,
@@ -77,7 +78,7 @@ public class BuildSsdtPipelineStepTests
 
         var request = CreateRequest(output.Path, cacheOptions: cacheOptions);
         var context = new BuildSsdtPipelineContext(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var step = new BuildSsdtEvidenceCacheStep(cacheService);
+        var step = new BuildSsdtEvidenceCacheStep(coordinator);
 
         var result = await step.ExecuteAsync(context);
 
@@ -206,7 +207,10 @@ public class BuildSsdtPipelineStepTests
                     definition,
                     new[]
                     {
-                        StaticEntityRow.Create(new object?[] { 1, "Sample" })
+                        StaticEntityRow.Create(
+                            definition.Columns
+                                .Select((_, index) => index == 0 ? 1 : (object?)$"Sample{index}")
+                                .ToArray())
                     }))
                 .Cast<StaticEntityTableData>()
                 .ToList();

@@ -28,25 +28,27 @@ public sealed class TableMetadataLoaderTests
 
         var metadata = await loader.LoadColumnMetadataAsync(connection, tables, CancellationToken.None);
 
-        var expectedSql = """SELECT
-    s.name AS SchemaName,
-    t.name AS TableName,
-    c.name AS ColumnName,
-    c.is_nullable,
-    c.is_computed,
-    CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END AS IsPrimaryKey,
-    dc.definition AS DefaultDefinition
-FROM sys.columns AS c
-JOIN sys.tables AS t ON c.object_id = t.object_id
-JOIN sys.schemas AS s ON t.schema_id = s.schema_id
-LEFT JOIN sys.default_constraints AS dc ON c.default_object_id = dc.object_id
-LEFT JOIN (
-    SELECT ic.object_id, ic.column_id
-    FROM sys.indexes AS i
-    JOIN sys.index_columns AS ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-    WHERE i.is_primary_key = 1
-) AS pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
-WHERE t.is_ms_shipped = 0 AND EXISTS (SELECT 1 FROM (VALUES (@schema0, @table0), (@schema1, @table1)) AS targets(SchemaName, TableName) WHERE targets.SchemaName = s.name AND targets.TableName = t.name);""";
+        var expectedSql = """
+            SELECT
+                s.name AS SchemaName,
+                t.name AS TableName,
+                c.name AS ColumnName,
+                c.is_nullable,
+                c.is_computed,
+                CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END AS IsPrimaryKey,
+                dc.definition AS DefaultDefinition
+            FROM sys.columns AS c
+            JOIN sys.tables AS t ON c.object_id = t.object_id
+            JOIN sys.schemas AS s ON t.schema_id = s.schema_id
+            LEFT JOIN sys.default_constraints AS dc ON c.default_object_id = dc.object_id
+            LEFT JOIN (
+                SELECT ic.object_id, ic.column_id
+                FROM sys.indexes AS i
+                JOIN sys.index_columns AS ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                WHERE i.is_primary_key = 1
+            ) AS pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
+            WHERE t.is_ms_shipped = 0 AND EXISTS (SELECT 1 FROM (VALUES (@schema0, @table0), (@schema1, @table1)) AS targets(SchemaName, TableName) WHERE targets.SchemaName = s.name AND targets.TableName = t.name);
+            """;
 
         Assert.Equal(expectedSql, connection.LastCommand!.CommandText);
         Assert.Equal(4, connection.LastCommand.ParametersCollection.Count);
@@ -75,15 +77,17 @@ WHERE t.is_ms_shipped = 0 AND EXISTS (SELECT 1 FROM (VALUES (@schema0, @table0),
 
         var counts = await loader.LoadRowCountsAsync(connection, tables, CancellationToken.None);
 
-        var expectedSql = """SELECT
-    s.name AS SchemaName,
-    t.name AS TableName,
-    SUM(p.rows) AS [RowCount]
-FROM sys.tables AS t
-JOIN sys.schemas AS s ON t.schema_id = s.schema_id
-JOIN sys.dm_db_partition_stats AS p ON t.object_id = p.object_id
-WHERE p.index_id IN (0,1) AND EXISTS (SELECT 1 FROM (VALUES (@schema0, @table0)) AS targets(SchemaName, TableName) WHERE targets.SchemaName = s.name AND targets.TableName = t.name)
-GROUP BY s.name, t.name;""";
+        var expectedSql = """
+            SELECT
+                s.name AS SchemaName,
+                t.name AS TableName,
+                SUM(p.rows) AS [RowCount]
+            FROM sys.tables AS t
+            JOIN sys.schemas AS s ON t.schema_id = s.schema_id
+            JOIN sys.dm_db_partition_stats AS p ON t.object_id = p.object_id
+            WHERE p.index_id IN (0,1) AND EXISTS (SELECT 1 FROM (VALUES (@schema0, @table0)) AS targets(SchemaName, TableName) WHERE targets.SchemaName = s.name AND targets.TableName = t.name)
+            GROUP BY s.name, t.name;
+            """;
 
         Assert.Equal(expectedSql, connection.LastCommand!.CommandText);
         Assert.Single(connection.LastCommand.ParametersCollection.Items.Where(parameter => parameter.ParameterName.StartsWith("@schema", System.StringComparison.Ordinal)));
