@@ -41,10 +41,10 @@ hostBuilder.Services.AddSingleton<CliGlobalOptions>();
 hostBuilder.Services.AddSingleton<ModuleFilterOptionBinder>();
 hostBuilder.Services.AddSingleton<CacheOptionBinder>();
 hostBuilder.Services.AddSingleton<SqlOptionBinder>();
-hostBuilder.Services.AddSingleton<ICommandModule, BuildSsdtCommandModule>();
-hostBuilder.Services.AddSingleton<ICommandModule, ExtractModelCommandModule>();
-hostBuilder.Services.AddSingleton<ICommandModule, DmmCompareCommandModule>();
-hostBuilder.Services.AddSingleton<ICommandModule, InspectCommandModule>();
+hostBuilder.Services.AddSingleton<ICommandFactory, BuildSsdtCommandFactory>();
+hostBuilder.Services.AddSingleton<ICommandFactory, ExtractModelCommandFactory>();
+hostBuilder.Services.AddSingleton<ICommandFactory, DmmCompareCommandFactory>();
+hostBuilder.Services.AddSingleton<ICommandFactory, InspectCommandFactory>();
 
 var remapUsersToggle = Environment.GetEnvironmentVariable("OSM_ENABLE_REMAP_USERS");
 var enableUatUsers = remapUsersToggle is null || string.Equals(remapUsersToggle, "true", StringComparison.OrdinalIgnoreCase);
@@ -52,15 +52,15 @@ var enableUatUsers = remapUsersToggle is null || string.Equals(remapUsersToggle,
 if (enableUatUsers)
 {
     hostBuilder.Services.AddSingleton<IUatUsersCommand, UatUsersCommand>();
-    hostBuilder.Services.AddSingleton<ICommandModule, UatUsersCommandModule>();
+    hostBuilder.Services.AddSingleton<ICommandFactory, UatUsersCommandFactory>();
 }
 
 using var host = hostBuilder.Build();
 
 var rootCommand = new RootCommand("OutSystems DDL Exporter CLI");
-foreach (var module in host.Services.GetRequiredService<IEnumerable<ICommandModule>>())
+foreach (var factory in host.Services.GetRequiredService<IEnumerable<ICommandFactory>>())
 {
-    rootCommand.AddCommand(module.BuildCommand());
+    rootCommand.AddCommand(factory.Create());
 }
 
 var parser = new CommandLineBuilder(rootCommand)

@@ -10,7 +10,7 @@ using Osm.Pipeline.ModelIngestion;
 
 namespace Osm.Cli.Commands;
 
-internal sealed class InspectCommandModule : ICommandModule
+internal sealed class InspectCommandFactory : ICommandFactory
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly Option<string> _modelOption = new("--model", "Path to the model JSON file.")
@@ -18,13 +18,13 @@ internal sealed class InspectCommandModule : ICommandModule
         IsRequired = true
     };
 
-    public InspectCommandModule(IServiceScopeFactory scopeFactory)
+    public InspectCommandFactory(IServiceScopeFactory scopeFactory)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _modelOption.AddAlias("--in");
     }
 
-    public Command BuildCommand()
+    public Command Create()
     {
         var command = new Command("inspect", "Inspect an OutSystems model JSON file.")
         {

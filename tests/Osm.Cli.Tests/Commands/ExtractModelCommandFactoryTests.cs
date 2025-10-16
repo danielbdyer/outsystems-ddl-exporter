@@ -18,7 +18,7 @@ using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
 
-public class ExtractModelCommandModuleTests
+public class ExtractModelCommandFactoryTests
 {
     [Fact]
     public async Task Invoke_ParsesOptions()
@@ -34,11 +34,15 @@ public class ExtractModelCommandModuleTests
         services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>>(application);
         services.AddSingleton<CliGlobalOptions>();
         services.AddSingleton<SqlOptionBinder>();
-        services.AddSingleton<ExtractModelCommandModule>();
+        services.AddSingleton<ExtractModelCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
-        var module = provider.GetRequiredService<ExtractModelCommandModule>();
-        var command = module.BuildCommand();
+        var factory = provider.GetRequiredService<ExtractModelCommandFactory>();
+        var command = factory.Create();
+        Assert.NotNull(command.Handler);
+
+        var sqlBinder = provider.GetRequiredService<SqlOptionBinder>();
+        Assert.Contains(sqlBinder.ConnectionStringOption, command.Options);
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();

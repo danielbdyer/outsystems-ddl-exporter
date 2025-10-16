@@ -12,7 +12,7 @@ using Osm.Validation.Tightening;
 
 namespace Osm.Cli.Commands;
 
-internal sealed class BuildSsdtCommandModule : ICommandModule
+internal sealed class BuildSsdtCommandFactory : ICommandFactory
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly CliGlobalOptions _globalOptions;
@@ -28,7 +28,7 @@ internal sealed class BuildSsdtCommandModule : ICommandModule
     private readonly Option<string?> _renameOption = new("--rename-table", "Rename tables using source=Override syntax.");
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
 
-    public BuildSsdtCommandModule(
+    public BuildSsdtCommandFactory(
         IServiceScopeFactory scopeFactory,
         CliGlobalOptions globalOptions,
         ModuleFilterOptionBinder moduleFilterBinder,
@@ -42,7 +42,7 @@ internal sealed class BuildSsdtCommandModule : ICommandModule
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
     }
 
-    public Command BuildCommand()
+    public Command Create()
     {
         var command = new Command("build-ssdt", "Emit SSDT artifacts from an OutSystems model.")
         {
@@ -57,20 +57,9 @@ internal sealed class BuildSsdtCommandModule : ICommandModule
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
-        foreach (var option in _moduleFilterBinder.Options)
-        {
-            command.AddOption(option);
-        }
-
-        foreach (var option in _cacheOptionBinder.Options)
-        {
-            command.AddOption(option);
-        }
-
-        foreach (var option in _sqlOptionBinder.Options)
-        {
-            command.AddOption(option);
-        }
+        CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
+        CommandOptionBuilder.AddCacheOptions(command, _cacheOptionBinder);
+        CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
 
         command.SetHandler(async context => await ExecuteAsync(context).ConfigureAwait(false));
         return command;

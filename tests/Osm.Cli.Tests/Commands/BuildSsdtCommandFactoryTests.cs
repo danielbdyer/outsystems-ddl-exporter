@@ -21,7 +21,7 @@ using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
 
-public class BuildSsdtCommandModuleTests
+public class BuildSsdtCommandFactoryTests
 {
     [Fact]
     public async Task Invoke_ParsesOptionsAndRunsPipeline()
@@ -36,11 +36,21 @@ public class BuildSsdtCommandModuleTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
-        services.AddSingleton<BuildSsdtCommandModule>();
+        services.AddSingleton<BuildSsdtCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
-        var module = provider.GetRequiredService<BuildSsdtCommandModule>();
-        var command = module.BuildCommand();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+        Assert.NotNull(command.Handler);
+
+        var moduleBinder = provider.GetRequiredService<ModuleFilterOptionBinder>();
+        Assert.Contains(moduleBinder.ModulesOption, command.Options);
+
+        var cacheBinder = provider.GetRequiredService<CacheOptionBinder>();
+        Assert.Contains(cacheBinder.CacheRootOption, command.Options);
+
+        var sqlBinder = provider.GetRequiredService<SqlOptionBinder>();
+        Assert.Contains(sqlBinder.ConnectionStringOption, command.Options);
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
