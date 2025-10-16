@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -42,8 +43,8 @@ public class EntityDocumentMapperTests
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper();
-        var attributeMapper = new AttributeDocumentMapper(extendedPropertyMapper);
+        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
+        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
         var mapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
 
         var document = new EntityDocument
@@ -54,10 +55,15 @@ public class EntityDocumentMapperTests
             Attributes = new[] { CreateIdentifierAttribute() }
         };
 
-        var result = mapper.Map(ModuleName.Create("Finance").Value, document);
+        var result = mapper.Map(
+            ModuleName.Create("Finance").Value,
+            document,
+            DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0));
 
         Assert.True(result.IsFailure);
-        Assert.Contains(result.Errors, error => error.Code == "entity.schema.missing");
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("entity.schema.missing", error.Code);
+        Assert.Contains("Path: $['modules'][0]['entities'][0]['schema']", error.Message);
     }
 
     [Fact]
@@ -75,8 +81,8 @@ public class EntityDocumentMapperTests
         Assert.True(overridesResult.IsSuccess, string.Join(", ", overridesResult.Errors.Select(e => e.Message)));
 
         var context = CreateContext(warnings, overridesResult.Value);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper();
-        var attributeMapper = new AttributeDocumentMapper(extendedPropertyMapper);
+        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
+        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
         var mapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
 
         var document = new EntityDocument
@@ -87,7 +93,10 @@ public class EntityDocumentMapperTests
             Attributes = new[] { CreateIdentifierAttribute() }
         };
 
-        var result = mapper.Map(ModuleName.Create("Finance").Value, document);
+        var result = mapper.Map(
+            ModuleName.Create("Finance").Value,
+            document,
+            DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0));
 
         Assert.True(result.IsSuccess);
         Assert.True(result.Value.IsActive);

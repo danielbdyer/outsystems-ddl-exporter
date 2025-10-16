@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Osm.Json;
 using Osm.Json.Deserialization;
 
@@ -7,6 +11,15 @@ using AttributeDocument = ModelJsonDeserializer.AttributeDocument;
 
 public class AttributeDocumentMapperTests
 {
+    private static DocumentMapperContext CreateContext()
+    {
+        var serializerOptions = new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+        return new DocumentMapperContext(ModelJsonDeserializerOptions.Default, new List<string>(), serializerOptions);
+    }
+
     private static AttributeDocument CreateAttribute(string name)
         => new()
         {
@@ -23,9 +36,10 @@ public class AttributeDocumentMapperTests
     [Fact]
     public void Map_ShouldProduceAttributeModel()
     {
-        var mapper = new AttributeDocumentMapper(new ExtendedPropertyDocumentMapper());
+        var context = CreateContext();
+        var mapper = new AttributeDocumentMapper(context, new ExtendedPropertyDocumentMapper(context));
 
-        var result = mapper.Map(new[] { CreateAttribute("Id") });
+        var result = mapper.Map(new[] { CreateAttribute("Id") }, DocumentPathContext.Root.Property("attributes"));
 
         Assert.True(result.IsSuccess);
         var attribute = Assert.Single(result.Value);
@@ -36,11 +50,13 @@ public class AttributeDocumentMapperTests
     [Fact]
     public void Map_ShouldFail_WhenNameIsInvalid()
     {
-        var mapper = new AttributeDocumentMapper(new ExtendedPropertyDocumentMapper());
+        var context = CreateContext();
+        var mapper = new AttributeDocumentMapper(context, new ExtendedPropertyDocumentMapper(context));
 
-        var result = mapper.Map(new[] { CreateAttribute(string.Empty) });
+        var result = mapper.Map(new[] { CreateAttribute(string.Empty) }, DocumentPathContext.Root.Property("attributes"));
 
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, error => error.Code.Contains("attribute"));
+        Assert.Contains(result.Errors, error => error.Message.Contains("Path: $['attributes'][0]['name']", StringComparison.Ordinal));
     }
 }
