@@ -227,11 +227,17 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
             }
 
             var foreignKey = accumulator.GetOrCreateForeignKey(name);
-            var column = constraint.Columns.FirstOrDefault();
-            var referencedColumn = constraint.ReferencedTableColumns.FirstOrDefault();
+            foreignKey.Columns.Clear();
 
-            foreignKey.Column = column?.Value ?? string.Empty;
-            foreignKey.ReferencedColumn = referencedColumn?.Value ?? string.Empty;
+            var localColumns = constraint.Columns;
+            var referencedColumns = constraint.ReferencedTableColumns;
+            var pairCount = Math.Max(localColumns.Count, referencedColumns.Count);
+            for (var i = 0; i < pairCount; i++)
+            {
+                var local = i < localColumns.Count ? localColumns[i].Value ?? string.Empty : string.Empty;
+                var referenced = i < referencedColumns.Count ? referencedColumns[i].Value ?? string.Empty : string.Empty;
+                foreignKey.Columns.Add(new DmmForeignKeyColumn(local, referenced));
+            }
 
             var referencedTable = constraint.ReferenceTableName;
             foreignKey.ReferencedSchema = referencedTable.SchemaIdentifier?.Value ?? "dbo";
@@ -568,13 +574,11 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
 
         public string Name { get; }
 
-        public string Column { get; set; } = string.Empty;
+        public List<DmmForeignKeyColumn> Columns { get; } = new();
 
         public string ReferencedSchema { get; set; } = "dbo";
 
         public string ReferencedTable { get; set; } = string.Empty;
-
-        public string ReferencedColumn { get; set; } = string.Empty;
 
         public string DeleteAction { get; set; } = "NoAction";
 
@@ -582,7 +586,7 @@ public sealed class ScriptDomDmmLens : IDmmLens<TextReader>
 
         public DmmForeignKey ToForeignKey()
         {
-            return new DmmForeignKey(Name, Column, ReferencedSchema, ReferencedTable, ReferencedColumn, DeleteAction, IsNotTrusted);
+            return new DmmForeignKey(Name, Columns.ToArray(), ReferencedSchema, ReferencedTable, DeleteAction, IsNotTrusted);
         }
     }
 }

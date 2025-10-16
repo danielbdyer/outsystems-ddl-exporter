@@ -41,12 +41,13 @@ public sealed record DmmIndexOptions(
 
 public sealed record DmmForeignKey(
     string Name,
-    string Column,
+    IReadOnlyList<DmmForeignKeyColumn> Columns,
     string ReferencedSchema,
     string ReferencedTable,
-    string ReferencedColumn,
     string DeleteAction,
     bool IsNotTrusted);
+
+public sealed record DmmForeignKeyColumn(string Column, string ReferencedColumn);
 
 public sealed record DmmComparisonResult(
     bool IsMatch,

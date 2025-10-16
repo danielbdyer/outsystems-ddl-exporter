@@ -247,14 +247,30 @@ public sealed class SsdtProjectDmmLens : IDmmLens<string>
     {
         return new DmmForeignKey(
             left.Name,
-            Choose(left.Column, right.Column),
+            ChooseColumns(left.Columns, right.Columns),
             Choose(left.ReferencedSchema, right.ReferencedSchema),
             Choose(left.ReferencedTable, right.ReferencedTable),
-            Choose(left.ReferencedColumn, right.ReferencedColumn),
             Choose(left.DeleteAction, right.DeleteAction),
             left.IsNotTrusted || right.IsNotTrusted);
     }
 
     private static string Choose(string left, string right)
         => string.IsNullOrWhiteSpace(left) ? right : left;
+
+    private static IReadOnlyList<DmmForeignKeyColumn> ChooseColumns(
+        IReadOnlyList<DmmForeignKeyColumn> left,
+        IReadOnlyList<DmmForeignKeyColumn> right)
+    {
+        if (left.Count > 0)
+        {
+            return left.ToArray();
+        }
+
+        if (right.Count > 0)
+        {
+            return right.ToArray();
+        }
+
+        return Array.Empty<DmmForeignKeyColumn>();
+    }
 }
