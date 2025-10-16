@@ -76,9 +76,19 @@ public sealed class UniqueIndexEvidenceAggregator
 
         foreach (var entity in model.Modules.SelectMany(static m => m.Entities))
         {
-            foreach (var index in entity.Indexes.Where(static i => i.IsUnique && i.Columns.Length == 1))
+            foreach (var index in entity.Indexes.Where(static i => i.IsUnique))
             {
-                var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, index.Columns[0].Column);
+                var keyColumns = index.Columns
+                    .Where(static c => !c.IsIncluded)
+                    .ToArray();
+
+                if (keyColumns.Length != 1)
+                {
+                    continue;
+                }
+
+                var keyColumn = keyColumns[0];
+                var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, keyColumn.Column);
                 if (uniqueProfiles.TryGetValue(coordinate, out var profile) && !profile.HasDuplicate)
                 {
                     result.Add(coordinate);
@@ -97,9 +107,19 @@ public sealed class UniqueIndexEvidenceAggregator
 
         foreach (var entity in model.Modules.SelectMany(static m => m.Entities))
         {
-            foreach (var index in entity.Indexes.Where(static i => i.IsUnique && i.Columns.Length == 1))
+            foreach (var index in entity.Indexes.Where(static i => i.IsUnique))
             {
-                var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, index.Columns[0].Column);
+                var keyColumns = index.Columns
+                    .Where(static c => !c.IsIncluded)
+                    .ToArray();
+
+                if (keyColumns.Length != 1)
+                {
+                    continue;
+                }
+
+                var keyColumn = keyColumns[0];
+                var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, keyColumn.Column);
                 if (uniqueProfiles.TryGetValue(coordinate, out var profile) && profile.HasDuplicate)
                 {
                     result.Add(coordinate);
@@ -130,15 +150,28 @@ public sealed class UniqueIndexEvidenceAggregator
 
         foreach (var entity in model.Modules.SelectMany(static m => m.Entities))
         {
-            foreach (var index in entity.Indexes.Where(static i => i.IsUnique && i.Columns.Length > 1))
+            foreach (var index in entity.Indexes.Where(static i => i.IsUnique))
             {
-                var key = UniqueIndexEvidenceKey.Create(entity.Schema.Value, entity.PhysicalName.Value, index.Columns.Select(static c => c.Column.Value));
+                var keyColumns = index.Columns
+                    .Where(static c => !c.IsIncluded)
+                    .ToArray();
+
+                if (keyColumns.Length <= 1)
+                {
+                    continue;
+                }
+
+                var key = UniqueIndexEvidenceKey.Create(
+                    entity.Schema.Value,
+                    entity.PhysicalName.Value,
+                    keyColumns.Select(static c => c.Column.Value));
+
                 if (!lookup.TryGetValue(key, out var profile))
                 {
                     continue;
                 }
 
-                foreach (var column in index.Columns)
+                foreach (var column in keyColumns)
                 {
                     var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, column.Column);
                     if (profile.HasDuplicate)

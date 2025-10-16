@@ -46,12 +46,21 @@ public sealed class UniqueIndexDecisionStrategy
             return UniqueIndexDecision.Create(coordinate, false, false, ImmutableArray<string>.Empty);
         }
 
-        var columnCoordinates = index.Columns
+        var keyColumns = index.Columns
+            .Where(static c => !c.IsIncluded)
+            .ToArray();
+
+        if (keyColumns.Length == 0)
+        {
+            return UniqueIndexDecision.Create(coordinate, false, false, ImmutableArray<string>.Empty);
+        }
+
+        var columnCoordinates = keyColumns
             .Select(c => new ColumnCoordinate(entity.Schema, entity.PhysicalName, c.Column))
             .ToArray();
 
         var physicalUnique = columnCoordinates.All(IsPhysicalUnique);
-        var isComposite = index.Columns.Length > 1;
+        var isComposite = columnCoordinates.Length > 1;
         var policyDisabled = isComposite
             ? !_options.Uniqueness.EnforceMultiColumnUnique
             : !_options.Uniqueness.EnforceSingleColumnUnique;
@@ -69,7 +78,7 @@ public sealed class UniqueIndexDecisionStrategy
         }
 
         var evidence = isComposite
-            ? EvaluateCompositeEvidence(entity, index, columnCoordinates, rationales)
+            ? EvaluateCompositeEvidence(entity, keyColumns, columnCoordinates, rationales)
             : EvaluateSingleColumnEvidence(columnCoordinates[0], rationales);
 
         if (!evidence.HasProfile && !physicalUnique)
@@ -159,14 +168,14 @@ public sealed class UniqueIndexDecisionStrategy
 
     private UniqueIndexEvidence EvaluateCompositeEvidence(
         EntityModel entity,
-        IndexModel index,
+        IReadOnlyList<IndexColumnModel> keyColumns,
         IReadOnlyList<ColumnCoordinate> columnCoordinates,
         SortedSet<string> rationales)
     {
         var key = UniqueIndexEvidenceKey.Create(
             entity.Schema.Value,
             entity.PhysicalName.Value,
-            index.Columns.Select(static c => c.Column.Value));
+            keyColumns.Select(static c => c.Column.Value));
 
         CompositeUniqueCandidateProfile? profile = null;
         if (_evidence.CompositeProfiles.TryGetValue(key, out var foundProfile))

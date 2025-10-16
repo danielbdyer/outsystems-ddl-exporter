@@ -51,6 +51,45 @@ public sealed class UniqueIndexDecisionStrategyTests
         Assert.Contains(TighteningRationales.RemediateBeforeTighten, decision.Rationales);
     }
 
+    [Fact]
+    public void EvidenceModeTreatsIncludedColumnsAsSingleColumnIndex()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUnique);
+        var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
+
+        var entity = GetEntity(model, "User");
+        var index = entity.Indexes.Single(i => string.Equals(i.Name.Value, "UX_USER_EMAIL", StringComparison.Ordinal));
+        var includedAttribute = entity.Attributes.Single(a => string.Equals(a.LogicalName.Value, "Id", StringComparison.Ordinal));
+
+        var includedColumn = IndexColumnModel.Create(
+            includedAttribute.LogicalName,
+            includedAttribute.ColumnName,
+            index.Columns.Length + 1,
+            isIncluded: true,
+            IndexColumnDirection.Ascending).Value;
+
+        var updatedIndex = index with { Columns = index.Columns.Add(includedColumn) };
+        var updatedModules = model.Modules
+            .Select(module => string.Equals(module.Name.Value, entity.Module.Value, StringComparison.Ordinal)
+                ? module with { Entities = module.Entities.Replace(entity, entity with { Indexes = entity.Indexes.Replace(index, updatedIndex) }) }
+                : module)
+            .ToImmutableArray();
+
+        var updatedModel = model with { Modules = updatedModules };
+        var strategy = CreateStrategy(updatedModel, snapshot, options);
+        var updatedEntity = GetEntity(updatedModel, "User");
+        var updatedIndexReference = updatedEntity.Indexes.Single(i => string.Equals(i.Name.Value, "UX_USER_EMAIL", StringComparison.Ordinal));
+
+        var decision = strategy.Decide(updatedEntity, updatedIndexReference);
+
+        Assert.True(decision.EnforceUnique);
+        Assert.False(decision.RequiresRemediation);
+        Assert.Contains(TighteningRationales.UniqueNoNulls, decision.Rationales);
+        Assert.DoesNotContain(TighteningRationales.ProfileMissing, decision.Rationales);
+        Assert.DoesNotContain(TighteningRationales.CompositeUniqueNoNulls, decision.Rationales);
+    }
+
     private static UniqueIndexDecisionStrategy CreateStrategy(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
     {
         var columnProfiles = snapshot.Columns.ToDictionary(ColumnCoordinate.From, static c => c);
