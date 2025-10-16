@@ -123,6 +123,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             state.EvidenceCache,
             state.Decisions,
             state.Report,
+            state.Insights,
             manifest,
             decisionLogPath));
     }

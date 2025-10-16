@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -54,6 +55,7 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
             state.Bootstrap,
             state.EvidenceCache,
             decisions,
-            report)));
+            report,
+            ImmutableArray<PipelineInsight>.Empty)));
     }
 }

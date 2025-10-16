@@ -135,6 +135,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.Bootstrap.Profile!,
             finalState.Report,
             finalState.Manifest,
+            finalState.Insights,
             finalState.DecisionLogPath,
             finalState.StaticSeedScriptPaths,
             finalState.EvidenceCache,

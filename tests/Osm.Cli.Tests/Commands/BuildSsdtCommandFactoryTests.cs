@@ -283,6 +283,7 @@ public class BuildSsdtCommandFactoryTests
                 snapshot,
                 report,
                 manifest,
+                ImmutableArray<PipelineInsight>.Empty,
                 "decision.log",
                 ImmutableArray<string>.Empty,
                 null,

@@ -28,7 +28,8 @@ public record DecisionsSynthesized(
     PipelineBootstrapContext Bootstrap,
     EvidenceCacheResult? EvidenceCache,
     PolicyDecisionSet Decisions,
-    PolicyDecisionReport Report)
+    PolicyDecisionReport Report,
+    ImmutableArray<PipelineInsight> Insights)
     : EvidencePrepared(Request, Log, Bootstrap, EvidenceCache);
 
 public record EmissionReady(
@@ -38,9 +39,10 @@ public record EmissionReady(
     EvidenceCacheResult? EvidenceCache,
     PolicyDecisionSet Decisions,
     PolicyDecisionReport Report,
+    ImmutableArray<PipelineInsight> Insights,
     SsdtManifest Manifest,
     string DecisionLogPath)
-    : DecisionsSynthesized(Request, Log, Bootstrap, EvidenceCache, Decisions, Report);
+    : DecisionsSynthesized(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Insights);
 
 public record StaticSeedsGenerated(
     BuildSsdtPipelineRequest Request,
@@ -49,7 +51,8 @@ public record StaticSeedsGenerated(
     EvidenceCacheResult? EvidenceCache,
     PolicyDecisionSet Decisions,
     PolicyDecisionReport Report,
+    ImmutableArray<PipelineInsight> Insights,
     SsdtManifest Manifest,
     string DecisionLogPath,
     ImmutableArray<string> StaticSeedScriptPaths)
-    : EmissionReady(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Manifest, DecisionLogPath);
+    : EmissionReady(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Insights, Manifest, DecisionLogPath);

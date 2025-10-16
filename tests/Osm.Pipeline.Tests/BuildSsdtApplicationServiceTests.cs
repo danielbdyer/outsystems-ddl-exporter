@@ -110,6 +110,7 @@ public sealed class BuildSsdtApplicationServiceTests
             profileResult.Value,
             report,
             manifest,
+            ImmutableArray<PipelineInsight>.Empty,
             "decision.log",
             ImmutableArray<string>.Empty,
             null,
