@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Abstractions;
 using Osm.Domain.Abstractions;
 using Osm.Emission;
 using Osm.Emission.Seeds;
@@ -41,7 +42,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         var resolvedBootstrapper = bootstrapper ?? new PipelineBootstrapper();
         var resolvedTighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
         var resolvedSmoModelFactory = smoModelFactory ?? new SmoModelFactory();
-        var resolvedEmitter = ssdtEmitter ?? new SsdtEmitter();
+        var resolvedEmitter = ssdtEmitter ?? new SsdtEmitter(new PerTableWriter(), new FileSystem());
         var resolvedDecisionLogWriter = decisionLogWriter ?? new PolicyDecisionLogWriter();
         var resolvedCacheService = evidenceCacheService ?? new EvidenceCacheService();
         var resolvedSeedGenerator = seedGenerator ?? new StaticEntitySeedScriptGenerator();
