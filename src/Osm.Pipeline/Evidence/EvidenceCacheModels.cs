@@ -13,17 +13,24 @@ public sealed record EvidenceCacheArtifact(
     string Hash,
     long Length);
 
+public sealed record EvidenceCacheModuleSelection(
+    string? Hash,
+    IReadOnlyList<string> Modules);
+
 public sealed record EvidenceCacheManifest(
     string Version,
     string Key,
     string Command,
     DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? ExpiresAtUtc,
+    EvidenceCacheModuleSelection? ModuleSelection,
     IReadOnlyDictionary<string, string?> Metadata,
     IReadOnlyList<EvidenceCacheArtifact> Artifacts);
 
 public sealed record EvidenceCacheResult(
     string CacheDirectory,
-    EvidenceCacheManifest Manifest);
+    EvidenceCacheManifest Manifest,
+    EvidenceCacheExecutionMetadata Execution);
 
 public sealed record EvidenceCacheRequest(
     string RootDirectory,
@@ -33,7 +40,19 @@ public sealed record EvidenceCacheRequest(
     string? DmmPath,
     string? ConfigPath,
     IReadOnlyDictionary<string, string?> Metadata,
-    bool Refresh);
+    bool Refresh,
+    TimeSpan? TimeToLive = null);
+
+public enum EvidenceCacheDecisionKind
+{
+    Created,
+    Reused,
+    Refreshed,
+}
+
+public sealed record EvidenceCacheExecutionMetadata(
+    EvidenceCacheDecisionKind Decision,
+    IReadOnlyDictionary<string, string?> Metadata);
 
 public interface IEvidenceCacheService
 {

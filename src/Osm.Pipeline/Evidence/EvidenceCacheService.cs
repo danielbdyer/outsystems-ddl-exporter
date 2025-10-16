@@ -16,7 +16,7 @@ namespace Osm.Pipeline.Evidence;
 public sealed class EvidenceCacheService : IEvidenceCacheService
 {
     private const string ManifestFileName = "manifest.json";
-    private const string ManifestVersion = "1.0";
+    private const string ManifestVersion = "1.1";
 
     private readonly IFileSystem _fileSystem;
     private readonly Func<DateTimeOffset> _timestampProvider;
@@ -63,14 +63,55 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
             return ValidationError.Create("cache.artifacts.none", "At least one artifact must be provided to create a cache entry.");
         }
 
+        var now = _timestampProvider();
+        var timeToLive = ResolveTimeToLive(request, metadata);
         var key = ComputeKey(request.Command.Trim(), descriptors, metadata);
         var cacheDirectory = _fileSystem.Path.Combine(normalizedRoot, key);
+        var moduleSelection = BuildModuleSelection(metadata);
+
+        EvidenceCacheDecisionKind decision = EvidenceCacheDecisionKind.Created;
+        var decisionMetadata = new Dictionary<string, string?>(StringComparer.Ordinal);
 
         if (_fileSystem.Directory.Exists(cacheDirectory))
         {
             if (request.Refresh)
             {
+                decision = EvidenceCacheDecisionKind.Refreshed;
+                decisionMetadata["reason.refreshRequested"] = bool.TrueString;
                 _fileSystem.Directory.Delete(cacheDirectory, recursive: true);
+            }
+            else
+            {
+                var manifestPath = _fileSystem.Path.Combine(cacheDirectory, ManifestFileName);
+                var existingManifest = await TryReadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+
+                if (existingManifest is null)
+                {
+                    decision = EvidenceCacheDecisionKind.Refreshed;
+                    decisionMetadata["reason.manifest.unreadable"] = bool.TrueString;
+                    _fileSystem.Directory.Delete(cacheDirectory, recursive: true);
+                }
+                else
+                {
+                    var evaluation = EvaluateExistingManifest(existingManifest, metadata, moduleSelection, timeToLive, now);
+                    if (evaluation.ShouldReuse)
+                    {
+                        var execution = CreateExecutionMetadata(
+                            EvidenceCacheDecisionKind.Reused,
+                            evaluation.Metadata,
+                            existingManifest,
+                            now);
+
+                        return Result<EvidenceCacheResult>.Success(new EvidenceCacheResult(
+                            cacheDirectory,
+                            existingManifest,
+                            execution));
+                    }
+
+                    decision = EvidenceCacheDecisionKind.Refreshed;
+                    decisionMetadata = evaluation.Metadata;
+                    _fileSystem.Directory.Delete(cacheDirectory, recursive: true);
+                }
             }
         }
 
@@ -93,18 +134,23 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
                 descriptor.Length));
         }
 
+        var createdAt = now;
+        DateTimeOffset? expiresAt = timeToLive.HasValue ? createdAt.Add(timeToLive.Value) : null;
         var manifest = new EvidenceCacheManifest(
             ManifestVersion,
             key,
             request.Command.Trim(),
-            _timestampProvider(),
+            createdAt,
+            expiresAt,
+            moduleSelection,
             metadata,
             artifacts);
 
-        var manifestPath = _fileSystem.Path.Combine(cacheDirectory, ManifestFileName);
-        await WriteManifestAsync(manifestPath, manifest, cancellationToken).ConfigureAwait(false);
+        var manifestPathNew = _fileSystem.Path.Combine(cacheDirectory, ManifestFileName);
+        await WriteManifestAsync(manifestPathNew, manifest, cancellationToken).ConfigureAwait(false);
 
-        return Result<EvidenceCacheResult>.Success(new EvidenceCacheResult(cacheDirectory, manifest));
+        var executionMetadata = CreateExecutionMetadata(decision, decisionMetadata, manifest, now);
+        return Result<EvidenceCacheResult>.Success(new EvidenceCacheResult(cacheDirectory, manifest, executionMetadata));
     }
 
     private async Task<Result<List<EvidenceArtifactDescriptor>>> CollectDescriptorsAsync(EvidenceCacheRequest request, CancellationToken cancellationToken)
@@ -216,6 +262,267 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
             _ => "Artifact",
         };
     }
+
+    private static TimeSpan? ResolveTimeToLive(EvidenceCacheRequest request, IReadOnlyDictionary<string, string?> metadata)
+    {
+        if (request.TimeToLive.HasValue)
+        {
+            return request.TimeToLive;
+        }
+
+        if (metadata is null || metadata.Count == 0)
+        {
+            return null;
+        }
+
+        if (metadata.TryGetValue("cache.ttlSeconds", out var secondsValue)
+            && double.TryParse(secondsValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var seconds)
+            && seconds > 0)
+        {
+            return TimeSpan.FromSeconds(seconds);
+        }
+
+        if (metadata.TryGetValue("cache.ttlMinutes", out var minutesValue)
+            && double.TryParse(minutesValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var minutes)
+            && minutes > 0)
+        {
+            return TimeSpan.FromMinutes(minutes);
+        }
+
+        return null;
+    }
+
+    private static EvidenceCacheModuleSelection BuildModuleSelection(IReadOnlyDictionary<string, string?> metadata)
+    {
+        if (metadata is null || metadata.Count == 0)
+        {
+            return new EvidenceCacheModuleSelection(null, Array.Empty<string>());
+        }
+
+        metadata.TryGetValue("moduleFilter.modules.hash", out var hash);
+
+        if (!metadata.TryGetValue("moduleFilter.modules.normalized", out var normalized)
+            || string.IsNullOrWhiteSpace(normalized))
+        {
+            return new EvidenceCacheModuleSelection(hash, Array.Empty<string>());
+        }
+
+        var modules = normalized
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(static module => module.Trim())
+            .Where(static module => !string.IsNullOrWhiteSpace(module))
+            .ToArray();
+
+        return new EvidenceCacheModuleSelection(hash, modules);
+    }
+
+    private CacheEvaluation EvaluateExistingManifest(
+        EvidenceCacheManifest manifest,
+        IReadOnlyDictionary<string, string?> metadata,
+        EvidenceCacheModuleSelection requestedSelection,
+        TimeSpan? requestedTimeToLive,
+        DateTimeOffset now)
+    {
+        var evaluationMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["manifest.version"] = manifest.Version,
+            ["manifest.createdAtUtc"] = manifest.CreatedAtUtc.ToString("O", CultureInfo.InvariantCulture),
+        };
+
+        if (manifest.ExpiresAtUtc is { } expiresAt)
+        {
+            evaluationMetadata["manifest.expiresAtUtc"] = expiresAt.ToString("O", CultureInfo.InvariantCulture);
+        }
+
+        if (manifest.ModuleSelection is { } existingSelection)
+        {
+            evaluationMetadata["manifest.moduleSelection.hash"] = existingSelection.Hash;
+            evaluationMetadata["manifest.moduleSelection.count"] = existingSelection.Modules.Count
+                .ToString(CultureInfo.InvariantCulture);
+        }
+
+        var metadataMatch = AreMetadataEquivalent(metadata, manifest.Metadata);
+        if (!metadataMatch)
+        {
+            evaluationMetadata["reason.metadataMismatch"] = bool.TrueString;
+        }
+
+        var moduleMatch = AreModuleSelectionsEquivalent(requestedSelection, manifest.ModuleSelection);
+        if (!moduleMatch)
+        {
+            evaluationMetadata["reason.moduleSelectionChanged"] = bool.TrueString;
+            evaluationMetadata["requested.moduleSelection.hash"] = requestedSelection.Hash;
+            evaluationMetadata["requested.moduleSelection.count"] = requestedSelection.Modules.Count
+                .ToString(CultureInfo.InvariantCulture);
+        }
+
+        var expired = manifest.ExpiresAtUtc is { } expiration && expiration <= now;
+        if (expired)
+        {
+            evaluationMetadata["reason.ttlExpired"] = bool.TrueString;
+            evaluationMetadata["nowUtc"] = now.ToString("O", CultureInfo.InvariantCulture);
+        }
+
+        DateTimeOffset? expectedExpiry = requestedTimeToLive.HasValue
+            ? manifest.CreatedAtUtc.Add(requestedTimeToLive.Value)
+            : null;
+
+        var ttlMismatch = false;
+        if (requestedTimeToLive.HasValue)
+        {
+            if (!manifest.ExpiresAtUtc.HasValue || manifest.ExpiresAtUtc != expectedExpiry)
+            {
+                ttlMismatch = true;
+                evaluationMetadata["reason.ttlChanged"] = bool.TrueString;
+                evaluationMetadata["requested.ttlSeconds"] = requestedTimeToLive.Value.TotalSeconds
+                    .ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        var versionMismatch = !string.Equals(manifest.Version, ManifestVersion, StringComparison.Ordinal);
+        if (versionMismatch)
+        {
+            evaluationMetadata["reason.versionMismatch"] = bool.TrueString;
+        }
+
+        var shouldReuse = metadataMatch && moduleMatch && !expired && !ttlMismatch && !versionMismatch;
+
+        return new CacheEvaluation(shouldReuse, evaluationMetadata);
+    }
+
+    private async Task<EvidenceCacheManifest?> TryReadManifestAsync(string manifestPath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var stream = _fileSystem.File.Open(manifestPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return await JsonSerializer.DeserializeAsync<EvidenceCacheManifest>(stream, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private EvidenceCacheExecutionMetadata CreateExecutionMetadata(
+        EvidenceCacheDecisionKind decision,
+        IReadOnlyDictionary<string, string?>? decisionMetadata,
+        EvidenceCacheManifest manifest,
+        DateTimeOffset now)
+    {
+        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["status"] = decision.ToString(),
+            ["manifest.version"] = manifest.Version,
+            ["manifest.createdAtUtc"] = manifest.CreatedAtUtc.ToString("O", CultureInfo.InvariantCulture),
+            ["timestamp.nowUtc"] = now.ToString("O", CultureInfo.InvariantCulture),
+        };
+
+        if (manifest.ExpiresAtUtc is { } expiresAt)
+        {
+            metadata["manifest.expiresAtUtc"] = expiresAt.ToString("O", CultureInfo.InvariantCulture);
+        }
+
+        if (manifest.ModuleSelection is { } selection)
+        {
+            metadata["moduleSelection.hash"] = selection.Hash;
+            metadata["moduleSelection.count"] = selection.Modules.Count.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (decisionMetadata is not null)
+        {
+            foreach (var pair in decisionMetadata)
+            {
+                metadata[pair.Key] = pair.Value;
+            }
+        }
+
+        return new EvidenceCacheExecutionMetadata(decision, metadata);
+    }
+
+    private static bool AreMetadataEquivalent(
+        IReadOnlyDictionary<string, string?> requested,
+        IReadOnlyDictionary<string, string?>? existing)
+    {
+        if (requested is null)
+        {
+            return existing is null || existing.Count == 0;
+        }
+
+        if (existing is null)
+        {
+            return requested.Count == 0;
+        }
+
+        if (requested.Count != existing.Count)
+        {
+            return false;
+        }
+
+        foreach (var pair in requested)
+        {
+            if (!existing.TryGetValue(pair.Key, out var value))
+            {
+                return false;
+            }
+
+            if (!string.Equals(pair.Value, value, StringComparison.Ordinal))
+            {
+                var leftEmpty = string.IsNullOrEmpty(pair.Value);
+                var rightEmpty = string.IsNullOrEmpty(value);
+                if (!(leftEmpty && rightEmpty))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool AreModuleSelectionsEquivalent(
+        EvidenceCacheModuleSelection requested,
+        EvidenceCacheModuleSelection? existing)
+    {
+        if (existing is null)
+        {
+            return requested.Modules.Count == 0;
+        }
+
+        var requestedCount = requested.Modules.Count;
+        var existingCount = existing.Modules.Count;
+        if (requestedCount != existingCount)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < requestedCount; index++)
+        {
+            var requestedValue = requested.Modules[index];
+            var existingValue = existing.Modules[index];
+            if (!string.Equals(requestedValue, existingValue, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(requested.Hash) || !string.IsNullOrEmpty(existing.Hash))
+        {
+            return string.Equals(requested.Hash, existing.Hash, StringComparison.Ordinal);
+        }
+
+        return true;
+    }
+
+    private sealed record CacheEvaluation(bool ShouldReuse, Dictionary<string, string?> Metadata);
 
     private static string ComputeKey(
         string command,

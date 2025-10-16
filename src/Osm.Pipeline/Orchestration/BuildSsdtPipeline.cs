@@ -260,15 +260,25 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             }
 
             cacheResult = cacheExecution.Value;
-            log.Record(
-                "evidence.cache.persisted",
-                "Persisted evidence cache manifest.",
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["cacheDirectory"] = cacheResult.CacheDirectory,
-                    ["artifactCount"] = cacheResult.Manifest.Artifacts.Count.ToString(CultureInfo.InvariantCulture),
-                    ["cacheKey"] = cacheResult.Manifest.Key
-                });
+            var execution = cacheResult.Execution;
+            var cacheLogMetadata = new Dictionary<string, string?>(execution.Metadata, StringComparer.Ordinal)
+            {
+                ["cacheDirectory"] = cacheResult.CacheDirectory,
+                ["artifactCount"] = cacheResult.Manifest.Artifacts.Count.ToString(CultureInfo.InvariantCulture),
+                ["cacheKey"] = cacheResult.Manifest.Key,
+            };
+
+            var (eventName, message) = execution.Decision switch
+            {
+                EvidenceCacheDecisionKind.Reused =>
+                    ("evidence.cache.reused", "Reused existing evidence cache manifest."),
+                EvidenceCacheDecisionKind.Refreshed =>
+                    ("evidence.cache.refreshed", "Refreshed evidence cache manifest."),
+                _ =>
+                    ("evidence.cache.persisted", "Persisted evidence cache manifest."),
+            };
+
+            log.Record(eventName, message, cacheLogMetadata);
         }
         else
         {
