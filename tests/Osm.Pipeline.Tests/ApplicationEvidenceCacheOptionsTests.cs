@@ -261,7 +261,16 @@ public sealed class ApplicationEvidenceCacheOptionsTests
     {
         var assembler = new BuildSsdtRequestAssembler();
         var modelResolution = new StubModelResolutionService();
-        return new BuildSsdtApplicationService(dispatcher, assembler, modelResolution);
+        var outputDirectoryResolver = new OutputDirectoryResolver();
+        var namingOverridesBinder = new NamingOverridesBinder();
+        var staticDataProviderFactory = new StaticDataProviderFactory();
+        return new BuildSsdtApplicationService(
+            dispatcher,
+            assembler,
+            modelResolution,
+            outputDirectoryResolver,
+            namingOverridesBinder,
+            staticDataProviderFactory);
     }
 
     private sealed class RecordingDispatcher : ICommandDispatcher

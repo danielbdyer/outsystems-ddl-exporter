@@ -37,6 +37,9 @@ hostBuilder.Services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, Dmm
 hostBuilder.Services.AddSingleton<ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>, ExtractModelPipeline>();
 hostBuilder.Services.AddSingleton<BuildSsdtRequestAssembler>();
 hostBuilder.Services.AddSingleton<IModelResolutionService, ModelResolutionService>();
+hostBuilder.Services.AddSingleton<IOutputDirectoryResolver, OutputDirectoryResolver>();
+hostBuilder.Services.AddSingleton<INamingOverridesBinder, NamingOverridesBinder>();
+hostBuilder.Services.AddSingleton<IStaticDataProviderFactory, StaticDataProviderFactory>();
 hostBuilder.Services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>, BuildSsdtApplicationService>();
 hostBuilder.Services.AddSingleton<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>, CompareWithDmmApplicationService>();
 hostBuilder.Services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();

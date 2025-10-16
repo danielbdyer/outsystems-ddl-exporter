@@ -33,15 +33,24 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
     private readonly ICommandDispatcher _dispatcher;
     private readonly BuildSsdtRequestAssembler _assembler;
     private readonly IModelResolutionService _modelResolutionService;
+    private readonly IOutputDirectoryResolver _outputDirectoryResolver;
+    private readonly INamingOverridesBinder _namingOverridesBinder;
+    private readonly IStaticDataProviderFactory _staticDataProviderFactory;
 
     public BuildSsdtApplicationService(
         ICommandDispatcher dispatcher,
         BuildSsdtRequestAssembler assembler,
-        IModelResolutionService modelResolutionService)
+        IModelResolutionService modelResolutionService,
+        IOutputDirectoryResolver outputDirectoryResolver,
+        INamingOverridesBinder namingOverridesBinder,
+        IStaticDataProviderFactory staticDataProviderFactory)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _assembler = assembler ?? throw new ArgumentNullException(nameof(assembler));
         _modelResolutionService = modelResolutionService ?? throw new ArgumentNullException(nameof(modelResolutionService));
+        _outputDirectoryResolver = outputDirectoryResolver ?? throw new ArgumentNullException(nameof(outputDirectoryResolver));
+        _namingOverridesBinder = namingOverridesBinder ?? throw new ArgumentNullException(nameof(namingOverridesBinder));
+        _staticDataProviderFactory = staticDataProviderFactory ?? throw new ArgumentNullException(nameof(staticDataProviderFactory));
     }
 
     public async Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
@@ -75,7 +84,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
         }
 
         var typeMappingPolicy = typeMappingResult.Value;
-        var outputDirectory = _assembler.ResolveOutputDirectory(input.Overrides);
+        var outputDirectory = _outputDirectoryResolver.Resolve(input.Overrides);
 
         var modelResolutionResult = await _modelResolutionService.ResolveModelAsync(
             configuration,
@@ -91,13 +100,17 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
 
         var modelResolution = modelResolutionResult.Value;
 
-        var namingOverridesResult = NamingOverridesResolver.Resolve(
-            input.Overrides.RenameOverrides,
-            SmoBuildOptions.FromEmission(tighteningOptions.Emission).NamingOverrides);
+        var namingOverridesResult = _namingOverridesBinder.Bind(input.Overrides, tighteningOptions);
 
         if (namingOverridesResult.IsFailure)
         {
             return Result<BuildSsdtApplicationResult>.Failure(namingOverridesResult.Errors);
+        }
+
+        var staticDataProviderResult = _staticDataProviderFactory.Create(input.Overrides, sqlOptionsResult.Value, tighteningOptions);
+        if (staticDataProviderResult.IsFailure)
+        {
+            return Result<BuildSsdtApplicationResult>.Failure(staticDataProviderResult.Errors);
         }
 
         var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission)
@@ -125,6 +138,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             smoOptions,
             modelResolution.ModelPath,
             outputDirectory,
+            staticDataProviderResult.Value,
             input.Cache,
             input.ConfigurationContext.ConfigPath));
         if (assemblyResult.IsFailure)
