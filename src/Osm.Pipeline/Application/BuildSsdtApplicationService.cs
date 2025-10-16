@@ -8,7 +8,6 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Configuration;
-using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
@@ -126,12 +125,14 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
 
         var staticDataProvider = ResolveStaticEntityDataProvider(input.Overrides.StaticDataPath, sqlOptionsResult.Value);
 
-        var cacheOptions = ResolveCacheOptions(
+        var cacheOptions = EvidenceCacheOptionsFactory.Create(
+            "build-ssdt",
             configuration,
             tighteningOptions,
             moduleFilter,
             modelResolution.ModelPath,
             profilePath,
+            dmmPath: null,
             input.Cache,
             input.ConfigurationContext.ConfigPath);
 
@@ -324,38 +325,4 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
         return null;
     }
 
-    private static EvidenceCachePipelineOptions? ResolveCacheOptions(
-        CliConfiguration configuration,
-        TighteningOptions tightening,
-        ModuleFilterOptions moduleFilter,
-        string modelPath,
-        string? profilePath,
-        CacheOptionsOverrides overrides,
-        string? configPath)
-    {
-        var cacheRoot = overrides.Root ?? configuration.Cache.Root;
-        if (string.IsNullOrWhiteSpace(cacheRoot))
-        {
-            return null;
-        }
-
-        var refresh = overrides.Refresh ?? configuration.Cache.Refresh ?? false;
-        var metadata = CacheMetadataBuilder.Build(
-            tightening,
-            moduleFilter,
-            configuration,
-            modelPath,
-            profilePath,
-            resolvedDmmPath: null);
-
-        return new EvidenceCachePipelineOptions(
-            cacheRoot!.Trim(),
-            refresh,
-            "build-ssdt",
-            modelPath,
-            profilePath,
-            DmmPath: null,
-            configPath,
-            metadata);
-    }
 }

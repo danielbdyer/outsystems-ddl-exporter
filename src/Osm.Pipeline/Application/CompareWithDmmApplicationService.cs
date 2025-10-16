@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Configuration;
-using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Smo;
@@ -115,7 +114,8 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
             smoOptions = smoOptions with { ModuleParallelism = moduleParallelism };
         }
 
-        var cacheOptions = ResolveCacheOptions(
+        var cacheOptions = EvidenceCacheOptionsFactory.Create(
+            "dmm-compare",
             configuration,
             tighteningOptions,
             moduleFilter,
@@ -167,42 +167,6 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
         var includeUsers = configuration.IncludeUsers ?? true;
         var paths = configuration.Paths ?? Array.Empty<string>();
         return new SupplementalModelOptions(includeUsers, paths.ToArray());
-    }
-
-    private static EvidenceCachePipelineOptions? ResolveCacheOptions(
-        CliConfiguration configuration,
-        TighteningOptions tightening,
-        ModuleFilterOptions moduleFilter,
-        string modelPath,
-        string profilePath,
-        string dmmPath,
-        CacheOptionsOverrides overrides,
-        string? configPath)
-    {
-        var cacheRoot = overrides.Root ?? configuration.Cache.Root;
-        if (string.IsNullOrWhiteSpace(cacheRoot))
-        {
-            return null;
-        }
-
-        var refresh = overrides.Refresh ?? configuration.Cache.Refresh ?? false;
-        var metadata = CacheMetadataBuilder.Build(
-            tightening,
-            moduleFilter,
-            configuration,
-            modelPath,
-            profilePath,
-            dmmPath);
-
-        return new EvidenceCachePipelineOptions(
-            cacheRoot!.Trim(),
-            refresh,
-            "dmm-compare",
-            modelPath,
-            profilePath,
-            dmmPath,
-            configPath,
-            metadata);
     }
 
     private static string ResolveOutputDirectory(string? overridePath)
