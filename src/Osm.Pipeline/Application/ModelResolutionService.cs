@@ -83,7 +83,10 @@ public sealed class ModelResolutionService : IModelResolutionService
 
         Directory.CreateDirectory(resolvedOutputDirectory);
         var modelPath = Path.Combine(resolvedOutputDirectory, "model.extracted.json");
-        await File.WriteAllTextAsync(modelPath, extraction.Json, cancellationToken).ConfigureAwait(false);
+        await using (var outputStream = File.Create(modelPath))
+        {
+            await extraction.JsonPayload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
+        }
 
         var warnings = extraction.Warnings.Count == 0
             ? ImmutableArray<string>.Empty

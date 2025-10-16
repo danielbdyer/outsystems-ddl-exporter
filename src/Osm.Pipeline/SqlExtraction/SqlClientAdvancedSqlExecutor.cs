@@ -2,6 +2,7 @@ using System;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -37,11 +38,29 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
         _logger = logger ?? NullLogger<SqlClientAdvancedSqlExecutor>.Instance;
     }
 
-    public async Task<Result<string>> ExecuteAsync(AdvancedSqlRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<long>> ExecuteAsync(
+        AdvancedSqlRequest request,
+        Stream destination,
+        CancellationToken cancellationToken = default)
     {
         if (request is null)
         {
             throw new ArgumentNullException(nameof(request));
+        }
+
+        if (destination is null)
+        {
+            throw new ArgumentNullException(nameof(destination));
+        }
+
+        if (!destination.CanWrite)
+        {
+            throw new ArgumentException("Destination stream must be writable.", nameof(destination));
+        }
+
+        if (!destination.CanSeek)
+        {
+            throw new ArgumentException("Destination stream must support seeking.", nameof(destination));
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -64,12 +83,15 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
         if (string.IsNullOrWhiteSpace(script))
         {
             _logger.LogError("Advanced SQL script provider returned an empty script.");
-            return Result<string>.Failure(ValidationError.Create("extraction.sql.script.missing", "Advanced SQL script was empty."));
+            return Result<long>.Failure(ValidationError.Create("extraction.sql.script.missing", "Advanced SQL script was empty."));
         }
 
         _logger.LogDebug("Advanced SQL script length: {ScriptLength} characters.", script.Length);
 
         var stopwatch = Stopwatch.StartNew();
+
+        destination.SetLength(0);
+        destination.Position = 0;
 
         try
         {
@@ -84,8 +106,12 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
                 .ExecuteReaderAsync(CommandBehavior.SequentialAccess | CommandBehavior.SingleResult, cancellationToken)
                 .ConfigureAwait(false);
 
-            var builder = new StringBuilder();
             var chunkCount = 0;
+            var hasContent = false;
+            var hasNonWhitespace = false;
+
+            using var writer = new StreamWriter(destination, Encoding.UTF8, bufferSize: 81920, leaveOpen: true);
+            var buffer = new char[8192];
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -94,9 +120,30 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
                     continue;
                 }
 
-                builder.Append(reader.GetString(0));
                 chunkCount++;
+
+                using var textReader = reader.GetTextReader(0);
+                int read;
+                while ((read = await textReader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+                {
+                    await writer.WriteAsync(buffer, 0, read).ConfigureAwait(false);
+                    hasContent = true;
+
+                    if (!hasNonWhitespace)
+                    {
+                        for (var i = 0; i < read; i++)
+                        {
+                            if (!char.IsWhiteSpace(buffer[i]))
+                            {
+                                hasNonWhitespace = true;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
+
+            await writer.FlushAsync().ConfigureAwait(false);
 
             stopwatch.Stop();
             _logger.LogInformation(
@@ -104,30 +151,38 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
                 stopwatch.Elapsed.TotalMilliseconds,
                 chunkCount);
 
-            if (builder.Length == 0)
+            if (!hasContent)
             {
                 _logger.LogError("Advanced SQL command returned no results.");
-                return Result<string>.Failure(ValidationError.Create(
+                destination.SetLength(0);
+                destination.Position = 0;
+                return Result<long>.Failure(ValidationError.Create(
                     "extraction.sql.emptyJson",
                     "Advanced SQL execution returned no JSON payload."));
             }
 
-            var payload = builder.ToString();
-            if (string.IsNullOrWhiteSpace(payload))
+            var bytesWritten = destination.Position;
+            destination.Position = 0;
+
+            if (bytesWritten == 0 || !hasNonWhitespace)
             {
                 _logger.LogError("Advanced SQL command returned an empty JSON payload after concatenation.");
-                return Result<string>.Failure(ValidationError.Create(
+                destination.SetLength(0);
+                destination.Position = 0;
+                return Result<long>.Failure(ValidationError.Create(
                     "extraction.sql.emptyJson",
                     "Advanced SQL execution returned an empty JSON payload."));
             }
 
-            return Result<string>.Success(payload);
+            return Result<long>.Success(bytesWritten);
         }
         catch (DbException ex)
         {
             stopwatch.Stop();
             _logger.LogError(ex, "Advanced SQL execution failed after {DurationMs} ms.", stopwatch.Elapsed.TotalMilliseconds);
-            return Result<string>.Failure(ValidationError.Create(
+            destination.SetLength(0);
+            destination.Position = 0;
+            return Result<long>.Failure(ValidationError.Create(
                 "extraction.sql.executionFailed",
                 $"Advanced SQL execution failed: {ex.Message}"));
         }

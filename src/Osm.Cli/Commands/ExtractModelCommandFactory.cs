@@ -124,7 +124,10 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
         var outputPath = result.OutputPath ?? "model.extracted.json";
         var cancellationToken = context.GetCancellationToken();
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath)) ?? Directory.GetCurrentDirectory());
-        await File.WriteAllTextAsync(outputPath, result.ExtractionResult.Json, cancellationToken).ConfigureAwait(false);
+        await using (var outputStream = File.Create(outputPath))
+        {
+            await result.ExtractionResult.JsonPayload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
+        }
 
         var model = result.ExtractionResult.Model;
         var moduleCount = model.Modules.Length;

@@ -54,7 +54,8 @@ public class SqlModelExtractionServiceTests
         var result = await service.ExtractAsync(command);
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Value.Model);
-        AssertModulesMatch(json, result.Value.Json);
+        var payloadJson = await result.Value.JsonPayload.ReadAsStringAsync();
+        AssertModulesMatch(json, payloadJson);
         Assert.Empty(result.Value.Warnings);
     }
 
@@ -107,7 +108,8 @@ public class SqlModelExtractionServiceTests
 
         var result = await service.ExtractAsync(command);
         Assert.True(result.IsSuccess);
-        using var payload = JsonDocument.Parse(result.Value.Json);
+        var jsonText = await result.Value.JsonPayload.ReadAsStringAsync();
+        using var payload = JsonDocument.Parse(jsonText);
         var modules = payload.RootElement.GetProperty("modules");
         Assert.Equal(JsonValueKind.Array, modules.ValueKind);
         Assert.Equal(0, modules.GetArrayLength());
@@ -187,7 +189,8 @@ public class SqlModelExtractionServiceTests
 
         Assert.True(result.IsSuccess);
 
-        using var actualDocument = JsonDocument.Parse(result.Value.Json);
+        var actualJson = await result.Value.JsonPayload.ReadAsStringAsync();
+        using var actualDocument = JsonDocument.Parse(actualJson);
         var exportedAtUtc = actualDocument.RootElement.GetProperty("exportedAtUtc").GetDateTime();
         var expectedJson = BuildLegacyJson(snapshot, exportedAtUtc);
 
@@ -222,6 +225,54 @@ public class SqlModelExtractionServiceTests
         Assert.True(triggeredBy.Reference.IsReference);
         Assert.Equal("User", triggeredBy.Reference.TargetEntity?.Value);
         Assert.Equal("OSUSR_U_USER", triggeredBy.Reference.TargetPhysicalName?.Value);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldSupportCustomDestinationStream()
+    {
+        var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.micro-unique.json"));
+        var snapshot = CreateSnapshotFromJson(json);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+
+        await using var destination = new MemoryStream();
+        var result = await service.ExtractAsync(command, ModelExtractionOptions.ToStream(destination));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(0, destination.Position);
+        Assert.True(destination.Length > 0);
+
+        var firstRead = await result.Value.JsonPayload.ReadAsStringAsync();
+        Assert.Equal(0, destination.Position);
+        var bufferSnapshot = Encoding.UTF8.GetString(destination.ToArray());
+        Assert.Equal(bufferSnapshot, firstRead);
+        var secondRead = await result.Value.JsonPayload.ReadAsStringAsync();
+        Assert.Equal(firstRead, secondRead);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldPersistJsonToFilePath()
+    {
+        var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.micro-unique.json"));
+        var snapshot = CreateSnapshotFromJson(json);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+
+        using var temp = new TempDirectory();
+        var path = Path.Combine(temp.Path, "model.json");
+
+        var result = await service.ExtractAsync(command, ModelExtractionOptions.ToFile(path));
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.JsonPayload.IsPersisted);
+        Assert.Equal(Path.GetFullPath(path), result.Value.JsonPayload.FilePath);
+        Assert.True(File.Exists(path));
+
+        var diskContents = await File.ReadAllTextAsync(path);
+        var payloadContents = await result.Value.JsonPayload.ReadAsStringAsync();
+        Assert.Equal(diskContents, payloadContents);
     }
 
     private static OutsystemsMetadataSnapshot CreateSnapshotFromJson(string json)

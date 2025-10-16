@@ -3,6 +3,7 @@ using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Parsing;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -105,7 +106,15 @@ public class ExtractModelCommandFactoryTests
                 Array.Empty<OutsystemsTriggerJsonRow>(),
                 Array.Empty<OutsystemsModuleJsonRow>(),
                 "TestDb");
-            var extraction = new ModelExtractionResult(model, "{}", DateTimeOffset.UtcNow, Array.Empty<string>(), snapshot);
+            var buffer = new MemoryStream();
+            using (var writer = new StreamWriter(buffer, Encoding.UTF8, leaveOpen: true))
+            {
+                writer.Write("{}");
+            }
+
+            buffer.Position = 0;
+            var payload = ModelJsonPayload.FromStream(buffer);
+            var extraction = new ModelExtractionResult(model, payload, DateTimeOffset.UtcNow, Array.Empty<string>(), snapshot);
             var result = new ExtractModelApplicationResult(extraction, input.Overrides.OutputPath ?? "model.json");
             return Task.FromResult(Result<ExtractModelApplicationResult>.Success(result));
         }

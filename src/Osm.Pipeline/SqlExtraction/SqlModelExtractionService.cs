@@ -20,7 +20,10 @@ namespace Osm.Pipeline.SqlExtraction;
 
 public interface ISqlModelExtractionService
 {
-    Task<Result<ModelExtractionResult>> ExtractAsync(ModelExtractionCommand command, CancellationToken cancellationToken = default);
+    Task<Result<ModelExtractionResult>> ExtractAsync(
+        ModelExtractionCommand command,
+        ModelExtractionOptions? options = null,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class SqlModelExtractionService : ISqlModelExtractionService
@@ -39,12 +42,17 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         _logger = logger ?? NullLogger<SqlModelExtractionService>.Instance;
     }
 
-    public async Task<Result<ModelExtractionResult>> ExtractAsync(ModelExtractionCommand command, CancellationToken cancellationToken = default)
+    public async Task<Result<ModelExtractionResult>> ExtractAsync(
+        ModelExtractionCommand command,
+        ModelExtractionOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         if (command is null)
         {
             throw new ArgumentNullException(nameof(command));
         }
+
+        options ??= ModelExtractionOptions.InMemory();
 
         _logger.LogInformation(
             "Executing advanced SQL for {ModuleCount} module(s) (includeSystem: {IncludeSystem}, onlyActive: {OnlyActive}).",
@@ -77,20 +85,22 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         var snapshot = metadataResult.Value;
         var exportedAtUtc = DateTimeOffset.UtcNow;
 
-        await using var jsonBuffer = new MemoryStream();
-        BuildJsonFromSnapshot(snapshot, exportedAtUtc.UtcDateTime, jsonBuffer);
+        await using var destination = CreateDestination(options);
+        var jsonStream = destination.Stream;
 
-        if (jsonBuffer.Length == 0)
+        BuildJsonFromSnapshot(snapshot, exportedAtUtc.UtcDateTime, jsonStream);
+
+        if (jsonStream.Position == 0)
         {
             _logger.LogError("Metadata reader produced an empty JSON payload.");
             return Result<ModelExtractionResult>.Failure(ValidationError.Create("extraction.sql.emptyJson", "Metadata reader produced no JSON payload."));
         }
 
+        jsonStream.Position = 0;
         var warnings = new List<string>();
 
         var deserializeTimer = Stopwatch.StartNew();
-        jsonBuffer.Position = 0;
-        var modelResult = _deserializer.Deserialize(jsonBuffer, warnings);
+        var modelResult = _deserializer.Deserialize(jsonStream, warnings);
         deserializeTimer.Stop();
 
         if (modelResult.IsFailure)
@@ -108,8 +118,11 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                     ExtendedProperty.EmptyArray);
 
                 warnings.Add("Advanced SQL returned no modules for the requested filter.");
-                var emptyJson = MaterializeJson(jsonBuffer);
-                var emptyResult = new ModelExtractionResult(emptyModel, emptyJson, exportedAtUtc, warnings, snapshot);
+                jsonStream.Position = 0;
+                var emptyPayload = destination.FilePath is not null
+                    ? ModelJsonPayload.FromFile(destination.FilePath)
+                    : ModelJsonPayload.FromStream(jsonStream);
+                var emptyResult = new ModelExtractionResult(emptyModel, emptyPayload, exportedAtUtc, warnings, snapshot);
                 return Result<ModelExtractionResult>.Success(emptyResult);
             }
 
@@ -134,8 +147,11 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                 deserializeTimer.Elapsed.TotalMilliseconds);
         }
 
-        var materializedJson = MaterializeJson(jsonBuffer);
-        var result = new ModelExtractionResult(modelResult.Value, materializedJson, exportedAtUtc, warnings, snapshot);
+        jsonStream.Position = 0;
+        var payload = destination.FilePath is not null
+            ? ModelJsonPayload.FromFile(destination.FilePath)
+            : ModelJsonPayload.FromStream(jsonStream);
+        var result = new ModelExtractionResult(modelResult.Value, payload, exportedAtUtc, warnings, snapshot);
         _logger.LogInformation(
             "Model extraction finished in {TotalDurationMs} ms (metadata: {MetadataMs} ms, deserialize: {DeserializeMs} ms).",
             metadataTimer.Elapsed.TotalMilliseconds + deserializeTimer.Elapsed.TotalMilliseconds,
@@ -143,6 +159,71 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
             deserializeTimer.Elapsed.TotalMilliseconds);
 
         return Result<ModelExtractionResult>.Success(result);
+    }
+
+    private static DestinationScope CreateDestination(ModelExtractionOptions options)
+    {
+        if (options is null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
+
+        if (options.DestinationStream is { } stream)
+        {
+            if (!stream.CanWrite)
+            {
+                throw new ArgumentException("Destination stream must be writable.", nameof(options));
+            }
+
+            if (!stream.CanSeek)
+            {
+                throw new ArgumentException("Destination stream must support seeking.", nameof(options));
+            }
+
+            stream.SetLength(0);
+            stream.Position = 0;
+            return new DestinationScope(stream, filePath: null, dispose: false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.DestinationPath))
+        {
+            var trimmed = options.DestinationPath!.Trim();
+            var absolutePath = Path.GetFullPath(trimmed);
+            var directory = Path.GetDirectoryName(absolutePath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var fileStream = new FileStream(absolutePath, FileMode.Create, FileAccess.ReadWrite, FileShare.Read);
+            fileStream.SetLength(0);
+            fileStream.Position = 0;
+            return new DestinationScope(fileStream, absolutePath, dispose: true);
+        }
+
+        var memoryStream = new MemoryStream();
+        return new DestinationScope(memoryStream, filePath: null, dispose: false);
+    }
+
+    private readonly struct DestinationScope : IAsyncDisposable
+    {
+        private readonly bool _dispose;
+
+        public DestinationScope(Stream stream, string? filePath, bool dispose)
+        {
+            Stream = stream ?? throw new ArgumentNullException(nameof(stream));
+            FilePath = filePath;
+            _dispose = dispose;
+        }
+
+        public Stream Stream { get; }
+
+        public string? FilePath { get; }
+
+        public ValueTask DisposeAsync()
+        {
+            return _dispose ? Stream.DisposeAsync() : ValueTask.CompletedTask;
+        }
     }
 
     private static void BuildJsonFromSnapshot(OutsystemsMetadataSnapshot snapshot, DateTime exportedAtUtc, Stream destination)
@@ -182,33 +263,19 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         writer.WriteEndObject();
     }
 
-    private static string MaterializeJson(MemoryStream buffer)
-    {
-        if (buffer is null)
-        {
-            throw new ArgumentNullException(nameof(buffer));
-        }
-
-        if (!buffer.TryGetBuffer(out var segment))
-        {
-            return Encoding.UTF8.GetString(buffer.ToArray());
-        }
-
-        return Encoding.UTF8.GetString(segment.Array!, segment.Offset, segment.Count);
-    }
 }
 
 public sealed class ModelExtractionResult
 {
     public ModelExtractionResult(
         OsmModel model,
-        string json,
+        ModelJsonPayload jsonPayload,
         DateTimeOffset extractedAtUtc,
         IReadOnlyList<string> warnings,
         OutsystemsMetadataSnapshot metadata)
     {
         Model = model ?? throw new ArgumentNullException(nameof(model));
-        Json = json ?? throw new ArgumentNullException(nameof(json));
+        JsonPayload = jsonPayload ?? throw new ArgumentNullException(nameof(jsonPayload));
         ExtractedAtUtc = extractedAtUtc;
         Warnings = warnings ?? throw new ArgumentNullException(nameof(warnings));
         Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
@@ -216,13 +283,142 @@ public sealed class ModelExtractionResult
 
     public OsmModel Model { get; }
 
-    public string Json { get; }
+    public ModelJsonPayload JsonPayload { get; }
 
     public DateTimeOffset ExtractedAtUtc { get; }
 
     public IReadOnlyList<string> Warnings { get; }
 
     public OutsystemsMetadataSnapshot Metadata { get; }
+}
+
+public sealed class ModelJsonPayload
+{
+    private readonly Stream? _buffer;
+    private readonly string? _filePath;
+
+    private ModelJsonPayload(Stream? buffer, string? filePath)
+    {
+        _buffer = buffer;
+        _filePath = filePath;
+    }
+
+    public static ModelJsonPayload FromStream(Stream stream)
+    {
+        if (stream is null)
+        {
+            throw new ArgumentNullException(nameof(stream));
+        }
+
+        if (!stream.CanSeek)
+        {
+            throw new ArgumentException("JSON buffer stream must support seeking.", nameof(stream));
+        }
+
+        return new ModelJsonPayload(stream, null);
+    }
+
+    public static ModelJsonPayload FromFile(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            throw new ArgumentException("File path must be provided.", nameof(filePath));
+        }
+
+        return new ModelJsonPayload(null, Path.GetFullPath(filePath));
+    }
+
+    public bool IsPersisted => _filePath is not null;
+
+    public string? FilePath => _filePath;
+
+    public async ValueTask<string> ReadAsStringAsync(CancellationToken cancellationToken = default)
+    {
+        if (_buffer is not null)
+        {
+            if (!_buffer.CanSeek)
+            {
+                throw new InvalidOperationException("JSON buffer stream must support seeking.");
+            }
+
+            _buffer.Position = 0;
+            using var reader = new StreamReader(_buffer, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+#if NET8_0_OR_GREATER
+            var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+#else
+            var text = await reader.ReadToEndAsync().ConfigureAwait(false);
+#endif
+            _buffer.Position = 0;
+            return text;
+        }
+
+        if (_filePath is not null)
+        {
+            await using var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+#if NET8_0_OR_GREATER
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
+            return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+#else
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
+            return await reader.ReadToEndAsync().ConfigureAwait(false);
+#endif
+        }
+
+        throw new InvalidOperationException("JSON payload is not available.");
+    }
+
+    public async ValueTask CopyToAsync(Stream destination, CancellationToken cancellationToken = default)
+    {
+        if (destination is null)
+        {
+            throw new ArgumentNullException(nameof(destination));
+        }
+
+        if (_buffer is not null)
+        {
+            if (!_buffer.CanSeek)
+            {
+                throw new InvalidOperationException("JSON buffer stream must support seeking.");
+            }
+
+            _buffer.Position = 0;
+            await _buffer.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+            _buffer.Position = 0;
+            return;
+        }
+
+        if (_filePath is not null)
+        {
+            await using var source = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        throw new InvalidOperationException("JSON payload is not available.");
+    }
+}
+
+public sealed class ModelExtractionOptions
+{
+    public ModelExtractionOptions(Stream? destinationStream = null, string? destinationPath = null)
+    {
+        DestinationStream = destinationStream;
+        DestinationPath = destinationPath;
+    }
+
+    public Stream? DestinationStream { get; }
+
+    public string? DestinationPath { get; }
+
+    public static ModelExtractionOptions InMemory() => new();
+
+    public static ModelExtractionOptions ToStream(Stream stream)
+        => new(stream ?? throw new ArgumentNullException(nameof(stream)), null);
+
+    public static ModelExtractionOptions ToFile(string path)
+        => string.IsNullOrWhiteSpace(path)
+            ? throw new ArgumentException("File path must be provided.", nameof(path))
+            : new ModelExtractionOptions(null, path);
 }
 
 public sealed class ModelExtractionCommand
