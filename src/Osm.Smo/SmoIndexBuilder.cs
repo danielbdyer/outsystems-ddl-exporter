@@ -91,7 +91,7 @@ internal static class SmoIndexBuilder
                 }
 
                 var isDescending = column.Direction == IndexColumnDirection.Descending;
-                columnsBuilder.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, column.Ordinal, column.IsIncluded, isDescending));
+                columnsBuilder.Add(new SmoIndexColumnDefinition(attribute.ColumnName.Value, column.Ordinal, column.IsIncluded, isDescending));
             }
 
             if (columnsBuilder.Count == 0)
@@ -160,7 +160,7 @@ internal static class SmoIndexBuilder
                     }
 
                     var isDescending = column.Direction == IndexColumnDirection.Descending;
-                    columnBuilder.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, ordinal++, IsIncluded: false, isDescending));
+                    columnBuilder.Add(new SmoIndexColumnDefinition(attribute.ColumnName.Value, ordinal++, IsIncluded: false, isDescending));
                     attributeBuilder.Add(attribute);
                 }
 
@@ -185,7 +185,7 @@ internal static class SmoIndexBuilder
         for (var i = 0; i < referencedAttributes.Length; i++)
         {
             var attribute = referencedAttributes[i];
-            fallback.Add(new SmoIndexColumnDefinition(attribute.LogicalName.Value, i + 1, IsIncluded: false, IsDescending: false));
+            fallback.Add(new SmoIndexColumnDefinition(attribute.ColumnName.Value, i + 1, IsIncluded: false, IsDescending: false));
         }
 
         return fallback.ToImmutable();

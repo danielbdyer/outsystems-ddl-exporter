@@ -55,9 +55,9 @@ public class SmoModelFactoryTests
             options: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission));
 
         var customerTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
-        var idColumn = customerTable.Columns.Single(c => c.Name.Equals("Id", StringComparison.Ordinal));
-        var emailColumn = customerTable.Columns.Single(c => c.Name.Equals("Email", StringComparison.Ordinal));
-        var cityColumn = customerTable.Columns.Single(c => c.Name.Equals("CityId", StringComparison.Ordinal));
+        var idColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("Id", StringComparison.Ordinal));
+        var emailColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("Email", StringComparison.Ordinal));
+        var cityColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("CityId", StringComparison.Ordinal));
         Assert.Equal(SqlDataType.BigInt, idColumn.DataType.SqlDataType);
         Assert.True(idColumn.IsIdentity);
         Assert.False(emailColumn.Nullable);
@@ -65,12 +65,13 @@ public class SmoModelFactoryTests
         Assert.Equal(SqlDataType.BigInt, cityColumn.DataType.SqlDataType);
         Assert.Equal(SqlDataType.NVarChar, emailColumn.DataType.SqlDataType);
         Assert.Equal(255, emailColumn.DataType.MaximumLength);
-        Assert.DoesNotContain(customerTable.Columns, c => c.Name.Equals("LegacyCode", StringComparison.Ordinal));
+        Assert.DoesNotContain(customerTable.Columns, c => c.LogicalName.Equals("LegacyCode", StringComparison.Ordinal));
 
         var pk = customerTable.Indexes.Single(i => i.IsPrimaryKey);
         Assert.Equal("PK_Customer", pk.Name);
+        var expectedPrimaryKeyColumnName = idColumn.Name;
         Assert.Collection(pk.Columns.OrderBy(c => c.Ordinal),
-            col => Assert.Equal("Id", col.Name));
+            col => Assert.Equal(expectedPrimaryKeyColumnName, col.Name));
 
         var emailIndex = customerTable.Indexes.Single(i => i.Name.Equals("IDX_Customer_Email", StringComparison.OrdinalIgnoreCase));
         Assert.True(emailIndex.IsUnique);
@@ -95,7 +96,7 @@ public class SmoModelFactoryTests
         Assert.False(cityForeignKey.IsNoCheck);
 
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
-        var jobRunTriggeredByColumn = jobRunTable.Columns.Single(c => c.Name.Equals("TriggeredByUserId", StringComparison.Ordinal));
+        var jobRunTriggeredByColumn = jobRunTable.Columns.Single(c => c.LogicalName.Equals("TriggeredByUserId", StringComparison.Ordinal));
         Assert.True(jobRunTriggeredByColumn.Nullable);
         Assert.Empty(jobRunTable.ForeignKeys);
         var triggerDefinition = Assert.Single(jobRunTable.Triggers);
@@ -105,7 +106,7 @@ public class SmoModelFactoryTests
 
         var billingTable = smoModel.Tables.Single(t => t.Name.Equals("BILLING_ACCOUNT", StringComparison.OrdinalIgnoreCase));
         Assert.Equal("billing", billingTable.Schema);
-        var accountNumberColumn = billingTable.Columns.Single(c => c.Name.Equals("AccountNumber", StringComparison.Ordinal));
+        var accountNumberColumn = billingTable.Columns.Single(c => c.LogicalName.Equals("AccountNumber", StringComparison.Ordinal));
         Assert.Equal(SqlDataType.VarChar, accountNumberColumn.DataType.SqlDataType);
         Assert.Equal(50, accountNumberColumn.DataType.MaximumLength);
     }
@@ -142,7 +143,7 @@ public class SmoModelFactoryTests
         var smoModel = factory.Create(updatedModel, decisions, profile: snapshot, options: smoOptions);
 
         var customerTable = smoModel.Tables.Single(t => t.LogicalName.Equals("Customer", StringComparison.Ordinal));
-        var cityColumn = customerTable.Columns.Single(c => c.Name.Equals("CityId", StringComparison.Ordinal));
+        var cityColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("CityId", StringComparison.Ordinal));
 
         Assert.Equal(SqlDataType.BigInt, cityColumn.DataType.SqlDataType);
     }
@@ -174,7 +175,7 @@ public class SmoModelFactoryTests
         var smoModel = factory.Create(updatedModel, decisions, profile: snapshot, options: smoOptions);
 
         var smoTable = smoModel.Tables.Single(t => t.Name.Equals(entity.PhysicalName.Value, StringComparison.OrdinalIgnoreCase));
-        var smoColumn = smoTable.Columns.Single(c => c.Name.Equals(updatedAttribute.LogicalName.Value, StringComparison.Ordinal));
+        var smoColumn = smoTable.Columns.Single(c => c.LogicalName.Equals(updatedAttribute.LogicalName.Value, StringComparison.Ordinal));
 
         Assert.Equal("((1))", smoColumn.DefaultExpression);
         Assert.NotNull(smoColumn.DefaultConstraint);
@@ -185,6 +186,114 @@ public class SmoModelFactoryTests
         Assert.Equal("CK_Custom_Check", checkConstraint.Name);
         Assert.Equal("([" + updatedAttribute.ColumnName.Value + "] > (0))", checkConstraint.Expression);
         Assert.True(checkConstraint.IsNotTrusted);
+    }
+
+    [Fact]
+    public void Build_uses_physical_identifiers_when_logical_names_differ()
+    {
+        var (model, _, _) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var module = model.Modules.First(m =>
+            m.Entities.Any(e => e.LogicalName.Value.Equals("Customer", StringComparison.Ordinal)) &&
+            m.Entities.Any(e => e.LogicalName.Value.Equals("City", StringComparison.Ordinal)));
+
+        var customer = module.Entities.First(e => e.LogicalName.Value.Equals("Customer", StringComparison.Ordinal));
+        var city = module.Entities.First(e => e.LogicalName.Value.Equals("City", StringComparison.Ordinal));
+
+        const string CustomerIdPhysical = "CUSTOMER_ID_PHYSICAL";
+        const string CustomerCityIdPhysical = "CUSTOMER_CITY_ID_PHYSICAL";
+        const string CityIdPhysical = "CITY_IDENTIFIER_PHYSICAL";
+
+        var customerIdAttribute = customer.Attributes.Single(a => a.LogicalName.Value.Equals("Id", StringComparison.Ordinal));
+        var customerCityAttribute = customer.Attributes.Single(a => a.LogicalName.Value.Equals("CityId", StringComparison.Ordinal));
+
+        var updatedCustomerId = customerIdAttribute with { ColumnName = new ColumnName(CustomerIdPhysical) };
+        var updatedCustomerCity = customerCityAttribute with { ColumnName = new ColumnName(CustomerCityIdPhysical) };
+
+        var customerAttributes = customer.Attributes
+            .Replace(customerIdAttribute, updatedCustomerId)
+            .Replace(customerCityAttribute, updatedCustomerCity);
+
+        var customerIndexes = customer.Indexes
+            .Select(index => index with
+            {
+                Columns = index.Columns
+                    .Select(column => column.Column.Value.Equals(customerIdAttribute.ColumnName.Value, StringComparison.OrdinalIgnoreCase)
+                        ? column with { Column = new ColumnName(CustomerIdPhysical) }
+                        : column.Column.Value.Equals(customerCityAttribute.ColumnName.Value, StringComparison.OrdinalIgnoreCase)
+                            ? column with { Column = new ColumnName(CustomerCityIdPhysical) }
+                            : column)
+                    .ToImmutableArray()
+            })
+            .ToImmutableArray();
+
+        var updatedCustomer = customer with
+        {
+            Attributes = customerAttributes,
+            Indexes = customerIndexes
+        };
+
+        var cityIdAttribute = city.Attributes.Single(a => a.LogicalName.Value.Equals("Id", StringComparison.Ordinal));
+        var updatedCityId = cityIdAttribute with { ColumnName = new ColumnName(CityIdPhysical) };
+        var cityAttributes = city.Attributes.Replace(cityIdAttribute, updatedCityId);
+
+        var cityIndexes = city.Indexes
+            .Select(index => index with
+            {
+                Columns = index.Columns
+                    .Select(column => column.Column.Value.Equals(cityIdAttribute.ColumnName.Value, StringComparison.OrdinalIgnoreCase)
+                        ? column with { Column = new ColumnName(CityIdPhysical) }
+                        : column)
+                    .ToImmutableArray()
+            })
+            .ToImmutableArray();
+
+        var updatedCity = city with
+        {
+            Attributes = cityAttributes,
+            Indexes = cityIndexes
+        };
+
+        var updatedEntities = module.Entities
+            .Replace(customer, updatedCustomer)
+            .Replace(city, updatedCity);
+
+        var updatedModule = module with { Entities = updatedEntities };
+        var updatedModel = model with { Modules = model.Modules.Replace(module, updatedModule) };
+
+        var emptySnapshot = new ProfileSnapshot(
+            ImmutableArray<ColumnProfile>.Empty,
+            ImmutableArray<UniqueCandidateProfile>.Empty,
+            ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
+            ImmutableArray<ForeignKeyReality>.Empty);
+
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(updatedModel, emptySnapshot, TighteningOptions.Default);
+
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(updatedModel, decisions, profile: emptySnapshot, options: options);
+
+        var customerTable = smoModel.Tables.Single(t => t.LogicalName.Equals("Customer", StringComparison.Ordinal));
+        var idColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("Id", StringComparison.Ordinal));
+        var cityColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("CityId", StringComparison.Ordinal));
+
+        Assert.Equal(CustomerIdPhysical, idColumn.Name);
+        Assert.Equal(CustomerCityIdPhysical, cityColumn.Name);
+
+        var primaryKey = customerTable.Indexes.Single(i => i.IsPrimaryKey);
+        Assert.Collection(primaryKey.Columns.OrderBy(c => c.Ordinal),
+            col => Assert.Equal(CustomerIdPhysical, col.Name));
+
+        var foreignKey = Assert.Single(customerTable.ForeignKeys);
+        Assert.Equal(CustomerCityIdPhysical, foreignKey.Column);
+        Assert.Equal(CityIdPhysical, foreignKey.ReferencedColumn);
+
+        var writer = new PerTableWriter();
+        var script = writer.Generate(customerTable, options).Script;
+
+        Assert.Contains($"[{CustomerIdPhysical}]", script, StringComparison.Ordinal);
+        Assert.Contains($"[{CustomerCityIdPhysical}]", script, StringComparison.Ordinal);
+        Assert.Contains($"[{CityIdPhysical}]", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -200,6 +309,7 @@ public class SmoModelFactoryTests
         {
             var result = writer.Generate(table, options);
             var expectedPath = Path.Combine(
+                FixtureFile.RepositoryRoot,
                 "tests",
                 "Fixtures",
                 "emission",
