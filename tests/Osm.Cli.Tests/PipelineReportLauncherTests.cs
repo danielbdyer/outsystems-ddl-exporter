@@ -74,12 +74,31 @@ public class PipelineReportLauncherTests
             Path.Combine(output.Path, "Seeds", "AppCore", "StaticEntities.seed.sql"),
             Path.Combine(output.Path, "Seeds", "ExtBilling", "StaticEntities.seed.sql"));
 
+        var insightWarning = ProfilingInsight.Create(
+            ProfilingInsightCodes.HighNullDensity,
+            ProfilingInsightSeverity.Warning,
+            new SchemaName("dbo"),
+            new TableName("Customer"),
+            ImmutableArray.Create(new ColumnName("Email")),
+            "Email column has a high null ratio.",
+            ImmutableDictionary<string, string?>.Empty).Value;
+
+        var insightInfo = ProfilingInsight.Create(
+            ProfilingInsightCodes.ForeignKeyOpportunity,
+            ProfilingInsightSeverity.Info,
+            new SchemaName("dbo"),
+            new TableName("Invoice"),
+            ImmutableArray.Create(new ColumnName("CustomerId")),
+            "No orphans detected for Customer reference.",
+            ImmutableDictionary<string, string?>.Empty).Value;
+
         var pipelineResult = new BuildSsdtPipelineResult(
             new ProfileSnapshot(
                 ImmutableArray<ColumnProfile>.Empty,
                 ImmutableArray<UniqueCandidateProfile>.Empty,
                 ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
                 ImmutableArray<ForeignKeyReality>.Empty),
+            ImmutableArray.Create(insightWarning, insightInfo),
             decisionReport,
             manifest,
             Path.Combine(output.Path, "policy-decisions.json"),
@@ -115,5 +134,8 @@ public class PipelineReportLauncherTests
         Assert.Contains("dmm-diff.json", html);
         Assert.Contains("AppCore", html);
         Assert.Contains("ExtBilling", html);
+        Assert.Contains("Profiling insights", html);
+        Assert.Contains("Email column has a high null ratio.", html);
+        Assert.Contains("No orphans detected", html);
     }
 }

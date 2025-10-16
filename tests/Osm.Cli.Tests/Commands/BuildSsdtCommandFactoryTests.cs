@@ -127,8 +127,11 @@ public class BuildSsdtCommandFactoryTests
                 SsdtCoverageSummary.CreateComplete(0, 0, 0),
                 Array.Empty<string>());
 
+            var insights = ImmutableArray<ProfilingInsight>.Empty;
+
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
+                insights,
                 report,
                 manifest,
                 "decision.log",

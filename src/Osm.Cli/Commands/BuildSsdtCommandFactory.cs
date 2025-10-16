@@ -136,6 +136,8 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
         }
 
+        CommandConsole.EmitProfilingInsights(context.Console, pipelineResult.ProfilingInsights);
+
         CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
         CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
 

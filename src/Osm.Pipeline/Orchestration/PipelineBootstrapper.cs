@@ -40,6 +40,7 @@ public sealed record PipelineBootstrapContext(
     OsmModel FilteredModel,
     ImmutableArray<EntityModel> SupplementalEntities,
     ProfileSnapshot Profile,
+    ImmutableArray<ProfilingInsight> ProfilingInsights,
     ImmutableArray<string> Warnings);
 
 public sealed class PipelineBootstrapper : IPipelineBootstrapper
@@ -47,15 +48,18 @@ public sealed class PipelineBootstrapper : IPipelineBootstrapper
     private readonly IModelIngestionService _modelIngestionService;
     private readonly ModuleFilter _moduleFilter;
     private readonly SupplementalEntityLoader _supplementalLoader;
+    private readonly IProfilingInsightAnalyzer _insightAnalyzer;
 
     public PipelineBootstrapper(
         IModelIngestionService? modelIngestionService = null,
         ModuleFilter? moduleFilter = null,
-        SupplementalEntityLoader? supplementalLoader = null)
+        SupplementalEntityLoader? supplementalLoader = null,
+        IProfilingInsightAnalyzer? insightAnalyzer = null)
     {
         _modelIngestionService = modelIngestionService ?? new ModelIngestionService(new ModelJsonDeserializer());
         _moduleFilter = moduleFilter ?? new ModuleFilter();
         _supplementalLoader = supplementalLoader ?? new SupplementalEntityLoader();
+        _insightAnalyzer = insightAnalyzer ?? new ProfilingInsightAnalyzer();
     }
 
     public async Task<Result<PipelineBootstrapContext>> BootstrapAsync(
@@ -190,6 +194,7 @@ public sealed class PipelineBootstrapper : IPipelineBootstrapper
         }
 
         var profile = profileResult.Value;
+        var insights = _insightAnalyzer.Analyze(profile);
         log.Record(
             "profiling.capture.completed",
             request.Telemetry.ProfilingCompletedMessage,
@@ -201,10 +206,22 @@ public sealed class PipelineBootstrapper : IPipelineBootstrapper
                 ["foreignKeys"] = profile.ForeignKeys.Length.ToString(CultureInfo.InvariantCulture)
             });
 
+        if (!insights.IsDefaultOrEmpty)
+        {
+            log.Record(
+                "profiling.insights.generated",
+                "Generated profiling heuristics from snapshot.",
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["insightCount"] = insights.Length.ToString(CultureInfo.InvariantCulture)
+                });
+        }
+
         return new PipelineBootstrapContext(
             filteredModel,
             supplementalEntities,
             profile,
+            insights,
             pipelineWarnings.ToImmutable());
     }
 }

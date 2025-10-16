@@ -117,6 +117,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
 
         return new BuildSsdtPipelineResult(
             context.Profile!,
+            context.ProfilingInsights,
             context.DecisionReport!,
             context.Manifest!,
             context.DecisionLogPath!,

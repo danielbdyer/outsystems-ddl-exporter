@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.CommandLine;
 using System.Diagnostics;
 using System.Globalization;
@@ -8,8 +9,9 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Osm.Pipeline.Application;
 using Osm.Emission;
+using Osm.Domain.Profiling;
+using Osm.Pipeline.Application;
 
 namespace Osm.Cli;
 
@@ -61,6 +63,7 @@ internal static class PipelineReportLauncher
             totalTables,
             totalIndexes,
             totalForeignKeys,
+            pipelineResult.ProfilingInsights,
             hasDiff,
             staticSeedPaths);
 
@@ -120,6 +123,7 @@ internal static class PipelineReportLauncher
         int totalTables,
         int totalIndexes,
         int totalForeignKeys,
+        ImmutableArray<ProfilingInsight> insights,
         bool hasDiff,
         IReadOnlyList<string> staticSeedPaths)
     {
@@ -139,12 +143,21 @@ internal static class PipelineReportLauncher
         builder.AppendLine("    .card { background: #ffffff; border-radius: 10px; padding: 1rem 1.25rem; box-shadow: 0 10px 25px -20px rgba(15, 23, 42, 0.6); min-width: 160px; }");
         builder.AppendLine("    .card .value { font-size: 1.8rem; font-weight: 600; color: #0b7285; }");
         builder.AppendLine("    .card .label { font-size: 0.9rem; color: #52606d; text-transform: uppercase; letter-spacing: 0.08em; }");
+        builder.AppendLine("    .badge { display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }");
+        builder.AppendLine("    .badge-info { background: #d0ebff; color: #0b7285; }");
+        builder.AppendLine("    .badge-warning { background: #fff3bf; color: #ad6800; }");
+        builder.AppendLine("    .badge-critical { background: #ffe3e3; color: #c92a2a; }");
         builder.AppendLine("    .decision-summary { background: #ffffff; border-radius: 10px; padding: 1rem 1.5rem; box-shadow: 0 10px 25px -20px rgba(15, 23, 42, 0.6); }");
         builder.AppendLine("    .decision-summary li { margin: 0.35rem 0; }");
         builder.AppendLine("    table { border-collapse: collapse; width: 100%; background: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 10px 25px -20px rgba(15, 23, 42, 0.6); }");
         builder.AppendLine("    th, td { padding: 0.65rem 0.9rem; text-align: left; border-bottom: 1px solid #d9e2ec; }");
         builder.AppendLine("    th { background: #0b7285; color: #ffffff; font-weight: 600; letter-spacing: 0.05em; }");
         builder.AppendLine("    tr:last-child td { border-bottom: none; }");
+        builder.AppendLine("    .insight-table td { vertical-align: top; }");
+        builder.AppendLine("    .insight-location { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace; color: #52606d; }");
+        builder.AppendLine("    .insight-metadata { margin: 0.35rem 0 0; padding-left: 1rem; color: #52606d; font-size: 0.85rem; }");
+        builder.AppendLine("    .insight-metadata span { font-weight: 600; color: #334e68; }");
+        builder.AppendLine("    .insight-code { margin-top: 0.35rem; font-size: 0.7rem; color: #829ab1; letter-spacing: 0.08em; text-transform: uppercase; }");
         builder.AppendLine("    a { color: #0b7285; text-decoration: none; }");
         builder.AppendLine("    a:hover { text-decoration: underline; }");
         builder.AppendLine("    dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1rem; }");
@@ -178,6 +191,43 @@ internal static class PipelineReportLauncher
         }
         builder.AppendLine("    </ul>");
         builder.AppendLine("  </section>");
+
+        if (!insights.IsDefaultOrEmpty && insights.Length > 0)
+        {
+            builder.AppendLine("  <section>");
+            builder.AppendLine("    <h2>Profiling insights</h2>");
+            builder.AppendLine("    <table class=\"insight-table\">");
+            builder.AppendLine("      <thead><tr><th>Severity</th><th>Location</th><th>Recommendation</th></tr></thead>");
+            builder.AppendLine("      <tbody>");
+            foreach (var insight in insights)
+            {
+                var severity = RenderSeverityBadge(insight);
+                var location = HtmlEncode(FormatInsightLocation(insight));
+                builder.AppendLine("        <tr>");
+                builder.AppendLine($"          <td>{severity}</td>");
+                builder.AppendLine($"          <td class=\"insight-location\">{location}</td>");
+                builder.AppendLine("          <td>");
+                builder.AppendLine($"            {HtmlEncode(insight.Message)}");
+                builder.AppendLine($"            <div class=\"insight-code\">{HtmlEncode(insight.Code)}</div>");
+                if (insight.Metadata.Count > 0)
+                {
+                    builder.AppendLine("            <ul class=\"insight-metadata\">");
+                    foreach (var entry in insight.Metadata.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
+                    {
+                        var value = entry.Value ?? "<null>";
+                        builder.AppendLine($"              <li><span>{HtmlEncode(entry.Key)}</span>: {HtmlEncode(value)}</li>");
+                    }
+                    builder.AppendLine("            </ul>");
+                }
+
+                builder.AppendLine("          </td>");
+                builder.AppendLine("        </tr>");
+            }
+
+            builder.AppendLine("      </tbody>");
+            builder.AppendLine("    </table>");
+            builder.AppendLine("  </section>");
+        }
 
         builder.AppendLine("  <section>");
         builder.AppendLine("    <h2>Artifacts</h2>");
@@ -235,6 +285,34 @@ internal static class PipelineReportLauncher
         builder.AppendLine("</body>");
         builder.AppendLine("</html>");
         return builder.ToString();
+    }
+
+    private static string RenderSeverityBadge(ProfilingInsight insight)
+    {
+        var (label, cssClass) = insight.Severity switch
+        {
+            ProfilingInsightSeverity.Critical => ("Critical", "badge-critical"),
+            ProfilingInsightSeverity.Warning => ("Warning", "badge-warning"),
+            _ => ("Info", "badge-info"),
+        };
+
+        return $"<span class=\"badge {cssClass}\">{HtmlEncode(label)}</span>";
+    }
+
+    private static string FormatInsightLocation(ProfilingInsight insight)
+    {
+        if (insight.Columns.IsDefaultOrEmpty || insight.Columns.Length == 0)
+        {
+            return $"{insight.Schema.Value}.{insight.Table.Value}";
+        }
+
+        if (insight.Columns.Length == 1)
+        {
+            return $"{insight.Schema.Value}.{insight.Table.Value}.{insight.Columns[0].Value}";
+        }
+
+        var columnList = string.Join(", ", insight.Columns.Select(column => column.Value));
+        return $"{insight.Schema.Value}.{insight.Table.Value} [{columnList}]";
     }
 
     private static string RenderCard(string label, int value)

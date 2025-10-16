@@ -82,6 +82,37 @@ internal static class CommandConsole
         WriteLine(console, ProfileSnapshotDebugFormatter.ToJson(snapshot));
     }
 
+    public static void EmitProfilingInsights(IConsole console, ImmutableArray<ProfilingInsight> insights)
+    {
+        if (insights.IsDefaultOrEmpty || insights.Length == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, "Profiling insights:");
+        foreach (var insight in insights)
+        {
+            var severityLabel = insight.Severity switch
+            {
+                ProfilingInsightSeverity.Critical => "CRITICAL",
+                ProfilingInsightSeverity.Warning => "WARNING",
+                _ => "INFO",
+            };
+
+            WriteLine(console, $"  [{severityLabel}] {FormatInsightLocation(insight)}");
+            WriteLine(console, $"    {insight.Message} ({insight.Code})");
+
+            if (insight.Metadata.Count > 0)
+            {
+                foreach (var entry in insight.Metadata.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
+                {
+                    var value = entry.Value ?? "<null>";
+                    WriteLine(console, $"      - {entry.Key}: {value}");
+                }
+            }
+        }
+    }
+
     public static void EmitPipelineLog(IConsole console, PipelineExecutionLog log)
     {
         if (log is null || log.Entries.Count == 0)
@@ -155,4 +186,20 @@ internal static class CommandConsole
 
     private static string FormatMetadataValue(string? value)
         => value ?? "<null>";
+
+    private static string FormatInsightLocation(ProfilingInsight insight)
+    {
+        if (insight.Columns.IsDefaultOrEmpty || insight.Columns.Length == 0)
+        {
+            return $"{insight.Schema.Value}.{insight.Table.Value}";
+        }
+
+        if (insight.Columns.Length == 1)
+        {
+            return $"{insight.Schema.Value}.{insight.Table.Value}.{insight.Columns[0].Value}";
+        }
+
+        var columnList = string.Join(", ", insight.Columns.Select(column => column.Value));
+        return $"{insight.Schema.Value}.{insight.Table.Value} [{columnList}]";
+    }
 }

@@ -40,6 +40,9 @@ public sealed class BuildSsdtPipelineContext
 
     public ProfileSnapshot? Profile => BootstrapContext?.Profile;
 
+    public ImmutableArray<ProfilingInsight> ProfilingInsights
+        => BootstrapContext?.ProfilingInsights ?? ImmutableArray<ProfilingInsight>.Empty;
+
     public ImmutableArray<string> PipelineWarnings => BootstrapContext?.Warnings ?? ImmutableArray<string>.Empty;
 
     public void SetBootstrapContext(PipelineBootstrapContext context)
