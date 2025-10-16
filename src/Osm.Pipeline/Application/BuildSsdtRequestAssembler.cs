@@ -6,8 +6,6 @@ using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
-using Osm.Pipeline.Sql;
-using Osm.Pipeline.StaticData;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
@@ -29,21 +27,12 @@ public sealed record BuildSsdtRequestAssemblerContext(
     SmoBuildOptions SmoOptions,
     string ModelPath,
     string OutputDirectory,
+    IStaticEntityDataProvider? StaticDataProvider,
     CacheOptionsOverrides CacheOverrides,
     string? ConfigPath);
 
 public sealed class BuildSsdtRequestAssembler
 {
-    public string ResolveOutputDirectory(BuildSsdtOverrides overrides)
-    {
-        if (overrides is null)
-        {
-            throw new ArgumentNullException(nameof(overrides));
-        }
-
-        return string.IsNullOrWhiteSpace(overrides.OutputDirectory) ? "out" : overrides.OutputDirectory!;
-    }
-
     public Result<BuildSsdtRequestAssembly> Assemble(BuildSsdtRequestAssemblerContext context)
     {
         if (context is null)
@@ -59,7 +48,6 @@ public sealed class BuildSsdtRequestAssembler
         }
 
         var profilePath = profilePathResult.Value;
-        var staticDataProvider = ResolveStaticEntityDataProvider(context.Overrides.StaticDataPath, context.SqlOptions);
         var cacheOptions = EvidenceCacheOptionsFactory.Create(
             "build-ssdt",
             context.Configuration,
@@ -83,7 +71,7 @@ public sealed class BuildSsdtRequestAssembler
             context.SmoOptions,
             context.TypeMappingPolicy,
             cacheOptions,
-            staticDataProvider,
+            context.StaticDataProvider,
             Path.Combine(context.OutputDirectory, "Seeds"));
 
         return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory);
@@ -146,27 +134,5 @@ public sealed class BuildSsdtRequestAssembler
         var includeUsers = configuration.IncludeUsers ?? true;
         var paths = configuration.Paths ?? Array.Empty<string>();
         return new SupplementalModelOptions(includeUsers, paths.ToArray());
-    }
-
-    private static IStaticEntityDataProvider? ResolveStaticEntityDataProvider(string? fixturePath, ResolvedSqlOptions sqlOptions)
-    {
-        if (!string.IsNullOrWhiteSpace(fixturePath))
-        {
-            return new FixtureStaticEntityDataProvider(fixturePath!);
-        }
-
-        if (!string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
-        {
-            var connectionOptions = new SqlConnectionOptions(
-                sqlOptions.Authentication.Method,
-                sqlOptions.Authentication.TrustServerCertificate,
-                sqlOptions.Authentication.ApplicationName,
-                sqlOptions.Authentication.AccessToken);
-
-            var factory = new SqlConnectionFactory(sqlOptions.ConnectionString!, connectionOptions);
-            return new SqlStaticEntityDataProvider(factory, sqlOptions.CommandTimeoutSeconds);
-        }
-
-        return null;
     }
 }

@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Threading;
+using System.Threading.Tasks;
+using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
-using Osm.Pipeline.StaticData;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Xunit;
@@ -91,7 +95,7 @@ public sealed class BuildSsdtRequestAssemblerTests
     }
 
     [Fact]
-    public void Assemble_UsesFixtureStaticDataProviderWhenPathProvided()
+    public void Assemble_UsesProvidedStaticDataProvider()
     {
         var assembler = new BuildSsdtRequestAssembler();
         var configuration = CreateConfiguration();
@@ -100,15 +104,23 @@ public sealed class BuildSsdtRequestAssemblerTests
             ProfilePath: "override.profile",
             OutputDirectory: "out",
             ProfilerProvider: "fixture",
-            StaticDataPath: "static-data.json",
+            StaticDataPath: null,
             RenameOverrides: null,
             MaxDegreeOfParallelism: null);
+        var provider = new StubStaticEntityDataProvider();
 
-        var context = CreateContext(configuration, overrides, DefaultSqlOptions, modelPath: "model.json", outputDirectory: "out");
+        var context = CreateContext(
+            configuration,
+            overrides,
+            DefaultSqlOptions,
+            modelPath: "model.json",
+            outputDirectory: "out",
+            staticDataProvider: provider);
 
         var result = assembler.Assemble(context);
+
         Assert.True(result.IsSuccess);
-        Assert.IsType<FixtureStaticEntityDataProvider>(result.Value.Request.StaticDataProvider);
+        Assert.Same(provider, result.Value.Request.StaticDataProvider);
     }
 
     private static BuildSsdtRequestAssemblerContext CreateContext(
@@ -117,7 +129,8 @@ public sealed class BuildSsdtRequestAssemblerTests
         ResolvedSqlOptions sqlOptions,
         ModuleFilterOptions? moduleFilter = null,
         string modelPath = "model.json",
-        string outputDirectory = "out")
+        string outputDirectory = "out",
+        IStaticEntityDataProvider? staticDataProvider = null)
     {
         var filter = moduleFilter ?? ModuleFilterOptions.IncludeAll;
         return new BuildSsdtRequestAssemblerContext(
@@ -130,6 +143,7 @@ public sealed class BuildSsdtRequestAssemblerTests
             SmoBuildOptions.FromEmission(configuration.Tightening.Emission),
             modelPath,
             outputDirectory,
+            staticDataProvider,
             new CacheOptionsOverrides(null, null),
             "config.json");
     }
@@ -149,5 +163,15 @@ public sealed class BuildSsdtRequestAssemblerTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty);
+    }
+
+    private sealed class StubStaticEntityDataProvider : IStaticEntityDataProvider
+    {
+        public Task<Result<IReadOnlyList<StaticEntityTableData>>> GetDataAsync(
+            IReadOnlyList<StaticEntitySeedTableDefinition> definitions,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success(Array.Empty<StaticEntityTableData>()));
+        }
     }
 }

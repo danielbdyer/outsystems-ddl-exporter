@@ -6,9 +6,30 @@ using Osm.Smo;
 
 namespace Osm.Pipeline.Application;
 
-internal static class NamingOverridesResolver
+public interface INamingOverridesBinder
 {
-    public static Result<NamingOverrideOptions> Resolve(string? rawOverrides, NamingOverrideOptions existingOverrides)
+    Result<NamingOverrideOptions> Bind(BuildSsdtOverrides overrides, TighteningOptions tighteningOptions);
+}
+
+public sealed class NamingOverridesBinder : INamingOverridesBinder
+{
+    public Result<NamingOverrideOptions> Bind(BuildSsdtOverrides overrides, TighteningOptions tighteningOptions)
+    {
+        if (overrides is null)
+        {
+            throw new ArgumentNullException(nameof(overrides));
+        }
+
+        if (tighteningOptions is null)
+        {
+            throw new ArgumentNullException(nameof(tighteningOptions));
+        }
+
+        var baseOverrides = SmoBuildOptions.FromEmission(tighteningOptions.Emission).NamingOverrides;
+        return Resolve(overrides.RenameOverrides, baseOverrides);
+    }
+
+    private static Result<NamingOverrideOptions> Resolve(string? rawOverrides, NamingOverrideOptions existingOverrides)
     {
         if (string.IsNullOrWhiteSpace(rawOverrides))
         {
