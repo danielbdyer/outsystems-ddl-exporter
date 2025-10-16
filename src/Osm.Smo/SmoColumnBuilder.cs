@@ -106,7 +106,7 @@ internal static class SmoColumnBuilder
             }
 
             builder.Add(new SmoColumnDefinition(
-                attribute.LogicalName.Value,
+                attribute.ColumnName.Value,
                 attribute.LogicalName.Value,
                 dataType,
                 nullable,

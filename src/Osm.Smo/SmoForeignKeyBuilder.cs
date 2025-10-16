@@ -82,11 +82,11 @@ internal static class SmoForeignKeyBuilder
                 format);
             builder.Add(new SmoForeignKeyDefinition(
                 name,
-                attribute.LogicalName.Value,
+                attribute.ColumnName.Value,
                 targetEntity.ModuleName,
                 targetEntity.Entity.PhysicalName.Value,
                 targetEntity.Entity.Schema.Value,
-                referencedColumn.LogicalName.Value,
+                referencedColumn.ColumnName.Value,
                 targetEntity.Entity.LogicalName.Value,
                 MapDeleteRule(attribute.Reference.DeleteRuleCode),
                 isNoCheck));
