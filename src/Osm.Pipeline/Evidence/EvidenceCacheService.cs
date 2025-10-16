@@ -63,7 +63,8 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
             return ValidationError.Create("cache.artifacts.none", "At least one artifact must be provided to create a cache entry.");
         }
 
-        var key = ComputeKey(request.Command.Trim(), descriptors, metadata);
+        var command = request.Command.Trim();
+        var key = ComputeKey(command, descriptors, metadata);
         var cacheDirectory = _fileSystem.Path.Combine(normalizedRoot, key);
 
         if (_fileSystem.Directory.Exists(cacheDirectory))
@@ -71,6 +72,21 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
             if (request.Refresh)
             {
                 _fileSystem.Directory.Delete(cacheDirectory, recursive: true);
+            }
+            else
+            {
+                var existingManifest = await TryReuseExistingCacheAsync(
+                    cacheDirectory,
+                    key,
+                    command,
+                    metadata,
+                    descriptors,
+                    cancellationToken).ConfigureAwait(false);
+
+                if (existingManifest is not null)
+                {
+                    return Result<EvidenceCacheResult>.Success(new EvidenceCacheResult(cacheDirectory, existingManifest));
+                }
             }
         }
 
@@ -96,7 +112,7 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
         var manifest = new EvidenceCacheManifest(
             ManifestVersion,
             key,
-            request.Command.Trim(),
+            command,
             _timestampProvider(),
             metadata,
             artifacts);
@@ -105,6 +121,140 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
         await WriteManifestAsync(manifestPath, manifest, cancellationToken).ConfigureAwait(false);
 
         return Result<EvidenceCacheResult>.Success(new EvidenceCacheResult(cacheDirectory, manifest));
+    }
+
+    private async Task<EvidenceCacheManifest?> TryReuseExistingCacheAsync(
+        string cacheDirectory,
+        string expectedKey,
+        string command,
+        IReadOnlyDictionary<string, string?> metadata,
+        IReadOnlyCollection<EvidenceArtifactDescriptor> descriptors,
+        CancellationToken cancellationToken)
+    {
+        var manifestPath = _fileSystem.Path.Combine(cacheDirectory, ManifestFileName);
+        var manifest = await ReadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+        if (manifest is null)
+        {
+            return null;
+        }
+
+        if (!ManifestMatches(manifest, expectedKey, command, metadata, descriptors, cacheDirectory))
+        {
+            return null;
+        }
+
+        return manifest;
+    }
+
+    private async Task<EvidenceCacheManifest?> ReadManifestAsync(string manifestPath, CancellationToken cancellationToken)
+    {
+        if (!_fileSystem.File.Exists(manifestPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            await using var stream = _fileSystem.File.Open(manifestPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return await JsonSerializer.DeserializeAsync<EvidenceCacheManifest>(stream, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private bool ManifestMatches(
+        EvidenceCacheManifest manifest,
+        string expectedKey,
+        string command,
+        IReadOnlyDictionary<string, string?> metadata,
+        IReadOnlyCollection<EvidenceArtifactDescriptor> descriptors,
+        string cacheDirectory)
+    {
+        if (!string.Equals(manifest.Version, ManifestVersion, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.Equals(manifest.Key, expectedKey, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.Equals(manifest.Command, command, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!MetadataEquals(manifest.Metadata, metadata))
+        {
+            return false;
+        }
+
+        if (manifest.Artifacts.Count != descriptors.Count)
+        {
+            return false;
+        }
+
+        var descriptorsByType = descriptors.ToDictionary(static descriptor => descriptor.Type);
+
+        foreach (var artifact in manifest.Artifacts)
+        {
+            if (!descriptorsByType.TryGetValue(artifact.Type, out var descriptor))
+            {
+                return false;
+            }
+
+            if (!string.Equals(artifact.Hash, descriptor.Hash, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (artifact.Length != descriptor.Length)
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(artifact.RelativePath))
+            {
+                return false;
+            }
+
+            var artifactPath = _fileSystem.Path.Combine(cacheDirectory, artifact.RelativePath);
+            if (!_fileSystem.File.Exists(artifactPath))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool MetadataEquals(
+        IReadOnlyDictionary<string, string?> left,
+        IReadOnlyDictionary<string, string?> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        foreach (var pair in left)
+        {
+            if (!right.TryGetValue(pair.Key, out var value))
+            {
+                return false;
+            }
+
+            if (!string.Equals(pair.Value, value, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private async Task<Result<List<EvidenceArtifactDescriptor>>> CollectDescriptorsAsync(EvidenceCacheRequest request, CancellationToken cancellationToken)
