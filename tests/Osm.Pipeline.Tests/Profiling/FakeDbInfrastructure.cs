@@ -6,6 +6,8 @@ using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
 
+#pragma warning disable CS8765
+
 namespace Osm.Pipeline.Tests.Profiling;
 
 internal sealed class RecordingDbConnection : DbConnection
@@ -144,7 +146,7 @@ internal sealed class RecordingDbCommand : DbCommand
         return new FakeDbDataReader(_rows);
     }
 
-    public override Task<DbDataReader> ExecuteReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
+    protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
     {
         return Task.FromResult<DbDataReader>(new FakeDbDataReader(_rows));
     }
@@ -160,7 +162,7 @@ internal sealed class RecordingDbParameterCollection : DbParameterCollection
 
     public override object SyncRoot => ((ICollection)_parameters).SyncRoot ?? this;
 
-    public override int Add(object value)
+    public override int Add(object? value)
     {
         if (value is not DbParameter parameter)
         {
@@ -184,9 +186,9 @@ internal sealed class RecordingDbParameterCollection : DbParameterCollection
         _parameters.Clear();
     }
 
-    public override bool Contains(object value)
+    public override bool Contains(object? value)
     {
-        return _parameters.Contains((DbParameter)value);
+        return value is DbParameter parameter && _parameters.Contains(parameter);
     }
 
     public override bool Contains(string value)
@@ -215,9 +217,9 @@ internal sealed class RecordingDbParameterCollection : DbParameterCollection
         return _parameters[index];
     }
 
-    public override int IndexOf(object value)
+    public override int IndexOf(object? value)
     {
-        return _parameters.IndexOf((DbParameter)value);
+        return value is DbParameter parameter ? _parameters.IndexOf(parameter) : -1;
     }
 
     public override int IndexOf(string parameterName)
@@ -233,7 +235,7 @@ internal sealed class RecordingDbParameterCollection : DbParameterCollection
         return -1;
     }
 
-    public override void Insert(int index, object value)
+    public override void Insert(int index, object? value)
     {
         if (value is not DbParameter parameter)
         {
@@ -243,9 +245,12 @@ internal sealed class RecordingDbParameterCollection : DbParameterCollection
         _parameters.Insert(index, parameter);
     }
 
-    public override void Remove(object value)
+    public override void Remove(object? value)
     {
-        _parameters.Remove((DbParameter)value);
+        if (value is DbParameter parameter)
+        {
+            _parameters.Remove(parameter);
+        }
     }
 
     public override void RemoveAt(int index)
@@ -333,9 +338,109 @@ internal sealed class FakeDbDataReader : DbDataReader
         return (bool)_rows[_position][ordinal]!;
     }
 
+    public override byte GetByte(int ordinal)
+    {
+        return Convert.ToByte(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
+    {
+        if (_rows[_position][ordinal] is not byte[] data)
+        {
+            throw new InvalidOperationException("Column does not contain binary data.");
+        }
+
+        var available = Math.Max(0, data.Length - (int)dataOffset);
+        if (buffer is null)
+        {
+            return available;
+        }
+
+        var copyLength = Math.Min(length, available);
+        Array.Copy(data, (int)dataOffset, buffer, bufferOffset, copyLength);
+        return copyLength;
+    }
+
+    public override char GetChar(int ordinal)
+    {
+        var value = _rows[_position][ordinal];
+        if (value is char c)
+        {
+            return c;
+        }
+
+        if (value is string s && s.Length > 0)
+        {
+            return s[0];
+        }
+
+        throw new InvalidOperationException("Column does not contain character data.");
+    }
+
+    public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
+    {
+        string text = _rows[_position][ordinal] switch
+        {
+            char c => c.ToString(),
+            string s => s,
+            null => throw new InvalidOperationException("Column does not contain character data."),
+            _ => _rows[_position][ordinal]!.ToString() ?? string.Empty
+        };
+
+        var available = Math.Max(0, text.Length - (int)dataOffset);
+        if (buffer is null)
+        {
+            return available;
+        }
+
+        var copyLength = Math.Min(length, available);
+        text.CopyTo((int)dataOffset, buffer, bufferOffset, copyLength);
+        return copyLength;
+    }
+
+    public override string GetDataTypeName(int ordinal)
+    {
+        return GetFieldType(ordinal).Name;
+    }
+
+    public override DateTime GetDateTime(int ordinal)
+    {
+        return Convert.ToDateTime(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override decimal GetDecimal(int ordinal)
+    {
+        return Convert.ToDecimal(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override double GetDouble(int ordinal)
+    {
+        return Convert.ToDouble(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     public override int GetInt32(int ordinal)
     {
         return Convert.ToInt32(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override float GetFloat(int ordinal)
+    {
+        return Convert.ToSingle(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public override Guid GetGuid(int ordinal)
+    {
+        return _rows[_position][ordinal] switch
+        {
+            Guid guid => guid,
+            string text => Guid.Parse(text),
+            _ => throw new InvalidOperationException("Column does not contain GUID data."),
+        };
+    }
+
+    public override short GetInt16(int ordinal)
+    {
+        return Convert.ToInt16(_rows[_position][ordinal], System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public override long GetInt64(int ordinal)
@@ -379,6 +484,11 @@ internal sealed class FakeDbDataReader : DbDataReader
         return false;
     }
 
+    public override IEnumerator GetEnumerator()
+    {
+        return ((IEnumerable)_rows).GetEnumerator();
+    }
+
     public override string GetName(int ordinal)
     {
         throw new NotSupportedException();
@@ -417,3 +527,5 @@ internal sealed class FakeDbDataReader : DbDataReader
     {
     }
 }
+
+#pragma warning restore CS8765

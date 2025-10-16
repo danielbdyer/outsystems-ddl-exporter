@@ -62,7 +62,10 @@ public sealed class SqlDataProfilerOrchestrationTests
         var snapshot = await profiler.CaptureAsync(CancellationToken.None);
 
         Assert.True(snapshot.IsSuccess, string.Join(", ", snapshot.Errors.Select(e => e.Code)));
-        Assert.Equal(expected, snapshot.Value);
+        Assert.Equal(expected.Columns, snapshot.Value.Columns);
+        Assert.Equal(expected.UniqueCandidates, snapshot.Value.UniqueCandidates);
+        Assert.Equal(expected.CompositeUniqueCandidates, snapshot.Value.CompositeUniqueCandidates);
+        Assert.Equal(expected.ForeignKeys, snapshot.Value.ForeignKeys);
     }
 
     [Fact]
@@ -192,7 +195,7 @@ public sealed class SqlDataProfilerOrchestrationTests
     {
         public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken)
         {
-            throw new NotSupportedException("Query execution should be stubbed in this test.");
+            return Task.FromResult<DbConnection>(RecordingDbConnection.WithResultSets());
         }
     }
 }
