@@ -27,6 +27,10 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
     private readonly Option<string?> _outputOption = new("--out", () => "out", "Output directory for SSDT artifacts.");
     private readonly Option<string?> _renameOption = new("--rename-table", "Rename tables using source=Override syntax.");
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
+    private readonly Option<CommandOutputFormat> _outputFormatOption = new(
+        "--output-format",
+        () => CommandOutputFormat.Text,
+        "Choose the command output format (text or json).");
 
     public BuildSsdtCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -53,6 +57,7 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             _outputOption,
             _renameOption,
             _openReportOption,
+            _outputFormatOption,
             _globalOptions.MaxDegreeOfParallelism
         };
 
@@ -110,76 +115,31 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             return;
         }
 
-        await EmitResultsAsync(context, result.Value).ConfigureAwait(false);
+        var outputFormat = context.ParseResult.GetValueForOption(_outputFormatOption);
+
+        await EmitResultsAsync(context, result.Value, outputFormat).ConfigureAwait(false);
         context.ExitCode = 0;
     }
 
-    private async Task EmitResultsAsync(InvocationContext context, BuildSsdtApplicationResult applicationResult)
+    private async Task EmitResultsAsync(
+        InvocationContext context,
+        BuildSsdtApplicationResult applicationResult,
+        CommandOutputFormat outputFormat)
     {
         var pipelineResult = applicationResult.PipelineResult;
+        var pipelineWarnings = pipelineResult.Warnings;
+        var cancellationToken = context.GetCancellationToken();
 
-        if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
-        {
-            var modelMessage = applicationResult.ModelWasExtracted
-                ? $"Extracted model to {applicationResult.ModelPath}."
-                : $"Using model at {applicationResult.ModelPath}.";
-            CommandConsole.WriteLine(context.Console, modelMessage);
-        }
+        var reportRequested = context.ParseResult.GetValueForOption(_openReportOption);
+        string? reportPath = null;
+        string? reportError = null;
 
-        if (!applicationResult.ModelExtractionWarnings.IsDefaultOrEmpty && applicationResult.ModelExtractionWarnings.Length > 0)
-        {
-            CommandConsole.EmitPipelineWarnings(context.Console, applicationResult.ModelExtractionWarnings);
-        }
-
-        if (IsSqlProfiler(applicationResult.ProfilerProvider))
-        {
-            CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
-        }
-
-        CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
-        CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
-
-        foreach (var diagnostic in pipelineResult.DecisionReport.Diagnostics)
-        {
-            if (diagnostic.Severity == TighteningDiagnosticSeverity.Warning)
-            {
-                CommandConsole.WriteErrorLine(context.Console, $"[warning] {diagnostic.Message}");
-            }
-        }
-
-        if (pipelineResult.EvidenceCache is { } cacheResult)
-        {
-            CommandConsole.WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");
-        }
-
-        if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty && pipelineResult.StaticSeedScriptPaths.Length > 0)
-        {
-            foreach (var seedPath in pipelineResult.StaticSeedScriptPaths)
-            {
-                CommandConsole.WriteLine(context.Console, $"Static entity seed script written to {seedPath}");
-            }
-        }
-
-        CommandConsole.WriteLine(context.Console, $"Emitted {pipelineResult.Manifest.Tables.Count} tables to {applicationResult.OutputDirectory}.");
-        CommandConsole.WriteLine(context.Console, $"Manifest written to {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
-        CommandConsole.WriteLine(context.Console, $"Columns tightened: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount}");
-        CommandConsole.WriteLine(context.Console, $"Unique indexes enforced: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount}");
-        CommandConsole.WriteLine(context.Console, $"Foreign keys created: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount}");
-
-        foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(pipelineResult.DecisionReport))
-        {
-            CommandConsole.WriteLine(context.Console, summary);
-        }
-
-        CommandConsole.WriteLine(context.Console, $"Decision log written to {pipelineResult.DecisionLogPath}");
-
-        if (context.ParseResult.GetValueForOption(_openReportOption))
+        if (reportRequested)
         {
             try
             {
-                var reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, context.GetCancellationToken()).ConfigureAwait(false);
-                CommandConsole.WriteLine(context.Console, $"Report written to {reportPath}");
-                PipelineReportLauncher.TryOpen(reportPath, context.Console);
+                reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -187,11 +147,93 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             }
             catch (Exception ex)
             {
-                CommandConsole.WriteErrorLine(context.Console, $"[warning] Failed to open report: {ex.Message}");
+                reportError = $"Failed to open report: {ex.Message}";
+                CommandConsole.WriteErrorLine(context.Console, $"[warning] {reportError}");
             }
+        }
+
+        if (outputFormat == CommandOutputFormat.Text)
+        {
+            if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
+            {
+                var modelMessage = applicationResult.ModelWasExtracted
+                    ? $"Extracted model to {applicationResult.ModelPath}."
+                    : $"Using model at {applicationResult.ModelPath}.";
+                CommandConsole.WriteLine(context.Console, modelMessage);
+            }
+
+            if (!applicationResult.ModelExtractionWarnings.IsDefaultOrEmpty && applicationResult.ModelExtractionWarnings.Length > 0)
+            {
+                CommandConsole.EmitPipelineWarnings(context.Console, applicationResult.ModelExtractionWarnings);
+            }
+            if (IsSqlProfiler(applicationResult.ProfilerProvider))
+            {
+                CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
+            }
+
+            CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
+            CommandConsole.EmitPipelineWarnings(context.Console, pipelineWarnings);
+
+            foreach (var diagnostic in pipelineResult.DecisionReport.Diagnostics)
+            {
+                if (diagnostic.Severity == TighteningDiagnosticSeverity.Warning)
+                {
+                    CommandConsole.WriteErrorLine(context.Console, $"[warning] {diagnostic.Message}");
+                }
+            }
+
+            if (pipelineResult.EvidenceCache is { } cacheResult)
+            {
+                CommandConsole.WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");
+            }
+            if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty && pipelineResult.StaticSeedScriptPaths.Length > 0)
+            {
+                foreach (var seedPath in pipelineResult.StaticSeedScriptPaths)
+                {
+                    CommandConsole.WriteLine(context.Console, $"Static entity seed script written to {seedPath}");
+                }
+            }
+
+            CommandConsole.WriteLine(context.Console, $"Emitted {pipelineResult.Manifest.Tables.Count} tables to {applicationResult.OutputDirectory}.");
+            CommandConsole.WriteLine(context.Console, $"Manifest written to {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
+            CommandConsole.WriteLine(context.Console, $"Columns tightened: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount}");
+            CommandConsole.WriteLine(context.Console, $"Unique indexes enforced: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount}");
+            CommandConsole.WriteLine(context.Console, $"Foreign keys created: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount}");
+
+            foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(pipelineResult.DecisionReport))
+            {
+                CommandConsole.WriteLine(context.Console, summary);
+            }
+
+            CommandConsole.WriteLine(context.Console, $"Decision log written to {pipelineResult.DecisionLogPath}");
+        }
+        else
+        {
+            CommandConsole.EmitBuildSsdtJson(
+                context.Console,
+                applicationResult,
+                pipelineWarnings,
+                reportPath,
+                reportError);
+        }
+
+        if (reportRequested && reportPath is not null)
+        {
+            if (outputFormat == CommandOutputFormat.Text)
+            {
+                CommandConsole.WriteLine(context.Console, $"Report written to {reportPath}");
+            }
+
+            PipelineReportLauncher.TryOpen(reportPath, context.Console);
         }
     }
 
     private static bool IsSqlProfiler(string provider)
         => string.Equals(provider, "sql", StringComparison.OrdinalIgnoreCase);
+
+    private enum CommandOutputFormat
+    {
+        Text,
+        Json
+    }
 }

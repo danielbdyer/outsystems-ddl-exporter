@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Parsing;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,6 +59,7 @@ public class BuildSsdtCommandFactoryTests
         var exitCode = await parser.InvokeAsync(args);
 
         Assert.Equal(0, exitCode);
+        Assert.Contains("--output-format", command.Options.SelectMany(option => option.Aliases));
         Assert.Equal("config.json", configurationService.LastPath);
         var input = application.LastInput!;
         Assert.Equal("model.json", input.Overrides.ModelPath);
