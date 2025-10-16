@@ -388,6 +388,67 @@ public class ModelJsonDeserializerTests
     }
 
     [Fact]
+    public void Deserialize_ShouldFail_WhenMissingSchemaFallbackInvalid()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Service Center",
+              "isSystem": true,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "User",
+                  "physicalName": "OSUSR_SYS_USER",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var overridesResult = ModuleValidationOverrides.Create(new Dictionary<string, ModuleValidationOverrideConfiguration>
+        {
+            ["Service Center"] = new ModuleValidationOverrideConfiguration(
+                Array.Empty<string>(),
+                false,
+                new[] { "User" },
+                false)
+        });
+
+        Assert.True(overridesResult.IsSuccess, string.Join(", ", overridesResult.Errors.Select(e => e.Message)));
+
+        var invalidFallback = new string('x', 300);
+        var options = new ModelJsonDeserializerOptions(overridesResult.Value, invalidFallback);
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream, options: options);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("schema.name.invalid", error.Code);
+        Assert.Contains("$['modules'][0]['entities'][0]['schema']", error.Message);
+    }
+
+    [Fact]
     public void Deserialize_ShouldIncludePayload_WhenSchemaMissingWithoutOverride()
     {
         const string json = """
