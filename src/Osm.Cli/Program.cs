@@ -29,6 +29,7 @@ hostBuilder.Services.AddLogging(static builder => builder.AddSimpleConsole());
 hostBuilder.Services.AddSingleton<ICliConfigurationService, CliConfigurationService>();
 hostBuilder.Services.AddSingleton<IModelJsonDeserializer, ModelJsonDeserializer>();
 hostBuilder.Services.AddSingleton<IModelIngestionService, ModelIngestionService>();
+hostBuilder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 hostBuilder.Services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
 hostBuilder.Services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
 hostBuilder.Services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();

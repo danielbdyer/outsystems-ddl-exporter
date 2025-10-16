@@ -35,6 +35,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
     private readonly StaticEntitySeedTemplate _seedTemplate;
     private readonly ProfileSnapshotDeserializer _profileSnapshotDeserializer;
     private readonly EmissionFingerprintCalculator _fingerprintCalculator;
+    private readonly TimeProvider _timeProvider;
 
     public BuildSsdtPipeline(
         IModelIngestionService? modelIngestionService = null,
@@ -48,7 +49,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         StaticEntitySeedScriptGenerator? seedGenerator = null,
         StaticEntitySeedTemplate? seedTemplate = null,
         ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
-        EmissionFingerprintCalculator? fingerprintCalculator = null)
+        EmissionFingerprintCalculator? fingerprintCalculator = null,
+        TimeProvider? timeProvider = null)
     {
         _modelIngestionService = modelIngestionService ?? new ModelIngestionService(new ModelJsonDeserializer());
         _moduleFilter = moduleFilter ?? new ModuleFilter();
@@ -62,6 +64,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         _seedTemplate = seedTemplate ?? StaticEntitySeedTemplate.Load();
         _profileSnapshotDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
         _fingerprintCalculator = fingerprintCalculator ?? new EmissionFingerprintCalculator();
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<Result<BuildSsdtPipelineResult>> HandleAsync(
@@ -87,7 +90,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 "Output directory must be provided for SSDT emission.");
         }
 
-        var log = new PipelineExecutionLogBuilder();
+        var log = new PipelineExecutionLogBuilder(_timeProvider);
         var pipelineWarnings = ImmutableArray.CreateBuilder<string>();
         log.Record(
             "request.received",
