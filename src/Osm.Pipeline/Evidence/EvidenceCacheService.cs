@@ -43,6 +43,46 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
             throw new ArgumentNullException(nameof(request));
         }
 
+        var normalizationResult = await TryNormalizeRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        if (normalizationResult.IsFailure)
+        {
+            return Result<EvidenceCacheResult>.Failure(normalizationResult.Errors);
+        }
+
+        var context = normalizationResult.Value;
+
+        CacheEvaluationResult evaluationResult;
+        if (_fileSystem.Directory.Exists(context.CacheDirectory))
+        {
+            evaluationResult = await EvaluateExistingEntryAsync(context, cancellationToken).ConfigureAwait(false);
+            if (evaluationResult is CacheEvaluationResult.Reuse reuse)
+            {
+                return Result<EvidenceCacheResult>.Success(reuse.Result);
+            }
+        }
+        else
+        {
+            var missingCacheReason = await DetermineMissingCacheReasonAsync(context, cancellationToken).ConfigureAwait(false);
+            evaluationResult = CacheEvaluationResult.CreateInvalidation(
+                missingCacheReason.Reason,
+                missingCacheReason.Metadata);
+        }
+
+        if (evaluationResult is not CacheEvaluationResult.Invalidate invalidate)
+        {
+            throw new InvalidOperationException("Expected invalidation metadata when cache reuse did not occur.");
+        }
+
+        var created = await CreateCacheEntryAsync(context, invalidate.Reason, invalidate.Metadata, cancellationToken)
+            .ConfigureAwait(false);
+
+        return Result<EvidenceCacheResult>.Success(created);
+    }
+
+    private async Task<Result<CacheRequestContext>> TryNormalizeRequestAsync(
+        EvidenceCacheRequest request,
+        CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(request.RootDirectory))
         {
             return ValidationError.Create("cache.root.missing", "Cache root directory must be provided.");
@@ -60,109 +100,124 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
             ? new Dictionary<string, string?>(StringComparer.Ordinal)
             : new Dictionary<string, string?>(request.Metadata, StringComparer.Ordinal);
 
-        var descriptorsResult = await _descriptorCollector.CollectAsync(request, cancellationToken).ConfigureAwait(false);
+        var descriptorsResult = await _descriptorCollector
+            .CollectAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+
         if (descriptorsResult.IsFailure)
         {
-            return Result<EvidenceCacheResult>.Failure(descriptorsResult.Errors);
+            return Result<CacheRequestContext>.Failure(descriptorsResult.Errors);
         }
 
         var descriptors = descriptorsResult.Value;
         if (descriptors.Count == 0)
         {
-            return ValidationError.Create("cache.artifacts.none", "At least one artifact must be provided to create a cache entry.");
+            return ValidationError.Create(
+                "cache.artifacts.none",
+                "At least one artifact must be provided to create a cache entry.");
         }
 
         var command = request.Command.Trim();
+        var moduleSelection = BuildModuleSelection(metadata);
         var key = ComputeKey(command, descriptors, metadata);
         var cacheDirectory = _fileSystem.Path.Combine(normalizedRoot, key);
-        var requestedModuleSelection = BuildModuleSelection(metadata);
 
-        EvidenceCacheInvalidationReason invalidationReason;
-        IReadOnlyDictionary<string, string?> invalidationMetadata;
-
-        if (_fileSystem.Directory.Exists(cacheDirectory))
-        {
-            if (request.Refresh)
-            {
-                invalidationReason = EvidenceCacheInvalidationReason.RefreshRequested;
-                invalidationMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["reason"] = EvidenceCacheReasonMapper.Map(EvidenceCacheInvalidationReason.RefreshRequested)
-                };
-
-                _fileSystem.Directory.Delete(cacheDirectory, recursive: true);
-            }
-            else
-            {
-                var evaluationTimestamp = _timestampProvider();
-                var evaluation = await _manifestEvaluator.EvaluateAsync(
-                    cacheDirectory,
-                    ManifestFileName,
-                    ManifestVersion,
-                    key,
-                    command,
-                    metadata,
-                    requestedModuleSelection,
-                    descriptors,
-                    evaluationTimestamp,
-                    cancellationToken).ConfigureAwait(false);
-
-                if (evaluation.Outcome == EvidenceCacheOutcome.Reused && evaluation.Manifest is not null)
-                {
-                    var reuseMetadata = BuildOutcomeMetadata(
-                        evaluationTimestamp,
-                        evaluation.Manifest,
-                        requestedModuleSelection,
-                        evaluation.Metadata,
-                        reuse: true,
-                        EvidenceCacheInvalidationReason.None);
-
-                    var reuseEvaluation = new EvidenceCacheEvaluation(
-                        EvidenceCacheOutcome.Reused,
-                        EvidenceCacheInvalidationReason.None,
-                        evaluationTimestamp,
-                        reuseMetadata);
-
-                    return Result<EvidenceCacheResult>.Success(
-                        new EvidenceCacheResult(cacheDirectory, evaluation.Manifest, reuseEvaluation));
-                }
-
-                invalidationReason = evaluation.Reason;
-                invalidationMetadata = evaluation.Metadata;
-
-                if (_fileSystem.Directory.Exists(cacheDirectory))
-                {
-                    _fileSystem.Directory.Delete(cacheDirectory, recursive: true);
-                }
-            }
-        }
-        else
-        {
-            (invalidationReason, invalidationMetadata) = await DetermineMissingCacheReasonAsync(
-                normalizedRoot,
-                command,
-                metadata,
-                descriptors,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        var creationTimestamp = _timestampProvider();
-        var manifest = await _cacheWriter.WriteAsync(
+        return new CacheRequestContext(
+            normalizedRoot,
             cacheDirectory,
-            ManifestFileName,
-            ManifestVersion,
-            key,
             command,
-            creationTimestamp,
-            requestedModuleSelection,
+            key,
             metadata,
             descriptors,
+            moduleSelection,
+            request.Refresh);
+    }
+
+    private async Task<CacheEvaluationResult> EvaluateExistingEntryAsync(
+        CacheRequestContext context,
+        CancellationToken cancellationToken)
+    {
+        if (context.Refresh)
+        {
+            var refreshMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["reason"] = EvidenceCacheReasonMapper.Map(EvidenceCacheInvalidationReason.RefreshRequested)
+            };
+
+            if (_fileSystem.Directory.Exists(context.CacheDirectory))
+            {
+                _fileSystem.Directory.Delete(context.CacheDirectory, recursive: true);
+            }
+
+            return CacheEvaluationResult.CreateInvalidation(
+                EvidenceCacheInvalidationReason.RefreshRequested,
+                refreshMetadata);
+        }
+
+        var evaluationTimestamp = _timestampProvider();
+        var evaluation = await _manifestEvaluator.EvaluateAsync(
+            context.CacheDirectory,
+            ManifestFileName,
+            ManifestVersion,
+            context.Key,
+            context.Command,
+            context.Metadata,
+            context.ModuleSelection,
+            context.Descriptors,
+            evaluationTimestamp,
+            cancellationToken).ConfigureAwait(false);
+
+        if (evaluation.Outcome == EvidenceCacheOutcome.Reused && evaluation.Manifest is not null)
+        {
+            var reuseMetadata = BuildOutcomeMetadata(
+                evaluationTimestamp,
+                evaluation.Manifest,
+                context.ModuleSelection,
+                evaluation.Metadata,
+                reuse: true,
+                EvidenceCacheInvalidationReason.None);
+
+            var reuseEvaluation = new EvidenceCacheEvaluation(
+                EvidenceCacheOutcome.Reused,
+                EvidenceCacheInvalidationReason.None,
+                evaluationTimestamp,
+                reuseMetadata);
+
+            var reuseResult = new EvidenceCacheResult(context.CacheDirectory, evaluation.Manifest, reuseEvaluation);
+            return CacheEvaluationResult.CreateReuse(reuseResult);
+        }
+
+        if (_fileSystem.Directory.Exists(context.CacheDirectory))
+        {
+            _fileSystem.Directory.Delete(context.CacheDirectory, recursive: true);
+        }
+
+        return CacheEvaluationResult.CreateInvalidation(evaluation.Reason, evaluation.Metadata);
+    }
+
+    private async Task<EvidenceCacheResult> CreateCacheEntryAsync(
+        CacheRequestContext context,
+        EvidenceCacheInvalidationReason invalidationReason,
+        IReadOnlyDictionary<string, string?> invalidationMetadata,
+        CancellationToken cancellationToken)
+    {
+        var creationTimestamp = _timestampProvider();
+        var manifest = await _cacheWriter.WriteAsync(
+            context.CacheDirectory,
+            ManifestFileName,
+            ManifestVersion,
+            context.Key,
+            context.Command,
+            creationTimestamp,
+            context.ModuleSelection,
+            context.Metadata,
+            context.Descriptors,
             cancellationToken).ConfigureAwait(false);
 
         var creationMetadata = BuildOutcomeMetadata(
             creationTimestamp,
             manifest,
-            requestedModuleSelection,
+            context.ModuleSelection,
             invalidationMetadata,
             reuse: false,
             invalidationReason);
@@ -173,19 +228,16 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
             creationTimestamp,
             creationMetadata);
 
-        return Result<EvidenceCacheResult>.Success(new EvidenceCacheResult(cacheDirectory, manifest, creationEvaluation));
+        return new EvidenceCacheResult(context.CacheDirectory, manifest, creationEvaluation);
     }
 
     private async Task<(EvidenceCacheInvalidationReason Reason, IReadOnlyDictionary<string, string?> Metadata)> DetermineMissingCacheReasonAsync(
-        string rootDirectory,
-        string command,
-        IReadOnlyDictionary<string, string?> metadata,
-        IReadOnlyCollection<EvidenceArtifactDescriptor> descriptors,
+        CacheRequestContext context,
         CancellationToken cancellationToken)
     {
         try
         {
-            foreach (var directory in _fileSystem.Directory.EnumerateDirectories(rootDirectory))
+            foreach (var directory in _fileSystem.Directory.EnumerateDirectories(context.NormalizedRootDirectory))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -201,23 +253,23 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
                     continue;
                 }
 
-                if (!string.Equals(manifest.Command, command, StringComparison.Ordinal))
+                if (!string.Equals(manifest.Command, context.Command, StringComparison.Ordinal))
                 {
                     continue;
                 }
 
-                if (!ArtifactsMatch(manifest, descriptors))
+                if (!ArtifactsMatch(manifest, context.Descriptors))
                 {
                     continue;
                 }
 
-                if (!MetadataEquals(manifest.Metadata, metadata))
+                if (!MetadataEquals(manifest.Metadata, context.Metadata))
                 {
                     var mismatchMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
                     {
                         ["reason"] = EvidenceCacheReasonMapper.Map(EvidenceCacheInvalidationReason.MetadataMismatch),
                         ["manifest.metadataCount"] = manifest.Metadata.Count.ToString(CultureInfo.InvariantCulture),
-                        ["request.metadataCount"] = metadata.Count.ToString(CultureInfo.InvariantCulture),
+                        ["request.metadataCount"] = context.Metadata.Count.ToString(CultureInfo.InvariantCulture),
                         ["manifest.cacheKey"] = manifest.Key
                     };
 
@@ -423,5 +475,34 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
         }
 
         return defaultValue;
+    }
+
+    private sealed record CacheRequestContext(
+        string NormalizedRootDirectory,
+        string CacheDirectory,
+        string Command,
+        string Key,
+        IReadOnlyDictionary<string, string?> Metadata,
+        IReadOnlyCollection<EvidenceArtifactDescriptor> Descriptors,
+        EvidenceCacheModuleSelection ModuleSelection,
+        bool Refresh);
+
+    private abstract record CacheEvaluationResult
+    {
+        private CacheEvaluationResult()
+        {
+        }
+
+        public sealed record Reuse(EvidenceCacheResult Result) : CacheEvaluationResult;
+
+        public sealed record Invalidate(
+            EvidenceCacheInvalidationReason Reason,
+            IReadOnlyDictionary<string, string?> Metadata) : CacheEvaluationResult;
+
+        public static CacheEvaluationResult CreateReuse(EvidenceCacheResult result) => new Reuse(result);
+
+        public static CacheEvaluationResult CreateInvalidation(
+            EvidenceCacheInvalidationReason reason,
+            IReadOnlyDictionary<string, string?> metadata) => new Invalidate(reason, metadata);
     }
 }
