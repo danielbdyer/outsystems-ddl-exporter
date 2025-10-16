@@ -54,6 +54,12 @@ internal readonly struct DbRow
 
     public int? GetInt32OrNull(int ordinal) => _reader.IsDBNull(ordinal) ? null : _reader.GetInt32(ordinal);
 
+    public int GetRequiredInt32Flexible(int ordinal, string columnName)
+    {
+        EnsureNotDbNull(ordinal, columnName);
+        return GetInt32Flexible(ordinal);
+    }
+
     public int GetInt32Flexible(int ordinal)
     {
         var value = _reader.GetValue(ordinal);
@@ -73,13 +79,31 @@ internal readonly struct DbRow
 
     public string GetString(int ordinal) => _reader.GetString(ordinal);
 
+    public string GetRequiredString(int ordinal, string columnName)
+    {
+        EnsureNotDbNull(ordinal, columnName);
+        return _reader.GetString(ordinal);
+    }
+
     public string? GetStringOrNull(int ordinal) => _reader.IsDBNull(ordinal) ? null : _reader.GetString(ordinal);
 
     public bool GetBoolean(int ordinal) => _reader.GetBoolean(ordinal);
 
+    public bool GetRequiredBoolean(int ordinal, string columnName)
+    {
+        EnsureNotDbNull(ordinal, columnName);
+        return _reader.GetBoolean(ordinal);
+    }
+
     public bool? GetBooleanOrNull(int ordinal) => _reader.IsDBNull(ordinal) ? null : _reader.GetBoolean(ordinal);
 
     public Guid GetGuid(int ordinal) => _reader.GetGuid(ordinal);
+
+    public Guid GetRequiredGuid(int ordinal, string columnName)
+    {
+        EnsureNotDbNull(ordinal, columnName);
+        return _reader.GetGuid(ordinal);
+    }
 
     public Guid? GetGuidOrNull(int ordinal) => _reader.IsDBNull(ordinal) ? null : _reader.GetGuid(ordinal);
 
@@ -100,4 +124,18 @@ internal readonly struct DbRow
     public decimal? GetDecimalOrNull(int ordinal) => _reader.IsDBNull(ordinal) ? null : _reader.GetDecimal(ordinal);
 
     public Type GetFieldType(int ordinal) => _reader.GetFieldType(ordinal);
+
+    private void EnsureNotDbNull(int ordinal, string columnName)
+    {
+        if (columnName is null)
+        {
+            throw new ArgumentNullException(nameof(columnName));
+        }
+
+        if (_reader.IsDBNull(ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Column '{columnName}' (ordinal {ordinal}) contained NULL but a non-null value was required.");
+        }
+    }
 }

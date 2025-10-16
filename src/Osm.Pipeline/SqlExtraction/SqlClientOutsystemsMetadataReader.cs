@@ -723,25 +723,25 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
         private static class Column
         {
             public static ColumnDefinition<int> Int32(int ordinal, string name)
-                => new(ordinal, name, row => row.GetInt32Flexible(ordinal));
+                => new(ordinal, name, row => row.GetRequiredInt32Flexible(ordinal, name));
 
             public static ColumnDefinition<int?> Int32OrNull(int ordinal, string name)
                 => new(ordinal, name, row => row.GetInt32FlexibleOrNull(ordinal));
 
             public static ColumnDefinition<string> String(int ordinal, string name)
-                => new(ordinal, name, row => row.GetString(ordinal));
+                => new(ordinal, name, row => row.GetRequiredString(ordinal, name));
 
             public static ColumnDefinition<string?> StringOrNull(int ordinal, string name)
                 => new(ordinal, name, row => row.GetStringOrNull(ordinal));
 
             public static ColumnDefinition<bool> Boolean(int ordinal, string name)
-                => new(ordinal, name, row => row.GetBoolean(ordinal));
+                => new(ordinal, name, row => row.GetRequiredBoolean(ordinal, name));
 
             public static ColumnDefinition<bool?> BooleanOrNull(int ordinal, string name)
                 => new(ordinal, name, row => row.GetBooleanOrNull(ordinal));
 
             public static ColumnDefinition<Guid> Guid(int ordinal, string name)
-                => new(ordinal, name, row => row.GetGuid(ordinal));
+                => new(ordinal, name, row => row.GetRequiredGuid(ordinal, name));
 
             public static ColumnDefinition<Guid?> GuidOrNull(int ordinal, string name)
                 => new(ordinal, name, row => row.GetGuidOrNull(ordinal));
