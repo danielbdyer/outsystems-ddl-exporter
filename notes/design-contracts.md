@@ -34,6 +34,16 @@ This appendix complements `architecture-guardrails.md` by describing the executa
 - **Failures**: Policy evaluation always succeeds; guardrails use assertions/tests instead of runtime errors. Misconfiguration (e.g., unsupported mode) should be caught during option deserialization.
 - **Telemetry hooks**: counts of tightened columns, remediation requirements, suppressed FKs, unique index enforcement, and rationale histograms.
 
+### Mode matrix (source: [`TighteningPolicyMatrix`](../src/Osm.Validation/Tightening/TighteningPolicyMatrix.cs))
+
+| Mode | NOT NULL triggers | Evidence requirements | Unique index enforcement | FK creation outcomes |
+| --- | --- | --- | --- | --- |
+| `Cautious` | Primary keys (`S1`) and physical NOT NULL columns (`S2`). | No profiling evidence is consulted; strong signals (`S3`–`S5`) are tracked for reporting but do not flip decisions. | Enforce only when the database already guarantees uniqueness (physical unique key or existing constraint). Profiling evidence never forces a tighten. | Never create new FKs. Existing database constraints are re-affirmed; other cases emit diagnostics (`DELETE_RULE_IGNORE`, `DATA_HAS_ORPHANS`, toggle blocks). |
+| `EvidenceGated` | Primary keys and physical NOT NULL columns automatically tighten; foreign keys/unique cleans/mandatory attributes (`S3`–`S5`) require profiling evidence (`DATA_NO_NULLS`). | Profiling null evidence must be present and clean to tighten on strong signals. Missing or dirty evidence leaves columns nullable. | Enforce uniqueness when profiling proves no duplicates or the database already guarantees it. No remediation is requested because evidence is mandatory. | Create FKs when the policy enables creation, there are no orphans, delete rules aren’t `Ignore`, and cross-schema/catalog guards allow it. |
+| `Aggressive` | Same trigger set as EvidenceGated, but strong signals tighten without null evidence. | Profiling evidence is still captured for telemetry; missing evidence forces remediation rationales (`REMEDIATE_BEFORE_TIGHTEN`). | Always enforce uniqueness. Duplicates or missing evidence demand remediation before activation. | Same safety gates as EvidenceGated, but existing constraints always generate creation decisions even when cross-boundary flags are disabled. |
+
+The matrix is enforced via `TighteningPolicyMatrixTests` so documentation, code, and tests stay aligned. Every row maps to specific rationale codes emitted in policy decisions (`PK`, `PHYSICAL_NOT_NULL`, `FOREIGN_KEY_ENFORCED`, `UNIQUE_NO_NULLS`, `REMEDIATE_BEFORE_TIGHTEN`, `POLICY_ENABLE_CREATION`, etc.), providing an auditable trail whenever toggles or profiling evidence change outcomes.
+
 ## SMO model construction (`SmoModelFactory` / `SmoBuildOptions`)
 - **Input**: Domain model, `PolicyDecisionSet`, and `SmoBuildOptions` (including naming overrides and emission toggles).
 - **Output**: Immutable `SmoModel` containing table, column, index, and foreign key definitions ready for SMO scripting.

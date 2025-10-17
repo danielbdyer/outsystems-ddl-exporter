@@ -96,40 +96,62 @@ public sealed class UniqueIndexDecisionStrategy
         bool physicalUnique,
         UniqueIndexEvidence evidence)
     {
+        var matrix = TighteningPolicyMatrix.UniqueIndexes;
+        var mode = _options.Policy.Mode;
+
         if (policyDisabled)
         {
-            return (false, false);
+            return ApplyOutcome(matrix.Resolve(mode, TighteningPolicyMatrix.UniquePolicyScenario.PolicyDisabled), evidence);
         }
 
         if (evidence.HasDuplicates)
         {
-            if (_options.Policy.Mode == TighteningMode.Aggressive)
-            {
-                return (true, AddRemediation(evidence.Rationales));
-            }
+            var scenario = physicalUnique
+                ? TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithPhysicalReality
+                : TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithoutPhysicalReality;
 
-            if (physicalUnique)
-            {
-                return (true, false);
-            }
-
-            return (false, false);
+            return ApplyOutcome(matrix.Resolve(mode, scenario), evidence);
         }
 
         if (physicalUnique)
         {
-            return (true, false);
+            return ApplyOutcome(matrix.Resolve(mode, TighteningPolicyMatrix.UniquePolicyScenario.PhysicalReality), evidence);
         }
 
-        return _options.Policy.Mode switch
+        if (evidence.HasEvidence && evidence.DataClean)
         {
-            TighteningMode.Cautious => (false, false),
-            TighteningMode.EvidenceGated when evidence.HasEvidence && evidence.DataClean => (true, false),
-            TighteningMode.EvidenceGated => (false, false),
-            TighteningMode.Aggressive => (true, !evidence.HasEvidence || !evidence.DataClean)
-                .ApplyRequiresRemediation(evidence.Rationales),
-            _ => (false, false)
+            return ApplyOutcome(matrix.Resolve(mode, TighteningPolicyMatrix.UniquePolicyScenario.CleanWithEvidence), evidence);
+        }
+
+        return ApplyOutcome(matrix.Resolve(mode, TighteningPolicyMatrix.UniquePolicyScenario.CleanWithoutEvidence), evidence);
+    }
+
+    private (bool EnforceUnique, bool RequiresRemediation) ApplyOutcome(
+        TighteningPolicyMatrix.UniqueIndexOutcome outcome,
+        UniqueIndexEvidence evidence)
+    {
+        if (!outcome.EnforceUnique)
+        {
+            return (false, false);
+        }
+
+        return outcome.Remediation switch
+        {
+            TighteningPolicyMatrix.RemediationDirective.None => (true, false),
+            TighteningPolicyMatrix.RemediationDirective.Always => (true, AddRemediation(evidence.Rationales)),
+            TighteningPolicyMatrix.RemediationDirective.WhenEvidenceMissing => (true, RequireEvidenceOrRemediate(evidence)),
+            _ => (true, false)
         };
+    }
+
+    private bool RequireEvidenceOrRemediate(UniqueIndexEvidence evidence)
+    {
+        if (evidence.HasEvidence && evidence.DataClean)
+        {
+            return false;
+        }
+
+        return AddRemediation(evidence.Rationales);
     }
 
     private UniqueIndexEvidence EvaluateSingleColumnEvidence(
@@ -244,25 +266,4 @@ public sealed class UniqueIndexDecisionStrategy
         bool HasDuplicates,
         bool DataClean,
         SortedSet<string> Rationales);
-}
-
-internal static class UniqueIndexDecisionStrategyExtensions
-{
-    public static (bool EnforceUnique, bool RequiresRemediation) ApplyRequiresRemediation(
-        this (bool EnforceUnique, bool RequiresRemediation) result,
-        SortedSet<string> rationales)
-    {
-        if (!result.EnforceUnique)
-        {
-            return result;
-        }
-
-        if (result.RequiresRemediation)
-        {
-            rationales.Add(TighteningRationales.RemediateBeforeTighten);
-            return result;
-        }
-
-        return result;
-    }
 }

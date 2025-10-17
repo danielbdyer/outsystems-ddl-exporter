@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using Osm.Domain.Configuration;
 
 namespace Osm.Validation.Tightening.Signals;
@@ -8,6 +10,8 @@ internal static class NullabilitySignalFactory
 {
     public static NullabilityPolicyDefinition Create(TighteningMode mode)
     {
+        var definition = TighteningPolicyMatrix.Nullability.GetMode(mode);
+
         var primaryKey = new PrimaryKeySignal();
         var physical = new PhysicalNotNullSignal();
         var foreignKey = new ForeignKeySupportSignal();
@@ -16,50 +20,47 @@ internal static class NullabilitySignalFactory
         var defaultSignal = new DefaultSignal();
         var evidence = new NullEvidenceSignal();
 
-        NullabilitySignal root = mode switch
+        var registry = new Dictionary<TighteningPolicyMatrix.NullabilitySignalKey, NullabilitySignal>
         {
-            TighteningMode.Cautious => new AnyOfSignal(
-                "MODE_CAUTIOUS",
-                "Cautious policy (S1 ∪ S2)",
-                primaryKey,
-                physical),
-            TighteningMode.EvidenceGated => new AnyOfSignal(
-                "MODE_EVIDENCE_GATED",
-                "Evidence gated policy",
-                primaryKey,
-                physical,
-                new RequiresEvidenceSignal(
-                    new AnyOfSignal(
-                        "EVIDENCE_STRONG_SIGNALS",
-                        "Strong signals requiring evidence",
-                        foreignKey,
-                        unique,
-                        mandatory),
-                    evidence)),
-            TighteningMode.Aggressive => new AnyOfSignal(
-                "MODE_AGGRESSIVE",
-                "Aggressive policy (S1 ∪ S2 ∪ S3 ∪ S4 ∪ S5)",
-                primaryKey,
-                physical,
-                foreignKey,
-                unique,
-                mandatory),
-            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported tightening mode."),
+            [TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey] = primaryKey,
+            [TighteningPolicyMatrix.NullabilitySignalKey.Physical] = physical,
+            [TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey] = foreignKey,
+            [TighteningPolicyMatrix.NullabilitySignalKey.Unique] = unique,
+            [TighteningPolicyMatrix.NullabilitySignalKey.Mandatory] = mandatory
         };
 
-        var conditionalSignals = ImmutableHashSet.Create(
-            StringComparer.Ordinal,
-            foreignKey.Code,
-            unique.Code,
-            mandatory.Code);
+        var rootChildren = new List<NullabilitySignal>();
+        foreach (var key in definition.CoreSignals)
+        {
+            rootChildren.Add(registry[key]);
+        }
 
-        var evidenceEmbedded = mode == TighteningMode.EvidenceGated;
+        if (definition.ConditionalGroup is { } group)
+        {
+            var groupSignals = group.Signals.Select(signal => registry[signal]).ToImmutableArray();
+            NullabilitySignal conditional = groupSignals.Length == 1
+                ? groupSignals[0]
+                : new AnyOfSignal(group.Code, group.Description, groupSignals);
+
+            if (group.RequiresEvidence)
+            {
+                conditional = new RequiresEvidenceSignal(conditional, evidence);
+            }
+
+            rootChildren.Add(conditional);
+        }
+
+        var root = new AnyOfSignal(definition.Code, definition.Description, rootChildren);
+
+        var conditionalCodes = TighteningPolicyMatrix.Nullability.ConditionalSignals
+            .Select(signal => registry[signal].Code)
+            .ToImmutableHashSet(StringComparer.Ordinal);
 
         return new NullabilityPolicyDefinition(
             root,
             evidence,
-            conditionalSignals,
-            evidenceEmbedded,
+            conditionalCodes,
+            definition.EvidenceEmbeddedInRoot,
             primaryKey,
             physical,
             unique,
