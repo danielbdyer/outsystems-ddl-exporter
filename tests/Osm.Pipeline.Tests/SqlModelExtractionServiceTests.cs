@@ -363,8 +363,7 @@ public class SqlModelExtractionServiceTests
                 ? "[]"
                 : module.ModuleEntitiesJson;
 
-            using var entities = JsonDocument.Parse(entitiesPayload);
-            entities.RootElement.WriteTo(writer);
+            writer.WriteRawValue(entitiesPayload, skipInputValidation: true);
 
             writer.WriteEndObject();
         }
