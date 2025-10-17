@@ -270,11 +270,12 @@ public sealed class PerTableWriter
     {
         _context.ScriptGenerator.GenerateScript(statement, out var script);
         var trimmed = script.Trim();
+        var effectiveFormat = format ?? SmoFormatOptions.Default;
 
         return statement switch
         {
-            CreateTableStatement createTable => _sqlScriptFormatter.FormatCreateTableScript(trimmed, createTable, foreignKeyTrustLookup),
-            _ => (format?.NormalizeWhitespace ?? true) ? _sqlScriptFormatter.NormalizeWhitespace(trimmed) : trimmed,
+            CreateTableStatement createTable => _sqlScriptFormatter.FormatCreateTableScript(trimmed, createTable, effectiveFormat, foreignKeyTrustLookup),
+            _ => effectiveFormat.NormalizeWhitespace ? _sqlScriptFormatter.NormalizeWhitespace(trimmed) : trimmed,
         };
     }
 

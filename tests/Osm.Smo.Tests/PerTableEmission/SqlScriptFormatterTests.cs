@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Osm.Smo;
 using Osm.Smo.PerTableEmission;
 using Xunit;
@@ -46,5 +47,33 @@ CREATE TABLE [dbo].[Order](
 
         Assert.Contains("GO", script);
         Assert.DoesNotContain("SELECT 1    ", script);
+    }
+
+    [Fact]
+    public void FormatCreateTableScript_returns_original_script_when_normalization_disabled()
+    {
+        var formatter = new SqlScriptFormatter();
+        var script = """
+CREATE TABLE [dbo].[Order](
+    [Id] INT DEFAULT (0),
+    [Name] NVARCHAR(100)
+);
+""";
+
+        var statement = new CreateTableStatement
+        {
+            Definition = new TableDefinition
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(),
+                }
+            }
+        };
+
+        var format = SmoFormatOptions.Default.WithWhitespaceNormalization(false);
+        var formatted = formatter.FormatCreateTableScript(script, statement, format, foreignKeyTrustLookup: null);
+
+        Assert.Equal(script.TrimEnd(), formatted);
     }
 }
