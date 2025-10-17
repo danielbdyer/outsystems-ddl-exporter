@@ -177,7 +177,7 @@ public class SqlClientOutsystemsMetadataReaderTests
         Assert.Equal("Entities", exception.ResultSetName);
         Assert.Equal(0, exception.RowIndex);
         Assert.Equal("EntityId", exception.ColumnName);
-        var highlighted = Assert.NotNull(exception.HighlightedColumn);
+        var highlighted = Assert.IsType<MetadataColumnSnapshot>(exception.HighlightedColumn);
         Assert.Equal("EntityId", highlighted.Name);
     }
 

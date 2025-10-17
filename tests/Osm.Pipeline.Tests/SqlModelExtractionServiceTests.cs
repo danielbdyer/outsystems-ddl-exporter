@@ -196,7 +196,10 @@ public class SqlModelExtractionServiceTests
 
         using var expectedDocument = JsonDocument.Parse(expectedJson);
 
-        Assert.Equal(expectedDocument.RootElement.GetRawText(), actualDocument.RootElement.GetRawText());
+        var expectedNormalized = JsonSerializer.Serialize(expectedDocument.RootElement);
+        var actualNormalized = JsonSerializer.Serialize(actualDocument.RootElement);
+
+        Assert.Equal(expectedNormalized, actualNormalized);
     }
 
     [Fact]
