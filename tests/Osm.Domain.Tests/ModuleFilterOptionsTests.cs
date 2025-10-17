@@ -53,6 +53,18 @@ public sealed class ModuleFilterOptionsTests
     }
 
     [Fact]
+    public void Create_Allows256CharacterModuleName()
+    {
+        var module = new string('A', 256);
+
+        var result = ModuleFilterOptions.Create(new[] { module }, includeSystemModules: true, includeInactiveModules: true);
+
+        Assert.True(result.IsSuccess);
+        var moduleName = Assert.Single(result.Value.Modules);
+        Assert.Equal(module, moduleName.Value);
+    }
+
+    [Fact]
     public void Merge_AddsNewModules()
     {
         var options = ModuleFilterOptions.Create(new[] { "AppCore" }, true, true).Value;
