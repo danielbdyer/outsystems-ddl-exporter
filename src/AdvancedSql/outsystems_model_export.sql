@@ -10,6 +10,16 @@
 SET NOCOUNT ON;
 SET TEXTSIZE -1; -- unlimited for (n)varchar(max) in this session
 
+IF OBJECT_ID(N'dbo.ossys_Espace') IS NULL
+BEGIN
+    THROW 50010, 'Required table dbo.ossys_Espace not found in current catalog. Aborting metadata export.', 1;
+END;
+
+IF OBJECT_ID(N'dbo.ossys_Entity') IS NULL
+BEGIN
+    THROW 50011, 'Required table dbo.ossys_Entity not found in current catalog. Aborting metadata export.', 1;
+END;
+
 /* Optional local defaults for standalone execution
 DECLARE @ModuleNamesCsv NVARCHAR(MAX) = N'OutSystemsModule1_CS,OutSystemsModel2_CS';
 DECLARE @IncludeSystem BIT = 1;
