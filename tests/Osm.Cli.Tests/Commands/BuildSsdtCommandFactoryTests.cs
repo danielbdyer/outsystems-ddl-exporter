@@ -21,6 +21,8 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Runtime;
+using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
 using Xunit;
 
@@ -41,6 +43,11 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<PipelineVerbExecutor>();
+        services.AddSingleton<IPipelineVerb>(provider => new BuildSsdtVerb(
+            provider.GetRequiredService<ICliConfigurationService>(),
+            provider.GetRequiredService<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>()));
+        services.AddSingleton<IVerbRegistry>(TestVerbRegistry.Create);
         services.AddSingleton<BuildSsdtCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -123,6 +130,11 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<PipelineVerbExecutor>();
+        services.AddSingleton<IPipelineVerb>(provider => new BuildSsdtVerb(
+            provider.GetRequiredService<ICliConfigurationService>(),
+            provider.GetRequiredService<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>()));
+        services.AddSingleton<IVerbRegistry>(TestVerbRegistry.Create);
         services.AddSingleton<BuildSsdtCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -158,6 +170,11 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<PipelineVerbExecutor>();
+        services.AddSingleton<IPipelineVerb>(provider => new BuildSsdtVerb(
+            provider.GetRequiredService<ICliConfigurationService>(),
+            provider.GetRequiredService<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>()));
+        services.AddSingleton<IVerbRegistry>(TestVerbRegistry.Create);
         services.AddSingleton<BuildSsdtCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();

@@ -17,6 +17,8 @@ using Osm.Dmm;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Runtime;
+using Osm.Pipeline.Runtime.Verbs;
 using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
@@ -36,6 +38,11 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<PipelineVerbExecutor>();
+        services.AddSingleton<IPipelineVerb>(provider => new DmmCompareVerb(
+            provider.GetRequiredService<ICliConfigurationService>(),
+            provider.GetRequiredService<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>>()));
+        services.AddSingleton<IVerbRegistry>(TestVerbRegistry.Create);
         services.AddSingleton<DmmCompareCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -106,6 +113,11 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<PipelineVerbExecutor>();
+        services.AddSingleton<IPipelineVerb>(provider => new DmmCompareVerb(
+            provider.GetRequiredService<ICliConfigurationService>(),
+            provider.GetRequiredService<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>>()));
+        services.AddSingleton<IVerbRegistry>(TestVerbRegistry.Create);
         services.AddSingleton<DmmCompareCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -143,6 +155,11 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<PipelineVerbExecutor>();
+        services.AddSingleton<IPipelineVerb>(provider => new DmmCompareVerb(
+            provider.GetRequiredService<ICliConfigurationService>(),
+            provider.GetRequiredService<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>>()));
+        services.AddSingleton<IVerbRegistry>(TestVerbRegistry.Create);
         services.AddSingleton<DmmCompareCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -178,6 +195,11 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<PipelineVerbExecutor>();
+        services.AddSingleton<IPipelineVerb>(provider => new DmmCompareVerb(
+            provider.GetRequiredService<ICliConfigurationService>(),
+            provider.GetRequiredService<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>>()));
+        services.AddSingleton<IVerbRegistry>(TestVerbRegistry.Create);
         services.AddSingleton<DmmCompareCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();

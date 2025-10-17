@@ -14,6 +14,8 @@ using Osm.Domain.Configuration;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.Runtime;
+using Osm.Pipeline.Runtime.Verbs;
 using Tests.Support;
 using Xunit;
 
@@ -35,6 +37,11 @@ public class ExtractModelCommandFactoryTests
         services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>>(application);
         services.AddSingleton<CliGlobalOptions>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<PipelineVerbExecutor>();
+        services.AddSingleton<IPipelineVerb>(provider => new ExtractModelVerb(
+            provider.GetRequiredService<ICliConfigurationService>(),
+            provider.GetRequiredService<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>>()));
+        services.AddSingleton<IVerbRegistry>(TestVerbRegistry.Create);
         services.AddSingleton<ExtractModelCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();

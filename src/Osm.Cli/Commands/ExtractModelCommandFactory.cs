@@ -5,17 +5,15 @@ using System.CommandLine.Parsing;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Application;
-using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 
 namespace Osm.Cli.Commands;
 
 internal sealed class ExtractModelCommandFactory : ICommandFactory
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly PipelineVerbExecutor _verbExecutor;
     private readonly CliGlobalOptions _globalOptions;
     private readonly SqlOptionBinder _sqlOptionBinder;
 
@@ -28,11 +26,11 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
     private readonly Option<string?> _mockSqlOption = new("--mock-advanced-sql", "Path to advanced SQL manifest fixture.");
 
     public ExtractModelCommandFactory(
-        IServiceScopeFactory scopeFactory,
+        PipelineVerbExecutor verbExecutor,
         CliGlobalOptions globalOptions,
         SqlOptionBinder sqlOptionBinder)
     {
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _verbExecutor = verbExecutor ?? throw new ArgumentNullException(nameof(verbExecutor));
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
         _modulesOption.AddAlias("--module");
@@ -60,11 +58,6 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
 
     private async Task ExecuteAsync(InvocationContext context)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var services = scope.ServiceProvider;
-        var registry = services.GetRequiredService<IVerbRegistry>();
-        var verb = registry.Get(ExtractModelVerb.VerbName);
-
         var parseResult = context.ParseResult;
         var moduleTokens = ModuleFilterOptionBinder.SplitList(parseResult.GetValueForOption(_modulesOption));
         IReadOnlyList<string>? moduleOverride = moduleTokens.Count > 0 ? moduleTokens : null;
@@ -85,18 +78,12 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
             Sql = _sqlOptionBinder.Bind(parseResult)
         };
 
-        var run = await verb.RunAsync(options, context.GetCancellationToken()).ConfigureAwait(false);
-        if (!run.IsSuccess)
-        {
-            CommandConsole.WriteErrors(context.Console, run.Errors);
-            context.ExitCode = 1;
-            return;
-        }
+        var execution = await _verbExecutor
+            .ExecuteAsync<ExtractModelVerbResult>(context, ExtractModelVerb.VerbName, options, context.GetCancellationToken())
+            .ConfigureAwait(false);
 
-        if (run.Payload is not ExtractModelVerbResult payload)
+        if (!execution.IsSuccess || execution.Payload is not { } payload)
         {
-            CommandConsole.WriteErrorLine(context.Console, "[error] Unexpected result type for extract-model verb.");
-            context.ExitCode = 1;
             return;
         }
 
