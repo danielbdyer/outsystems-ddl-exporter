@@ -247,6 +247,10 @@ public class SqlClientOutsystemsMetadataReaderTests
         Assert.Contains("AttributesJson", logEntry.Message);
         Assert.Contains("ColumnValuePreview: <NULL>", logEntry.Message);
         Assert.Contains("RowSnapshot:", logEntry.Message);
+        Assert.Contains("EntityId=10 (EntityA)", logEntry.Message);
+        Assert.Contains("ModuleId=1 (ModuleA)", logEntry.Message);
+        Assert.Contains("EntityId=10 (EntityA)", error.Message);
+        Assert.Contains("ModuleId=1 (ModuleA)", error.Message);
         var exception = Assert.IsType<MetadataRowMappingException>(logEntry.Exception);
         Assert.NotNull(exception.RowSnapshot);
     }

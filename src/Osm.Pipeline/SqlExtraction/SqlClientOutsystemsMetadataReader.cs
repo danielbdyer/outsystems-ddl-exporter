@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Linq;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -195,6 +196,8 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
 
         var stopwatch = Stopwatch.StartNew();
 
+        var accumulator = new MetadataAccumulator();
+
         try
         {
             await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -204,8 +207,6 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
             await using var reader = await _commandExecutor
                 .ExecuteReaderAsync(command, CommandBehavior.SequentialAccess, cancellationToken)
                 .ConfigureAwait(false);
-
-            var accumulator = new MetadataAccumulator();
 
             for (var i = 0; i < _resultSets.Count; i++)
             {
@@ -249,9 +250,11 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                     ? "<NULL>"
                     : ex.HighlightedColumn.ValuePreview ?? "<unavailable>";
 
+            var friendlyContext = BuildFriendlyContext(ex, accumulator);
+
             _logger.LogError(
                 ex,
-                "Failed to map row {RowIndex} in result set '{ResultSetName}'. Column: {ColumnName}, Ordinal: {ColumnOrdinal}, ExpectedClrType: {ExpectedClrType}, ProviderType: {ProviderType}. DurationMs: {DurationMs}. ColumnValuePreview: {ColumnValuePreview}. RowSnapshot: {RowSnapshotJson}",
+                "Failed to map row {RowIndex} in result set '{ResultSetName}'. Column: {ColumnName}, Ordinal: {ColumnOrdinal}, ExpectedClrType: {ExpectedClrType}, ProviderType: {ProviderType}. DurationMs: {DurationMs}. ColumnValuePreview: {ColumnValuePreview}. FriendlyContext: {FriendlyContext}. RowSnapshot: {RowSnapshotJson}",
                 ex.RowIndex,
                 ex.ResultSetName,
                 ex.ColumnName ?? "unknown",
@@ -260,11 +263,16 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                 ex.ProviderFieldType?.FullName ?? "unknown",
                 stopwatch.Elapsed.TotalMilliseconds,
                 highlightedValue,
+                friendlyContext ?? "<unavailable>",
                 ex.RowSnapshot?.ToJson() ?? "<unavailable>");
+
+            var message = friendlyContext is null
+                ? ex.Message
+                : string.Concat(ex.Message, " Context: ", friendlyContext, ".");
 
             return Result<OutsystemsMetadataSnapshot>.Failure(ValidationError.Create(
                 "extraction.metadata.rowMapping",
-                ex.Message));
+                message));
         }
         catch (MetadataResultSetMissingException ex)
         {
@@ -290,6 +298,136 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                 "extraction.metadata.executionFailed",
                 $"Metadata snapshot execution failed: {ex.Message}"));
         }
+    }
+
+    private static string? BuildFriendlyContext(MetadataRowMappingException exception, MetadataAccumulator accumulator)
+    {
+        if (exception is null)
+        {
+            throw new ArgumentNullException(nameof(exception));
+        }
+
+        if (accumulator is null)
+        {
+            return null;
+        }
+
+        var snapshot = exception.RowSnapshot;
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        var columns = snapshot.Columns;
+        if (columns.Count == 0)
+        {
+            return null;
+        }
+
+        var context = new List<string>();
+        var resolvedAttributes = new HashSet<int>();
+        var resolvedEntities = new HashSet<int>();
+        var resolvedModules = new HashSet<int>();
+
+        if (TryGetIntValue(columns, "AttrId", out var attributeId))
+        {
+            AppendAttribute(attributeId);
+        }
+
+        if (TryGetIntValue(columns, "EntityId", out var entityId))
+        {
+            AppendEntity(entityId);
+        }
+
+        if (TryGetIntValue(columns, "EspaceId", out var moduleId))
+        {
+            AppendModule(moduleId);
+        }
+
+        return context.Count == 0 ? null : string.Join(", ", context);
+
+        void AppendAttribute(int attrId)
+        {
+            if (!resolvedAttributes.Add(attrId))
+            {
+                return;
+            }
+
+            var attribute = accumulator.Attributes.FirstOrDefault(attr => attr.AttrId == attrId);
+            if (attribute is not null)
+            {
+                context.Add($"AttrId={attrId} ({attribute.AttrName})");
+                AppendEntity(attribute.EntityId);
+            }
+            else
+            {
+                context.Add($"AttrId={attrId} (unresolved)");
+            }
+        }
+
+        void AppendEntity(int entityIdValue)
+        {
+            if (!resolvedEntities.Add(entityIdValue))
+            {
+                return;
+            }
+
+            var entity = accumulator.Entities.FirstOrDefault(entity => entity.EntityId == entityIdValue);
+            if (entity is not null)
+            {
+                context.Add($"EntityId={entityIdValue} ({entity.EntityName})");
+                AppendModule(entity.EspaceId);
+            }
+            else
+            {
+                context.Add($"EntityId={entityIdValue} (unresolved)");
+            }
+        }
+
+        void AppendModule(int moduleIdValue)
+        {
+            if (!resolvedModules.Add(moduleIdValue))
+            {
+                return;
+            }
+
+            var module = accumulator.Modules.FirstOrDefault(module => module.EspaceId == moduleIdValue);
+            if (module is not null)
+            {
+                context.Add($"ModuleId={moduleIdValue} ({module.EspaceName})");
+            }
+            else
+            {
+                context.Add($"ModuleId={moduleIdValue} (unresolved)");
+            }
+        }
+    }
+
+    private static bool TryGetIntValue(IReadOnlyList<MetadataColumnSnapshot> columns, string columnName, out int value)
+    {
+        if (columns is null)
+        {
+            throw new ArgumentNullException(nameof(columns));
+        }
+
+        if (string.IsNullOrWhiteSpace(columnName))
+        {
+            throw new ArgumentException("Column name must be provided.", nameof(columnName));
+        }
+
+        value = default;
+        var column = columns.FirstOrDefault(column => string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
+        if (column is null || column.IsNull)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(column.ValuePreview))
+        {
+            return false;
+        }
+
+        return int.TryParse(column.ValuePreview, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
     }
 
     private static DbCommand CreateCommand(
