@@ -47,6 +47,37 @@ public class SqlClientOutsystemsMetadataReaderTests
     }
 
     [Fact]
+    public async Task ReadAsync_ShouldPassFullLengthModuleCsvToCommand()
+    {
+        var resultSets = CreateDefaultResultSets();
+
+        var command = new StubCommand(resultSets);
+        var connection = new StubConnection(command);
+        var factory = new StubConnectionFactory(connection);
+        var scriptProvider = new StubScriptProvider("SELECT 1");
+        var reader = new SqlClientOutsystemsMetadataReader(
+            factory,
+            scriptProvider,
+            SqlExecutionOptions.Default,
+            NullLogger<SqlClientOutsystemsMetadataReader>.Instance);
+
+        var module = new string('Z', 256);
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create(module).Value), includeSystemModules: false, onlyActiveAttributes: true);
+
+        var result = await reader.ReadAsync(request, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+
+        var moduleParameter = command.Parameters
+            .OfType<DbParameter>()
+            .Single(parameter => string.Equals(parameter.ParameterName, "@ModuleNamesCsv", StringComparison.OrdinalIgnoreCase));
+
+        var parameterValue = Assert.IsType<string>(moduleParameter.Value);
+        Assert.Equal(module.Length, parameterValue.Length);
+        Assert.Equal(module, parameterValue);
+    }
+
+    [Fact]
     public async Task ReadAsync_ShouldUseSequentialAccessCommandBehavior()
     {
         var resultSets = CreateDefaultResultSets();

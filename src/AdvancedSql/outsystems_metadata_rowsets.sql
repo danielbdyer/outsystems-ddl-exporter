@@ -32,11 +32,32 @@ DECLARE @OnlyActiveAttributes BIT = 1;
 
 -- 1) #ModuleNames
 IF OBJECT_ID('tempdb..#ModuleNames') IS NOT NULL DROP TABLE #ModuleNames;
-CREATE TABLE #ModuleNames ( ModuleName NVARCHAR(200) COLLATE DATABASE_DEFAULT NOT NULL );
-INSERT INTO #ModuleNames(ModuleName)
+CREATE TABLE #ModuleNames ( ModuleName NVARCHAR(256) COLLATE DATABASE_DEFAULT NOT NULL );
+
+DECLARE @ModuleTokens TABLE ( ModuleName NVARCHAR(MAX) NOT NULL );
+
+INSERT INTO @ModuleTokens(ModuleName)
 SELECT LTRIM(RTRIM(value))
 FROM STRING_SPLIT(@ModuleNamesCsv, ',')
 WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL;
+
+DECLARE @InvalidModuleName NVARCHAR(MAX);
+SELECT TOP (1) @InvalidModuleName = ModuleName
+FROM @ModuleTokens
+WHERE LEN(ModuleName) > 256;
+
+IF @InvalidModuleName IS NOT NULL
+BEGIN
+    DECLARE @ModuleNameError NVARCHAR(4000) =
+        N'Module filter module name exceeds 256 characters: '''
+        + LEFT(@InvalidModuleName, 256)
+        + N'''.';
+    THROW 50000, @ModuleNameError, 1;
+END;
+
+INSERT INTO #ModuleNames(ModuleName)
+SELECT ModuleName
+FROM @ModuleTokens;
 
 -- 2) #E (espace) with module-level IncludeSystem filtering
 IF OBJECT_ID('tempdb..#E') IS NOT NULL DROP TABLE #E;
