@@ -7,7 +7,7 @@ using Osm.Pipeline.Application;
 
 namespace Osm.Cli.Commands.Binders;
 
-internal sealed class ModuleFilterOptionBinder : BinderBase<ModuleFilterOverrides>
+internal sealed class ModuleFilterOptionBinder : BinderBase<ModuleFilterOverrides>, ICommandOptionSource
 {
     private static readonly char[] ModuleSeparators = new[] { ',', ';' };
 

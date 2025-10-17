@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.CommandLine;
 using Osm.Cli.Commands.Binders;
 
@@ -16,23 +15,21 @@ internal static class CommandOptionBuilder
     public static Command AddCacheOptions(Command command, CacheOptionBinder binder)
         => AddOptions(command, binder);
 
-    private static Command AddOptions(Command command, SqlOptionBinder binder)
-        => AddOptions(command, binder?.Options ?? throw new ArgumentNullException(nameof(binder)));
-
-    private static Command AddOptions(Command command, ModuleFilterOptionBinder binder)
-        => AddOptions(command, binder?.Options ?? throw new ArgumentNullException(nameof(binder)));
-
-    private static Command AddOptions(Command command, CacheOptionBinder binder)
-        => AddOptions(command, binder?.Options ?? throw new ArgumentNullException(nameof(binder)));
-
-    private static Command AddOptions(Command command, IEnumerable<Option> options)
+    private static Command AddOptions(Command command, ICommandOptionSource optionSource)
     {
         if (command is null)
         {
             throw new ArgumentNullException(nameof(command));
         }
 
-        foreach (var option in options ?? throw new ArgumentNullException(nameof(options)))
+        if (optionSource is null)
+        {
+            throw new ArgumentNullException(nameof(optionSource));
+        }
+
+        var options = optionSource.Options ?? throw new ArgumentNullException(nameof(optionSource.Options));
+
+        foreach (var option in options)
         {
             command.AddOption(option);
         }
