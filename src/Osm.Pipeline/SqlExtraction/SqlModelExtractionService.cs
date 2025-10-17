@@ -79,11 +79,24 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                 "Metadata reader failed after {DurationMs} ms with errors: {Errors}.",
                 metadataTimer.Elapsed.TotalMilliseconds,
                 string.Join(", ", metadataResult.Errors.Select(static error => error.Code)));
+
+            await SqlMetadataDiagnosticsWriter.WriteFailureAsync(
+                options.MetadataOutputPath,
+                metadataResult.Errors,
+                TryGetFailureSnapshot(),
+                cancellationToken).ConfigureAwait(false);
+
             return Result<ModelExtractionResult>.Failure(metadataResult.Errors.ToArray());
         }
 
         var snapshot = metadataResult.Value;
         var exportedAtUtc = DateTimeOffset.UtcNow;
+
+        await SqlMetadataDiagnosticsWriter.WriteSnapshotAsync(
+            options.MetadataOutputPath,
+            snapshot,
+            exportedAtUtc,
+            cancellationToken).ConfigureAwait(false);
 
         await using var destination = CreateDestination(options);
         var jsonStream = destination.Stream;
@@ -159,6 +172,16 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
             deserializeTimer.Elapsed.TotalMilliseconds);
 
         return Result<ModelExtractionResult>.Success(result);
+    }
+
+    private MetadataRowSnapshot? TryGetFailureSnapshot()
+    {
+        if (_metadataReader is IMetadataSnapshotDiagnostics diagnostics)
+        {
+            return diagnostics.LastFailureRowSnapshot;
+        }
+
+        return null;
     }
 
     private static DestinationScope CreateDestination(ModelExtractionOptions options)
@@ -400,25 +423,28 @@ public sealed class ModelJsonPayload
 
 public sealed class ModelExtractionOptions
 {
-    public ModelExtractionOptions(Stream? destinationStream = null, string? destinationPath = null)
+    public ModelExtractionOptions(Stream? destinationStream = null, string? destinationPath = null, string? metadataOutputPath = null)
     {
         DestinationStream = destinationStream;
         DestinationPath = destinationPath;
+        MetadataOutputPath = metadataOutputPath;
     }
 
     public Stream? DestinationStream { get; }
 
     public string? DestinationPath { get; }
 
-    public static ModelExtractionOptions InMemory() => new();
+    public string? MetadataOutputPath { get; }
 
-    public static ModelExtractionOptions ToStream(Stream stream)
-        => new(stream ?? throw new ArgumentNullException(nameof(stream)), null);
+    public static ModelExtractionOptions InMemory(string? metadataOutputPath = null) => new(null, null, metadataOutputPath);
 
-    public static ModelExtractionOptions ToFile(string path)
+    public static ModelExtractionOptions ToStream(Stream stream, string? metadataOutputPath = null)
+        => new(stream ?? throw new ArgumentNullException(nameof(stream)), null, metadataOutputPath);
+
+    public static ModelExtractionOptions ToFile(string path, string? metadataOutputPath = null)
         => string.IsNullOrWhiteSpace(path)
             ? throw new ArgumentException("File path must be provided.", nameof(path))
-            : new ModelExtractionOptions(null, path);
+            : new ModelExtractionOptions(null, path, metadataOutputPath);
 }
 
 public sealed class ModelExtractionCommand

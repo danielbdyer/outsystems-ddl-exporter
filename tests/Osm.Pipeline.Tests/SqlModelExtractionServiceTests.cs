@@ -275,6 +275,67 @@ public class SqlModelExtractionServiceTests
         Assert.Equal(diskContents, payloadContents);
     }
 
+    [Fact]
+    public async Task ExtractAsync_ShouldWriteMetadataSnapshotWhenPathProvided()
+    {
+        var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.micro-unique.json"));
+        var snapshot = CreateSnapshotFromJson(json);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+
+        using var temp = new TempDirectory();
+        var metadataPath = Path.Combine(temp.Path, "metadata.json");
+
+        var result = await service.ExtractAsync(command, ModelExtractionOptions.InMemory(metadataPath));
+
+        Assert.True(result.IsSuccess);
+        Assert.True(File.Exists(metadataPath));
+
+        using var metadataDocument = JsonDocument.Parse(await File.ReadAllTextAsync(metadataPath));
+        var root = metadataDocument.RootElement;
+        Assert.Equal("success", root.GetProperty("status").GetString());
+        Assert.Equal(snapshot.DatabaseName, root.GetProperty("databaseName").GetString());
+        Assert.Equal(JsonValueKind.Array, root.GetProperty("modules").ValueKind);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldWriteFailureSnapshotWhenMetadataReaderFails()
+    {
+        var failureError = ValidationError.Create("boom", "fail");
+        var failure = Result<OutsystemsMetadataSnapshot>.Failure(failureError);
+        var column = new MetadataColumnSnapshot(
+            ordinal: 0,
+            name: "AttrId",
+            providerType: "int",
+            isNull: false,
+            rawValue: 5,
+            valuePreview: MetadataColumnSnapshot.FormatValuePreview(5, 32),
+            serializationError: null);
+        var rowSnapshot = new MetadataRowSnapshot("AttributesJson", 3, new[] { column });
+        var reader = new StubMetadataReader(failure, rowSnapshot);
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+
+        using var temp = new TempDirectory();
+        var metadataPath = Path.Combine(temp.Path, "metadata.json");
+
+        var result = await service.ExtractAsync(command, ModelExtractionOptions.InMemory(metadataPath));
+
+        Assert.True(result.IsFailure);
+        Assert.True(File.Exists(metadataPath));
+
+        using var metadataDocument = JsonDocument.Parse(await File.ReadAllTextAsync(metadataPath));
+        var root = metadataDocument.RootElement;
+        Assert.Equal("failure", root.GetProperty("status").GetString());
+        var errors = root.GetProperty("errors");
+        Assert.Equal(JsonValueKind.Array, errors.ValueKind);
+        Assert.Equal("boom", errors[0].GetProperty("code").GetString());
+        var row = root.GetProperty("rowSnapshot");
+        Assert.Equal("AttributesJson", row.GetProperty("resultSet").GetString());
+        Assert.Equal(3, row.GetProperty("rowIndex").GetInt32());
+    }
+
     private static OutsystemsMetadataSnapshot CreateSnapshotFromJson(string json)
     {
         using var document = JsonDocument.Parse(json);
@@ -375,18 +436,22 @@ public class SqlModelExtractionServiceTests
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private sealed class StubMetadataReader : IOutsystemsMetadataReader
+    private sealed class StubMetadataReader : IOutsystemsMetadataReader, IMetadataSnapshotDiagnostics
     {
         private readonly Result<OutsystemsMetadataSnapshot> _result;
+        private readonly MetadataRowSnapshot? _failureSnapshot;
 
-        public StubMetadataReader(Result<OutsystemsMetadataSnapshot> result)
+        public StubMetadataReader(Result<OutsystemsMetadataSnapshot> result, MetadataRowSnapshot? failureSnapshot = null)
         {
             _result = result;
+            _failureSnapshot = failureSnapshot;
         }
 
         public Task<Result<OutsystemsMetadataSnapshot>> ReadAsync(AdvancedSqlRequest request, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_result);
         }
+
+        public MetadataRowSnapshot? LastFailureRowSnapshot => _result.IsFailure ? _failureSnapshot : null;
     }
 }

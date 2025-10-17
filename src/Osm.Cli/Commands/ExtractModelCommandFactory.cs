@@ -24,6 +24,7 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
     private readonly Option<bool> _includeInactiveAttributesOption = new("--include-inactive-attributes", "Include inactive attributes when extracting.");
     private readonly Option<string?> _outputOption = new("--out", () => "model.extracted.json", "Output path for extracted model JSON.");
     private readonly Option<string?> _mockSqlOption = new("--mock-advanced-sql", "Path to advanced SQL manifest fixture.");
+    private readonly Option<string?> _sqlMetadataOption = new("--sql-metadata-out", "Path to write SQL metadata diagnostics (JSON).");
 
     public ExtractModelCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -44,7 +45,8 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
             _onlyActiveAttributesOption,
             _includeInactiveAttributesOption,
             _outputOption,
-            _mockSqlOption
+            _mockSqlOption,
+            _sqlMetadataOption
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
@@ -73,13 +75,15 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
             includeSystemOverride,
             onlyActiveOverride,
             parseResult.GetValueForOption(_outputOption),
-            parseResult.GetValueForOption(_mockSqlOption));
+            parseResult.GetValueForOption(_mockSqlOption),
+            parseResult.GetValueForOption(_sqlMetadataOption));
 
         var options = new ExtractModelVerbOptions
         {
             ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
             Overrides = overrides,
-            Sql = _sqlOptionBinder.Bind(parseResult)
+            Sql = _sqlOptionBinder.Bind(parseResult),
+            SqlMetadataOutputPath = overrides.SqlMetadataOutputPath
         };
 
         var run = await verb.RunAsync(options, context.GetCancellationToken()).ConfigureAwait(false);

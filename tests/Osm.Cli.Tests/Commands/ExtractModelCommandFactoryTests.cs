@@ -53,7 +53,8 @@ public class ExtractModelCommandFactoryTests
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
-        var args = $"extract-model --config config.json --modules ModuleA,ModuleB --include-system-modules --include-inactive-attributes --out {outputPath} --mock-advanced-sql manifest.json --connection-string DataSource";
+        var metadataPath = Path.Combine(temp.Path, "metadata.json");
+        var args = $"extract-model --config config.json --modules ModuleA,ModuleB --include-system-modules --include-inactive-attributes --out {outputPath} --mock-advanced-sql manifest.json --sql-metadata-out {metadataPath} --connection-string DataSource";
         var exitCode = await parser.InvokeAsync(args);
 
         Assert.Equal(0, exitCode);
@@ -64,6 +65,7 @@ public class ExtractModelCommandFactoryTests
         Assert.False(input.Overrides.OnlyActiveAttributes);
         Assert.Equal(outputPath, input.Overrides.OutputPath);
         Assert.Equal("manifest.json", input.Overrides.MockAdvancedSqlManifest);
+        Assert.Equal(metadataPath, input.Overrides.SqlMetadataOutputPath);
         Assert.Equal("DataSource", input.Sql.ConnectionString);
     }
 

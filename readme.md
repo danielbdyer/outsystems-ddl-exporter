@@ -799,6 +799,7 @@ When resolving inputs, the CLI honours the following order: CLI flag ➝ environ
   * `--include-system-modules` — include OutSystems system producers.
   * `--include-inactive-attributes` — future toggle to rehydrate inactive columns when downstream tooling still expects them.
   * `--out <path>` — destination for the JSON payload (defaults to `model.extracted.json`).
+  * `--sql-metadata-out <path>` — optional JSON diagnostics capturing the raw Advanced SQL metadata snapshot (written even when extraction fails).
 * `build-ssdt`
   * `--model <model.json>` / `--profile <profile.json>` — deterministic inputs (fixtures or cached extraction outputs).
   * `--connection-string`, `--command-timeout`, `--sql-authentication`, `--sql-access-token`, `--sql-trust-server-certificate`, `--sql-application-name` — same semantics as `extract-model`; only required when running the live SQL profiler.

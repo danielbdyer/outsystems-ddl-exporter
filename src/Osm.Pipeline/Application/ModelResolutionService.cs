@@ -66,7 +66,8 @@ public sealed class ModelResolutionService : IModelResolutionService
         var extractRequest = new ExtractModelPipelineRequest(
             extractionCommandResult.Value,
             sqlOptions,
-            AdvancedSqlFixtureManifestPath: null);
+            AdvancedSqlFixtureManifestPath: null,
+            SqlMetadataOutputPath: null);
 
         var extractionResult = await _dispatcher
             .DispatchAsync<ExtractModelPipelineRequest, ModelExtractionResult>(extractRequest, cancellationToken)

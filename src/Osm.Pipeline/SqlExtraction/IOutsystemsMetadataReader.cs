@@ -11,6 +11,11 @@ public interface IOutsystemsMetadataReader
     Task<Result<OutsystemsMetadataSnapshot>> ReadAsync(AdvancedSqlRequest request, CancellationToken cancellationToken = default);
 }
 
+internal interface IMetadataSnapshotDiagnostics
+{
+    MetadataRowSnapshot? LastFailureRowSnapshot { get; }
+}
+
 public sealed record OutsystemsMetadataSnapshot(
     IReadOnlyList<OutsystemsModuleRow> Modules,
     IReadOnlyList<OutsystemsEntityRow> Entities,

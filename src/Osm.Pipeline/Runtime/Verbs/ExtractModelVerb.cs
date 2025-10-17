@@ -13,8 +13,9 @@ namespace Osm.Pipeline.Runtime.Verbs;
 public sealed record ExtractModelVerbOptions
 {
     public string? ConfigurationPath { get; init; }
-    public ExtractModelOverrides Overrides { get; init; } = new(null, null, null, null, null);
+    public ExtractModelOverrides Overrides { get; init; } = new(null, null, null, null, null, null);
     public SqlOptionsOverrides Sql { get; init; } = new(null, null, null, null, null, null, null, null);
+    public string? SqlMetadataOutputPath { get; init; }
 }
 
 public sealed record ExtractModelVerbResult(
@@ -58,9 +59,15 @@ public sealed class ExtractModelVerb : PipelineVerb<ExtractModelVerbOptions, Ext
             return Result<ExtractModelVerbResult>.Failure(configurationResult.Errors);
         }
 
+        var overrides = options.Overrides ?? new ExtractModelOverrides(null, null, null, null, null, null);
+        if (string.IsNullOrWhiteSpace(overrides.SqlMetadataOutputPath) && !string.IsNullOrWhiteSpace(options.SqlMetadataOutputPath))
+        {
+            overrides = overrides with { SqlMetadataOutputPath = options.SqlMetadataOutputPath };
+        }
+
         var input = new ExtractModelApplicationInput(
             configurationResult.Value,
-            options.Overrides,
+            overrides,
             options.Sql);
 
         var applicationResult = await _applicationService

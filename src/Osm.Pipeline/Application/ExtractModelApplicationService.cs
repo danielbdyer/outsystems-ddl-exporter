@@ -49,7 +49,7 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
         }
 
         var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
-        var overrides = input.Overrides ?? new ExtractModelOverrides(null, null, null, null, null);
+        var overrides = input.Overrides ?? new ExtractModelOverrides(null, null, null, null, null, null);
         var moduleFilterConfiguration = configuration.ModuleFilter ?? ModuleFilterConfiguration.Empty;
         bool? includeInactiveOverride = overrides.OnlyActiveAttributes.HasValue
             ? !overrides.OnlyActiveAttributes.Value
@@ -151,11 +151,13 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
         var request = new ExtractModelPipelineRequest(
             commandResult.Value,
             sqlOptionsResult.Value,
-            overrides.MockAdvancedSqlManifest);
+            overrides.MockAdvancedSqlManifest,
+            overrides.SqlMetadataOutputPath);
 
         _logger.LogInformation(
-            "Dispatching extract-model pipeline (outputPath: {OutputPath}, fixtureProvided: {FixtureProvided}).",
+            "Dispatching extract-model pipeline (outputPath: {OutputPath}, metadataPath: {MetadataPath}, fixtureProvided: {FixtureProvided}).",
             outputPath,
+            string.IsNullOrWhiteSpace(overrides.SqlMetadataOutputPath) ? "<none>" : overrides.SqlMetadataOutputPath,
             fixtureProvided);
 
         var extractionResult = await _dispatcher.DispatchAsync<ExtractModelPipelineRequest, ModelExtractionResult>(
