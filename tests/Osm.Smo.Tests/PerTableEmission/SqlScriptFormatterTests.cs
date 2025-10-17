@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Osm.Smo;
 using Osm.Smo.PerTableEmission;
 using Xunit;
@@ -46,5 +48,83 @@ CREATE TABLE [dbo].[Order](
 
         Assert.Contains("GO", script);
         Assert.DoesNotContain("SELECT 1    ", script);
+    }
+
+    [Fact]
+    public void FormatCreateTableScript_reflows_inline_defaults_constraints_and_primary_keys()
+    {
+        var formatter = new SqlScriptFormatter();
+        var statement = CreateMinimalCreateTableStatement("Id", "Status", "Code", "CustomerId");
+
+        var script = """
+CREATE TABLE [dbo].[Order](
+    [Id] INT NOT NULL CONSTRAINT [PK_Order] PRIMARY KEY CLUSTERED ,
+    [Status] INT NOT NULL CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0))  ,
+    [Code] NVARCHAR(20) CONSTRAINT [DF_Order_Code] DEFAULT ((N''))   ,
+    [CustomerId] INT NOT NULL,
+    CONSTRAINT [PK_Order_Multi] PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC) ,
+    CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
+);
+""".Trim();
+
+        var formatted = formatter.FormatCreateTableScript(script, statement, foreignKeyTrustLookup: null);
+
+        Assert.Contains("    [Id] INT NOT NULL\n        CONSTRAINT [PK_Order] PRIMARY KEY CLUSTERED,", formatted);
+        Assert.Contains("    [Status] INT NOT NULL\n        CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0)),", formatted);
+        Assert.Contains("    [Code] NVARCHAR(20)\n        CONSTRAINT [DF_Order_Code] DEFAULT ((N'')),", formatted);
+        Assert.Contains("    CONSTRAINT [PK_Order_Multi]\n        PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC),", formatted);
+        Assert.Contains("    CONSTRAINT [FK_Order_Customer]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
+        Assert.DoesNotContain("   ,", formatted);
+    }
+
+    [Fact]
+    public void FormatCreateTableScript_preserves_trust_comment_when_lookup_marks_foreign_key_as_not_trusted()
+    {
+        var formatter = new SqlScriptFormatter();
+        var statement = CreateMinimalCreateTableStatement("Id", "CustomerId");
+        var lookup = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["FK_Order_Customer"] = true,
+        };
+
+        var script = """
+CREATE TABLE [dbo].[Order](
+    [Id] INT NOT NULL,
+    [CustomerId] INT NOT NULL,
+    CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
+);
+""".Trim();
+
+        var formatted = formatter.FormatCreateTableScript(script, statement, lookup);
+
+        Assert.Contains("    CONSTRAINT [FK_Order_Customer]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
+        Assert.Contains("-- Source constraint was not trusted (WITH NOCHECK)", formatted);
+    }
+
+    private static CreateTableStatement CreateMinimalCreateTableStatement(params string[] columnNames)
+    {
+        var tableDefinition = new TableDefinition();
+
+        foreach (var columnName in columnNames)
+        {
+            tableDefinition.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                ColumnIdentifier = new Identifier { Value = columnName },
+                DataType = new SqlDataTypeReference { SqlDataTypeOption = SqlDataTypeOption.Int },
+            });
+        }
+
+        return new CreateTableStatement
+        {
+            SchemaObjectName = new SchemaObjectName
+            {
+                Identifiers =
+                {
+                    new Identifier { Value = "dbo" },
+                    new Identifier { Value = "Order" },
+                }
+            },
+            Definition = tableDefinition,
+        };
     }
 }
