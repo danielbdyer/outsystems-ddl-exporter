@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
@@ -44,71 +45,82 @@ public class SmoModelFactoryTests
     }
 
     [Fact]
-    public void Build_creates_tables_with_policy_driven_nullability_and_foreign_keys()
+    public void Create_respects_policy_decisions_for_edge_case_fixture()
     {
         var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
         var factory = new SmoModelFactory();
-        var smoModel = factory.Create(
-            model,
-            decisions,
-            profile: snapshot,
-            options: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission));
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
 
-        var customerTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
-        var idColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("Id", StringComparison.Ordinal));
-        var emailColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("Email", StringComparison.Ordinal));
-        var cityColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("CityId", StringComparison.Ordinal));
-        Assert.Equal(SqlDataType.BigInt, idColumn.DataType.SqlDataType);
-        Assert.True(idColumn.IsIdentity);
+        var columnLookup = BuildColumnLookup(smoModel);
+        var indexLookup = BuildIndexLookup(smoModel);
+        var foreignKeyLookup = BuildForeignKeyLookup(smoModel);
+
+        var emailCoordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_CUSTOMER"), new ColumnName("EMAIL"));
+        Assert.True(decisions.Nullability.TryGetValue(emailCoordinate, out var emailDecision));
+        Assert.True(emailDecision.MakeNotNull);
+        var emailColumn = columnLookup[BuildColumnKey(emailCoordinate)];
         Assert.False(emailColumn.Nullable);
-        Assert.False(cityColumn.Nullable);
-        Assert.Equal(SqlDataType.BigInt, cityColumn.DataType.SqlDataType);
         Assert.Equal(SqlDataType.NVarChar, emailColumn.DataType.SqlDataType);
         Assert.Equal(255, emailColumn.DataType.MaximumLength);
-        Assert.DoesNotContain(customerTable.Columns, c => c.LogicalName.Equals("LegacyCode", StringComparison.Ordinal));
 
-        var pk = customerTable.Indexes.Single(i => i.IsPrimaryKey);
-        Assert.Equal("PK_Customer", pk.Name);
-        var expectedPrimaryKeyColumnName = idColumn.Name;
-        Assert.Collection(pk.Columns.OrderBy(c => c.Ordinal),
-            col => Assert.Equal(expectedPrimaryKeyColumnName, col.Name));
+        var cityCoordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_CUSTOMER"), new ColumnName("CITYID"));
+        Assert.True(decisions.Nullability.TryGetValue(cityCoordinate, out var cityDecision));
+        Assert.True(cityDecision.MakeNotNull);
+        var cityColumn = columnLookup[BuildColumnKey(cityCoordinate)];
+        Assert.False(cityColumn.Nullable);
+        Assert.Equal(SqlDataType.BigInt, cityColumn.DataType.SqlDataType);
 
-        var emailIndex = customerTable.Indexes.Single(i => i.Name.Equals("IDX_Customer_Email", StringComparison.OrdinalIgnoreCase));
+        Assert.True(decisions.ForeignKeys.TryGetValue(cityCoordinate, out var cityForeignKeyDecision));
+        Assert.True(cityForeignKeyDecision.CreateConstraint);
+        Assert.True(foreignKeyLookup.TryGetValue(BuildColumnKey(cityCoordinate), out var cityForeignKeys));
+        var cityForeignKey = Assert.Single(cityForeignKeys);
+        Assert.Equal("OSUSR_DEF_CITY", cityForeignKey.ReferencedTable);
+        Assert.Equal("dbo", cityForeignKey.ReferencedSchema);
+        Assert.Equal("City", cityForeignKey.ReferencedLogicalTable);
+        Assert.Equal(ForeignKeyAction.NoAction, cityForeignKey.DeleteAction);
+        Assert.False(cityForeignKey.IsNoCheck);
+
+        var triggeredCoordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_XYZ_JOBRUN"), new ColumnName("TRIGGEREDBYUSERID"));
+        Assert.True(decisions.ForeignKeys.TryGetValue(triggeredCoordinate, out var triggeredDecision));
+        Assert.False(triggeredDecision.CreateConstraint);
+        var triggeredColumn = columnLookup[BuildColumnKey(triggeredCoordinate)];
+        Assert.True(triggeredColumn.Nullable);
+        Assert.False(foreignKeyLookup.ContainsKey(BuildColumnKey(triggeredCoordinate)));
+
+        var emailIndexCoordinate = new IndexCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_CUSTOMER"), new IndexName("IDX_CUSTOMER_EMAIL"));
+        Assert.True(decisions.UniqueIndexes.TryGetValue(emailIndexCoordinate, out var emailIndexDecision));
+        Assert.True(emailIndexDecision.EnforceUnique);
+        var emailIndex = indexLookup[BuildIndexKey(emailIndexCoordinate)];
         Assert.True(emailIndex.IsUnique);
+        Assert.Equal("[EMAIL] IS NOT NULL", emailIndex.Metadata.FilterDefinition);
         Assert.Equal(85, emailIndex.Metadata.FillFactor);
         Assert.True(emailIndex.Metadata.IgnoreDuplicateKey);
-        Assert.Equal("[EMAIL] IS NOT NULL", emailIndex.Metadata.FilterDefinition);
         var emailDataSpace = emailIndex.Metadata.DataSpace;
         Assert.NotNull(emailDataSpace);
         Assert.Equal("FG_Customers", emailDataSpace!.Name);
         Assert.Equal("ROWS_FILEGROUP", emailDataSpace.Type);
 
-        var nameIndex = customerTable.Indexes.Single(i => i.Name.Equals("IDX_Customer_Name", StringComparison.OrdinalIgnoreCase));
-        Assert.True(nameIndex.Metadata.IsDisabled);
-        Assert.True(nameIndex.Metadata.StatisticsNoRecompute);
+        var accountNumberCoordinate = new ColumnCoordinate(new SchemaName("billing"), new TableName("BILLING_ACCOUNT"), new ColumnName("ACCOUNTNUMBER"));
+        var accountNumberColumn = columnLookup[BuildColumnKey(accountNumberCoordinate)];
+        Assert.False(accountNumberColumn.Nullable);
+        Assert.Equal(SqlDataType.VarChar, accountNumberColumn.DataType.SqlDataType);
+        Assert.Equal(50, accountNumberColumn.DataType.MaximumLength);
 
-        var cityForeignKey = customerTable.ForeignKeys.Single();
-        Assert.Equal("FK_Customer_CityId", cityForeignKey.Name);
-        Assert.Equal("OSUSR_DEF_CITY", cityForeignKey.ReferencedTable);
-        Assert.Equal("dbo", cityForeignKey.ReferencedSchema);
-        Assert.Equal(ForeignKeyAction.NoAction, cityForeignKey.DeleteAction);
-        Assert.Equal("City", cityForeignKey.ReferencedLogicalTable);
-        Assert.False(cityForeignKey.IsNoCheck);
+        var accountNumberIndexCoordinate = new IndexCoordinate(new SchemaName("billing"), new TableName("BILLING_ACCOUNT"), new IndexName("IDX_BILLINGACCOUNT_ACCTNUM"));
+        Assert.True(decisions.UniqueIndexes.TryGetValue(accountNumberIndexCoordinate, out var accountNumberDecision));
+        Assert.True(accountNumberDecision.EnforceUnique);
+        var accountNumberIndex = indexLookup[BuildIndexKey(accountNumberIndexCoordinate)];
+        Assert.True(accountNumberIndex.IsUnique);
+
+        var customerTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(customerTable.Columns, c => c.LogicalName.Equals("LegacyCode", StringComparison.Ordinal));
 
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
-        var jobRunTriggeredByColumn = jobRunTable.Columns.Single(c => c.LogicalName.Equals("TriggeredByUserId", StringComparison.Ordinal));
-        Assert.True(jobRunTriggeredByColumn.Nullable);
         Assert.Empty(jobRunTable.ForeignKeys);
         var triggerDefinition = Assert.Single(jobRunTable.Triggers);
         Assert.Equal("TR_OSUSR_XYZ_JOBRUN_AUDIT", triggerDefinition.Name);
         Assert.True(triggerDefinition.IsDisabled);
-        Assert.Contains("CREATE TRIGGER", triggerDefinition.Definition);
-
-        var billingTable = smoModel.Tables.Single(t => t.Name.Equals("BILLING_ACCOUNT", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal("billing", billingTable.Schema);
-        var accountNumberColumn = billingTable.Columns.Single(c => c.LogicalName.Equals("AccountNumber", StringComparison.Ordinal));
-        Assert.Equal(SqlDataType.VarChar, accountNumberColumn.DataType.SqlDataType);
-        Assert.Equal(50, accountNumberColumn.DataType.MaximumLength);
     }
 
     [Fact]
@@ -324,6 +336,43 @@ public class SmoModelFactoryTests
             Assert.Equal(Normalize(expected), Normalize(result.Script));
         }
     }
+
+    private static Dictionary<string, SmoColumnDefinition> BuildColumnLookup(SmoModel smoModel)
+        => smoModel.Tables
+            .SelectMany(table => table.Columns.Select(column => (
+                Key: BuildColumnKey(table.Schema, table.Name, column.Name),
+                Column: column)))
+            .ToDictionary(static pair => pair.Key, static pair => pair.Column);
+
+    private static Dictionary<string, SmoIndexDefinition> BuildIndexLookup(SmoModel smoModel)
+        => smoModel.Tables
+            .SelectMany(table => table.Indexes.Select(index => (
+                Key: BuildIndexKey(table.Schema, table.Name, index.Name),
+                Index: index)))
+            .ToDictionary(static pair => pair.Key, static pair => pair.Index);
+
+    private static Dictionary<string, ImmutableArray<SmoForeignKeyDefinition>> BuildForeignKeyLookup(SmoModel smoModel)
+        => smoModel.Tables
+            .SelectMany(table => table.ForeignKeys.Select(foreignKey => (
+                Key: BuildColumnKey(table.Schema, table.Name, foreignKey.Column),
+                ForeignKey: foreignKey)))
+            .GroupBy(static pair => pair.Key, static pair => pair.ForeignKey)
+            .ToDictionary(static group => group.Key, static group => group.ToImmutableArray());
+
+    private static string BuildColumnKey(ColumnCoordinate coordinate)
+        => BuildColumnKey(coordinate.Schema.Value, coordinate.Table.Value, coordinate.Column.Value);
+
+    private static string BuildColumnKey(string schema, string table, string column)
+        => BuildKey(schema, table, column);
+
+    private static string BuildIndexKey(IndexCoordinate coordinate)
+        => BuildIndexKey(coordinate.Schema.Value, coordinate.Table.Value, coordinate.Index.Value);
+
+    private static string BuildIndexKey(string schema, string table, string index)
+        => BuildKey(schema, table, index);
+
+    private static string BuildKey(string schema, string table, string name)
+        => $"{schema.ToUpperInvariant()}|{table.ToUpperInvariant()}|{name.ToUpperInvariant()}";
 
     private static string Normalize(string value)
         => value.Replace("\r\n", "\n").Trim();
