@@ -13,12 +13,13 @@ using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.SqlExtraction;
 
-public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReader
+public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReader, IMetadataSnapshotDiagnostics
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IAdvancedSqlScriptProvider _scriptProvider;
     private readonly SqlExecutionOptions _options;
     private readonly ILogger<SqlClientOutsystemsMetadataReader> _logger;
+    private MetadataRowSnapshot? _lastFailureRowSnapshot;
     private readonly IDbCommandExecutor _commandExecutor;
     private readonly MetadataContractOverrides _contractOverrides;
     private readonly IReadOnlyList<IResultSetDefinition> _resultSets;
@@ -197,6 +198,7 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
 
         try
         {
+            _lastFailureRowSnapshot = null;
             await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
             var databaseName = connection.Database;
 
@@ -237,11 +239,14 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
 
             var snapshot = accumulator.BuildSnapshot(databaseName ?? string.Empty);
 
+            _lastFailureRowSnapshot = null;
             return Result<OutsystemsMetadataSnapshot>.Success(snapshot);
         }
         catch (MetadataRowMappingException ex)
         {
             stopwatch.Stop();
+
+            _lastFailureRowSnapshot = ex.RowSnapshot;
 
             var highlightedValue = ex.HighlightedColumn is null
                 ? "<unavailable>"
@@ -986,4 +991,6 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
                 expectedNextResultSetIndex);
         }
     }
+
+    MetadataRowSnapshot? IMetadataSnapshotDiagnostics.LastFailureRowSnapshot => Volatile.Read(ref _lastFailureRowSnapshot);
 }

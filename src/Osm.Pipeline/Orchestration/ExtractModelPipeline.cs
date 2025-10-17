@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -48,6 +49,13 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
                 string.Join(",", request.Command.ModuleNames.Select(static module => module.Value)));
         }
 
+        if (!string.IsNullOrWhiteSpace(request.SqlMetadataOutputPath))
+        {
+            _logger.LogInformation(
+                "SQL metadata diagnostics will be written to {MetadataPath}.",
+                Path.GetFullPath(request.SqlMetadataOutputPath!));
+        }
+
         var readerResult = ResolveMetadataReader(request.SqlOptions, request.AdvancedSqlFixtureManifestPath);
         if (readerResult.IsFailure)
         {
@@ -65,7 +73,10 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
             _loggerFactory.CreateLogger<SqlModelExtractionService>());
 
         var extractionResult = await extractionService
-            .ExtractAsync(request.Command, cancellationToken: cancellationToken)
+            .ExtractAsync(
+                request.Command,
+                ModelExtractionOptions.InMemory(request.SqlMetadataOutputPath),
+                cancellationToken)
             .ConfigureAwait(false);
 
         if (extractionResult.IsFailure)

@@ -44,7 +44,8 @@ public sealed class ModuleFilterConsistencyTests
             IncludeSystemModules: false,
             OnlyActiveAttributes: true,
             OutputPath: null,
-            MockAdvancedSqlManifest: null);
+            MockAdvancedSqlManifest: null,
+            SqlMetadataOutputPath: null);
 
         await extractService.RunAsync(new ExtractModelApplicationInput(context, extractOverrides, DefaultSqlOverrides));
 
@@ -127,7 +128,7 @@ public sealed class ModuleFilterConsistencyTests
         var extractService = new ExtractModelApplicationService(extractDispatcher);
         await extractService.RunAsync(new ExtractModelApplicationInput(
             context,
-            new ExtractModelOverrides(null, null, null, null, null),
+            new ExtractModelOverrides(null, null, null, null, null, null),
             DefaultSqlOverrides));
 
         var extractRequest = extractDispatcher.ExtractRequest;
@@ -211,7 +212,7 @@ public sealed class ModuleFilterConsistencyTests
         var extractService = new ExtractModelApplicationService(new RecordingDispatcher());
         var extractResult = await extractService.RunAsync(new ExtractModelApplicationInput(
             context,
-            new ExtractModelOverrides(null, null, null, null, null),
+            new ExtractModelOverrides(null, null, null, null, null, null),
             DefaultSqlOverrides));
         AssertValidationOverrideFailure(extractResult);
 

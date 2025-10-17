@@ -45,4 +45,5 @@ public sealed record ExtractModelOverrides(
     bool? IncludeSystemModules,
     bool? OnlyActiveAttributes,
     string? OutputPath,
-    string? MockAdvancedSqlManifest);
+    string? MockAdvancedSqlManifest,
+    string? SqlMetadataOutputPath);
