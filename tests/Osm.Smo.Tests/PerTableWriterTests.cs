@@ -163,11 +163,11 @@ public class PerTableWriterTests
 
         var foreignKey = new SmoForeignKeyDefinition(
             Name: "FK_Order_CityId",
-            Column: foreignKeyColumn.Name,
+            Columns: ImmutableArray.Create(foreignKeyColumn.Name),
             ReferencedModule: "AppCore",
             ReferencedTable: "OSUSR_DEF_CITY",
             ReferencedSchema: "dbo",
-            ReferencedColumn: "Id",
+            ReferencedColumns: ImmutableArray.Create("Id"),
             ReferencedLogicalTable: "City",
             DeleteAction: ForeignKeyAction.NoAction,
             IsNoCheck: false);

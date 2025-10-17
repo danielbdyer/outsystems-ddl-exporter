@@ -21,6 +21,15 @@ internal static class SmoTestHelper
         return (model, decisions, snapshot);
     }
 
+    public static (OsmModel Model, PolicyDecisionSet Decisions, ProfileSnapshot Profile) LoadCompositeForeignKeyArtifacts()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-fk-composite.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroFkComposite);
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(model, snapshot, TighteningOptions.Default);
+        return (model, decisions, snapshot);
+    }
+
     public static IReadOnlyDictionary<ColumnCoordinate, string> BuildProfileDefaults(ProfileSnapshot profile)
     {
         if (profile is null || profile.Columns.IsDefaultOrEmpty)

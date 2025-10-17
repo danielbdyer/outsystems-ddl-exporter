@@ -96,11 +96,11 @@ public sealed record SmoIndexCompressionSetting(int PartitionNumber, string Comp
 
 public sealed record SmoForeignKeyDefinition(
     string Name,
-    string Column,
+    ImmutableArray<string> Columns,
     string ReferencedModule,
     string ReferencedTable,
     string ReferencedSchema,
-    string ReferencedColumn,
+    ImmutableArray<string> ReferencedColumns,
     string ReferencedLogicalTable,
     ForeignKeyAction DeleteAction,
     bool IsNoCheck);

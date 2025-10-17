@@ -222,11 +222,11 @@ public sealed class EmissionFingerprintCalculator
             .OrderBy(fk => fk.Name, StringComparer.OrdinalIgnoreCase)
             .Select(fk => new ForeignKeyDocument(
                 fk.Name,
-                fk.Column,
+                fk.Columns.IsDefaultOrEmpty ? Array.Empty<string>() : fk.Columns.ToArray(),
                 fk.ReferencedModule,
                 fk.ReferencedTable,
                 fk.ReferencedSchema,
-                fk.ReferencedColumn,
+                fk.ReferencedColumns.IsDefaultOrEmpty ? Array.Empty<string>() : fk.ReferencedColumns.ToArray(),
                 fk.ReferencedLogicalTable,
                 fk.DeleteAction.ToString(),
                 fk.IsNoCheck))
@@ -461,11 +461,11 @@ public sealed class EmissionFingerprintCalculator
 
     private sealed record ForeignKeyDocument(
         string Name,
-        string Column,
+        IReadOnlyList<string> Columns,
         string ReferencedModule,
         string ReferencedTable,
         string ReferencedSchema,
-        string ReferencedColumn,
+        IReadOnlyList<string> ReferencedColumns,
         string ReferencedLogicalTable,
         string DeleteAction,
         bool IsNoCheck);

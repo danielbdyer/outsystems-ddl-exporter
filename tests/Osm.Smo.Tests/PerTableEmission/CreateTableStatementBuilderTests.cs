@@ -5,6 +5,7 @@ using Microsoft.SqlServer.Management.Smo;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Osm.Smo;
 using Osm.Smo.PerTableEmission;
+using Osm.Validation.Tightening;
 using Xunit;
 
 namespace Osm.Smo.Tests.PerTableEmission;
@@ -98,11 +99,11 @@ public class CreateTableStatementBuilderTests
             Indexes: ImmutableArray<SmoIndexDefinition>.Empty,
             ForeignKeys: ImmutableArray.Create(new SmoForeignKeyDefinition(
                 Name: "FK_OSUSR_SALES_ORDER_CITY",
-                Column: "CityId",
+                Columns: ImmutableArray.Create("CityId"),
                 ReferencedModule: "Core",
                 ReferencedTable: "OSUSR_CORE_CITY",
                 ReferencedSchema: "dbo",
-                ReferencedColumn: "Id",
+                ReferencedColumns: ImmutableArray.Create("Id"),
                 ReferencedLogicalTable: "City",
                 DeleteAction: ForeignKeyAction.SetNull,
                 IsNoCheck: true)),
@@ -120,5 +121,32 @@ public class CreateTableStatementBuilderTests
         var fkConstraint = Assert.Single(columnDefinition.Constraints.OfType<ForeignKeyConstraintDefinition>());
         Assert.Equal("CityId", fkConstraint.Columns[0].Value);
         Assert.Equal(DeleteUpdateAction.SetNull, fkConstraint.DeleteAction);
+    }
+
+    [Fact]
+    public void AddForeignKeys_emits_all_columns_for_composite_relationship()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadCompositeForeignKeyArtifacts();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(model, decisions, snapshot, options);
+        var childTable = Assert.Single(smoModel.Tables.Where(t => t.LogicalName.Equals("Child", StringComparison.Ordinal)));
+
+        var builder = new CreateTableStatementBuilder(_formatter);
+        var statement = builder.BuildCreateTableStatement(childTable, childTable.Name, options);
+        var foreignKeyNames = builder.AddForeignKeys(statement, childTable, childTable.Name, options, out _);
+
+        var resolvedName = Assert.Single(foreignKeyNames);
+        Assert.Equal("FK_OSUSR_M_CHILD_PARENT", resolvedName);
+
+        var constraint = Assert.Single(statement.Definition!.TableConstraints.OfType<ForeignKeyConstraintDefinition>());
+        Assert.Collection(
+            constraint.Columns,
+            column => Assert.Equal("ParentId", column.Value),
+            column => Assert.Equal("TenantId", column.Value));
+        Assert.Collection(
+            constraint.ReferencedTableColumns,
+            column => Assert.Equal("Id", column.Value),
+            column => Assert.Equal("TenantId", column.Value));
     }
 }

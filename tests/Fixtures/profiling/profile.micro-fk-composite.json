@@ -1,0 +1,128 @@
+{
+  "columns": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_PARENT",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 100,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 100,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_PARENT",
+      "Column": "TENANTID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 100,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 100,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_CHILD",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 250,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 250,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_CHILD",
+      "Column": "TENANTID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 250,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 250,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_CHILD",
+      "Column": "PARENTID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 250,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 250,
+        "Outcome": "Succeeded"
+      }
+    }
+  ],
+  "uniqueCandidates": [],
+  "fkReality": [
+    {
+      "Ref": {
+        "FromSchema": "dbo",
+        "FromTable": "OSUSR_M_CHILD",
+        "FromColumn": "PARENTID",
+        "ToSchema": "dbo",
+        "ToTable": "OSUSR_M_PARENT",
+        "ToColumn": "ID",
+        "HasDbConstraint": true
+      },
+      "HasOrphan": false,
+      "IsNoCheck": false,
+      "ProbeStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 0,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Ref": {
+        "FromSchema": "dbo",
+        "FromTable": "OSUSR_M_CHILD",
+        "FromColumn": "TENANTID",
+        "ToSchema": "dbo",
+        "ToTable": "OSUSR_M_PARENT",
+        "ToColumn": "TENANTID",
+        "HasDbConstraint": true
+      },
+      "HasOrphan": false,
+      "IsNoCheck": false,
+      "ProbeStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 0,
+        "Outcome": "Succeeded"
+      }
+    }
+  ]
+}
