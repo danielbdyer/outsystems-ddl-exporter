@@ -119,7 +119,21 @@ internal static class SmoForeignKeyBuilder
                         }
 
                         var coordinates = resolvedOwnerColumns
-                            .Select(column => new ColumnCoordinate(context.Entity.Schema, context.Entity.PhysicalName, column))
+                            .Select(column =>
+                            {
+                                if (context.AttributeLookup.TryGetValue(column, out var ownerAttribute))
+                                {
+                                    return new ColumnCoordinate(
+                                        context.Entity.Schema,
+                                        context.Entity.PhysicalName,
+                                        ownerAttribute.ColumnName);
+                                }
+
+                                return new ColumnCoordinate(
+                                    context.Entity.Schema,
+                                    context.Entity.PhysicalName,
+                                    new ColumnName(column));
+                            })
                             .ToImmutableArray();
 
                         if (!AllColumnsApproved(coordinates, decisions))

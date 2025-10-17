@@ -150,7 +150,8 @@ public static class EmissionCoverageCalculator
                 expectedForeignKeys++;
 
                 var hasForeignKey = smoTable.ForeignKeys.Any(fk =>
-                    string.Equals(fk.Column, attribute.LogicalName.Value, StringComparison.OrdinalIgnoreCase) &&
+                    fk.Columns.Any(column =>
+                        string.Equals(column, attribute.ColumnName.Value, StringComparison.OrdinalIgnoreCase)) &&
                     string.Equals(
                         fk.ReferencedTable,
                         attribute.Reference.TargetPhysicalName?.Value ?? string.Empty,

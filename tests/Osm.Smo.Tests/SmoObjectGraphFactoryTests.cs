@@ -132,13 +132,13 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
             foreignKey.Columns.Cast<ForeignKeyColumn>(),
             column =>
             {
-                Assert.Equal("ParentId", column.Name, StringComparison.OrdinalIgnoreCase);
-                Assert.Equal("Id", column.ReferencedColumn, StringComparison.OrdinalIgnoreCase);
+                Assert.Equal("ParentId", column.Name, ignoreCase: true, ignoreLineEndingDifferences: false, ignoreWhiteSpaceDifferences: false);
+                Assert.Equal("Id", column.ReferencedColumn, ignoreCase: true, ignoreLineEndingDifferences: false, ignoreWhiteSpaceDifferences: false);
             },
             column =>
             {
-                Assert.Equal("TenantId", column.Name, StringComparison.OrdinalIgnoreCase);
-                Assert.Equal("TenantId", column.ReferencedColumn, StringComparison.OrdinalIgnoreCase);
+                Assert.Equal("TenantId", column.Name, ignoreCase: true, ignoreLineEndingDifferences: false, ignoreWhiteSpaceDifferences: false);
+                Assert.Equal("TenantId", column.ReferencedColumn, ignoreCase: true, ignoreLineEndingDifferences: false, ignoreWhiteSpaceDifferences: false);
             });
     }
 
