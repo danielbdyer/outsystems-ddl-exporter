@@ -7,7 +7,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
 using Osm.Emission.Seeds;
+using Osm.Json;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Validation.Tightening;
@@ -92,7 +94,8 @@ public class BuildSsdtPipelineTests
             Assert.Equal("Received build-ssdt pipeline request.", request.Telemetry.RequestMessage);
             Assert.Equal("fixture", request.Telemetry.ProfilingStartMetadata["provider"]);
 
-            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            var model = LoadModel(request.ModelPath);
+            var captureResult = await request.ProfileCaptureAsync(model, token);
             Assert.True(captureResult.IsSuccess);
 
             var error = ValidationError.Create("test.bootstrap.stop", "Bootstrapper halted pipeline for verification.");
@@ -138,7 +141,8 @@ public class BuildSsdtPipelineTests
         {
             Assert.Equal("sql", request.Telemetry.ProfilingStartMetadata["provider"]);
 
-            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            var model = LoadModel(request.ModelPath);
+            var captureResult = await request.ProfileCaptureAsync(model, token);
             Assert.True(captureResult.IsFailure);
             var captureError = Assert.Single(captureResult.Errors);
             Assert.Equal("pipeline.buildSsdt.sql.connectionString.missing", captureError.Code);
@@ -249,7 +253,15 @@ public class BuildSsdtPipelineTests
         var completedIndex = Array.IndexOf(steps, "pipeline.completed");
         Assert.True(requestIndex >= 0 && completedIndex > requestIndex);
 
-        Assert.True(value.Warnings.IsDefaultOrEmpty);
+        var expectedWarnings = new[]
+        {
+            "Schema validation encountered 3 issue(s). Proceeding with best-effort import.",
+            "  Example 1: /modules/0/entities/0/indexes/0/fill_factor: All values fail against the false schema",
+            "  Example 2: /modules/0/entities/0/indexes/1/fill_factor: All values fail against the false schema",
+            "  Example 3: /modules/2/entities/0/indexes/0/fill_factor: All values fail against the false schema"
+        };
+
+        Assert.Equal(expectedWarnings, value.Warnings.ToArray());
 
         Assert.NotNull(value.EvidenceCache);
         Assert.True(Directory.Exists(value.EvidenceCache!.CacheDirectory));
@@ -308,5 +320,15 @@ public class BuildSsdtPipelineTests
                 .ToArray();
             return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success((IReadOnlyList<StaticEntityTableData>)data));
         }
+    }
+
+    private static OsmModel LoadModel(string modelPath)
+    {
+        using var stream = File.OpenRead(modelPath);
+        var warnings = new List<string>();
+        var deserializer = new ModelJsonDeserializer();
+        var result = deserializer.Deserialize(stream, warnings);
+        Assert.True(result.IsSuccess);
+        return result.Value;
     }
 }

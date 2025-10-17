@@ -27,49 +27,109 @@ public static class PipelineServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
         }
 
+        return services
+            .AddPipelineInfrastructure()
+            .AddPipelineConfiguration()
+            .AddPipelineSqlInfrastructure()
+            .AddPipelineIngestion()
+            .AddPipelineEvidence()
+            .AddPipelineTightening()
+            .AddPipelineEmission()
+            .AddPipelineOrchestration()
+            .AddPipelineApplications()
+            .AddPipelineVerbs();
+    }
+
+    internal static IServiceCollection AddPipelineInfrastructure(this IServiceCollection services)
+    {
         services.AddSingleton<TimeProvider>(TimeProvider.System);
 
+        return services;
+    }
+
+    internal static IServiceCollection AddPipelineConfiguration(this IServiceCollection services)
+    {
         services.AddSingleton<ICliConfigurationService, CliConfigurationService>();
         services.AddSingleton<CliConfigurationLoader>();
 
-        services.AddSingleton<IModelJsonDeserializer, ModelJsonDeserializer>();
-        services.AddSingleton<IProfileSnapshotDeserializer, ProfileSnapshotDeserializer>();
+        return services;
+    }
 
+    internal static IServiceCollection AddPipelineSqlInfrastructure(this IServiceCollection services)
+    {
         services.AddSingleton<Func<string, SqlConnectionOptions, IDbConnectionFactory>>(
             _ => (connectionString, options) => new SqlConnectionFactory(connectionString, options));
 
+        return services;
+    }
+
+    internal static IServiceCollection AddPipelineIngestion(this IServiceCollection services)
+    {
+        services.AddSingleton<IModelJsonDeserializer, ModelJsonDeserializer>();
+        services.AddSingleton<IProfileSnapshotDeserializer, ProfileSnapshotDeserializer>();
         services.AddSingleton<IDataProfilerFactory, DataProfilerFactory>();
         services.AddSingleton<IModelIngestionService, ModelIngestionService>();
-        services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
 
+        return services;
+    }
+
+    internal static IServiceCollection AddPipelineEvidence(this IServiceCollection services)
+    {
+        services.AddSingleton<IEvidenceCacheService, EvidenceCacheService>();
+        services.AddSingleton<EvidenceCacheCoordinator>();
+
+        return services;
+    }
+
+    internal static IServiceCollection AddPipelineTightening(this IServiceCollection services)
+    {
         services.AddSingleton<TighteningPolicy>();
+
+        return services;
+    }
+
+    internal static IServiceCollection AddPipelineEmission(this IServiceCollection services)
+    {
         services.AddSingleton<SmoModelFactory>();
         services.AddSingleton<SsdtEmitter>();
         services.AddSingleton<PolicyDecisionLogWriter>();
         services.AddSingleton<EmissionFingerprintCalculator>();
         services.AddSingleton<StaticEntitySeedScriptGenerator>();
         services.AddSingleton(static _ => StaticEntitySeedTemplate.Load());
-        services.AddSingleton<IEvidenceCacheService, EvidenceCacheService>();
-        services.AddSingleton<EvidenceCacheCoordinator>();
 
+        return services;
+    }
+
+    internal static IServiceCollection AddPipelineOrchestration(this IServiceCollection services)
+    {
+        services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
         services.AddSingleton<BuildSsdtRequestAssembler>();
         services.AddSingleton<IModelResolutionService, ModelResolutionService>();
         services.AddSingleton<IOutputDirectoryResolver, OutputDirectoryResolver>();
         services.AddSingleton<INamingOverridesBinder, NamingOverridesBinder>();
         services.AddSingleton<IStaticDataProviderFactory, StaticDataProviderFactory>();
 
-        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>, BuildSsdtApplicationService>();
-        services.AddSingleton<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>, CompareWithDmmApplicationService>();
-        services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();
-
         services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
         services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();
         services.AddSingleton<ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>, ExtractModelPipeline>();
 
+        return services;
+    }
+
+    internal static IServiceCollection AddPipelineApplications(this IServiceCollection services)
+    {
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>, BuildSsdtApplicationService>();
+        services.AddSingleton<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>, CompareWithDmmApplicationService>();
+        services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();
+
+        return services;
+    }
+
+    internal static IServiceCollection AddPipelineVerbs(this IServiceCollection services)
+    {
         services.AddSingleton<IPipelineVerb, BuildSsdtVerb>();
         services.AddSingleton<IPipelineVerb, DmmCompareVerb>();
         services.AddSingleton<IPipelineVerb, ExtractModelVerb>();
-
         services.AddSingleton<IVerbRegistry, VerbRegistry>();
 
         return services;
