@@ -4,11 +4,16 @@ namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class MetadataRowMappingException : Exception
 {
-    public MetadataRowMappingException(string resultSetName, int rowIndex, Exception innerException)
-        : base(FormatMessage(resultSetName, rowIndex, innerException), innerException)
+    public MetadataRowMappingException(
+        string resultSetName,
+        int rowIndex,
+        Exception innerException,
+        MetadataRowSnapshot? rowSnapshot)
+        : base(FormatMessage(resultSetName, rowIndex, innerException, rowSnapshot), innerException)
     {
         ResultSetName = resultSetName ?? throw new ArgumentNullException(nameof(resultSetName));
         RowIndex = rowIndex;
+        RowSnapshot = rowSnapshot;
 
         if (innerException is ColumnReadException columnReadException)
         {
@@ -31,7 +36,16 @@ internal sealed class MetadataRowMappingException : Exception
 
     public Type? ProviderFieldType { get; }
 
-    private static string FormatMessage(string resultSetName, int rowIndex, Exception innerException)
+    public MetadataRowSnapshot? RowSnapshot { get; }
+
+    public MetadataColumnSnapshot? HighlightedColumn
+        => RowSnapshot?.FindColumn(ColumnName);
+
+    private static string FormatMessage(
+        string resultSetName,
+        int rowIndex,
+        Exception innerException,
+        MetadataRowSnapshot? rowSnapshot)
     {
         if (resultSetName is null)
         {
@@ -50,6 +64,16 @@ internal sealed class MetadataRowMappingException : Exception
             if (!string.IsNullOrWhiteSpace(rootCause))
             {
                 message += $" Root cause: {rootCause}";
+            }
+
+            if (rowSnapshot is not null)
+            {
+                var column = rowSnapshot.FindColumn(columnReadException.ColumnName);
+                if (column is not null)
+                {
+                    var preview = column.IsNull ? "<NULL>" : column.ValuePreview ?? "<unavailable>";
+                    message += $" Column snapshot preview: {preview}.";
+                }
             }
         }
         else if (!string.IsNullOrWhiteSpace(innerException.Message))

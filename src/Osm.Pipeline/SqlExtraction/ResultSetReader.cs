@@ -40,23 +40,39 @@ internal sealed class ResultSetReader<T>
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
+            var dbRow = new DbRow(reader, resultSetName, rowIndex);
+            MetadataRowSnapshot? snapshot = null;
+
             try
             {
-                results.Add(_rowFactory(new DbRow(reader, resultSetName, rowIndex)));
+                results.Add(_rowFactory(dbRow));
             }
             catch (Exception ex)
             {
+                snapshot = TryCreateSnapshot(dbRow);
                 var failure = ex is ColumnReadException columnReadException
                     ? columnReadException.WithContext(resultSetName, rowIndex)
                     : ex;
 
-                throw new MetadataRowMappingException(resultSetName, rowIndex, failure);
+                throw new MetadataRowMappingException(resultSetName, rowIndex, failure, snapshot);
             }
 
             rowIndex++;
         }
 
         return results;
+    }
+
+    private static MetadataRowSnapshot? TryCreateSnapshot(DbRow row)
+    {
+        try
+        {
+            return row.CreateSnapshot();
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
 
@@ -151,6 +167,58 @@ internal readonly struct DbRow
     public decimal? GetDecimalOrNull(int ordinal) => _reader.IsDBNull(ordinal) ? null : _reader.GetDecimal(ordinal);
 
     public Type GetFieldType(int ordinal) => _reader.GetFieldType(ordinal);
+
+    public MetadataRowSnapshot CreateSnapshot(int maxValueLength = 256)
+    {
+        var columns = new List<MetadataColumnSnapshot>(_reader.FieldCount);
+
+        for (var ordinal = 0; ordinal < _reader.FieldCount; ordinal++)
+        {
+            var name = _reader.GetName(ordinal);
+            var providerType = _reader.GetFieldType(ordinal);
+
+            if (_reader.IsDBNull(ordinal))
+            {
+                columns.Add(new MetadataColumnSnapshot(
+                    ordinal,
+                    name,
+                    providerType.FullName ?? providerType.Name,
+                    isNull: true,
+                    rawValue: null,
+                    valuePreview: null,
+                    serializationError: null));
+                continue;
+            }
+
+            object? rawValue = null;
+            string? preview = null;
+            string? serializationError = null;
+
+            try
+            {
+                rawValue = _reader.GetValue(ordinal);
+                if (rawValue is not null)
+                {
+                    preview = MetadataColumnSnapshot.FormatValuePreview(rawValue, maxValueLength);
+                }
+            }
+            catch (Exception ex)
+            {
+                serializationError = ex.Message;
+            }
+
+            columns.Add(new MetadataColumnSnapshot(
+                ordinal,
+                name,
+                providerType.FullName ?? providerType.Name,
+                isNull: false,
+                rawValue: rawValue,
+                valuePreview: preview,
+                serializationError: serializationError));
+        }
+
+        return new MetadataRowSnapshot(_resultSetName, _rowIndex, columns);
+    }
 
     private void EnsureNotDbNull(int ordinal, string columnName)
     {

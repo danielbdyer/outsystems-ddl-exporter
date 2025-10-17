@@ -5,13 +5,15 @@ OutSystems metadata exports normally guarantee that every row in the `AttributeJ
 created attribute has no metadata yet), the exporter treats the NULL as a contract violation and raises the following error:
 
 ```
-osm.pipeline.SqlExtraction.MetadataRowMappingException: Failed to map row 76 in result set 'AttributeJson'. Column 'AttributesJson' (ordinal 1) expected type 'System.String' but provider type was 'System.String'. Root cause: Column 'AttributesJson' (ordinal 1) contained NULL but a non-null value was required.
+osm.pipeline.SqlExtraction.MetadataRowMappingException: Failed to map row 76 in result set 'AttributeJson'. Column 'AttributesJson' (ordinal 1) expected type 'System.String' but provider type was 'System.String'. Root cause: Column 'AttributesJson' (ordinal 1) contained NULL but a non-null value was required. Column snapshot preview: <NULL>.
 ```
 
 Even though the provider type matches the expected CLR type (`System.String`), the pipeline fails because the strict contract
 requires a non-null JSON payload. The mismatch is not a SQL client bug: the reader forces the column to be non-null and emits a
-`ColumnReadException` when the database returns `NULL`. The updated error message now surfaces the inner failure (`contained NULL`)
-so the reason is clear.【F:src/Osm.Pipeline/SqlExtraction/MetadataRowMappingException.cs†L27-L63】
+`ColumnReadException` when the database returns `NULL`. The error message now surfaces the inner failure (`contained NULL`)
+so the reason is clear and includes a column preview for instant context.【F:src/Osm.Pipeline/SqlExtraction/MetadataRowMappingException.cs†L27-L72】
+
+To improve triage further, the metadata reader logs the offending row as structured JSON and highlights the column value (or `<NULL>`) directly inside the error payload. You can copy the raw values into issue trackers or overrides without re-running the export.【F:src/Osm.Pipeline/SqlExtraction/SqlClientOutsystemsMetadataReader.cs†L247-L262】【F:src/Osm.Pipeline/SqlExtraction/MetadataRowSnapshot.cs†L1-L103】
 
 When you confirm that `AttributesJson` should be optional for your environment, register a metadata contract override so the
 reader treats the column as nullable instead of aborting the extraction.

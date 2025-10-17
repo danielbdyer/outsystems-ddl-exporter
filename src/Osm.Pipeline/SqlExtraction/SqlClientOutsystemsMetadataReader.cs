@@ -243,16 +243,24 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
         {
             stopwatch.Stop();
 
+            var highlightedValue = ex.HighlightedColumn is null
+                ? "<unavailable>"
+                : ex.HighlightedColumn.IsNull
+                    ? "<NULL>"
+                    : ex.HighlightedColumn.ValuePreview ?? "<unavailable>";
+
             _logger.LogError(
                 ex,
-                "Failed to map row {RowIndex} in result set '{ResultSetName}'. Column: {ColumnName}, Ordinal: {ColumnOrdinal}, ExpectedClrType: {ExpectedClrType}, ProviderType: {ProviderType}. DurationMs: {DurationMs}",
+                "Failed to map row {RowIndex} in result set '{ResultSetName}'. Column: {ColumnName}, Ordinal: {ColumnOrdinal}, ExpectedClrType: {ExpectedClrType}, ProviderType: {ProviderType}. DurationMs: {DurationMs}. ColumnValuePreview: {ColumnValuePreview}. RowSnapshot: {RowSnapshotJson}",
                 ex.RowIndex,
                 ex.ResultSetName,
                 ex.ColumnName ?? "unknown",
                 ex.Ordinal ?? -1,
                 ex.ExpectedClrType?.FullName ?? "unknown",
                 ex.ProviderFieldType?.FullName ?? "unknown",
-                stopwatch.Elapsed.TotalMilliseconds);
+                stopwatch.Elapsed.TotalMilliseconds,
+                highlightedValue,
+                ex.RowSnapshot?.ToJson() ?? "<unavailable>");
 
             return Result<OutsystemsMetadataSnapshot>.Failure(ValidationError.Create(
                 "extraction.metadata.rowMapping",

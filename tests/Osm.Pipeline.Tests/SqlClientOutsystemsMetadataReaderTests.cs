@@ -131,10 +131,13 @@ public class SqlClientOutsystemsMetadataReaderTests
         var logEntry = Assert.Single(logger.Entries.Where(entry => entry.LogLevel == LogLevel.Error));
         Assert.Contains("Modules", logEntry.Message);
         Assert.Contains("Column: EspaceName", logEntry.Message);
+        Assert.Contains("ColumnValuePreview: <NULL>", logEntry.Message);
+        Assert.Contains("RowSnapshot:", logEntry.Message);
         var exception = Assert.IsType<MetadataRowMappingException>(logEntry.Exception);
         Assert.Equal("Modules", exception.ResultSetName);
         Assert.Equal(0, exception.RowIndex);
         Assert.Equal("EspaceName", exception.ColumnName);
+        Assert.NotNull(exception.RowSnapshot);
     }
 
     [Fact]
@@ -168,10 +171,14 @@ public class SqlClientOutsystemsMetadataReaderTests
         var logEntry = Assert.Single(logger.Entries.Where(entry => entry.LogLevel == LogLevel.Error));
         Assert.Contains("Entities", logEntry.Message);
         Assert.Contains("Column: EntityId", logEntry.Message);
+        Assert.Contains("ColumnValuePreview", logEntry.Message);
+        Assert.Contains("RowSnapshot:", logEntry.Message);
         var exception = Assert.IsType<MetadataRowMappingException>(logEntry.Exception);
         Assert.Equal("Entities", exception.ResultSetName);
         Assert.Equal(0, exception.RowIndex);
         Assert.Equal("EntityId", exception.ColumnName);
+        var highlighted = Assert.NotNull(exception.HighlightedColumn);
+        Assert.Equal("EntityId", highlighted.Name);
     }
 
     [Fact]
@@ -206,6 +213,10 @@ public class SqlClientOutsystemsMetadataReaderTests
         var logEntry = Assert.Single(logger.Entries.Where(entry => entry.LogLevel == LogLevel.Error));
         Assert.Contains("AttributeJson", logEntry.Message);
         Assert.Contains("AttributesJson", logEntry.Message);
+        Assert.Contains("ColumnValuePreview: <NULL>", logEntry.Message);
+        Assert.Contains("RowSnapshot:", logEntry.Message);
+        var exception = Assert.IsType<MetadataRowMappingException>(logEntry.Exception);
+        Assert.NotNull(exception.RowSnapshot);
     }
 
     [Fact]
