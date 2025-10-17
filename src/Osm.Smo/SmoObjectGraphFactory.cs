@@ -227,7 +227,31 @@ public sealed class SmoObjectGraphFactory : IDisposable
                 IsChecked = !foreignKey.IsNoCheck,
             };
 
-            smoForeignKey.Columns.Add(new ForeignKeyColumn(smoForeignKey, foreignKey.Column, foreignKey.ReferencedColumn));
+            var pairCount = Math.Min(foreignKey.Columns.Length, foreignKey.ReferencedColumns.Length);
+            for (var index = 0; index < pairCount; index++)
+            {
+                var columnName = foreignKey.Columns[index];
+                var referencedColumn = foreignKey.ReferencedColumns[index];
+
+                if (string.IsNullOrWhiteSpace(columnName) || string.IsNullOrWhiteSpace(referencedColumn))
+                {
+                    continue;
+                }
+
+                smoForeignKey.Columns.Add(new ForeignKeyColumn(smoForeignKey, columnName, referencedColumn));
+            }
+
+            if (smoForeignKey.Columns.Count == 0 &&
+                foreignKey.Columns.Length > 0 &&
+                foreignKey.ReferencedColumns.Length > 0 &&
+                !string.IsNullOrWhiteSpace(foreignKey.Columns[0]) &&
+                !string.IsNullOrWhiteSpace(foreignKey.ReferencedColumns[0]))
+            {
+                smoForeignKey.Columns.Add(new ForeignKeyColumn(
+                    smoForeignKey,
+                    foreignKey.Columns[0],
+                    foreignKey.ReferencedColumns[0]));
+            }
             table.ForeignKeys.Add(smoForeignKey);
         }
     }

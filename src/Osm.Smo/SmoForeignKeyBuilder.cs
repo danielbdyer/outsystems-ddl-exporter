@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -46,6 +47,12 @@ internal static class SmoForeignKeyBuilder
         }
 
         var builder = ImmutableArray.CreateBuilder<SmoForeignKeyDefinition>();
+        var relationshipsByAttribute = context.Entity.Relationships
+            .GroupBy(static relationship => relationship.ViaAttribute.Value, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static grouping => grouping.Key, static grouping => grouping.ToImmutableArray(), StringComparer.OrdinalIgnoreCase);
+        var attributesByLogicalName = context.Entity.Attributes
+            .ToDictionary(static attribute => attribute.LogicalName.Value, StringComparer.OrdinalIgnoreCase);
+        var processedConstraints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var attribute in context.EmittableAttributes)
         {
@@ -72,27 +79,273 @@ internal static class SmoForeignKeyBuilder
                 throw new InvalidOperationException($"Target entity '{targetEntity.Entity.PhysicalName.Value}' is missing an identifier column for foreign key creation.");
             }
 
-            var isNoCheck = foreignKeyReality.TryGetValue(coordinate, out var reality) && reality.IsNoCheck;
-            var referencedAttributes = new[] { attribute };
-            var name = ConstraintNameNormalizer.Normalize(
+            var emittedFromEvidence = false;
+            if (relationshipsByAttribute.TryGetValue(attribute.LogicalName.Value, out var relationships))
+            {
+                foreach (var relationship in relationships)
+                {
+                    if (relationship.ActualConstraints.IsDefaultOrEmpty)
+                    {
+                        continue;
+                    }
+
+                    foreach (var constraint in relationship.ActualConstraints)
+                    {
+                        var orderedColumns = constraint.Columns
+                            .Where(static column =>
+                                !string.IsNullOrWhiteSpace(column.OwnerColumn) ||
+                                !string.IsNullOrWhiteSpace(column.OwnerAttribute))
+                            .OrderBy(static column => column.Ordinal)
+                            .ToImmutableArray();
+
+                        if (orderedColumns.Length == 0)
+                        {
+                            continue;
+                        }
+
+                        if (!orderedColumns.Any(column => ColumnMatches(column, attribute)))
+                        {
+                            continue;
+                        }
+
+                        var resolvedOwnerColumns = ResolveOwnerColumns(
+                            orderedColumns,
+                            attribute,
+                            attributesByLogicalName);
+
+                        if (resolvedOwnerColumns.Length == 0)
+                        {
+                            continue;
+                        }
+
+                        var coordinates = resolvedOwnerColumns
+                            .Select(column => new ColumnCoordinate(context.Entity.Schema, context.Entity.PhysicalName, column))
+                            .ToImmutableArray();
+
+                        if (!AllColumnsApproved(coordinates, decisions))
+                        {
+                            continue;
+                        }
+
+                        var resolvedReferencedColumns = ResolveReferencedColumns(
+                            orderedColumns,
+                            targetEntity,
+                            referencedColumn.ColumnName.Value);
+
+                        var key = BuildConstraintKey(relationship, constraint, resolvedOwnerColumns, resolvedReferencedColumns);
+                        if (!processedConstraints.Add(key))
+                        {
+                            continue;
+                        }
+
+                        var isNoCheck = coordinates.Any(coord =>
+                            foreignKeyReality.TryGetValue(coord, out var reality) && reality.IsNoCheck);
+
+                        var referencedTable = string.IsNullOrWhiteSpace(constraint.ReferencedTable)
+                            ? targetEntity.Entity.PhysicalName.Value
+                            : constraint.ReferencedTable;
+                        var referencedSchema = string.IsNullOrWhiteSpace(constraint.ReferencedSchema)
+                            ? targetEntity.Entity.Schema.Value
+                            : constraint.ReferencedSchema;
+
+                        var referencedAttributes = resolvedOwnerColumns
+                            .Select(column => context.AttributeLookup.TryGetValue(column, out var ownerAttribute)
+                                ? ownerAttribute
+                                : null)
+                            .Where(static attribute => attribute is not null)
+                            .Cast<AttributeModel>()
+                            .ToImmutableArray();
+
+                        if (referencedAttributes.IsDefault)
+                        {
+                            referencedAttributes = ImmutableArray.Create(attribute);
+                        }
+
+                        var deleteAction = !string.IsNullOrWhiteSpace(constraint.OnDeleteAction)
+                            ? MapDeleteRule(constraint.OnDeleteAction)
+                            : MapDeleteRule(attribute.Reference.DeleteRuleCode);
+
+                        var baseName = string.IsNullOrWhiteSpace(constraint.Name)
+                            ? $"FK_{context.Entity.PhysicalName.Value}_{string.Join('_', resolvedOwnerColumns)}"
+                            : constraint.Name;
+
+                        var name = ConstraintNameNormalizer.Normalize(
+                            baseName,
+                            context.Entity,
+                            referencedAttributes,
+                            ConstraintNameKind.ForeignKey,
+                            format);
+
+                        builder.Add(new SmoForeignKeyDefinition(
+                            name,
+                            resolvedOwnerColumns,
+                            targetEntity.ModuleName,
+                            referencedTable,
+                            referencedSchema,
+                            resolvedReferencedColumns,
+                            targetEntity.Entity.LogicalName.Value,
+                            deleteAction,
+                            isNoCheck));
+
+                        emittedFromEvidence = true;
+                    }
+                }
+            }
+
+            if (emittedFromEvidence)
+            {
+                continue;
+            }
+
+            var ownerColumnsFallback = ImmutableArray.Create(attribute.ColumnName.Value);
+            var referencedColumnsFallback = ImmutableArray.Create(referencedColumn.ColumnName.Value);
+            var isNoCheckFallback = foreignKeyReality.TryGetValue(coordinate, out var realityFallback) && realityFallback.IsNoCheck;
+            var nameFallback = ConstraintNameNormalizer.Normalize(
                 $"FK_{context.Entity.PhysicalName.Value}_{attribute.ColumnName.Value}",
                 context.Entity,
-                referencedAttributes,
+                new[] { attribute },
                 ConstraintNameKind.ForeignKey,
                 format);
+
             builder.Add(new SmoForeignKeyDefinition(
-                name,
-                attribute.ColumnName.Value,
+                nameFallback,
+                ownerColumnsFallback,
                 targetEntity.ModuleName,
                 targetEntity.Entity.PhysicalName.Value,
                 targetEntity.Entity.Schema.Value,
-                referencedColumn.ColumnName.Value,
+                referencedColumnsFallback,
                 targetEntity.Entity.LogicalName.Value,
                 MapDeleteRule(attribute.Reference.DeleteRuleCode),
-                isNoCheck));
+                isNoCheckFallback));
         }
 
         return builder.ToImmutable();
+    }
+
+    private static bool ColumnMatches(RelationshipActualConstraintColumn column, AttributeModel attribute)
+    {
+        if (!string.IsNullOrWhiteSpace(column.OwnerColumn) &&
+            column.OwnerColumn.Equals(attribute.ColumnName.Value, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(column.OwnerAttribute) &&
+            column.OwnerAttribute.Equals(attribute.LogicalName.Value, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static ImmutableArray<string> ResolveOwnerColumns(
+        ImmutableArray<RelationshipActualConstraintColumn> columns,
+        AttributeModel attribute,
+        IReadOnlyDictionary<string, AttributeModel> attributesByLogicalName)
+    {
+        var builder = ImmutableArray.CreateBuilder<string>(columns.Length);
+        foreach (var column in columns)
+        {
+            var resolved = ResolveOwnerColumn(column, attribute, attributesByLogicalName);
+            if (string.IsNullOrWhiteSpace(resolved))
+            {
+                return ImmutableArray<string>.Empty;
+            }
+
+            builder.Add(resolved);
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    private static string ResolveOwnerColumn(
+        RelationshipActualConstraintColumn column,
+        AttributeModel attribute,
+        IReadOnlyDictionary<string, AttributeModel> attributesByLogicalName)
+    {
+        if (!string.IsNullOrWhiteSpace(column.OwnerAttribute) &&
+            attributesByLogicalName.TryGetValue(column.OwnerAttribute, out var ownerByLogical))
+        {
+            return ownerByLogical.ColumnName.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(column.OwnerColumn))
+        {
+            return column.OwnerColumn;
+        }
+
+        if (!string.IsNullOrWhiteSpace(column.ReferencedAttribute) &&
+            attributesByLogicalName.TryGetValue(column.ReferencedAttribute, out var referencedAttribute))
+        {
+            return referencedAttribute.ColumnName.Value;
+        }
+
+        return attribute.ColumnName.Value;
+    }
+
+    private static ImmutableArray<string> ResolveReferencedColumns(
+        ImmutableArray<RelationshipActualConstraintColumn> columns,
+        EntityEmissionContext targetEntity,
+        string fallbackColumn)
+    {
+        var builder = ImmutableArray.CreateBuilder<string>(columns.Length);
+        foreach (var column in columns)
+        {
+            if (!string.IsNullOrWhiteSpace(column.ReferencedAttribute))
+            {
+                var matched = targetEntity.Entity.Attributes.FirstOrDefault(attr =>
+                    attr.LogicalName.Value.Equals(column.ReferencedAttribute, StringComparison.OrdinalIgnoreCase));
+                if (matched is not null)
+                {
+                    builder.Add(matched.ColumnName.Value);
+                    continue;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(column.ReferencedColumn))
+            {
+                builder.Add(column.ReferencedColumn);
+                continue;
+            }
+
+            builder.Add(fallbackColumn);
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    private static bool AllColumnsApproved(
+        ImmutableArray<ColumnCoordinate> coordinates,
+        PolicyDecisionSet decisions)
+    {
+        var hasDecision = false;
+        foreach (var coordinate in coordinates)
+        {
+            if (!decisions.ForeignKeys.TryGetValue(coordinate, out var decision))
+            {
+                continue;
+            }
+
+            hasDecision = true;
+
+            if (!decision.CreateConstraint)
+            {
+                return false;
+            }
+        }
+
+        return hasDecision;
+    }
+
+    private static string BuildConstraintKey(
+        RelationshipModel relationship,
+        RelationshipActualConstraint constraint,
+        ImmutableArray<string> ownerColumns,
+        ImmutableArray<string> referencedColumns)
+    {
+        var namePart = string.IsNullOrWhiteSpace(constraint.Name) ? relationship.ViaAttribute.Value : constraint.Name;
+        return $"{relationship.ViaAttribute.Value}|{namePart}|{string.Join('|', ownerColumns)}|{string.Join('|', referencedColumns)}";
     }
 
     private static ForeignKeyAction MapDeleteRule(string? deleteRule)

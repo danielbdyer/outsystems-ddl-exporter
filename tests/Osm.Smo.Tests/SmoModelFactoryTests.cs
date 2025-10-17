@@ -285,8 +285,8 @@ public class SmoModelFactoryTests
             col => Assert.Equal(CustomerIdPhysical, col.Name));
 
         var foreignKey = Assert.Single(customerTable.ForeignKeys);
-        Assert.Equal(CustomerCityIdPhysical, foreignKey.Column);
-        Assert.Equal(CityIdPhysical, foreignKey.ReferencedColumn);
+        Assert.Equal(CustomerCityIdPhysical, Assert.Single(foreignKey.Columns));
+        Assert.Equal(CityIdPhysical, Assert.Single(foreignKey.ReferencedColumns));
 
         var writer = new PerTableWriter();
         var script = writer.Generate(customerTable, options).Script;

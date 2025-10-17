@@ -24,6 +24,8 @@ public class SmoForeignKeyBuilderTests
         Assert.Equal("FK_Customer_CityId", cityForeignKey.Name);
         Assert.False(cityForeignKey.IsNoCheck);
         Assert.Equal("City", cityForeignKey.ReferencedLogicalTable);
+        Assert.Collection(cityForeignKey.Columns, column => Assert.Equal("CityId", column));
+        Assert.Collection(cityForeignKey.ReferencedColumns, column => Assert.Equal("Id", column));
 
         var jobRunEntity = model.Modules
             .SelectMany(module => module.Entities)

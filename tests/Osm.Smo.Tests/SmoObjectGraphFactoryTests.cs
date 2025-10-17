@@ -116,6 +116,32 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         Assert.Equal("CityArchive", foreignKey.ReferencedTable);
     }
 
+    [Fact]
+    public void CreateTable_emits_all_columns_for_composite_foreign_keys()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadCompositeForeignKeyArtifacts();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var smoModel = _modelFactory.Create(model, decisions, snapshot, options);
+
+        var tables = _factory.CreateTables(smoModel, options);
+        var childTable = Assert.Single(tables.Where(t => t.Name.Equals("OSUSR_M_CHILD", StringComparison.OrdinalIgnoreCase)));
+        var foreignKey = Assert.Single(childTable.ForeignKeys.Cast<ForeignKey>());
+
+        Assert.Equal("FK_OSUSR_M_CHILD_PARENT", foreignKey.Name);
+        Assert.Collection(
+            foreignKey.Columns.Cast<ForeignKeyColumn>(),
+            column =>
+            {
+                Assert.Equal("ParentId", column.Name, StringComparison.OrdinalIgnoreCase);
+                Assert.Equal("Id", column.ReferencedColumn, StringComparison.OrdinalIgnoreCase);
+            },
+            column =>
+            {
+                Assert.Equal("TenantId", column.Name, StringComparison.OrdinalIgnoreCase);
+                Assert.Equal("TenantId", column.ReferencedColumn, StringComparison.OrdinalIgnoreCase);
+            });
+    }
+
     public void Dispose()
     {
         _factory.Dispose();
