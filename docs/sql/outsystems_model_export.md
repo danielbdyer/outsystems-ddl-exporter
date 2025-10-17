@@ -6,6 +6,7 @@ The `src/AdvancedSql/outsystems_model_export.sql` script drives the legacy one-s
 
 * Inputs: `@ModuleNamesCsv` (comma delimited names), `@IncludeSystem` (BIT), `@OnlyActiveAttributes` (BIT).【F:src/AdvancedSql/outsystems_model_export.sql†L6-L17】
 * Session options: `SET NOCOUNT ON;` and `SET TEXTSIZE -1;` to avoid row-count noise and enforce unlimited `(n)varchar(max)` streaming.【F:src/AdvancedSql/outsystems_model_export.sql†L11-L12】
+* Preflight guardrails: the script immediately validates that `dbo.ossys_Espace` and `dbo.ossys_Entity` exist, raising `THROW 50010`/`50011` with descriptive messages when either table is missing so operators see an actionable failure instead of cascading errors; the companion `outsystems_metadata_rowsets.sql` includes the same guardrail so both entry points fail fast when metadata tables are absent.【F:src/AdvancedSql/outsystems_model_export.sql†L14-L21】【F:src/AdvancedSql/outsystems_metadata_rowsets.sql†L14-L21】
 
 ## Module selection (`#ModuleNames`, `#E`)
 
