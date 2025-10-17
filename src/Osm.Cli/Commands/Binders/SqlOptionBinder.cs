@@ -8,7 +8,7 @@ using Osm.Pipeline.Application;
 
 namespace Osm.Cli.Commands.Binders;
 
-internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>
+internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, ICommandOptionSource
 {
     public SqlOptionBinder()
     {

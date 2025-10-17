@@ -7,7 +7,7 @@ using Osm.Pipeline.Application;
 
 namespace Osm.Cli.Commands.Binders;
 
-internal sealed class CacheOptionBinder : BinderBase<CacheOptionsOverrides>
+internal sealed class CacheOptionBinder : BinderBase<CacheOptionsOverrides>, ICommandOptionSource
 {
     public CacheOptionBinder()
     {
