@@ -178,12 +178,11 @@ internal sealed class CreateTableStatementBuilder
                 constraint.ReferencedTableColumns.Add(_formatter.CreateIdentifier(referencedColumn, options.Format));
             }
 
-            var canInline = foreignKey.Columns.Length == 1 &&
-                columnLookup.TryGetValue(foreignKey.Columns[0], out var columnDefinition);
-
-            if (canInline && columnDefinition is not null)
+            if (foreignKey.Columns.Length == 1 &&
+                columnLookup.TryGetValue(foreignKey.Columns[0], out var inlineColumn) &&
+                inlineColumn is not null)
             {
-                columnDefinition.Constraints.Add(constraint);
+                inlineColumn.Constraints.Add(constraint);
             }
             else
             {

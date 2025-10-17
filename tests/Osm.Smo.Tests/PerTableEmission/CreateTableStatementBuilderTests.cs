@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
+using Osm.Domain.Configuration;
 using Osm.Smo;
 using Osm.Smo.PerTableEmission;
 using Osm.Validation.Tightening;

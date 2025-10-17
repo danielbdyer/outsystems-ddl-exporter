@@ -353,9 +353,9 @@ public class SmoModelFactoryTests
 
     private static Dictionary<string, ImmutableArray<SmoForeignKeyDefinition>> BuildForeignKeyLookup(SmoModel smoModel)
         => smoModel.Tables
-            .SelectMany(table => table.ForeignKeys.Select(foreignKey => (
-                Key: BuildColumnKey(table.Schema, table.Name, foreignKey.Column),
-                ForeignKey: foreignKey)))
+            .SelectMany(table => table.ForeignKeys.SelectMany(foreignKey => foreignKey.Columns.Select(column => (
+                Key: BuildColumnKey(table.Schema, table.Name, column),
+                ForeignKey: foreignKey))))
             .GroupBy(static pair => pair.Key, static pair => pair.ForeignKey)
             .ToDictionary(static group => group.Key, static group => group.ToImmutableArray());
 
