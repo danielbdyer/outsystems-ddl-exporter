@@ -17,6 +17,8 @@ using Osm.Dmm;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Runtime;
+using Osm.Pipeline.Runtime.Verbs;
 using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
@@ -36,6 +38,7 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<DmmCompareCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -106,6 +109,7 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<DmmCompareCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -143,6 +147,7 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<DmmCompareCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -153,7 +158,6 @@ public class DmmCompareCommandFactoryTests
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
         var console = new TestConsole();
         var exitCode = await parser.InvokeAsync("dmm-compare --model model.json --profile profile.json --dmm baseline.dmm", console);
-
         Assert.Equal(1, exitCode);
         Assert.Null(application.LastResult);
         Assert.Contains("cli.compare: Comparison failed.", console.Error.ToString());
@@ -178,6 +182,7 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<DmmCompareCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -188,7 +193,6 @@ public class DmmCompareCommandFactoryTests
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
         var console = new TestConsole();
         var exitCode = await parser.InvokeAsync("dmm-compare", console);
-
         Assert.Equal(1, exitCode);
         Assert.Null(application.LastInput);
         Assert.Contains("cli.config: Missing configuration.", console.Error.ToString());
@@ -251,6 +255,26 @@ public class DmmCompareCommandFactoryTests
             var result = new CompareWithDmmApplicationResult(pipeline, NextDiffPath);
             LastResult = result;
             return Task.FromResult(Result<CompareWithDmmApplicationResult>.Success(result));
+        }
+    }
+
+    private sealed class FakeVerbRegistry : IVerbRegistry
+    {
+        private readonly IPipelineVerb _verb;
+
+        public FakeVerbRegistry(
+            ICliConfigurationService configurationService,
+            IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult> applicationService)
+        {
+            _verb = new DmmCompareVerb(configurationService, applicationService);
+        }
+
+        public IPipelineVerb Get(string verbName) => _verb;
+
+        public bool TryGet(string verbName, out IPipelineVerb verb)
+        {
+            verb = _verb;
+            return true;
         }
     }
 }
