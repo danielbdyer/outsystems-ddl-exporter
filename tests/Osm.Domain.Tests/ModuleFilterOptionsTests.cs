@@ -40,6 +40,29 @@ public sealed class ModuleFilterOptionsTests
         Assert.Contains(result.Errors, error => error.Code == "moduleFilter.modules.empty");
     }
 
+    [Theory]
+    [InlineData("App,Core")]
+    [InlineData("App\nCore")]
+    [InlineData("App\rCore")]
+    public void Create_RejectsModulesWithDelimitersOrLineBreaks(string module)
+    {
+        var result = ModuleFilterOptions.Create(new[] { module }, includeSystemModules: true, includeInactiveModules: true);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("module.name.invalid", error.Code);
+        Assert.Contains("Module name must not contain commas or line breaks.", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Create_AcceptsCleanModuleNames()
+    {
+        var result = ModuleFilterOptions.Create(new[] { "AppCore" }, includeSystemModules: true, includeInactiveModules: true);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("AppCore", Assert.Single(result.Value.Modules).Value);
+    }
+
     [Fact]
     public void Create_SortsAndDeduplicatesModules()
     {
