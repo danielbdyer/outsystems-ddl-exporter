@@ -13,6 +13,8 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.Runtime;
+using Osm.Pipeline.Runtime.Verbs;
 using Osm.Pipeline.SqlExtraction;
 using Tests.Support;
 using Xunit;
@@ -34,7 +36,9 @@ public class ExtractModelCommandFactoryTests
         services.AddSingleton<ICliConfigurationService>(configurationService);
         services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>>(application);
         services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<ExtractModelCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -42,6 +46,8 @@ public class ExtractModelCommandFactoryTests
         var command = factory.Create();
         Assert.NotNull(command.Handler);
 
+        var moduleBinder = provider.GetRequiredService<ModuleFilterOptionBinder>();
+        Assert.Contains(moduleBinder.ModulesOption, command.Options);
         var sqlBinder = provider.GetRequiredService<SqlOptionBinder>();
         Assert.Contains(sqlBinder.ConnectionStringOption, command.Options);
 
@@ -117,6 +123,26 @@ public class ExtractModelCommandFactoryTests
             var extraction = new ModelExtractionResult(model, payload, DateTimeOffset.UtcNow, Array.Empty<string>(), snapshot);
             var result = new ExtractModelApplicationResult(extraction, input.Overrides.OutputPath ?? "model.json");
             return Task.FromResult(Result<ExtractModelApplicationResult>.Success(result));
+        }
+    }
+
+    private sealed class FakeVerbRegistry : IVerbRegistry
+    {
+        private readonly IPipelineVerb _verb;
+
+        public FakeVerbRegistry(
+            ICliConfigurationService configurationService,
+            IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult> applicationService)
+        {
+            _verb = new ExtractModelVerb(configurationService, applicationService);
+        }
+
+        public IPipelineVerb Get(string verbName) => _verb;
+
+        public bool TryGet(string verbName, out IPipelineVerb verb)
+        {
+            verb = _verb;
+            return true;
         }
     }
 }

@@ -17,11 +17,9 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly CliGlobalOptions _globalOptions;
+    private readonly ModuleFilterOptionBinder _moduleFilterBinder;
     private readonly SqlOptionBinder _sqlOptionBinder;
 
-    private readonly Option<string?> _modulesOption = new("--modules", "Comma or semicolon separated list of modules.");
-    private readonly Option<bool> _includeSystemOption = new("--include-system-modules", "Include system modules during extraction.");
-    private readonly Option<bool> _excludeSystemOption = new("--exclude-system-modules", "Exclude system modules during extraction.");
     private readonly Option<bool> _onlyActiveAttributesOption = new("--only-active-attributes", "Extract only active attributes.");
     private readonly Option<bool> _includeInactiveAttributesOption = new("--include-inactive-attributes", "Include inactive attributes when extracting.");
     private readonly Option<string?> _outputOption = new("--out", () => "model.extracted.json", "Output path for extracted model JSON.");
@@ -30,21 +28,19 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
     public ExtractModelCommandFactory(
         IServiceScopeFactory scopeFactory,
         CliGlobalOptions globalOptions,
+        ModuleFilterOptionBinder moduleFilterBinder,
         SqlOptionBinder sqlOptionBinder)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
+        _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
-        _modulesOption.AddAlias("--module");
     }
 
     public Command Create()
     {
         var command = new Command("extract-model", "Extract the OutSystems model using Advanced SQL.")
         {
-            _modulesOption,
-            _includeSystemOption,
-            _excludeSystemOption,
             _onlyActiveAttributesOption,
             _includeInactiveAttributesOption,
             _outputOption,
@@ -52,6 +48,7 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
+        CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
         CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
 
         command.SetHandler(async context => await ExecuteAsync(context).ConfigureAwait(false));
@@ -66,9 +63,9 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
         var verb = registry.Get(ExtractModelVerb.VerbName);
 
         var parseResult = context.ParseResult;
-        var moduleTokens = ModuleFilterOptionBinder.SplitList(parseResult.GetValueForOption(_modulesOption));
-        IReadOnlyList<string>? moduleOverride = moduleTokens.Count > 0 ? moduleTokens : null;
-        var includeSystemOverride = ModuleFilterOptionBinder.ResolveToggle(parseResult, _includeSystemOption, _excludeSystemOption);
+        var moduleFilter = _moduleFilterBinder.Bind(parseResult);
+        IReadOnlyList<string>? moduleOverride = moduleFilter.Modules.Count > 0 ? moduleFilter.Modules : null;
+        var includeSystemOverride = moduleFilter.IncludeSystemModules;
         var onlyActiveOverride = ResolveOnlyActiveOverride(parseResult);
 
         var overrides = new ExtractModelOverrides(
