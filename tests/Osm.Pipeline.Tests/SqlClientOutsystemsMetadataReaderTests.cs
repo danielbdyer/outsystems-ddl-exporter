@@ -267,11 +267,12 @@ public class SqlClientOutsystemsMetadataReaderTests
         var factory = new StubConnectionFactory(connection);
         var scriptProvider = new StubScriptProvider("SELECT 1");
         var overrides = MetadataContractOverrides.Strict.WithOptionalColumn("AttributeJson", "AttributesJson");
+        var logger = new ListLogger<SqlClientOutsystemsMetadataReader>();
         var reader = new SqlClientOutsystemsMetadataReader(
             factory,
             scriptProvider,
             SqlExecutionOptions.Default,
-            NullLogger<SqlClientOutsystemsMetadataReader>.Instance,
+            logger,
             commandExecutor: null,
             contractOverrides: overrides);
 
@@ -282,6 +283,8 @@ public class SqlClientOutsystemsMetadataReaderTests
         Assert.True(result.IsSuccess);
         var attributeRowResult = Assert.Single(result.Value.AttributeJson);
         Assert.Null(attributeRowResult.AttributesJson);
+        var warning = Assert.Single(logger.Entries.Where(entry => entry.LogLevel == LogLevel.Warning));
+        Assert.Contains("NULL AttributesJson", warning.Message, StringComparison.Ordinal);
     }
 
     private sealed class TrackingCommandExecutor : IDbCommandExecutor

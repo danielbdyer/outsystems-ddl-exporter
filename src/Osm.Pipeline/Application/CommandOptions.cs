@@ -13,7 +13,8 @@ public sealed record SqlOptionsOverrides(
     SqlAuthenticationMethod? AuthenticationMethod,
     bool? TrustServerCertificate,
     string? ApplicationName,
-    string? AccessToken);
+    string? AccessToken,
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? OptionalColumns);
 
 public sealed record ModuleFilterOverrides(
     IReadOnlyList<string> Modules,

@@ -156,8 +156,8 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
 
         if (allowNull && record.AttributesJson is null)
         {
-            _logger.LogDebug(
-                "AttributeJson result set row {RowIndex} returned NULL for AttributesJson and was accepted due to contract overrides.",
+            _logger.LogWarning(
+                "Metadata contract override accepted NULL AttributesJson in AttributeJson result set row {RowIndex}.",
                 row.RowIndex);
         }
 

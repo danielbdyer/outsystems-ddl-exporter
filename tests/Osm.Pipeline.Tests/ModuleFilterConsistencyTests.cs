@@ -26,6 +26,7 @@ public sealed class ModuleFilterConsistencyTests
         null,
         null,
         null,
+        null,
         null);
 
     [Fact]

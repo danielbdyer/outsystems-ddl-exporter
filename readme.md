@@ -793,6 +793,7 @@ When resolving inputs, the CLI honours the following order: CLI flag ➝ environ
 * `extract-model`
   * `--connection-string <value>` / `--command-timeout <seconds>` — point at the live OutSystems catalog and adjust the ADO.NET timeout.
   * `--sql-authentication <method>` / `--sql-access-token <token>` / `--sql-trust-server-certificate [true|false]` / `--sql-application-name <name>` — optional authentication and connection-management overrides (supports Azure AD, managed identity, and application tagging).
+  * `--sql-optional-column ResultSet:Column` — treat the specified result-set column as optional (repeat for multiple columns).
   * `--sampling-threshold <rows>` / `--sampling-size <rows>` — override the profiler’s built-in sampling defaults for very large tables.
   * `--mock-advanced-sql <manifest.json>` — replay deterministic Advanced SQL payloads (bypasses live extraction).
   * `--modules <csv>` — optional module filter; trimmed, case-insensitive.
@@ -802,6 +803,7 @@ When resolving inputs, the CLI honours the following order: CLI flag ➝ environ
 * `build-ssdt`
   * `--model <model.json>` / `--profile <profile.json>` — deterministic inputs (fixtures or cached extraction outputs).
   * `--connection-string`, `--command-timeout`, `--sql-authentication`, `--sql-access-token`, `--sql-trust-server-certificate`, `--sql-application-name` — same semantics as `extract-model`; only required when running the live SQL profiler.
+  * `--sql-optional-column ResultSet:Column` — same semantics as `extract-model`.
   * `--sampling-threshold`, `--sampling-size` — override profiler sampling defaults when capturing directly from SQL Server.
   * `--modules <csv>` — optional module filter; values are trimmed and case-insensitive.
   * `--exclude-system-modules` / `--include-system-modules` — toggle whether system modules participate when the filter is empty.

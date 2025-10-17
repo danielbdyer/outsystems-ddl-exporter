@@ -15,7 +15,7 @@ internal static class SqlOptionsResolver
             throw new ArgumentNullException(nameof(configuration));
         }
 
-        overrides ??= new SqlOptionsOverrides(null, null, null, null, null, null, null, null);
+        overrides ??= new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null);
 
         var connection = overrides.ConnectionString ?? configuration.Sql.ConnectionString;
         var timeout = overrides.CommandTimeoutSeconds ?? configuration.Sql.CommandTimeoutSeconds;
@@ -73,6 +73,14 @@ internal static class SqlOptionsResolver
         foreach (var pair in metadataContract.OptionalColumns)
         {
             contractOverrides = contractOverrides.WithOptionalColumns(pair.Key, pair.Value);
+        }
+
+        if (overrides.OptionalColumns is { Count: > 0 })
+        {
+            foreach (var pair in overrides.OptionalColumns)
+            {
+                contractOverrides = contractOverrides.WithOptionalColumns(pair.Key, pair.Value);
+            }
         }
 
         return new ResolvedSqlOptions(

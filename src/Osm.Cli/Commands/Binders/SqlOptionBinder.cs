@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Binding;
 using System.CommandLine.Parsing;
+using System.Linq;
 using Microsoft.Data.SqlClient;
 using Osm.Pipeline.Application;
 
@@ -38,6 +39,32 @@ internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, IComman
         };
         ApplicationNameOption = new Option<string?>("--sql-application-name", "Application name for SQL connections.");
         AccessTokenOption = new Option<string?>("--sql-access-token", "Access token for SQL authentication.");
+        OptionalColumnOption = new Option<string[]>(
+            "--sql-optional-column",
+            description: "Mark a result-set column as optional using the ResultSet:Column syntax. May be specified multiple times.")
+        {
+            AllowMultipleArgumentsPerToken = true,
+        };
+        OptionalColumnOption.AddValidator(result =>
+        {
+            foreach (var token in result.Tokens)
+            {
+                var separatorIndex = token.Value.IndexOf(':');
+                if (separatorIndex <= 0 || separatorIndex == token.Value.Length - 1)
+                {
+                    result.ErrorMessage = "Invalid --sql-optional-column value. Expected ResultSet:Column.";
+                    return;
+                }
+
+                var resultSet = token.Value.Substring(0, separatorIndex).Trim();
+                var column = token.Value.Substring(separatorIndex + 1).Trim();
+                if (string.IsNullOrWhiteSpace(resultSet) || string.IsNullOrWhiteSpace(column))
+                {
+                    result.ErrorMessage = "Invalid --sql-optional-column value. ResultSet and Column names must be non-empty.";
+                    return;
+                }
+            }
+        });
     }
 
     public Option<string?> ConnectionStringOption { get; }
@@ -56,6 +83,8 @@ internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, IComman
 
     public Option<string?> AccessTokenOption { get; }
 
+    public Option<string[]> OptionalColumnOption { get; }
+
     public IEnumerable<Option> Options
     {
         get
@@ -68,6 +97,7 @@ internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, IComman
             yield return TrustServerCertificateOption;
             yield return ApplicationNameOption;
             yield return AccessTokenOption;
+            yield return OptionalColumnOption;
         }
     }
 
@@ -89,6 +119,50 @@ internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, IComman
             parseResult.GetValueForOption(AuthenticationMethodOption),
             parseResult.GetValueForOption(TrustServerCertificateOption),
             parseResult.GetValueForOption(ApplicationNameOption),
-            parseResult.GetValueForOption(AccessTokenOption));
+            parseResult.GetValueForOption(AccessTokenOption),
+            ParseOptionalColumns(parseResult.GetValueForOption(OptionalColumnOption)));
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>>? ParseOptionalColumns(string[]? values)
+    {
+        if (values is null || values.Length == 0)
+        {
+            return null;
+        }
+
+        var buffer = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var value in values)
+        {
+            var separatorIndex = value.IndexOf(':');
+            if (separatorIndex <= 0 || separatorIndex == value.Length - 1)
+            {
+                continue;
+            }
+
+            var resultSet = value.Substring(0, separatorIndex).Trim();
+            var column = value.Substring(separatorIndex + 1).Trim();
+            if (string.IsNullOrWhiteSpace(resultSet) || string.IsNullOrWhiteSpace(column))
+            {
+                continue;
+            }
+
+            if (!buffer.TryGetValue(resultSet, out var columns))
+            {
+                columns = new List<string>();
+                buffer[resultSet] = columns;
+            }
+
+            columns.Add(column);
+        }
+
+        if (buffer.Count == 0)
+        {
+            return null;
+        }
+
+        return buffer.ToDictionary(
+            static pair => pair.Key,
+            static pair => (IReadOnlyList<string>)pair.Value.AsReadOnly(),
+            StringComparer.OrdinalIgnoreCase);
     }
 }

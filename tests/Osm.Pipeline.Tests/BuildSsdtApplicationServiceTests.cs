@@ -36,7 +36,7 @@ public sealed class BuildSsdtApplicationServiceTests
             IncludeInactiveModules: null,
             AllowMissingPrimaryKey: Array.Empty<string>(),
             AllowMissingSchema: Array.Empty<string>());
-        var sqlOverrides = new SqlOptionsOverrides(null, null, null, null, null, null, null, null);
+        var sqlOverrides = new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null);
         var cacheOverrides = new CacheOptionsOverrides(null, null);
         var configuration = new CliConfiguration(
             TighteningOptions.Default,
