@@ -29,6 +29,8 @@ internal sealed record AnyOfSignal : NullabilitySignal
     {
     }
 
+    public ImmutableArray<NullabilitySignal> Signals => _signals;
+
     protected override SignalEvaluation EvaluateCore(in NullabilitySignalContext context)
     {
         var evaluations = ImmutableArray.CreateBuilder<SignalEvaluation>(_signals.Length);
