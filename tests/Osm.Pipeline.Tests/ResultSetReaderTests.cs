@@ -20,7 +20,7 @@ public class ResultSetReaderTests
             new object?[] { 1, "Module", true, Guid.Empty }
         };
 
-        using var reader = new SingleResultSetDataReader(rows);
+        using var reader = new SingleResultSetDataReader(rows, new[] { "Id", "Name", "Flag", "Token" });
         var resultSetReader = ResultSetReader<TestRow>.Create(static row => new TestRow(
             row.GetInt32(0),
             row.GetString(1),
@@ -44,7 +44,7 @@ public class ResultSetReaderTests
             new object?[] { 2, null, null }
         };
 
-        using var reader = new SingleResultSetDataReader(rows);
+        using var reader = new SingleResultSetDataReader(rows, new[] { "Id", "Name", "Flag" });
         var resultSetReader = ResultSetReader<NullableRow>.Create(static row => new NullableRow(
             row.GetInt32(0),
             row.GetStringOrNull(1),
@@ -66,7 +66,7 @@ public class ResultSetReaderTests
             new object?[] { null }
         };
 
-        using var reader = new SingleResultSetDataReader(rows);
+        using var reader = new SingleResultSetDataReader(rows, new[] { "TestColumn" });
         Assert.True(reader.Read());
         var row = new DbRow(reader, "TestResultSet", 0);
 
@@ -84,7 +84,7 @@ public class ResultSetReaderTests
             new object?[] { "bad-int" }
         };
 
-        using var reader = new SingleResultSetDataReader(rows);
+        using var reader = new SingleResultSetDataReader(rows, new[] { "AttrId" });
         var resultSetReader = ResultSetReader<int>.Create(static row => row.GetInt32(0));
 
         var exception = await Assert.ThrowsAsync<MetadataRowMappingException>(() =>
@@ -94,6 +94,15 @@ public class ResultSetReaderTests
         Assert.Equal(0, exception.RowIndex);
         Assert.Null(exception.ColumnName);
         Assert.IsType<FormatException>(exception.InnerException);
+
+        var snapshot = exception.RowSnapshot;
+        Assert.NotNull(snapshot);
+        Assert.Equal("BrokenSet", snapshot!.ResultSetName);
+        Assert.Equal(0, snapshot.RowIndex);
+        var column = Assert.Single(snapshot.Columns);
+        Assert.Equal("AttrId", column.Name);
+        Assert.False(column.IsNull);
+        Assert.Equal("bad-int", column.ValuePreview);
     }
 
     [Fact]
@@ -104,9 +113,9 @@ public class ResultSetReaderTests
             new object?[] { "value" }
         };
 
-        using var reader = new SingleResultSetDataReader(rows);
+        using var reader = new SingleResultSetDataReader(rows, new[] { "EntityId" });
         var resultSetReader = ResultSetReader<int>.Create(static _ => throw new ColumnReadException(
-            "TestColumn",
+            "EntityId",
             0,
             typeof(int),
             typeof(string),
@@ -119,13 +128,19 @@ public class ResultSetReaderTests
 
         Assert.Equal("ColumnSet", exception.ResultSetName);
         Assert.Equal(0, exception.RowIndex);
-        Assert.Equal("TestColumn", exception.ColumnName);
+        Assert.Equal("EntityId", exception.ColumnName);
         Assert.Equal(0, exception.Ordinal);
         Assert.Equal(typeof(int), exception.ExpectedClrType);
         Assert.Equal(typeof(string), exception.ProviderFieldType);
         var columnException = Assert.IsType<ColumnReadException>(exception.InnerException);
         Assert.Equal("ColumnSet", columnException.ResultSetName);
         Assert.Equal(0, columnException.RowIndex);
+
+        var snapshot = exception.RowSnapshot;
+        Assert.NotNull(snapshot);
+        var highlighted = exception.HighlightedColumn;
+        Assert.NotNull(highlighted);
+        Assert.Equal("EntityId", highlighted!.Name);
     }
 
     [Fact]
@@ -136,23 +151,24 @@ public class ResultSetReaderTests
             new object?[] { "value" }
         };
 
-        using var reader = new SingleResultSetDataReader(rows);
+        using var reader = new SingleResultSetDataReader(rows, new[] { "AttributesJson" });
         var resultSetReader = ResultSetReader<int>.Create(static _ => throw new ColumnReadException(
-            "RequiredColumn",
+            "AttributesJson",
             0,
             typeof(string),
             typeof(string),
             null,
             null,
-            new InvalidOperationException("Column 'RequiredColumn' (ordinal 0) contained NULL but a non-null value was required.")));
+            new InvalidOperationException("Column 'AttributesJson' (ordinal 0) contained NULL but a non-null value was required.")));
 
         var exception = await Assert.ThrowsAsync<MetadataRowMappingException>(() =>
             resultSetReader.ReadAllAsync(reader, "NullableSet", CancellationToken.None));
 
         Assert.Contains("NullableSet", exception.Message);
-        Assert.Contains("RequiredColumn", exception.Message);
+        Assert.Contains("AttributesJson", exception.Message);
         Assert.Contains("Root cause", exception.Message);
         Assert.Contains("contained NULL", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Column snapshot preview", exception.Message);
     }
 
     private sealed record TestRow(int Id, string Name, bool Flag, Guid? Token);
@@ -162,9 +178,14 @@ public class ResultSetReaderTests
     private sealed class SingleResultSetDataReader : DbDataReader
     {
         private readonly object?[][] _rows;
+        private readonly string[]? _columnNames;
         private int _rowIndex = -1;
 
-        public SingleResultSetDataReader(object?[][] rows) => _rows = rows;
+        public SingleResultSetDataReader(object?[][] rows, string[]? columnNames = null)
+        {
+            _rows = rows;
+            _columnNames = columnNames;
+        }
 
         public override object this[int ordinal] => GetValue(ordinal);
 
@@ -172,7 +193,18 @@ public class ResultSetReaderTests
 
         public override int Depth => 0;
 
-        public override int FieldCount => _rows.Length == 0 ? 0 : _rows[0].Length;
+        public override int FieldCount
+        {
+            get
+            {
+                if (_columnNames is not null)
+                {
+                    return _columnNames.Length;
+                }
+
+                return _rows.Length == 0 ? 0 : _rows[0].Length;
+            }
+        }
 
         public override bool HasRows => _rows.Length > 0;
 
@@ -232,7 +264,15 @@ public class ResultSetReaderTests
         public override int GetOrdinal(string name)
             => throw new NotSupportedException();
 
-        public override string GetName(int ordinal) => $"Column{ordinal}";
+        public override string GetName(int ordinal)
+        {
+            if (_columnNames is not null && ordinal < _columnNames.Length)
+            {
+                return _columnNames[ordinal];
+            }
+
+            return $"Column{ordinal}";
+        }
 
         public override string GetDataTypeName(int ordinal) => GetFieldType(ordinal).Name;
 
