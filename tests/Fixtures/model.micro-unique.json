@@ -75,7 +75,8 @@
               ]
             }
           ],
-          "relationships": []
+          "relationships": [],
+          "triggers": []
         }
       ]
     }

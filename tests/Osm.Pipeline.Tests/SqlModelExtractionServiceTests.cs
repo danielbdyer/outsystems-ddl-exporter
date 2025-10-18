@@ -8,6 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Text.Json;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 using Osm.Json;
 using Osm.Pipeline.SqlExtraction;
 using Tests.Support;
@@ -48,7 +50,7 @@ public class SqlModelExtractionServiceTests
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.micro-unique.json"));
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = new SqlModelExtractionService(reader, new PassthroughModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -64,7 +66,7 @@ public class SqlModelExtractionServiceTests
     {
         var failure = Result<OutsystemsMetadataSnapshot>.Failure(ValidationError.Create("boom", "fail"));
         var reader = new StubMetadataReader(failure);
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = new SqlModelExtractionService(reader, new PassthroughModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -154,7 +156,8 @@ public class SqlModelExtractionServiceTests
                     }
                   ],
                   "indexes": [],
-                  "relationships": []
+                  "relationships": [],
+                  "triggers": []
                 }
               ]
             }
@@ -527,6 +530,85 @@ public class SqlModelExtractionServiceTests
         writer.Flush();
 
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private sealed class PassthroughModelJsonDeserializer : IModelJsonDeserializer
+    {
+        public Result<OsmModel> Deserialize(Stream jsonStream, ICollection<string>? warnings = null, ModelJsonDeserializerOptions? options = null)
+        {
+            if (jsonStream is null)
+            {
+                throw new ArgumentNullException(nameof(jsonStream));
+            }
+
+            if (jsonStream.CanSeek)
+            {
+                jsonStream.Position = 0;
+            }
+
+            using var document = JsonDocument.Parse(jsonStream);
+            var modulesElement = document.RootElement.GetProperty("modules");
+            var moduleModels = new List<ModuleModel>(modulesElement.GetArrayLength());
+
+            foreach (var moduleElement in modulesElement.EnumerateArray())
+            {
+                var moduleNameText = moduleElement.TryGetProperty("name", out var nameElement)
+                    ? nameElement.GetString()
+                    : null;
+                var moduleNameResult = ModuleName.Create(moduleNameText ?? "Module");
+                if (moduleNameResult.IsFailure)
+                {
+                    continue;
+                }
+
+                var entitiesElement = moduleElement.TryGetProperty("entities", out var entityArray)
+                    ? entityArray
+                    : default;
+
+                if (entitiesElement.ValueKind != JsonValueKind.Array || entitiesElement.GetArrayLength() == 0)
+                {
+                    warnings?.Add($"Module '{moduleNameResult.Value.Value}' contains no entities and will be skipped.");
+                    continue;
+                }
+
+                var schema = SchemaName.Create("dbo").Value;
+                var attributeName = AttributeName.Create("Id").Value;
+                var columnName = ColumnName.Create("ID").Value;
+                var attribute = AttributeModel.Create(
+                    attributeName,
+                    columnName,
+                    dataType: "Identifier",
+                    isMandatory: true,
+                    isIdentifier: true,
+                    isAutoNumber: true,
+                    isActive: true).Value;
+
+                var entityName = EntityName.Create("PassthroughEntity").Value;
+                var tableName = TableName.Create("PASSTHROUGH_ENTITY").Value;
+                var entity = EntityModel.Create(
+                    moduleNameResult.Value,
+                    entityName,
+                    tableName,
+                    schema,
+                    catalog: null,
+                    isStatic: false,
+                    isExternal: false,
+                    isActive: true,
+                    new[] { attribute },
+                    allowMissingPrimaryKey: true).Value;
+
+                var module = ModuleModel.Create(
+                    moduleNameResult.Value,
+                    isSystemModule: false,
+                    isActive: true,
+                    new[] { entity }).Value;
+
+                moduleModels.Add(module);
+            }
+
+            var model = OsmModel.Create(DateTime.UtcNow, moduleModels).Value;
+            return Result<OsmModel>.Success(model);
+        }
     }
 
     private sealed class StubMetadataReader : IOutsystemsMetadataReader, IMetadataSnapshotDiagnostics
