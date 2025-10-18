@@ -112,6 +112,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
         services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();
         services.AddSingleton<ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>, ExtractModelPipeline>();
+        services.AddSingleton<ICommandHandler<TighteningAnalysisPipelineRequest, TighteningAnalysisPipelineResult>, TighteningAnalysisPipeline>();
 
         return services;
     }
@@ -121,6 +122,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>, BuildSsdtApplicationService>();
         services.AddSingleton<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>, CompareWithDmmApplicationService>();
         services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();
+        services.AddSingleton<IApplicationService<AnalyzeApplicationInput, AnalyzeApplicationResult>, AnalyzeApplicationService>();
 
         return services;
     }
@@ -130,6 +132,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IPipelineVerb, BuildSsdtVerb>();
         services.AddSingleton<IPipelineVerb, DmmCompareVerb>();
         services.AddSingleton<IPipelineVerb, ExtractModelVerb>();
+        services.AddSingleton<IPipelineVerb, AnalyzeVerb>();
         services.AddSingleton<IVerbRegistry, VerbRegistry>();
 
         return services;

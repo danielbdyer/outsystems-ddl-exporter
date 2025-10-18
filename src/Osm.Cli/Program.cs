@@ -21,6 +21,7 @@ hostBuilder.Services.AddSingleton<ICommandFactory, BuildSsdtCommandFactory>();
 hostBuilder.Services.AddSingleton<ICommandFactory, ExtractModelCommandFactory>();
 hostBuilder.Services.AddSingleton<ICommandFactory, DmmCompareCommandFactory>();
 hostBuilder.Services.AddSingleton<ICommandFactory, InspectCommandFactory>();
+hostBuilder.Services.AddSingleton<ICommandFactory, AnalyzeCommandFactory>();
 
 var remapUsersToggle = Environment.GetEnvironmentVariable("OSM_ENABLE_REMAP_USERS");
 var enableUatUsers = remapUsersToggle is null || string.Equals(remapUsersToggle, "true", StringComparison.OrdinalIgnoreCase);
