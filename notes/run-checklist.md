@@ -55,6 +55,7 @@ echo "✅ .NET SDK $DOTNET_VERSION setup complete"
 
 4. **Run the full automated test suite**
    - `dotnet test OutSystemsModelToSql.sln -c Release --no-build`
+   - The SQL Server integration suite (`tests/Osm.Etl.Integration.Tests`) spins up a container via DotNet.Testcontainers. Ensure Docker is available locally before running these tests; if it is not, skip this project and record the limitation in your status notes.
 
 5. **(Optional) Smoke the CLI with fixtures**
    - `dotnet run --project src/Osm.Cli -- --in tests/Fixtures/model.edge-case.json` *(uses the edge-case fixture to exercise ingestion summary).* 
