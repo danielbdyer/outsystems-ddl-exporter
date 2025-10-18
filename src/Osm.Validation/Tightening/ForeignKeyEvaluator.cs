@@ -87,13 +87,10 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
             throw new ArgumentNullException(nameof(attribute));
         }
 
-        var rationales = new SortedSet<string>(StringComparer.Ordinal);
-        var createConstraint = false;
-
         if (!attribute.Reference.IsReference)
         {
             return new ForeignKeyEvaluation(
-                ForeignKeyDecision.Create(coordinate, createConstraint, rationales.ToImmutableArray()),
+                ForeignKeyDecision.Create(coordinate, createConstraint: false, ImmutableArray<string>.Empty),
                 HasOrphan: false,
                 IgnoreRule: false,
                 CrossSchemaBlocked: false,
@@ -103,62 +100,23 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
         var fkReality = _foreignKeys.TryGetValue(coordinate, out var fk) ? fk : null;
         var targetEntity = _targetIndex.GetTarget(coordinate);
 
-        var ignoreRule = IsIgnoreRule(attribute.Reference.DeleteRuleCode);
-        if (ignoreRule)
+        var evaluation = EvaluateScenario(entity, attribute, fkReality, targetEntity);
+        var definition = TighteningPolicyMatrix.ForeignKeys.Resolve(evaluation.Scenario);
+
+        var rationales = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var rationale in definition.Rationales)
         {
-            rationales.Add(TighteningRationales.DeleteRuleIgnore);
+            rationales.Add(rationale);
         }
 
-        var hasOrphan = fkReality?.HasOrphan ?? false;
-        if (hasOrphan)
-        {
-            rationales.Add(TighteningRationales.DataHasOrphans);
-        }
-
-        var hasConstraint = fkReality?.Reference.HasDatabaseConstraint ?? false;
-        if (hasConstraint)
-        {
-            createConstraint = true;
-            rationales.Add(TighteningRationales.DatabaseConstraintPresent);
-        }
-
-        var crossSchema = targetEntity is not null && !SchemaEquals(entity.Schema, targetEntity.Schema);
-        var crossCatalog = targetEntity is not null && !CatalogEquals(entity.Catalog, targetEntity.Catalog);
-
-        var crossSchemaBlocked = crossSchema && !_options.AllowCrossSchema && !hasConstraint;
-        var crossCatalogBlocked = crossCatalog && !_options.AllowCrossCatalog && !hasConstraint;
-
-        if (!hasConstraint && !ignoreRule && !hasOrphan && !crossSchemaBlocked && !crossCatalogBlocked && _options.EnableCreation)
-        {
-            createConstraint = true;
-            rationales.Add(TighteningRationales.PolicyEnableCreation);
-        }
-        else
-        {
-            if (!_options.EnableCreation && !hasConstraint && !ignoreRule && !hasOrphan)
-            {
-                rationales.Add(TighteningRationales.ForeignKeyCreationDisabled);
-            }
-
-            if (crossSchemaBlocked)
-            {
-                rationales.Add(TighteningRationales.CrossSchema);
-            }
-
-            if (crossCatalogBlocked)
-            {
-                rationales.Add(TighteningRationales.CrossCatalog);
-            }
-        }
-
-        var decision = ForeignKeyDecision.Create(coordinate, createConstraint, rationales.ToImmutableArray());
+        var decision = ForeignKeyDecision.Create(coordinate, definition.ExpectCreate, rationales.ToImmutableArray());
 
         return new ForeignKeyEvaluation(
             decision,
-            hasOrphan,
-            ignoreRule,
-            crossSchemaBlocked,
-            crossCatalogBlocked);
+            evaluation.HasOrphan,
+            evaluation.IgnoreRule,
+            evaluation.CrossSchemaBlocked,
+            evaluation.CrossCatalogBlocked);
     }
 
     private static bool ShouldCreateOpportunity(ForeignKeyEvaluation evaluation)
@@ -184,6 +142,98 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
         return "Enable policy or gather evidence before creating the foreign key.";
     }
 
+    private ForeignKeyScenarioEvaluation EvaluateScenario(
+        EntityModel entity,
+        AttributeModel attribute,
+        ForeignKeyReality? reality,
+        EntityModel? targetEntity)
+    {
+        var ignoreRule = IsIgnoreRule(attribute.Reference.DeleteRuleCode);
+        if (ignoreRule)
+        {
+            return new ForeignKeyScenarioEvaluation(
+                TighteningPolicyMatrix.ForeignKeyPolicyScenario.IgnoreRule,
+                IgnoreRule: true,
+                HasOrphan: reality?.HasOrphan ?? false,
+                CrossSchemaBlocked: false,
+                CrossCatalogBlocked: false);
+        }
+
+        var hasOrphan = reality?.HasOrphan ?? false;
+        if (hasOrphan)
+        {
+            return new ForeignKeyScenarioEvaluation(
+                TighteningPolicyMatrix.ForeignKeyPolicyScenario.HasOrphan,
+                IgnoreRule: false,
+                HasOrphan: true,
+                CrossSchemaBlocked: false,
+                CrossCatalogBlocked: false);
+        }
+
+        var hasConstraint = reality?.Reference.HasDatabaseConstraint ?? false;
+        if (hasConstraint)
+        {
+            return new ForeignKeyScenarioEvaluation(
+                TighteningPolicyMatrix.ForeignKeyPolicyScenario.ExistingConstraint,
+                IgnoreRule: false,
+                HasOrphan: false,
+                CrossSchemaBlocked: false,
+                CrossCatalogBlocked: false);
+        }
+
+        if (!_options.EnableCreation)
+        {
+            return new ForeignKeyScenarioEvaluation(
+                TighteningPolicyMatrix.ForeignKeyPolicyScenario.PolicyDisabled,
+                IgnoreRule: false,
+                HasOrphan: false,
+                CrossSchemaBlocked: false,
+                CrossCatalogBlocked: false);
+        }
+
+        if (targetEntity is null)
+        {
+            return new ForeignKeyScenarioEvaluation(
+                TighteningPolicyMatrix.ForeignKeyPolicyScenario.PolicyDisabled,
+                IgnoreRule: false,
+                HasOrphan: false,
+                CrossSchemaBlocked: false,
+                CrossCatalogBlocked: false);
+        }
+
+        var crossSchema = !SchemaEquals(entity.Schema, targetEntity.Schema);
+        var crossCatalog = !CatalogEquals(entity.Catalog, targetEntity.Catalog);
+        var crossSchemaBlocked = crossSchema && !_options.AllowCrossSchema;
+        var crossCatalogBlocked = crossCatalog && !_options.AllowCrossCatalog;
+
+        if (crossSchemaBlocked)
+        {
+            return new ForeignKeyScenarioEvaluation(
+                TighteningPolicyMatrix.ForeignKeyPolicyScenario.CrossSchemaBlocked,
+                IgnoreRule: false,
+                HasOrphan: false,
+                CrossSchemaBlocked: true,
+                CrossCatalogBlocked: crossCatalogBlocked);
+        }
+
+        if (crossCatalogBlocked)
+        {
+            return new ForeignKeyScenarioEvaluation(
+                TighteningPolicyMatrix.ForeignKeyPolicyScenario.CrossCatalogBlocked,
+                IgnoreRule: false,
+                HasOrphan: false,
+                CrossSchemaBlocked: false,
+                CrossCatalogBlocked: true);
+        }
+
+        return new ForeignKeyScenarioEvaluation(
+            TighteningPolicyMatrix.ForeignKeyPolicyScenario.Eligible,
+            IgnoreRule: false,
+            HasOrphan: false,
+            CrossSchemaBlocked: false,
+            CrossCatalogBlocked: false);
+    }
+
     private static bool IsIgnoreRule(string? deleteRule)
         => string.IsNullOrWhiteSpace(deleteRule) || string.Equals(deleteRule, "Ignore", StringComparison.OrdinalIgnoreCase);
 
@@ -197,6 +247,13 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
         ForeignKeyDecision Decision,
         bool HasOrphan,
         bool IgnoreRule,
+        bool CrossSchemaBlocked,
+        bool CrossCatalogBlocked);
+
+    private sealed record ForeignKeyScenarioEvaluation(
+        TighteningPolicyMatrix.ForeignKeyPolicyScenario Scenario,
+        bool IgnoreRule,
+        bool HasOrphan,
         bool CrossSchemaBlocked,
         bool CrossCatalogBlocked);
 }

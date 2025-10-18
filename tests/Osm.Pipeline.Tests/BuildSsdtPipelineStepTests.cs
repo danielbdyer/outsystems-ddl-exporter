@@ -118,6 +118,7 @@ public class BuildSsdtPipelineStepTests
         var state = result.Value;
         Assert.NotNull(state.Report);
         Assert.True(state.Report.ColumnCount > 0);
+        Assert.NotEmpty(state.Insights);
         var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "policy.decisions.synthesized");
     }
