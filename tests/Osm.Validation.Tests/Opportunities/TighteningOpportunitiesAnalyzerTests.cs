@@ -7,6 +7,7 @@ using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
+using OpportunitiesChangeRisk = Osm.Validation.Tightening.Opportunities.ChangeRisk;
 using Osm.Validation.Tests.Policy;
 using Xunit;
 
@@ -41,7 +42,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         Assert.Equal(1, report.TotalCount);
         var opportunity = Assert.Single(report.Opportunities);
         Assert.Equal(ConstraintType.NotNull, opportunity.Constraint);
-        Assert.Equal(ChangeRisk.SafeToApply, opportunity.Risk);
+        Assert.Equal(OpportunitiesChangeRisk.SafeToApply, opportunity.Risk);
         Assert.Contains("ALTER TABLE", opportunity.Statements[0]);
     }
 
@@ -90,7 +91,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         Assert.Equal(1, report.TotalCount);
         var opportunity = Assert.Single(report.Opportunities);
         Assert.Equal(ConstraintType.Unique, opportunity.Constraint);
-        Assert.Equal(ChangeRisk.NeedsRemediation, opportunity.Risk);
+        Assert.Equal(OpportunitiesChangeRisk.NeedsRemediation, opportunity.Risk);
         Assert.Contains("CREATE UNIQUE", opportunity.Statements[0]);
     }
 
@@ -131,7 +132,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         Assert.Equal(1, report.TotalCount);
         var opportunity = Assert.Single(report.Opportunities);
         Assert.Equal(ConstraintType.ForeignKey, opportunity.Constraint);
-        Assert.Equal(ChangeRisk.SafeToApply, opportunity.Risk);
+        Assert.Equal(OpportunitiesChangeRisk.SafeToApply, opportunity.Risk);
         Assert.Contains("FOREIGN KEY", opportunity.Statements[0]);
     }
 }

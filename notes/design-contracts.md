@@ -36,13 +36,39 @@ This appendix complements `architecture-guardrails.md` by describing the executa
 
 ### Mode matrix (source: [`TighteningPolicyMatrix`](../src/Osm.Validation/Tightening/TighteningPolicyMatrix.cs))
 
-| Mode | NOT NULL triggers | Evidence requirements | Unique index enforcement | FK creation outcomes |
-| --- | --- | --- | --- | --- |
-| `Cautious` | Primary keys (`S1`) and physical NOT NULL columns (`S2`). | No profiling evidence is consulted; strong signals (`S3`–`S5`) are tracked for reporting but do not flip decisions. | Enforce only when the database already guarantees uniqueness (physical unique key or existing constraint). Profiling evidence never forces a tighten. | Never create new FKs. Existing database constraints are re-affirmed; other cases emit diagnostics (`DELETE_RULE_IGNORE`, `DATA_HAS_ORPHANS`, toggle blocks). |
-| `EvidenceGated` | Primary keys and physical NOT NULL columns automatically tighten; foreign keys/unique cleans/mandatory attributes (`S3`–`S5`) require profiling evidence (`DATA_NO_NULLS`). | Profiling null evidence must be present and clean to tighten on strong signals. Missing or dirty evidence leaves columns nullable. | Enforce uniqueness when profiling proves no duplicates or the database already guarantees it. No remediation is requested because evidence is mandatory. | Create FKs when the policy enables creation, there are no orphans, delete rules aren’t `Ignore`, and cross-schema/catalog guards allow it. |
-| `Aggressive` | Same trigger set as EvidenceGated, but strong signals tighten without null evidence. | Profiling evidence is still captured for telemetry; missing evidence forces remediation rationales (`REMEDIATE_BEFORE_TIGHTEN`). | Always enforce uniqueness. Duplicates or missing evidence demand remediation before activation. | Same safety gates as EvidenceGated, but existing constraints always generate creation decisions even when cross-boundary flags are disabled. |
+#### Nullability (NOT NULL)
 
-The matrix is enforced via `TighteningPolicyMatrixTests` so documentation, code, and tests stay aligned. Every row maps to specific rationale codes emitted in policy decisions (`PK`, `PHYSICAL_NOT_NULL`, `FOREIGN_KEY_ENFORCED`, `UNIQUE_NO_NULLS`, `REMEDIATE_BEFORE_TIGHTEN`, `POLICY_ENABLE_CREATION`, etc.), providing an auditable trail whenever toggles or profiling evidence change outcomes.
+| Mode | Signals that tighten without evidence | Strong signals requiring evidence | Evidence threshold | Remediation behaviour |
+| --- | --- | --- | --- | --- |
+| `Cautious` | Primary keys (`S1_PK`), physical NOT NULL columns (`S2_DB_NOT_NULL`). | None – foreign-key attributes, unique cleans, and mandatory attributes (`S3`–`S5`) are observed for telemetry only. | _n/a_ | Never emits remediation: nullable columns stay nullable whenever only strong signals fire. |
+| `EvidenceGated` | Same as `Cautious`. | Foreign key attributes (`S3_FK_SUPPORT`), unique cleans (`S4_UNIQUE_CLEAN`), and logical mandatory attributes (`S5_LOGICAL_MANDATORY`). | Profiling must succeed (`NullCountStatus.Outcome == Succeeded`) and prove `NullCount <= RowCount × NullBudget`. The default budget `0.0` requires zero null rows. | No remediation is generated because a decision only flips once the budget check succeeds. Missing evidence yields `PROFILE_MISSING` diagnostics and the column remains nullable. |
+| `Aggressive` | Same as `EvidenceGated`. | Same signals as `EvidenceGated`, but evidence is optional. | Evidence (when present) must pass the same budget check. If evidence is missing or stale, the decision still tightens but records `REMEDIATE_BEFORE_TIGHTEN` so operators know additional validation is required before promotion. | Remediation is attached to every strong-signal tighten lacking clean evidence. |
+
+Additional notes:
+
+- Profiling evidence consumes the caller supplied `NullBudget` so CI can allow residual nulls (e.g., `0.001` for sampled data) without losing monotonic guarantees.
+- Every signal appends rationale codes (`PRIMARY_KEY`, `PHYSICAL_NOT_NULL`, `MANDATORY`, `DATA_NO_NULLS`, etc.) so downstream emitters can reason about decisions without reevaluating predicates.
+
+#### Unique index enforcement
+
+| Mode | Policy disabled | Physical unique reality | Duplicates observed | Clean evidence present | Clean evidence missing |
+| --- | --- | --- | --- | --- | --- |
+| `Cautious` | Never enforce. | Enforce (honours existing constraint metadata). | Enforce when a physical constraint exists; otherwise do not tighten. | Do not enforce. | Do not enforce. |
+| `EvidenceGated` | Never enforce. | Enforce. | Enforce only when a physical constraint exists; duplicates without physical reality stay unenforced. | Enforce. | Do not enforce. |
+| `Aggressive` | Respect the toggle but otherwise enforce. | Enforce. | Enforce and flag `REMEDIATE_BEFORE_TIGHTEN` so duplicates must be cleaned before release. | Enforce. | Enforce but require remediation when the profiler was absent or inconclusive. |
+
+- “Physical unique reality” refers to columns where the profiler reports an existing unique key or the database metadata says the index is already unique; these are trusted regardless of mode.
+- Evidence clean means the profiler ran and reported no duplicates (single-column or composite). Evidence missing covers both missing probes and disabled profiler inputs.
+
+#### Foreign key creation
+
+All modes share the same gating rules because safety depends on relational evidence rather than tightening aggressiveness:
+
+- Delete rules set to `Ignore` or orphan detections always suppress creation and attach `DELETE_RULE_IGNORE` or `DATA_HAS_ORPHANS` respectively.
+- Existing database constraints (`HasDbConstraint=true`) are re-surfaced even if the policy toggle disables creation so emitted SMO graphs mirror reality.
+- New creations require the policy toggle to allow them (`ForeignKeyOptions.EnableCreation`), the profiler to show no orphans, and cross-schema/catalog blocks to be lifted. When allowed, SMO scripts are emitted with `WITH CHECK` to ensure the constraint is trusted.
+
+The matrix is enforced via `TighteningPolicyMatrixTests` so documentation, code, and tests stay aligned. Every row maps to specific rationale codes emitted in policy decisions (`PRIMARY_KEY`, `PHYSICAL_NOT_NULL`, `FOREIGN_KEY_ENFORCED`, `UNIQUE_NO_NULLS`, `REMEDIATE_BEFORE_TIGHTEN`, `POLICY_ENABLE_CREATION`, etc.), providing an auditable trail whenever toggles or profiling evidence change outcomes.
 
 ## SMO model construction (`SmoModelFactory` / `SmoBuildOptions`)
 - **Input**: Domain model, `PolicyDecisionSet`, and `SmoBuildOptions` (including naming overrides and emission toggles).

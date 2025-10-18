@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
 using System.Threading;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
@@ -104,6 +106,67 @@ public class SsdtEmitterTests
             var script = await File.ReadAllTextAsync(scriptPath).ConfigureAwait(false);
             Assert.Contains("CREATE TABLE", script, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public async Task EmitAsync_foreign_keys_are_emitted_with_check_when_trusted()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var options = TighteningOptions.Default;
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(model, snapshot, options);
+        var report = PolicyDecisionReporter.Create(decisions);
+        var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: smoOptions);
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+
+        var foreignKeyTable = manifest.Tables.First(table => table.ForeignKeys.Count > 0);
+        var tablePath = Path.Combine(temp.Path, foreignKeyTable.TableFile);
+        var script = await File.ReadAllTextAsync(tablePath).ConfigureAwait(false);
+
+        Assert.Contains("WITH CHECK ADD CONSTRAINT", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("WITH NOCHECK", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task EmitAsync_is_idempotent_for_edge_case_fixture()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var options = TighteningOptions.Default;
+        var policy = new TighteningPolicy();
+        var decisions = policy.Decide(model, snapshot, options);
+        var report = PolicyDecisionReporter.Create(decisions);
+        var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: smoOptions);
+
+        using var temp = new TempDirectory();
+        var emitter = new SsdtEmitter();
+
+        await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+        var firstSnapshot = CaptureFiles(temp);
+
+        await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+        var secondSnapshot = CaptureFiles(temp);
+
+        Assert.Equal(firstSnapshot.Count, secondSnapshot.Count);
+        foreach (var pair in firstSnapshot)
+        {
+            Assert.True(secondSnapshot.TryGetValue(pair.Key, out var secondContent), $"Missing file '{pair.Key}' on rerun.");
+            Assert.Equal(pair.Value, secondContent);
+        }
+    }
+
+    private static Dictionary<string, byte[]> CaptureFiles(TempDirectory directory)
+    {
+        return directory.GetFiles("*", SearchOption.AllDirectories)
+            .ToDictionary(static path => path, static path => File.ReadAllBytes(path));
     }
 
     private static SmoModel CreateMinimalModel()

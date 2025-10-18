@@ -68,6 +68,12 @@ public sealed class PolicyDecisionLogWriterTests
         Assert.Equal(1, accounting.GetProperty("TightenedColumnCount").GetInt32());
         Assert.Equal(1, accounting.GetProperty("UniqueIndexCount").GetInt32());
         Assert.Equal(1, accounting.GetProperty("ForeignKeyCount").GetInt32());
+        var moduleColumnRationales = accounting.GetProperty("ColumnRationales");
+        Assert.Equal(1, moduleColumnRationales.GetProperty("unique").GetInt32());
+        var moduleForeignKeyRationales = accounting.GetProperty("ForeignKeyRationales");
+        Assert.Equal(1, moduleForeignKeyRationales.GetProperty("profile-clean").GetInt32());
+        var moduleUniqueRationales = accounting.GetProperty("UniqueIndexRationales");
+        Assert.Equal(JsonValueKind.Object, moduleUniqueRationales.ValueKind);
 
         var toggles = root.GetProperty("TogglePrecedence");
         var mode = toggles.GetProperty(TighteningToggleKeys.PolicyMode);
