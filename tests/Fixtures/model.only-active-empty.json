@@ -1,0 +1,28 @@
+{
+  "exportedAtUtc": "2025-02-01T00:00:00Z",
+  "modules": [
+    {
+      "name": "AppCore",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Customer",
+          "physicalName": "OSUSR_ABC_CUSTOMER",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "meta": {
+            "description": "Customer records for OnlyActive fixture"
+          },
+          "attributes": [],
+          "relationships": [],
+          "indexes": [],
+          "triggers": []
+        }
+      ]
+    }
+  ]
+}

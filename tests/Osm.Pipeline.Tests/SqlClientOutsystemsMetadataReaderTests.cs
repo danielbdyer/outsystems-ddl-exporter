@@ -78,6 +78,64 @@ public class SqlClientOutsystemsMetadataReaderTests
     }
 
     [Fact]
+    public async Task ReadAsync_ShouldReturnAllModules_WhenModuleCsvWhitespace()
+    {
+        var resultSets = CreateDefaultResultSets();
+
+        resultSets[0] = ResultSet.Create(
+            resultSets[0].Columns,
+            new[]
+            {
+                resultSets[0].Rows[0],
+                new object?[] { 2, "ModuleB", false, true, null, null }
+            });
+
+        var moduleJsonIndex = resultSets.Length - 1;
+        resultSets[moduleJsonIndex] = ResultSet.Create(
+            resultSets[moduleJsonIndex].Columns,
+            new[]
+            {
+                resultSets[moduleJsonIndex].Rows[0],
+                new object?[] { "ModuleB", false, true, "[]" }
+            });
+
+        var command = new StubCommand(
+            resultSets,
+            parameter =>
+            {
+                if (string.Equals(parameter.ParameterName, "@ModuleNamesCsv", StringComparison.OrdinalIgnoreCase))
+                {
+                    parameter.Value = "   ";
+                }
+            });
+        var connection = new StubConnection(command);
+        var factory = new StubConnectionFactory(connection);
+        var scriptProvider = new StubScriptProvider("SELECT 1");
+        var reader = new SqlClientOutsystemsMetadataReader(
+            factory,
+            scriptProvider,
+            SqlExecutionOptions.Default,
+            NullLogger<SqlClientOutsystemsMetadataReader>.Instance);
+
+        var request = new AdvancedSqlRequest(ImmutableArray<ModuleName>.Empty, includeSystemModules: false, onlyActiveAttributes: true);
+
+        var result = await reader.ReadAsync(request, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Collection(
+            result.Value.ModuleJson,
+            module => Assert.Equal("ModuleA", module.ModuleName),
+            module => Assert.Equal("ModuleB", module.ModuleName));
+
+        var moduleParameter = command.Parameters
+            .OfType<DbParameter>()
+            .Single(parameter => string.Equals(parameter.ParameterName, "@ModuleNamesCsv", StringComparison.OrdinalIgnoreCase));
+
+        var parameterValue = Assert.IsType<string>(moduleParameter.Value);
+        Assert.Equal("   ", parameterValue);
+    }
+
+    [Fact]
     public async Task ReadAsync_ShouldUseSequentialAccessCommandBehavior()
     {
         var resultSets = CreateDefaultResultSets();
@@ -466,9 +524,13 @@ public class SqlClientOutsystemsMetadataReaderTests
     private sealed class StubCommand : DbCommand
     {
         private readonly ResultSet[] _resultSets;
-        private readonly StubParameterCollection _parameters = new();
+        private readonly StubParameterCollection _parameters;
 
-        public StubCommand(ResultSet[] resultSets) => _resultSets = resultSets;
+        public StubCommand(ResultSet[] resultSets, Action<DbParameter>? onParameterAdded = null)
+        {
+            _resultSets = resultSets;
+            _parameters = new StubParameterCollection(onParameterAdded);
+        }
 
         public override string CommandText { get; set; } = string.Empty;
 
@@ -542,6 +604,10 @@ public class SqlClientOutsystemsMetadataReaderTests
     private sealed class StubParameterCollection : DbParameterCollection
     {
         private readonly List<DbParameter> _parameters = new();
+        private readonly Action<DbParameter>? _onAddParameter;
+
+        public StubParameterCollection(Action<DbParameter>? onAddParameter = null)
+            => _onAddParameter = onAddParameter;
 
         public override int Count => _parameters.Count;
 
@@ -554,6 +620,7 @@ public class SqlClientOutsystemsMetadataReaderTests
                 throw new ArgumentException("Value must be a DbParameter.", nameof(value));
             }
 
+            _onAddParameter?.Invoke(parameter);
             _parameters.Add(parameter);
             return _parameters.Count - 1;
         }
