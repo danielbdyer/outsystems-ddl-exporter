@@ -15,6 +15,7 @@ using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Pipeline.Runtime;
 
@@ -84,6 +85,7 @@ public static class PipelineServiceCollectionExtensions
     internal static IServiceCollection AddPipelineTightening(this IServiceCollection services)
     {
         services.AddSingleton<TighteningPolicy>();
+        services.AddSingleton<ITighteningAnalyzer, TighteningOpportunitiesAnalyzer>();
 
         return services;
     }
@@ -94,6 +96,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<SsdtEmitter>();
         services.AddSingleton<PolicyDecisionLogWriter>();
         services.AddSingleton<EmissionFingerprintCalculator>();
+        services.AddSingleton<OpportunityLogWriter>();
         services.AddSingleton<StaticEntitySeedScriptGenerator>();
         services.AddSingleton(static _ => StaticEntitySeedTemplate.Load());
 

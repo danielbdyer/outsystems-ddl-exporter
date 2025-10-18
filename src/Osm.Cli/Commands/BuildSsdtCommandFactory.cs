@@ -173,6 +173,9 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
         }
 
         CommandConsole.WriteLine(context.Console, $"Decision log written to {pipelineResult.DecisionLogPath}");
+        CommandConsole.WriteLine(context.Console, $"Opportunities written to {pipelineResult.OpportunitiesPath}");
+        CommandConsole.WriteLine(context.Console, $"Safe suggestions: {pipelineResult.SafeScriptPath}");
+        CommandConsole.WriteLine(context.Console, $"Needs-remediation suggestions: {pipelineResult.RemediationScriptPath}");
 
         if (!context.ParseResult.GetValueForOption(_openReportOption))
         {

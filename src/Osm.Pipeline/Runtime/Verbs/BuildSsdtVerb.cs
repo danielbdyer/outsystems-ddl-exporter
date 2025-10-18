@@ -95,6 +95,21 @@ public sealed class BuildSsdtVerb : PipelineVerb<BuildSsdtVerbOptions, BuildSsdt
             artifacts.Add(new PipelineArtifact("decision-log", pipelineResult.DecisionLogPath, "application/json"));
         }
 
+        if (!string.IsNullOrWhiteSpace(pipelineResult.OpportunitiesPath))
+        {
+            artifacts.Add(new PipelineArtifact("opportunities", pipelineResult.OpportunitiesPath, "application/json"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(pipelineResult.SafeScriptPath))
+        {
+            artifacts.Add(new PipelineArtifact("opportunity-safe", pipelineResult.SafeScriptPath, "application/sql"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(pipelineResult.RemediationScriptPath))
+        {
+            artifacts.Add(new PipelineArtifact("opportunity-remediation", pipelineResult.RemediationScriptPath, "application/sql"));
+        }
+
         if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty)
         {
             foreach (var seedPath in pipelineResult.StaticSeedScriptPaths)

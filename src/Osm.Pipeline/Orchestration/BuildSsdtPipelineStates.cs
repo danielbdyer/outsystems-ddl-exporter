@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Osm.Emission;
 using Osm.Pipeline.Evidence;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -29,6 +30,7 @@ public record DecisionsSynthesized(
     EvidenceCacheResult? EvidenceCache,
     PolicyDecisionSet Decisions,
     PolicyDecisionReport Report,
+    OpportunitiesReport Opportunities,
     ImmutableArray<PipelineInsight> Insights)
     : EvidencePrepared(Request, Log, Bootstrap, EvidenceCache);
 
@@ -39,10 +41,12 @@ public record EmissionReady(
     EvidenceCacheResult? EvidenceCache,
     PolicyDecisionSet Decisions,
     PolicyDecisionReport Report,
+    OpportunitiesReport Opportunities,
     ImmutableArray<PipelineInsight> Insights,
     SsdtManifest Manifest,
-    string DecisionLogPath)
-    : DecisionsSynthesized(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Insights);
+    string DecisionLogPath,
+    OpportunityArtifactPaths OpportunityArtifacts)
+    : DecisionsSynthesized(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights);
 
 public record StaticSeedsGenerated(
     BuildSsdtPipelineRequest Request,
@@ -51,8 +55,10 @@ public record StaticSeedsGenerated(
     EvidenceCacheResult? EvidenceCache,
     PolicyDecisionSet Decisions,
     PolicyDecisionReport Report,
+    OpportunitiesReport Opportunities,
     ImmutableArray<PipelineInsight> Insights,
     SsdtManifest Manifest,
     string DecisionLogPath,
+    OpportunityArtifactPaths OpportunityArtifacts,
     ImmutableArray<string> StaticSeedScriptPaths)
-    : EmissionReady(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Insights, Manifest, DecisionLogPath);
+    : EmissionReady(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights, Manifest, DecisionLogPath, OpportunityArtifacts);

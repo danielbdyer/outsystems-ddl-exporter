@@ -13,6 +13,7 @@ using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -38,7 +39,9 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         IProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
         EmissionFingerprintCalculator? fingerprintCalculator = null,
         TimeProvider? timeProvider = null,
-        IDataProfilerFactory? dataProfilerFactory = null)
+        IDataProfilerFactory? dataProfilerFactory = null,
+        ITighteningAnalyzer? analyzer = null,
+        OpportunityLogWriter? opportunityWriter = null)
     {
         var resolvedBootstrapper = bootstrapper ?? new PipelineBootstrapper();
         var resolvedTighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
@@ -51,6 +54,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         var resolvedSeedTemplate = seedTemplate ?? StaticEntitySeedTemplate.Load();
         var resolvedProfileDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
         var resolvedFingerprintCalculator = fingerprintCalculator ?? new EmissionFingerprintCalculator();
+        var resolvedAnalyzer = analyzer ?? new TighteningOpportunitiesAnalyzer();
+        var resolvedOpportunityWriter = opportunityWriter ?? new OpportunityLogWriter();
         var resolvedProfilerFactory = dataProfilerFactory
             ?? new DataProfilerFactory(
                 resolvedProfileDeserializer,
@@ -58,8 +63,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
 
         _bootstrapStep = new BuildSsdtBootstrapStep(resolvedBootstrapper, resolvedProfilerFactory);
         _evidenceCacheStep = new BuildSsdtEvidenceCacheStep(resolvedCacheCoordinator);
-        _policyStep = new BuildSsdtPolicyDecisionStep(resolvedTighteningPolicy);
-        _emissionStep = new BuildSsdtEmissionStep(resolvedSmoModelFactory, resolvedEmitter, resolvedDecisionLogWriter, resolvedFingerprintCalculator);
+        _policyStep = new BuildSsdtPolicyDecisionStep(resolvedTighteningPolicy, resolvedAnalyzer);
+        _emissionStep = new BuildSsdtEmissionStep(resolvedSmoModelFactory, resolvedEmitter, resolvedDecisionLogWriter, resolvedFingerprintCalculator, resolvedOpportunityWriter);
         _staticSeedStep = new BuildSsdtStaticSeedStep(resolvedSeedGenerator, resolvedSeedTemplate);
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -112,6 +117,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             {
                 ["manifestPath"] = Path.Combine(request.OutputDirectory, "manifest.json"),
                 ["decisionLogPath"] = finalState.DecisionLogPath,
+                ["opportunitiesPath"] = finalState.OpportunityArtifacts.ReportPath,
                 ["seedScriptPaths"] = finalState.StaticSeedScriptPaths.IsDefaultOrEmpty ? "<none>" : string.Join(";", finalState.StaticSeedScriptPaths),
                 ["cacheDirectory"] = finalState.EvidenceCache?.CacheDirectory
             });
@@ -120,9 +126,13 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.Bootstrap.Profile!,
             finalState.Bootstrap.Insights,
             finalState.Report,
+            finalState.Opportunities,
             finalState.Manifest,
             finalState.Insights,
             finalState.DecisionLogPath,
+            finalState.OpportunityArtifacts.ReportPath,
+            finalState.OpportunityArtifacts.SafeScriptPath,
+            finalState.OpportunityArtifacts.RemediationScriptPath,
             finalState.StaticSeedScriptPaths,
             finalState.EvidenceCache,
             finalState.Log.Build(),

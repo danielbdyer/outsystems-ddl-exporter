@@ -13,6 +13,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 using Xunit;
 
 namespace Osm.Pipeline.Tests;
@@ -106,13 +107,23 @@ public sealed class BuildSsdtApplicationServiceTests
             Array.Empty<PreRemediationManifestEntry>(),
             SsdtCoverageSummary.CreateComplete(0, 0, 0),
             Array.Empty<string>());
+        var opportunities = new OpportunitiesReport(
+            ImmutableArray<Opportunity>.Empty,
+            ImmutableDictionary<ChangeRisk, int>.Empty,
+            ImmutableDictionary<ConstraintType, int>.Empty,
+            DateTimeOffset.UtcNow);
+
         return new BuildSsdtPipelineResult(
             profileResult.Value,
             ImmutableArray<ProfilingInsight>.Empty,
             report,
+            opportunities,
             manifest,
             ImmutableArray<PipelineInsight>.Empty,
             "decision.log",
+            "opportunities.json",
+            "suggestions/safe-to-apply.sql",
+            "suggestions/needs-remediation.sql",
             ImmutableArray<string>.Empty,
             null,
             PipelineExecutionLog.Empty,

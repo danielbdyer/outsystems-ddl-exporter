@@ -9,6 +9,7 @@ using Osm.Domain.Abstractions;
 using Osm.Emission;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -18,17 +19,20 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
     private readonly SsdtEmitter _ssdtEmitter;
     private readonly PolicyDecisionLogWriter _decisionLogWriter;
     private readonly EmissionFingerprintCalculator _fingerprintCalculator;
+    private readonly OpportunityLogWriter _opportunityWriter;
 
     public BuildSsdtEmissionStep(
         SmoModelFactory smoModelFactory,
         SsdtEmitter ssdtEmitter,
         PolicyDecisionLogWriter decisionLogWriter,
-        EmissionFingerprintCalculator fingerprintCalculator)
+        EmissionFingerprintCalculator fingerprintCalculator,
+        OpportunityLogWriter opportunityWriter)
     {
         _smoModelFactory = smoModelFactory ?? throw new ArgumentNullException(nameof(smoModelFactory));
         _ssdtEmitter = ssdtEmitter ?? throw new ArgumentNullException(nameof(ssdtEmitter));
         _decisionLogWriter = decisionLogWriter ?? throw new ArgumentNullException(nameof(decisionLogWriter));
         _fingerprintCalculator = fingerprintCalculator ?? throw new ArgumentNullException(nameof(fingerprintCalculator));
+        _opportunityWriter = opportunityWriter ?? throw new ArgumentNullException(nameof(opportunityWriter));
     }
 
     public async Task<Result<EmissionReady>> ExecuteAsync(
@@ -116,6 +120,21 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
                 ["diagnostics"] = report.Diagnostics.Length.ToString(CultureInfo.InvariantCulture)
             });
 
+        var opportunityArtifacts = await _opportunityWriter
+            .WriteAsync(state.Request.OutputDirectory, state.Opportunities, cancellationToken)
+            .ConfigureAwait(false);
+
+        state.Log.Record(
+            "opportunities.persisted",
+            "Persisted tightening opportunities.",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["report"] = opportunityArtifacts.ReportPath,
+                ["safeScript"] = opportunityArtifacts.SafeScriptPath,
+                ["remediationScript"] = opportunityArtifacts.RemediationScriptPath,
+                ["count"] = state.Opportunities.TotalCount.ToString(CultureInfo.InvariantCulture)
+            });
+
         return Result<EmissionReady>.Success(new EmissionReady(
             state.Request,
             state.Log,
@@ -123,9 +142,11 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             state.EvidenceCache,
             state.Decisions,
             state.Report,
+            state.Opportunities,
             state.Insights,
             manifest,
-            decisionLogPath));
+            decisionLogPath,
+            opportunityArtifacts));
     }
 
     private SmoBuildOptions BuildEmissionOptions(
