@@ -9,7 +9,7 @@ using Osm.Validation.Tightening.Signals;
 
 namespace Osm.Validation.Tightening;
 
-internal sealed class NullabilityEvaluator
+internal sealed class NullabilityEvaluator : ITighteningAnalyzer
 {
     private readonly TighteningOptions _options;
     private readonly IReadOnlyDictionary<ColumnCoordinate, ColumnProfile> _columnProfiles;
@@ -144,5 +144,61 @@ internal sealed class NullabilityEvaluator
             requiresRemediation,
             rationales.ToImmutableArray(),
             trace);
+    }
+
+    public void Analyze(EntityContext context, ColumnAnalysisBuilder builder)
+    {
+        if (context is null)
+        {
+            throw new ArgumentNullException(nameof(context));
+        }
+
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        var decision = Evaluate(context.Entity, context.Attribute, context.Column);
+        builder.SetNullability(decision);
+
+        if (!ShouldCreateOpportunity(decision))
+        {
+            return;
+        }
+
+        var summary = BuildNullabilitySummary(decision);
+        var risk = ChangeRiskClassifier.ForNotNull(decision);
+        var opportunity = Opportunity.Create(
+            OpportunityCategory.Nullability,
+            "NOT NULL",
+            summary,
+            risk,
+            decision.Rationales,
+            column: context.Column);
+
+        builder.AddOpportunity(opportunity);
+    }
+
+    private static bool ShouldCreateOpportunity(NullabilityDecision decision)
+        => decision.RequiresRemediation || !decision.MakeNotNull;
+
+    private static string BuildNullabilitySummary(NullabilityDecision decision)
+    {
+        if (decision.RequiresRemediation)
+        {
+            return "Remediate data before enforcing NOT NULL.";
+        }
+
+        if (decision.Rationales.Contains(TighteningRationales.ProfileMissing))
+        {
+            return "Collect profiling evidence before enforcing NOT NULL.";
+        }
+
+        if (decision.Rationales.Contains(TighteningRationales.NullBudgetEpsilon))
+        {
+            return "Column exceeds the configured null budget.";
+        }
+
+        return "Review policy blockers before enforcing NOT NULL.";
     }
 }
