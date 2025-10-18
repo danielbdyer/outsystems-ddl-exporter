@@ -6,16 +6,19 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Pipeline.Orchestration;
 
 public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepared, DecisionsSynthesized>
 {
     private readonly TighteningPolicy _tighteningPolicy;
+    private readonly ITighteningAnalyzer _analyzer;
 
-    public BuildSsdtPolicyDecisionStep(TighteningPolicy tighteningPolicy)
+    public BuildSsdtPolicyDecisionStep(TighteningPolicy tighteningPolicy, ITighteningAnalyzer analyzer)
     {
         _tighteningPolicy = tighteningPolicy ?? throw new ArgumentNullException(nameof(tighteningPolicy));
+        _analyzer = analyzer ?? throw new ArgumentNullException(nameof(analyzer));
     }
 
     public Task<Result<DecisionsSynthesized>> ExecuteAsync(
@@ -34,6 +37,7 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
 
         var decisions = _tighteningPolicy.Decide(model, profile, state.Request.TighteningOptions);
         var report = PolicyDecisionReporter.Create(decisions);
+        var opportunities = _analyzer.Analyze(model, profile, decisions);
 
         state.Log.Record(
             "policy.decisions.synthesized",
@@ -46,7 +50,8 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
                 ["uniqueIndexes"] = report.UniqueIndexCount.ToString(CultureInfo.InvariantCulture),
                 ["uniqueIndexesEnforced"] = report.UniqueIndexesEnforcedCount.ToString(CultureInfo.InvariantCulture),
                 ["foreignKeys"] = report.ForeignKeyCount.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeysCreated"] = report.ForeignKeysCreatedCount.ToString(CultureInfo.InvariantCulture)
+                ["foreignKeysCreated"] = report.ForeignKeysCreatedCount.ToString(CultureInfo.InvariantCulture),
+                ["opportunities"] = opportunities.TotalCount.ToString(CultureInfo.InvariantCulture)
             });
 
         return Task.FromResult(Result<DecisionsSynthesized>.Success(new DecisionsSynthesized(
@@ -56,6 +61,7 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
             state.EvidenceCache,
             decisions,
             report,
+            opportunities,
             ImmutableArray<PipelineInsight>.Empty)));
     }
 }

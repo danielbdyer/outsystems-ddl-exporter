@@ -50,9 +50,11 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<EmissionReady, Stat
                 state.EvidenceCache,
                 state.Decisions,
                 state.Report,
+                state.Opportunities,
                 state.Insights,
                 state.Manifest,
                 state.DecisionLogPath,
+                state.OpportunityArtifacts,
                 ImmutableArray<string>.Empty));
         }
 
@@ -135,9 +137,11 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<EmissionReady, Stat
             state.EvidenceCache,
             state.Decisions,
             state.Report,
+            state.Opportunities,
             state.Insights,
             state.Manifest,
             state.DecisionLogPath,
+            state.OpportunityArtifacts,
             seedPaths));
     }
 }
