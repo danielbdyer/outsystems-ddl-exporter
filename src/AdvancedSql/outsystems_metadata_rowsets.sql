@@ -34,28 +34,40 @@ DECLARE @OnlyActiveAttributes BIT = 1;
 IF OBJECT_ID('tempdb..#ModuleNames') IS NOT NULL DROP TABLE #ModuleNames;
 CREATE TABLE #ModuleNames ( ModuleName NVARCHAR(256) COLLATE DATABASE_DEFAULT NOT NULL );
 
-DECLARE @ModuleTokens TABLE ( ModuleName NVARCHAR(MAX) NOT NULL );
+DECLARE @ModuleTokens TABLE (
+    ModuleName NVARCHAR(256) COLLATE DATABASE_DEFAULT NOT NULL PRIMARY KEY
+);
+
+DECLARE @InvalidModuleName NVARCHAR(MAX);
 
 IF NULLIF(LTRIM(RTRIM(@ModuleNamesCsv)), '') IS NOT NULL
 BEGIN
+    ;WITH TrimmedTokens AS (
+        SELECT DISTINCT LTRIM(RTRIM(value)) AS ModuleName
+        FROM STRING_SPLIT(@ModuleNamesCsv, ',')
+        WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL
+    )
+    SELECT TOP (1) @InvalidModuleName = ModuleName
+    FROM TrimmedTokens
+    WHERE LEN(ModuleName) > 256;
+
+    IF @InvalidModuleName IS NOT NULL
+    BEGIN
+        DECLARE @ModuleNameError NVARCHAR(4000) =
+            N'Module filter module name exceeds 256 characters: '''
+            + LEFT(@InvalidModuleName, 256)
+            + N'''.';
+        THROW 50000, @ModuleNameError, 1;
+    END;
+
+    ;WITH TrimmedTokens AS (
+        SELECT DISTINCT LTRIM(RTRIM(value)) AS ModuleName
+        FROM STRING_SPLIT(@ModuleNamesCsv, ',')
+        WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL
+    )
     INSERT INTO @ModuleTokens(ModuleName)
-    SELECT LTRIM(RTRIM(value))
-    FROM STRING_SPLIT(@ModuleNamesCsv, ',')
-    WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL;
-END;
-
-DECLARE @InvalidModuleName NVARCHAR(MAX);
-SELECT TOP (1) @InvalidModuleName = ModuleName
-FROM @ModuleTokens
-WHERE LEN(ModuleName) > 256;
-
-IF @InvalidModuleName IS NOT NULL
-BEGIN
-    DECLARE @ModuleNameError NVARCHAR(4000) =
-        N'Module filter module name exceeds 256 characters: '''
-        + LEFT(@InvalidModuleName, 256)
-        + N'''.';
-    THROW 50000, @ModuleNameError, 1;
+    SELECT ModuleName
+    FROM TrimmedTokens;
 END;
 
 IF EXISTS (SELECT 1 FROM @ModuleTokens)
