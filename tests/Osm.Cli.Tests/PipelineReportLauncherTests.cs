@@ -9,6 +9,7 @@ using Osm.Emission;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 using Tests.Support;
 using Xunit;
 
@@ -147,6 +148,22 @@ public class PipelineReportLauncherTests
             await File.WriteAllTextAsync(Path.Combine(output.Path, "dmm-diff.json"), "{}");
         }
 
+        var opportunities = new OpportunitiesReport(
+            ImmutableArray<Opportunity>.Empty,
+            ImmutableDictionary<ChangeRisk, int>.Empty,
+            ImmutableDictionary<ConstraintType, int>.Empty,
+            DateTimeOffset.UnixEpoch);
+
+        var opportunitiesPath = Path.Combine(output.Path, "opportunities.json");
+        await File.WriteAllTextAsync(opportunitiesPath, "{}");
+
+        var suggestionsRoot = Path.Combine(output.Path, "suggestions");
+        Directory.CreateDirectory(suggestionsRoot);
+        var safePath = Path.Combine(suggestionsRoot, "safe-to-apply.sql");
+        var remediationPath = Path.Combine(suggestionsRoot, "needs-remediation.sql");
+        await File.WriteAllTextAsync(safePath, string.Empty);
+        await File.WriteAllTextAsync(remediationPath, string.Empty);
+
         var pipelineResult = new BuildSsdtPipelineResult(
             new ProfileSnapshot(
                 ImmutableArray<ColumnProfile>.Empty,
@@ -155,9 +172,15 @@ public class PipelineReportLauncherTests
                 ImmutableArray<ForeignKeyReality>.Empty),
             ImmutableArray<ProfilingInsight>.Empty,
             decisionReport,
+            opportunities,
             manifest,
             insights.IsDefault ? ImmutableArray<PipelineInsight>.Empty : insights,
             policyPath,
+            opportunitiesPath,
+            safePath,
+            string.Empty,
+            remediationPath,
+            string.Empty,
             seedPaths,
             null,
             PipelineExecutionLog.Empty,

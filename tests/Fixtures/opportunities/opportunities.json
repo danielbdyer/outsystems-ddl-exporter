@@ -1,0 +1,132 @@
+{
+  "Opportunities": [
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Name": "Email",
+      "Statements": [
+        "ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]\n    ALTER COLUMN [Email] NVARCHAR(255) NOT NULL;"
+      ],
+      "Rationales": [
+        "Null probe succeeded."
+      ],
+      "Evidence": [
+        "Rows=100",
+        "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": false,
+        "HasOrphans": false
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_CUSTOMER"
+            },
+            "Column": {
+              "Value": "EMAIL"
+            }
+          },
+          "Module": "Customers",
+          "Entity": "Customer",
+          "Attribute": "Email",
+          "DataType": "Text",
+          "SqlType": "NVARCHAR(255)",
+          "PhysicalNullable": false,
+          "PhysicalUnique": false,
+          "RowCount": 100,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 100,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": false,
+          "UniqueProbeStatus": null,
+          "HasOrphans": false,
+          "HasDatabaseConstraint": true,
+          "DeleteRule": null
+        }
+      ]
+    },
+    {
+      "Constraint": "Unique",
+      "Risk": "NeedsRemediation",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_ORDER",
+      "Name": "IX_OSUSR_ABC_ORDER_OrderNumber",
+      "Statements": [
+        "CREATE UNIQUE INDEX [IX_OSUSR_ABC_ORDER_OrderNumber] ON [dbo].[OSUSR_ABC_ORDER] ([OrderNumber]);"
+      ],
+      "Rationales": [
+        "Duplicate values detected."
+      ],
+      "Evidence": [
+        "Unique duplicates=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"
+      ],
+      "Metrics": {
+        "RequiresRemediation": true,
+        "EvidenceAvailable": true,
+        "DataClean": false,
+        "HasDuplicates": true,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_ORDER"
+            },
+            "Column": {
+              "Value": "ORDERNUMBER"
+            }
+          },
+          "Module": "Orders",
+          "Entity": "Order",
+          "Attribute": "OrderNumber",
+          "DataType": "Text",
+          "SqlType": "NVARCHAR(50)",
+          "PhysicalNullable": false,
+          "PhysicalUnique": false,
+          "RowCount": 100,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 100,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": true,
+          "UniqueProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 100,
+            "Outcome": "Succeeded"
+          },
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ]
+    }
+  ],
+  "RiskCounts": {
+    "SafeToApply": 1,
+    "NeedsRemediation": 1
+  },
+  "ConstraintCounts": {
+    "NotNull": 1,
+    "Unique": 1
+  },
+  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00"
+}

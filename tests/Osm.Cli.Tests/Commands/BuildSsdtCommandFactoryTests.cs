@@ -24,6 +24,7 @@ using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
@@ -285,13 +286,25 @@ public class BuildSsdtCommandFactoryTests
                 SsdtCoverageSummary.CreateComplete(0, 0, 0),
                 Array.Empty<string>());
 
+            var opportunities = new OpportunitiesReport(
+                ImmutableArray<Opportunity>.Empty,
+                ImmutableDictionary<ChangeRisk, int>.Empty,
+                ImmutableDictionary<ConstraintType, int>.Empty,
+                DateTimeOffset.UnixEpoch);
+
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
                 ImmutableArray<ProfilingInsight>.Empty,
                 report,
+                opportunities,
                 manifest,
                 ImmutableArray<PipelineInsight>.Empty,
                 "decision.log",
+                "opportunities.json",
+                "suggestions/safe-to-apply.sql",
+                string.Empty,
+                "suggestions/needs-remediation.sql",
+                string.Empty,
                 ImmutableArray<string>.Empty,
                 null,
                 PipelineExecutionLog.Empty,

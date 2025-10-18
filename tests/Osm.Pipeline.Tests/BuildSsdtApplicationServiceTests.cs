@@ -14,7 +14,7 @@ using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
-using Osm.Validation.Tightening.Opportunities;
+using Opportunities = Osm.Validation.Tightening.Opportunities;
 using Xunit;
 
 namespace Osm.Pipeline.Tests;
@@ -109,10 +109,10 @@ public sealed class BuildSsdtApplicationServiceTests
             Array.Empty<PreRemediationManifestEntry>(),
             SsdtCoverageSummary.CreateComplete(0, 0, 0),
             Array.Empty<string>());
-        var opportunities = new OpportunitiesReport(
-            ImmutableArray<Opportunity>.Empty,
-            ImmutableDictionary<ChangeRisk, int>.Empty,
-            ImmutableDictionary<ConstraintType, int>.Empty,
+        var opportunities = new Opportunities.OpportunitiesReport(
+            ImmutableArray<Opportunities.Opportunity>.Empty,
+            ImmutableDictionary<Opportunities.ChangeRisk, int>.Empty,
+            ImmutableDictionary<Opportunities.ConstraintType, int>.Empty,
             DateTimeOffset.UtcNow);
 
         return new BuildSsdtPipelineResult(
@@ -125,7 +125,9 @@ public sealed class BuildSsdtApplicationServiceTests
             "decision.log",
             "opportunities.json",
             "suggestions/safe-to-apply.sql",
+            "-- safe script\nGO\n",
             "suggestions/needs-remediation.sql",
+            "-- remediation script\nGO\n",
             ImmutableArray<string>.Empty,
             null,
             PipelineExecutionLog.Empty,

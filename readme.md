@@ -415,6 +415,14 @@ dotnet run --project src/Osm.Cli -- build-ssdt \
 * Keep reusable snapshots under version control (for example the repository fixtures) and point to them via `--profile` or the CLI configuration file.
 * `profiler.provider=Fixture` and `profiler.profilePath=<path>` in `appsettings.json` remove the need to pass flags on every invocation; environment variables such as `OSM_CLI_PROFILE_PATH` offer another override when automating builds.【F:src/Osm.Pipeline/Configuration/CliConfigurationLoader.cs†L95-L140】【F:readme.md†L626-L671】
 
+Every run also emits a tightening opportunity bundle next to the SSDT schema:
+
+* `<out>/opportunities.json` captures every candidate the analyzer reviewed (constraint type, risk level, evidence, and per-column profiling metrics).
+* `<out>/suggestions/safe-to-apply.sql` concatenates statement-ready fixes that require no remediation.
+* `<out>/suggestions/needs-remediation.sql` captures SQL that should be reviewed alongside data cleanup guidance before deployment.
+
+These files appear in the CLI artifact summary and console output so pipelines can promote or inspect them without re-running analysis.【F:src/Osm.Pipeline/Runtime/Verbs/BuildSsdtVerb.cs†L87-L113】【F:src/Osm.Cli/Commands/BuildSsdtCommandFactory.cs†L180-L187】
+
 #### Live SQL capture
 
 ```bash

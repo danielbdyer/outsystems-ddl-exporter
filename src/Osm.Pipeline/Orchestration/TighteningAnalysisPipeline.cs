@@ -21,7 +21,7 @@ public sealed record TighteningAnalysisPipelineRequest(
     TighteningOptions TighteningOptions,
     SupplementalModelOptions SupplementalModels,
     string ProfilePath,
-    string OutputDirectory);
+    string OutputDirectory) : ICommand<TighteningAnalysisPipelineResult>;
 
 public sealed record TighteningAnalysisPipelineResult(
     PolicyDecisionReport Report,
