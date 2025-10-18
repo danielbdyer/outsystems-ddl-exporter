@@ -169,11 +169,22 @@ internal sealed class SqlScriptFormatter
     public string FormatCreateTableScript(
         string script,
         CreateTableStatement statement,
-        IReadOnlyDictionary<string, bool>? foreignKeyTrustLookup)
+        IReadOnlyDictionary<string, bool>? foreignKeyTrustLookup,
+        SmoFormatOptions format)
     {
         if (script is null)
         {
             throw new ArgumentNullException(nameof(script));
+        }
+
+        if (format is null)
+        {
+            throw new ArgumentNullException(nameof(format));
+        }
+
+        if (!format.NormalizeWhitespace)
+        {
+            return script;
         }
 
         if (statement?.Definition?.ColumnDefinitions is null ||

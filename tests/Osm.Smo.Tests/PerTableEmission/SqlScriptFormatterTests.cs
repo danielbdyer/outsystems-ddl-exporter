@@ -67,7 +67,7 @@ CREATE TABLE [dbo].[Order](
 );
 """.Trim();
 
-        var formatted = formatter.FormatCreateTableScript(script, statement, foreignKeyTrustLookup: null);
+        var formatted = formatter.FormatCreateTableScript(script, statement, foreignKeyTrustLookup: null, SmoFormatOptions.Default);
 
         Assert.Contains("    [Id] INT NOT NULL\n        CONSTRAINT [PK_Order] PRIMARY KEY CLUSTERED,", formatted);
         Assert.Contains("    [Status] INT NOT NULL\n        CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0)),", formatted);
@@ -95,10 +95,33 @@ CREATE TABLE [dbo].[Order](
 );
 """.Trim();
 
-        var formatted = formatter.FormatCreateTableScript(script, statement, lookup);
+        var formatted = formatter.FormatCreateTableScript(script, statement, lookup, SmoFormatOptions.Default);
 
         Assert.Contains("    CONSTRAINT [FK_Order_Customer]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
         Assert.Contains("-- Source constraint was not trusted (WITH NOCHECK)", formatted);
+    }
+
+    [Fact]
+    public void FormatCreateTableScript_skips_reflow_when_normalization_is_disabled()
+    {
+        var formatter = new SqlScriptFormatter();
+        var statement = CreateMinimalCreateTableStatement("Id", "Status", "Code", "CustomerId");
+        var format = SmoFormatOptions.Default.WithWhitespaceNormalization(normalize: false);
+
+        var script = """
+CREATE TABLE [dbo].[Order](
+    [Id] INT NOT NULL CONSTRAINT [PK_Order] PRIMARY KEY CLUSTERED ,
+    [Status] INT NOT NULL CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0))  ,
+    [Code] NVARCHAR(20) CONSTRAINT [DF_Order_Code] DEFAULT ((N''))   ,
+    [CustomerId] INT NOT NULL,
+    CONSTRAINT [PK_Order_Multi] PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC) ,
+    CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
+);
+""".Trim();
+
+        var formatted = formatter.FormatCreateTableScript(script, statement, foreignKeyTrustLookup: null, format);
+
+        Assert.Equal(script, formatted);
     }
 
     private static CreateTableStatement CreateMinimalCreateTableStatement(params string[] columnNames)
