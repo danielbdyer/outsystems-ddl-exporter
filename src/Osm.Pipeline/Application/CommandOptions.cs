@@ -40,6 +40,11 @@ public sealed record CompareWithDmmOverrides(
     string? OutputDirectory,
     int? MaxDegreeOfParallelism);
 
+public sealed record AnalyzeOverrides(
+    string? ModelPath,
+    string? ProfilePath,
+    string? OutputDirectory);
+
 public sealed record ExtractModelOverrides(
     IReadOnlyList<string>? Modules,
     bool? IncludeSystemModules,
