@@ -8,7 +8,7 @@ using Osm.Domain.ValueObjects;
 
 namespace Osm.Validation.Tightening;
 
-internal sealed class ForeignKeyEvaluator
+internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
 {
     private readonly ForeignKeyOptions _options;
     private readonly IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> _foreignKeys;
@@ -26,6 +26,57 @@ internal sealed class ForeignKeyEvaluator
 
     public ForeignKeyDecision Evaluate(EntityModel entity, AttributeModel attribute, ColumnCoordinate coordinate)
     {
+        var evaluation = EvaluateCore(entity, attribute, coordinate);
+        return evaluation.Decision;
+    }
+
+    public void Analyze(EntityContext context, ColumnAnalysisBuilder builder)
+    {
+        if (context is null)
+        {
+            throw new ArgumentNullException(nameof(context));
+        }
+
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        var evaluation = EvaluateCore(context.Entity, context.Attribute, context.Column);
+
+        if (!context.Attribute.Reference.IsReference)
+        {
+            return;
+        }
+
+        builder.SetForeignKey(evaluation.Decision);
+
+        if (!ShouldCreateOpportunity(evaluation))
+        {
+            return;
+        }
+
+        var summary = BuildForeignKeySummary(evaluation);
+        var risk = ChangeRiskClassifier.ForForeignKey(
+            evaluation.Decision,
+            evaluation.HasOrphan,
+            evaluation.IgnoreRule,
+            evaluation.CrossSchemaBlocked,
+            evaluation.CrossCatalogBlocked);
+
+        var opportunity = Opportunity.Create(
+            OpportunityCategory.ForeignKey,
+            "FOREIGN KEY",
+            summary,
+            risk,
+            evaluation.Decision.Rationales,
+            column: context.Column);
+
+        builder.AddOpportunity(opportunity);
+    }
+
+    private ForeignKeyEvaluation EvaluateCore(EntityModel entity, AttributeModel attribute, ColumnCoordinate coordinate)
+    {
         if (entity is null)
         {
             throw new ArgumentNullException(nameof(entity));
@@ -41,7 +92,12 @@ internal sealed class ForeignKeyEvaluator
 
         if (!attribute.Reference.IsReference)
         {
-            return ForeignKeyDecision.Create(coordinate, createConstraint, rationales.ToImmutableArray());
+            return new ForeignKeyEvaluation(
+                ForeignKeyDecision.Create(coordinate, createConstraint, rationales.ToImmutableArray()),
+                HasOrphan: false,
+                IgnoreRule: false,
+                CrossSchemaBlocked: false,
+                CrossCatalogBlocked: false);
         }
 
         var fkReality = _foreignKeys.TryGetValue(coordinate, out var fk) ? fk : null;
@@ -95,7 +151,37 @@ internal sealed class ForeignKeyEvaluator
             }
         }
 
-        return ForeignKeyDecision.Create(coordinate, createConstraint, rationales.ToImmutableArray());
+        var decision = ForeignKeyDecision.Create(coordinate, createConstraint, rationales.ToImmutableArray());
+
+        return new ForeignKeyEvaluation(
+            decision,
+            hasOrphan,
+            ignoreRule,
+            crossSchemaBlocked,
+            crossCatalogBlocked);
+    }
+
+    private static bool ShouldCreateOpportunity(ForeignKeyEvaluation evaluation)
+        => !evaluation.Decision.CreateConstraint;
+
+    private static string BuildForeignKeySummary(ForeignKeyEvaluation evaluation)
+    {
+        if (evaluation.HasOrphan)
+        {
+            return "Resolve orphaned rows before enforcing the foreign key.";
+        }
+
+        if (evaluation.IgnoreRule)
+        {
+            return "Delete rule 'Ignore' prevents creating the foreign key.";
+        }
+
+        if (evaluation.CrossSchemaBlocked || evaluation.CrossCatalogBlocked)
+        {
+            return "Allow cross-database enforcement or adjust the schema before creating the foreign key.";
+        }
+
+        return "Enable policy or gather evidence before creating the foreign key.";
     }
 
     private static bool IsIgnoreRule(string? deleteRule)
@@ -106,4 +192,11 @@ internal sealed class ForeignKeyEvaluator
 
     private static bool CatalogEquals(string? left, string? right)
         => string.Equals(left ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
+    private sealed record ForeignKeyEvaluation(
+        ForeignKeyDecision Decision,
+        bool HasOrphan,
+        bool IgnoreRule,
+        bool CrossSchemaBlocked,
+        bool CrossCatalogBlocked);
 }

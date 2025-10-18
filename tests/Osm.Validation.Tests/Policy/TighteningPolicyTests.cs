@@ -281,6 +281,22 @@ public sealed class TighteningPolicyTests
         Assert.Equal(2, diagnostic.Candidates.Length);
     }
 
+    [Fact]
+    public void Analyze_ReturnsOpportunitiesReport()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-fk-ignore.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroFkIgnore);
+        var policy = new TighteningPolicy();
+        var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
+
+        var analysis = policy.Analyze(model, snapshot, options);
+
+        Assert.NotNull(analysis.Report);
+        Assert.True(analysis.Report.Columns.Length > 0);
+        Assert.True(analysis.Report.Summary.ColumnsWithOpportunities > 0);
+    }
+
+
     private static EntityModel GetEntity(OsmModel model, string logicalName)
         => model.Modules.SelectMany(m => m.Entities).Single(e => string.Equals(e.LogicalName.Value, logicalName, StringComparison.Ordinal));
 

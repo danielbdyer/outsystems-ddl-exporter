@@ -27,7 +27,7 @@ public sealed class UniqueIndexDecisionStrategy
         _evidence = evidence ?? throw new ArgumentNullException(nameof(evidence));
     }
 
-    public UniqueIndexDecision Decide(EntityModel entity, IndexModel index)
+    public UniqueIndexAnalysis Evaluate(EntityModel entity, IndexModel index)
     {
         if (entity is null)
         {
@@ -43,7 +43,17 @@ public sealed class UniqueIndexDecisionStrategy
 
         if (!index.IsUnique)
         {
-            return UniqueIndexDecision.Create(coordinate, false, false, ImmutableArray<string>.Empty);
+            var emptyDecision = UniqueIndexDecision.Create(coordinate, enforceUnique: false, requiresRemediation: false, ImmutableArray<string>.Empty);
+            return new UniqueIndexAnalysis(
+                coordinate,
+                emptyDecision,
+                ImmutableArray<string>.Empty,
+                false,
+                false,
+                false,
+                false,
+                false,
+                ImmutableArray<ColumnCoordinate>.Empty);
         }
 
         var keyColumns = index.Columns
@@ -52,7 +62,17 @@ public sealed class UniqueIndexDecisionStrategy
 
         if (keyColumns.Length == 0)
         {
-            return UniqueIndexDecision.Create(coordinate, false, false, ImmutableArray<string>.Empty);
+            var emptyDecision = UniqueIndexDecision.Create(coordinate, false, false, ImmutableArray<string>.Empty);
+            return new UniqueIndexAnalysis(
+                coordinate,
+                emptyDecision,
+                ImmutableArray<string>.Empty,
+                false,
+                false,
+                false,
+                false,
+                false,
+                ImmutableArray<ColumnCoordinate>.Empty);
         }
 
         var columnCoordinates = keyColumns
@@ -87,9 +107,22 @@ public sealed class UniqueIndexDecisionStrategy
         }
 
         var (enforceUnique, requiresRemediation) = DetermineOutcome(policyDisabled, physicalUnique, evidence);
+        var uniqueDecision = UniqueIndexDecision.Create(coordinate, enforceUnique, requiresRemediation, rationales.ToImmutableArray());
 
-        return UniqueIndexDecision.Create(coordinate, enforceUnique, requiresRemediation, rationales.ToImmutableArray());
+        return new UniqueIndexAnalysis(
+            coordinate,
+            uniqueDecision,
+            rationales.ToImmutableArray(),
+            evidence.HasDuplicates,
+            physicalUnique,
+            policyDisabled,
+            evidence.HasEvidence,
+            evidence.DataClean,
+            columnCoordinates.ToImmutableArray());
     }
+
+    public UniqueIndexDecision Decide(EntityModel entity, IndexModel index)
+        => Evaluate(entity, index).Decision;
 
     private (bool EnforceUnique, bool RequiresRemediation) DetermineOutcome(
         bool policyDisabled,
@@ -259,6 +292,17 @@ public sealed class UniqueIndexDecisionStrategy
         rationales.Add(TighteningRationales.RemediateBeforeTighten);
         return true;
     }
+
+    public sealed record UniqueIndexAnalysis(
+        IndexCoordinate Index,
+        UniqueIndexDecision Decision,
+        ImmutableArray<string> Rationales,
+        bool HasDuplicates,
+        bool PhysicalReality,
+        bool PolicyDisabled,
+        bool HasEvidence,
+        bool DataClean,
+        ImmutableArray<ColumnCoordinate> Columns);
 
     private sealed record UniqueIndexEvidence(
         bool HasProfile,

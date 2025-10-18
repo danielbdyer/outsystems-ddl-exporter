@@ -11,18 +11,31 @@ namespace Osm.Validation.Tightening;
 
 public sealed class TighteningPolicy
 {
+    private readonly ILegacyPolicyAdapter _legacyAdapter;
+
+    public TighteningPolicy()
+        : this(new LegacyPolicyAdapter())
+    {
+    }
+
+    public TighteningPolicy(ILegacyPolicyAdapter legacyAdapter)
+    {
+        _legacyAdapter = legacyAdapter ?? throw new ArgumentNullException(nameof(legacyAdapter));
+    }
+
     public static TighteningDecisions Evaluate(OsmModel model, ProfileSnapshot snapshot, TighteningMode mode)
     {
-        var options = CreateKernelOptions(mode);
-        var decisionSet = ComputeDecisionSet(model, snapshot, options);
+        var policy = new TighteningPolicy();
+        var options = policy._legacyAdapter.Adapt(mode);
+        var analysis = policy.Analyze(model, snapshot, options);
 
-        return TighteningDecisions.Create(decisionSet.Nullability, decisionSet.ForeignKeys, decisionSet.UniqueIndexes);
+        return TighteningDecisions.Create(analysis.Decisions.Nullability, analysis.Decisions.ForeignKeys, analysis.Decisions.UniqueIndexes);
     }
 
     public PolicyDecisionSet Decide(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
-        => ComputeDecisionSet(model, snapshot, options);
+        => Analyze(model, snapshot, options).Decisions;
 
-    private static PolicyDecisionSet ComputeDecisionSet(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
+    public PolicyAnalysisResult Analyze(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
     {
         if (model is null)
         {
@@ -41,7 +54,7 @@ public sealed class TighteningPolicy
 
         var columnProfiles = snapshot.Columns.ToDictionary(ColumnCoordinate.From, static c => c);
         var uniqueProfiles = snapshot.UniqueCandidates.ToDictionary(ColumnCoordinate.From, static u => u);
-        var fkReality = snapshot.ForeignKeys.ToDictionary(f => ColumnCoordinate.From(f.Reference), static f => f);
+        var foreignKeyReality = snapshot.ForeignKeys.ToDictionary(f => ColumnCoordinate.From(f.Reference), static f => f);
 
         var lookupResolution = EntityLookupResolver.Resolve(model, options.Emission.NamingOverrides);
         var entityLookup = lookupResolution.Lookup;
@@ -61,51 +74,99 @@ public sealed class TighteningPolicy
             options,
             columnProfiles,
             uniqueProfiles,
-            fkReality,
+            foreignKeyReality,
             foreignKeyTargets,
             uniqueEvidence.SingleColumnClean,
             uniqueEvidence.SingleColumnDuplicates,
             uniqueEvidence.CompositeClean,
             uniqueEvidence.CompositeDuplicates);
 
-        var foreignKeyEvaluator = new ForeignKeyEvaluator(options.ForeignKeys, fkReality, foreignKeyTargets);
+        var foreignKeyEvaluator = new ForeignKeyEvaluator(options.ForeignKeys, foreignKeyReality, foreignKeyTargets);
+        var analyzers = new ITighteningAnalyzer[] { nullabilityEvaluator, foreignKeyEvaluator };
 
         var nullabilityBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, NullabilityDecision>();
         var foreignKeyBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ForeignKeyDecision>();
         var uniqueIndexBuilder = ImmutableDictionary.CreateBuilder<IndexCoordinate, UniqueIndexDecision>();
         var columnModuleBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, string>();
         var indexModuleBuilder = ImmutableDictionary.CreateBuilder<IndexCoordinate, string>();
+        var columnAnalysisBuilder = new Dictionary<ColumnCoordinate, ColumnAnalysisBuilder>();
 
         foreach (var entity in model.Modules.SelectMany(m => m.Entities))
         {
             foreach (var attribute in attributeIndex.GetAttributes(entity))
             {
                 var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
+                var builder = new ColumnAnalysisBuilder(coordinate);
+                columnAnalysisBuilder[coordinate] = builder;
 
-                var nullability = nullabilityEvaluator.Evaluate(entity, attribute, coordinate);
+                var columnProfile = columnProfiles.TryGetValue(coordinate, out var profile) ? profile : null;
+                var uniqueProfile = uniqueProfiles.TryGetValue(coordinate, out var uniqueCandidate) ? uniqueCandidate : null;
+                var foreignKey = foreignKeyReality.TryGetValue(coordinate, out var fk) ? fk : null;
 
-                nullabilityBuilder[coordinate] = nullability;
+                var context = new EntityContext(
+                    entity,
+                    attribute,
+                    coordinate,
+                    columnProfile,
+                    uniqueProfile,
+                    foreignKey,
+                    foreignKeyTargets.GetTarget(coordinate),
+                    uniqueEvidence.SingleColumnClean.Contains(coordinate),
+                    uniqueEvidence.SingleColumnDuplicates.Contains(coordinate),
+                    uniqueEvidence.CompositeClean.Contains(coordinate),
+                    uniqueEvidence.CompositeDuplicates.Contains(coordinate));
+
+                foreach (var analyzer in analyzers)
+                {
+                    analyzer.Analyze(context, builder);
+                }
+
+                nullabilityBuilder[coordinate] = builder.Nullability;
                 columnModuleBuilder[coordinate] = entity.Module.Value;
 
-                if (attribute.Reference.IsReference)
+                if (builder.ForeignKey is not null)
                 {
-                    var fkDecision = foreignKeyEvaluator.Evaluate(entity, attribute, coordinate);
-
-                    foreignKeyBuilder[coordinate] = fkDecision;
+                    foreignKeyBuilder[coordinate] = builder.ForeignKey;
                 }
             }
 
             foreach (var index in entity.Indexes.Where(static i => i.IsUnique))
             {
-                var indexCoordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
-                var uniqueDecision = uniqueStrategy.Decide(entity, index);
+                var indexAnalysis = uniqueStrategy.Evaluate(entity, index);
+                uniqueIndexBuilder[indexAnalysis.Index] = indexAnalysis.Decision;
+                indexModuleBuilder[indexAnalysis.Index] = entity.Module.Value;
 
-                uniqueIndexBuilder[indexCoordinate] = uniqueDecision;
-                indexModuleBuilder[indexCoordinate] = entity.Module.Value;
+                foreach (var column in indexAnalysis.Columns)
+                {
+                    if (!columnAnalysisBuilder.TryGetValue(column, out var builder))
+                    {
+                        continue;
+                    }
+
+                    builder.AddUniqueDecision(indexAnalysis.Decision);
+
+                    if (!ShouldCreateUniqueOpportunity(indexAnalysis))
+                    {
+                        continue;
+                    }
+
+                    var summary = BuildUniqueSummary(indexAnalysis);
+                    var risk = ChangeRiskClassifier.ForUniqueIndex(indexAnalysis);
+                    var opportunity = Opportunity.Create(
+                        OpportunityCategory.UniqueIndex,
+                        "UNIQUE",
+                        summary,
+                        risk,
+                        indexAnalysis.Rationales,
+                        column: column,
+                        index: indexAnalysis.Index);
+
+                    builder.AddOpportunity(opportunity);
+                }
             }
         }
 
-        return PolicyDecisionSet.Create(
+        var decisions = PolicyDecisionSet.Create(
             nullabilityBuilder.ToImmutable(),
             foreignKeyBuilder.ToImmutable(),
             uniqueIndexBuilder.ToImmutable(),
@@ -113,19 +174,37 @@ public sealed class TighteningPolicy
             columnModuleBuilder.ToImmutable(),
             indexModuleBuilder.ToImmutable(),
             options);
+
+        var report = OpportunitiesReport.Create(columnAnalysisBuilder.Values.Select(builder => builder.Build()));
+
+        return PolicyAnalysisResult.Create(decisions, report);
     }
 
-    private static TighteningOptions CreateKernelOptions(TighteningMode mode)
-    {
-        var defaults = TighteningOptions.Default;
-        var policy = PolicyOptions.Create(mode, defaults.Policy.NullBudget).Value;
+    private static bool ShouldCreateUniqueOpportunity(UniqueIndexDecisionStrategy.UniqueIndexAnalysis analysis)
+        => !analysis.Decision.EnforceUnique || analysis.Decision.RequiresRemediation;
 
-        return TighteningOptions.Create(
-            policy,
-            defaults.ForeignKeys,
-            defaults.Uniqueness,
-            defaults.Remediation,
-            defaults.Emission,
-            defaults.Mocking).Value;
+    private static string BuildUniqueSummary(UniqueIndexDecisionStrategy.UniqueIndexAnalysis analysis)
+    {
+        if (analysis.Decision.RequiresRemediation)
+        {
+            return "Remediate data before enforcing the unique index.";
+        }
+
+        if (analysis.HasDuplicates)
+        {
+            return "Resolve duplicate values before enforcing the unique index.";
+        }
+
+        if (analysis.PolicyDisabled)
+        {
+            return "Enable policy support before enforcing the unique index.";
+        }
+
+        if (!analysis.HasEvidence)
+        {
+            return "Collect profiling evidence before enforcing the unique index.";
+        }
+
+        return "Review unique index enforcement before applying.";
     }
 }
