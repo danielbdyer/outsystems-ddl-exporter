@@ -826,7 +826,7 @@ CREATE CLUSTERED INDEX IX_IdxColsJson ON #IdxColsJson(EntityId, IndexName);
 -- Indexes JSON per entity
 IF OBJECT_ID('tempdb..#IdxJson') IS NOT NULL DROP TABLE #IdxJson;
 SELECT
-  ai.EntityId,
+  en.EntityId,
   ISNULL((
     SELECT
       ai2.IndexName                         AS [name],
@@ -853,32 +853,30 @@ SELECT
       JSON_QUERY(icj.ColumnsJson)           AS [columns]
     FROM #AllIdx ai2
     LEFT JOIN #IdxColsJson icj ON icj.EntityId = ai2.EntityId AND icj.IndexName = ai2.IndexName
-    WHERE ai2.EntityId = ai.EntityId
+    WHERE ai2.EntityId = en.EntityId
     ORDER BY ai2.IndexName
     FOR JSON PATH
   ), '[]') AS IndexesJson
 INTO #IdxJson
-FROM #AllIdx ai
-GROUP BY ai.EntityId;
+FROM #Ent en;
 CREATE CLUSTERED INDEX IX_IdxJson ON #IdxJson(EntityId);
 
 -- Trigger JSON per entity
 IF OBJECT_ID('tempdb..#TriggerJson') IS NOT NULL DROP TABLE #TriggerJson;
 SELECT
-  tr.EntityId,
+  en.EntityId,
   ISNULL((
     SELECT
       tr2.TriggerName       AS [name],
       CAST(tr2.IsDisabled AS bit) AS [isDisabled],
       tr2.TriggerDefinition AS [definition]
     FROM #Triggers tr2
-    WHERE tr2.EntityId = tr.EntityId
+    WHERE tr2.EntityId = en.EntityId
     ORDER BY tr2.TriggerName
     FOR JSON PATH
   ), '[]') AS TriggersJson
 INTO #TriggerJson
-FROM #Triggers tr
-GROUP BY tr.EntityId;
+FROM #Ent en;
 CREATE CLUSTERED INDEX IX_TriggerJson ON #TriggerJson(EntityId);
 
 -- Module JSON (final assembly)
