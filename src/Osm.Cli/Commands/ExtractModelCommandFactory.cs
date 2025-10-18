@@ -8,14 +8,12 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Application;
-using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 
 namespace Osm.Cli.Commands;
 
-internal sealed class ExtractModelCommandFactory : ICommandFactory
+internal sealed class ExtractModelCommandFactory : PipelineVerbCommandFactory
 {
-    private readonly IServiceScopeFactory _scopeFactory;
     private readonly CliGlobalOptions _globalOptions;
     private readonly ModuleFilterOptionBinder _moduleFilterBinder;
     private readonly SqlOptionBinder _sqlOptionBinder;
@@ -30,8 +28,8 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
         CliGlobalOptions globalOptions,
         ModuleFilterOptionBinder moduleFilterBinder,
         SqlOptionBinder sqlOptionBinder)
+        : base(scopeFactory)
     {
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
         _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
@@ -57,12 +55,18 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
 
     private async Task ExecuteAsync(InvocationContext context)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var services = scope.ServiceProvider;
-        var registry = services.GetRequiredService<IVerbRegistry>();
-        var verb = registry.Get(ExtractModelVerb.VerbName);
-
         var parseResult = context.ParseResult;
+        await ExecuteVerbAsync<ExtractModelVerbOptions, ExtractModelVerbResult>(
+                context,
+                ExtractModelVerb.VerbName,
+                (_, _) => CreateOptions(parseResult),
+                (_, invocationContext, payload) => HandleSuccessAsync(invocationContext, payload),
+                "[error] Unexpected result type for extract-model verb.")
+            .ConfigureAwait(false);
+    }
+
+    private ExtractModelVerbOptions CreateOptions(ParseResult parseResult)
+    {
         var moduleFilter = _moduleFilterBinder.Bind(parseResult);
         IReadOnlyList<string>? moduleOverride = moduleFilter.Modules.Count > 0 ? moduleFilter.Modules : null;
         var includeSystemOverride = moduleFilter.IncludeSystemModules;
@@ -75,28 +79,16 @@ internal sealed class ExtractModelCommandFactory : ICommandFactory
             parseResult.GetValueForOption(_outputOption),
             parseResult.GetValueForOption(_mockSqlOption));
 
-        var options = new ExtractModelVerbOptions
+        return new ExtractModelVerbOptions
         {
             ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
             Overrides = overrides,
             Sql = _sqlOptionBinder.Bind(parseResult)
         };
+    }
 
-        var run = await verb.RunAsync(options, context.GetCancellationToken()).ConfigureAwait(false);
-        if (!run.IsSuccess)
-        {
-            CommandConsole.WriteErrors(context.Console, run.Errors);
-            context.ExitCode = 1;
-            return;
-        }
-
-        if (run.Payload is not ExtractModelVerbResult payload)
-        {
-            CommandConsole.WriteErrorLine(context.Console, "[error] Unexpected result type for extract-model verb.");
-            context.ExitCode = 1;
-            return;
-        }
-
+    private async ValueTask HandleSuccessAsync(InvocationContext context, ExtractModelVerbResult payload)
+    {
         await EmitResultsAsync(context, payload).ConfigureAwait(false);
         context.ExitCode = 0;
     }
