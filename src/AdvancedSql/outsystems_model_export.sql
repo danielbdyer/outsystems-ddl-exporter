@@ -36,10 +36,13 @@ CREATE TABLE #ModuleNames ( ModuleName NVARCHAR(256) COLLATE DATABASE_DEFAULT NO
 
 DECLARE @ModuleTokens TABLE ( ModuleName NVARCHAR(MAX) NOT NULL );
 
-INSERT INTO @ModuleTokens(ModuleName)
-SELECT LTRIM(RTRIM(value))
-FROM STRING_SPLIT(@ModuleNamesCsv, ',')
-WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL;
+IF NULLIF(LTRIM(RTRIM(@ModuleNamesCsv)), '') IS NOT NULL
+BEGIN
+    INSERT INTO @ModuleTokens(ModuleName)
+    SELECT LTRIM(RTRIM(value))
+    FROM STRING_SPLIT(@ModuleNamesCsv, ',')
+    WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL;
+END;
 
 DECLARE @InvalidModuleName NVARCHAR(MAX);
 SELECT TOP (1) @InvalidModuleName = ModuleName
@@ -55,9 +58,12 @@ BEGIN
     THROW 50000, @ModuleNameError, 1;
 END;
 
-INSERT INTO #ModuleNames(ModuleName)
-SELECT ModuleName
-FROM @ModuleTokens;
+IF EXISTS (SELECT 1 FROM @ModuleTokens)
+BEGIN
+    INSERT INTO #ModuleNames(ModuleName)
+    SELECT ModuleName
+    FROM @ModuleTokens;
+END;
 
 -- 2) #E (espace) with module-level IncludeSystem filtering
 IF OBJECT_ID('tempdb..#E') IS NOT NULL DROP TABLE #E;
@@ -386,7 +392,7 @@ CREATE CLUSTERED INDEX IX_ColumnCheckReality ON #ColumnCheckReality(AttrId);
 IF OBJECT_ID('tempdb..#AttrCheckJson') IS NOT NULL DROP TABLE #AttrCheckJson;
 SELECT
   cc.AttrId,
-  (
+  ISNULL((
     SELECT
       cc2.ConstraintName AS [name],
       cc2.Definition AS [definition],
@@ -394,7 +400,7 @@ SELECT
     FROM #ColumnCheckReality cc2
     WHERE cc2.AttrId = cc.AttrId
     FOR JSON PATH
-  ) AS CheckJson
+  ), '[]') AS CheckJson
 INTO #AttrCheckJson
 FROM #ColumnCheckReality cc
 GROUP BY cc.AttrId;
@@ -655,7 +661,7 @@ CREATE CLUSTERED INDEX IX_AttrHasFK ON #AttrHasFK(AttrId);
 IF OBJECT_ID('tempdb..#FkColumnsJson') IS NOT NULL DROP TABLE #FkColumnsJson;
 SELECT
   fc.FkObjectId,
-  (
+  ISNULL((
     SELECT
       fc2.Ordinal AS [ordinal],
       fc2.ParentColumn AS [owner.physical],
@@ -666,7 +672,7 @@ SELECT
     WHERE fc2.FkObjectId = fc.FkObjectId
     ORDER BY fc2.Ordinal
     FOR JSON PATH
-  ) AS ColumnsJson
+  ), '[]') AS ColumnsJson
 INTO #FkColumnsJson
 FROM #FkColumns fc
 GROUP BY fc.FkObjectId;
@@ -676,7 +682,7 @@ CREATE CLUSTERED INDEX IX_FkColumnsJson ON #FkColumnsJson(FkObjectId);
 IF OBJECT_ID('tempdb..#FkAttrJson') IS NOT NULL DROP TABLE #FkAttrJson;
 SELECT
   fam.AttrId,
-  (
+  ISNULL((
     SELECT
       fk.FkName AS [name],
       fk.DeleteAction AS [onDelete],
@@ -689,7 +695,7 @@ SELECT
     LEFT JOIN #FkColumnsJson fkc ON fkc.FkObjectId = fk.FkObjectId
     WHERE EXISTS (SELECT 1 FROM #FkAttrMap fam2 WHERE fam2.AttrId = fam.AttrId AND fam2.FkObjectId = fk.FkObjectId)
     FOR JSON PATH
-  ) AS ConstraintJson
+  ), '[]') AS ConstraintJson
 INTO #FkAttrJson
 FROM #FkAttrMap fam
 GROUP BY fam.AttrId;
@@ -703,7 +709,7 @@ CREATE CLUSTERED INDEX IX_FkAttrJson ON #FkAttrJson(AttrId);
 IF OBJECT_ID('tempdb..#AttrJson') IS NOT NULL DROP TABLE #AttrJson;
 SELECT
   en.EntityId,
-  (
+  ISNULL((
     SELECT
       a.AttrName AS [name],
       COALESCE(NULLIF(a.PhysicalColumnName, ''), NULLIF(a.DatabaseColumnName, ''), a.AttrName) AS [physicalName],
@@ -760,7 +766,7 @@ SELECT
     ORDER BY CASE WHEN COALESCE(a.IsIdentifier, CASE WHEN a.AttrSSKey = en.PrimaryKeySSKey THEN 1 ELSE 0 END) = 1 THEN 0 ELSE 1 END,
              a.AttrName
     FOR JSON PATH
-  ) AS AttributesJson
+  ), '[]') AS AttributesJson
 INTO #AttrJson
 FROM #Ent en;
 CREATE CLUSTERED INDEX IX_AttrJson ON #AttrJson(EntityId);
@@ -769,7 +775,7 @@ CREATE CLUSTERED INDEX IX_AttrJson ON #AttrJson(EntityId);
 IF OBJECT_ID('tempdb..#RelJson') IS NOT NULL DROP TABLE #RelJson;
 SELECT
   en.EntityId,
-  (
+  ISNULL((
     SELECT DISTINCT
       a.AttrId                           AS [viaAttributeId],
       a.AttrName                         AS [viaAttributeName],
@@ -793,7 +799,7 @@ SELECT
       AND (r.AttrId IS NOT NULL OR fk.FkObjectId IS NOT NULL)
     ORDER BY a.AttrName
     FOR JSON PATH
-  ) AS RelationshipsJson
+  ), '[]') AS RelationshipsJson
 INTO #RelJson
 FROM #Ent en;
 CREATE CLUSTERED INDEX IX_RelJson ON #RelJson(EntityId);
@@ -803,7 +809,7 @@ IF OBJECT_ID('tempdb..#IdxColsJson') IS NOT NULL DROP TABLE #IdxColsJson;
 SELECT
   m.EntityId,
   m.IndexName,
-  (
+  ISNULL((
     SELECT m2.HumanAttr AS [attribute], m2.PhysicalColumn AS [physicalColumn], m2.Ordinal AS [ordinal],
            CAST(m2.IsIncluded AS bit) AS [isIncluded],
            m2.Direction AS [direction]
@@ -811,7 +817,7 @@ SELECT
     WHERE m2.EntityId = m.EntityId AND m2.IndexName = m.IndexName
     ORDER BY m2.Ordinal
     FOR JSON PATH
-  ) AS ColumnsJson
+  ), '[]') AS ColumnsJson
 INTO #IdxColsJson
 FROM #IdxColsMapped m
 GROUP BY m.EntityId, m.IndexName;
@@ -821,7 +827,7 @@ CREATE CLUSTERED INDEX IX_IdxColsJson ON #IdxColsJson(EntityId, IndexName);
 IF OBJECT_ID('tempdb..#IdxJson') IS NOT NULL DROP TABLE #IdxJson;
 SELECT
   ai.EntityId,
-  (
+  ISNULL((
     SELECT
       ai2.IndexName                         AS [name],
       CAST(ai2.IsPrimary AS bit)            AS [isPrimary],
@@ -850,7 +856,7 @@ SELECT
     WHERE ai2.EntityId = ai.EntityId
     ORDER BY ai2.IndexName
     FOR JSON PATH
-  ) AS IndexesJson
+  ), '[]') AS IndexesJson
 INTO #IdxJson
 FROM #AllIdx ai
 GROUP BY ai.EntityId;
@@ -860,7 +866,7 @@ CREATE CLUSTERED INDEX IX_IdxJson ON #IdxJson(EntityId);
 IF OBJECT_ID('tempdb..#TriggerJson') IS NOT NULL DROP TABLE #TriggerJson;
 SELECT
   tr.EntityId,
-  (
+  ISNULL((
     SELECT
       tr2.TriggerName       AS [name],
       CAST(tr2.IsDisabled AS bit) AS [isDisabled],
@@ -869,7 +875,7 @@ SELECT
     WHERE tr2.EntityId = tr.EntityId
     ORDER BY tr2.TriggerName
     FOR JSON PATH
-  ) AS TriggersJson
+  ), '[]') AS TriggersJson
 INTO #TriggerJson
 FROM #Triggers tr
 GROUP BY tr.EntityId;
@@ -881,7 +887,7 @@ SELECT
   e.EspaceName           AS [module.name],
   e.IsSystemModule       AS [module.isSystem],
   e.ModuleIsActive       AS [module.isActive],
-  (
+  ISNULL((
     SELECT
       en.EntityName                   AS [name],
       en.PhysicalTableName            AS [physicalName],
@@ -908,13 +914,13 @@ SELECT
     WHERE en.EspaceId = e.EspaceId
     ORDER BY en.EntityName
     FOR JSON PATH
-  ) AS [module.entities]
+  ), '[]') AS [module.entities]
 INTO #ModuleJson
 FROM #E e;
 
 -- Output root object
 SELECT
-  JSON_QUERY((
+  JSON_QUERY(ISNULL((
     SELECT
       mj.[module.name]  AS [name],
       mj.[module.isSystem] AS [isSystem],
@@ -923,5 +929,5 @@ SELECT
     FROM #ModuleJson AS mj
     ORDER BY mj.[module.name]
     FOR JSON PATH
-  )) AS [modules]
+  ), '[]')) AS [modules]
 FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;

@@ -177,6 +177,99 @@ public class SqlModelExtractionServiceTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldEmitEmptyArraysWhenEntityFilteredOut()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Inventory",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "RetiredProduct",
+                  "physicalName": "OSUSR_INV_RETIRED_PRODUCT",
+                  "db_schema": "dbo",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "attributes": [],
+                  "relationships": [],
+                  "indexes": [],
+                  "triggers": []
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var snapshot = CreateSnapshotFromJson(json);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: true).Value;
+
+        var result = await service.ExtractAsync(command);
+
+        Assert.True(result.IsSuccess);
+        var payload = await result.Value.JsonPayload.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        var entity = document.RootElement
+            .GetProperty("modules")[0]
+            .GetProperty("entities")[0];
+
+        Assert.Equal(0, entity.GetProperty("attributes").GetArrayLength());
+        Assert.Equal(0, entity.GetProperty("relationships").GetArrayLength());
+        Assert.Equal(0, entity.GetProperty("indexes").GetArrayLength());
+        Assert.Equal(0, entity.GetProperty("triggers").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldFailWhenEntityArrayIsNull()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Inventory",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "RetiredProduct",
+                  "physicalName": "OSUSR_INV_RETIRED_PRODUCT",
+                  "db_schema": "dbo",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "attributes": null,
+                  "relationships": [],
+                  "indexes": [],
+                  "triggers": []
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var snapshot = CreateSnapshotFromJson(json);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: true).Value;
+
+        var result = await service.ExtractAsync(command);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("extraction.sql.contract.entityArray", error.Code);
+        Assert.Contains("attributes", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldMatchLegacyJsonSnapshot()
     {
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.edge-case.json"));
