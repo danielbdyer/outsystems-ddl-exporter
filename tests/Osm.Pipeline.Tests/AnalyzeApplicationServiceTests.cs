@@ -85,13 +85,13 @@ public sealed class AnalyzeApplicationServiceTests
             ProfilePath: profilePath,
             DmmPath: null,
             CacheConfiguration.Empty,
-            new ProfilerConfiguration(provider: null, profilerProfilePath, mockFolder: null),
+            new ProfilerConfiguration(null, profilerProfilePath, null),
             SqlConfiguration.Empty,
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty);
 
-        return new CliConfigurationContext(configuration, configPath: null);
+        return new CliConfigurationContext(configuration, null);
     }
 
     private sealed class CapturingDispatcher : ICommandDispatcher
@@ -99,6 +99,7 @@ public sealed class AnalyzeApplicationServiceTests
         public TighteningAnalysisPipelineRequest? LastRequest { get; private set; }
 
         public Task<Result<TResult>> DispatchAsync<TRequest, TResult>(TRequest command, CancellationToken cancellationToken = default)
+            where TRequest : ICommand<TResult>
         {
             if (command is TighteningAnalysisPipelineRequest request && typeof(TResult) == typeof(TighteningAnalysisPipelineResult))
             {

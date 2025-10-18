@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using Osm.Emission;
 using Osm.Pipeline.Evidence;
 using Osm.Validation.Tightening;
-using Osm.Validation.Tightening.Opportunities;
+using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -45,7 +45,7 @@ public record EmissionReady(
     ImmutableArray<PipelineInsight> Insights,
     SsdtManifest Manifest,
     string DecisionLogPath,
-    OpportunityArtifactPaths OpportunityArtifacts)
+    OpportunityArtifacts OpportunityArtifacts)
     : DecisionsSynthesized(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights);
 
 public record StaticSeedsGenerated(
@@ -59,6 +59,6 @@ public record StaticSeedsGenerated(
     ImmutableArray<PipelineInsight> Insights,
     SsdtManifest Manifest,
     string DecisionLogPath,
-    OpportunityArtifactPaths OpportunityArtifacts,
+    OpportunityArtifacts OpportunityArtifacts,
     ImmutableArray<string> StaticSeedScriptPaths)
     : EmissionReady(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights, Manifest, DecisionLogPath, OpportunityArtifacts);

@@ -16,6 +16,7 @@ using Osm.Pipeline.SqlExtraction;
 using Osm.Json;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 using Tests.Support;
 using Xunit;
 
@@ -110,7 +111,7 @@ public class BuildSsdtPipelineStepTests
             bootstrapState.Log,
             bootstrapState.Bootstrap,
             EvidenceCache: null);
-        var step = new BuildSsdtPolicyDecisionStep(new TighteningPolicy());
+        var step = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
 
         var result = await step.ExecuteAsync(evidenceState);
 
@@ -135,9 +136,14 @@ public class BuildSsdtPipelineStepTests
             bootstrapState.Log,
             bootstrapState.Bootstrap,
             EvidenceCache: null);
-        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy());
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
-        var step = new BuildSsdtEmissionStep(new SmoModelFactory(), new SsdtEmitter(), new PolicyDecisionLogWriter(), new EmissionFingerprintCalculator());
+        var step = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
 
         var result = await step.ExecuteAsync(decisionState);
 
@@ -166,9 +172,14 @@ public class BuildSsdtPipelineStepTests
             bootstrapState.Log,
             bootstrapState.Bootstrap,
             EvidenceCache: null);
-        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy());
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
-        var emissionStep = new BuildSsdtEmissionStep(new SmoModelFactory(), new SsdtEmitter(), new PolicyDecisionLogWriter(), new EmissionFingerprintCalculator());
+        var emissionStep = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
         var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
         var step = new BuildSsdtStaticSeedStep(new StaticEntitySeedScriptGenerator(), StaticEntitySeedTemplate.Load());
 

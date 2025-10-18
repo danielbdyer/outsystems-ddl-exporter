@@ -19,7 +19,7 @@ public class TighteningAnalysisPipelineTests
             FixtureFile.GetPath("model.edge-case.json"),
             ModuleFilterOptions.IncludeAll,
             TighteningOptions.Default,
-            new SupplementalModelOptions(includeUsers: true, Array.Empty<string>()),
+            new SupplementalModelOptions(true, Array.Empty<string>()),
             FixtureFile.GetPath("profiling/profile.edge-case.json"),
             temp.Path);
 
