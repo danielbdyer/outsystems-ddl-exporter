@@ -27,6 +27,7 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
     private readonly Option<string?> _outputOption = new("--out", () => "out", "Output directory for SSDT artifacts.");
     private readonly Option<string?> _renameOption = new("--rename-table", "Rename tables using source=Override syntax.");
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
+    private readonly Option<string?> _sqlMetadataOption = new("--sql-metadata-out", "Path to write SQL metadata diagnostics (JSON).");
 
     public BuildSsdtCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -53,7 +54,8 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             _outputOption,
             _renameOption,
             _openReportOption,
-            _globalOptions.MaxDegreeOfParallelism
+            _globalOptions.MaxDegreeOfParallelism,
+            _sqlMetadataOption
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
@@ -84,7 +86,8 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             context.ParseResult.GetValueForOption(_profilerProviderOption),
             context.ParseResult.GetValueForOption(_staticDataOption),
             context.ParseResult.GetValueForOption(_renameOption),
-            context.ParseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism));
+            context.ParseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
+            context.ParseResult.GetValueForOption(_sqlMetadataOption));
 
         var options = new BuildSsdtVerbOptions
         {

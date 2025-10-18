@@ -67,7 +67,7 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
         };
 
         var connectionFactory = _connectionFactoryFactory(request.SqlOptions.ConnectionString!, connectionOptions);
-        var profiler = new SqlDataProfiler(connectionFactory, model, profilerOptions);
+        var profiler = new SqlDataProfiler(connectionFactory, model, profilerOptions, request.SqlMetadataLog);
         return Result<IDataProfiler>.Success(profiler);
     }
 

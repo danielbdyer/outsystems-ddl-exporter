@@ -9,6 +9,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
 using Xunit;
 
@@ -43,7 +44,8 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             ProfilerProvider: "fixture",
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
 
         var moduleFilter = new ModuleFilterOverrides(
             Array.Empty<string>(),
@@ -93,7 +95,8 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             ProfilerProvider: "fixture",
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
 
         var moduleFilter = new ModuleFilterOverrides(
             Array.Empty<string>(),
@@ -135,7 +138,8 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             ProfilerProvider: "fixture",
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
 
         var moduleFilter = new ModuleFilterOverrides(
             Array.Empty<string>(),
@@ -172,7 +176,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             ProfilePath: "profile.snapshot",
             DmmPath: "baseline.dmm",
             OutputDirectory: "out",
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: 8);
 
         var moduleFilter = new ModuleFilterOverrides(
             Array.Empty<string>(),
@@ -306,6 +310,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             ModuleFilterOptions moduleFilter,
             ResolvedSqlOptions sqlOptions,
             string outputDirectory,
+            SqlMetadataLog? sqlMetadataLog,
             CancellationToken cancellationToken)
         {
             var path = overrides.ModelPath ?? configuration.ModelPath;

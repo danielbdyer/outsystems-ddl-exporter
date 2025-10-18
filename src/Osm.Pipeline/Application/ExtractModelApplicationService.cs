@@ -7,6 +7,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -148,11 +149,16 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
             return Result<ExtractModelApplicationResult>.Failure(sqlOptionsResult.Errors);
         }
 
+        var metadataLog = string.IsNullOrWhiteSpace(overrides.SqlMetadataOutputPath)
+            ? null
+            : new SqlMetadataLog();
+
         var request = new ExtractModelPipelineRequest(
             commandResult.Value,
             sqlOptionsResult.Value,
             overrides.MockAdvancedSqlManifest,
-            overrides.SqlMetadataOutputPath);
+            overrides.SqlMetadataOutputPath,
+            metadataLog);
 
         _logger.LogInformation(
             "Dispatching extract-model pipeline (outputPath: {OutputPath}, metadataPath: {MetadataPath}, fixtureProvided: {FixtureProvided}).",
@@ -163,6 +169,14 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
         var extractionResult = await _dispatcher.DispatchAsync<ExtractModelPipelineRequest, ModelExtractionResult>(
             request,
             cancellationToken).ConfigureAwait(false);
+
+        if (metadataLog is not null && !string.IsNullOrWhiteSpace(overrides.SqlMetadataOutputPath))
+        {
+            await SqlMetadataDiagnosticsWriter
+                .WriteAsync(overrides.SqlMetadataOutputPath!, metadataLog, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         if (extractionResult.IsFailure)
         {
             _logger.LogError(

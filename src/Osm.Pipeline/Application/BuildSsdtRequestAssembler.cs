@@ -9,6 +9,7 @@ using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
@@ -32,7 +33,8 @@ public sealed record BuildSsdtRequestAssemblerContext(
     string OutputDirectory,
     IStaticEntityDataProvider? StaticDataProvider,
     CacheOptionsOverrides CacheOverrides,
-    string? ConfigPath);
+    string? ConfigPath,
+    SqlMetadataLog? SqlMetadataLog);
 
 public sealed class BuildSsdtRequestAssembler
 {
@@ -85,7 +87,8 @@ public sealed class BuildSsdtRequestAssembler
             context.TypeMappingPolicy,
             cacheOptions,
             context.StaticDataProvider,
-            Path.Combine(context.OutputDirectory, "Seeds"));
+            Path.Combine(context.OutputDirectory, "Seeds"),
+            context.SqlMetadataLog);
 
         return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory);
     }

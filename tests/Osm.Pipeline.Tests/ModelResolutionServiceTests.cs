@@ -13,6 +13,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Tests.Support;
 using Xunit;
@@ -41,7 +42,8 @@ public sealed class ModelResolutionServiceTests
             ProfilerProvider: null,
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
 
         var result = await service.ResolveModelAsync(
             configuration,
@@ -49,6 +51,7 @@ public sealed class ModelResolutionServiceTests
             ModuleFilterOptions.IncludeAll,
             DefaultSqlOptions,
             outputDirectory: "out",
+            sqlMetadataLog: null,
             cancellationToken: CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -64,7 +67,7 @@ public sealed class ModelResolutionServiceTests
         var dispatcher = new RecordingDispatcher();
         var service = new ModelResolutionService(dispatcher);
         var configuration = CreateConfiguration();
-        var overrides = new BuildSsdtOverrides(null, null, null, null, null, null, null);
+        var overrides = new BuildSsdtOverrides(null, null, null, null, null, null, null, null);
 
         var result = await service.ResolveModelAsync(
             configuration,
@@ -72,6 +75,7 @@ public sealed class ModelResolutionServiceTests
             ModuleFilterOptions.IncludeAll,
             DefaultSqlOptions,
             outputDirectory: "out",
+            sqlMetadataLog: null,
             cancellationToken: CancellationToken.None);
 
         Assert.True(result.IsFailure);
@@ -86,7 +90,7 @@ public sealed class ModelResolutionServiceTests
         dispatcher.SetExtractionResult(Result<ModelExtractionResult>.Success(CreateExtractionResult()));
         var service = new ModelResolutionService(dispatcher);
         var configuration = CreateConfiguration();
-        var overrides = new BuildSsdtOverrides(null, null, null, null, null, null, null);
+        var overrides = new BuildSsdtOverrides(null, null, null, null, null, null, null, null);
         var sqlOptions = DefaultSqlOptions with { ConnectionString = "Server=.;Database=Osm;" };
 
         var result = await service.ResolveModelAsync(
@@ -95,6 +99,7 @@ public sealed class ModelResolutionServiceTests
             ModuleFilterOptions.IncludeAll,
             sqlOptions,
             output.Path,
+            sqlMetadataLog: null,
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);

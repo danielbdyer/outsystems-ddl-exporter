@@ -38,7 +38,8 @@ public sealed class BuildSsdtRequestAssemblerTests
             ProfilerProvider: "override-provider",
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
 
         var context = CreateContext(configuration, overrides, DefaultSqlOptions, modelPath: "model.json", outputDirectory: "out");
 
@@ -65,7 +66,8 @@ public sealed class BuildSsdtRequestAssemblerTests
             ProfilerProvider: "fixture",
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
 
         var sqlOptions = DefaultSqlOptions with { ConnectionString = "Server=.;Database=Osm;" };
         var moduleFilterResult = ModuleFilterOptions.Create(new[] { "AppCore", "Ops" }, includeSystemModules: false, includeInactiveModules: false);
@@ -108,7 +110,8 @@ public sealed class BuildSsdtRequestAssemblerTests
             ProfilerProvider: "fixture",
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
         var provider = new StubStaticEntityDataProvider();
 
         var context = CreateContext(
@@ -147,7 +150,8 @@ public sealed class BuildSsdtRequestAssemblerTests
             outputDirectory,
             staticDataProvider,
             new CacheOptionsOverrides(null, null),
-            "config.json");
+            "config.json",
+            null);
     }
 
     private static CliConfiguration CreateConfiguration(

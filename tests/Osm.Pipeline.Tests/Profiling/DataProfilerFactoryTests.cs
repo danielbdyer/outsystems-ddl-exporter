@@ -128,7 +128,8 @@ public sealed class DataProfilerFactoryTests
             TypeMappingPolicy: TypeMappingPolicy.LoadDefault(),
             EvidenceCache: null,
             StaticDataProvider: null,
-            SeedOutputDirectoryHint: null);
+            SeedOutputDirectoryHint: null,
+            SqlMetadataLog: null);
     }
 
     private sealed class RecordingConnectionFactoryBuilder

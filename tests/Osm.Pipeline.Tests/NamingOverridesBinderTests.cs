@@ -16,7 +16,8 @@ public sealed class NamingOverridesBinderTests
             ProfilerProvider: null,
             StaticDataPath: null,
             RenameOverrides: "invalid",
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
         var binder = new NamingOverridesBinder();
 
         var result = binder.Bind(overrides, TighteningOptions.Default);
@@ -35,7 +36,8 @@ public sealed class NamingOverridesBinderTests
             ProfilerProvider: null,
             StaticDataPath: null,
             RenameOverrides: "Module::Entity=CustomTable",
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
         var binder = new NamingOverridesBinder();
 
         var result = binder.Bind(overrides, TighteningOptions.Default);

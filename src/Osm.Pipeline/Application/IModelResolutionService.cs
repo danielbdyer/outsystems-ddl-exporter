@@ -6,6 +6,7 @@ using Osm.Domain.Configuration;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 
 namespace Osm.Pipeline.Application;
@@ -18,6 +19,7 @@ public interface IModelResolutionService
         ModuleFilterOptions moduleFilter,
         ResolvedSqlOptions sqlOptions,
         string outputDirectory,
+        SqlMetadataLog? sqlMetadataLog,
         CancellationToken cancellationToken);
 }
 

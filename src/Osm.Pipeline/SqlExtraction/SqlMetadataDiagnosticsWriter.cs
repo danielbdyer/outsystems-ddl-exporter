@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
+using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.SqlExtraction;
 
@@ -19,10 +19,9 @@ internal static class SqlMetadataDiagnosticsWriter
         WriteIndented = false
     };
 
-    public static async Task WriteSnapshotAsync(
+    public static async Task WriteAsync(
         string? path,
-        OutsystemsMetadataSnapshot snapshot,
-        DateTimeOffset exportedAtUtc,
+        SqlMetadataLog log,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -30,81 +29,96 @@ internal static class SqlMetadataDiagnosticsWriter
             return;
         }
 
-        var absolutePath = EnsureDirectory(path);
-
-        await using var stream = new FileStream(absolutePath, FileMode.Create, FileAccess.Write, FileShare.Read);
-        using var writer = new Utf8JsonWriter(stream, WriterOptions);
-
-        writer.WriteStartObject();
-        writer.WriteString("status", "success");
-        writer.WriteString("exportedAtUtc", exportedAtUtc.ToString("O", CultureInfo.InvariantCulture));
-        writer.WriteString("databaseName", snapshot.DatabaseName);
-
-        WriteArray(writer, "modules", snapshot.Modules);
-        WriteArray(writer, "entities", snapshot.Entities);
-        WriteArray(writer, "attributes", snapshot.Attributes);
-        WriteArray(writer, "references", snapshot.References);
-        WriteArray(writer, "physicalTables", snapshot.PhysicalTables);
-        WriteArray(writer, "columnReality", snapshot.ColumnReality);
-        WriteArray(writer, "columnChecks", snapshot.ColumnChecks);
-        WriteArray(writer, "columnCheckJson", snapshot.ColumnCheckJson);
-        WriteArray(writer, "physicalColumnsPresent", snapshot.PhysicalColumnsPresent);
-        WriteArray(writer, "indexes", snapshot.Indexes);
-        WriteArray(writer, "indexColumns", snapshot.IndexColumns);
-        WriteArray(writer, "foreignKeys", snapshot.ForeignKeys);
-        WriteArray(writer, "foreignKeyColumns", snapshot.ForeignKeyColumns);
-        WriteArray(writer, "foreignKeyAttributeMap", snapshot.ForeignKeyAttributeMap);
-        WriteArray(writer, "attributeForeignKeys", snapshot.AttributeForeignKeys);
-        WriteArray(writer, "foreignKeyColumnsJson", snapshot.ForeignKeyColumnsJson);
-        WriteArray(writer, "foreignKeyAttributeJson", snapshot.ForeignKeyAttributeJson);
-        WriteArray(writer, "triggers", snapshot.Triggers);
-        WriteArray(writer, "attributeJson", snapshot.AttributeJson);
-        WriteArray(writer, "relationshipJson", snapshot.RelationshipJson);
-        WriteArray(writer, "indexJson", snapshot.IndexJson);
-        WriteArray(writer, "triggerJson", snapshot.TriggerJson);
-        WriteArray(writer, "moduleJson", snapshot.ModuleJson);
-
-        writer.WriteEndObject();
-
-        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    public static async Task WriteFailureAsync(
-        string? path,
-        IReadOnlyList<ValidationError> errors,
-        MetadataRowSnapshot? rowSnapshot,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(path))
+        if (log is null)
         {
-            return;
+            throw new ArgumentNullException(nameof(log));
         }
 
         var absolutePath = EnsureDirectory(path);
+        var state = log.BuildState();
 
         await using var stream = new FileStream(absolutePath, FileMode.Create, FileAccess.Write, FileShare.Read);
         using var writer = new Utf8JsonWriter(stream, WriterOptions);
 
         writer.WriteStartObject();
-        writer.WriteString("status", "failure");
-        writer.WritePropertyName("errors");
-        writer.WriteStartArray();
-        if (errors is not null)
+        if (state.HasSnapshot)
         {
-            foreach (var error in errors)
+            writer.WriteString("status", "success");
+            if (state.ExportedAtUtc.HasValue)
+            {
+                writer.WriteString("exportedAtUtc", state.ExportedAtUtc.Value.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            }
+
+            if (!string.IsNullOrWhiteSpace(state.DatabaseName))
+            {
+                writer.WriteString("databaseName", state.DatabaseName);
+            }
+
+            var snapshot = state.Snapshot!;
+            WriteArray(writer, "modules", snapshot.Modules);
+            WriteArray(writer, "entities", snapshot.Entities);
+            WriteArray(writer, "attributes", snapshot.Attributes);
+            WriteArray(writer, "references", snapshot.References);
+            WriteArray(writer, "physicalTables", snapshot.PhysicalTables);
+            WriteArray(writer, "columnReality", snapshot.ColumnReality);
+            WriteArray(writer, "columnChecks", snapshot.ColumnChecks);
+            WriteArray(writer, "columnCheckJson", snapshot.ColumnCheckJson);
+            WriteArray(writer, "physicalColumnsPresent", snapshot.PhysicalColumnsPresent);
+            WriteArray(writer, "indexes", snapshot.Indexes);
+            WriteArray(writer, "indexColumns", snapshot.IndexColumns);
+            WriteArray(writer, "foreignKeys", snapshot.ForeignKeys);
+            WriteArray(writer, "foreignKeyColumns", snapshot.ForeignKeyColumns);
+            WriteArray(writer, "foreignKeyAttributeMap", snapshot.ForeignKeyAttributeMap);
+            WriteArray(writer, "attributeForeignKeys", snapshot.AttributeForeignKeys);
+            WriteArray(writer, "foreignKeyColumnsJson", snapshot.ForeignKeyColumnsJson);
+            WriteArray(writer, "foreignKeyAttributeJson", snapshot.ForeignKeyAttributeJson);
+            WriteArray(writer, "triggers", snapshot.Triggers);
+            WriteArray(writer, "attributeJson", snapshot.AttributeJson);
+            WriteArray(writer, "relationshipJson", snapshot.RelationshipJson);
+            WriteArray(writer, "indexJson", snapshot.IndexJson);
+            WriteArray(writer, "triggerJson", snapshot.TriggerJson);
+            WriteArray(writer, "moduleJson", snapshot.ModuleJson);
+        }
+        else if (state.HasErrors)
+        {
+            writer.WriteString("status", "failure");
+            writer.WritePropertyName("errors");
+            writer.WriteStartArray();
+            foreach (var error in state.Errors)
             {
                 writer.WriteStartObject();
                 writer.WriteString("code", error.Code);
                 writer.WriteString("message", error.Message);
                 writer.WriteEndObject();
             }
-        }
-        writer.WriteEndArray();
 
-        if (rowSnapshot is not null)
+            writer.WriteEndArray();
+
+            if (state.FailureRowSnapshot is not null)
+            {
+                writer.WritePropertyName("rowSnapshot");
+                state.FailureRowSnapshot.WriteTo(writer);
+            }
+        }
+        else
         {
-            writer.WritePropertyName("rowSnapshot");
-            rowSnapshot.WriteTo(writer);
+            writer.WriteString("status", "success");
+        }
+
+        if (state.HasRequests)
+        {
+            writer.WritePropertyName("requests");
+            writer.WriteStartArray();
+            foreach (var entry in state.Requests)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("name", entry.Name);
+                writer.WritePropertyName("payload");
+                JsonSerializer.Serialize(writer, entry.Payload, SerializerOptions);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
         }
 
         writer.WriteEndObject();

@@ -7,6 +7,8 @@ using Osm.Domain.Configuration;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Sql;
+using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
@@ -63,15 +65,37 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
         var configuration = input.ConfigurationContext.Configuration;
         var tighteningOptions = configuration.Tightening;
 
+        var sqlMetadataLog = string.IsNullOrWhiteSpace(input.Overrides.SqlMetadataOutputPath)
+            ? null
+            : new SqlMetadataLog();
+
+        async Task FlushMetadataAsync()
+        {
+            if (sqlMetadataLog is not null && !string.IsNullOrWhiteSpace(input.Overrides.SqlMetadataOutputPath))
+            {
+                var state = sqlMetadataLog.BuildState();
+                if (!state.HasSnapshot && !state.HasErrors && !state.HasRequests)
+                {
+                    return;
+                }
+
+                await SqlMetadataDiagnosticsWriter
+                    .WriteAsync(input.Overrides.SqlMetadataOutputPath!, sqlMetadataLog, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
         var sqlOptionsResult = SqlOptionsResolver.Resolve(configuration, input.Sql);
         if (sqlOptionsResult.IsFailure)
         {
+            await FlushMetadataAsync().ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(sqlOptionsResult.Errors);
         }
 
         var moduleFilterResult = ModuleFilterResolver.Resolve(configuration, input.ModuleFilter);
         if (moduleFilterResult.IsFailure)
         {
+            await FlushMetadataAsync().ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(moduleFilterResult.Errors);
         }
 
@@ -80,6 +104,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
         var typeMappingResult = TypeMappingPolicyResolver.Resolve(input.ConfigurationContext);
         if (typeMappingResult.IsFailure)
         {
+            await FlushMetadataAsync().ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(typeMappingResult.Errors);
         }
 
@@ -92,9 +117,11 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             moduleFilter,
             sqlOptionsResult.Value,
             outputDirectory,
+            sqlMetadataLog,
             cancellationToken).ConfigureAwait(false);
         if (modelResolutionResult.IsFailure)
         {
+            await FlushMetadataAsync().ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(modelResolutionResult.Errors);
         }
 
@@ -104,12 +131,14 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
 
         if (namingOverridesResult.IsFailure)
         {
+            await FlushMetadataAsync().ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(namingOverridesResult.Errors);
         }
 
         var staticDataProviderResult = _staticDataProviderFactory.Create(input.Overrides, sqlOptionsResult.Value, tighteningOptions);
         if (staticDataProviderResult.IsFailure)
         {
+            await FlushMetadataAsync().ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(staticDataProviderResult.Errors);
         }
 
@@ -120,6 +149,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
         {
             if (moduleParallelism <= 0)
             {
+                await FlushMetadataAsync().ConfigureAwait(false);
                 return ValidationError.Create(
                     "cli.buildSsdt.parallelism.invalid",
                     "--max-degree-of-parallelism must be a positive integer when specified.");
@@ -140,9 +170,11 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             outputDirectory,
             staticDataProviderResult.Value,
             input.Cache,
-            input.ConfigurationContext.ConfigPath));
+            input.ConfigurationContext.ConfigPath,
+            sqlMetadataLog));
         if (assemblyResult.IsFailure)
         {
+            await FlushMetadataAsync().ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(assemblyResult.Errors);
         }
 
@@ -151,6 +183,9 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
         var pipelineResult = await _dispatcher.DispatchAsync<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>(
             assembly.Request,
             cancellationToken).ConfigureAwait(false);
+
+        await FlushMetadataAsync().ConfigureAwait(false);
+
         if (pipelineResult.IsFailure)
         {
             return Result<BuildSsdtApplicationResult>.Failure(pipelineResult.Errors);

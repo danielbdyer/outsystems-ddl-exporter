@@ -28,7 +28,8 @@ public sealed class StaticDataProviderFactoryTests
             ProfilerProvider: null,
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
         var seeds = StaticSeedOptions.Create(groupByModule: true, StaticSeedSynchronizationMode.Authoritative).Value;
         var emission = EmissionOptions.Create(
             TighteningOptions.Default.Emission.PerTableFiles,
@@ -64,7 +65,8 @@ public sealed class StaticDataProviderFactoryTests
             ProfilerProvider: null,
             StaticDataPath: "fixtures",
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
         var factory = new StaticDataProviderFactory();
 
         var result = factory.Create(overrides, DefaultSqlOptions, TighteningOptions.Default);
@@ -83,7 +85,8 @@ public sealed class StaticDataProviderFactoryTests
             ProfilerProvider: null,
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
         var sqlOptions = DefaultSqlOptions with { ConnectionString = "Server=.;Database=Osm;" };
         var factory = new StaticDataProviderFactory();
 

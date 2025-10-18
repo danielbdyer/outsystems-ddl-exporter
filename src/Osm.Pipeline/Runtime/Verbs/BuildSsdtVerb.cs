@@ -13,7 +13,7 @@ namespace Osm.Pipeline.Runtime.Verbs;
 public sealed record BuildSsdtVerbOptions
 {
     public string? ConfigurationPath { get; init; }
-    public BuildSsdtOverrides Overrides { get; init; } = new(null, null, null, null, null, null, null);
+    public BuildSsdtOverrides Overrides { get; init; } = new(null, null, null, null, null, null, null, null);
     public ModuleFilterOverrides ModuleFilter { get; init; } = new(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>());
     public SqlOptionsOverrides Sql { get; init; } = new(null, null, null, null, null, null, null, null);
     public CacheOptionsOverrides Cache { get; init; } = new(null, null);

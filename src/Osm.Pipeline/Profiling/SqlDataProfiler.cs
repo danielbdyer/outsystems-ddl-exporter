@@ -23,15 +23,21 @@ public sealed class SqlDataProfiler : IDataProfiler
     private readonly ITableMetadataLoader _metadataLoader;
     private readonly IProfilingPlanBuilder _planBuilder;
     private readonly IProfilingQueryExecutor _queryExecutor;
+    private readonly SqlMetadataLog? _metadataLog;
 
-    public SqlDataProfiler(IDbConnectionFactory connectionFactory, OsmModel model, SqlProfilerOptions? options = null)
+    public SqlDataProfiler(
+        IDbConnectionFactory connectionFactory,
+        OsmModel model,
+        SqlProfilerOptions? options = null,
+        SqlMetadataLog? metadataLog = null)
         : this(
             connectionFactory,
             model,
             options ?? SqlProfilerOptions.Default,
             null,
             null,
-            null)
+            null,
+            metadataLog)
     {
     }
 
@@ -41,15 +47,17 @@ public sealed class SqlDataProfiler : IDataProfiler
         SqlProfilerOptions options,
         ITableMetadataLoader? metadataLoader,
         IProfilingPlanBuilder? planBuilder,
-        IProfilingQueryExecutor? queryExecutor)
+        IProfilingQueryExecutor? queryExecutor,
+        SqlMetadataLog? metadataLog = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _metadataLog = metadataLog;
         _entityLookup = EntityProfilingLookup.Create(_model, _options.NamingOverrides);
-        _metadataLoader = metadataLoader ?? new TableMetadataLoader(_options);
+        _metadataLoader = metadataLoader ?? new TableMetadataLoader(_options, _metadataLog);
         _planBuilder = planBuilder ?? new ProfilingPlanBuilder(_model, _entityLookup);
-        _queryExecutor = queryExecutor ?? new ProfilingQueryExecutor(_connectionFactory, _options);
+        _queryExecutor = queryExecutor ?? new ProfilingQueryExecutor(_connectionFactory, _options, _metadataLog);
     }
 
     public async Task<Result<ProfileSnapshot>> CaptureAsync(CancellationToken cancellationToken = default)

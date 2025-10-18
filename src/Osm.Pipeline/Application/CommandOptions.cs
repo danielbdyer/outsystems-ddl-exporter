@@ -31,7 +31,8 @@ public sealed record BuildSsdtOverrides(
     string? ProfilerProvider,
     string? StaticDataPath,
     string? RenameOverrides,
-    int? MaxDegreeOfParallelism);
+    int? MaxDegreeOfParallelism,
+    string? SqlMetadataOutputPath);
 
 public sealed record CompareWithDmmOverrides(
     string? ModelPath,
