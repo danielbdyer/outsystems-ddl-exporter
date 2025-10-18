@@ -124,6 +124,42 @@ public class SmoModelFactoryTests
     }
 
     [Fact]
+    public void Create_aligns_nullability_uniques_and_foreign_keys_with_policy()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
+
+        foreach (var pair in decisions.Nullability.Where(kvp => kvp.Value.MakeNotNull))
+        {
+            var table = smoModel.Tables.Single(t =>
+                t.Schema.Equals(pair.Key.Schema.Value, StringComparison.OrdinalIgnoreCase) &&
+                t.Name.Equals(pair.Key.Table.Value, StringComparison.OrdinalIgnoreCase));
+            var column = table.Columns.Single(c => c.Name.Equals(pair.Key.Column.Value, StringComparison.OrdinalIgnoreCase));
+            Assert.False(column.Nullable);
+        }
+
+        foreach (var pair in decisions.UniqueIndexes)
+        {
+            var table = smoModel.Tables.Single(t =>
+                t.Schema.Equals(pair.Key.Schema.Value, StringComparison.OrdinalIgnoreCase) &&
+                t.Name.Equals(pair.Key.Table.Value, StringComparison.OrdinalIgnoreCase));
+            var index = table.Indexes.Single(i => i.Name.Equals(pair.Key.Index.Value, StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(pair.Value.EnforceUnique, index.IsUnique);
+        }
+
+        foreach (var pair in decisions.ForeignKeys.Where(kvp => kvp.Value.CreateConstraint))
+        {
+            var table = smoModel.Tables.Single(t =>
+                t.Schema.Equals(pair.Key.Schema.Value, StringComparison.OrdinalIgnoreCase) &&
+                t.Name.Equals(pair.Key.Table.Value, StringComparison.OrdinalIgnoreCase));
+            var foreignKey = table.ForeignKeys.Single(fk => fk.Columns.Contains(pair.Key.Column.Value, StringComparer.OrdinalIgnoreCase));
+            Assert.False(foreignKey.IsNoCheck);
+        }
+    }
+
+    [Fact]
     public void Build_aligns_reference_column_types_with_target_identifiers()
     {
         var (model, _, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();

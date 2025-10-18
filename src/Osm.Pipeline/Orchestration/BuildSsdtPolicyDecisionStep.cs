@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -39,6 +40,8 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
         var report = PolicyDecisionReporter.Create(decisions);
         var opportunities = _analyzer.Analyze(model, profile, decisions);
 
+        var moduleInsights = BuildModuleInsights(report);
+
         state.Log.Record(
             "policy.decisions.synthesized",
             "Synthesized tightening decisions.",
@@ -51,6 +54,7 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
                 ["uniqueIndexesEnforced"] = report.UniqueIndexesEnforcedCount.ToString(CultureInfo.InvariantCulture),
                 ["foreignKeys"] = report.ForeignKeyCount.ToString(CultureInfo.InvariantCulture),
                 ["foreignKeysCreated"] = report.ForeignKeysCreatedCount.ToString(CultureInfo.InvariantCulture),
+                ["modules"] = report.ModuleCount.ToString(CultureInfo.InvariantCulture),
                 ["opportunities"] = opportunities.TotalCount.ToString(CultureInfo.InvariantCulture)
             });
 
@@ -62,6 +66,64 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
             decisions,
             report,
             opportunities,
-            ImmutableArray<PipelineInsight>.Empty)));
+            moduleInsights)));
+    }
+
+    private static ImmutableArray<PipelineInsight> BuildModuleInsights(PolicyDecisionReport report)
+    {
+        if (report.ModuleRollups.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<PipelineInsight>.Empty;
+        }
+
+        var insights = ImmutableArray.CreateBuilder<PipelineInsight>();
+        foreach (var pair in report.ModuleRollups.OrderBy(static p => p.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            insights.Add(CreateModuleInsight(pair.Key, pair.Value));
+        }
+
+        return insights.MoveToImmutable();
+    }
+
+    private static PipelineInsight CreateModuleInsight(string module, ModuleDecisionRollup rollup)
+    {
+        var baseline = string.Format(
+            CultureInfo.InvariantCulture,
+            "{0}/{1} columns tightened, {2}/{3} unique indexes enforced, {4}/{5} foreign keys created.",
+            rollup.TightenedColumnCount,
+            rollup.ColumnCount,
+            rollup.UniqueIndexesEnforcedCount,
+            rollup.UniqueIndexCount,
+            rollup.ForeignKeysCreatedCount,
+            rollup.ForeignKeyCount);
+
+        var rationaleSummary = FormatRationales(rollup.RationaleCounts);
+        var summary = string.IsNullOrWhiteSpace(rationaleSummary)
+            ? baseline
+            : string.Concat(baseline, " Top rationales: ", rationaleSummary, ".");
+
+        return new PipelineInsight(
+            code: $"policy.module.{module}",
+            title: $"Tightening outcomes for module '{module}'",
+            summary: summary,
+            severity: PipelineInsightSeverity.Info,
+            affectedObjects: ImmutableArray.Create(module),
+            suggestedAction: "Review emitted manifest and remediation guidance for this module.");
+    }
+
+    private static string FormatRationales(ImmutableDictionary<string, int> rationales)
+    {
+        if (rationales.IsDefaultOrEmpty)
+        {
+            return string.Empty;
+        }
+
+        var top = rationales
+            .OrderByDescending(static pair => pair.Value)
+            .ThenBy(static pair => pair.Key, StringComparer.Ordinal)
+            .Take(3)
+            .Select(static pair => $"{pair.Key} ({pair.Value.ToString(CultureInfo.InvariantCulture)})");
+
+        return string.Join(", ", top);
     }
 }

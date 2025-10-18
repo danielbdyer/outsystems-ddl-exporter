@@ -126,7 +126,7 @@ public class PipelineReportLauncherTests
             ImmutableArray<TighteningDiagnostic>.Empty,
             ImmutableDictionary<string, ModuleDecisionRollup>.Empty.Add(
                 "AppCore",
-                new ModuleDecisionRollup(1, 1, 0, 0, 0, 0, 0, 0)),
+                new ModuleDecisionRollup(1, 1, 0, 0, 0, 0, 0, 0, ImmutableDictionary<string, int>.Empty)),
             TighteningToggleSnapshot.Create(TighteningOptions.Default));
 
         var seedPaths = ImmutableArray.Create(

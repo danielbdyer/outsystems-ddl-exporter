@@ -104,6 +104,8 @@ public static class PolicyDecisionReporter
             {
                 rollup.RemediationColumnCount++;
             }
+
+            rollup.AddRationales(column.Rationales);
         }
 
         foreach (var index in uniqueIndexes)
@@ -124,6 +126,8 @@ public static class PolicyDecisionReporter
             {
                 rollup.UniqueIndexesRequireRemediationCount++;
             }
+
+            rollup.AddRationales(index.Rationales);
         }
 
         foreach (var foreignKey in foreignKeys)
@@ -139,6 +143,8 @@ public static class PolicyDecisionReporter
             {
                 rollup.ForeignKeysCreatedCount++;
             }
+
+            rollup.AddRationales(foreignKey.Rationales);
         }
 
         var builder = ImmutableDictionary.CreateBuilder<string, ModuleDecisionRollup>(StringComparer.OrdinalIgnoreCase);
@@ -200,7 +206,8 @@ public sealed record ModuleDecisionRollup(
     int UniqueIndexesEnforcedCount,
     int UniqueIndexesRequireRemediationCount,
     int ForeignKeyCount,
-    int ForeignKeysCreatedCount);
+    int ForeignKeysCreatedCount,
+    ImmutableDictionary<string, int> RationaleCounts);
 
 internal sealed class ModuleDecisionRollupBuilder
 {
@@ -212,6 +219,32 @@ internal sealed class ModuleDecisionRollupBuilder
     public int UniqueIndexesRequireRemediationCount;
     public int ForeignKeyCount;
     public int ForeignKeysCreatedCount;
+    private readonly Dictionary<string, int> _rationales = new(StringComparer.Ordinal);
+
+    public void AddRationales(IEnumerable<string> rationales)
+    {
+        if (rationales is null)
+        {
+            return;
+        }
+
+        foreach (var rationale in rationales)
+        {
+            if (string.IsNullOrWhiteSpace(rationale))
+            {
+                continue;
+            }
+
+            if (_rationales.TryGetValue(rationale, out var count))
+            {
+                _rationales[rationale] = count + 1;
+            }
+            else
+            {
+                _rationales[rationale] = 1;
+            }
+        }
+    }
 
     public ModuleDecisionRollup Build()
         => new(
@@ -222,7 +255,8 @@ internal sealed class ModuleDecisionRollupBuilder
             UniqueIndexesEnforcedCount,
             UniqueIndexesRequireRemediationCount,
             ForeignKeyCount,
-            ForeignKeysCreatedCount);
+            ForeignKeysCreatedCount,
+            _rationales.ToImmutableDictionary(StringComparer.Ordinal));
 }
 
 public sealed record ColumnDecisionReport(
