@@ -11,6 +11,7 @@ using Osm.Domain.Model;
 using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Validation.Tightening;
 using Osm.Smo;
@@ -42,7 +43,8 @@ public class BuildSsdtPipelineTests
             TypeMappingPolicy: TypeMappingPolicy.LoadDefault(),
             EvidenceCache: null,
             StaticDataProvider: null,
-            SeedOutputDirectoryHint: null);
+            SeedOutputDirectoryHint: null,
+            SqlMetadataLog: null);
 
         var pipeline = new BuildSsdtPipeline();
         var result = await pipeline.HandleAsync(request);
@@ -73,7 +75,8 @@ public class BuildSsdtPipelineTests
             TypeMappingPolicy: TypeMappingPolicy.LoadDefault(),
             EvidenceCache: null,
             StaticDataProvider: null,
-            SeedOutputDirectoryHint: null);
+            SeedOutputDirectoryHint: null,
+            SqlMetadataLog: null);
 
         var pipeline = new BuildSsdtPipeline();
         var result = await pipeline.HandleAsync(request);

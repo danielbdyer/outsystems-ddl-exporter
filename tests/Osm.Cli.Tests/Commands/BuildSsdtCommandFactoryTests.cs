@@ -63,7 +63,7 @@ public class BuildSsdtCommandFactoryTests
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
         var console = new TestConsole();
-        var args = "build-ssdt --config config.json --modules ModuleA --include-system-modules --include-inactive-modules --allow-missing-primary-key Module::* --cache-root ./cache --refresh-cache --connection-string DataSource --model model.json --profile profile.json --profiler-provider fixture --static-data data.json --out output --rename-table Module=Override --max-degree-of-parallelism 4";
+        var args = "build-ssdt --config config.json --modules ModuleA --include-system-modules --include-inactive-modules --allow-missing-primary-key Module::* --cache-root ./cache --refresh-cache --connection-string DataSource --model model.json --profile profile.json --profiler-provider fixture --static-data data.json --out output --rename-table Module=Override --max-degree-of-parallelism 4 --sql-metadata-out metadata.json";
         var exitCode = await parser.InvokeAsync(args, console);
 
         Assert.Equal(0, exitCode);
@@ -76,6 +76,7 @@ public class BuildSsdtCommandFactoryTests
         Assert.Equal("data.json", input.Overrides.StaticDataPath);
         Assert.Equal("Module=Override", input.Overrides.RenameOverrides);
         Assert.Equal(4, input.Overrides.MaxDegreeOfParallelism);
+        Assert.Equal("metadata.json", input.Overrides.SqlMetadataOutputPath);
         Assert.Equal(new[] { "ModuleA" }, input.ModuleFilter.Modules);
         Assert.True(input.ModuleFilter.IncludeSystemModules);
         Assert.True(input.ModuleFilter.IncludeInactiveModules);

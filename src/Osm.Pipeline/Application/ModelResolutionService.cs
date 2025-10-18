@@ -10,6 +10,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Application;
 
@@ -28,6 +29,7 @@ public sealed class ModelResolutionService : IModelResolutionService
         ModuleFilterOptions moduleFilter,
         ResolvedSqlOptions sqlOptions,
         string outputDirectory,
+        SqlMetadataLog? sqlMetadataLog,
         CancellationToken cancellationToken)
     {
         if (configuration is null)
@@ -35,7 +37,7 @@ public sealed class ModelResolutionService : IModelResolutionService
             throw new ArgumentNullException(nameof(configuration));
         }
 
-        overrides ??= new BuildSsdtOverrides(null, null, null, null, null, null, null);
+        overrides ??= new BuildSsdtOverrides(null, null, null, null, null, null, null, null);
 
         var candidatePath = overrides.ModelPath ?? configuration.ModelPath;
         if (!string.IsNullOrWhiteSpace(candidatePath))
@@ -67,7 +69,8 @@ public sealed class ModelResolutionService : IModelResolutionService
             extractionCommandResult.Value,
             sqlOptions,
             AdvancedSqlFixtureManifestPath: null,
-            SqlMetadataOutputPath: null);
+            SqlMetadataOutputPath: overrides.SqlMetadataOutputPath,
+            SqlMetadataLog: sqlMetadataLog);
 
         var extractionResult = await _dispatcher
             .DispatchAsync<ExtractModelPipelineRequest, ModelExtractionResult>(extractRequest, cancellationToken)

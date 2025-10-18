@@ -62,6 +62,7 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
             _logger.LogError(
                 "Failed to resolve metadata reader: {Errors}.",
                 string.Join(", ", readerResult.Errors.Select(static error => error.Code)));
+            request.SqlMetadataLog?.RecordFailure(readerResult.Errors, rowSnapshot: null);
             return Result<ModelExtractionResult>.Failure(readerResult.Errors);
         }
 
@@ -75,7 +76,7 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
         var extractionResult = await extractionService
             .ExtractAsync(
                 request.Command,
-                ModelExtractionOptions.InMemory(request.SqlMetadataOutputPath),
+                ModelExtractionOptions.InMemory(request.SqlMetadataOutputPath, request.SqlMetadataLog),
                 cancellationToken)
             .ConfigureAwait(false);
 

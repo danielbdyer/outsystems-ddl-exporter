@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Pipeline.Sql;
@@ -11,10 +12,12 @@ namespace Osm.Pipeline.Profiling;
 internal sealed class TableMetadataLoader : ITableMetadataLoader
 {
     private readonly SqlProfilerOptions _options;
+    private readonly SqlMetadataLog? _metadataLog;
 
-    public TableMetadataLoader(SqlProfilerOptions options)
+    public TableMetadataLoader(SqlProfilerOptions options, SqlMetadataLog? metadataLog = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _metadataLog = metadataLog;
     }
 
     public async Task<Dictionary<(string Schema, string Table, string Column), ColumnMetadata>> LoadColumnMetadataAsync(
@@ -81,6 +84,24 @@ WHERE t.is_ms_shipped = 0 AND {filterClause};";
             metadata[(schema, table, column)] = new ColumnMetadata(isNullable, isComputed, isPrimaryKey, defaultDefinition);
         }
 
+        _metadataLog?.RecordRequest(
+            "sql.tableMetadata",
+            metadata
+                .OrderBy(static entry => entry.Key.Schema, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static entry => entry.Key.Table, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static entry => entry.Key.Column, StringComparer.OrdinalIgnoreCase)
+                .Select(entry => new
+                {
+                    schema = entry.Key.Schema,
+                    table = entry.Key.Table,
+                    column = entry.Key.Column,
+                    entry.Value.IsNullable,
+                    entry.Value.IsComputed,
+                    entry.Value.IsPrimaryKey,
+                    entry.Value.DefaultDefinition
+                })
+                .ToArray());
+
         return metadata;
     }
 
@@ -132,6 +153,19 @@ GROUP BY s.name, t.name;";
             var count = reader.GetInt64(2);
             counts[(schema, table)] = count;
         }
+
+        _metadataLog?.RecordRequest(
+            "sql.tableRowCounts",
+            counts
+                .OrderBy(static entry => entry.Key.Schema, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static entry => entry.Key.Table, StringComparer.OrdinalIgnoreCase)
+                .Select(entry => new
+                {
+                    schema = entry.Key.Schema,
+                    table = entry.Key.Table,
+                    rowCount = entry.Value
+                })
+                .ToArray());
 
         return counts;
     }

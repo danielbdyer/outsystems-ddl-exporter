@@ -15,7 +15,8 @@ public sealed class OutputDirectoryResolverTests
             ProfilerProvider: null,
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
         var resolver = new OutputDirectoryResolver();
 
         var result = resolver.Resolve(overrides);
@@ -33,7 +34,8 @@ public sealed class OutputDirectoryResolverTests
             ProfilerProvider: null,
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
         var resolver = new OutputDirectoryResolver();
 
         var result = resolver.Resolve(overrides);

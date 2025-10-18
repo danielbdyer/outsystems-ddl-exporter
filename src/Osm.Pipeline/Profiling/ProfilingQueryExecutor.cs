@@ -17,13 +17,15 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly SqlProfilerOptions _options;
+    private readonly SqlMetadataLog? _metadataLog;
 
     private readonly record struct ProfilingProbeResult<T>(T Value, ProfilingProbeStatus Status);
 
-    public ProfilingQueryExecutor(IDbConnectionFactory connectionFactory, SqlProfilerOptions options)
+    public ProfilingQueryExecutor(IDbConnectionFactory connectionFactory, SqlProfilerOptions options, SqlMetadataLog? metadataLog = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _metadataLog = metadataLog;
     }
 
     public async Task<TableProfilingResults> ExecuteAsync(TableProfilingPlan plan, CancellationToken cancellationToken)
@@ -289,7 +291,21 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
             }
         }
 
-        return results.ToImmutable();
+        var dictionary = results.ToImmutable();
+        _metadataLog?.RecordRequest(
+            "sql.nullCounts",
+            new
+            {
+                schema = plan.Schema,
+                table = plan.Table,
+                rowCount = plan.RowCount,
+                results = dictionary
+                    .OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(entry => new { column = entry.Key, nullCount = entry.Value })
+                    .ToArray()
+            });
+
+        return dictionary;
     }
 
     private async Task<IReadOnlyDictionary<string, bool>> ComputeDuplicateCandidatesAsync(
@@ -340,7 +356,22 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
             }
         }
 
-        return results.ToImmutable();
+        var dictionary = results.ToImmutable();
+        _metadataLog?.RecordRequest(
+            "sql.uniqueCandidates",
+            new
+            {
+                schema = plan.Schema,
+                table = plan.Table,
+                rowCount = plan.RowCount,
+                useSampling,
+                results = dictionary
+                    .OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(entry => new { candidate = entry.Key, hasDuplicates = entry.Value })
+                    .ToArray()
+            });
+
+        return dictionary;
     }
 
     private async Task<(IReadOnlyDictionary<string, bool> Orphans, IReadOnlyDictionary<string, bool> IsNoCheck)> ComputeForeignKeyRealityAsync(
@@ -387,9 +418,24 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
             }
         }
 
+        var dictionary = results.ToImmutable();
         var metadata = await LoadForeignKeyMetadataAsync(connection, plan, cancellationToken).ConfigureAwait(false);
 
-        return (results.ToImmutable(), metadata);
+        _metadataLog?.RecordRequest(
+            "sql.foreignKeyReality",
+            new
+            {
+                schema = plan.Schema,
+                table = plan.Table,
+                rowCount = plan.RowCount,
+                useSampling,
+                orphans = dictionary
+                    .OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(entry => new { candidate = entry.Key, hasOrphans = entry.Value })
+                    .ToArray()
+            });
+
+        return (dictionary, metadata);
     }
 
     private async Task<IReadOnlyDictionary<string, bool>> LoadForeignKeyMetadataAsync(
@@ -425,7 +471,15 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
             }
         }
 
-        return results.ToImmutable();
+        var dictionary = results.ToImmutable();
+        _metadataLog?.RecordRequest(
+            "sql.foreignKeyMetadata",
+            dictionary
+                .OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(entry => new { candidate = entry.Key, isNotTrustedOrDisabled = entry.Value })
+                .ToArray());
+
+        return dictionary;
     }
 
     private async Task<ProfilingProbeResult<T>> ExecuteWithTimeoutFallback<T>(

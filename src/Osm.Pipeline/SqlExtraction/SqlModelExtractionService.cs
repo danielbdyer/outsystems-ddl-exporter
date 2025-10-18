@@ -15,6 +15,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
 using Osm.Json;
+using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.SqlExtraction;
 
@@ -68,6 +69,14 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         }
 
         var request = new AdvancedSqlRequest(command.ModuleNames, command.IncludeSystemModules, command.OnlyActiveAttributes);
+        options.MetadataLog?.RecordRequest(
+            "advancedSql.request",
+            new
+            {
+                modules = request.ModuleNames.Select(static module => module.Value).ToArray(),
+                includeSystem = request.IncludeSystemModules,
+                onlyActive = request.OnlyActiveAttributes
+            });
 
         var metadataTimer = Stopwatch.StartNew();
         var metadataResult = await _metadataReader.ReadAsync(request, cancellationToken).ConfigureAwait(false);
@@ -80,23 +89,20 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                 metadataTimer.Elapsed.TotalMilliseconds,
                 string.Join(", ", metadataResult.Errors.Select(static error => error.Code)));
 
-            await SqlMetadataDiagnosticsWriter.WriteFailureAsync(
-                options.MetadataOutputPath,
-                metadataResult.Errors,
-                TryGetFailureSnapshot(),
-                cancellationToken).ConfigureAwait(false);
+            options.MetadataLog?.RecordFailure(metadataResult.Errors, TryGetFailureSnapshot());
 
             return Result<ModelExtractionResult>.Failure(metadataResult.Errors.ToArray());
         }
 
         var snapshot = metadataResult.Value;
         var exportedAtUtc = DateTimeOffset.UtcNow;
-
-        await SqlMetadataDiagnosticsWriter.WriteSnapshotAsync(
-            options.MetadataOutputPath,
-            snapshot,
-            exportedAtUtc,
-            cancellationToken).ConfigureAwait(false);
+        options.MetadataLog?.RecordSnapshot(snapshot, exportedAtUtc);
+        options.MetadataLog?.RecordRequest(
+            "advancedSql.duration",
+            new
+            {
+                metadataMilliseconds = metadataTimer.Elapsed.TotalMilliseconds
+            });
 
         await using var destination = CreateDestination(options);
         var jsonStream = destination.Stream;
@@ -423,11 +429,16 @@ public sealed class ModelJsonPayload
 
 public sealed class ModelExtractionOptions
 {
-    public ModelExtractionOptions(Stream? destinationStream = null, string? destinationPath = null, string? metadataOutputPath = null)
+    public ModelExtractionOptions(
+        Stream? destinationStream = null,
+        string? destinationPath = null,
+        string? metadataOutputPath = null,
+        SqlMetadataLog? metadataLog = null)
     {
         DestinationStream = destinationStream;
         DestinationPath = destinationPath;
         MetadataOutputPath = metadataOutputPath;
+        MetadataLog = metadataLog;
     }
 
     public Stream? DestinationStream { get; }
@@ -436,15 +447,18 @@ public sealed class ModelExtractionOptions
 
     public string? MetadataOutputPath { get; }
 
-    public static ModelExtractionOptions InMemory(string? metadataOutputPath = null) => new(null, null, metadataOutputPath);
+    public SqlMetadataLog? MetadataLog { get; }
 
-    public static ModelExtractionOptions ToStream(Stream stream, string? metadataOutputPath = null)
-        => new(stream ?? throw new ArgumentNullException(nameof(stream)), null, metadataOutputPath);
+    public static ModelExtractionOptions InMemory(string? metadataOutputPath = null, SqlMetadataLog? metadataLog = null)
+        => new(null, null, metadataOutputPath, metadataLog);
 
-    public static ModelExtractionOptions ToFile(string path, string? metadataOutputPath = null)
+    public static ModelExtractionOptions ToStream(Stream stream, string? metadataOutputPath = null, SqlMetadataLog? metadataLog = null)
+        => new(stream ?? throw new ArgumentNullException(nameof(stream)), null, metadataOutputPath, metadataLog);
+
+    public static ModelExtractionOptions ToFile(string path, string? metadataOutputPath = null, SqlMetadataLog? metadataLog = null)
         => string.IsNullOrWhiteSpace(path)
             ? throw new ArgumentException("File path must be provided.", nameof(path))
-            : new ModelExtractionOptions(null, path, metadataOutputPath);
+            : new ModelExtractionOptions(null, path, metadataOutputPath, metadataLog);
 }
 
 public sealed class ModelExtractionCommand

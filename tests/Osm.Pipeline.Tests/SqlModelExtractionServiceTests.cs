@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Text.Json;
 using Osm.Domain.Abstractions;
 using Osm.Json;
+using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Tests.Support;
 
@@ -287,16 +288,16 @@ public class SqlModelExtractionServiceTests
         using var temp = new TempDirectory();
         var metadataPath = Path.Combine(temp.Path, "metadata.json");
 
-        var result = await service.ExtractAsync(command, ModelExtractionOptions.InMemory(metadataPath));
+        var metadataLog = new SqlMetadataLog();
+        var result = await service.ExtractAsync(command, ModelExtractionOptions.InMemory(metadataPath, metadataLog));
 
         Assert.True(result.IsSuccess);
-        Assert.True(File.Exists(metadataPath));
 
-        using var metadataDocument = JsonDocument.Parse(await File.ReadAllTextAsync(metadataPath));
-        var root = metadataDocument.RootElement;
-        Assert.Equal("success", root.GetProperty("status").GetString());
-        Assert.Equal(snapshot.DatabaseName, root.GetProperty("databaseName").GetString());
-        Assert.Equal(JsonValueKind.Array, root.GetProperty("modules").ValueKind);
+        var state = metadataLog.BuildState();
+        Assert.True(state.HasSnapshot);
+        Assert.Equal(snapshot.DatabaseName, state.DatabaseName);
+        Assert.Equal(snapshot.Modules, state.Snapshot!.Modules);
+        Assert.True(state.HasRequests);
     }
 
     [Fact]
@@ -320,20 +321,17 @@ public class SqlModelExtractionServiceTests
         using var temp = new TempDirectory();
         var metadataPath = Path.Combine(temp.Path, "metadata.json");
 
-        var result = await service.ExtractAsync(command, ModelExtractionOptions.InMemory(metadataPath));
+        var metadataLog = new SqlMetadataLog();
+        var result = await service.ExtractAsync(command, ModelExtractionOptions.InMemory(metadataPath, metadataLog));
 
         Assert.True(result.IsFailure);
-        Assert.True(File.Exists(metadataPath));
 
-        using var metadataDocument = JsonDocument.Parse(await File.ReadAllTextAsync(metadataPath));
-        var root = metadataDocument.RootElement;
-        Assert.Equal("failure", root.GetProperty("status").GetString());
-        var errors = root.GetProperty("errors");
-        Assert.Equal(JsonValueKind.Array, errors.ValueKind);
-        Assert.Equal("boom", errors[0].GetProperty("code").GetString());
-        var row = root.GetProperty("rowSnapshot");
-        Assert.Equal("AttributesJson", row.GetProperty("resultSet").GetString());
-        Assert.Equal(3, row.GetProperty("rowIndex").GetInt32());
+        var state = metadataLog.BuildState();
+        var error = Assert.Single(state.Errors);
+        Assert.True(state.HasErrors);
+        Assert.NotNull(state.FailureRowSnapshot);
+        Assert.Equal("AttributesJson", state.FailureRowSnapshot!.ResultSetName);
+        Assert.Equal(3, state.FailureRowSnapshot.RowIndex);
     }
 
     private static OutsystemsMetadataSnapshot CreateSnapshotFromJson(string json)

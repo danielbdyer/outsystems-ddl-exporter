@@ -11,6 +11,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
 using Xunit;
 
@@ -71,7 +72,8 @@ public sealed class ModuleFilterConsistencyTests
             ProfilerProvider: null,
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
 
         await buildService.RunAsync(new BuildSsdtApplicationInput(
             context,
@@ -147,7 +149,8 @@ public sealed class ModuleFilterConsistencyTests
             ProfilerProvider: null,
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
 
         await buildService.RunAsync(new BuildSsdtApplicationInput(
             context,
@@ -224,7 +227,8 @@ public sealed class ModuleFilterConsistencyTests
             ProfilerProvider: null,
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
         var buildResult = await buildService.RunAsync(new BuildSsdtApplicationInput(
             context,
             buildOverrides,
@@ -343,6 +347,7 @@ public sealed class ModuleFilterConsistencyTests
             ModuleFilterOptions moduleFilter,
             ResolvedSqlOptions sqlOptions,
             string outputDirectory,
+            SqlMetadataLog? sqlMetadataLog,
             CancellationToken cancellationToken)
         {
             var path = overrides.ModelPath ?? configuration.ModelPath;

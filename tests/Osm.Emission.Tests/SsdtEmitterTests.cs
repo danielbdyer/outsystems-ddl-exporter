@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO.Abstractions;
@@ -19,8 +20,9 @@ public class SsdtEmitterTests
     [Fact]
     public async Task EmitAsync_writes_per_table_artifacts_using_mock_file_system()
     {
-        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), @"c:\");
-        var outputDirectory = fileSystem.Path.Combine(@"c:\", "out");
+        var fileSystem = CreateFileSystem();
+        var root = fileSystem.Directory.GetCurrentDirectory();
+        var outputDirectory = fileSystem.Path.Combine(root, "out");
         var emitter = new SsdtEmitter(new PerTableWriter(), fileSystem);
         var model = CreateMinimalModel();
         var options = SmoBuildOptions.Default;
@@ -54,7 +56,7 @@ public class SsdtEmitterTests
     [InlineData("   ")]
     public async Task EmitAsync_requires_non_empty_output_directory(string? outputDirectory)
     {
-        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), @"c:\");
+        var fileSystem = CreateFileSystem();
         var emitter = new SsdtEmitter(new PerTableWriter(), fileSystem);
 
         var exception = await Assert.ThrowsAsync<ArgumentException>(
@@ -66,13 +68,13 @@ public class SsdtEmitterTests
     [Fact]
     public async Task EmitAsync_honors_cancellation_token()
     {
-        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), @"c:\");
+        var fileSystem = CreateFileSystem();
         var emitter = new SsdtEmitter(new PerTableWriter(), fileSystem);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => emitter.EmitAsync(CreateMinimalModel(), fileSystem.Path.Combine(@"c:\", "out"), SmoBuildOptions.Default, DefaultMetadata, cancellationToken: cts.Token)).ConfigureAwait(false);
+            () => emitter.EmitAsync(CreateMinimalModel(), fileSystem.Path.Combine(fileSystem.Directory.GetCurrentDirectory(), "out"), SmoBuildOptions.Default, DefaultMetadata, cancellationToken: cts.Token)).ConfigureAwait(false);
     }
 
     [Fact]
@@ -148,5 +150,11 @@ public class SsdtEmitterTests
         }
 
         return path;
+    }
+
+    private static MockFileSystem CreateFileSystem(IDictionary<string, MockFileData>? files = null)
+    {
+        var root = OperatingSystem.IsWindows() ? @"c:\" : "/";
+        return new MockFileSystem(files ?? new Dictionary<string, MockFileData>(), root);
     }
 }

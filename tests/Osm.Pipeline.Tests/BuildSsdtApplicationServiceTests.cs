@@ -12,6 +12,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
 using Xunit;
 
@@ -29,7 +30,8 @@ public sealed class BuildSsdtApplicationServiceTests
             ProfilerProvider: "fixture",
             StaticDataPath: null,
             RenameOverrides: null,
-            MaxDegreeOfParallelism: null);
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
         var moduleFilterOverrides = new ModuleFilterOverrides(
             Array.Empty<string>(),
             IncludeSystemModules: null,
@@ -161,6 +163,7 @@ public sealed class BuildSsdtApplicationServiceTests
             ModuleFilterOptions moduleFilter,
             ResolvedSqlOptions sqlOptions,
             string outputDirectory,
+            SqlMetadataLog? sqlMetadataLog,
             CancellationToken cancellationToken)
         {
             var model = new ModelResolutionResult(overrides.ModelPath!, false, ImmutableArray<string>.Empty);

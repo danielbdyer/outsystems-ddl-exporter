@@ -3,6 +3,7 @@ using Osm.Emission.Seeds;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Pipeline.Mediation;
+using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -19,4 +20,5 @@ public sealed record BuildSsdtPipelineRequest(
     TypeMappingPolicy TypeMappingPolicy,
     EvidenceCachePipelineOptions? EvidenceCache,
     IStaticEntityDataProvider? StaticDataProvider,
-    string? SeedOutputDirectoryHint) : ICommand<BuildSsdtPipelineResult>;
+    string? SeedOutputDirectoryHint,
+    SqlMetadataLog? SqlMetadataLog = null) : ICommand<BuildSsdtPipelineResult>;
