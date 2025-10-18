@@ -34,36 +34,36 @@ DECLARE @OnlyActiveAttributes BIT = 1;
 IF OBJECT_ID('tempdb..#ModuleNames') IS NOT NULL DROP TABLE #ModuleNames;
 CREATE TABLE #ModuleNames ( ModuleName NVARCHAR(256) COLLATE DATABASE_DEFAULT NOT NULL );
 
-DECLARE @ModuleTokens TABLE ( ModuleName NVARCHAR(MAX) NOT NULL );
+DECLARE @ModuleTokens TABLE ( ModuleName NVARCHAR(256) NOT NULL PRIMARY KEY );
+DECLARE @InvalidModuleName NVARCHAR(MAX);
 
 IF NULLIF(LTRIM(RTRIM(@ModuleNamesCsv)), '') IS NOT NULL
 BEGIN
+    SELECT TOP (1) @InvalidModuleName = token.ModuleName
+    FROM STRING_SPLIT(@ModuleNamesCsv, ',') AS split
+    CROSS APPLY (SELECT LTRIM(RTRIM(split.value)) AS ModuleName) AS token
+    WHERE NULLIF(token.ModuleName, '') IS NOT NULL
+      AND LEN(token.ModuleName) > 256;
+
+    IF @InvalidModuleName IS NOT NULL
+    BEGIN
+        DECLARE @ModuleNameError NVARCHAR(4000) =
+            N'Module filter module name exceeds 256 characters: '''
+            + LEFT(@InvalidModuleName, 256)
+            + N'''.';
+        THROW 50000, @ModuleNameError, 1;
+    END;
+
     INSERT INTO @ModuleTokens(ModuleName)
-    SELECT LTRIM(RTRIM(value))
-    FROM STRING_SPLIT(@ModuleNamesCsv, ',')
-    WHERE NULLIF(LTRIM(RTRIM(value)), '') IS NOT NULL;
+    SELECT DISTINCT token.ModuleName
+    FROM STRING_SPLIT(@ModuleNamesCsv, ',') AS split
+    CROSS APPLY (SELECT LTRIM(RTRIM(split.value)) AS ModuleName) AS token
+    WHERE NULLIF(token.ModuleName, '') IS NOT NULL;
 END;
 
-DECLARE @InvalidModuleName NVARCHAR(MAX);
-SELECT TOP (1) @InvalidModuleName = ModuleName
-FROM @ModuleTokens
-WHERE LEN(ModuleName) > 256;
-
-IF @InvalidModuleName IS NOT NULL
-BEGIN
-    DECLARE @ModuleNameError NVARCHAR(4000) =
-        N'Module filter module name exceeds 256 characters: '''
-        + LEFT(@InvalidModuleName, 256)
-        + N'''.';
-    THROW 50000, @ModuleNameError, 1;
-END;
-
-IF EXISTS (SELECT 1 FROM @ModuleTokens)
-BEGIN
-    INSERT INTO #ModuleNames(ModuleName)
-    SELECT ModuleName
-    FROM @ModuleTokens;
-END;
+INSERT INTO #ModuleNames(ModuleName)
+SELECT ModuleName
+FROM @ModuleTokens;
 
 -- 2) #E (espace) with module-level IncludeSystem filtering
 IF OBJECT_ID('tempdb..#E') IS NOT NULL DROP TABLE #E;
@@ -865,20 +865,19 @@ CREATE CLUSTERED INDEX IX_IdxJson ON #IdxJson(EntityId);
 -- Trigger JSON per entity
 IF OBJECT_ID('tempdb..#TriggerJson') IS NOT NULL DROP TABLE #TriggerJson;
 SELECT
-  tr.EntityId,
+  en.EntityId,
   ISNULL((
     SELECT
-      tr2.TriggerName       AS [name],
-      CAST(tr2.IsDisabled AS bit) AS [isDisabled],
-      tr2.TriggerDefinition AS [definition]
-    FROM #Triggers tr2
-    WHERE tr2.EntityId = tr.EntityId
-    ORDER BY tr2.TriggerName
+      tr.TriggerName       AS [name],
+      CAST(tr.IsDisabled AS bit) AS [isDisabled],
+      tr.TriggerDefinition AS [definition]
+    FROM #Triggers tr
+    WHERE tr.EntityId = en.EntityId
+    ORDER BY tr.TriggerName
     FOR JSON PATH
   ), '[]') AS TriggersJson
 INTO #TriggerJson
-FROM #Triggers tr
-GROUP BY tr.EntityId;
+FROM #Ent en;
 CREATE CLUSTERED INDEX IX_TriggerJson ON #TriggerJson(EntityId);
 
 -- Module JSON (final assembly)
@@ -900,10 +899,10 @@ SELECT
         (SELECT NULLIF(LTRIM(RTRIM(en.EntityDescription)), '') AS [description]
          FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
       ) END                           AS [meta],
-      JSON_QUERY(aj.AttributesJson)   AS [attributes],
-      JSON_QUERY(rj.RelationshipsJson)AS [relationships],
-      JSON_QUERY(ij.IndexesJson)      AS [indexes],
-      JSON_QUERY(tj.TriggersJson)     AS [triggers]
+      JSON_QUERY(COALESCE(aj.AttributesJson, N'[]'))    AS [attributes],
+      JSON_QUERY(COALESCE(rj.RelationshipsJson, N'[]')) AS [relationships],
+      JSON_QUERY(COALESCE(ij.IndexesJson, N'[]'))       AS [indexes],
+      JSON_QUERY(COALESCE(tj.TriggersJson, N'[]'))      AS [triggers]
     FROM #Ent en
     LEFT JOIN #PhysTbls pt  ON pt.EntityId = en.EntityId
     LEFT JOIN #AttrJson aj  ON aj.EntityId = en.EntityId

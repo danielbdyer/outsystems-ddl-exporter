@@ -97,6 +97,7 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         }
 
         var snapshot = metadataResult.Value;
+        var modulesWithoutEntities = IdentifyModulesWithoutEntities(snapshot);
         var exportedAtUtc = DateTimeOffset.UtcNow;
 
         await SqlMetadataDiagnosticsWriter.WriteSnapshotAsync(
@@ -116,13 +117,25 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
             return Result<ModelExtractionResult>.Failure(ValidationError.Create("extraction.sql.emptyJson", "Metadata reader produced no JSON payload."));
         }
 
-        var contractError = ValidateAdvancedSqlPayload(jsonStream);
-        if (contractError is not null)
+        ValidationError? contractError;
+        try
+        {
+            contractError = ValidateAdvancedSqlPayload(jsonStream);
+        }
+        catch (InvalidDataException ex)
         {
             _logger.LogError(
                 "Advanced SQL payload violated array contract: {Message}.",
-                contractError.Message);
-            return Result<ModelExtractionResult>.Failure(contractError);
+                ex.Message);
+            return Result<ModelExtractionResult>.Failure(
+                ValidationError.Create("extraction.sql.contract.entityArray", ex.Message));
+        }
+        if (contractError is ValidationError error)
+        {
+            _logger.LogError(
+                "Advanced SQL payload violated array contract: {Message}.",
+                error.Message);
+            return Result<ModelExtractionResult>.Failure(error);
         }
 
         jsonStream.Position = 0;
@@ -160,6 +173,15 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                 deserializeTimer.Elapsed.TotalMilliseconds,
                 string.Join(", ", modelResult.Errors.Select(static error => error.Code)));
             return Result<ModelExtractionResult>.Failure(modelResult.Errors.ToArray());
+        }
+
+        foreach (var moduleName in modulesWithoutEntities)
+        {
+            var message = $"Module '{moduleName}' contains no entities and will be skipped.";
+            if (!warnings.Contains(message, StringComparer.Ordinal))
+            {
+                warnings.Add(message);
+            }
         }
 
         if (warnings.Count > 0)
@@ -334,6 +356,15 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                         ? entityNameElement.GetString()
                         : null;
 
+                    if (entityElement.TryGetProperty("attributes", out var attributesElement)
+                        && attributesElement.ValueKind == JsonValueKind.Null)
+                    {
+                        var entityNameForMessage = entityName ?? "<unknown>";
+                        var moduleNameForMessage = moduleName ?? "<unknown>";
+                        throw new InvalidDataException(
+                            $"Advanced SQL extractor emitted null attributes for entity '{entityNameForMessage}' in module '{moduleNameForMessage}'.");
+                    }
+
                     foreach (var propertyName in EntityArrayPropertyNames)
                     {
                         if (!entityElement.TryGetProperty(propertyName, out var arrayElement))
@@ -372,6 +403,45 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         }
 
         return null;
+    }
+
+    private static IReadOnlyList<string> IdentifyModulesWithoutEntities(OutsystemsMetadataSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        if (snapshot.ModuleJson.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var result = new List<string>();
+        foreach (var module in snapshot.ModuleJson)
+        {
+            var entitiesJson = module.ModuleEntitiesJson;
+            if (string.IsNullOrWhiteSpace(entitiesJson))
+            {
+                result.Add(module.ModuleName);
+                continue;
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(entitiesJson);
+                if (document.RootElement.ValueKind == JsonValueKind.Array && document.RootElement.GetArrayLength() == 0)
+                {
+                    result.Add(module.ModuleName);
+                }
+            }
+            catch (JsonException)
+            {
+                // Validation will surface invalid JSON payloads later.
+            }
+        }
+
+        return result;
     }
 
     private static void BuildJsonFromSnapshot(OutsystemsMetadataSnapshot snapshot, DateTime exportedAtUtc, Stream destination)
