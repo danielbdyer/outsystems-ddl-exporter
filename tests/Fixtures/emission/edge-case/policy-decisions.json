@@ -37,7 +37,21 @@
       "UniqueIndexesEnforcedCount": 0,
       "UniqueIndexesRequireRemediationCount": 0,
       "ForeignKeyCount": 1,
-      "ForeignKeysCreatedCount": 0
+      "ForeignKeysCreatedCount": 0,
+      "ColumnRationales": {
+        "DATA_HAS_ORPHANS": 1,
+        "DATA_NO_NULLS": 2,
+        "DEFAULT_PRESENT": 1,
+        "DELETE_RULE_IGNORE": 1,
+        "MANDATORY": 2,
+        "PHYSICAL_NOT_NULL": 1,
+        "PK": 1
+      },
+      "UniqueIndexRationales": {},
+      "ForeignKeyRationales": {
+        "DATA_HAS_ORPHANS": 1,
+        "DELETE_RULE_IGNORE": 1
+      }
     },
     "ExtBilling": {
       "ColumnCount": 3,
@@ -47,7 +61,19 @@
       "UniqueIndexesEnforcedCount": 1,
       "UniqueIndexesRequireRemediationCount": 0,
       "ForeignKeyCount": 0,
-      "ForeignKeysCreatedCount": 0
+      "ForeignKeysCreatedCount": 0,
+      "ColumnRationales": {
+        "DATA_NO_NULLS": 2,
+        "MANDATORY": 2,
+        "PHYSICAL_NOT_NULL": 1,
+        "PK": 1,
+        "UNIQUE_NO_NULLS": 1
+      },
+      "UniqueIndexRationales": {
+        "PHYSICAL_UNIQUE_KEY": 1,
+        "UNIQUE_NO_NULLS": 1
+      },
+      "ForeignKeyRationales": {}
     },
     "AppCore": {
       "ColumnCount": 9,
@@ -57,7 +83,24 @@
       "UniqueIndexesEnforcedCount": 1,
       "UniqueIndexesRequireRemediationCount": 0,
       "ForeignKeyCount": 1,
-      "ForeignKeysCreatedCount": 1
+      "ForeignKeysCreatedCount": 1,
+      "ColumnRationales": {
+        "DATA_NO_NULLS": 6,
+        "DEFAULT_PRESENT": 1,
+        "FK_ENFORCED": 1,
+        "MANDATORY": 6,
+        "PHYSICAL_NOT_NULL": 2,
+        "PK": 2,
+        "PROFILE_MISSING": 1,
+        "UNIQUE_NO_NULLS": 1
+      },
+      "UniqueIndexRationales": {
+        "PHYSICAL_UNIQUE_KEY": 1,
+        "UNIQUE_NO_NULLS": 1
+      },
+      "ForeignKeyRationales": {
+        "DB_CONSTRAINT_PRESENT": 1
+      }
     }
   },
   "TogglePrecedence": {

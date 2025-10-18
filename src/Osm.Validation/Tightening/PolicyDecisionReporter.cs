@@ -104,6 +104,8 @@ public static class PolicyDecisionReporter
             {
                 rollup.RemediationColumnCount++;
             }
+
+            rollup.AddColumnRationales(column.Rationales);
         }
 
         foreach (var index in uniqueIndexes)
@@ -124,6 +126,8 @@ public static class PolicyDecisionReporter
             {
                 rollup.UniqueIndexesRequireRemediationCount++;
             }
+
+            rollup.AddUniqueRationales(index.Rationales);
         }
 
         foreach (var foreignKey in foreignKeys)
@@ -139,6 +143,8 @@ public static class PolicyDecisionReporter
             {
                 rollup.ForeignKeysCreatedCount++;
             }
+
+            rollup.AddForeignKeyRationales(foreignKey.Rationales);
         }
 
         var builder = ImmutableDictionary.CreateBuilder<string, ModuleDecisionRollup>(StringComparer.OrdinalIgnoreCase);
@@ -200,7 +206,10 @@ public sealed record ModuleDecisionRollup(
     int UniqueIndexesEnforcedCount,
     int UniqueIndexesRequireRemediationCount,
     int ForeignKeyCount,
-    int ForeignKeysCreatedCount);
+    int ForeignKeysCreatedCount,
+    ImmutableDictionary<string, int> ColumnRationales,
+    ImmutableDictionary<string, int> UniqueIndexRationales,
+    ImmutableDictionary<string, int> ForeignKeyRationales);
 
 internal sealed class ModuleDecisionRollupBuilder
 {
@@ -212,6 +221,9 @@ internal sealed class ModuleDecisionRollupBuilder
     public int UniqueIndexesRequireRemediationCount;
     public int ForeignKeyCount;
     public int ForeignKeysCreatedCount;
+    private readonly Dictionary<string, int> _columnRationales = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _uniqueRationales = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _foreignKeyRationales = new(StringComparer.Ordinal);
 
     public ModuleDecisionRollup Build()
         => new(
@@ -222,7 +234,39 @@ internal sealed class ModuleDecisionRollupBuilder
             UniqueIndexesEnforcedCount,
             UniqueIndexesRequireRemediationCount,
             ForeignKeyCount,
-            ForeignKeysCreatedCount);
+            ForeignKeysCreatedCount,
+            _columnRationales.ToImmutableDictionary(StringComparer.Ordinal),
+            _uniqueRationales.ToImmutableDictionary(StringComparer.Ordinal),
+            _foreignKeyRationales.ToImmutableDictionary(StringComparer.Ordinal));
+
+    public void AddColumnRationales(ImmutableArray<string> rationales)
+        => AddRationales(_columnRationales, rationales);
+
+    public void AddUniqueRationales(ImmutableArray<string> rationales)
+        => AddRationales(_uniqueRationales, rationales);
+
+    public void AddForeignKeyRationales(ImmutableArray<string> rationales)
+        => AddRationales(_foreignKeyRationales, rationales);
+
+    private static void AddRationales(Dictionary<string, int> accumulator, ImmutableArray<string> rationales)
+    {
+        if (rationales.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        foreach (var rationale in rationales)
+        {
+            if (accumulator.TryGetValue(rationale, out var count))
+            {
+                accumulator[rationale] = count + 1;
+            }
+            else
+            {
+                accumulator[rationale] = 1;
+            }
+        }
+    }
 }
 
 public sealed record ColumnDecisionReport(

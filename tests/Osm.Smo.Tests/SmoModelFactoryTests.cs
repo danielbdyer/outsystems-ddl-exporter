@@ -124,6 +124,40 @@ public class SmoModelFactoryTests
     }
 
     [Fact]
+    public void Create_aligns_model_with_all_policy_decisions()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
+
+        var columnLookup = BuildColumnLookup(smoModel);
+        var indexLookup = BuildIndexLookup(smoModel);
+        var foreignKeyLookup = BuildForeignKeyLookup(smoModel);
+
+        foreach (var pair in decisions.Nullability)
+        {
+            var key = BuildColumnKey(pair.Key);
+            Assert.True(columnLookup.TryGetValue(key, out var column), $"Column '{key}' missing from SMO model.");
+            Assert.Equal(pair.Value.MakeNotNull, !column.Nullable);
+        }
+
+        foreach (var pair in decisions.UniqueIndexes)
+        {
+            var key = BuildIndexKey(pair.Key);
+            Assert.True(indexLookup.TryGetValue(key, out var index), $"Index '{key}' missing from SMO model.");
+            Assert.Equal(pair.Value.EnforceUnique, index.IsUnique);
+        }
+
+        foreach (var pair in decisions.ForeignKeys)
+        {
+            var key = BuildColumnKey(pair.Key);
+            var hasForeignKey = foreignKeyLookup.TryGetValue(key, out var foreignKeys) && foreignKeys.Any();
+            Assert.Equal(pair.Value.CreateConstraint, hasForeignKey);
+        }
+    }
+
+    [Fact]
     public void Build_aligns_reference_column_types_with_target_identifiers()
     {
         var (model, _, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();

@@ -14,6 +14,15 @@ internal sealed record NullEvidenceSignal()
             return SignalEvaluation.Create(Code, Description, result: false);
         }
 
+        if (profile.NullCountStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+        {
+            return SignalEvaluation.Create(
+                Code,
+                Description,
+                result: false,
+                rationales: new[] { TighteningRationales.ProfileMissing });
+        }
+
         var withinBudget = IsWithinNullBudget(profile, context.Options.Policy.NullBudget, out var usedBudget);
         if (!withinBudget)
         {
