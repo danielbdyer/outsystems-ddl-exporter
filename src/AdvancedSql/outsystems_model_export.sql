@@ -826,40 +826,39 @@ CREATE CLUSTERED INDEX IX_IdxColsJson ON #IdxColsJson(EntityId, IndexName);
 -- Indexes JSON per entity
 IF OBJECT_ID('tempdb..#IdxJson') IS NOT NULL DROP TABLE #IdxJson;
 SELECT
-  ai.EntityId,
+  en.EntityId,
   ISNULL((
     SELECT
-      ai2.IndexName                         AS [name],
-      CAST(ai2.IsPrimary AS bit)            AS [isPrimary],
-      ai2.Kind                              AS [kind],
-      CAST(ai2.IsUnique AS bit)             AS [isUnique],
-      CAST(CASE WHEN ai2.IndexName LIKE 'OSIDX\_%' ESCAPE '\' THEN 1 ELSE 0 END AS int) AS [isPlatformAuto],
-      CAST(ai2.IsDisabled AS bit)           AS [isDisabled],
-      CAST(ai2.IsPadded AS bit)             AS [isPadded],
-      ai2.Fill_Factor                       AS [fill_factor],
-      CAST(ai2.IgnoreDupKey AS bit)         AS [ignoreDupKey],
-      CAST(ai2.AllowRowLocks AS bit)        AS [allowRowLocks],
-      CAST(ai2.AllowPageLocks AS bit)       AS [allowPageLocks],
-      CAST(ai2.NoRecompute AS bit)          AS [noRecompute],
-      ai2.FilterDefinition                  AS [filterDefinition],
-      CASE WHEN ai2.DataSpaceName IS NOT NULL OR ai2.DataSpaceType IS NOT NULL THEN JSON_QUERY(
+      ai.IndexName                         AS [name],
+      CAST(ai.IsPrimary AS bit)            AS [isPrimary],
+      ai.Kind                              AS [kind],
+      CAST(ai.IsUnique AS bit)             AS [isUnique],
+      CAST(CASE WHEN ai.IndexName LIKE 'OSIDX\_%' ESCAPE '\' THEN 1 ELSE 0 END AS int) AS [isPlatformAuto],
+      CAST(ai.IsDisabled AS bit)           AS [isDisabled],
+      CAST(ai.IsPadded AS bit)             AS [isPadded],
+      ai.Fill_Factor                       AS [fill_factor],
+      CAST(ai.IgnoreDupKey AS bit)         AS [ignoreDupKey],
+      CAST(ai.AllowRowLocks AS bit)        AS [allowRowLocks],
+      CAST(ai.AllowPageLocks AS bit)       AS [allowPageLocks],
+      CAST(ai.NoRecompute AS bit)          AS [noRecompute],
+      ai.FilterDefinition                  AS [filterDefinition],
+      CASE WHEN ai.DataSpaceName IS NOT NULL OR ai.DataSpaceType IS NOT NULL THEN JSON_QUERY(
         (
-          SELECT ai2.DataSpaceName AS [name], ai2.DataSpaceType AS [type]
+          SELECT ai.DataSpaceName AS [name], ai.DataSpaceType AS [type]
           FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
         )
       ) END                                 AS [dataSpace],
-      JSON_QUERY(COALESCE(ai2.PartitionColumnsJson, N'[]')) AS [partitionColumns],
-      JSON_QUERY(COALESCE(ai2.DataCompressionJson, N'[]'))  AS [dataCompression],
+      JSON_QUERY(COALESCE(ai.PartitionColumnsJson, N'[]')) AS [partitionColumns],
+      JSON_QUERY(COALESCE(ai.DataCompressionJson, N'[]'))  AS [dataCompression],
       JSON_QUERY(icj.ColumnsJson)           AS [columns]
-    FROM #AllIdx ai2
-    LEFT JOIN #IdxColsJson icj ON icj.EntityId = ai2.EntityId AND icj.IndexName = ai2.IndexName
-    WHERE ai2.EntityId = ai.EntityId
-    ORDER BY ai2.IndexName
+    FROM #AllIdx ai
+    LEFT JOIN #IdxColsJson icj ON icj.EntityId = ai.EntityId AND icj.IndexName = ai.IndexName
+    WHERE ai.EntityId = en.EntityId
+    ORDER BY ai.IndexName
     FOR JSON PATH
   ), '[]') AS IndexesJson
 INTO #IdxJson
-FROM #AllIdx ai
-GROUP BY ai.EntityId;
+FROM #Ent en;
 CREATE CLUSTERED INDEX IX_IdxJson ON #IdxJson(EntityId);
 
 -- Trigger JSON per entity
