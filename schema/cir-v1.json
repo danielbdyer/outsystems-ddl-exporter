@@ -89,7 +89,12 @@
           "items": { "$ref": "#/$defs/extendedProperty" },
           "default": []
         },
-        "meta": { "$ref": "#/$defs/entityMeta" },
+        "meta": {
+          "oneOf": [
+            { "$ref": "#/$defs/entityMeta" },
+            { "type": ["string", "null"] }
+          ]
+        },
         "temporal": { "$ref": "#/$defs/temporal" }
       }
     },
@@ -134,7 +139,12 @@
         "external_dbType": { "type": ["string", "null"] },
         "physical_isPresentButInactive": { "type": "integer" },
         "onDisk": { "$ref": "#/$defs/attributeOnDisk" },
-        "meta": { "$ref": "#/$defs/attributeMeta" },
+        "meta": {
+          "oneOf": [
+            { "$ref": "#/$defs/attributeMeta" },
+            { "type": ["string", "null"] }
+          ]
+        },
         "reality": { "$ref": "#/$defs/attributeReality" },
         "extendedProperties": {
           "type": "array",

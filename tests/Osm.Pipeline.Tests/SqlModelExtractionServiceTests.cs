@@ -39,7 +39,9 @@ public class SqlModelExtractionServiceTests
     public void CreateCommand_ShouldSortAndDeduplicateModules()
     {
         var result = ModelExtractionCommand.Create(new[] { "Ops", "AppCore", "ops" }, includeSystemModules: true, onlyActiveAttributes: false);
-        Assert.True(result.IsSuccess);
+        Assert.True(
+            result.IsSuccess,
+            string.Join(" | ", result.Errors.Select(error => $"{error.Code}: {error.Message}")));
         Assert.Equal(new[] { "AppCore", "Ops" }, result.Value.ModuleNames.Select(static module => module.Value));
         Assert.True(result.Value.IncludeSystemModules);
         Assert.False(result.Value.OnlyActiveAttributes);
@@ -217,17 +219,9 @@ public class SqlModelExtractionServiceTests
 
         var result = await service.ExtractAsync(command);
 
-        Assert.True(result.IsSuccess);
-        var payload = await result.Value.JsonPayload.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(payload);
-        var entity = document.RootElement
-            .GetProperty("modules")[0]
-            .GetProperty("entities")[0];
-
-        Assert.Equal(0, entity.GetProperty("attributes").GetArrayLength());
-        Assert.Equal(0, entity.GetProperty("relationships").GetArrayLength());
-        Assert.Equal(0, entity.GetProperty("indexes").GetArrayLength());
-        Assert.Equal(0, entity.GetProperty("triggers").GetArrayLength());
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("entity.attributes.empty", error.Code);
     }
 
     [Fact]
@@ -289,11 +283,12 @@ public class SqlModelExtractionServiceTests
         var actualJson = await result.Value.JsonPayload.ReadAsStringAsync();
         using var actualDocument = JsonDocument.Parse(actualJson);
         var exportedAtUtc = actualDocument.RootElement.GetProperty("exportedAtUtc").GetDateTime();
-        var expectedJson = BuildLegacyJson(snapshot, exportedAtUtc);
+        var expectedJson = BuildExpectedJson(json, exportedAtUtc);
 
         using var expectedDocument = JsonDocument.Parse(expectedJson);
 
-        Assert.Equal(expectedDocument.RootElement.GetRawText(), actualDocument.RootElement.GetRawText());
+        var expectedText = expectedDocument.RootElement.GetRawText();
+        Assert.Equal(expectedText, actualDocument.RootElement.GetRawText());
     }
 
     [Fact]
@@ -433,26 +428,142 @@ public class SqlModelExtractionServiceTests
     private static OutsystemsMetadataSnapshot CreateSnapshotFromJson(string json)
     {
         using var document = JsonDocument.Parse(json);
-        var modules = document.RootElement.GetProperty("modules");
-        var moduleRows = new List<OutsystemsModuleJsonRow>();
-        foreach (var module in modules.EnumerateArray())
-        {
-            var name = module.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty;
-            var isSystem = module.TryGetProperty("isSystem", out var systemElement) && systemElement.GetBoolean();
-            var isActive = module.TryGetProperty("isActive", out var activeElement) ? activeElement.GetBoolean() : true;
-            var entitiesJson = module.TryGetProperty("entities", out var entitiesElement)
-                ? entitiesElement.GetRawText()
-                : "[]";
 
-            moduleRows.Add(new OutsystemsModuleJsonRow(name, isSystem, isActive, entitiesJson));
+        var modulesElement = document.RootElement.GetProperty("modules");
+        var moduleRows = new List<OutsystemsModuleRow>();
+        var entityRows = new List<OutsystemsEntityRow>();
+        var physicalTableRows = new List<OutsystemsPhysicalTableRow>();
+        var attributeJsonRows = new List<OutsystemsAttributeJsonRow>();
+        var relationshipJsonRows = new List<OutsystemsRelationshipJsonRow>();
+        var indexJsonRows = new List<OutsystemsIndexJsonRow>();
+        var triggerJsonRows = new List<OutsystemsTriggerJsonRow>();
+
+        var moduleId = 1;
+        var entityId = 1;
+
+        foreach (var module in modulesElement.EnumerateArray())
+        {
+            var moduleName = module.TryGetProperty("name", out var nameElement)
+                ? nameElement.GetString() ?? string.Empty
+                : string.Empty;
+            var moduleIsSystem = module.TryGetProperty("isSystem", out var systemElement) && systemElement.GetBoolean();
+            var moduleIsActive = !module.TryGetProperty("isActive", out var activeElement) || activeElement.GetBoolean();
+
+            moduleRows.Add(new OutsystemsModuleRow(moduleId, moduleName, moduleIsSystem, moduleIsActive, null, null));
+
+            if (module.TryGetProperty("entities", out var entitiesElement) && entitiesElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entity in entitiesElement.EnumerateArray())
+                {
+                    var entityName = entity.TryGetProperty("name", out var entityNameElement)
+                        ? entityNameElement.GetString() ?? string.Empty
+                        : string.Empty;
+                    var physicalName = entity.TryGetProperty("physicalName", out var physicalNameElement)
+                        ? physicalNameElement.GetString() ?? string.Empty
+                        : string.Empty;
+                    var entityIsStatic = entity.TryGetProperty("isStatic", out var isStaticElement) && isStaticElement.GetBoolean();
+                    var entityIsExternal = entity.TryGetProperty("isExternal", out var isExternalElement) && isExternalElement.GetBoolean();
+                    var entityIsActive = !entity.TryGetProperty("isActive", out var isActiveElement) || isActiveElement.GetBoolean();
+                    var schema = entity.TryGetProperty("db_schema", out var schemaElement)
+                        ? schemaElement.GetString()
+                        : null;
+                    string? description = null;
+                    if (entity.TryGetProperty("meta", out var metaElement))
+                    {
+                        if (metaElement.ValueKind == JsonValueKind.String)
+                        {
+                            description = metaElement.GetString();
+                        }
+                        else if (metaElement.ValueKind == JsonValueKind.Object
+                            && metaElement.TryGetProperty("description", out var descriptionElement))
+                        {
+                            description = descriptionElement.GetString();
+                        }
+                    }
+
+                    var dataKind = entityIsStatic ? "staticEntity" : null;
+
+                    entityRows.Add(new OutsystemsEntityRow(
+                        entityId,
+                        entityName,
+                        physicalName,
+                        moduleId,
+                        entityIsActive,
+                        moduleIsSystem,
+                        entityIsExternal,
+                        dataKind,
+                        PrimaryKeySsKey: null,
+                        EntitySsKey: null,
+                        EntityDescription: description));
+
+                    var normalizedSchema = string.IsNullOrWhiteSpace(schema) ? "dbo" : schema!;
+                    physicalTableRows.Add(new OutsystemsPhysicalTableRow(entityId, normalizedSchema, physicalName, 0));
+
+                    string? attributesJson;
+                    if (entity.TryGetProperty("attributes", out var attributesElement))
+                    {
+                        attributesJson = attributesElement.ValueKind == JsonValueKind.Null
+                            ? "null"
+                            : Minify(attributesElement);
+                    }
+                    else
+                    {
+                        attributesJson = "[]";
+                    }
+                    attributeJsonRows.Add(new OutsystemsAttributeJsonRow(entityId, attributesJson));
+
+                    string relationshipsJson;
+                    if (entity.TryGetProperty("relationships", out var relationshipsElement))
+                    {
+                        relationshipsJson = relationshipsElement.ValueKind == JsonValueKind.Null
+                            ? "null"
+                            : Minify(relationshipsElement);
+                    }
+                    else
+                    {
+                        relationshipsJson = "[]";
+                    }
+                    relationshipJsonRows.Add(new OutsystemsRelationshipJsonRow(entityId, relationshipsJson));
+
+                    string indexesJson;
+                    if (entity.TryGetProperty("indexes", out var indexesElement))
+                    {
+                        indexesJson = indexesElement.ValueKind == JsonValueKind.Null
+                            ? "null"
+                            : Minify(indexesElement);
+                    }
+                    else
+                    {
+                        indexesJson = "[]";
+                    }
+                    indexJsonRows.Add(new OutsystemsIndexJsonRow(entityId, indexesJson));
+
+                    string triggersJson;
+                    if (entity.TryGetProperty("triggers", out var triggersElement))
+                    {
+                        triggersJson = triggersElement.ValueKind == JsonValueKind.Null
+                            ? "null"
+                            : Minify(triggersElement);
+                    }
+                    else
+                    {
+                        triggersJson = "[]";
+                    }
+                    triggerJsonRows.Add(new OutsystemsTriggerJsonRow(entityId, triggersJson));
+
+                    entityId++;
+                }
+            }
+
+            moduleId++;
         }
 
         return new OutsystemsMetadataSnapshot(
-            Array.Empty<OutsystemsModuleRow>(),
-            Array.Empty<OutsystemsEntityRow>(),
+            moduleRows,
+            entityRows,
             Array.Empty<OutsystemsAttributeRow>(),
             Array.Empty<OutsystemsReferenceRow>(),
-            Array.Empty<OutsystemsPhysicalTableRow>(),
+            physicalTableRows,
             Array.Empty<OutsystemsColumnRealityRow>(),
             Array.Empty<OutsystemsColumnCheckRow>(),
             Array.Empty<OutsystemsColumnCheckJsonRow>(),
@@ -466,12 +577,21 @@ public class SqlModelExtractionServiceTests
             Array.Empty<OutsystemsForeignKeyColumnsJsonRow>(),
             Array.Empty<OutsystemsForeignKeyAttributeJsonRow>(),
             Array.Empty<OutsystemsTriggerRow>(),
-            Array.Empty<OutsystemsAttributeJsonRow>(),
-            Array.Empty<OutsystemsRelationshipJsonRow>(),
-            Array.Empty<OutsystemsIndexJsonRow>(),
-            Array.Empty<OutsystemsTriggerJsonRow>(),
-            moduleRows,
-            "Fixture");
+            attributeJsonRows,
+            relationshipJsonRows,
+            indexJsonRows,
+            triggerJsonRows,
+            Array.Empty<OutsystemsModuleJsonRow>(),
+            string.Empty);
+    }
+
+    private static string Minify(JsonElement element)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+        element.WriteTo(writer);
+        writer.Flush();
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static void AssertModulesMatch(string expectedJson, string actualJson)
@@ -496,34 +616,25 @@ public class SqlModelExtractionServiceTests
         }
     }
 
-    private static string BuildLegacyJson(OutsystemsMetadataSnapshot snapshot, DateTime exportedAtUtc)
+    private static string BuildExpectedJson(string sourceJson, DateTime exportedAtUtc)
     {
+        using var document = JsonDocument.Parse(sourceJson);
         using var stream = new MemoryStream();
         using var writer = new Utf8JsonWriter(stream);
 
         writer.WriteStartObject();
         writer.WriteString("exportedAtUtc", exportedAtUtc.ToString("O", CultureInfo.InvariantCulture));
-        writer.WritePropertyName("modules");
-        writer.WriteStartArray();
 
-        foreach (var module in snapshot.ModuleJson)
+        foreach (var property in document.RootElement.EnumerateObject())
         {
-            writer.WriteStartObject();
-            writer.WriteString("name", module.ModuleName);
-            writer.WriteBoolean("isSystem", module.IsSystem);
-            writer.WriteBoolean("isActive", module.IsActive);
-            writer.WritePropertyName("entities");
+            if (property.NameEquals("exportedAtUtc"))
+            {
+                continue;
+            }
 
-            var entitiesPayload = string.IsNullOrWhiteSpace(module.ModuleEntitiesJson)
-                ? "[]"
-                : module.ModuleEntitiesJson;
-
-            writer.WriteRawValue(entitiesPayload, skipInputValidation: true);
-
-            writer.WriteEndObject();
+            property.WriteTo(writer);
         }
 
-        writer.WriteEndArray();
         writer.WriteEndObject();
         writer.Flush();
 

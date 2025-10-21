@@ -14,9 +14,7 @@
           "isActive": true,
           "db_catalog": null,
           "db_schema": "dbo",
-          "meta": {
-            "description": "Customer records for OnlyActive fixture"
-          },
+          "meta": "Customer records for OnlyActive fixture",
           "attributes": [],
           "relationships": [],
           "indexes": [],
