@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
@@ -16,6 +17,7 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
 {
     private const string DatabaseName = "OutsystemsIntegration";
     private readonly MsSqlTestcontainer _container;
+    private int _disposed;
     private string? _databaseConnectionString;
 
     public SqlServerFixture()
@@ -78,9 +80,24 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
             }).ConfigureAwait(false);
     }
 
-    public async ValueTask DisposeAsync()
+    public async Task DisposeAsync()
     {
-        await _container.DisposeAsync().ConfigureAwait(false);
+        await DisposeContainerAsync().ConfigureAwait(false);
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        await DisposeContainerAsync().ConfigureAwait(false);
+    }
+
+    private ValueTask DisposeContainerAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        return _container.DisposeAsync();
     }
 
     private static async Task ExecuteScriptAsync(string connectionString, string script, Action<SqlCommand>? configure = null)
