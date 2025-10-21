@@ -79,7 +79,7 @@ Attributes per entity are emitted with the following normalization rules before 
 * `hasDbConstraint` leverages `#AttrHasFK`.
 * `physical_isPresentButInactive` is true when an inactive attribute still has a physical column.
 * `onDisk` JSON is only included when column or check evidence exists, embedding nullability, SQL type, identity/computed flags, default/check constraint metadata, and trust indicators.
-* Descriptions populate the `meta.description` node when non-empty.【F:src/AdvancedSql/outsystems_model_export.sql†L570-L643】
+* Descriptions populate the `meta` node when non-empty.【F:src/AdvancedSql/outsystems_model_export.sql†L570-L643】
 
 ## Relationship JSON (`#RelJson`)
 
@@ -99,7 +99,7 @@ Relationships walk each attribute that either has logical reference evidence or 
 
 `#ModuleJson` collects per-module JSON using the aggregated attribute, relationship, index, and trigger blobs:
 
-* Entity-level metadata includes `isStatic` from `DataKind`, external/active flags, `DB_NAME()` for catalog, schema from `#PhysTbls`, and optional `meta.description` when the entity description is non-empty.
+* Entity-level metadata includes `isStatic` from `DataKind`, external/active flags, `DB_NAME()` for catalog, schema from `#PhysTbls`, and optional `meta` when the entity description is non-empty.
 * JSON fragments from `#AttrJson`, `#RelJson`, `#IdxJson`, and `#TriggerJson` are embedded using `JSON_QUERY` to preserve object/array semantics.【F:src/AdvancedSql/outsystems_model_export.sql†L752-L792】
 
 Finally, the script wraps the module rows into `{ "modules": [...] }` via nested `FOR JSON PATH` calls.【F:src/AdvancedSql/outsystems_model_export.sql†L794-L807】

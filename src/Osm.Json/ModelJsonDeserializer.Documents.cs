@@ -78,6 +78,7 @@ public sealed partial class ModelJsonDeserializer
         public TriggerDocument[]? Triggers { get; init; }
 
         [JsonPropertyName("meta")]
+        [JsonConverter(typeof(EntityMetaDocumentConverter))]
         public EntityMetaDocument? Meta { get; init; }
 
         [JsonPropertyName("extendedProperties")]
@@ -154,6 +155,7 @@ public sealed partial class ModelJsonDeserializer
         public AttributeOnDiskDocument? OnDisk { get; init; }
 
         [JsonPropertyName("meta")]
+        [JsonConverter(typeof(AttributeMetaDocumentConverter))]
         public AttributeMetaDocument? Meta { get; init; }
 
         [JsonPropertyName("reality")]
@@ -548,6 +550,106 @@ public sealed partial class ModelJsonDeserializer
 
         [JsonPropertyName("referenced.attribute")]
         public string? ReferencedAttribute { get; init; }
+    }
+
+    private sealed class EntityMetaDocumentConverter : JsonConverter<EntityMetaDocument?>
+    {
+        public override EntityMetaDocument? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.TokenType switch
+            {
+                JsonTokenType.Null => null,
+                JsonTokenType.String => new EntityMetaDocument { Description = NormalizeDescription(reader.GetString()) },
+                JsonTokenType.StartObject => ReadObject(ref reader),
+                _ => throw new JsonException($"Unsupported token '{reader.TokenType}' for entity meta.")
+            };
+        }
+
+        public override void Write(Utf8JsonWriter writer, EntityMetaDocument? value, JsonSerializerOptions options)
+        {
+            if (value is null || string.IsNullOrWhiteSpace(value.Description))
+            {
+                writer.WriteNullValue();
+                return;
+            }
+
+            writer.WriteStringValue(value.Description);
+        }
+
+        private static EntityMetaDocument? ReadObject(ref Utf8JsonReader reader)
+        {
+            using var document = JsonDocument.ParseValue(ref reader);
+            var element = document.RootElement;
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                throw new JsonException("Entity meta must be an object with a description property.");
+            }
+
+            if (element.TryGetProperty("description", out var descriptionElement))
+            {
+                if (descriptionElement.ValueKind is JsonValueKind.Null)
+                {
+                    return new EntityMetaDocument { Description = null };
+                }
+
+                return new EntityMetaDocument { Description = NormalizeDescription(descriptionElement.GetString()) };
+            }
+
+            return new EntityMetaDocument { Description = null };
+        }
+
+        private static string? NormalizeDescription(string? description)
+            => string.IsNullOrWhiteSpace(description) ? null : description;
+    }
+
+    private sealed class AttributeMetaDocumentConverter : JsonConverter<AttributeMetaDocument?>
+    {
+        public override AttributeMetaDocument? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.TokenType switch
+            {
+                JsonTokenType.Null => null,
+                JsonTokenType.String => new AttributeMetaDocument { Description = NormalizeDescription(reader.GetString()) },
+                JsonTokenType.StartObject => ReadObject(ref reader),
+                _ => throw new JsonException($"Unsupported token '{reader.TokenType}' for attribute meta.")
+            };
+        }
+
+        public override void Write(Utf8JsonWriter writer, AttributeMetaDocument? value, JsonSerializerOptions options)
+        {
+            if (value is null || string.IsNullOrWhiteSpace(value.Description))
+            {
+                writer.WriteNullValue();
+                return;
+            }
+
+            writer.WriteStringValue(value.Description);
+        }
+
+        private static AttributeMetaDocument? ReadObject(ref Utf8JsonReader reader)
+        {
+            using var document = JsonDocument.ParseValue(ref reader);
+            var element = document.RootElement;
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                throw new JsonException("Attribute meta must be an object with a description property.");
+            }
+
+            if (element.TryGetProperty("description", out var descriptionElement))
+            {
+                if (descriptionElement.ValueKind is JsonValueKind.Null)
+                {
+                    return new AttributeMetaDocument { Description = null };
+                }
+
+                return new AttributeMetaDocument { Description = NormalizeDescription(descriptionElement.GetString()) };
+            }
+
+            return new AttributeMetaDocument { Description = null };
+        }
+
+        private static string? NormalizeDescription(string? description)
+            => string.IsNullOrWhiteSpace(description) ? null : description;
     }
 
     private sealed class BooleanAsZeroOneIntConverter : JsonConverter<int>

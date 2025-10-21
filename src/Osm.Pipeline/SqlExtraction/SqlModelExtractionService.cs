@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
 using Osm.Json;
@@ -39,6 +40,8 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         "indexes",
         "triggers",
     };
+
+    private const string DefaultSchemaFallback = "dbo";
 
     public SqlModelExtractionService(
         IOutsystemsMetadataReader metadataReader,
@@ -148,7 +151,8 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         var warnings = new List<string>();
 
         var deserializeTimer = Stopwatch.StartNew();
-        var modelResult = _deserializer.Deserialize(jsonStream, warnings);
+        var deserializerOptions = BuildDeserializerOptions(snapshot, command.OnlyActiveAttributes);
+        var modelResult = _deserializer.Deserialize(jsonStream, warnings, deserializerOptions);
         deserializeTimer.Stop();
 
         if (modelResult.IsFailure)
@@ -418,32 +422,21 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
             throw new ArgumentNullException(nameof(snapshot));
         }
 
-        if (snapshot.ModuleJson.Count == 0)
+        if (snapshot.Modules.Count == 0)
         {
             return Array.Empty<string>();
         }
 
-        var result = new List<string>();
-        foreach (var module in snapshot.ModuleJson)
-        {
-            var entitiesJson = module.ModuleEntitiesJson;
-            if (string.IsNullOrWhiteSpace(entitiesJson))
-            {
-                result.Add(module.ModuleName);
-                continue;
-            }
+        var entitiesByModule = snapshot.Entities
+            .GroupBy(static entity => entity.EspaceId)
+            .ToDictionary(static group => group.Key, static group => group.Count());
 
-            try
+        var result = new List<string>();
+        foreach (var module in snapshot.Modules)
+        {
+            if (!entitiesByModule.TryGetValue(module.EspaceId, out var entityCount) || entityCount == 0)
             {
-                using var document = JsonDocument.Parse(entitiesJson);
-                if (document.RootElement.ValueKind == JsonValueKind.Array && document.RootElement.GetArrayLength() == 0)
-                {
-                    result.Add(module.ModuleName);
-                }
-            }
-            catch (JsonException)
-            {
-                // Validation will surface invalid JSON payloads later.
+                result.Add(module.EspaceName);
             }
         }
 
@@ -466,25 +459,183 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         writer.WritePropertyName("modules");
         writer.WriteStartArray();
 
-        foreach (var module in snapshot.ModuleJson)
-        {
-            writer.WriteStartObject();
-            writer.WriteString("name", module.ModuleName);
-            writer.WriteBoolean("isSystem", module.IsSystem);
-            writer.WriteBoolean("isActive", module.IsActive);
-            writer.WritePropertyName("entities");
-
-            var entitiesPayload = string.IsNullOrWhiteSpace(module.ModuleEntitiesJson)
-                ? "[]"
-                : module.ModuleEntitiesJson;
-
-            writer.WriteRawValue(entitiesPayload, skipInputValidation: true);
-
-            writer.WriteEndObject();
-        }
+        WriteModules(writer, snapshot);
 
         writer.WriteEndArray();
         writer.WriteEndObject();
+    }
+
+    private static void WriteModules(Utf8JsonWriter writer, OutsystemsMetadataSnapshot snapshot)
+    {
+        var modules = snapshot.Modules.ToArray();
+
+        if (modules.Length == 0)
+        {
+            return;
+        }
+
+        var entitiesByModule = snapshot.Entities
+            .GroupBy(static entity => entity.EspaceId)
+            .ToDictionary(static group => group.Key, static group => group.ToArray());
+
+        var attributeJsonByEntity = snapshot.AttributeJson
+            .GroupBy(static row => row.EntityId)
+            .ToDictionary(static group => group.Key, static group => (string?)group.Last().AttributesJson);
+
+        var relationshipJsonByEntity = snapshot.RelationshipJson
+            .GroupBy(static row => row.EntityId)
+            .ToDictionary(static group => group.Key, static group => (string?)group.Last().RelationshipsJson);
+
+        var indexJsonByEntity = snapshot.IndexJson
+            .GroupBy(static row => row.EntityId)
+            .ToDictionary(static group => group.Key, static group => (string?)group.Last().IndexesJson);
+
+        var triggerJsonByEntity = snapshot.TriggerJson
+            .GroupBy(static row => row.EntityId)
+            .ToDictionary(static group => group.Key, static group => (string?)group.Last().TriggersJson);
+
+        var schemaByEntity = snapshot.PhysicalTables
+            .GroupBy(static row => row.EntityId)
+            .ToDictionary(static group => group.Key, static group => group.Last().SchemaName);
+
+        var databaseName = string.IsNullOrWhiteSpace(snapshot.DatabaseName)
+            ? null
+            : snapshot.DatabaseName;
+
+        foreach (var module in modules)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", module.EspaceName);
+            writer.WriteBoolean("isSystem", module.IsSystemModule);
+            writer.WriteBoolean("isActive", module.ModuleIsActive);
+            writer.WritePropertyName("entities");
+            writer.WriteStartArray();
+
+            if (entitiesByModule.TryGetValue(module.EspaceId, out var entities) && entities.Length > 0)
+            {
+                foreach (var entity in entities)
+                {
+                    WriteEntity(
+                        writer,
+                        entity,
+                        databaseName,
+                        schemaByEntity,
+                        attributeJsonByEntity,
+                        relationshipJsonByEntity,
+                        indexJsonByEntity,
+                        triggerJsonByEntity);
+                }
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+    }
+
+    private static void WriteEntity(
+        Utf8JsonWriter writer,
+        OutsystemsEntityRow entity,
+        string? databaseName,
+        IReadOnlyDictionary<int, string> schemaByEntity,
+        IReadOnlyDictionary<int, string?> attributeJsonByEntity,
+        IReadOnlyDictionary<int, string?> relationshipJsonByEntity,
+        IReadOnlyDictionary<int, string?> indexJsonByEntity,
+        IReadOnlyDictionary<int, string?> triggerJsonByEntity)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("name", entity.EntityName);
+        writer.WriteString("physicalName", entity.PhysicalTableName);
+        writer.WriteBoolean("isStatic", string.Equals(entity.DataKind, "staticEntity", StringComparison.OrdinalIgnoreCase));
+        writer.WriteBoolean("isExternal", entity.IsExternalEntity);
+        writer.WriteBoolean("isActive", entity.EntityIsActive);
+
+        if (!string.IsNullOrWhiteSpace(databaseName))
+        {
+            writer.WriteString("db_catalog", databaseName);
+        }
+        else
+        {
+            writer.WriteNull("db_catalog");
+        }
+
+        var schema = schemaByEntity.TryGetValue(entity.EntityId, out var schemaName)
+            ? schemaName
+            : null;
+
+        var normalizedSchema = string.IsNullOrWhiteSpace(schema) ? DefaultSchemaFallback : schema!.Trim();
+        writer.WriteString("db_schema", normalizedSchema);
+
+        if (!string.IsNullOrWhiteSpace(entity.EntityDescription))
+        {
+            writer.WriteString("meta", entity.EntityDescription.Trim());
+        }
+
+        writer.WritePropertyName("attributes");
+        writer.WriteRawValue(ResolveJsonArray(attributeJsonByEntity, entity.EntityId), skipInputValidation: true);
+
+        writer.WritePropertyName("relationships");
+        writer.WriteRawValue(ResolveJsonArray(relationshipJsonByEntity, entity.EntityId), skipInputValidation: true);
+
+        writer.WritePropertyName("indexes");
+        writer.WriteRawValue(ResolveJsonArray(indexJsonByEntity, entity.EntityId), skipInputValidation: true);
+
+        writer.WritePropertyName("triggers");
+        writer.WriteRawValue(ResolveJsonArray(triggerJsonByEntity, entity.EntityId), skipInputValidation: true);
+
+        writer.WriteEndObject();
+    }
+
+    private static string ResolveJsonArray(IReadOnlyDictionary<int, string?> source, int entityId)
+    {
+        if (source.TryGetValue(entityId, out var payload))
+        {
+            if (payload is null)
+            {
+                return "null";
+            }
+
+            if (payload.Length > 0)
+            {
+                return payload;
+            }
+        }
+
+        return "[]";
+    }
+
+    private static ModelJsonDeserializerOptions? BuildDeserializerOptions(
+        OutsystemsMetadataSnapshot snapshot,
+        bool onlyActiveAttributes)
+    {
+        if (!onlyActiveAttributes || snapshot.Modules.Count == 0)
+        {
+            return null;
+        }
+
+        var overrides = new Dictionary<string, ModuleValidationOverrideConfiguration>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var module in snapshot.Modules)
+        {
+            overrides[module.EspaceName] = new ModuleValidationOverrideConfiguration(
+                Array.Empty<string>(),
+                AllowMissingPrimaryKeyForAll: true,
+                Array.Empty<string>(),
+                AllowMissingSchemaForAll: false);
+        }
+
+        if (overrides.Count == 0)
+        {
+            return null;
+        }
+
+        var overrideResult = ModuleValidationOverrides.Create(overrides);
+        if (overrideResult.IsFailure)
+        {
+            return null;
+        }
+
+        return new ModelJsonDeserializerOptions(overrideResult.Value);
     }
 
 }

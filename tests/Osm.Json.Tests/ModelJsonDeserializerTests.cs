@@ -111,7 +111,7 @@ public class ModelJsonDeserializerTests
                       ]
                     }
                   ],
-                  "meta": { "description": "Invoice table" },
+                  "meta": "Invoice table",
                   "extendedProperties": [
                     { "name": "entity.note", "value": "Invoices" }
                   ],

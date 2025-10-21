@@ -210,9 +210,7 @@ Key metadata surfaced by the reconciled extractor:
   "isActive": true,
   "db_catalog": null,
   "db_schema": "dbo",
-  "meta": {
-    "description": "End-user profile data captured from Service Center"
-  },
+  "meta": "End-user profile data captured from Service Center",
   "attributes": [ /* attributes[] below */ ],
   "relationships": [ /* derived references */ ],
   "indexes": [ /* modeled indexes */ ]
@@ -254,9 +252,7 @@ Key metadata surfaced by the reconciled extractor:
     "computedDefinition": null,
     "defaultDefinition": "DEFAULT ('')"
   },
-  "meta": {
-    "description": "Primary email address"
-  }
+  "meta": "Primary email address"
 }
 ```
 
@@ -311,7 +307,7 @@ Key metadata surfaced by the reconciled extractor:
 >
 > **Extended descriptions → `MS_Description`**
 >
-> The `meta.description` payload for entities and attributes comes straight from the OutSystems metadata. To round-trip these notes into SQL Server or SSDT projects, iterate the JSON and call `sp_addextendedproperty`/`sp_updateextendedproperty` as shown below:
+> The `meta` payload for entities and attributes comes straight from the OutSystems metadata. To round-trip these notes into SQL Server or SSDT projects, iterate the JSON and call `sp_addextendedproperty`/`sp_updateextendedproperty` as shown below:
 >
 > ```sql
 > -- Table description (entity-level)

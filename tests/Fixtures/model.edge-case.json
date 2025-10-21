@@ -14,9 +14,7 @@
           "isActive": true,
           "db_catalog": null,
           "db_schema": "dbo",
-          "meta": {
-            "description": "Stores customer records for AppCore"
-          },
+          "meta": "Stores customer records for AppCore",
           "attributes": [
             {
               "name": "Id",
@@ -38,9 +36,7 @@
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
               "physical_isPresentButInactive": 0,
-              "meta": {
-                "description": "Customer identifier"
-              },
+              "meta": "Customer identifier",
               "onDisk": {
                 "isNullable": false,
                 "sqlType": "int",
@@ -70,9 +66,7 @@
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
               "physical_isPresentButInactive": 0,
-              "meta": {
-                "description": "Customer email"
-              },
+              "meta": "Customer email",
               "onDisk": {
                 "isNullable": false,
                 "sqlType": "nvarchar",
@@ -101,9 +95,7 @@
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
               "physical_isPresentButInactive": 0,
-              "meta": {
-                "description": "Customer first name"
-              },
+              "meta": "Customer first name",
               "onDisk": {
                 "isNullable": true,
                 "sqlType": "nvarchar",
@@ -132,9 +124,7 @@
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
               "physical_isPresentButInactive": 0,
-              "meta": {
-                "description": "Customer last name"
-              },
+              "meta": "Customer last name",
               "onDisk": {
                 "isNullable": true,
                 "sqlType": "nvarchar",
@@ -163,9 +153,7 @@
               "reference_hasDbConstraint": 1,
               "external_dbType": null,
               "physical_isPresentButInactive": 0,
-              "meta": {
-                "description": "FK to City"
-              },
+              "meta": "FK to City",
               "onDisk": {
                 "isNullable": false,
                 "sqlType": "int",

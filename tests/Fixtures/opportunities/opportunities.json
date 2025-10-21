@@ -56,7 +56,8 @@
           "HasDatabaseConstraint": true,
           "DeleteRule": null
         }
-      ]
+      ],
+      "HasStatements": true
     },
     {
       "Constraint": "Unique",
@@ -117,7 +118,8 @@
           "HasDatabaseConstraint": false,
           "DeleteRule": null
         }
-      ]
+      ],
+      "HasStatements": true
     }
   ],
   "RiskCounts": {
@@ -128,5 +130,6 @@
     "NotNull": 1,
     "Unique": 1
   },
-  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00"
+  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00",
+  "TotalCount": 2
 }
