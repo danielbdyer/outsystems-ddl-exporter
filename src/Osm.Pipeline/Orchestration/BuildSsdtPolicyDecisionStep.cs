@@ -71,7 +71,7 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
 
     private static ImmutableArray<PipelineInsight> BuildModuleInsights(PolicyDecisionReport report)
     {
-        if (report.ModuleRollups.IsDefaultOrEmpty)
+        if (report.ModuleRollups.IsEmpty)
         {
             return ImmutableArray<PipelineInsight>.Empty;
         }
@@ -124,7 +124,7 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
         AppendTopRationales(builder, "Columns", rollup.ColumnRationales);
         AppendTopRationales(builder, "Unique", rollup.UniqueIndexRationales);
         AppendTopRationales(builder, "ForeignKeys", rollup.ForeignKeyRationales);
-        return builder.MoveToImmutable();
+        return builder.ToImmutable();
     }
 
     private static void AppendTopRationales(
@@ -132,7 +132,7 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
         string category,
         ImmutableDictionary<string, int> rationales)
     {
-        if (rationales.IsDefaultOrEmpty || rationales.Count == 0)
+        if (rationales.IsEmpty)
         {
             return;
         }
