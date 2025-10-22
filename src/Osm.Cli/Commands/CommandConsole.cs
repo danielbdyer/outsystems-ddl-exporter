@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.CommandLine;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Osm.Cli;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
@@ -13,6 +15,11 @@ namespace Osm.Cli.Commands;
 
 internal static class CommandConsole
 {
+    private static readonly JsonSerializerOptions NamingOverrideSerializerOptions = new()
+    {
+        WriteIndented = true
+    };
+
     public static void WriteLine(IConsole console, string message)
     {
         if (console is null)
@@ -155,4 +162,97 @@ internal static class CommandConsole
 
     private static string FormatMetadataValue(string? value)
         => value ?? "<null>";
+
+    public static void EmitNamingOverrideTemplate(
+        IConsole console,
+        IEnumerable<TighteningDiagnostic> diagnostics)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (diagnostics is null)
+        {
+            throw new ArgumentNullException(nameof(diagnostics));
+        }
+
+        if (!TryBuildNamingOverrideTemplate(diagnostics, out var templateJson))
+        {
+            return;
+        }
+
+        WriteErrorLine(console, "[action] Duplicate logical entity names detected. Use the template below to populate emission.namingOverrides.rules:");
+        WriteLine(console, templateJson);
+    }
+
+    private static bool TryBuildNamingOverrideTemplate(
+        IEnumerable<TighteningDiagnostic> diagnostics,
+        out string templateJson)
+    {
+        var rules = new List<NamingOverrideTemplateRule>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var diagnostic in diagnostics)
+        {
+            if (diagnostic is null)
+            {
+                continue;
+            }
+
+            if (!diagnostic.Code.StartsWith("tightening.entity.duplicate", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            foreach (var candidate in diagnostic.Candidates)
+            {
+                var key = string.Join(
+                    "|",
+                    candidate.Schema,
+                    candidate.PhysicalName,
+                    candidate.Module,
+                    diagnostic.LogicalName);
+
+                if (!seen.Add(key))
+                {
+                    continue;
+                }
+
+                rules.Add(new NamingOverrideTemplateRule(
+                    candidate.Schema,
+                    candidate.PhysicalName,
+                    candidate.Module,
+                    diagnostic.LogicalName,
+                    $"{candidate.Module}_{diagnostic.LogicalName}"));
+            }
+        }
+
+        if (rules.Count == 0)
+        {
+            templateJson = string.Empty;
+            return false;
+        }
+
+        var template = new
+        {
+            emission = new
+            {
+                namingOverrides = new
+                {
+                    rules
+                }
+            }
+        };
+
+        templateJson = JsonSerializer.Serialize(template, NamingOverrideSerializerOptions);
+        return true;
+    }
+
+    private sealed record NamingOverrideTemplateRule(
+        [property: JsonPropertyName("schema"), JsonPropertyOrder(0)] string Schema,
+        [property: JsonPropertyName("table"), JsonPropertyOrder(1)] string Table,
+        [property: JsonPropertyName("module"), JsonPropertyOrder(2)] string Module,
+        [property: JsonPropertyName("entity"), JsonPropertyOrder(3)] string Entity,
+        [property: JsonPropertyName("override"), JsonPropertyOrder(4)] string Override);
 }

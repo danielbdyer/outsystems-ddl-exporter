@@ -100,6 +100,8 @@ internal sealed class AnalyzeCommandFactory : ICommandFactory
             }
         }
 
+        CommandConsole.EmitNamingOverrideTemplate(context.Console, report.Diagnostics);
+
         CommandConsole.WriteLine(context.Console, $"Columns tightened: {report.TightenedColumnCount}/{report.ColumnCount}");
         CommandConsole.WriteLine(context.Console, $"Unique indexes enforced: {report.UniqueIndexesEnforcedCount}/{report.UniqueIndexCount}");
         CommandConsole.WriteLine(context.Console, $"Foreign keys created: {report.ForeignKeysCreatedCount}/{report.ForeignKeyCount}");

@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.CommandLine.IO;
 using System.Reflection;
+using System.Text.Json;
 using Osm.Cli;
 using Osm.Cli.Commands;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
+using Osm.Validation.Tightening;
 using Tests.Support;
 
 namespace Osm.Cli.Tests.Commands;
@@ -141,6 +143,74 @@ public class CommandConsoleTests
         }) + Environment.NewLine;
 
         Assert.Equal(expected, console.Out!.ToString());
+    }
+
+    [Fact]
+    public void EmitNamingOverrideTemplate_WritesTemplateWhenDuplicatesExist()
+    {
+        var console = new TestConsole();
+        var candidates = ImmutableArray.Create(
+            new TighteningDuplicateCandidate("Sales", "dbo", "OSUSR_SAL_ENTITY"),
+            new TighteningDuplicateCandidate("Support", "dbo", "OSUSR_SUP_ENTITY"));
+        var diagnostics = ImmutableArray.Create(
+            new TighteningDiagnostic(
+                "tightening.entity.duplicate.unresolved",
+                "Duplicate logical name detected.",
+                TighteningDiagnosticSeverity.Warning,
+                "EntityType",
+                "Sales",
+                "dbo",
+                "OSUSR_SAL_ENTITY",
+                candidates,
+                ResolvedByOverride: false));
+
+        CommandConsole.EmitNamingOverrideTemplate(console, diagnostics);
+
+        var errorLines = console.Error!.ToString()!.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Single(errorLines);
+        Assert.Equal("[action] Duplicate logical entity names detected. Use the template below to populate emission.namingOverrides.rules:", errorLines[0]);
+
+        var json = console.Out!.ToString()!;
+        Assert.False(string.IsNullOrWhiteSpace(json));
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var emission = root.GetProperty("emission");
+        var namingOverrides = emission.GetProperty("namingOverrides");
+        var rules = namingOverrides.GetProperty("rules");
+        Assert.Equal(2, rules.GetArrayLength());
+
+        var first = rules[0];
+        Assert.Equal("dbo", first.GetProperty("schema").GetString());
+        Assert.Equal("OSUSR_SAL_ENTITY", first.GetProperty("table").GetString());
+        Assert.Equal("Sales", first.GetProperty("module").GetString());
+        Assert.Equal("EntityType", first.GetProperty("entity").GetString());
+        Assert.Equal("Sales_EntityType", first.GetProperty("override").GetString());
+
+        var second = rules[1];
+        Assert.Equal("Support", second.GetProperty("module").GetString());
+        Assert.Equal("Support_EntityType", second.GetProperty("override").GetString());
+    }
+
+    [Fact]
+    public void EmitNamingOverrideTemplate_SuppressesOutputWhenNoDuplicates()
+    {
+        var console = new TestConsole();
+        var diagnostics = ImmutableArray.Create(
+            new TighteningDiagnostic(
+                "tightening.entity.unique",
+                "No duplicates present.",
+                TighteningDiagnosticSeverity.Info,
+                "EntityType",
+                "Sales",
+                "dbo",
+                "OSUSR_SAL_ENTITY",
+                ImmutableArray<TighteningDuplicateCandidate>.Empty,
+                ResolvedByOverride: false));
+
+        CommandConsole.EmitNamingOverrideTemplate(console, diagnostics);
+
+        Assert.True(string.IsNullOrEmpty(console.Out!.ToString()));
+        Assert.True(string.IsNullOrEmpty(console.Error!.ToString()));
     }
 
     private static PipelineExecutionLog CreateExecutionLog(IReadOnlyList<PipelineLogEntry> entries)
