@@ -268,6 +268,159 @@ public class SqlModelExtractionServiceTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldMarkLegacyTypeGuidEncodedReference()
+    {
+        var moduleSsKey = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var referencedEntitySsKey = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+        var module = new OutsystemsModuleRow(1, "Orders", IsSystemModule: false, ModuleIsActive: true, EspaceKind: null, EspaceSsKey: moduleSsKey);
+        var referencedEntity = new OutsystemsEntityRow(
+            EntityId: 2,
+            EntityName: "Customer",
+            PhysicalTableName: "OSUSR_APP_CUSTOMER",
+            EspaceId: module.EspaceId,
+            EntityIsActive: true,
+            IsSystemEntity: false,
+            IsExternalEntity: false,
+            DataKind: null,
+            PrimaryKeySsKey: null,
+            EntitySsKey: referencedEntitySsKey,
+            EntityDescription: null);
+        var sourceEntity = new OutsystemsEntityRow(
+            EntityId: 3,
+            EntityName: "Order",
+            PhysicalTableName: "OSUSR_APP_ORDER",
+            EspaceId: module.EspaceId,
+            EntityIsActive: true,
+            IsSystemEntity: false,
+            IsExternalEntity: false,
+            DataKind: null,
+            PrimaryKeySsKey: null,
+            EntitySsKey: Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            EntityDescription: null);
+
+        var attribute = new OutsystemsAttributeRow(
+            AttrId: 100,
+            EntityId: sourceEntity.EntityId,
+            AttrName: "CustomerId",
+            AttrSsKey: null,
+            DataType: "Identifier",
+            Length: null,
+            Precision: null,
+            Scale: null,
+            DefaultValue: null,
+            IsMandatory: true,
+            AttrIsActive: true,
+            IsAutoNumber: false,
+            IsIdentifier: false,
+            RefEntityId: null,
+            OriginalName: null,
+            ExternalColumnType: null,
+            DeleteRule: null,
+            PhysicalColumnName: "CUSTOMERID",
+            DatabaseColumnName: null,
+            LegacyType: $"bt{moduleSsKey:D}*{referencedEntitySsKey:D}",
+            Decimals: null,
+            OriginalType: null,
+            AttrDescription: null);
+
+        var attributesJson = JsonSerializer.Serialize(new[]
+        {
+            new Dictionary<string, object?>
+            {
+                ["name"] = attribute.AttrName,
+                ["physicalName"] = attribute.PhysicalColumnName,
+                ["originalName"] = null,
+                ["dataType"] = attribute.DataType,
+                ["length"] = null,
+                ["precision"] = null,
+                ["scale"] = null,
+                ["default"] = null,
+                ["isMandatory"] = attribute.IsMandatory,
+                ["isIdentifier"] = attribute.IsIdentifier ?? false,
+                ["isAutoNumber"] = attribute.IsAutoNumber ?? false,
+                ["isActive"] = attribute.AttrIsActive,
+                ["isReference"] = 1,
+                ["refEntityId"] = referencedEntity.EntityId,
+                ["refEntity_name"] = referencedEntity.EntityName,
+                ["refEntity_physicalName"] = referencedEntity.PhysicalTableName,
+                ["reference_hasDbConstraint"] = 0,
+                ["reference_deleteRuleCode"] = attribute.DeleteRule,
+                ["external_dbType"] = attribute.ExternalColumnType,
+                ["physical_isPresentButInactive"] = 0,
+                ["onDisk"] = null,
+                ["meta"] = null,
+            }
+        });
+
+        var relationshipsJson = JsonSerializer.Serialize(new[]
+        {
+            new Dictionary<string, object?>
+            {
+                ["viaAttributeId"] = attribute.AttrId,
+                ["viaAttributeName"] = attribute.AttrName,
+                ["toEntity_name"] = referencedEntity.EntityName,
+                ["toEntity_physicalName"] = referencedEntity.PhysicalTableName,
+                ["deleteRuleCode"] = attribute.DeleteRule,
+                ["hasDbConstraint"] = 0,
+                ["actualConstraints"] = Array.Empty<object>(),
+            }
+        });
+
+        var snapshot = new OutsystemsMetadataSnapshot(
+            Modules: new[] { module },
+            Entities: new[] { sourceEntity, referencedEntity },
+            Attributes: new[] { attribute },
+            References: new[] { new OutsystemsReferenceRow(attribute.AttrId, referencedEntity.EntityId, referencedEntity.EntityName, referencedEntity.PhysicalTableName) },
+            PhysicalTables: new[]
+            {
+                new OutsystemsPhysicalTableRow(sourceEntity.EntityId, "dbo", sourceEntity.PhysicalTableName, 0),
+                new OutsystemsPhysicalTableRow(referencedEntity.EntityId, "dbo", referencedEntity.PhysicalTableName, 0),
+            },
+            ColumnReality: Array.Empty<OutsystemsColumnRealityRow>(),
+            ColumnChecks: Array.Empty<OutsystemsColumnCheckRow>(),
+            ColumnCheckJson: Array.Empty<OutsystemsColumnCheckJsonRow>(),
+            PhysicalColumnsPresent: Array.Empty<OutsystemsPhysicalColumnPresenceRow>(),
+            Indexes: Array.Empty<OutsystemsIndexRow>(),
+            IndexColumns: Array.Empty<OutsystemsIndexColumnRow>(),
+            ForeignKeys: Array.Empty<OutsystemsForeignKeyRow>(),
+            ForeignKeyColumns: Array.Empty<OutsystemsForeignKeyColumnRow>(),
+            ForeignKeyAttributeMap: Array.Empty<OutsystemsForeignKeyAttrMapRow>(),
+            AttributeForeignKeys: Array.Empty<OutsystemsAttributeHasFkRow>(),
+            ForeignKeyColumnsJson: Array.Empty<OutsystemsForeignKeyColumnsJsonRow>(),
+            ForeignKeyAttributeJson: Array.Empty<OutsystemsForeignKeyAttributeJsonRow>(),
+            Triggers: Array.Empty<OutsystemsTriggerRow>(),
+            AttributeJson: new[] { new OutsystemsAttributeJsonRow(sourceEntity.EntityId, attributesJson) },
+            RelationshipJson: new[] { new OutsystemsRelationshipJsonRow(sourceEntity.EntityId, relationshipsJson) },
+            IndexJson: Array.Empty<OutsystemsIndexJsonRow>(),
+            TriggerJson: Array.Empty<OutsystemsTriggerJsonRow>(),
+            ModuleJson: Array.Empty<OutsystemsModuleJsonRow>(),
+            DatabaseName: "Fixture");
+
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new PassthroughModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+
+        var result = await service.ExtractAsync(command);
+
+        Assert.True(result.IsSuccess);
+        var payloadJson = await result.Value.JsonPayload.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payloadJson);
+        var modules = document.RootElement.GetProperty("modules");
+        var entity = modules[0].GetProperty("entities")[0];
+        var attributeJson = entity.GetProperty("attributes")[0];
+
+        Assert.Equal(1, attributeJson.GetProperty("isReference").GetInt32());
+        Assert.Equal(referencedEntity.EntityId, attributeJson.GetProperty("refEntityId").GetInt32());
+        Assert.Equal(referencedEntity.EntityName, attributeJson.GetProperty("refEntity_name").GetString());
+        Assert.Equal(referencedEntity.PhysicalTableName, attributeJson.GetProperty("refEntity_physicalName").GetString());
+
+        var relationship = entity.GetProperty("relationships")[0];
+        Assert.Equal(attribute.AttrName, relationship.GetProperty("viaAttributeName").GetString());
+        Assert.Equal(referencedEntity.EntityName, relationship.GetProperty("toEntity_name").GetString());
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldMatchLegacyJsonSnapshot()
     {
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.edge-case.json"));

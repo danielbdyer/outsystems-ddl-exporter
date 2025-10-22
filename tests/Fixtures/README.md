@@ -12,6 +12,7 @@ Micro fixtures (F1–F3) live alongside the edge-case dataset to drive targeted 
 | `model.micro-fk-default-delete-rule.json` + `profiling/profile.micro-fk-default-delete-rule.json` | Parent/child reference without an explicit delete rule to document the default `NoAction` behavior and ensure FK creation stays enabled. |
 | `model.micro-fk-ignore.json` + `profiling/profile.micro-fk-ignore.json` | Ignore delete rule with orphaned children to assert defensive skips on FK creation and NOT NULL tightening. |
 | `model.micro-physical.json` + `profiling/profile.micro-physical.json` | Entity with a physically enforced non-null column to verify policy reactions when catalog metadata already guarantees NOT NULL. |
+| `model.legacy-guid-reference.json` | Minimal module demonstrating recovery of `btGUID*GUID` legacy reference encoding and the resulting FK relationship. |
 | `policy/kernel-model.json` + `policy/kernel-profile.json` | Golden tightening vectors that document how Cautious, EvidenceGated, and Aggressive modes react to shared signals across nullability, foreign keys, and uniqueness. |
 
 Use the `Tests.Support.FixtureFile`, `ModelFixtures`, and `ProfileFixtures` helpers to locate and open these assets from any test project without hard-coding relative paths.

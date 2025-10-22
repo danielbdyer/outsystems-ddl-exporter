@@ -242,11 +242,11 @@ WITH ParsedRef AS
   SELECT
     a.AttrId,
     TRY_CONVERT(uniqueidentifier,
-                CASE WHEN a.LegacyType LIKE 'bt*%'
+                CASE WHEN a.LegacyType LIKE 'bt%*%'
                      THEN SUBSTRING(a.LegacyType, 3, 36)
                 END) AS RefEspaceSSKey,
     TRY_CONVERT(uniqueidentifier,
-                CASE WHEN a.LegacyType LIKE 'bt*%'
+                CASE WHEN a.LegacyType LIKE 'bt%*%'
                      THEN SUBSTRING(a.LegacyType, CHARINDEX('*', a.LegacyType) + 1, 36)
                 END) AS RefEntitySSKey
   FROM #Attr a

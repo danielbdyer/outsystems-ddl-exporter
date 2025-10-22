@@ -11,6 +11,12 @@
       "includeSystemModules": false,
       "onlyActiveAttributes": true,
       "jsonPath": "../model.only-active-empty.json"
+    },
+    {
+      "modules": ["LegacyRef"],
+      "includeSystemModules": false,
+      "onlyActiveAttributes": false,
+      "jsonPath": "../model.legacy-guid-reference.json"
     }
   ]
 }

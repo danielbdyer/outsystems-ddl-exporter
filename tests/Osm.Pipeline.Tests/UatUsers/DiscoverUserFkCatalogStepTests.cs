@@ -146,7 +146,7 @@ public sealed class DiscoverUserFkCatalogStepTests
     public async Task SynthesizesCatalogFromAttributeReferenceWhenRelationshipsMissing()
     {
         using var temp = new TemporaryDirectory();
-        var userReferenceToken = "bt*00000000-0000-0000-0000-000000000000*11111111-1111-1111-1111-111111111111";
+        var userReferenceToken = "bt00000000-0000-0000-0000-000000000000*11111111-1111-1111-1111-111111111111";
 
         var moduleName = ModuleName.Create("AppCore").Value;
         var entityName = EntityName.Create("Order").Value;
