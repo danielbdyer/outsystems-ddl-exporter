@@ -88,7 +88,8 @@ public class SsdtEmitterTests
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, snapshot, options);
-        var report = PolicyDecisionReporter.Create(decisions);
+        var predicates = ModelPredicateEvaluator.Evaluate(model, decisions);
+        var report = PolicyDecisionReporter.Create(decisions, predicates);
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
         var factory = new SmoModelFactory();
         var smoModel = factory.Create(model, decisions, profile: snapshot, options: smoOptions);
@@ -116,7 +117,8 @@ public class SsdtEmitterTests
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, snapshot, options);
-        var report = PolicyDecisionReporter.Create(decisions);
+        var predicates = ModelPredicateEvaluator.Evaluate(model, decisions);
+        var report = PolicyDecisionReporter.Create(decisions, predicates);
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
         var factory = new SmoModelFactory();
         var smoModel = factory.Create(model, decisions, profile: snapshot, options: smoOptions);
@@ -141,7 +143,8 @@ public class SsdtEmitterTests
         var options = TighteningOptions.Default;
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, snapshot, options);
-        var report = PolicyDecisionReporter.Create(decisions);
+        var predicates = ModelPredicateEvaluator.Evaluate(model, decisions);
+        var report = PolicyDecisionReporter.Create(decisions, predicates);
         var smoOptions = SmoBuildOptions.FromEmission(options.Emission);
         var factory = new SmoModelFactory();
         var smoModel = factory.Create(model, decisions, profile: snapshot, options: smoOptions);

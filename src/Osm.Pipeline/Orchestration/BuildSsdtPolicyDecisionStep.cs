@@ -37,7 +37,8 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
             ?? throw new InvalidOperationException("Profiling must complete before policy decisions.");
 
         var decisions = _tighteningPolicy.Decide(model, profile, state.Request.TighteningOptions);
-        var report = PolicyDecisionReporter.Create(decisions);
+        var predicates = ModelPredicateEvaluator.Evaluate(model, decisions);
+        var report = PolicyDecisionReporter.Create(decisions, predicates);
         var opportunities = _analyzer.Analyze(model, profile, decisions);
 
         state.Log.Record(

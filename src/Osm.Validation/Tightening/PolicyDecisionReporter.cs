@@ -7,12 +7,14 @@ namespace Osm.Validation.Tightening;
 
 public static class PolicyDecisionReporter
 {
-    public static PolicyDecisionReport Create(PolicyDecisionSet decisions)
+    public static PolicyDecisionReport Create(PolicyDecisionSet decisions, PredicateTelemetry predicates)
     {
         if (decisions is null)
         {
             throw new ArgumentNullException(nameof(decisions));
         }
+
+        predicates ??= PredicateTelemetry.Empty;
 
         var columnReports = decisions.Nullability.Values
             .Select(ColumnDecisionReport.From)
@@ -56,7 +58,8 @@ public static class PolicyDecisionReporter
             foreignKeyRationales,
             diagnostics,
             moduleRollups,
-            decisions.Toggles);
+            decisions.Toggles,
+            predicates);
     }
 
     private static ImmutableDictionary<string, int> AggregateRationales(IEnumerable<string> rationales)
@@ -177,7 +180,8 @@ public sealed record PolicyDecisionReport(
     ImmutableDictionary<string, int> ForeignKeyRationaleCounts,
     ImmutableArray<TighteningDiagnostic> Diagnostics,
     ImmutableDictionary<string, ModuleDecisionRollup> ModuleRollups,
-    TighteningToggleSnapshot Toggles)
+    TighteningToggleSnapshot Toggles,
+    PredicateTelemetry Predicates)
 {
     public int ColumnCount => Columns.Length;
 

@@ -1,0 +1,850 @@
+{
+  "Opportunities": [
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_DEF_CITY",
+      "Name": "ID",
+      "Statements": [
+        "ALTER TABLE [dbo.[OSUSR_DEF_CITY\n    ALTER COLUMN [ID Identifier NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "Evidence": [
+        "Rows=320",
+        "Nulls=0 (Outcome=Succeeded, Sample=320, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PK",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_DEF_CITY"
+            },
+            "Column": {
+              "Value": "ID"
+            }
+          },
+          "Module": "AppCore",
+          "Entity": "City",
+          "Attribute": "Id",
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 320,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 320,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_DEF_CITY",
+      "Name": "ISACTIVE",
+      "Statements": [
+        "ALTER TABLE [dbo.[OSUSR_DEF_CITY\n    ALTER COLUMN [ISACTIVE Boolean NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT",
+        "MANDATORY"
+      ],
+      "Evidence": [
+        "Rows=320",
+        "Nulls=0 (Outcome=Succeeded, Sample=320, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "MANDATORY",
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_DEF_CITY"
+            },
+            "Column": {
+              "Value": "ISACTIVE"
+            }
+          },
+          "Module": "AppCore",
+          "Entity": "City",
+          "Attribute": "IsActive",
+          "DataType": "Boolean",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 320,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 320,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_DEF_CITY",
+      "Name": "NAME",
+      "Statements": [
+        "ALTER TABLE [dbo.[OSUSR_DEF_CITY\n    ALTER COLUMN [NAME Text NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY"
+      ],
+      "Evidence": [
+        "Rows=320",
+        "Nulls=0 (Outcome=Succeeded, Sample=320, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_DEF_CITY"
+            },
+            "Column": {
+              "Value": "NAME"
+            }
+          },
+          "Module": "AppCore",
+          "Entity": "City",
+          "Attribute": "Name",
+          "DataType": "Text",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 320,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 320,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT",
+      "Name": "ID",
+      "Statements": [
+        "ALTER TABLE [billing.[BILLING_ACCOUNT\n    ALTER COLUMN [ID int NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "Evidence": [
+        "Rows=58000",
+        "Nulls=0 (Outcome=Succeeded, Sample=58000, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PK",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "billing"
+            },
+            "Table": {
+              "Value": "BILLING_ACCOUNT"
+            },
+            "Column": {
+              "Value": "ID"
+            }
+          },
+          "Module": "ExtBilling",
+          "Entity": "BillingAccount",
+          "Attribute": "Id",
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 58000,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 58000,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_XYZ_JOBRUN",
+      "Name": "ID",
+      "Statements": [
+        "ALTER TABLE [dbo.[OSUSR_XYZ_JOBRUN\n    ALTER COLUMN [ID Identifier NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "Evidence": [
+        "Rows=2500000",
+        "Nulls=0 (Outcome=Succeeded, Sample=2500000, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PK",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_XYZ_JOBRUN"
+            },
+            "Column": {
+              "Value": "ID"
+            }
+          },
+          "Module": "Ops",
+          "Entity": "JobRun",
+          "Attribute": "Id",
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 2500000,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 2500000,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT",
+      "Name": "ACCOUNTNUMBER",
+      "Statements": [
+        "ALTER TABLE [billing.[BILLING_ACCOUNT\n    ALTER COLUMN [ACCOUNTNUMBER varchar(50) NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "UNIQUE_NO_NULLS"
+      ],
+      "Evidence": [
+        "Rows=58000",
+        "Nulls=0 (Outcome=Succeeded, Sample=58000, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "UNIQUE_NO_NULLS",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": false,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "billing"
+            },
+            "Table": {
+              "Value": "BILLING_ACCOUNT"
+            },
+            "Column": {
+              "Value": "ACCOUNTNUMBER"
+            }
+          },
+          "Module": "ExtBilling",
+          "Entity": "BillingAccount",
+          "Attribute": "AccountNumber",
+          "DataType": "Text",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 58000,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 58000,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": false,
+          "UniqueProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 0,
+            "Outcome": "Succeeded"
+          },
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_XYZ_JOBRUN",
+      "Name": "CREATEDON",
+      "Statements": [
+        "ALTER TABLE [dbo.[OSUSR_XYZ_JOBRUN\n    ALTER COLUMN [CREATEDON DateTime NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT",
+        "MANDATORY"
+      ],
+      "Evidence": [
+        "Rows=2500000",
+        "Nulls=0 (Outcome=Succeeded, Sample=2500000, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "MANDATORY",
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_XYZ_JOBRUN"
+            },
+            "Column": {
+              "Value": "CREATEDON"
+            }
+          },
+          "Module": "Ops",
+          "Entity": "JobRun",
+          "Attribute": "CreatedOn",
+          "DataType": "DateTime",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 2500000,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 2500000,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Name": "EMAIL",
+      "Statements": [
+        "ALTER TABLE [dbo.[OSUSR_ABC_CUSTOMER\n    ALTER COLUMN [EMAIL nvarchar NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "UNIQUE_NO_NULLS"
+      ],
+      "Evidence": [
+        "Rows=125000",
+        "Nulls=0 (Outcome=Succeeded, Sample=125000, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "UNIQUE_NO_NULLS",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": false,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_CUSTOMER"
+            },
+            "Column": {
+              "Value": "EMAIL"
+            }
+          },
+          "Module": "AppCore",
+          "Entity": "Customer",
+          "Attribute": "Email",
+          "DataType": "Text",
+          "SqlType": "nvarchar",
+          "PhysicalNullable": false,
+          "PhysicalUnique": null,
+          "RowCount": 125000,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 125000,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": false,
+          "UniqueProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 0,
+            "Outcome": "Succeeded"
+          },
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Name": "CITYID",
+      "Statements": [
+        "ALTER TABLE [dbo.[OSUSR_ABC_CUSTOMER\n    ALTER COLUMN [CITYID int NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "FK_ENFORCED",
+        "MANDATORY"
+      ],
+      "Evidence": [
+        "Rows=125000",
+        "Nulls=0 (Outcome=Succeeded, Sample=125000, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "FK_ENFORCED",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": false
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_CUSTOMER"
+            },
+            "Column": {
+              "Value": "CITYID"
+            }
+          },
+          "Module": "AppCore",
+          "Entity": "Customer",
+          "Attribute": "CityId",
+          "DataType": "Identifier",
+          "SqlType": "int",
+          "PhysicalNullable": false,
+          "PhysicalUnique": null,
+          "RowCount": 125000,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 125000,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": false,
+          "HasDatabaseConstraint": true,
+          "DeleteRule": "Protect"
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Name": "ID",
+      "Statements": [
+        "ALTER TABLE [dbo.[OSUSR_ABC_CUSTOMER\n    ALTER COLUMN [ID int NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "Evidence": [
+        "Rows=125000",
+        "Nulls=0 (Outcome=Succeeded, Sample=125000, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PK",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_CUSTOMER"
+            },
+            "Column": {
+              "Value": "ID"
+            }
+          },
+          "Module": "AppCore",
+          "Entity": "Customer",
+          "Attribute": "Id",
+          "DataType": "Identifier",
+          "SqlType": "int",
+          "PhysicalNullable": false,
+          "PhysicalUnique": true,
+          "RowCount": 125000,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 125000,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "Unique",
+      "Risk": "SafeToApply",
+      "Schema": "billing",
+      "Table": "BILLING_ACCOUNT",
+      "Name": "IDX_BILLINGACCOUNT_ACCTNUM",
+      "Statements": [
+        "CREATE UNIQUE NONCLUSTERED INDEX [IDX_BILLINGACCOUNT_ACCTNUM ON [billing.[BILLING_ACCOUNT ([ACCOUNTNUMBER ASC);"
+      ],
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY",
+        "UNIQUE_NO_NULLS"
+      ],
+      "Evidence": [
+        "Unique duplicates=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": false,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "billing"
+            },
+            "Table": {
+              "Value": "BILLING_ACCOUNT"
+            },
+            "Column": {
+              "Value": "ACCOUNTNUMBER"
+            }
+          },
+          "Module": "ExtBilling",
+          "Entity": "BillingAccount",
+          "Attribute": "AccountNumber",
+          "DataType": "Text",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 58000,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 58000,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": false,
+          "UniqueProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 0,
+            "Outcome": "Succeeded"
+          },
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "Unique",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Name": "IDX_CUSTOMER_EMAIL",
+      "Statements": [
+        "CREATE UNIQUE NONCLUSTERED INDEX [IDX_CUSTOMER_EMAIL ON [dbo.[OSUSR_ABC_CUSTOMER ([EMAIL ASC);"
+      ],
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY",
+        "UNIQUE_NO_NULLS"
+      ],
+      "Evidence": [
+        "Unique duplicates=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": false,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_CUSTOMER"
+            },
+            "Column": {
+              "Value": "EMAIL"
+            }
+          },
+          "Module": "AppCore",
+          "Entity": "Customer",
+          "Attribute": "Email",
+          "DataType": "Text",
+          "SqlType": "nvarchar",
+          "PhysicalNullable": false,
+          "PhysicalUnique": null,
+          "RowCount": 125000,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 125000,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": false,
+          "UniqueProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 0,
+            "Outcome": "Succeeded"
+          },
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "ForeignKey",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_CUSTOMER",
+      "Name": "CITYID",
+      "Statements": [
+        "ALTER TABLE [dbo.[OSUSR_ABC_CUSTOMER WITH CHECK ADD CONSTRAINT [FK_OSUSR_ABC_CUSTOMER_CITYID_OSUSR_DEF_CITY FOREIGN KEY ([CITYID) REFERENCES [dbo.[OSUSR_DEF_CITY ([ID);",
+        "ALTER TABLE [dbo.[OSUSR_ABC_CUSTOMER CHECK CONSTRAINT [FK_OSUSR_ABC_CUSTOMER_CITYID_OSUSR_DEF_CITY;"
+      ],
+      "Rationales": [
+        "DB_CONSTRAINT_PRESENT"
+      ],
+      "Evidence": [
+        "HasConstraint=True",
+        "HasOrphans=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": false
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_CUSTOMER"
+            },
+            "Column": {
+              "Value": "CITYID"
+            }
+          },
+          "Module": "AppCore",
+          "Entity": "Customer",
+          "Attribute": "CityId",
+          "DataType": "Identifier",
+          "SqlType": "int",
+          "PhysicalNullable": false,
+          "PhysicalUnique": null,
+          "RowCount": null,
+          "NullCount": null,
+          "NullProbeStatus": null,
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": false,
+          "HasDatabaseConstraint": true,
+          "DeleteRule": "Protect"
+        }
+      ],
+      "HasStatements": true
+    }
+  ],
+  "RiskCounts": {
+    "SafeToApply": 13
+  },
+  "ConstraintCounts": {
+    "NotNull": 10,
+    "Unique": 2,
+    "ForeignKey": 1
+  },
+  "GeneratedAtUtc": "2025-10-22T03:52:49.4185869+00:00",
+  "TotalCount": 13
+}

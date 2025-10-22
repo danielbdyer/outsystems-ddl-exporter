@@ -15,7 +15,8 @@ public sealed class DecisionReportTests
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, snapshot, TighteningOptions.Default);
 
-        var report = PolicyDecisionReporter.Create(decisions);
+        var predicates = ModelPredicateEvaluator.Evaluate(model, decisions);
+        var report = PolicyDecisionReporter.Create(decisions, predicates);
 
         var expectedColumnCount = model.Modules.SelectMany(m => m.Entities).Sum(e => e.Attributes.Length);
         Assert.Equal(expectedColumnCount, report.ColumnCount);

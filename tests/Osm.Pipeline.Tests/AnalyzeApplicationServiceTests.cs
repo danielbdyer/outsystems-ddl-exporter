@@ -111,7 +111,7 @@ public sealed class AnalyzeApplicationServiceTests
                     ImmutableArray<TighteningDiagnostic>.Empty,
                     ImmutableDictionary<ColumnCoordinate, string>.Empty,
                     ImmutableDictionary<IndexCoordinate, string>.Empty,
-                    TighteningOptions.Default));
+                    TighteningOptions.Default), PredicateTelemetry.Empty);
                 var profile = ProfileFixtures.LoadSnapshot("profiling/profile.edge-case.json");
                 var pipelineResult = new TighteningAnalysisPipelineResult(
                     report,

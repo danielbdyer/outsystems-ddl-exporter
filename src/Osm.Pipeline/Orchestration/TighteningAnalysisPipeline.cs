@@ -108,7 +108,8 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
 
         var bootstrap = bootstrapResult.Value;
         var decisions = _tighteningPolicy.Decide(bootstrap.FilteredModel, bootstrap.Profile, request.TighteningOptions);
-        var report = PolicyDecisionReporter.Create(decisions);
+        var predicates = ModelPredicateEvaluator.Evaluate(bootstrap.FilteredModel, decisions);
+        var report = PolicyDecisionReporter.Create(decisions, predicates);
 
         log.Record(
             "policy.decisions.synthesized",

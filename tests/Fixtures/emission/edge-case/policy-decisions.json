@@ -8,25 +8,25 @@
   "ForeignKeyCount": 2,
   "ForeignKeysCreatedCount": 1,
   "ColumnRationales": {
-    "DEFAULT_PRESENT": 2,
-    "PHYSICAL_NOT_NULL": 4,
-    "MANDATORY": 10,
-    "DATA_HAS_ORPHANS": 1,
-    "DELETE_RULE_IGNORE": 1,
     "PROFILE_MISSING": 1,
-    "PK": 4,
-    "FK_ENFORCED": 1,
+    "DATA_NO_NULLS": 10,
+    "MANDATORY": 10,
     "UNIQUE_NO_NULLS": 2,
-    "DATA_NO_NULLS": 10
+    "DELETE_RULE_IGNORE": 1,
+    "FK_ENFORCED": 1,
+    "DATA_HAS_ORPHANS": 1,
+    "DEFAULT_PRESENT": 2,
+    "PK": 4,
+    "PHYSICAL_NOT_NULL": 4
   },
   "UniqueIndexRationales": {
-    "PHYSICAL_UNIQUE_KEY": 2,
-    "UNIQUE_NO_NULLS": 2
+    "UNIQUE_NO_NULLS": 2,
+    "PHYSICAL_UNIQUE_KEY": 2
   },
   "ForeignKeyRationales": {
-    "DATA_HAS_ORPHANS": 1,
+    "DB_CONSTRAINT_PRESENT": 1,
     "DELETE_RULE_IGNORE": 1,
-    "DB_CONSTRAINT_PRESENT": 1
+    "DATA_HAS_ORPHANS": 1
   },
   "ModuleRollups": {
     "Ops": {
@@ -39,18 +39,18 @@
       "ForeignKeyCount": 1,
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
-        "DATA_HAS_ORPHANS": 1,
         "DATA_NO_NULLS": 2,
-        "DEFAULT_PRESENT": 1,
-        "DELETE_RULE_IGNORE": 1,
         "MANDATORY": 2,
-        "PHYSICAL_NOT_NULL": 1,
-        "PK": 1
+        "DELETE_RULE_IGNORE": 1,
+        "DATA_HAS_ORPHANS": 1,
+        "DEFAULT_PRESENT": 1,
+        "PK": 1,
+        "PHYSICAL_NOT_NULL": 1
       },
       "UniqueIndexRationales": {},
       "ForeignKeyRationales": {
-        "DATA_HAS_ORPHANS": 1,
-        "DELETE_RULE_IGNORE": 1
+        "DELETE_RULE_IGNORE": 1,
+        "DATA_HAS_ORPHANS": 1
       }
     },
     "ExtBilling": {
@@ -65,13 +65,13 @@
       "ColumnRationales": {
         "DATA_NO_NULLS": 2,
         "MANDATORY": 2,
-        "PHYSICAL_NOT_NULL": 1,
+        "UNIQUE_NO_NULLS": 1,
         "PK": 1,
-        "UNIQUE_NO_NULLS": 1
+        "PHYSICAL_NOT_NULL": 1
       },
       "UniqueIndexRationales": {
-        "PHYSICAL_UNIQUE_KEY": 1,
-        "UNIQUE_NO_NULLS": 1
+        "UNIQUE_NO_NULLS": 1,
+        "PHYSICAL_UNIQUE_KEY": 1
       },
       "ForeignKeyRationales": {}
     },
@@ -85,18 +85,18 @@
       "ForeignKeyCount": 1,
       "ForeignKeysCreatedCount": 1,
       "ColumnRationales": {
-        "DATA_NO_NULLS": 6,
-        "DEFAULT_PRESENT": 1,
-        "FK_ENFORCED": 1,
-        "MANDATORY": 6,
-        "PHYSICAL_NOT_NULL": 2,
-        "PK": 2,
         "PROFILE_MISSING": 1,
-        "UNIQUE_NO_NULLS": 1
+        "DATA_NO_NULLS": 6,
+        "MANDATORY": 6,
+        "UNIQUE_NO_NULLS": 1,
+        "FK_ENFORCED": 1,
+        "DEFAULT_PRESENT": 1,
+        "PK": 2,
+        "PHYSICAL_NOT_NULL": 2
       },
       "UniqueIndexRationales": {
-        "PHYSICAL_UNIQUE_KEY": 1,
-        "UNIQUE_NO_NULLS": 1
+        "UNIQUE_NO_NULLS": 1,
+        "PHYSICAL_UNIQUE_KEY": 1
       },
       "ForeignKeyRationales": {
         "DB_CONSTRAINT_PRESENT": 1
@@ -356,5 +356,282 @@
       ]
     }
   ],
-  "Diagnostics": []
+  "Diagnostics": [],
+  "Predicates": {
+    "Tables": [
+      {
+        "Module": "AppCore",
+        "LogicalName": "Customer",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Predicates": [
+          "HasDbBackedRelationships",
+          "HasDefaultConstraints",
+          "HasInactivityDrift",
+          "HasLogicalReferences",
+          "HasRelationships"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "LogicalName": "City",
+        "Schema": "dbo",
+        "Table": "OSUSR_DEF_CITY",
+        "Predicates": [
+          "IsStatic"
+        ]
+      },
+      {
+        "Module": "ExtBilling",
+        "LogicalName": "BillingAccount",
+        "Schema": "billing",
+        "Table": "BILLING_ACCOUNT",
+        "Predicates": [
+          "IsExternal"
+        ]
+      },
+      {
+        "Module": "Ops",
+        "LogicalName": "JobRun",
+        "Schema": "dbo",
+        "Table": "OSUSR_XYZ_JOBRUN",
+        "Predicates": [
+          "HasLogicalReferences",
+          "HasRelationships",
+          "HasTriggers"
+        ]
+      }
+    ],
+    "Columns": [
+      {
+        "Module": "AppCore",
+        "Entity": "Customer",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Column": "ID",
+        "Predicates": [
+          "DecisionMakeNotNull",
+          "HasIdentity",
+          "HasPhysicalType",
+          "IsAutoNumber",
+          "IsIdentifier",
+          "IsMandatory",
+          "PhysicalNotNull"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Entity": "Customer",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Column": "EMAIL",
+        "Predicates": [
+          "DecisionMakeNotNull",
+          "HasPhysicalType",
+          "IsMandatory",
+          "PhysicalNotNull"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Entity": "Customer",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Column": "FIRSTNAME",
+        "Predicates": [
+          "HasDefaultConstraint",
+          "HasOnDiskDefault",
+          "HasPhysicalType",
+          "PhysicalNullable"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Entity": "Customer",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Column": "LASTNAME",
+        "Predicates": [
+          "HasDefaultConstraint",
+          "HasOnDiskDefault",
+          "HasPhysicalType",
+          "PhysicalNullable"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Entity": "Customer",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Column": "CITYID",
+        "Predicates": [
+          "DecisionCreatesForeignKey",
+          "DecisionMakeNotNull",
+          "HasPhysicalType",
+          "IsMandatory",
+          "IsReference",
+          "PhysicalNotNull",
+          "ReferenceHasDbConstraint"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Entity": "Customer",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Column": "LEGACYCODE",
+        "Predicates": [
+          "PresentButInactive"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Entity": "City",
+        "Schema": "dbo",
+        "Table": "OSUSR_DEF_CITY",
+        "Column": "ID",
+        "Predicates": [
+          "DecisionMakeNotNull",
+          "IsAutoNumber",
+          "IsIdentifier",
+          "IsMandatory"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Entity": "City",
+        "Schema": "dbo",
+        "Table": "OSUSR_DEF_CITY",
+        "Column": "NAME",
+        "Predicates": [
+          "DecisionMakeNotNull",
+          "IsMandatory"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Entity": "City",
+        "Schema": "dbo",
+        "Table": "OSUSR_DEF_CITY",
+        "Column": "ISACTIVE",
+        "Predicates": [
+          "DecisionMakeNotNull",
+          "HasDefaultConstraint",
+          "IsMandatory"
+        ]
+      },
+      {
+        "Module": "ExtBilling",
+        "Entity": "BillingAccount",
+        "Schema": "billing",
+        "Table": "BILLING_ACCOUNT",
+        "Column": "ID",
+        "Predicates": [
+          "DecisionMakeNotNull",
+          "IsAutoNumber",
+          "IsIdentifier",
+          "IsMandatory"
+        ]
+      },
+      {
+        "Module": "ExtBilling",
+        "Entity": "BillingAccount",
+        "Schema": "billing",
+        "Table": "BILLING_ACCOUNT",
+        "Column": "ACCOUNTNUMBER",
+        "Predicates": [
+          "DecisionMakeNotNull",
+          "IsMandatory"
+        ]
+      },
+      {
+        "Module": "Ops",
+        "Entity": "JobRun",
+        "Schema": "dbo",
+        "Table": "OSUSR_XYZ_JOBRUN",
+        "Column": "ID",
+        "Predicates": [
+          "DecisionMakeNotNull",
+          "IsAutoNumber",
+          "IsIdentifier",
+          "IsMandatory"
+        ]
+      },
+      {
+        "Module": "Ops",
+        "Entity": "JobRun",
+        "Schema": "dbo",
+        "Table": "OSUSR_XYZ_JOBRUN",
+        "Column": "TRIGGEREDBYUSERID",
+        "Predicates": [
+          "DecisionSkipsForeignKey",
+          "IsReference",
+          "ReferenceMissingDbConstraint"
+        ]
+      },
+      {
+        "Module": "Ops",
+        "Entity": "JobRun",
+        "Schema": "dbo",
+        "Table": "OSUSR_XYZ_JOBRUN",
+        "Column": "CREATEDON",
+        "Predicates": [
+          "DecisionMakeNotNull",
+          "HasDefaultConstraint",
+          "IsMandatory"
+        ]
+      }
+    ],
+    "Indexes": [
+      {
+        "Module": "AppCore",
+        "Entity": "Customer",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Index": "IDX_CUSTOMER_EMAIL",
+        "Predicates": [
+          "DecisionEnforceUnique",
+          "HasDataSpace",
+          "HasFilter",
+          "IsUnique"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Entity": "Customer",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Index": "IDX_CUSTOMER_NAME",
+        "Predicates": [
+          "HasDataSpace",
+          "IsComposite"
+        ]
+      },
+      {
+        "Module": "ExtBilling",
+        "Entity": "BillingAccount",
+        "Schema": "billing",
+        "Table": "BILLING_ACCOUNT",
+        "Index": "IDX_BILLINGACCOUNT_ACCTNUM",
+        "Predicates": [
+          "DecisionEnforceUnique",
+          "IsUnique"
+        ]
+      },
+      {
+        "Module": "Ops",
+        "Entity": "JobRun",
+        "Schema": "dbo",
+        "Table": "OSUSR_XYZ_JOBRUN",
+        "Index": "OSIDX_JOBRUN_CREATEDON",
+        "Predicates": [
+          "HasCompression",
+          "HasDataSpace",
+          "HasPartitionScheme"
+        ]
+      }
+    ],
+    "Sequences": [],
+    "ExtendedProperties": []
+  }
 }
