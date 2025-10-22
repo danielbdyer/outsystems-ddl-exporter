@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -160,6 +161,27 @@ internal sealed class EntityDocumentMapper
         var metadata = EntityMetadata.Create(doc.Meta?.Description, propertyResult.Value, temporalResult.Value);
         var attributes = attributesResult.Value;
 
+        var allowDuplicateLogicalNames = _context.Options.AllowDuplicateAttributeLogicalNames;
+        if (allowDuplicateLogicalNames)
+        {
+            var duplicateLogicalNames = attributes
+                .GroupBy(static attribute => attribute.LogicalName.Value, StringComparer.Ordinal)
+                .Where(static group => group.Count() > 1)
+                .Select(static group => group.Key)
+                .ToArray();
+
+            if (duplicateLogicalNames.Length > 0)
+            {
+                serializedPayload ??= _context.SerializeEntityDocument(doc);
+                var attributePath = path.Property("attributes");
+                foreach (var duplicateName in duplicateLogicalNames)
+                {
+                    _context.AddWarning(
+                        $"Entity '{moduleNameValue}::{entityNameValue}' contains duplicate attribute logical name '{duplicateName}'. Raw payload: {serializedPayload} (Path: {attributePath})");
+                }
+            }
+        }
+
         var allowMissingPrimaryKey = _context.Options.ValidationOverrides.AllowsMissingPrimaryKey(moduleNameValue, entityNameValue);
         if (!attributes.Any(static a => a.IsIdentifier))
         {
@@ -191,7 +213,8 @@ internal sealed class EntityDocumentMapper
             relationshipsResult.Value,
             triggersResult.Value,
             metadata,
-            allowMissingPrimaryKey: allowMissingPrimaryKey);
+            allowMissingPrimaryKey: allowMissingPrimaryKey,
+            allowDuplicateAttributeLogicalNames: allowDuplicateLogicalNames);
 
         if (entityResult.IsFailure)
         {

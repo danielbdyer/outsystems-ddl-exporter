@@ -897,6 +897,119 @@ public class ModelJsonDeserializerTests
     }
 
     [Fact]
+    public void Deserialize_ShouldFail_WhenDuplicateAttributeLogicalNamesDetected()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    },
+                    {
+                      "name": "Id",
+                      "physicalName": "LEGACY_ID",
+                      "dataType": "Text",
+                      "isMandatory": false,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == "entity.attributes.duplicateLogical");
+    }
+
+    [Fact]
+    public void Deserialize_ShouldWarnAndSucceed_WhenDuplicateAttributeLogicalNamesAllowed()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    },
+                    {
+                      "name": "Id",
+                      "physicalName": "LEGACY_ID",
+                      "dataType": "Text",
+                      "isMandatory": false,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+        var warnings = new List<string>();
+        var options = new ModelJsonDeserializerOptions(allowDuplicateAttributeLogicalNames: true);
+
+        var result = deserializer.Deserialize(stream, warnings, options);
+
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
+        Assert.Contains(warnings, warning => warning.Contains("duplicate attribute logical name 'Id'", StringComparison.Ordinal));
+        Assert.Contains(warnings, warning => warning.Contains("Path: $['modules'][0]['entities'][0]['attributes']", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Deserialize_ShouldFail_WhenDuplicateAttributeColumnsDetected()
     {
         const string json = """
