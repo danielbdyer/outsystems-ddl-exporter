@@ -2,13 +2,13 @@ CREATE TABLE [dbo].[Customer] (
     [Id]        BIGINT         IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_Customer]
             PRIMARY KEY CLUSTERED,
-    [Email]     NVARCHAR (255) COLLATE [Latin1_General_CI_AI] NOT NULL,
+    [Email]     NVARCHAR (255) NOT NULL,
     [FirstName] NVARCHAR (100)
         DEFAULT (''),
     [LastName]  NVARCHAR (100)
         DEFAULT (''),
     [CityId]    BIGINT         NOT NULL
-        CONSTRAINT [FK_Customer_CityId]
+        CONSTRAINT [FK_Customer_Osusr_Def_City]
             FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])
 )
 

@@ -485,12 +485,14 @@ internal sealed class SqlScriptFormatter
 
         var beforeDefault = working[..defaultIndex].TrimEnd();
         var defaultSegment = working[defaultIndex..].TrimStart();
+        defaultSegment = defaultSegment.TrimEnd();
 
         string? constraintSegment = null;
         var constraintIndex = beforeDefault.IndexOf(" CONSTRAINT ", StringComparison.OrdinalIgnoreCase);
         if (constraintIndex >= 0)
         {
             constraintSegment = beforeDefault[constraintIndex..].TrimStart();
+            constraintSegment = constraintSegment.TrimEnd();
             beforeDefault = beforeDefault[..constraintIndex].TrimEnd();
         }
 

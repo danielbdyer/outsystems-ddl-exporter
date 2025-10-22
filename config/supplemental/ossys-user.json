@@ -1,50 +1,196 @@
 {
+  "exportedAtUtc": "2025-01-01T00:00:00Z",
   "modules": [
     {
-      "name": "OutSystems.System",
-      "isSystem": true,
+      "name": "UserExtension_CS",
+      "isSystem": false,
       "isActive": true,
       "entities": [
         {
           "name": "User",
-          "physicalName": "OSUSR_U_USER",
-          "schema": "dbo",
-          "isActive": true,
-          "isExternal": false,
+          "physicalName": "ossys_User",
           "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "meta": "Supplemental representation of the OutSystems user table",
           "attributes": [
             {
               "name": "Id",
               "physicalName": "ID",
+              "originalName": null,
               "dataType": "Identifier",
+              "length": null,
+              "precision": 19,
+              "scale": 0,
+              "default": null,
               "isMandatory": true,
               "isIdentifier": true,
-              "isAutoNumber": false,
-              "isActive": true
+              "isAutoNumber": true,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 1,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "meta": "User identifier",
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "bigint",
+                "precision": 19,
+                "scale": 0,
+                "isIdentity": true
+              }
             },
             {
               "name": "Username",
               "physicalName": "USERNAME",
+              "originalName": null,
               "dataType": "Text",
+              "length": 50,
+              "precision": null,
+              "scale": null,
+              "default": null,
               "isMandatory": true,
               "isIdentifier": false,
               "isAutoNumber": false,
               "isActive": true,
-              "length": 50
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "meta": "Unique username",
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "nvarchar",
+                "maxLength": 50,
+                "collation": "Latin1_General_CI_AI"
+              }
             },
             {
               "name": "Email",
               "physicalName": "EMAIL",
+              "originalName": null,
               "dataType": "Text",
+              "length": 255,
+              "precision": null,
+              "scale": null,
+              "default": null,
               "isMandatory": true,
               "isIdentifier": false,
               "isAutoNumber": false,
               "isActive": true,
-              "length": 255
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "meta": "User email",
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "nvarchar",
+                "maxLength": 255,
+                "collation": "Latin1_General_CI_AI"
+              }
             }
           ],
-          "indexes": [],
-          "relationships": []
+          "indexes": [
+            {
+              "name": "PK_ossys_User",
+              "isUnique": true,
+              "isPrimary": true,
+              "isPlatformAuto": 0,
+              "kind": "PK",
+              "isDisabled": false,
+              "isPadded": false,
+              "fill_factor": null,
+              "ignoreDupKey": false,
+              "allowRowLocks": true,
+              "allowPageLocks": true,
+              "noRecompute": false,
+              "filterDefinition": null,
+              "dataSpace": null,
+              "partitionColumns": [],
+              "dataCompression": [],
+              "columns": [
+                {
+                  "attribute": "Id",
+                  "physicalColumn": "ID",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                }
+              ]
+            },
+            {
+              "name": "UQ_ossys_User_Username",
+              "isUnique": true,
+              "isPrimary": false,
+              "isPlatformAuto": 0,
+              "kind": "UIX",
+              "isDisabled": false,
+              "isPadded": false,
+              "fill_factor": null,
+              "ignoreDupKey": false,
+              "allowRowLocks": true,
+              "allowPageLocks": true,
+              "noRecompute": false,
+              "filterDefinition": null,
+              "dataSpace": null,
+              "partitionColumns": [],
+              "dataCompression": [],
+              "columns": [
+                {
+                  "attribute": "Username",
+                  "physicalColumn": "USERNAME",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                }
+              ]
+            },
+            {
+              "name": "UQ_ossys_User_Email",
+              "isUnique": true,
+              "isPrimary": false,
+              "isPlatformAuto": 0,
+              "kind": "UIX",
+              "isDisabled": false,
+              "isPadded": false,
+              "fill_factor": null,
+              "ignoreDupKey": false,
+              "allowRowLocks": true,
+              "allowPageLocks": true,
+              "noRecompute": false,
+              "filterDefinition": null,
+              "dataSpace": null,
+              "partitionColumns": [],
+              "dataCompression": [],
+              "columns": [
+                {
+                  "attribute": "Email",
+                  "physicalColumn": "EMAIL",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                }
+              ]
+            }
+          ],
+          "relationships": [],
+          "triggers": [],
+          "extendedProperties": []
         }
       ]
     }

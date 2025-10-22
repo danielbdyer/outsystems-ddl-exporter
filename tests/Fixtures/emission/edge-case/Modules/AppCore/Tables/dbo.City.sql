@@ -1,8 +1,8 @@
 CREATE TABLE [dbo].[City] (
-    [ID]       BIGINT         IDENTITY (1, 1) NOT NULL
+    [Id]       BIGINT         IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_City]
             PRIMARY KEY CLUSTERED,
-    [NAME]     NVARCHAR (200) NOT NULL,
-    [ISACTIVE] BIT            NOT NULL
+    [Name]     NVARCHAR (200) NOT NULL,
+    [IsActive] BIT            NOT NULL
         DEFAULT ((1))
 )

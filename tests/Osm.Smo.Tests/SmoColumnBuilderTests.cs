@@ -24,13 +24,15 @@ public class SmoColumnBuilderTests
         Assert.False(idColumn.Nullable);
         Assert.True(idColumn.IsIdentity);
         var idAttribute = customerContext.EmittableAttributes.Single(a => a.LogicalName.Value.Equals("Id", StringComparison.Ordinal));
-        Assert.Equal(idAttribute.ColumnName.Value, idColumn.Name);
+        Assert.Equal(idAttribute.ColumnName.Value, idColumn.PhysicalName);
+        Assert.Equal(idAttribute.LogicalName.Value, idColumn.Name);
 
         var cityColumn = columns.Single(c => c.LogicalName.Equals("CityId", StringComparison.Ordinal));
         Assert.Equal(SqlDataType.BigInt, cityColumn.DataType.SqlDataType);
         Assert.False(cityColumn.Nullable);
         var cityAttribute = customerContext.EmittableAttributes.Single(a => a.LogicalName.Value.Equals("CityId", StringComparison.Ordinal));
-        Assert.Equal(cityAttribute.ColumnName.Value, cityColumn.Name);
+        Assert.Equal(cityAttribute.ColumnName.Value, cityColumn.PhysicalName);
+        Assert.Equal(cityAttribute.LogicalName.Value, cityColumn.Name);
 
         var firstNameColumn = columns.Single(c => c.LogicalName.Equals("FirstName", StringComparison.Ordinal));
         Assert.Equal("('')", firstNameColumn.DefaultExpression);

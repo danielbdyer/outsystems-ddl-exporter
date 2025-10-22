@@ -14,6 +14,7 @@ public class ExtendedPropertyScriptBuilderTests
     public void BuildExtendedPropertyScripts_emits_table_and_column_descriptions()
     {
         var column = new SmoColumnDefinition(
+            PhysicalName: "NAME",
             Name: "Name",
             LogicalName: "Name",
             DataType: DataType.NVarChar(50),
@@ -62,6 +63,7 @@ public class ExtendedPropertyScriptBuilderTests
             LogicalName: "Order",
             Description: null,
             Columns: ImmutableArray.Create(new SmoColumnDefinition(
+                PhysicalName: "ID",
                 Name: "Id",
                 LogicalName: "Id",
                 DataType: DataType.Int,
@@ -90,6 +92,7 @@ public class ExtendedPropertyScriptBuilderTests
     public void BuildExtendedPropertyScripts_escapes_single_quotes_in_descriptions()
     {
         var column = new SmoColumnDefinition(
+            PhysicalName: "NAME",
             Name: "Name",
             LogicalName: "Name",
             DataType: DataType.NVarChar(50),
@@ -124,11 +127,11 @@ public class ExtendedPropertyScriptBuilderTests
         Assert.Equal(2, scripts.Length);
 
         var tableScript = scripts[0];
-        Assert.Contains("OBJECT_ID(N'[dbo].[OSUSR_SALES_ORDER]')", tableScript);
+        Assert.Contains("OBJECT_ID(N'[dbo].[Order]')", tableScript);
         Assert.Contains("@value=N'Contains customers'' orders [deprecated]'", tableScript);
 
         var columnScript = scripts[1];
-        Assert.Contains("COLUMNPROPERTY(OBJECT_ID(N'[dbo].[OSUSR_SALES_ORDER]'), N'Name', 'ColumnId')", columnScript);
+        Assert.Contains("COLUMNPROPERTY(OBJECT_ID(N'[dbo].[Order]'), N'Name', 'ColumnId')", columnScript);
         Assert.Contains("@value=N'Customer''s preferred title [display]'", columnScript);
     }
 }

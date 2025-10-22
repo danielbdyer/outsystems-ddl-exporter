@@ -1,9 +1,9 @@
 CREATE TABLE [dbo].[JobRun] (
-    [ID]                BIGINT   IDENTITY (1, 1) NOT NULL
+    [Id]                BIGINT   IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_JobRun]
             PRIMARY KEY CLUSTERED,
-    [TRIGGEREDBYUSERID] BIGINT,
-    [CREATEDON]         DATETIME NOT NULL
+    [TriggeredByUserId] BIGINT,
+    [CreatedOn]         DATETIME NOT NULL
         DEFAULT (getutcdate())
 )
 

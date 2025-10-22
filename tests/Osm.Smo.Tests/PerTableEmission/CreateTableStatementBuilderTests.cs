@@ -19,6 +19,7 @@ public class CreateTableStatementBuilderTests
     public void BuildCreateTableStatement_inlines_single_column_primary_key()
     {
         var column = new SmoColumnDefinition(
+            PhysicalName: "ID",
             Name: "Id",
             LogicalName: "Id",
             DataType: DataType.Int,
@@ -73,6 +74,7 @@ public class CreateTableStatementBuilderTests
     public void AddForeignKeys_attaches_constraints_and_tracks_trust()
     {
         var column = new SmoColumnDefinition(
+            PhysicalName: "CITYID",
             Name: "CityId",
             LogicalName: "CityId",
             DataType: DataType.Int,
@@ -138,7 +140,7 @@ public class CreateTableStatementBuilderTests
         var foreignKeyNames = builder.AddForeignKeys(statement, childTable, childTable.Name, options, out _);
 
         var resolvedName = Assert.Single(foreignKeyNames);
-        Assert.Equal("FK_OSUSR_M_CHILD_PARENT", resolvedName);
+        Assert.Equal("FK_Child_Parent", resolvedName);
 
         var constraint = Assert.Single(statement.Definition!.TableConstraints.OfType<ForeignKeyConstraintDefinition>());
         Assert.Collection(
