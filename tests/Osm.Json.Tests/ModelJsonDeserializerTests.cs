@@ -1339,4 +1339,69 @@ public class ModelJsonDeserializerTests
         Assert.Equal("entity.attributes.nullEntry", error.Code);
         Assert.Contains("$['modules'][0]['entities'][0]['attributes'][0]", error.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Deserialize_ShouldHandleNormalizedMetaArrays()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-02-02T00:00:00Z",
+          "modules": [
+            {
+              "name": "App",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Customer",
+                  "physicalName": "OSUSR_APP_CUSTOMER",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true,
+                      "isReference": 0,
+                      "meta": [
+                        {
+                          "name": "Description",
+                          "value": "Identifier attribute"
+                        }
+                      ]
+                    }
+                  ],
+                  "meta": [
+                    {
+                      "key": "Description",
+                      "value": {
+                        "text": "Customer records"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
+        var module = Assert.Single(result.Value.Modules);
+        var entity = Assert.Single(module.Entities);
+        Assert.Equal("Customer records", entity.Metadata.Description);
+        var attribute = Assert.Single(entity.Attributes);
+        Assert.Equal("Identifier attribute", attribute.Metadata.Description);
+    }
 }

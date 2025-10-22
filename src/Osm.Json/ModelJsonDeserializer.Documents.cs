@@ -552,17 +552,134 @@ public sealed partial class ModelJsonDeserializer
         public string? ReferencedAttribute { get; init; }
     }
 
+    private static string? ExtractMetaDescription(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Null:
+                return null;
+            case JsonValueKind.String:
+                return element.GetString();
+            case JsonValueKind.Number:
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                return element.ToString();
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (string.Equals(property.Name, "description", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var fromDescription = ExtractMetaDescription(property.Value);
+                        if (fromDescription is not null)
+                        {
+                            return fromDescription;
+                        }
+                    }
+                }
+
+                if (TryGetDescriptionFromNameValue(element, "name", out var namedValue) ||
+                    TryGetDescriptionFromNameValue(element, "key", out namedValue) ||
+                    TryGetDescriptionFromNameValue(element, "property", out namedValue))
+                {
+                    return namedValue;
+                }
+
+                if (element.TryGetProperty("value", out var valueElement))
+                {
+                    var fromValue = ExtractMetaDescription(valueElement);
+                    if (fromValue is not null)
+                    {
+                        return fromValue;
+                    }
+                }
+
+                if (element.TryGetProperty("text", out var textElement))
+                {
+                    var fromText = ExtractMetaDescription(textElement);
+                    if (fromText is not null)
+                    {
+                        return fromText;
+                    }
+                }
+
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+                    {
+                        var nested = ExtractMetaDescription(property.Value);
+                        if (nested is not null)
+                        {
+                            return nested;
+                        }
+                    }
+                }
+
+                return null;
+
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    var fromArray = ExtractMetaDescription(item);
+                    if (fromArray is not null)
+                    {
+                        return fromArray;
+                    }
+                }
+
+                return null;
+            default:
+                return null;
+        }
+
+        static bool TryGetDescriptionFromNameValue(JsonElement element, string nameProperty, out string? description)
+        {
+            description = null;
+            if (!element.TryGetProperty(nameProperty, out var nameElement) ||
+                nameElement.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            var candidate = nameElement.GetString();
+            if (string.IsNullOrWhiteSpace(candidate) ||
+                !string.Equals(candidate, "description", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (element.TryGetProperty("value", out var valueElement))
+            {
+                description = ExtractMetaDescription(valueElement);
+                return description is not null;
+            }
+
+            if (element.TryGetProperty("text", out var textElement))
+            {
+                description = ExtractMetaDescription(textElement);
+                return description is not null;
+            }
+
+            return false;
+        }
+    }
+
+    private static string? ReadMetaDescription(ref Utf8JsonReader reader)
+    {
+        using var document = JsonDocument.ParseValue(ref reader);
+        return ExtractMetaDescription(document.RootElement);
+    }
+
     private sealed class EntityMetaDocumentConverter : JsonConverter<EntityMetaDocument?>
     {
         public override EntityMetaDocument? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            return reader.TokenType switch
+            if (reader.TokenType is JsonTokenType.Null)
             {
-                JsonTokenType.Null => null,
-                JsonTokenType.String => new EntityMetaDocument { Description = NormalizeDescription(reader.GetString()) },
-                JsonTokenType.StartObject => ReadObject(ref reader),
-                _ => throw new JsonException($"Unsupported token '{reader.TokenType}' for entity meta.")
-            };
+                return null;
+            }
+
+            var description = ReadMetaDescription(ref reader);
+            return new EntityMetaDocument { Description = NormalizeDescription(description) };
         }
 
         public override void Write(Utf8JsonWriter writer, EntityMetaDocument? value, JsonSerializerOptions options)
@@ -576,28 +693,6 @@ public sealed partial class ModelJsonDeserializer
             writer.WriteStringValue(value.Description);
         }
 
-        private static EntityMetaDocument? ReadObject(ref Utf8JsonReader reader)
-        {
-            using var document = JsonDocument.ParseValue(ref reader);
-            var element = document.RootElement;
-            if (element.ValueKind != JsonValueKind.Object)
-            {
-                throw new JsonException("Entity meta must be an object with a description property.");
-            }
-
-            if (element.TryGetProperty("description", out var descriptionElement))
-            {
-                if (descriptionElement.ValueKind is JsonValueKind.Null)
-                {
-                    return new EntityMetaDocument { Description = null };
-                }
-
-                return new EntityMetaDocument { Description = NormalizeDescription(descriptionElement.GetString()) };
-            }
-
-            return new EntityMetaDocument { Description = null };
-        }
-
         private static string? NormalizeDescription(string? description)
             => string.IsNullOrWhiteSpace(description) ? null : description;
     }
@@ -606,13 +701,13 @@ public sealed partial class ModelJsonDeserializer
     {
         public override AttributeMetaDocument? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            return reader.TokenType switch
+            if (reader.TokenType is JsonTokenType.Null)
             {
-                JsonTokenType.Null => null,
-                JsonTokenType.String => new AttributeMetaDocument { Description = NormalizeDescription(reader.GetString()) },
-                JsonTokenType.StartObject => ReadObject(ref reader),
-                _ => throw new JsonException($"Unsupported token '{reader.TokenType}' for attribute meta.")
-            };
+                return null;
+            }
+
+            var description = ReadMetaDescription(ref reader);
+            return new AttributeMetaDocument { Description = NormalizeDescription(description) };
         }
 
         public override void Write(Utf8JsonWriter writer, AttributeMetaDocument? value, JsonSerializerOptions options)
@@ -624,28 +719,6 @@ public sealed partial class ModelJsonDeserializer
             }
 
             writer.WriteStringValue(value.Description);
-        }
-
-        private static AttributeMetaDocument? ReadObject(ref Utf8JsonReader reader)
-        {
-            using var document = JsonDocument.ParseValue(ref reader);
-            var element = document.RootElement;
-            if (element.ValueKind != JsonValueKind.Object)
-            {
-                throw new JsonException("Attribute meta must be an object with a description property.");
-            }
-
-            if (element.TryGetProperty("description", out var descriptionElement))
-            {
-                if (descriptionElement.ValueKind is JsonValueKind.Null)
-                {
-                    return new AttributeMetaDocument { Description = null };
-                }
-
-                return new AttributeMetaDocument { Description = NormalizeDescription(descriptionElement.GetString()) };
-            }
-
-            return new AttributeMetaDocument { Description = null };
         }
 
         private static string? NormalizeDescription(string? description)
