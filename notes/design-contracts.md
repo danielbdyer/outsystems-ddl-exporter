@@ -64,7 +64,7 @@ Additional notes:
 
 All modes share the same gating rules because safety depends on relational evidence rather than tightening aggressiveness:
 
-- Delete rules set to `Ignore` or orphan detections always suppress creation and attach `DELETE_RULE_IGNORE` or `DATA_HAS_ORPHANS` respectively.
+- Delete rules set to `Ignore` always suppress creation and attach `DELETE_RULE_IGNORE`. Missing `deleteRuleCode` values fall back to the platform default (`NoAction`) unless the `foreignKeys.treatMissingDeleteRuleAsIgnore` toggle is enabled. Orphan detections still attach `DATA_HAS_ORPHANS` and block creation.
 - Existing database constraints (`HasDbConstraint=true`) are re-surfaced even if the policy toggle disables creation so emitted SMO graphs mirror reality.
 - New creations require the policy toggle to allow them (`ForeignKeyOptions.EnableCreation`), the profiler to show no orphans, and cross-schema/catalog blocks to be lifted. When allowed, SMO scripts are emitted with `WITH CHECK` to ensure the constraint is trusted.
 

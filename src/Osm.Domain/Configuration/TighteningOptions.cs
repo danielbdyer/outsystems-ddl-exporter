@@ -42,7 +42,11 @@ public sealed record TighteningOptions
 
     public static TighteningOptions Default { get; } = Create(
         PolicyOptions.Create(TighteningMode.EvidenceGated, 0.0).Value,
-        ForeignKeyOptions.Create(enableCreation: true, allowCrossSchema: false, allowCrossCatalog: false).Value,
+        ForeignKeyOptions.Create(
+            enableCreation: true,
+            allowCrossSchema: false,
+            allowCrossCatalog: false,
+            treatMissingDeleteRuleAsIgnore: false).Value,
         UniquenessOptions.Create(enforceSingleColumnUnique: true, enforceMultiColumnUnique: true).Value,
         RemediationOptions.Create(
             generatePreScripts: true,
@@ -130,11 +134,16 @@ public sealed record PolicyOptions
 
 public sealed record ForeignKeyOptions
 {
-    private ForeignKeyOptions(bool enableCreation, bool allowCrossSchema, bool allowCrossCatalog)
+    private ForeignKeyOptions(
+        bool enableCreation,
+        bool allowCrossSchema,
+        bool allowCrossCatalog,
+        bool treatMissingDeleteRuleAsIgnore)
     {
         EnableCreation = enableCreation;
         AllowCrossSchema = allowCrossSchema;
         AllowCrossCatalog = allowCrossCatalog;
+        TreatMissingDeleteRuleAsIgnore = treatMissingDeleteRuleAsIgnore;
     }
 
     public bool EnableCreation { get; }
@@ -143,9 +152,19 @@ public sealed record ForeignKeyOptions
 
     public bool AllowCrossCatalog { get; }
 
-    public static Result<ForeignKeyOptions> Create(bool enableCreation, bool allowCrossSchema, bool allowCrossCatalog)
+    public bool TreatMissingDeleteRuleAsIgnore { get; }
+
+    public static Result<ForeignKeyOptions> Create(
+        bool enableCreation,
+        bool allowCrossSchema,
+        bool allowCrossCatalog,
+        bool treatMissingDeleteRuleAsIgnore = false)
     {
-        return new ForeignKeyOptions(enableCreation, allowCrossSchema, allowCrossCatalog);
+        return new ForeignKeyOptions(
+            enableCreation,
+            allowCrossSchema,
+            allowCrossCatalog,
+            treatMissingDeleteRuleAsIgnore);
     }
 }
 

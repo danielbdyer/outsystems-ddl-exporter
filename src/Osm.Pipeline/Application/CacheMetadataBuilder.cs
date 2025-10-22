@@ -29,6 +29,7 @@ internal static class CacheMetadataBuilder
             ["foreignKeys.enableCreation"] = options.ForeignKeys.EnableCreation.ToString(),
             ["foreignKeys.allowCrossSchema"] = options.ForeignKeys.AllowCrossSchema.ToString(),
             ["foreignKeys.allowCrossCatalog"] = options.ForeignKeys.AllowCrossCatalog.ToString(),
+            ["foreignKeys.treatMissingDeleteRuleAsIgnore"] = options.ForeignKeys.TreatMissingDeleteRuleAsIgnore.ToString(),
             ["uniqueness.singleColumn"] = options.Uniqueness.EnforceSingleColumnUnique.ToString(),
             ["uniqueness.multiColumn"] = options.Uniqueness.EnforceMultiColumnUnique.ToString(),
             ["remediation.generatePreScripts"] = options.Remediation.GeneratePreScripts.ToString(),

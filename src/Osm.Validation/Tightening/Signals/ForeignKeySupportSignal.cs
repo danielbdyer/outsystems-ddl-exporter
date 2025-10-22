@@ -20,7 +20,7 @@ internal sealed record ForeignKeySupportSignal()
 
         var rationales = new List<string>();
 
-        if (IsIgnoreRule(context.Attribute.Reference.DeleteRuleCode))
+        if (ForeignKeyEvaluator.IsIgnoreRule(context.Attribute.Reference.DeleteRuleCode, context.Options.ForeignKeys))
         {
             rationales.Add(TighteningRationales.DeleteRuleIgnore);
         }
@@ -32,7 +32,7 @@ internal sealed record ForeignKeySupportSignal()
 
         var supports = context.ForeignKeyReality is ForeignKeyReality reality
             && !reality.HasOrphan
-            && !IsIgnoreRule(context.Attribute.Reference.DeleteRuleCode)
+            && !ForeignKeyEvaluator.IsIgnoreRule(context.Attribute.Reference.DeleteRuleCode, context.Options.ForeignKeys)
             && ForeignKeySupportsTightening(
                 context.Entity,
                 reality,
@@ -87,6 +87,4 @@ internal sealed record ForeignKeySupportSignal()
     private static bool CatalogEquals(string? left, string? right)
         => string.Equals(left ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsIgnoreRule(string? deleteRule)
-        => string.IsNullOrWhiteSpace(deleteRule) || string.Equals(deleteRule, "Ignore", StringComparison.OrdinalIgnoreCase);
 }

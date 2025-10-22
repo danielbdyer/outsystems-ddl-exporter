@@ -62,6 +62,24 @@ public sealed class TighteningPolicyTests
     }
 
     [Fact]
+    public void MissingDeleteRule_ShouldStillCreateForeignKey()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-fk-default-delete-rule.json");
+        var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroFkDefaultDeleteRule);
+        var policy = new TighteningPolicy();
+        var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
+
+        var decisions = policy.Decide(model, snapshot, options);
+        var entity = GetEntity(model, "Child");
+        var coordinate = GetCoordinate(entity, "ParentId");
+        var fkDecision = decisions.ForeignKeys[coordinate];
+
+        Assert.True(fkDecision.CreateConstraint);
+        Assert.Contains(TighteningRationales.PolicyEnableCreation, fkDecision.Rationales);
+        Assert.DoesNotContain(TighteningRationales.DeleteRuleIgnore, fkDecision.Rationales);
+    }
+
+    [Fact]
     public void IgnoreForeignKey_ShouldAvoidTighteningOrCreatingConstraint()
     {
         var model = ModelFixtures.LoadModel("model.micro-fk-ignore.json");
