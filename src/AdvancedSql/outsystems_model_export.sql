@@ -730,7 +730,7 @@ SELECT
       CAST(ISNULL(h.HasFK, 0) AS int) AS [hasDbConstraint],
       a.ExternalColumnType AS [external_dbType],
       CAST(CASE WHEN a.AttrIsActive = 0 AND pc.AttrId IS NOT NULL THEN 1 ELSE 0 END AS bit) AS [physical_isPresentButInactive],
-      CASE WHEN cr.AttrId IS NOT NULL OR chk.AttrId IS NOT NULL THEN JSON_QUERY(
+      JSON_QUERY(CASE WHEN cr.AttrId IS NOT NULL OR chk.AttrId IS NOT NULL THEN
         (SELECT
             CAST(cr.IsNullable AS bit) AS [isNullable],
             cr.SqlType AS [sqlType],
@@ -742,20 +742,20 @@ SELECT
             CAST(cr.IsComputed AS bit) AS [isComputed],
             cr.ComputedDefinition AS [computedDefinition],
             cr.DefaultDefinition AS [defaultDefinition],
-            CASE WHEN cr.DefaultConstraintName IS NOT NULL OR cr.DefaultDefinition IS NOT NULL THEN JSON_QUERY(
+            JSON_QUERY(CASE WHEN cr.DefaultConstraintName IS NOT NULL OR cr.DefaultDefinition IS NOT NULL THEN
                 (SELECT
                     cr.DefaultConstraintName AS [name],
                     cr.DefaultDefinition AS [definition],
                     CAST(0 AS bit) AS [isNotTrusted]
                  FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
-            ) END AS [defaultConstraint],
-            CASE WHEN chk.CheckJson IS NOT NULL THEN JSON_QUERY(chk.CheckJson) END AS [checkConstraints]
+            END) AS [defaultConstraint],
+            JSON_QUERY(CASE WHEN chk.CheckJson IS NOT NULL THEN chk.CheckJson END) AS [checkConstraints]
          FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
-      ) END AS [onDisk],
-      CASE WHEN NULLIF(LTRIM(RTRIM(a.AttrDescription)), '') IS NOT NULL THEN JSON_QUERY(
+      END) AS [onDisk],
+      JSON_QUERY(CASE WHEN NULLIF(LTRIM(RTRIM(a.AttrDescription)), '') IS NOT NULL THEN
         (SELECT NULLIF(LTRIM(RTRIM(a.AttrDescription)), '') AS [description]
          FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
-      ) END AS [meta]
+      END) AS [meta]
     FROM #Attr a
     LEFT JOIN #RefResolved r ON r.AttrId = a.AttrId
     LEFT JOIN #AttrHasFK h ON h.AttrId = a.AttrId
@@ -842,12 +842,12 @@ SELECT
       CAST(ai.AllowPageLocks AS bit)       AS [allowPageLocks],
       CAST(ai.NoRecompute AS bit)          AS [noRecompute],
       ai.FilterDefinition                  AS [filterDefinition],
-      CASE WHEN ai.DataSpaceName IS NOT NULL OR ai.DataSpaceType IS NOT NULL THEN JSON_QUERY(
+      JSON_QUERY(CASE WHEN ai.DataSpaceName IS NOT NULL OR ai.DataSpaceType IS NOT NULL THEN
         (
           SELECT ai.DataSpaceName AS [name], ai.DataSpaceType AS [type]
           FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
         )
-      ) END                                 AS [dataSpace],
+      END)                                 AS [dataSpace],
       JSON_QUERY(COALESCE(ai.PartitionColumnsJson, N'[]')) AS [partitionColumns],
       JSON_QUERY(COALESCE(ai.DataCompressionJson, N'[]'))  AS [dataCompression],
       JSON_QUERY(icj.ColumnsJson)           AS [columns]
@@ -894,10 +894,10 @@ SELECT
       en.EntityIsActive               AS [isActive],
       DB_NAME()                       AS [db_catalog],
       pt.SchemaName                   AS [db_schema],
-      CASE WHEN NULLIF(LTRIM(RTRIM(en.EntityDescription)), '') IS NOT NULL THEN JSON_QUERY(
+      JSON_QUERY(CASE WHEN NULLIF(LTRIM(RTRIM(en.EntityDescription)), '') IS NOT NULL THEN
         (SELECT NULLIF(LTRIM(RTRIM(en.EntityDescription)), '') AS [description]
          FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
-      ) END                           AS [meta],
+      END)                           AS [meta],
       JSON_QUERY(COALESCE(aj.AttributesJson, N'[]'))    AS [attributes],
       JSON_QUERY(COALESCE(rj.RelationshipsJson, N'[]')) AS [relationships],
       JSON_QUERY(COALESCE(ij.IndexesJson, N'[]'))       AS [indexes],
