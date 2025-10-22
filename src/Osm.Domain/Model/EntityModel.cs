@@ -37,7 +37,8 @@ public sealed record EntityModel(
         IEnumerable<TriggerModel>? triggers = null,
         EntityMetadata? metadata = null,
         bool allowMissingPrimaryKey = false,
-        bool allowDuplicateAttributeLogicalNames = false)
+        bool allowDuplicateAttributeLogicalNames = false,
+        bool allowDuplicateAttributeColumnNames = false)
     {
         if (attributes is null)
         {
@@ -55,22 +56,26 @@ public sealed record EntityModel(
             return Result<EntityModel>.Failure(ValidationError.Create("entity.attributes.missingPrimaryKey", "Entity must define at least one primary key attribute."));
         }
 
-        var duplicateLogicalNames = GetDuplicates(attributeArray.Select(a => a.LogicalName.Value));
-        if (duplicateLogicalNames.Count > 0 && !allowDuplicateAttributeLogicalNames)
+        var duplicateLogicalGroups = FindDuplicateGroups(
+            attributeArray,
+            static attribute => attribute.LogicalName.Value,
+            StringComparer.Ordinal);
+        if (!duplicateLogicalGroups.IsDefaultOrEmpty && !allowDuplicateAttributeLogicalNames)
         {
             return Result<EntityModel>.Failure(ValidationError.Create(
                 "entity.attributes.duplicateLogical",
-                FormatDuplicateMessage("logical", duplicateLogicalNames)));
+                FormatDuplicateLogicalMessage(duplicateLogicalGroups)));
         }
 
-        var duplicateColumnNames = GetDuplicates(
-            attributeArray.Select(a => a.ColumnName.Value),
+        var duplicateColumnGroups = FindDuplicateGroups(
+            attributeArray,
+            static attribute => attribute.ColumnName.Value,
             StringComparer.OrdinalIgnoreCase);
-        if (duplicateColumnNames.Count > 0)
+        if (!duplicateColumnGroups.IsDefaultOrEmpty && !allowDuplicateAttributeColumnNames)
         {
             return Result<EntityModel>.Failure(ValidationError.Create(
                 "entity.attributes.duplicateColumn",
-                FormatDuplicateMessage("column", duplicateColumnNames)));
+                FormatDuplicateColumnMessage(duplicateColumnGroups)));
         }
 
         var indexArray = (indexes ?? Enumerable.Empty<IndexModel>()).ToImmutableArray();
@@ -100,9 +105,56 @@ public sealed record EntityModel(
             metadata ?? EntityMetadata.Empty));
     }
 
-    private static IReadOnlyCollection<string> GetDuplicates(IEnumerable<string> values, IEqualityComparer<string>? comparer = null)
+    private static ImmutableArray<DuplicateAttributeGroup> FindDuplicateGroups(
+        ImmutableArray<AttributeModel> attributes,
+        Func<AttributeModel, string> keySelector,
+        IEqualityComparer<string> comparer)
     {
-        comparer ??= StringComparer.Ordinal;
+        if (attributes.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<DuplicateAttributeGroup>.Empty;
+        }
+
+        return attributes
+            .GroupBy(keySelector, comparer)
+            .Where(static group => group.Count() > 1)
+            .Select(static group => new DuplicateAttributeGroup(
+                group.Key,
+                group.Select(static attribute => attribute.LogicalName.Value).ToImmutableArray(),
+                group.Select(static attribute => attribute.ColumnName.Value).ToImmutableArray()))
+            .ToImmutableArray();
+    }
+
+    private static string FormatDuplicateLogicalMessage(ImmutableArray<DuplicateAttributeGroup> duplicates)
+    {
+        var details = duplicates
+            .Select(static group =>
+            {
+                var columns = string.Join(", ", group.ColumnNames.Select(static name => $"'{name}'"));
+                return $"'{group.Key}' mapped to columns {columns}";
+            });
+
+        var suffix = duplicates.Length == 1 ? "name" : "names";
+        return $"Duplicate attribute logical {suffix} detected: {string.Join("; ", details)}.";
+    }
+
+    private static string FormatDuplicateColumnMessage(ImmutableArray<DuplicateAttributeGroup> duplicates)
+    {
+        var details = duplicates
+            .Select(static group =>
+            {
+                var attributes = string.Join(", ", group.LogicalNames.Select(static name => $"'{name}'"));
+                return $"'{group.Key}' shared by attributes {attributes}";
+            });
+
+        var suffix = duplicates.Length == 1 ? "name" : "names";
+        return $"Duplicate attribute column {suffix} detected: {string.Join("; ", details)}.";
+    }
+
+    private static IReadOnlyCollection<string> GetDuplicates(
+        IEnumerable<string> values,
+        IEqualityComparer<string> comparer)
+    {
         var set = new HashSet<string>(comparer);
         var duplicates = new HashSet<string>(comparer);
         foreach (var value in values)
@@ -118,10 +170,8 @@ public sealed record EntityModel(
             : duplicates.ToArray();
     }
 
-    private static string FormatDuplicateMessage(string descriptor, IReadOnlyCollection<string> duplicates)
-    {
-        var formattedNames = string.Join(", ", duplicates.Select(static name => $"'{name}'"));
-        var suffix = duplicates.Count == 1 ? "name" : "names";
-        return $"Duplicate attribute {descriptor} {suffix} detected: {formattedNames}.";
-    }
+    private readonly record struct DuplicateAttributeGroup(
+        string Key,
+        ImmutableArray<string> LogicalNames,
+        ImmutableArray<string> ColumnNames);
 }

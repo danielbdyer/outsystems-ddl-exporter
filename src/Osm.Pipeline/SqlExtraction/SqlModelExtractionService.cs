@@ -643,7 +643,8 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         ModelJsonDeserializerOptions? options)
     {
         return (options ?? ModelJsonDeserializerOptions.Default)
-            .WithAllowDuplicateAttributeLogicalNames(true);
+            .WithAllowDuplicateAttributeLogicalNames(true)
+            .WithAllowDuplicateAttributeColumnNames(true);
     }
 
 }
