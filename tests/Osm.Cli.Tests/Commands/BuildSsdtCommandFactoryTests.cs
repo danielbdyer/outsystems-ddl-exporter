@@ -265,7 +265,8 @@ public class BuildSsdtCommandFactoryTests
                 ImmutableDictionary<string, int>.Empty,
                 ImmutableArray<TighteningDiagnostic>.Empty,
                 ImmutableDictionary<string, ModuleDecisionRollup>.Empty,
-                toggle);
+                toggle,
+                PredicateTelemetry.Empty);
 
             var manifest = new SsdtManifest(
                 new[]

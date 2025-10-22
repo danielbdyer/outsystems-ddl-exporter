@@ -88,7 +88,7 @@ public sealed class AnalyzeCommandFactoryTests
                 System.Collections.Immutable.ImmutableDictionary<ColumnCoordinate, string>.Empty,
                 System.Collections.Immutable.ImmutableDictionary<IndexCoordinate, string>.Empty,
                 TighteningOptions.Default);
-            var report = PolicyDecisionReporter.Create(decisions);
+            var report = PolicyDecisionReporter.Create(decisions, PredicateTelemetry.Empty);
             var profile = ProfileFixtures.LoadSnapshot("profiling/profile.edge-case.json");
             var outputDirectory = input.Overrides.OutputDirectory ?? "out";
             var pipelineResult = new TighteningAnalysisPipelineResult(

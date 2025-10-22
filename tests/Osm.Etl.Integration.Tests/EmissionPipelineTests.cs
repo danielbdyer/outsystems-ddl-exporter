@@ -33,7 +33,8 @@ public class EmissionPipelineTests
 
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, profile, tighteningOptions);
-        var decisionReport = PolicyDecisionReporter.Create(decisions);
+        var predicates = ModelPredicateEvaluator.Evaluate(model, decisions);
+        var decisionReport = PolicyDecisionReporter.Create(decisions, predicates);
 
         var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission);
         var smoModel = new SmoModelFactory().Create(
@@ -147,7 +148,8 @@ public class EmissionPipelineTests
 
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(model, profile, tighteningOptions);
-        var decisionReport = PolicyDecisionReporter.Create(decisions);
+        var predicates = ModelPredicateEvaluator.Evaluate(model, decisions);
+        var decisionReport = PolicyDecisionReporter.Create(decisions, predicates);
 
         var smoOptions = SmoBuildOptions
             .FromEmission(tighteningOptions.Emission)

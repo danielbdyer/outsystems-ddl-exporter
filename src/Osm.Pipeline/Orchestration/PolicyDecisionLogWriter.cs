@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
 using Osm.Validation.Tightening;
@@ -24,6 +25,8 @@ public sealed class PolicyDecisionLogWriter
             static pair => pair.Value,
             StringComparer.OrdinalIgnoreCase);
         var togglePrecedence = report.Toggles.ToExportDictionary();
+
+        var predicates = BuildPredicateTelemetry(report.Predicates);
 
         var log = new PolicyDecisionLog(
             report.ColumnCount,
@@ -71,7 +74,8 @@ public sealed class PolicyDecisionLogWriter
                 d.Candidates.Select(static c => new PolicyDecisionLogDuplicateCandidate(
                     c.Module,
                     c.Schema,
-                    c.PhysicalName)).ToArray())).ToArray());
+                    c.PhysicalName)).ToArray())).ToArray(),
+            predicates);
 
         var path = Path.Combine(outputDirectory, "policy-decisions.json");
         Directory.CreateDirectory(outputDirectory);
@@ -97,7 +101,8 @@ public sealed class PolicyDecisionLogWriter
         IReadOnlyList<PolicyDecisionLogColumn> Columns,
         IReadOnlyList<PolicyDecisionLogUniqueIndex> UniqueIndexes,
         IReadOnlyList<PolicyDecisionLogForeignKey> ForeignKeys,
-        IReadOnlyList<PolicyDecisionLogDiagnostic> Diagnostics);
+        IReadOnlyList<PolicyDecisionLogDiagnostic> Diagnostics,
+        PolicyDecisionLogPredicates Predicates);
 
     private sealed record PolicyDecisionLogColumn(
         string Schema,
@@ -134,4 +139,101 @@ public sealed class PolicyDecisionLogWriter
         IReadOnlyList<PolicyDecisionLogDuplicateCandidate> Candidates);
 
     private sealed record PolicyDecisionLogDuplicateCandidate(string Module, string Schema, string PhysicalName);
+
+    private static PolicyDecisionLogPredicates BuildPredicateTelemetry(PredicateTelemetry predicates)
+    {
+        static IReadOnlyList<string> ToList(ImmutableArray<string> values)
+            => values.IsDefaultOrEmpty ? Array.Empty<string>() : values.ToArray();
+
+        var tables = predicates.Tables
+            .Select(static table => new PolicyDecisionLogTablePredicate(
+                table.Module,
+                table.LogicalName,
+                table.Schema,
+                table.PhysicalName,
+                ToList(table.Predicates)))
+            .ToArray();
+
+        var columns = predicates.Columns
+            .Select(static column => new PolicyDecisionLogColumnPredicate(
+                column.Module,
+                column.Entity,
+                column.Schema,
+                column.Table,
+                column.Column,
+                ToList(column.Predicates)))
+            .ToArray();
+
+        var indexes = predicates.Indexes
+            .Select(static index => new PolicyDecisionLogIndexPredicate(
+                index.Module,
+                index.Entity,
+                index.Schema,
+                index.Table,
+                index.Index,
+                ToList(index.Predicates)))
+            .ToArray();
+
+        var sequences = predicates.Sequences
+            .Select(static sequence => new PolicyDecisionLogSequencePredicate(
+                sequence.Schema,
+                sequence.Name,
+                ToList(sequence.Predicates)))
+            .ToArray();
+
+        var extended = predicates.ExtendedProperties
+            .Select(static property => new PolicyDecisionLogExtendedPredicate(
+                property.Scope,
+                property.Module,
+                property.Schema,
+                property.Table,
+                property.Column,
+                ToList(property.Predicates)))
+            .ToArray();
+
+        return new PolicyDecisionLogPredicates(tables, columns, indexes, sequences, extended);
+    }
+
+    private sealed record PolicyDecisionLogPredicates(
+        IReadOnlyList<PolicyDecisionLogTablePredicate> Tables,
+        IReadOnlyList<PolicyDecisionLogColumnPredicate> Columns,
+        IReadOnlyList<PolicyDecisionLogIndexPredicate> Indexes,
+        IReadOnlyList<PolicyDecisionLogSequencePredicate> Sequences,
+        IReadOnlyList<PolicyDecisionLogExtendedPredicate> ExtendedProperties);
+
+    private sealed record PolicyDecisionLogTablePredicate(
+        string Module,
+        string LogicalName,
+        string Schema,
+        string Table,
+        IReadOnlyList<string> Predicates);
+
+    private sealed record PolicyDecisionLogColumnPredicate(
+        string Module,
+        string Entity,
+        string Schema,
+        string Table,
+        string Column,
+        IReadOnlyList<string> Predicates);
+
+    private sealed record PolicyDecisionLogIndexPredicate(
+        string Module,
+        string Entity,
+        string Schema,
+        string Table,
+        string Index,
+        IReadOnlyList<string> Predicates);
+
+    private sealed record PolicyDecisionLogSequencePredicate(
+        string Schema,
+        string Name,
+        IReadOnlyList<string> Predicates);
+
+    private sealed record PolicyDecisionLogExtendedPredicate(
+        string Scope,
+        string? Module,
+        string? Schema,
+        string? Table,
+        string? Column,
+        IReadOnlyList<string> Predicates);
 }

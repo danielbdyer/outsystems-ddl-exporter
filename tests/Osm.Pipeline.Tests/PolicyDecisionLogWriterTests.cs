@@ -52,7 +52,7 @@ public sealed class PolicyDecisionLogWriterTests
             ImmutableDictionary<IndexCoordinate, string>.Empty.Add(indexCoordinate, "Accounting"),
             TighteningOptions.Default);
 
-        var report = PolicyDecisionReporter.Create(decisions);
+        var report = PolicyDecisionReporter.Create(decisions, PredicateTelemetry.Empty);
 
         using var output = new TempDirectory();
         var writer = new PolicyDecisionLogWriter();
@@ -74,6 +74,10 @@ public sealed class PolicyDecisionLogWriterTests
         Assert.Equal(1, moduleForeignKeyRationales.GetProperty("profile-clean").GetInt32());
         var moduleUniqueRationales = accounting.GetProperty("UniqueIndexRationales");
         Assert.Equal(JsonValueKind.Object, moduleUniqueRationales.ValueKind);
+
+        var predicates = root.GetProperty("Predicates");
+        Assert.Equal(1, predicates.GetProperty("Columns").GetArrayLength());
+        Assert.Equal(1, predicates.GetProperty("Indexes").GetArrayLength());
 
         var toggles = root.GetProperty("TogglePrecedence");
         var mode = toggles.GetProperty(TighteningToggleKeys.PolicyMode);

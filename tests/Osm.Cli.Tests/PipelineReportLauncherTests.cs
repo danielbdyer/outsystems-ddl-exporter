@@ -139,7 +139,8 @@ public class PipelineReportLauncherTests
                     ImmutableDictionary<string, int>.Empty,
                     ImmutableDictionary<string, int>.Empty,
                     ImmutableDictionary<string, int>.Empty)),
-            TighteningToggleSnapshot.Create(TighteningOptions.Default));
+            TighteningToggleSnapshot.Create(TighteningOptions.Default),
+            PredicateTelemetry.Empty);
 
         var seedPaths = ImmutableArray.Create(
             Path.Combine(output.Path, "Seeds", "AppCore", "StaticEntities.seed.sql"),

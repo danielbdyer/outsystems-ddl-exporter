@@ -1,0 +1,86 @@
+{
+  "scenarios": [
+    {
+      "name": "edge-case",
+      "model": "model.edge-case.json",
+      "profile": "profiling/profile.edge-case.json",
+      "staticData": "static-data/static-entities.edge-case.json",
+      "baseline": "emission-matrix/edge-case"
+    }
+  ],
+  "assertions": [
+    {
+      "name": "table-triggers",
+      "scenario": "edge-case",
+      "predicate": "HasTriggers",
+      "target": {
+        "kind": "Table",
+        "module": "Ops",
+        "schema": "dbo",
+        "table": "OSUSR_XYZ_JOBRUN"
+      },
+      "artifact": {
+        "path": "Modules/Ops/Tables/dbo.JobRun.sql",
+        "contains": [
+          "CREATE TRIGGER [dbo].[TR_OSUSR_XYZ_JOBRUN_AUDIT]",
+          "ALTER TABLE [dbo].[JobRun] DISABLE TRIGGER"
+        ]
+      }
+    },
+    {
+      "name": "column-reference-db",
+      "scenario": "edge-case",
+      "predicate": "ReferenceHasDbConstraint",
+      "target": {
+        "kind": "Column",
+        "module": "AppCore",
+        "schema": "dbo",
+        "table": "OSUSR_ABC_CUSTOMER",
+        "column": "CITYID"
+      },
+      "artifact": {
+        "path": "Modules/AppCore/Tables/dbo.Customer.sql",
+        "contains": [
+          "FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])"
+        ]
+      }
+    },
+    {
+      "name": "index-unique-email",
+      "scenario": "edge-case",
+      "predicate": "IsUnique",
+      "target": {
+        "kind": "Index",
+        "module": "AppCore",
+        "schema": "dbo",
+        "table": "OSUSR_ABC_CUSTOMER",
+        "index": "IDX_Customer_Email"
+      },
+      "artifact": {
+        "path": "Modules/AppCore/Tables/dbo.Customer.sql",
+        "contains": [
+          "CREATE UNIQUE INDEX [IDX_Customer_Email]",
+          "WHERE ([EMAIL] IS NOT NULL)"
+        ]
+      }
+    },
+    {
+      "name": "entity-extended-properties",
+      "scenario": "edge-case",
+      "predicate": "HasExtendedProperties",
+      "target": {
+        "kind": "ExtendedProperty",
+        "scope": "Entity",
+        "module": "AppCore",
+        "schema": "dbo",
+        "table": "OSUSR_ABC_CUSTOMER"
+      },
+      "artifact": {
+        "path": "manifest.json",
+        "contains": [
+          "\"IncludesExtendedProperties\": true"
+        ]
+      }
+    }
+  ]
+}
