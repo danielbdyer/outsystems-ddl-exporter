@@ -99,8 +99,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 
         var attributeIndex = EntityAttributeIndex.Create(model);
         var attributeLookup = attributeIndex.Entries.ToDictionary(static entry => entry.Coordinate, static entry => entry);
-        var entityLookup = model.Modules.SelectMany(static module => module.Entities)
-            .ToDictionary(static entity => entity.LogicalName.Value, StringComparer.OrdinalIgnoreCase);
+        var entityLookup = BuildEntityLookup(model);
         var columnProfiles = new Dictionary<ColumnCoordinate, ColumnProfile>();
         foreach (var column in profile.Columns)
         {
@@ -551,6 +550,18 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         }
 
         return null;
+    }
+
+    private static IReadOnlyDictionary<string, EntityModel> BuildEntityLookup(OsmModel model)
+    {
+        var lookup = new Dictionary<string, EntityModel>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entity in model.Modules.SelectMany(static module => module.Entities))
+        {
+            lookup.TryAdd(entity.LogicalName.Value, entity);
+        }
+
+        return lookup;
     }
 
     private static string BuildCreateUniqueStatement(EntityModel entity, IndexModel index)

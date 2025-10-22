@@ -151,6 +151,8 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
             }
         }
 
+        CommandConsole.EmitNamingOverrideTemplate(context.Console, pipelineResult.DecisionReport.Diagnostics);
+
         if (pipelineResult.EvidenceCache is { } cacheResult)
         {
             CommandConsole.WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");

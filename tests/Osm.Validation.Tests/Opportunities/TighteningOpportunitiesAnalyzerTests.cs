@@ -135,4 +135,37 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         Assert.Equal(OpportunitiesChangeRisk.SafeToApply, opportunity.Risk);
         Assert.Contains("FOREIGN KEY", opportunity.Statements[0]);
     }
+
+    [Fact]
+    public void Analyze_ignores_duplicate_logical_entity_names_without_throwing()
+    {
+        var attributeA = TighteningEvaluatorTestHelper.CreateAttribute("Id", "ID");
+        var attributeB = TighteningEvaluatorTestHelper.CreateAttribute("Id", "ID");
+        var entityA = TighteningEvaluatorTestHelper.CreateEntity("Sales", "EntityType", "OSUSR_SAL_ENTITY", new[] { attributeA });
+        var entityB = TighteningEvaluatorTestHelper.CreateEntity("Support", "EntityType", "OSUSR_SUP_ENTITY", new[] { attributeB });
+        var moduleA = TighteningEvaluatorTestHelper.CreateModule("Sales", entityA);
+        var moduleB = TighteningEvaluatorTestHelper.CreateModule("Support", entityB);
+        var model = TighteningEvaluatorTestHelper.CreateModel(moduleA, moduleB);
+
+        var snapshot = ProfileSnapshot.Create(
+            Array.Empty<ColumnProfile>(),
+            Array.Empty<UniqueCandidateProfile>(),
+            Array.Empty<CompositeUniqueCandidateProfile>(),
+            Array.Empty<ForeignKeyReality>()).Value;
+
+        var decisions = PolicyDecisionSet.Create(
+            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            ImmutableDictionary<IndexCoordinate, string>.Empty,
+            TighteningOptions.Default);
+
+        var analyzer = new TighteningOpportunitiesAnalyzer();
+
+        var report = analyzer.Analyze(model, snapshot, decisions);
+
+        Assert.Equal(0, report.TotalCount);
+    }
 }
