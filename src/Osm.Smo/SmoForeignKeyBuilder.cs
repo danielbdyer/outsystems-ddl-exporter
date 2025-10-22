@@ -190,13 +190,16 @@ internal static class SmoForeignKeyBuilder
                             ConstraintNameKind.ForeignKey,
                             format);
 
+                        var ownerColumnNames = NormalizeColumnNames(resolvedOwnerColumns, context.AttributeLookup);
+                        var referencedColumnNames = NormalizeColumnNames(resolvedReferencedColumns, targetEntity.AttributeLookup);
+
                         builder.Add(new SmoForeignKeyDefinition(
                             name,
-                            resolvedOwnerColumns,
+                            ownerColumnNames,
                             targetEntity.ModuleName,
                             referencedTable,
                             referencedSchema,
-                            resolvedReferencedColumns,
+                            referencedColumnNames,
                             targetEntity.Entity.LogicalName.Value,
                             deleteAction,
                             isNoCheck));
@@ -221,16 +224,46 @@ internal static class SmoForeignKeyBuilder
                 ConstraintNameKind.ForeignKey,
                 format);
 
+            var friendlyOwnerColumns = NormalizeColumnNames(ownerColumnsFallback, context.AttributeLookup);
+            var friendlyReferencedColumns = NormalizeColumnNames(referencedColumnsFallback, targetEntity.AttributeLookup);
+
             builder.Add(new SmoForeignKeyDefinition(
                 nameFallback,
-                ownerColumnsFallback,
+                friendlyOwnerColumns,
                 targetEntity.ModuleName,
                 targetEntity.Entity.PhysicalName.Value,
                 targetEntity.Entity.Schema.Value,
-                referencedColumnsFallback,
+                friendlyReferencedColumns,
                 targetEntity.Entity.LogicalName.Value,
                 MapDeleteRule(attribute.Reference.DeleteRuleCode),
                 isNoCheckFallback));
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static ImmutableArray<string> NormalizeColumnNames(
+        ImmutableArray<string> columns,
+        IReadOnlyDictionary<string, AttributeModel> attributeLookup)
+    {
+        if (columns.IsDefaultOrEmpty)
+        {
+            return columns;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<string>(columns.Length);
+        foreach (var column in columns)
+        {
+            if (!string.IsNullOrWhiteSpace(column) &&
+                attributeLookup.TryGetValue(column, out var attribute) &&
+                !string.IsNullOrWhiteSpace(attribute.LogicalName.Value))
+            {
+                builder.Add(attribute.LogicalName.Value);
+            }
+            else
+            {
+                builder.Add(column);
+            }
         }
 
         return builder.ToImmutable();

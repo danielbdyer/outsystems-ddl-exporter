@@ -173,6 +173,7 @@ public class SsdtEmitterTests
     {
         var columns = ImmutableArray.Create(
             new SmoColumnDefinition(
+                PhysicalName: "ID",
                 Name: "Id",
                 LogicalName: "Id",
                 DataType: DataType.Int,

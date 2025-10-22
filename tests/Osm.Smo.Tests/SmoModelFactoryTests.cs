@@ -323,23 +323,26 @@ public class SmoModelFactoryTests
         var idColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("Id", StringComparison.Ordinal));
         var cityColumn = customerTable.Columns.Single(c => c.LogicalName.Equals("CityId", StringComparison.Ordinal));
 
-        Assert.Equal(CustomerIdPhysical, idColumn.Name);
-        Assert.Equal(CustomerCityIdPhysical, cityColumn.Name);
+        Assert.Equal("Id", idColumn.Name);
+        Assert.Equal(CustomerIdPhysical, idColumn.PhysicalName);
+        Assert.Equal("CityId", cityColumn.Name);
+        Assert.Equal(CustomerCityIdPhysical, cityColumn.PhysicalName);
 
         var primaryKey = customerTable.Indexes.Single(i => i.IsPrimaryKey);
         Assert.Collection(primaryKey.Columns.OrderBy(c => c.Ordinal),
-            col => Assert.Equal(CustomerIdPhysical, col.Name));
+            col => Assert.Equal("Id", col.Name));
 
         var foreignKey = Assert.Single(customerTable.ForeignKeys);
-        Assert.Equal(CustomerCityIdPhysical, Assert.Single(foreignKey.Columns));
-        Assert.Equal(CityIdPhysical, Assert.Single(foreignKey.ReferencedColumns));
+        Assert.Equal("CityId", Assert.Single(foreignKey.Columns));
+        Assert.Equal("Id", Assert.Single(foreignKey.ReferencedColumns));
 
         var writer = new PerTableWriter();
         var script = writer.Generate(customerTable, options).Script;
 
-        Assert.Contains($"[{CustomerIdPhysical}]", script, StringComparison.Ordinal);
-        Assert.Contains($"[{CustomerCityIdPhysical}]", script, StringComparison.Ordinal);
-        Assert.Contains($"[{CityIdPhysical}]", script, StringComparison.Ordinal);
+        Assert.Contains("[Id]", script, StringComparison.Ordinal);
+        Assert.Contains("[CityId]", script, StringComparison.Ordinal);
+        Assert.Contains("FOREIGN KEY ([CityId])", script, StringComparison.Ordinal);
+        Assert.Contains("REFERENCES [dbo].[City] ([Id])", script, StringComparison.Ordinal);
     }
 
     [Fact]

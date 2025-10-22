@@ -41,7 +41,7 @@ internal sealed class CreateTableStatementBuilder
         }
 
         var definition = new TableDefinition();
-        var columnLookup = new Dictionary<string, ColumnDefinition>(table.Columns.Length, StringComparer.OrdinalIgnoreCase);
+        var columnLookup = new Dictionary<string, ColumnDefinition>(table.Columns.Length * 2, StringComparer.OrdinalIgnoreCase);
         foreach (var column in table.Columns)
         {
             var columnDefinition = BuildColumnDefinition(column, options);
@@ -49,6 +49,11 @@ internal sealed class CreateTableStatementBuilder
             if (!string.IsNullOrWhiteSpace(column.Name))
             {
                 columnLookup[column.Name] = columnDefinition;
+            }
+
+            if (!string.IsNullOrWhiteSpace(column.PhysicalName))
+            {
+                columnLookup[column.PhysicalName] = columnDefinition;
             }
         }
 
@@ -216,7 +221,8 @@ internal sealed class CreateTableStatementBuilder
             };
         }
 
-        if (!string.IsNullOrWhiteSpace(column.Collation))
+        if (!string.IsNullOrWhiteSpace(column.Collation) &&
+            !string.Equals(column.Collation, "Latin1_General_CI_AI", StringComparison.OrdinalIgnoreCase))
         {
             definition.Collation = _formatter.CreateIdentifier(column.Collation!, options.Format);
         }

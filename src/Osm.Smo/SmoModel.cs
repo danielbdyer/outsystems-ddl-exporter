@@ -32,6 +32,7 @@ public sealed record SmoTableDefinition(
     ImmutableArray<SmoTriggerDefinition> Triggers);
 
 public sealed record SmoColumnDefinition(
+    string PhysicalName,
     string Name,
     string LogicalName,
     DataType DataType,

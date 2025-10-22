@@ -91,7 +91,8 @@ internal static class SmoIndexBuilder
                 }
 
                 var isDescending = column.Direction == IndexColumnDirection.Descending;
-                columnsBuilder.Add(new SmoIndexColumnDefinition(attribute.ColumnName.Value, column.Ordinal, column.IsIncluded, isDescending));
+                var emittedName = ResolveEmissionColumnName(attribute);
+                columnsBuilder.Add(new SmoIndexColumnDefinition(emittedName, column.Ordinal, column.IsIncluded, isDescending));
             }
 
             if (columnsBuilder.Count == 0)
@@ -160,7 +161,8 @@ internal static class SmoIndexBuilder
                     }
 
                     var isDescending = column.Direction == IndexColumnDirection.Descending;
-                    columnBuilder.Add(new SmoIndexColumnDefinition(attribute.ColumnName.Value, ordinal++, IsIncluded: false, isDescending));
+                    var emittedName = ResolveEmissionColumnName(attribute);
+                    columnBuilder.Add(new SmoIndexColumnDefinition(emittedName, ordinal++, IsIncluded: false, isDescending));
                     attributeBuilder.Add(attribute);
                 }
 
@@ -185,10 +187,21 @@ internal static class SmoIndexBuilder
         for (var i = 0; i < referencedAttributes.Length; i++)
         {
             var attribute = referencedAttributes[i];
-            fallback.Add(new SmoIndexColumnDefinition(attribute.ColumnName.Value, i + 1, IsIncluded: false, IsDescending: false));
+            var emittedName = ResolveEmissionColumnName(attribute);
+            fallback.Add(new SmoIndexColumnDefinition(emittedName, i + 1, IsIncluded: false, IsDescending: false));
         }
 
         return fallback.ToImmutable();
+    }
+
+    private static string ResolveEmissionColumnName(AttributeModel attribute)
+    {
+        if (!string.IsNullOrWhiteSpace(attribute.LogicalName.Value))
+        {
+            return attribute.LogicalName.Value;
+        }
+
+        return attribute.ColumnName.Value;
     }
 
     private static SmoIndexMetadata MapIndexMetadata(IndexModel index)

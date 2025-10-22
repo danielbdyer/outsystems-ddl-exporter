@@ -69,7 +69,7 @@ CREATE TABLE [dbo].[Order](
 
         var formatted = formatter.FormatCreateTableScript(script, statement, foreignKeyTrustLookup: null, SmoFormatOptions.Default);
 
-        Assert.Contains("    [Id] INT NOT NULL\n        CONSTRAINT [PK_Order] PRIMARY KEY CLUSTERED,", formatted);
+        Assert.Contains("    [Id] INT NOT NULL\n        CONSTRAINT [PK_Order]\n            PRIMARY KEY CLUSTERED,", formatted);
         Assert.Contains("    [Status] INT NOT NULL\n        CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0)),", formatted);
         Assert.Contains("    [Code] NVARCHAR(20)\n        CONSTRAINT [DF_Order_Code] DEFAULT ((N'')),", formatted);
         Assert.Contains("    CONSTRAINT [PK_Order_Multi]\n        PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC),", formatted);

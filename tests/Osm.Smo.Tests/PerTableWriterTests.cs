@@ -12,6 +12,7 @@ public class PerTableWriterTests
     public void Generate_respects_identifier_quote_strategy()
     {
         var column = new SmoColumnDefinition(
+            PhysicalName: "ID",
             Name: "Id",
             LogicalName: "Id",
             DataType: DataType.Int,
@@ -55,6 +56,7 @@ public class PerTableWriterTests
     public void Generate_includes_configured_header_when_enabled()
     {
         var column = new SmoColumnDefinition(
+            PhysicalName: "ID",
             Name: "Id",
             LogicalName: "Id",
             DataType: DataType.Int,
@@ -114,6 +116,7 @@ public class PerTableWriterTests
     public void Generate_inlines_foreign_keys_with_referencing_columns()
     {
         var idColumn = new SmoColumnDefinition(
+            PhysicalName: "ID",
             Name: "Id",
             LogicalName: "Id",
             DataType: DataType.BigInt,
@@ -130,6 +133,7 @@ public class PerTableWriterTests
             CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty);
 
         var foreignKeyColumn = new SmoColumnDefinition(
+            PhysicalName: "CITYID",
             Name: "CityId",
             LogicalName: "CityId",
             DataType: DataType.BigInt,
@@ -146,6 +150,7 @@ public class PerTableWriterTests
             CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty);
 
         var nameColumn = new SmoColumnDefinition(
+            PhysicalName: "NAME",
             Name: "Name",
             LogicalName: "Name",
             DataType: DataType.NVarChar(100),

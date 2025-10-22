@@ -107,6 +107,7 @@ internal static class SmoColumnBuilder
 
             builder.Add(new SmoColumnDefinition(
                 attribute.ColumnName.Value,
+                ResolveEmissionColumnName(attribute),
                 attribute.LogicalName.Value,
                 dataType,
                 nullable,
@@ -123,6 +124,17 @@ internal static class SmoColumnBuilder
         }
 
         return builder.ToImmutable();
+    }
+
+    private static string ResolveEmissionColumnName(AttributeModel attribute)
+    {
+        var logical = attribute.LogicalName.Value;
+        if (!string.IsNullOrWhiteSpace(logical))
+        {
+            return logical;
+        }
+
+        return attribute.ColumnName.Value;
     }
 
     private static SmoDefaultConstraintDefinition? CreateDefaultConstraint(AttributeOnDiskDefaultConstraint? constraint)
