@@ -185,6 +185,49 @@ public class EntityModelTests
     }
 
     [Fact]
+    public void Create_ShouldAllowDuplicateAttributeColumns_WhenOverrideEnabled()
+    {
+        var module = ModuleName.Create("Module").Value;
+        var logical = EntityName.Create("Entity").Value;
+        var schema = SchemaName.Create("dbo").Value;
+        var table = TableName.Create("OSUSR_ENTITY").Value;
+
+        var id = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true,
+            reference: AttributeReference.None).Value;
+
+        var conflicting = AttributeModel.Create(
+            AttributeName.Create("Code").Value,
+            ColumnName.Create("id").Value,
+            dataType: "Text",
+            isMandatory: false,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            reference: AttributeReference.None).Value;
+
+        var result = EntityModel.Create(
+            module,
+            logical,
+            table,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { id, conflicting },
+            allowDuplicateAttributeColumnNames: true);
+
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
+    }
+
+    [Fact]
     public void Create_ShouldSucceed_WhenInputsAreValid()
     {
         var module = ModuleName.Create("Module").Value;

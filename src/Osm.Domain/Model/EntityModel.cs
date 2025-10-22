@@ -37,7 +37,8 @@ public sealed record EntityModel(
         IEnumerable<TriggerModel>? triggers = null,
         EntityMetadata? metadata = null,
         bool allowMissingPrimaryKey = false,
-        bool allowDuplicateAttributeLogicalNames = false)
+        bool allowDuplicateAttributeLogicalNames = false,
+        bool allowDuplicateAttributeColumnNames = false)
     {
         if (attributes is null)
         {
@@ -66,7 +67,7 @@ public sealed record EntityModel(
         var duplicateColumnNames = GetDuplicates(
             attributeArray.Select(a => a.ColumnName.Value),
             StringComparer.OrdinalIgnoreCase);
-        if (duplicateColumnNames.Count > 0)
+        if (duplicateColumnNames.Count > 0 && !allowDuplicateAttributeColumnNames)
         {
             return Result<EntityModel>.Failure(ValidationError.Create(
                 "entity.attributes.duplicateColumn",

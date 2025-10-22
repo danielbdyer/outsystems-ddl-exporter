@@ -1065,6 +1065,64 @@ public class ModelJsonDeserializerTests
     }
 
     [Fact]
+    public void Deserialize_ShouldWarn_WhenDuplicateAttributeColumnsAllowed()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    },
+                    {
+                      "name": "Legacy",
+                      "physicalName": "id",
+                      "dataType": "Identifier",
+                      "isMandatory": false,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+        var warnings = new List<string>();
+        var options = new ModelJsonDeserializerOptions(allowDuplicateAttributeColumnNames: true);
+
+        var result = deserializer.Deserialize(stream, warnings, options);
+
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
+        Assert.Contains(warnings, w => w.Contains("duplicate attribute column name 'id'", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(warnings, w => w.Contains("Path: $['modules'][0]['entities'][0]['attributes']", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Deserialize_ShouldFail_WhenDuplicateEntityPhysicalNames()
     {
         const string json = """
