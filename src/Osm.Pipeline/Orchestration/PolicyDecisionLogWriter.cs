@@ -1,13 +1,18 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using Osm.Emission;
 using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
 public sealed class PolicyDecisionLogWriter
 {
-    public async Task<string> WriteAsync(string outputDirectory, PolicyDecisionReport report, CancellationToken cancellationToken = default)
+    public async Task<string> WriteAsync(
+        string outputDirectory,
+        PolicyDecisionReport report,
+        CancellationToken cancellationToken = default,
+        SsdtPredicateCoverage? predicateCoverage = null)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -71,7 +76,8 @@ public sealed class PolicyDecisionLogWriter
                 d.Candidates.Select(static c => new PolicyDecisionLogDuplicateCandidate(
                     c.Module,
                     c.Schema,
-                    c.PhysicalName)).ToArray())).ToArray());
+                    c.PhysicalName)).ToArray())).ToArray(),
+            predicateCoverage ?? SsdtPredicateCoverage.Empty);
 
         var path = Path.Combine(outputDirectory, "policy-decisions.json");
         Directory.CreateDirectory(outputDirectory);
@@ -97,7 +103,8 @@ public sealed class PolicyDecisionLogWriter
         IReadOnlyList<PolicyDecisionLogColumn> Columns,
         IReadOnlyList<PolicyDecisionLogUniqueIndex> UniqueIndexes,
         IReadOnlyList<PolicyDecisionLogForeignKey> ForeignKeys,
-        IReadOnlyList<PolicyDecisionLogDiagnostic> Diagnostics);
+        IReadOnlyList<PolicyDecisionLogDiagnostic> Diagnostics,
+        SsdtPredicateCoverage PredicateCoverage);
 
     private sealed record PolicyDecisionLogColumn(
         string Schema,

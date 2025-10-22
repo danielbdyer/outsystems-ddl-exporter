@@ -10,6 +10,7 @@ public sealed record SsdtManifest(
     SsdtEmissionMetadata Emission,
     IReadOnlyList<PreRemediationManifestEntry> PreRemediation,
     SsdtCoverageSummary Coverage,
+    SsdtPredicateCoverage PredicateCoverage,
     IReadOnlyList<string> Unsupported);
 
 public sealed record TableManifestEntry(

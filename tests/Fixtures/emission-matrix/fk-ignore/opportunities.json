@@ -1,0 +1,144 @@
+{
+  "Opportunities": [
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_A",
+      "Name": "ID",
+      "Statements": [
+        "ALTER TABLE [dbo].[OSUSR_A]\n    ALTER COLUMN [ID] Identifier NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "Evidence": [
+        "Rows=200",
+        "Nulls=0 (Outcome=Succeeded, Sample=200, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PK",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_A"
+            },
+            "Column": {
+              "Value": "ID"
+            }
+          },
+          "Module": "M",
+          "Entity": "A",
+          "Attribute": "Id",
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 200,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 200,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Constraint": "NotNull",
+      "Risk": "SafeToApply",
+      "Schema": "dbo",
+      "Table": "OSUSR_B",
+      "Name": "ID",
+      "Statements": [
+        "ALTER TABLE [dbo].[OSUSR_B]\n    ALTER COLUMN [ID] Identifier NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "Evidence": [
+        "Rows=4000",
+        "Nulls=0 (Outcome=Succeeded, Sample=4000, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PK",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Metrics": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_B"
+            },
+            "Column": {
+              "Value": "ID"
+            }
+          },
+          "Module": "M",
+          "Entity": "B",
+          "Attribute": "Id",
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 4000,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 4000,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    }
+  ],
+  "RiskCounts": {
+    "SafeToApply": 2
+  },
+  "ConstraintCounts": {
+    "NotNull": 2
+  },
+  "GeneratedAtUtc": "2025-10-22T07:09:24.8061413+00:00",
+  "TotalCount": 2
+}

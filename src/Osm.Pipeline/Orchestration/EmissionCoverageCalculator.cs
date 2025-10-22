@@ -60,9 +60,19 @@ public static class EmissionCoverageCalculator
 
         var unsupported = new List<string>();
         var unsupportedSeen = new HashSet<string>(StringComparer.Ordinal);
+        var predicateSnapshots = new List<PredicateSnapshot>(entityMap.Count);
+        var predicateCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var (key, snapshot) in entityMap)
         {
+            var predicates = EvaluatePredicates(snapshot);
+            predicateSnapshots.Add(new PredicateSnapshot(
+                snapshot.ModuleName,
+                snapshot.Entity.Schema.Value,
+                snapshot.Entity.PhysicalName.Value,
+                predicates));
+            IncrementPredicateCounts(predicateCounts, predicates);
+
             expectedPrimaryKeys++;
 
             if (!snapshot.EmittableAttributes.Any(attribute => attribute.IsIdentifier))
@@ -173,7 +183,31 @@ public static class EmissionCoverageCalculator
             CoverageBreakdown.Create(emittedColumns, totalColumns),
             CoverageBreakdown.Create(emittedConstraints, totalConstraints));
 
-        return new EmissionCoverageResult(coverage, unsupported.ToImmutableArray());
+        var orderedSnapshots = predicateSnapshots
+            .OrderBy(static snapshot => snapshot.Module, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static snapshot => snapshot.Schema, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static snapshot => snapshot.Table, StringComparer.OrdinalIgnoreCase)
+            .Select(snapshot =>
+            {
+                var predicates = snapshot.Predicates;
+                if (!predicates.IsDefaultOrEmpty)
+                {
+                    predicates = predicates.Sort(StringComparer.Ordinal);
+                }
+
+                return PredicateCoverageEntry.Create(snapshot.Module, snapshot.Schema, snapshot.Table, predicates);
+            })
+            .ToArray();
+
+        var orderedCounts = predicateCounts.Count == 0
+            ? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            : predicateCounts
+                .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+        var predicateCoverage = new SsdtPredicateCoverage(orderedSnapshots, orderedCounts);
+
+        return new EmissionCoverageResult(coverage, unsupported.ToImmutableArray(), predicateCoverage);
     }
 
     private static Dictionary<string, DomainEntitySnapshot> BuildEntityMap(
@@ -261,6 +295,152 @@ public static class EmissionCoverageCalculator
         }
     }
 
+    private static ImmutableArray<string> EvaluatePredicates(DomainEntitySnapshot snapshot)
+    {
+        var builder = ImmutableArray.CreateBuilder<string>();
+        var entity = snapshot.Entity;
+
+        if (entity.Metadata.Temporal.Type is TemporalTableType.SystemVersioned or TemporalTableType.HistoryTable)
+        {
+            builder.Add(SsdtPredicateNames.HasTemporalHistory);
+        }
+
+        if (!entity.Triggers.IsDefaultOrEmpty)
+        {
+            builder.Add(SsdtPredicateNames.HasTrigger);
+        }
+
+        if (entity.IsStatic)
+        {
+            builder.Add(SsdtPredicateNames.IsStaticEntity);
+        }
+
+        if (entity.IsExternal)
+        {
+            builder.Add(SsdtPredicateNames.IsExternalEntity);
+        }
+
+        if (!entity.IsActive)
+        {
+            builder.Add(SsdtPredicateNames.IsInactiveEntity);
+        }
+
+        if (HasInactiveColumns(entity))
+        {
+            builder.Add(SsdtPredicateNames.HasInactiveColumns);
+        }
+
+        if (entity.Attributes.Any(HasDefaultConstraint))
+        {
+            builder.Add(SsdtPredicateNames.HasDefaultConstraint);
+        }
+
+        if (entity.Attributes.Any(attribute => !attribute.OnDisk.CheckConstraints.IsDefaultOrEmpty))
+        {
+            builder.Add(SsdtPredicateNames.HasCheckConstraint);
+        }
+
+        if (HasExtendedProperties(entity))
+        {
+            builder.Add(SsdtPredicateNames.HasExtendedProperties);
+        }
+
+        if (entity.Indexes.Any(index => index.IsUnique))
+        {
+            builder.Add(SsdtPredicateNames.HasUniqueIndex);
+        }
+
+        if (entity.Indexes.Any(index => index.IsUnique && index.Columns.Count(column => !column.IsIncluded) > 1))
+        {
+            builder.Add(SsdtPredicateNames.HasCompositeUniqueIndex);
+        }
+
+        if (entity.Indexes.Any(index => !string.IsNullOrWhiteSpace(index.OnDisk.FilterDefinition)))
+        {
+            builder.Add(SsdtPredicateNames.HasFilteredIndex);
+        }
+
+        if (entity.Indexes.Any(index => index.Columns.Any(column => column.IsIncluded)))
+        {
+            builder.Add(SsdtPredicateNames.HasIncludedIndexColumns);
+        }
+
+        if (entity.Attributes.Any(attribute => attribute.Reference.IsReference))
+        {
+            builder.Add(SsdtPredicateNames.HasLogicalForeignKey);
+        }
+
+        if (entity.Attributes.Any(attribute => attribute.Reference.IsReference && !attribute.Reference.HasDatabaseConstraint))
+        {
+            builder.Add(SsdtPredicateNames.HasLogicalForeignKeyWithoutDbConstraint);
+        }
+
+        if (entity.Attributes.Any(attribute => attribute.Reference.IsReference && attribute.Reference.HasDatabaseConstraint))
+        {
+            builder.Add(SsdtPredicateNames.HasLogicalForeignKeyWithDbConstraint);
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static bool HasInactiveColumns(EntityModel entity)
+        => entity.Attributes.Any(attribute => !attribute.IsActive || attribute.Reality.IsPresentButInactive);
+
+    private static bool HasExtendedProperties(EntityModel entity)
+    {
+        if (!entity.Metadata.ExtendedProperties.IsDefaultOrEmpty && entity.Metadata.ExtendedProperties.Length > 0)
+        {
+            return true;
+        }
+
+        if (!entity.Metadata.Temporal.ExtendedProperties.IsDefaultOrEmpty && entity.Metadata.Temporal.ExtendedProperties.Length > 0)
+        {
+            return true;
+        }
+
+        if (entity.Attributes.Any(attribute => !attribute.Metadata.ExtendedProperties.IsDefaultOrEmpty && attribute.Metadata.ExtendedProperties.Length > 0))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasDefaultConstraint(AttributeModel attribute)
+    {
+        if (!string.IsNullOrEmpty(attribute.DefaultValue))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrEmpty(attribute.OnDisk.DefaultDefinition))
+        {
+            return true;
+        }
+
+        if (attribute.OnDisk.DefaultConstraint is { Definition: { Length: > 0 } })
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void IncrementPredicateCounts(Dictionary<string, int> counts, ImmutableArray<string> predicates)
+    {
+        foreach (var predicate in predicates)
+        {
+            if (counts.TryGetValue(predicate, out var current))
+            {
+                counts[predicate] = current + 1;
+            }
+            else
+            {
+                counts[predicate] = 1;
+            }
+        }
+    }
+
     private sealed record DomainEntitySnapshot(
         string ModuleName,
         EntityModel Entity,
@@ -290,6 +470,11 @@ public static class EmissionCoverageCalculator
         public static IndexAnalysisResult Failure(string reason)
             => new(false, ImmutableArray<AttributeModel>.Empty, reason);
     }
+
+    private sealed record PredicateSnapshot(string Module, string Schema, string Table, ImmutableArray<string> Predicates);
 }
 
-public sealed record EmissionCoverageResult(SsdtCoverageSummary Summary, ImmutableArray<string> Unsupported);
+public sealed record EmissionCoverageResult(
+    SsdtCoverageSummary Summary,
+    ImmutableArray<string> Unsupported,
+    SsdtPredicateCoverage PredicateCoverage);

@@ -484,31 +484,59 @@ internal sealed class SqlScriptFormatter
         }
 
         var beforeDefault = working[..defaultIndex].TrimEnd();
-        var defaultSegment = working[defaultIndex..].TrimStart();
-        defaultSegment = defaultSegment.TrimEnd();
+        var afterDefault = working[defaultIndex..].TrimStart();
 
-        string? constraintSegment = null;
+        string? leadingConstraint = null;
         var constraintIndex = beforeDefault.IndexOf(" CONSTRAINT ", StringComparison.OrdinalIgnoreCase);
         if (constraintIndex >= 0)
         {
-            constraintSegment = beforeDefault[constraintIndex..].TrimStart();
-            constraintSegment = constraintSegment.TrimEnd();
+            leadingConstraint = beforeDefault[constraintIndex..].Trim();
             beforeDefault = beforeDefault[..constraintIndex].TrimEnd();
         }
 
-        var builder = new StringBuilder(line.Length + 16);
+        var builder = new StringBuilder(line.Length + 32);
         builder.Append(indent);
         builder.Append(beforeDefault);
         builder.Append(Environment.NewLine);
         builder.Append(extraIndent);
-        if (!string.IsNullOrEmpty(constraintSegment))
+
+        if (!string.IsNullOrEmpty(leadingConstraint))
         {
-            builder.Append(constraintSegment);
-            builder.Append(" ");
+            builder.Append(leadingConstraint);
+            builder.Append(' ');
         }
 
-        builder.Append(defaultSegment);
+        var formattedDefault = InsertConstraintLineBreaks(afterDefault.TrimEnd(), Environment.NewLine + extraIndent + "CONSTRAINT ");
+        builder.Append(formattedDefault);
         builder.Append(trailingComma);
+
+        return builder.ToString();
+    }
+
+    private static string InsertConstraintLineBreaks(string segment, string replacement)
+    {
+        if (string.IsNullOrWhiteSpace(segment))
+        {
+            return segment;
+        }
+
+        const string token = " CONSTRAINT ";
+        var builder = new StringBuilder(segment.Length + 16);
+        var index = 0;
+
+        while (true)
+        {
+            var match = segment.IndexOf(token, index, StringComparison.OrdinalIgnoreCase);
+            if (match < 0)
+            {
+                builder.Append(segment, index, segment.Length - index);
+                break;
+            }
+
+            builder.Append(segment, index, match - index);
+            builder.Append(replacement);
+            index = match + token.Length;
+        }
 
         return builder.ToString();
     }
