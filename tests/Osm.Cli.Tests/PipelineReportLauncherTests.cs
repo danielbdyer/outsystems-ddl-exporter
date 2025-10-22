@@ -9,9 +9,12 @@ using Osm.Emission;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
-using Osm.Validation.Tightening.Opportunities;
 using Tests.Support;
 using Xunit;
+using ChangeRisk = Osm.Validation.Tightening.Opportunities.ChangeRisk;
+using ConstraintType = Osm.Validation.Tightening.Opportunities.ConstraintType;
+using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+using Opportunity = Osm.Validation.Tightening.Opportunities.Opportunity;
 
 namespace Osm.Cli.Tests;
 

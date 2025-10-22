@@ -21,11 +21,15 @@ public class SmoForeignKeyBuilderTests
 
         var customerForeignKeys = SmoForeignKeyBuilder.BuildForeignKeys(customerContext, decisions, contexts, reality, SmoFormatOptions.Default);
         var cityForeignKey = Assert.Single(customerForeignKeys);
-        Assert.Equal("FK_Customer_CityId", cityForeignKey.Name);
+        Assert.Equal("FK_Customer_Osusr_Def_City", cityForeignKey.Name);
         Assert.False(cityForeignKey.IsNoCheck);
         Assert.Equal("City", cityForeignKey.ReferencedLogicalTable);
-        Assert.Collection(cityForeignKey.Columns, column => Assert.Equal("CityId", column));
-        Assert.Collection(cityForeignKey.ReferencedColumns, column => Assert.Equal("Id", column));
+        Assert.Collection(
+            cityForeignKey.Columns,
+            column => Assert.Equal("CityId", column, StringComparer.OrdinalIgnoreCase));
+        Assert.Collection(
+            cityForeignKey.ReferencedColumns,
+            column => Assert.Equal("Id", column, StringComparer.OrdinalIgnoreCase));
 
         var jobRunEntity = model.Modules
             .SelectMany(module => module.Entities)

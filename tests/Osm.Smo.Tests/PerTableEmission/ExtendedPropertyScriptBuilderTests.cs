@@ -124,11 +124,11 @@ public class ExtendedPropertyScriptBuilderTests
         Assert.Equal(2, scripts.Length);
 
         var tableScript = scripts[0];
-        Assert.Contains("OBJECT_ID(N'[dbo].[OSUSR_SALES_ORDER]')", tableScript);
+        Assert.Contains("OBJECT_ID(N'[dbo].[Order]')", tableScript);
         Assert.Contains("@value=N'Contains customers'' orders [deprecated]'", tableScript);
 
         var columnScript = scripts[1];
-        Assert.Contains("COLUMNPROPERTY(OBJECT_ID(N'[dbo].[OSUSR_SALES_ORDER]'), N'Name', 'ColumnId')", columnScript);
+        Assert.Contains("COLUMNPROPERTY(OBJECT_ID(N'[dbo].[Order]'), N'Name', 'ColumnId')", columnScript);
         Assert.Contains("@value=N'Customer''s preferred title [display]'", columnScript);
     }
 }

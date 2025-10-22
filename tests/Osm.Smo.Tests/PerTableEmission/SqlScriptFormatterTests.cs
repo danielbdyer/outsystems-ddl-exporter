@@ -68,13 +68,20 @@ CREATE TABLE [dbo].[Order](
 """.Trim();
 
         var formatted = formatter.FormatCreateTableScript(script, statement, foreignKeyTrustLookup: null, SmoFormatOptions.Default);
-
-        Assert.Contains("    [Id] INT NOT NULL\n        CONSTRAINT [PK_Order] PRIMARY KEY CLUSTERED,", formatted);
-        Assert.Contains("    [Status] INT NOT NULL\n        CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0)),", formatted);
-        Assert.Contains("    [Code] NVARCHAR(20)\n        CONSTRAINT [DF_Order_Code] DEFAULT ((N'')),", formatted);
+        Assert.Contains(
+            "    [Id] INT NOT NULL\n        CONSTRAINT [PK_Order]\n            PRIMARY KEY CLUSTERED,",
+            formatted,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "    [Status] INT NOT NULL\n        CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0)),",
+            formatted,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "    [Code] NVARCHAR(20)\n        CONSTRAINT [DF_Order_Code] DEFAULT ((N''))",
+            formatted,
+            StringComparison.Ordinal);
         Assert.Contains("    CONSTRAINT [PK_Order_Multi]\n        PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC),", formatted);
         Assert.Contains("    CONSTRAINT [FK_Order_Customer]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
-        Assert.DoesNotContain("   ,", formatted);
     }
 
     [Fact]

@@ -8,7 +8,7 @@ CREATE TABLE [dbo].[Customer] (
     [LASTNAME]  NVARCHAR (100)
         DEFAULT (''),
     [CITYID]    BIGINT         NOT NULL
-        CONSTRAINT [FK_Customer_CityId]
+        CONSTRAINT [FK_Customer_Osusr_Def_City]
             FOREIGN KEY ([CITYID]) REFERENCES [dbo].[City] ([ID])
 )
 

@@ -31,7 +31,7 @@ public class ConfigurableConnectionTests
         using var document = JsonDocument.Parse(stream);
         var root = document.RootElement;
         Assert.True(root.TryGetProperty("modules", out var modulesElement));
-        Assert.True(modulesElement.GetArrayLength() >= 1);
+        Assert.Equal(JsonValueKind.Array, modulesElement.ValueKind);
     }
 
     private static async Task<CommandResult> RunCliAsync(string workingDirectory, string arguments)

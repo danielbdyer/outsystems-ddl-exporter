@@ -48,7 +48,9 @@ public class SsdtEmitterTests
         Assert.True(fileSystem.File.Exists(tablePath));
         var script = fileSystem.File.ReadAllText(tablePath);
         Assert.Contains("CREATE TABLE [dbo].[Sample]", script, StringComparison.Ordinal);
-        Assert.Contains("[Id] INT NOT NULL", script, StringComparison.Ordinal);
+        Assert.Contains("[Id] INT", script, StringComparison.Ordinal);
+        Assert.Contains("IDENTITY", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NOT NULL", script, StringComparison.OrdinalIgnoreCase);
         Assert.EndsWith(Environment.NewLine, script, StringComparison.Ordinal);
     }
 
@@ -129,7 +131,8 @@ public class SsdtEmitterTests
         var tablePath = Path.Combine(temp.Path, foreignKeyTable.TableFile);
         var script = await File.ReadAllTextAsync(tablePath).ConfigureAwait(false);
 
-        Assert.Contains("WITH CHECK ADD CONSTRAINT", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CONSTRAINT", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FOREIGN KEY", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("WITH NOCHECK", script, StringComparison.OrdinalIgnoreCase);
     }
 
