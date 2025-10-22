@@ -47,8 +47,21 @@ public class ExtendedPropertyScriptBuilderTests
         var scripts = builder.BuildExtendedPropertyScripts(table, "Order", SmoFormatOptions.Default);
 
         Assert.Equal(2, scripts.Length);
-        Assert.Contains("EXEC sys.sp_updateextendedproperty", scripts[0]);
-        Assert.Contains("Display name", scripts[1]);
+        Assert.Equal(
+            """
+            EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Contains order records',
+                @level0type=N'SCHEMA',@level0name=N'dbo',
+                @level1type=N'TABLE',@level1name=N'Order';
+            """.Trim(),
+            scripts[0]);
+        Assert.Equal(
+            """
+            EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Display name',
+                @level0type=N'SCHEMA',@level0name=N'dbo',
+                @level1type=N'TABLE',@level1name=N'Order',
+                @level2type=N'COLUMN',@level2name=N'Name';
+            """.Trim(),
+            scripts[1]);
     }
 
     [Fact]
@@ -127,11 +140,22 @@ public class ExtendedPropertyScriptBuilderTests
         Assert.Equal(2, scripts.Length);
 
         var tableScript = scripts[0];
-        Assert.Contains("OBJECT_ID(N'[dbo].[Order]')", tableScript);
-        Assert.Contains("@value=N'Contains customers'' orders [deprecated]'", tableScript);
+        Assert.Equal(
+            """
+            EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Contains customers'' orders [deprecated]',
+                @level0type=N'SCHEMA',@level0name=N'dbo',
+                @level1type=N'TABLE',@level1name=N'Order';
+            """.Trim(),
+            tableScript);
 
         var columnScript = scripts[1];
-        Assert.Contains("COLUMNPROPERTY(OBJECT_ID(N'[dbo].[Order]'), N'Name', 'ColumnId')", columnScript);
-        Assert.Contains("@value=N'Customer''s preferred title [display]'", columnScript);
+        Assert.Equal(
+            """
+            EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer''s preferred title [display]',
+                @level0type=N'SCHEMA',@level0name=N'dbo',
+                @level1type=N'TABLE',@level1name=N'Order',
+                @level2type=N'COLUMN',@level2name=N'Name';
+            """.Trim(),
+            columnScript);
     }
 }

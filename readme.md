@@ -307,7 +307,7 @@ Key metadata surfaced by the reconciled extractor:
 >
 > **Extended descriptions → `MS_Description`**
 >
-> The `meta` payload for entities and attributes comes straight from the OutSystems metadata. To round-trip these notes into SQL Server or SSDT projects, iterate the JSON and call `sp_addextendedproperty`/`sp_updateextendedproperty` as shown below:
+> The `meta` payload for entities and attributes comes straight from the OutSystems metadata. To round-trip these notes into SQL Server or SSDT projects, iterate the JSON and call `sp_addextendedproperty` as shown below:
 >
 > ```sql
 > -- Table description (entity-level)
@@ -326,7 +326,7 @@ Key metadata surfaced by the reconciled extractor:
 >      @level2type = N'COLUMN', @level2name = @ColumnName;
 > ```
 >
-> Use `sp_updateextendedproperty` when the description already exists. Because the exporter surfaces trimmed descriptions and physical column names, you can drive these stored procedures directly from the JSON.
+> Because the exporter surfaces trimmed descriptions and physical column names, you can drive `sp_addextendedproperty` directly from the JSON after clearing any existing values as part of your deployment pipeline.
 >
 **JSON schema** (optional) — validate with `NJsonSchema` or `JsonSchema.Net` before mapping.
 
@@ -528,7 +528,7 @@ out/
 
 * Builds one `CREATE TABLE` AST per entity using ScriptDom, attaching `DefaultConstraintDefinition`, `ForeignKeyConstraintDefinition`, and inline `CREATE INDEX` statements.
 * Formats default expressions to a dedicated indented line and nests foreign key definitions two levels deep for readability.
-* Appends `sys.sp_addextendedproperty`/`sys.sp_updateextendedproperty` calls for entity and column descriptions when metadata is present.
+* Appends `sys.sp_addextendedproperty` calls for entity and column descriptions when metadata is present.
 * Records emitted index names, foreign key names, and whether extended properties were included in `manifest.json` (`TableManifestEntry.Indexes`, `ForeignKeys`, `IncludesExtendedProperties`).
 * Honors `EmitBareTableOnly` to suppress inline defaults, foreign keys, indexes, and extended properties when consumers need a structural-only script.
 

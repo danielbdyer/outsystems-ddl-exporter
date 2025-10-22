@@ -15,7 +15,7 @@ CREATE TABLE [dbo].[Customer] (
 GO
 
 CREATE UNIQUE INDEX [IDX_Customer_Email]
-    ON [dbo].[Customer]([Email]) WHERE ([EMAIL] IS NOT NULL) WITH (FILLFACTOR = 85, IGNORE_DUP_KEY = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
+    ON [dbo].[Customer]([Email]) WHERE ([Email] IS NOT NULL) WITH (FILLFACTOR = 85, IGNORE_DUP_KEY = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
     ON [FG_Customers]
 
 GO
@@ -31,106 +31,41 @@ ALTER INDEX [IDX_Customer_Name]
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[Customer]')
-      AND minor_id = 0
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Stores customer records for AppCore',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Stores customer records for AppCore',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Stores customer records for AppCore',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'Customer';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[Customer]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[Customer]'), N'Id', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Customer identifier',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer',
-        @level2type=N'COLUMN',@level2name=N'Id';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer identifier',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer',
-        @level2type=N'COLUMN',@level2name=N'Id';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer identifier',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'Customer',
+    @level2type=N'COLUMN',@level2name=N'Id';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[Customer]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[Customer]'), N'Email', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Customer email',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer',
-        @level2type=N'COLUMN',@level2name=N'Email';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer email',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer',
-        @level2type=N'COLUMN',@level2name=N'Email';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer email',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'Customer',
+    @level2type=N'COLUMN',@level2name=N'Email';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[Customer]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[Customer]'), N'FirstName', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Customer first name',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer',
-        @level2type=N'COLUMN',@level2name=N'FirstName';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer first name',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer',
-        @level2type=N'COLUMN',@level2name=N'FirstName';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer first name',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'Customer',
+    @level2type=N'COLUMN',@level2name=N'FirstName';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[Customer]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[Customer]'), N'LastName', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Customer last name',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer',
-        @level2type=N'COLUMN',@level2name=N'LastName';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer last name',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer',
-        @level2type=N'COLUMN',@level2name=N'LastName';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer last name',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'Customer',
+    @level2type=N'COLUMN',@level2name=N'LastName';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[Customer]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[Customer]'), N'CityId', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'FK to City',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer',
-        @level2type=N'COLUMN',@level2name=N'CityId';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'FK to City',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'Customer',
-        @level2type=N'COLUMN',@level2name=N'CityId';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'FK to City',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'Customer',
+    @level2type=N'COLUMN',@level2name=N'CityId';
