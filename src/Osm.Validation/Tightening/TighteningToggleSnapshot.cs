@@ -19,6 +19,7 @@ public static class TighteningToggleKeys
     public const string ForeignKeysEnableCreation = "foreignKeys.enableCreation";
     public const string ForeignKeysAllowCrossSchema = "foreignKeys.allowCrossSchema";
     public const string ForeignKeysAllowCrossCatalog = "foreignKeys.allowCrossCatalog";
+    public const string ForeignKeysTreatMissingDeleteRuleAsIgnore = "foreignKeys.treatMissingDeleteRuleAsIgnore";
     public const string UniquenessEnforceSingleColumn = "uniqueness.enforceSingleColumn";
     public const string UniquenessEnforceMultiColumn = "uniqueness.enforceMultiColumn";
     public const string RemediationGeneratePreScripts = "remediation.generatePreScripts";
@@ -42,6 +43,7 @@ public sealed record TighteningToggleSnapshot(
     ToggleState<bool> ForeignKeyCreationEnabled,
     ToggleState<bool> ForeignKeyCrossSchemaAllowed,
     ToggleState<bool> ForeignKeyCrossCatalogAllowed,
+    ToggleState<bool> ForeignKeyTreatMissingDeleteRuleAsIgnore,
     ToggleState<bool> SingleColumnUniqueEnforced,
     ToggleState<bool> MultiColumnUniqueEnforced,
     ToggleState<bool> RemediationGeneratePreScripts,
@@ -65,6 +67,11 @@ public sealed record TighteningToggleSnapshot(
             Resolve(TighteningToggleKeys.ForeignKeysEnableCreation, options.ForeignKeys.EnableCreation, baseline.ForeignKeys.EnableCreation, sourceResolver),
             Resolve(TighteningToggleKeys.ForeignKeysAllowCrossSchema, options.ForeignKeys.AllowCrossSchema, baseline.ForeignKeys.AllowCrossSchema, sourceResolver),
             Resolve(TighteningToggleKeys.ForeignKeysAllowCrossCatalog, options.ForeignKeys.AllowCrossCatalog, baseline.ForeignKeys.AllowCrossCatalog, sourceResolver),
+            Resolve(
+                TighteningToggleKeys.ForeignKeysTreatMissingDeleteRuleAsIgnore,
+                options.ForeignKeys.TreatMissingDeleteRuleAsIgnore,
+                baseline.ForeignKeys.TreatMissingDeleteRuleAsIgnore,
+                sourceResolver),
             Resolve(TighteningToggleKeys.UniquenessEnforceSingleColumn, options.Uniqueness.EnforceSingleColumnUnique, baseline.Uniqueness.EnforceSingleColumnUnique, sourceResolver),
             Resolve(TighteningToggleKeys.UniquenessEnforceMultiColumn, options.Uniqueness.EnforceMultiColumnUnique, baseline.Uniqueness.EnforceMultiColumnUnique, sourceResolver),
             Resolve(TighteningToggleKeys.RemediationGeneratePreScripts, options.Remediation.GeneratePreScripts, baseline.Remediation.GeneratePreScripts, sourceResolver),
@@ -80,6 +87,7 @@ public sealed record TighteningToggleSnapshot(
             [TighteningToggleKeys.ForeignKeysEnableCreation] = ToggleExportValue.From(ForeignKeyCreationEnabled),
             [TighteningToggleKeys.ForeignKeysAllowCrossSchema] = ToggleExportValue.From(ForeignKeyCrossSchemaAllowed),
             [TighteningToggleKeys.ForeignKeysAllowCrossCatalog] = ToggleExportValue.From(ForeignKeyCrossCatalogAllowed),
+            [TighteningToggleKeys.ForeignKeysTreatMissingDeleteRuleAsIgnore] = ToggleExportValue.From(ForeignKeyTreatMissingDeleteRuleAsIgnore),
             [TighteningToggleKeys.UniquenessEnforceSingleColumn] = ToggleExportValue.From(SingleColumnUniqueEnforced),
             [TighteningToggleKeys.UniquenessEnforceMultiColumn] = ToggleExportValue.From(MultiColumnUniqueEnforced),
             [TighteningToggleKeys.RemediationGeneratePreScripts] = ToggleExportValue.From(RemediationGeneratePreScripts),

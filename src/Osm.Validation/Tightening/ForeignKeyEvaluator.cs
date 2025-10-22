@@ -184,8 +184,28 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
         return "Enable policy or gather evidence before creating the foreign key.";
     }
 
-    private static bool IsIgnoreRule(string? deleteRule)
-        => string.IsNullOrWhiteSpace(deleteRule) || string.Equals(deleteRule, "Ignore", StringComparison.OrdinalIgnoreCase);
+    private bool IsIgnoreRule(string? deleteRule)
+        => IsIgnoreRule(deleteRule, _options);
+
+    internal static bool IsIgnoreRule(string? deleteRule, ForeignKeyOptions options)
+    {
+        if (options is null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
+
+        if (string.Equals(deleteRule, "Ignore", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (options.TreatMissingDeleteRuleAsIgnore)
+        {
+            return string.IsNullOrWhiteSpace(deleteRule);
+        }
+
+        return false;
+    }
 
     private static bool SchemaEquals(SchemaName left, SchemaName right)
         => string.Equals(left.Value, right.Value, StringComparison.OrdinalIgnoreCase);

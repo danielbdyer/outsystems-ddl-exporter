@@ -6,7 +6,8 @@
   "foreignKeys": {
     "enableCreation": true,
     "allowCrossSchema": false,
-    "allowCrossCatalog": false
+    "allowCrossCatalog": false,
+    "treatMissingDeleteRuleAsIgnore": false
   },
   "uniqueness": {
     "enforceSingleColumnUnique": true,

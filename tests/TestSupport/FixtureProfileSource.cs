@@ -10,6 +10,7 @@ public static class FixtureProfileSource
     public const string MicroCompositeUniqueWithDuplicates = "profiling/profile.micro-unique-composite-duplicates.json";
     public const string MicroFkProtect = "profiling/profile.micro-fk-protect.json";
     public const string MicroFkIgnore = "profiling/profile.micro-fk-ignore.json";
+    public const string MicroFkDefaultDeleteRule = "profiling/profile.micro-fk-default-delete-rule.json";
     public const string MicroFkComposite = "profiling/profile.micro-fk-composite.json";
     public const string MicroPhysical = "profiling/profile.micro-physical.json";
 }

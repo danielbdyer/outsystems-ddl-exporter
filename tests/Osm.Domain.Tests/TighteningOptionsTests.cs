@@ -45,6 +45,7 @@ public class TighteningOptionsTests
         Assert.True(options.IsSuccess);
         Assert.Equal(TighteningMode.Aggressive, options.Value.Policy.Mode);
         Assert.Equal("0", options.Value.Remediation.Sentinels.Numeric);
+        Assert.False(options.Value.ForeignKeys.TreatMissingDeleteRuleAsIgnore);
     }
 
     [Fact]
