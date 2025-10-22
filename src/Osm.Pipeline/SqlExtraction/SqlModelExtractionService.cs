@@ -467,6 +467,27 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
 
     private static void WriteModules(Utf8JsonWriter writer, OutsystemsMetadataSnapshot snapshot)
     {
+        if (writer is null)
+        {
+            throw new ArgumentNullException(nameof(writer));
+        }
+
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        if (snapshot.Modules.Count == 0 && snapshot.ModuleJson.Count > 0)
+        {
+            WriteModulesFromModuleJson(writer, snapshot.ModuleJson);
+            return;
+        }
+
+        WriteModulesFromRelationalRows(writer, snapshot);
+    }
+
+    private static void WriteModulesFromRelationalRows(Utf8JsonWriter writer, OutsystemsMetadataSnapshot snapshot)
+    {
         var modules = snapshot.Modules.ToArray();
 
         if (modules.Length == 0)
@@ -529,6 +550,51 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
 
             writer.WriteEndArray();
             writer.WriteEndObject();
+        }
+    }
+
+    private static void WriteModulesFromModuleJson(
+        Utf8JsonWriter writer,
+        IReadOnlyList<OutsystemsModuleJsonRow> moduleJson)
+    {
+        foreach (var module in moduleJson)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", module.ModuleName);
+            writer.WriteBoolean("isSystem", module.IsSystem);
+            writer.WriteBoolean("isActive", module.IsActive);
+            writer.WritePropertyName("entities");
+            WriteModuleEntitiesJson(writer, module.ModuleEntitiesJson);
+            writer.WriteEndObject();
+        }
+    }
+
+    private static void WriteModuleEntitiesJson(Utf8JsonWriter writer, string moduleEntitiesJson)
+    {
+        if (string.IsNullOrWhiteSpace(moduleEntitiesJson))
+        {
+            writer.WriteStartArray();
+            writer.WriteEndArray();
+            return;
+        }
+
+        try
+        {
+            using var entitiesDocument = JsonDocument.Parse(moduleEntitiesJson);
+            if (entitiesDocument.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                entitiesDocument.RootElement.WriteTo(writer);
+            }
+            else
+            {
+                writer.WriteStartArray();
+                writer.WriteEndArray();
+            }
+        }
+        catch (JsonException)
+        {
+            writer.WriteStartArray();
+            writer.WriteEndArray();
         }
     }
 
