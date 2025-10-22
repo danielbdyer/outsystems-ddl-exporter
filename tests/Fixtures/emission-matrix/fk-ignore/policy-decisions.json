@@ -1,0 +1,171 @@
+{
+  "ColumnCount": 3,
+  "TightenedColumnCount": 2,
+  "RemediationColumnCount": 0,
+  "UniqueIndexCount": 0,
+  "UniqueIndexesEnforcedCount": 0,
+  "UniqueIndexesRequireRemediationCount": 0,
+  "ForeignKeyCount": 1,
+  "ForeignKeysCreatedCount": 0,
+  "ColumnRationales": {
+    "DELETE_RULE_IGNORE": 1,
+    "MANDATORY": 2,
+    "PHYSICAL_NOT_NULL": 2,
+    "PK": 2,
+    "DATA_NO_NULLS": 2,
+    "DATA_HAS_ORPHANS": 1
+  },
+  "UniqueIndexRationales": {},
+  "ForeignKeyRationales": {
+    "DELETE_RULE_IGNORE": 1,
+    "DATA_HAS_ORPHANS": 1
+  },
+  "ModuleRollups": {
+    "M": {
+      "ColumnCount": 3,
+      "TightenedColumnCount": 2,
+      "RemediationColumnCount": 0,
+      "UniqueIndexCount": 0,
+      "UniqueIndexesEnforcedCount": 0,
+      "UniqueIndexesRequireRemediationCount": 0,
+      "ForeignKeyCount": 1,
+      "ForeignKeysCreatedCount": 0,
+      "ColumnRationales": {
+        "DELETE_RULE_IGNORE": 1,
+        "MANDATORY": 2,
+        "PHYSICAL_NOT_NULL": 2,
+        "PK": 2,
+        "DATA_NO_NULLS": 2,
+        "DATA_HAS_ORPHANS": 1
+      },
+      "UniqueIndexRationales": {},
+      "ForeignKeyRationales": {
+        "DELETE_RULE_IGNORE": 1,
+        "DATA_HAS_ORPHANS": 1
+      }
+    }
+  },
+  "TogglePrecedence": {
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
+    },
+    "policy.nullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    }
+  },
+  "Columns": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_B",
+      "Column": "AID",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_HAS_ORPHANS",
+        "DELETE_RULE_IGNORE"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_B",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    }
+  ],
+  "UniqueIndexes": [],
+  "ForeignKeys": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_B",
+      "Column": "AID",
+      "CreateConstraint": false,
+      "Rationales": [
+        "DATA_HAS_ORPHANS",
+        "DELETE_RULE_IGNORE"
+      ]
+    }
+  ],
+  "Diagnostics": [],
+  "PredicateCoverage": {
+    "Tables": [
+      {
+        "Module": "M",
+        "Schema": "dbo",
+        "Table": "OSUSR_A",
+        "Predicates": []
+      },
+      {
+        "Module": "M",
+        "Schema": "dbo",
+        "Table": "OSUSR_B",
+        "Predicates": [
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithoutDbConstraint"
+        ]
+      },
+      {
+        "Module": "UserExtension_CS",
+        "Schema": "dbo",
+        "Table": "ossys_User",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      }
+    ],
+    "PredicateCounts": {
+      "HasLogicalForeignKey": 1,
+      "HasLogicalForeignKeyWithoutDbConstraint": 1,
+      "HasUniqueIndex": 1
+    }
+  }
+}

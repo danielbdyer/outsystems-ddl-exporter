@@ -236,7 +236,7 @@ public sealed class SqlExtractionParityTests
     {
         if (node is JsonObject obj && obj.TryGetPropertyValue(property, out var value) && value is not null)
         {
-            if (value.TryGetValue<int>(out var number))
+            if (value is JsonValue jsonValue && jsonValue.TryGetValue<int>(out var number))
             {
                 return number;
             }

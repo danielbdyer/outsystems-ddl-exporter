@@ -24,7 +24,10 @@ using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
-using Osm.Validation.Tightening.Opportunities;
+using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+using Opportunity = Osm.Validation.Tightening.Opportunities.Opportunity;
+using ChangeRisk = Osm.Validation.Tightening.Opportunities.ChangeRisk;
+using ConstraintType = Osm.Validation.Tightening.Opportunities.ConstraintType;
 using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
@@ -284,6 +287,7 @@ public class BuildSsdtCommandFactoryTests
                 new SsdtEmissionMetadata("sha256", "hash"),
                 Array.Empty<PreRemediationManifestEntry>(),
                 SsdtCoverageSummary.CreateComplete(0, 0, 0),
+                SsdtPredicateCoverage.Empty,
                 Array.Empty<string>());
 
             var opportunities = new OpportunitiesReport(

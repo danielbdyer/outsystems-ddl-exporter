@@ -108,6 +108,7 @@ public sealed class BuildSsdtApplicationServiceTests
             new SsdtEmissionMetadata("sha256", "hash"),
             Array.Empty<PreRemediationManifestEntry>(),
             SsdtCoverageSummary.CreateComplete(0, 0, 0),
+            SsdtPredicateCoverage.Empty,
             Array.Empty<string>());
         var opportunities = new Opportunities.OpportunitiesReport(
             ImmutableArray<Opportunities.Opportunity>.Empty,

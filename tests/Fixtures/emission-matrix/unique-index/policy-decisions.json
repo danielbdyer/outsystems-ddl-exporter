@@ -1,0 +1,149 @@
+{
+  "ColumnCount": 2,
+  "TightenedColumnCount": 2,
+  "RemediationColumnCount": 0,
+  "UniqueIndexCount": 1,
+  "UniqueIndexesEnforcedCount": 1,
+  "UniqueIndexesRequireRemediationCount": 0,
+  "ForeignKeyCount": 0,
+  "ForeignKeysCreatedCount": 0,
+  "ColumnRationales": {
+    "DATA_NO_NULLS": 2,
+    "UNIQUE_NO_NULLS": 1,
+    "PK": 1,
+    "PHYSICAL_NOT_NULL": 1,
+    "MANDATORY": 2
+  },
+  "UniqueIndexRationales": {
+    "UNIQUE_NO_NULLS": 1,
+    "PHYSICAL_UNIQUE_KEY": 1
+  },
+  "ForeignKeyRationales": {},
+  "ModuleRollups": {
+    "M": {
+      "ColumnCount": 2,
+      "TightenedColumnCount": 2,
+      "RemediationColumnCount": 0,
+      "UniqueIndexCount": 1,
+      "UniqueIndexesEnforcedCount": 1,
+      "UniqueIndexesRequireRemediationCount": 0,
+      "ForeignKeyCount": 0,
+      "ForeignKeysCreatedCount": 0,
+      "ColumnRationales": {
+        "DATA_NO_NULLS": 2,
+        "UNIQUE_NO_NULLS": 1,
+        "PK": 1,
+        "PHYSICAL_NOT_NULL": 1,
+        "MANDATORY": 2
+      },
+      "UniqueIndexRationales": {
+        "UNIQUE_NO_NULLS": 1,
+        "PHYSICAL_UNIQUE_KEY": 1
+      },
+      "ForeignKeyRationales": {}
+    }
+  },
+  "TogglePrecedence": {
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
+    },
+    "policy.nullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    }
+  },
+  "Columns": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_U_USER",
+      "Column": "EMAIL",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "UNIQUE_NO_NULLS"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_U_USER",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    }
+  ],
+  "UniqueIndexes": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_U_USER",
+      "Index": "UX_USER_EMAIL",
+      "EnforceUnique": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY",
+        "UNIQUE_NO_NULLS"
+      ]
+    }
+  ],
+  "ForeignKeys": [],
+  "Diagnostics": [],
+  "PredicateCoverage": {
+    "Tables": [
+      {
+        "Module": "M",
+        "Schema": "dbo",
+        "Table": "OSUSR_U_USER",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      },
+      {
+        "Module": "UserExtension_CS",
+        "Schema": "dbo",
+        "Table": "ossys_User",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      }
+    ],
+    "PredicateCounts": {
+      "HasUniqueIndex": 2
+    }
+  }
+}

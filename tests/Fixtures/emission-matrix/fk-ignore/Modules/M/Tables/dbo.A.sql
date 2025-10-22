@@ -1,0 +1,5 @@
+CREATE TABLE [dbo].[A] (
+    [Id] BIGINT NOT NULL
+        CONSTRAINT [PK_A]
+            PRIMARY KEY CLUSTERED
+)

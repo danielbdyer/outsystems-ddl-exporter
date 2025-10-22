@@ -44,6 +44,7 @@ public sealed class SsdtEmitter
         PolicyDecisionReport? decisionReport = null,
         IReadOnlyList<PreRemediationManifestEntry>? preRemediation = null,
         SsdtCoverageSummary? coverage = null,
+        SsdtPredicateCoverage? predicateCoverage = null,
         IReadOnlyList<string>? unsupported = null,
         CancellationToken cancellationToken = default)
     {
@@ -168,6 +169,7 @@ public sealed class SsdtEmitter
             emission,
             preRemediationEntries,
             coverageSummary,
+            predicateCoverage ?? SsdtPredicateCoverage.Empty,
             unsupportedEntries);
 
         var manifestPath = _fileSystem.Path.Combine(outputDirectory, "manifest.json");

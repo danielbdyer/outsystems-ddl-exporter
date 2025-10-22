@@ -1,0 +1,170 @@
+{
+  "ColumnCount": 4,
+  "TightenedColumnCount": 3,
+  "RemediationColumnCount": 0,
+  "UniqueIndexCount": 1,
+  "UniqueIndexesEnforcedCount": 1,
+  "UniqueIndexesRequireRemediationCount": 0,
+  "ForeignKeyCount": 0,
+  "ForeignKeysCreatedCount": 0,
+  "ColumnRationales": {
+    "PK": 1,
+    "COMPOSITE_UNIQUE_NO_NULLS": 2,
+    "PHYSICAL_NOT_NULL": 1,
+    "DATA_NO_NULLS": 3,
+    "MANDATORY": 3
+  },
+  "UniqueIndexRationales": {
+    "COMPOSITE_UNIQUE_NO_NULLS": 1
+  },
+  "ForeignKeyRationales": {},
+  "ModuleRollups": {
+    "M": {
+      "ColumnCount": 4,
+      "TightenedColumnCount": 3,
+      "RemediationColumnCount": 0,
+      "UniqueIndexCount": 1,
+      "UniqueIndexesEnforcedCount": 1,
+      "UniqueIndexesRequireRemediationCount": 0,
+      "ForeignKeyCount": 0,
+      "ForeignKeysCreatedCount": 0,
+      "ColumnRationales": {
+        "PK": 1,
+        "COMPOSITE_UNIQUE_NO_NULLS": 2,
+        "PHYSICAL_NOT_NULL": 1,
+        "DATA_NO_NULLS": 3,
+        "MANDATORY": 3
+      },
+      "UniqueIndexRationales": {
+        "COMPOSITE_UNIQUE_NO_NULLS": 1
+      },
+      "ForeignKeyRationales": {}
+    }
+  },
+  "TogglePrecedence": {
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
+    },
+    "policy.nullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    }
+  },
+  "Columns": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "Column": "COUNTRYID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS",
+        "DATA_NO_NULLS",
+        "MANDATORY"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "Column": "DOCUMENTID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS",
+        "DATA_NO_NULLS",
+        "MANDATORY"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "Column": "QTY",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": []
+    }
+  ],
+  "UniqueIndexes": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "Index": "UX_ORDERALLOC_COUNTRY_DOCUMENT",
+      "EnforceUnique": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS"
+      ]
+    }
+  ],
+  "ForeignKeys": [],
+  "Diagnostics": [],
+  "PredicateCoverage": {
+    "Tables": [
+      {
+        "Module": "M",
+        "Schema": "dbo",
+        "Table": "OSUSR_A_ORDERALLOCATION",
+        "Predicates": [
+          "HasCompositeUniqueIndex",
+          "HasDefaultConstraint",
+          "HasUniqueIndex"
+        ]
+      },
+      {
+        "Module": "UserExtension_CS",
+        "Schema": "dbo",
+        "Table": "ossys_User",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      }
+    ],
+    "PredicateCounts": {
+      "HasCompositeUniqueIndex": 1,
+      "HasDefaultConstraint": 1,
+      "HasUniqueIndex": 2
+    }
+  }
+}

@@ -70,6 +70,8 @@ public sealed class PerTableWriter
             table.LogicalName,
             table.OriginalModule);
 
+        var columnNameMap = BuildColumnNameMap(table);
+
         var statement = _createTableStatementBuilder.BuildCreateTableStatement(table, effectiveTableName, options);
         var inlineForeignKeys = _createTableStatementBuilder.AddForeignKeys(statement, table, effectiveTableName, options, out var foreignKeyTrustLookup);
         var tableScript = Script(statement, foreignKeyTrustLookup, options.Format);
@@ -112,7 +114,7 @@ public sealed class PerTableWriter
                 includesExtendedProperties = true;
             }
 
-            var triggerScripts = BuildTriggerScripts(table, effectiveTableName, options.Format);
+            var triggerScripts = BuildTriggerScripts(table, effectiveTableName, options.Format, columnNameMap);
             if (!triggerScripts.IsDefaultOrEmpty)
             {
                 statements.AddRange(triggerScripts);
@@ -228,10 +230,32 @@ public sealed class PerTableWriter
         return builder.ToString();
     }
 
+    private static IReadOnlyDictionary<string, string> BuildColumnNameMap(SmoTableDefinition table)
+    {
+        if (table.Columns.Length == 0)
+        {
+            return ImmutableDictionary<string, string>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in table.Columns)
+        {
+            if (string.IsNullOrWhiteSpace(column.PhysicalName) || string.IsNullOrWhiteSpace(column.Name))
+            {
+                continue;
+            }
+
+            builder[column.PhysicalName] = column.Name;
+        }
+
+        return builder.ToImmutable();
+    }
+
     private ImmutableArray<string> BuildTriggerScripts(
         SmoTableDefinition table,
         string effectiveTableName,
-        SmoFormatOptions format)
+        SmoFormatOptions format,
+        IReadOnlyDictionary<string, string> columnNameMap)
     {
         if (table.Triggers.Length == 0)
         {
@@ -246,7 +270,8 @@ public sealed class PerTableWriter
 
             if (!string.IsNullOrWhiteSpace(trigger.Definition))
             {
-                builder.AppendLine(trigger.Definition.Trim());
+                var rewritten = RewriteTriggerDefinition(trigger.Definition.Trim(), trigger, effectiveTableName, format, columnNameMap);
+                builder.AppendLine(rewritten);
             }
 
             if (trigger.IsDisabled)
@@ -261,6 +286,62 @@ public sealed class PerTableWriter
         }
 
         return scripts.ToImmutable();
+    }
+
+    private string RewriteTriggerDefinition(
+        string definition,
+        SmoTriggerDefinition trigger,
+        string effectiveTableName,
+        SmoFormatOptions format,
+        IReadOnlyDictionary<string, string> columnNameMap)
+    {
+        var rewritten = definition;
+
+        var schemaIdentifier = _sqlScriptFormatter.QuoteIdentifier(trigger.Schema, format);
+        var physicalTableIdentifier = _sqlScriptFormatter.QuoteIdentifier(trigger.Table, format);
+        var effectiveTableIdentifier = _sqlScriptFormatter.QuoteIdentifier(effectiveTableName, format);
+
+        rewritten = ReplaceIgnoreCase(rewritten, $"{schemaIdentifier}.{physicalTableIdentifier}", $"{schemaIdentifier}.{effectiveTableIdentifier}");
+        rewritten = ReplaceIgnoreCase(rewritten, physicalTableIdentifier, effectiveTableIdentifier);
+        rewritten = ReplaceIgnoreCase(rewritten, trigger.Table, effectiveTableName);
+
+        foreach (var pair in columnNameMap)
+        {
+            var physicalColumn = _sqlScriptFormatter.QuoteIdentifier(pair.Key, format);
+            var effectiveColumn = _sqlScriptFormatter.QuoteIdentifier(pair.Value, format);
+
+            rewritten = ReplaceIgnoreCase(rewritten, physicalColumn, effectiveColumn);
+            rewritten = ReplaceIgnoreCase(rewritten, pair.Key, pair.Value);
+        }
+
+        return rewritten.Trim();
+    }
+
+    private static string ReplaceIgnoreCase(string source, string search, string replacement)
+    {
+        if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(search))
+        {
+            return source;
+        }
+
+        var builder = new StringBuilder(source.Length + Math.Max(0, replacement.Length - search.Length));
+        var index = 0;
+
+        while (true)
+        {
+            var match = source.IndexOf(search, index, StringComparison.OrdinalIgnoreCase);
+            if (match < 0)
+            {
+                builder.Append(source, index, source.Length - index);
+                break;
+            }
+
+            builder.Append(source, index, match - index);
+            builder.Append(replacement);
+            index = match + search.Length;
+        }
+
+        return builder.ToString();
     }
 
     private string Script(

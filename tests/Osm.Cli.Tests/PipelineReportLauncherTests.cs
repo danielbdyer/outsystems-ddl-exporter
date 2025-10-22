@@ -9,7 +9,10 @@ using Osm.Emission;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
-using Osm.Validation.Tightening.Opportunities;
+using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+using Opportunity = Osm.Validation.Tightening.Opportunities.Opportunity;
+using ChangeRisk = Osm.Validation.Tightening.Opportunities.ChangeRisk;
+using ConstraintType = Osm.Validation.Tightening.Opportunities.ConstraintType;
 using Tests.Support;
 using Xunit;
 
@@ -110,6 +113,7 @@ public class PipelineReportLauncherTests
             new SsdtEmissionMetadata("SHA256", "abc123"),
             Array.Empty<PreRemediationManifestEntry>(),
             coverage,
+            SsdtPredicateCoverage.Empty,
             Array.Empty<string>());
 
         var decisionReport = new PolicyDecisionReport(

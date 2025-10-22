@@ -580,5 +580,5 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         => $"{Quote(schema)}.{Quote(name)}";
 
     private static string Quote(string identifier)
-        => $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}";
+        => $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
 }

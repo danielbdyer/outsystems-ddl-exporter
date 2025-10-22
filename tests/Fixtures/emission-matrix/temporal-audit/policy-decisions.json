@@ -1,0 +1,242 @@
+{
+  "ColumnCount": 8,
+  "TightenedColumnCount": 5,
+  "RemediationColumnCount": 0,
+  "UniqueIndexCount": 0,
+  "UniqueIndexesEnforcedCount": 0,
+  "UniqueIndexesRequireRemediationCount": 0,
+  "ForeignKeyCount": 1,
+  "ForeignKeysCreatedCount": 1,
+  "ColumnRationales": {
+    "FK_ENFORCED": 1,
+    "DEFAULT_PRESENT": 1,
+    "PROFILE_MISSING": 1,
+    "DATA_NO_NULLS": 5,
+    "MANDATORY": 5,
+    "PK": 2,
+    "PHYSICAL_NOT_NULL": 5
+  },
+  "UniqueIndexRationales": {},
+  "ForeignKeyRationales": {
+    "DB_CONSTRAINT_PRESENT": 1
+  },
+  "ModuleRollups": {
+    "Matrix": {
+      "ColumnCount": 8,
+      "TightenedColumnCount": 5,
+      "RemediationColumnCount": 0,
+      "UniqueIndexCount": 0,
+      "UniqueIndexesEnforcedCount": 0,
+      "UniqueIndexesRequireRemediationCount": 0,
+      "ForeignKeyCount": 1,
+      "ForeignKeysCreatedCount": 1,
+      "ColumnRationales": {
+        "FK_ENFORCED": 1,
+        "DEFAULT_PRESENT": 1,
+        "PROFILE_MISSING": 1,
+        "DATA_NO_NULLS": 5,
+        "MANDATORY": 5,
+        "PK": 2,
+        "PHYSICAL_NOT_NULL": 5
+      },
+      "UniqueIndexRationales": {},
+      "ForeignKeyRationales": {
+        "DB_CONSTRAINT_PRESENT": 1
+      }
+    }
+  },
+  "TogglePrecedence": {
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
+    },
+    "policy.nullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    }
+  },
+  "Columns": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_AUDIT",
+      "Column": "DETAILS",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "PROFILE_MISSING"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_AUDIT",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "AUDITID",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "FK_ENFORCED"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "LEGACYCODE",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": []
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "STATUS",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "VALIDFROM",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "VALIDTO",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ]
+    }
+  ],
+  "UniqueIndexes": [],
+  "ForeignKeys": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "AUDITID",
+      "CreateConstraint": true,
+      "Rationales": [
+        "DB_CONSTRAINT_PRESENT"
+      ]
+    }
+  ],
+  "Diagnostics": [],
+  "PredicateCoverage": {
+    "Tables": [
+      {
+        "Module": "Matrix",
+        "Schema": "dbo",
+        "Table": "OSUSR_M_AUDIT",
+        "Predicates": []
+      },
+      {
+        "Module": "Matrix",
+        "Schema": "dbo",
+        "Table": "OSUSR_M_TEMPORALORDER",
+        "Predicates": [
+          "HasCheckConstraint",
+          "HasDefaultConstraint",
+          "HasExtendedProperties",
+          "HasFilteredIndex",
+          "HasInactiveColumns",
+          "HasIncludedIndexColumns",
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithDbConstraint",
+          "HasTemporalHistory",
+          "HasTrigger",
+          "IsStaticEntity"
+        ]
+      },
+      {
+        "Module": "UserExtension_CS",
+        "Schema": "dbo",
+        "Table": "ossys_User",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      }
+    ],
+    "PredicateCounts": {
+      "HasCheckConstraint": 1,
+      "HasDefaultConstraint": 1,
+      "HasExtendedProperties": 1,
+      "HasFilteredIndex": 1,
+      "HasInactiveColumns": 1,
+      "HasIncludedIndexColumns": 1,
+      "HasLogicalForeignKey": 1,
+      "HasLogicalForeignKeyWithDbConstraint": 1,
+      "HasTemporalHistory": 1,
+      "HasTrigger": 1,
+      "HasUniqueIndex": 1,
+      "IsStaticEntity": 1
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "tables": [
+    {
+      "schema": "dbo",
+      "table": "OSUSR_M_TEMPORALORDER",
+      "rows": [
+        {
+          "ID": 1,
+          "STATUS": "PENDING",
+          "AUDITID": 1,
+          "VALIDFROM": "2025-01-01T00:00:00Z",
+          "VALIDTO": "9999-12-31T23:59:59Z",
+          "LEGACYCODE": null
+        }
+      ]
+    }
+  ]
+}

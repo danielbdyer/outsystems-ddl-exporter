@@ -1,0 +1,144 @@
+{
+  "columns": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_AUDIT",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 250,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 250,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "ID",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": true,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 1024,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 1024,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "STATUS",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": "('PENDING')",
+      "NullCount": 0,
+      "RowCount": 1024,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 1024,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "AUDITID",
+      "IsNullablePhysical": true,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 50,
+      "RowCount": 1024,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 1024,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "VALIDFROM",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 1024,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 1024,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "VALIDTO",
+      "IsNullablePhysical": false,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 0,
+      "RowCount": 1024,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 1024,
+        "Outcome": "Succeeded"
+      }
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "Column": "LEGACYCODE",
+      "IsNullablePhysical": true,
+      "IsComputed": false,
+      "IsPrimaryKey": false,
+      "IsUniqueKey": false,
+      "DefaultDefinition": null,
+      "NullCount": 1024,
+      "RowCount": 1024,
+      "NullCountStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 1024,
+        "Outcome": "Succeeded"
+      }
+    }
+  ],
+  "uniqueCandidates": [],
+  "fkReality": [
+    {
+      "Ref": {
+        "FromSchema": "dbo",
+        "FromTable": "OSUSR_M_TEMPORALORDER",
+        "FromColumn": "AUDITID",
+        "ToSchema": "dbo",
+        "ToTable": "OSUSR_M_AUDIT",
+        "ToColumn": "ID",
+        "HasDbConstraint": true
+      },
+      "HasOrphan": false,
+      "IsNoCheck": false,
+      "ProbeStatus": {
+        "CapturedAtUtc": "2024-01-01T00:00:00Z",
+        "SampleSize": 0,
+        "Outcome": "Succeeded"
+      }
+    }
+  ]
+}

@@ -59,6 +59,8 @@ internal sealed class IndexScriptBuilder
             Unique = index.IsUnique,
         };
 
+        var columnNameMap = BuildColumnNameMap(table);
+
         foreach (var column in index.Columns.OrderBy(c => c.Ordinal))
         {
             if (column.IsIncluded)
@@ -80,7 +82,7 @@ internal sealed class IndexScriptBuilder
             statement.Columns.Add(orderedColumn);
         }
 
-        ApplyIndexMetadata(statement, index.Metadata, format);
+        ApplyIndexMetadata(statement, index.Metadata, format, columnNameMap);
 
         return statement;
     }
@@ -119,13 +121,18 @@ internal sealed class IndexScriptBuilder
         };
     }
 
-    private void ApplyIndexMetadata(CreateIndexStatement statement, SmoIndexMetadata metadata, SmoFormatOptions format)
+    private void ApplyIndexMetadata(
+        CreateIndexStatement statement,
+        SmoIndexMetadata metadata,
+        SmoFormatOptions format,
+        IReadOnlyDictionary<string, string> columnNameMap)
     {
         if (!string.IsNullOrWhiteSpace(metadata.FilterDefinition))
         {
             var predicate = ParsePredicate(metadata.FilterDefinition);
             if (predicate is not null)
             {
+                RewriteColumnReferences(predicate, columnNameMap);
                 BooleanExpression filter = predicate;
                 if (filter is not BooleanParenthesisExpression)
                 {
@@ -146,6 +153,40 @@ internal sealed class IndexScriptBuilder
         {
             statement.OnFileGroupOrPartitionScheme = clause;
         }
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildColumnNameMap(SmoTableDefinition table)
+    {
+        if (table.Columns.Length == 0)
+        {
+            return ImmutableDictionary<string, string>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in table.Columns)
+        {
+            if (string.IsNullOrWhiteSpace(column.PhysicalName) || string.IsNullOrWhiteSpace(column.Name))
+            {
+                continue;
+            }
+
+            builder[column.PhysicalName] = column.Name;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static void RewriteColumnReferences(
+        TSqlFragment? fragment,
+        IReadOnlyDictionary<string, string> columnNameMap)
+    {
+        if (fragment is null || columnNameMap.Count == 0)
+        {
+            return;
+        }
+
+        var visitor = new ColumnReferenceRewriteVisitor(columnNameMap);
+        fragment.Accept(visitor);
     }
 
     private static IEnumerable<IndexOption> BuildIndexOptions(SmoIndexMetadata metadata)
@@ -332,5 +373,36 @@ internal sealed class IndexScriptBuilder
         }
 
         return fragment;
+    }
+
+    private sealed class ColumnReferenceRewriteVisitor : TSqlFragmentVisitor
+    {
+        private readonly IReadOnlyDictionary<string, string> _columnNameMap;
+
+        public ColumnReferenceRewriteVisitor(IReadOnlyDictionary<string, string> columnNameMap)
+        {
+            _columnNameMap = columnNameMap;
+        }
+
+        public override void ExplicitVisit(ColumnReferenceExpression node)
+        {
+            if (node?.MultiPartIdentifier is null || node.MultiPartIdentifier.Identifiers.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var identifier in node.MultiPartIdentifier.Identifiers)
+            {
+                if (identifier is null || string.IsNullOrEmpty(identifier.Value))
+                {
+                    continue;
+                }
+
+                if (_columnNameMap.TryGetValue(identifier.Value, out var replacement))
+                {
+                    identifier.Value = replacement;
+                }
+            }
+        }
     }
 }

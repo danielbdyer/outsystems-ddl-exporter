@@ -1,0 +1,363 @@
+{
+  "exportedAtUtc": "2025-01-01T00:00:00Z",
+  "modules": [
+    {
+      "name": "Matrix",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Audit",
+          "physicalName": "OSUSR_M_AUDIT",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "meta": "Audit primary key",
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "int",
+                "precision": 10,
+                "scale": 0,
+                "isIdentity": true
+              }
+            },
+            {
+              "name": "Details",
+              "physicalName": "DETAILS",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 200,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "onDisk": {
+                "isNullable": true,
+                "sqlType": "nvarchar",
+                "maxLength": 200
+              }
+            }
+          ],
+          "indexes": [],
+          "relationships": []
+        },
+        {
+          "name": "TemporalOrder",
+          "physicalName": "OSUSR_M_TEMPORALORDER",
+          "isStatic": true,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "meta": "Temporal order identifier",
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "int",
+                "precision": 10,
+                "scale": 0
+              }
+            },
+            {
+              "name": "Status",
+              "physicalName": "STATUS",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 50,
+              "precision": null,
+              "scale": null,
+              "default": "PENDING",
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "meta": "Order processing status",
+              "extendedProperties": [
+                {
+                  "name": "MS_Description",
+                  "value": "Workflow status"
+                }
+              ],
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "nvarchar",
+                "maxLength": 50,
+                "defaultDefinition": "('PENDING')",
+              "checkConstraints": [
+                {
+                  "name": "CK_TEMPORALORDER_STATUS",
+                  "definition": "[STATUS] IN ('PENDING','APPROVED','ARCHIVED')",
+                  "isNotTrusted": false
+                }
+              ]
+              }
+            },
+            {
+              "name": "AuditId",
+              "physicalName": "AUDITID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 1,
+              "refEntityId": 1,
+              "refEntity_name": "Audit",
+              "refEntity_physicalName": "OSUSR_M_AUDIT",
+              "reference_deleteRuleCode": "Protect",
+              "reference_hasDbConstraint": 1,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "onDisk": {
+                "isNullable": true,
+                "sqlType": "int",
+                "precision": 10,
+                "scale": 0
+              }
+            },
+            {
+              "name": "ValidFrom",
+              "physicalName": "VALIDFROM",
+              "originalName": null,
+              "dataType": "DateTime",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "datetime2"
+              }
+            },
+            {
+              "name": "ValidTo",
+              "physicalName": "VALIDTO",
+              "originalName": null,
+              "dataType": "DateTime",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "onDisk": {
+                "isNullable": false,
+                "sqlType": "datetime2"
+              }
+            },
+            {
+              "name": "LegacyCode",
+              "physicalName": "LEGACYCODE",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 25,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 1,
+              "onDisk": {
+                "isNullable": true,
+                "sqlType": "nvarchar",
+                "maxLength": 25
+              }
+            }
+          ],
+          "indexes": [
+            {
+              "name": "IX_TEMPORALORDER_STATUS",
+              "isUnique": false,
+              "isPrimary": false,
+              "isPlatformAuto": 0,
+              "kind": "IX",
+              "isDisabled": false,
+              "isPadded": false,
+              "fillFactor": 90,
+              "ignoreDupKey": false,
+              "allowRowLocks": true,
+              "allowPageLocks": true,
+              "noRecompute": false,
+              "filterDefinition": "[STATUS] <> 'DELETED'",
+              "dataSpace": {
+                "name": "PRIMARY",
+                "type": "ROWS_FILEGROUP"
+              },
+              "partitionColumns": [],
+              "dataCompression": [],
+              "columns": [
+                {
+                  "attribute": "Status",
+                  "physicalColumn": "STATUS",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                },
+                {
+                  "attribute": "AuditId",
+                  "physicalColumn": "AUDITID",
+                  "ordinal": 2,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                },
+                {
+                  "attribute": "ValidFrom",
+                  "physicalColumn": "VALIDFROM",
+                  "ordinal": 3,
+                  "isIncluded": true,
+                  "direction": "Ascending"
+                }
+              ]
+            }
+          ],
+          "relationships": [
+            {
+              "viaAttributeName": "AuditId",
+              "toEntity_name": "Audit",
+              "toEntity_physicalName": "OSUSR_M_AUDIT",
+              "deleteRuleCode": "Protect",
+              "hasDbConstraint": 1
+            }
+          ],
+          "triggers": [
+            {
+              "name": "TR_TEMPORALORDER_AUDIT",
+              "isDisabled": false,
+              "definition": "CREATE TRIGGER TR_TEMPORALORDER_AUDIT ON [dbo].[OSUSR_M_TEMPORALORDER] AFTER INSERT AS BEGIN SET NOCOUNT ON; END"
+            }
+          ],
+          "meta": {
+            "description": "Temporal order history"
+          },
+          "extendedProperties": [
+            {
+              "name": "MS_Description",
+              "value": "Temporal order entity"
+            }
+          ],
+          "temporal": {
+            "type": "systemVersioned",
+            "historyTable": {
+              "schema": "dbo",
+              "name": "OSUSR_M_TEMPORALORDER_HISTORY"
+            },
+            "periodStartColumn": "ValidFrom",
+            "periodEndColumn": "ValidTo",
+            "retention": {
+              "kind": "infinite",
+              "unit": "none"
+            },
+            "extendedProperties": [
+              {
+                "name": "HistoryRetention",
+                "value": "Infinite"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "sequences": [],
+  "extendedProperties": []
+}

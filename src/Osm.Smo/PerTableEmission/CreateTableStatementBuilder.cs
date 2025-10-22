@@ -42,9 +42,10 @@ internal sealed class CreateTableStatementBuilder
 
         var definition = new TableDefinition();
         var columnLookup = new Dictionary<string, ColumnDefinition>(table.Columns.Length * 2, StringComparer.OrdinalIgnoreCase);
+        var columnNameMap = BuildColumnNameMap(table);
         foreach (var column in table.Columns)
         {
-            var columnDefinition = BuildColumnDefinition(column, options);
+            var columnDefinition = BuildColumnDefinition(column, options, columnNameMap);
             definition.ColumnDefinitions.Add(columnDefinition);
             if (!string.IsNullOrWhiteSpace(column.Name))
             {
@@ -199,7 +200,10 @@ internal sealed class CreateTableStatementBuilder
         return builder.ToImmutable();
     }
 
-    private ColumnDefinition BuildColumnDefinition(SmoColumnDefinition column, SmoBuildOptions options)
+    private ColumnDefinition BuildColumnDefinition(
+        SmoColumnDefinition column,
+        SmoBuildOptions options,
+        IReadOnlyDictionary<string, string> columnNameMap)
     {
         var definition = new ColumnDefinition
         {
@@ -229,7 +233,7 @@ internal sealed class CreateTableStatementBuilder
 
         if (!options.EmitBareTableOnly)
         {
-            var defaultExpression = ParseExpression(column.DefaultExpression);
+            var defaultExpression = ParseExpression(column.DefaultExpression, columnNameMap);
             if (defaultExpression is not null)
             {
                 var defaultConstraintDefinition = new DefaultConstraintDefinition
@@ -249,7 +253,7 @@ internal sealed class CreateTableStatementBuilder
             {
                 foreach (var checkConstraint in column.CheckConstraints)
                 {
-                    var predicate = ParsePredicate(checkConstraint.Expression);
+                    var predicate = ParsePredicate(checkConstraint.Expression, columnNameMap);
                     if (predicate is null)
                     {
                         continue;
@@ -272,13 +276,36 @@ internal sealed class CreateTableStatementBuilder
 
         if (column.IsComputed && !string.IsNullOrWhiteSpace(column.ComputedExpression))
         {
-            definition.ComputedColumnExpression = ParseExpression(column.ComputedExpression);
+            definition.ComputedColumnExpression = ParseExpression(column.ComputedExpression, columnNameMap);
         }
 
         return definition;
     }
 
-    private static ScalarExpression? ParseExpression(string? expression)
+    private static IReadOnlyDictionary<string, string> BuildColumnNameMap(SmoTableDefinition table)
+    {
+        if (table.Columns.Length == 0)
+        {
+            return ImmutableDictionary<string, string>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in table.Columns)
+        {
+            if (string.IsNullOrWhiteSpace(column.PhysicalName) || string.IsNullOrWhiteSpace(column.Name))
+            {
+                continue;
+            }
+
+            builder[column.PhysicalName] = column.Name;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static ScalarExpression? ParseExpression(
+        string? expression,
+        IReadOnlyDictionary<string, string> columnNameMap)
     {
         if (string.IsNullOrWhiteSpace(expression))
         {
@@ -293,10 +320,13 @@ internal sealed class CreateTableStatementBuilder
             return null;
         }
 
+        RewriteColumnReferences(fragment, columnNameMap);
         return fragment;
     }
 
-    private static BooleanExpression? ParsePredicate(string? predicate)
+    private static BooleanExpression? ParsePredicate(
+        string? predicate,
+        IReadOnlyDictionary<string, string> columnNameMap)
     {
         if (string.IsNullOrWhiteSpace(predicate))
         {
@@ -311,7 +341,52 @@ internal sealed class CreateTableStatementBuilder
             return null;
         }
 
+        RewriteColumnReferences(fragment, columnNameMap);
         return fragment;
+    }
+
+    private static void RewriteColumnReferences(
+        TSqlFragment? fragment,
+        IReadOnlyDictionary<string, string> columnNameMap)
+    {
+        if (fragment is null || columnNameMap.Count == 0)
+        {
+            return;
+        }
+
+        var visitor = new ColumnReferenceRewriteVisitor(columnNameMap);
+        fragment.Accept(visitor);
+    }
+
+    private sealed class ColumnReferenceRewriteVisitor : TSqlFragmentVisitor
+    {
+        private readonly IReadOnlyDictionary<string, string> _columnNameMap;
+
+        public ColumnReferenceRewriteVisitor(IReadOnlyDictionary<string, string> columnNameMap)
+        {
+            _columnNameMap = columnNameMap;
+        }
+
+        public override void ExplicitVisit(ColumnReferenceExpression node)
+        {
+            if (node?.MultiPartIdentifier is null || node.MultiPartIdentifier.Identifiers.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var identifier in node.MultiPartIdentifier.Identifiers)
+            {
+                if (identifier is null || string.IsNullOrEmpty(identifier.Value))
+                {
+                    continue;
+                }
+
+                if (_columnNameMap.TryGetValue(identifier.Value, out var replacement))
+                {
+                    identifier.Value = replacement;
+                }
+            }
+        }
     }
 
     private static DataTypeReference TranslateDataType(DataType dataType)
@@ -356,6 +431,20 @@ internal sealed class CreateTableStatementBuilder
         SqlDataType.NVarCharMax => SqlDataTypeOption.NVarChar,
         SqlDataType.VarChar => SqlDataTypeOption.VarChar,
         SqlDataType.VarCharMax => SqlDataTypeOption.VarChar,
+        SqlDataType.VarBinary => SqlDataTypeOption.VarBinary,
+        SqlDataType.VarBinaryMax => SqlDataTypeOption.VarBinary,
+        SqlDataType.Binary => SqlDataTypeOption.Binary,
+        SqlDataType.SmallInt => SqlDataTypeOption.SmallInt,
+        SqlDataType.TinyInt => SqlDataTypeOption.TinyInt,
+        SqlDataType.UniqueIdentifier => SqlDataTypeOption.UniqueIdentifier,
+        SqlDataType.SmallDateTime => SqlDataTypeOption.SmallDateTime,
+        SqlDataType.DateTime2 => SqlDataTypeOption.DateTime2,
+        SqlDataType.DateTimeOffset => SqlDataTypeOption.DateTimeOffset,
+        SqlDataType.Time => SqlDataTypeOption.Time,
+        SqlDataType.Money => SqlDataTypeOption.Money,
+        SqlDataType.SmallMoney => SqlDataTypeOption.SmallMoney,
+        SqlDataType.Real => SqlDataTypeOption.Real,
+        SqlDataType.Float => SqlDataTypeOption.Float,
         _ => SqlDataTypeOption.NVarChar,
     };
 

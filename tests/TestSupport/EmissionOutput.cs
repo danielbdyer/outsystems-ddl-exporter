@@ -174,6 +174,7 @@ public sealed record EmissionManifest(
     EmissionManifestOptions Options,
     EmissionManifestPolicySummary PolicySummary,
     EmissionManifestCoverage Coverage,
+    EmissionManifestPredicateCoverage PredicateCoverage,
     IReadOnlyList<EmissionManifestTable> Tables,
     IReadOnlyList<string> Unsupported,
     IReadOnlyList<EmissionManifestPreRemediation> PreRemediation);
@@ -203,6 +204,16 @@ public sealed record EmissionManifestCoverage(
     EmissionManifestCoverageSection Constraints);
 
 public sealed record EmissionManifestCoverageSection(int Emitted, int Total, double Percentage);
+
+public sealed record EmissionManifestPredicateCoverage(
+    IReadOnlyList<EmissionPredicateCoverageEntry> Tables,
+    IReadOnlyDictionary<string, int> PredicateCounts);
+
+public sealed record EmissionPredicateCoverageEntry(
+    string Module,
+    string Schema,
+    string Table,
+    IReadOnlyList<string> Predicates);
 
 public sealed record EmissionManifestTable(
     string Module,

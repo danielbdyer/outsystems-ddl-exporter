@@ -1,0 +1,171 @@
+{
+  "Tables": [
+    {
+      "Module": "M",
+      "Schema": "dbo",
+      "Table": "A",
+      "TableFile": "Modules/M/Tables/dbo.A.sql",
+      "Indexes": [],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false
+    },
+    {
+      "Module": "M",
+      "Schema": "dbo",
+      "Table": "B",
+      "TableFile": "Modules/M/Tables/dbo.B.sql",
+      "Indexes": [],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false
+    }
+  ],
+  "Options": {
+    "IncludePlatformAutoIndexes": false,
+    "EmitBareTableOnly": false,
+    "SanitizeModuleNames": true,
+    "ModuleParallelism": 1
+  },
+  "PolicySummary": {
+    "ColumnCount": 3,
+    "TightenedColumnCount": 2,
+    "RemediationColumnCount": 0,
+    "UniqueIndexCount": 0,
+    "UniqueIndexesEnforcedCount": 0,
+    "UniqueIndexesRequireRemediationCount": 0,
+    "ForeignKeyCount": 1,
+    "ForeignKeysCreatedCount": 0,
+    "ColumnRationales": {
+      "DELETE_RULE_IGNORE": 1,
+      "MANDATORY": 2,
+      "PHYSICAL_NOT_NULL": 2,
+      "PK": 2,
+      "DATA_NO_NULLS": 2,
+      "DATA_HAS_ORPHANS": 1
+    },
+    "UniqueIndexRationales": {},
+    "ForeignKeyRationales": {
+      "DELETE_RULE_IGNORE": 1,
+      "DATA_HAS_ORPHANS": 1
+    },
+    "ModuleRollups": {
+      "M": {
+        "ColumnCount": 3,
+        "TightenedColumnCount": 2,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 0,
+        "UniqueIndexesEnforcedCount": 0,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 1,
+        "ForeignKeysCreatedCount": 0,
+        "ColumnRationales": {
+          "DELETE_RULE_IGNORE": 1,
+          "MANDATORY": 2,
+          "PHYSICAL_NOT_NULL": 2,
+          "PK": 2,
+          "DATA_NO_NULLS": 2,
+          "DATA_HAS_ORPHANS": 1
+        },
+        "UniqueIndexRationales": {},
+        "ForeignKeyRationales": {
+          "DELETE_RULE_IGNORE": 1,
+          "DATA_HAS_ORPHANS": 1
+        }
+      }
+    },
+    "TogglePrecedence": {
+      "policy.mode": {
+        "Value": "EvidenceGated",
+        "Source": 0
+      },
+      "policy.nullBudget": {
+        "Value": 0,
+        "Source": 0
+      },
+      "foreignKeys.enableCreation": {
+        "Value": true,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossSchema": {
+        "Value": false,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossCatalog": {
+        "Value": false,
+        "Source": 0
+      },
+      "uniqueness.enforceSingleColumn": {
+        "Value": true,
+        "Source": 0
+      },
+      "uniqueness.enforceMultiColumn": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.generatePreScripts": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.maxRowsDefaultBackfill": {
+        "Value": 100000,
+        "Source": 0
+      }
+    }
+  },
+  "Emission": {
+    "Algorithm": "SHA256",
+    "Hash": "edd1d6647ed54b41819bb03a71398a5c82ac35497c076f694ca84457278296d1"
+  },
+  "PreRemediation": [],
+  "Coverage": {
+    "Tables": {
+      "Emitted": 2,
+      "Total": 3,
+      "Percentage": 66.67
+    },
+    "Columns": {
+      "Emitted": 3,
+      "Total": 6,
+      "Percentage": 50.0
+    },
+    "Constraints": {
+      "Emitted": 2,
+      "Total": 3,
+      "Percentage": 66.67
+    }
+  },
+  "PredicateCoverage": {
+    "Tables": [
+      {
+        "Module": "M",
+        "Schema": "dbo",
+        "Table": "OSUSR_A",
+        "Predicates": []
+      },
+      {
+        "Module": "M",
+        "Schema": "dbo",
+        "Table": "OSUSR_B",
+        "Predicates": [
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithoutDbConstraint"
+        ]
+      },
+      {
+        "Module": "UserExtension_CS",
+        "Schema": "dbo",
+        "Table": "ossys_User",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      }
+    ],
+    "PredicateCounts": {
+      "HasLogicalForeignKey": 1,
+      "HasLogicalForeignKeyWithoutDbConstraint": 1,
+      "HasUniqueIndex": 1
+    }
+  },
+  "Unsupported": [
+    "Table dbo.ossys_User missing from emission output."
+  ]
+}

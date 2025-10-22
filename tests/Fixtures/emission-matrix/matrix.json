@@ -1,0 +1,74 @@
+{
+  "cases": [
+    {
+      "name": "unique-index",
+      "model": "model.micro-unique.json",
+      "profile": "profiling/profile.micro-unique.json",
+      "expected": "emission-matrix/unique-index",
+      "entity": {
+        "module": "M",
+        "schema": "dbo",
+        "table": "OSUSR_U_USER"
+      },
+      "predicates": [
+        "HasUniqueIndex"
+      ]
+    },
+    {
+      "name": "composite-default",
+      "model": "model.micro-unique-composite.json",
+      "profile": "profiling/profile.micro-unique-composite.json",
+      "expected": "emission-matrix/composite-default",
+      "entity": {
+        "module": "M",
+        "schema": "dbo",
+        "table": "OSUSR_A_ORDERALLOCATION"
+      },
+      "predicates": [
+        "HasUniqueIndex",
+        "HasCompositeUniqueIndex",
+        "HasDefaultConstraint"
+      ]
+    },
+    {
+      "name": "fk-ignore",
+      "model": "model.micro-fk-ignore.json",
+      "profile": "profiling/profile.micro-fk-ignore.json",
+      "expected": "emission-matrix/fk-ignore",
+      "entity": {
+        "module": "M",
+        "schema": "dbo",
+        "table": "OSUSR_B"
+      },
+      "predicates": [
+        "HasLogicalForeignKey",
+        "HasLogicalForeignKeyWithoutDbConstraint"
+      ]
+    },
+    {
+      "name": "temporal-audit",
+      "model": "model.matrix.temporal.json",
+      "profile": "profiling/profile.matrix.temporal.json",
+      "expected": "emission-matrix/temporal-audit",
+      "entity": {
+        "module": "Matrix",
+        "schema": "dbo",
+        "table": "OSUSR_M_TEMPORALORDER"
+      },
+      "staticData": "static-data/static-entities.matrix.temporal.json",
+      "predicates": [
+        "HasTemporalHistory",
+        "HasTrigger",
+        "IsStaticEntity",
+        "HasDefaultConstraint",
+        "HasCheckConstraint",
+        "HasExtendedProperties",
+        "HasInactiveColumns",
+        "HasFilteredIndex",
+        "HasIncludedIndexColumns",
+        "HasLogicalForeignKey",
+        "HasLogicalForeignKeyWithDbConstraint"
+      ]
+    }
+  ]
+}

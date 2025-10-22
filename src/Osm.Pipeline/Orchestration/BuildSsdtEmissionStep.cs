@@ -93,6 +93,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
                 emissionMetadata,
                 report,
                 coverage: coverageResult.Summary,
+                predicateCoverage: coverageResult.PredicateCoverage,
                 unsupported: coverageResult.Unsupported,
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
@@ -108,7 +109,11 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             });
 
         var decisionLogPath = await _decisionLogWriter
-            .WriteAsync(state.Request.OutputDirectory, report, cancellationToken)
+            .WriteAsync(
+                state.Request.OutputDirectory,
+                report,
+                cancellationToken,
+                coverageResult.PredicateCoverage)
             .ConfigureAwait(false);
 
         state.Log.Record(
