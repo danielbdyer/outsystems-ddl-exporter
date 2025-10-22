@@ -29,6 +29,6 @@ This note distills the reference information gathered while expanding the advanc
 - Index projection keeps logical attribute ordering alongside the physical column names so downstream diff tooling can reason about both facets simultaneously, now with direction and included-column flags. 【F:src/AdvancedSql/outsystems_model_export.sql†L300-L341】【F:readme.md†L271-L287】
 
 ## Extended Descriptions → `MS_Description`
-- README now documents how to apply the surfaced entity/attribute descriptions to SQL Server extended properties using `sp_addextendedproperty` / `sp_updateextendedproperty`, enabling SSDT parity without re-authoring metadata. 【F:readme.md†L289-L315】
+- README now documents how to apply the surfaced entity/attribute descriptions to SQL Server extended properties using `sp_addextendedproperty`, enabling SSDT parity without re-authoring metadata. 【F:readme.md†L289-L315】
 
 These notes should make it easier to extend the extractor, audit its assumptions, or onboard new collaborators who need to understand where each JSON field originates.

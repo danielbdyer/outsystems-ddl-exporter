@@ -31,106 +31,41 @@ ALTER INDEX [IDX_CUSTOMER_PORTAL_Name]
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]')
-      AND minor_id = 0
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Stores customer records for AppCore',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Stores customer records for AppCore',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Stores customer records for AppCore',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]'), N'Id', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Customer identifier',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
-        @level2type=N'COLUMN',@level2name=N'Id';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer identifier',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
-        @level2type=N'COLUMN',@level2name=N'Id';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer identifier',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
+    @level2type=N'COLUMN',@level2name=N'Id';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]'), N'Email', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Customer email',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
-        @level2type=N'COLUMN',@level2name=N'Email';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer email',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
-        @level2type=N'COLUMN',@level2name=N'Email';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer email',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
+    @level2type=N'COLUMN',@level2name=N'Email';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]'), N'FirstName', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Customer first name',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
-        @level2type=N'COLUMN',@level2name=N'FirstName';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer first name',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
-        @level2type=N'COLUMN',@level2name=N'FirstName';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer first name',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
+    @level2type=N'COLUMN',@level2name=N'FirstName';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]'), N'LastName', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Customer last name',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
-        @level2type=N'COLUMN',@level2name=N'LastName';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer last name',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
-        @level2type=N'COLUMN',@level2name=N'LastName';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Customer last name',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
+    @level2type=N'COLUMN',@level2name=N'LastName';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[CUSTOMER_PORTAL]'), N'CityId', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'FK to City',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
-        @level2type=N'COLUMN',@level2name=N'CityId';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'FK to City',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
-        @level2type=N'COLUMN',@level2name=N'CityId';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'FK to City',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'CUSTOMER_PORTAL',
+    @level2type=N'COLUMN',@level2name=N'CityId';

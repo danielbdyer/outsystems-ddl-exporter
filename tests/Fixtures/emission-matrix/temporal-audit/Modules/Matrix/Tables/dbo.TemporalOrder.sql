@@ -21,55 +21,23 @@ CREATE INDEX [IX_TemporalOrder_Status]
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[TemporalOrder]')
-      AND minor_id = 0
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Temporal order history',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'TemporalOrder';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Temporal order history',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'TemporalOrder';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Temporal order history',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'TemporalOrder';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[TemporalOrder]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[TemporalOrder]'), N'Id', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Temporal order identifier',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'TemporalOrder',
-        @level2type=N'COLUMN',@level2name=N'Id';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Temporal order identifier',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'TemporalOrder',
-        @level2type=N'COLUMN',@level2name=N'Id';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Temporal order identifier',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'TemporalOrder',
+    @level2type=N'COLUMN',@level2name=N'Id';
 
 GO
 
-IF EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE class = 1 AND name = N'MS_Description'
-      AND major_id = OBJECT_ID(N'[dbo].[TemporalOrder]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID(N'[dbo].[TemporalOrder]'), N'Status', 'ColumnId')
-)
-    EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'Order processing status',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'TemporalOrder',
-        @level2type=N'COLUMN',@level2name=N'Status';
-ELSE
-    EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Order processing status',
-        @level0type=N'SCHEMA',@level0name=N'dbo',
-        @level1type=N'TABLE',@level1name=N'TemporalOrder',
-        @level2type=N'COLUMN',@level2name=N'Status';
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Order processing status',
+    @level0type=N'SCHEMA',@level0name=N'dbo',
+    @level1type=N'TABLE',@level1name=N'TemporalOrder',
+    @level2type=N'COLUMN',@level2name=N'Status';
 
 GO
 
