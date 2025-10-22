@@ -15,13 +15,19 @@ using EntityDocument = ModelJsonDeserializer.EntityDocument;
 
 public class EntityDocumentMapperTests
 {
-    private static DocumentMapperContext CreateContext(List<string> warnings, ModuleValidationOverrides? overrides = null)
+    private static DocumentMapperContext CreateContext(
+        List<string> warnings,
+        ModuleValidationOverrides? overrides = null,
+        bool allowDuplicateAttributeLogicalNames = false)
     {
         var serializerOptions = new JsonSerializerOptions
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
-        var options = new ModelJsonDeserializerOptions(overrides);
+        var options = new ModelJsonDeserializerOptions(
+            overrides,
+            missingSchemaFallback: null,
+            allowDuplicateAttributeLogicalNames: allowDuplicateAttributeLogicalNames);
         return new DocumentMapperContext(options, warnings, serializerOptions);
     }
 
@@ -101,5 +107,43 @@ public class EntityDocumentMapperTests
         Assert.True(result.IsSuccess);
         Assert.True(result.Value.IsActive);
         Assert.Contains(warnings, warning => warning.Contains("missing schema", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Map_ShouldWarnAndSucceed_WhenDuplicateLogicalNamesAllowed()
+    {
+        var warnings = new List<string>();
+        var context = CreateContext(warnings, allowDuplicateAttributeLogicalNames: true);
+        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
+        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
+        var mapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
+
+        var duplicateAttribute = new AttributeDocument
+        {
+            Name = "Id",
+            PhysicalName = "ID2",
+            DataType = "Identifier",
+            IsMandatory = false,
+            IsIdentifier = false,
+            IsAutoNumber = false,
+            IsActive = true,
+            ExtendedProperties = Array.Empty<ModelJsonDeserializer.ExtendedPropertyDocument>()
+        };
+
+        var document = new EntityDocument
+        {
+            Name = "Invoice",
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            Schema = "dbo",
+            IsActive = true,
+            Attributes = new[] { CreateIdentifierAttribute(), duplicateAttribute }
+        };
+
+        var path = DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0);
+        var result = mapper.Map(ModuleName.Create("Finance").Value, document, path);
+
+        Assert.True(result.IsSuccess);
+        var warning = Assert.Single(warnings, w => w.Contains("duplicate attribute logical name 'Id'", StringComparison.Ordinal));
+        Assert.Contains("Path: $['modules'][0]['entities'][0]['attributes']", warning);
     }
 }

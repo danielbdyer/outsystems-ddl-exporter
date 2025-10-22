@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -35,7 +36,8 @@ public sealed record EntityModel(
         IEnumerable<RelationshipModel>? relationships = null,
         IEnumerable<TriggerModel>? triggers = null,
         EntityMetadata? metadata = null,
-        bool allowMissingPrimaryKey = false)
+        bool allowMissingPrimaryKey = false,
+        bool allowDuplicateAttributeLogicalNames = false)
     {
         if (attributes is null)
         {
@@ -53,21 +55,29 @@ public sealed record EntityModel(
             return Result<EntityModel>.Failure(ValidationError.Create("entity.attributes.missingPrimaryKey", "Entity must define at least one primary key attribute."));
         }
 
-        if (HasDuplicates(attributeArray.Select(a => a.LogicalName.Value)))
+        var duplicateLogicalNames = GetDuplicates(attributeArray.Select(a => a.LogicalName.Value));
+        if (duplicateLogicalNames.Count > 0 && !allowDuplicateAttributeLogicalNames)
         {
-            return Result<EntityModel>.Failure(ValidationError.Create("entity.attributes.duplicateLogical", "Duplicate attribute logical names detected."));
+            return Result<EntityModel>.Failure(ValidationError.Create(
+                "entity.attributes.duplicateLogical",
+                FormatDuplicateMessage("logical", duplicateLogicalNames)));
         }
 
-        if (HasDuplicates(attributeArray.Select(a => a.ColumnName.Value), StringComparer.OrdinalIgnoreCase))
+        var duplicateColumnNames = GetDuplicates(
+            attributeArray.Select(a => a.ColumnName.Value),
+            StringComparer.OrdinalIgnoreCase);
+        if (duplicateColumnNames.Count > 0)
         {
-            return Result<EntityModel>.Failure(ValidationError.Create("entity.attributes.duplicateColumn", "Duplicate attribute column names detected."));
+            return Result<EntityModel>.Failure(ValidationError.Create(
+                "entity.attributes.duplicateColumn",
+                FormatDuplicateMessage("column", duplicateColumnNames)));
         }
 
         var indexArray = (indexes ?? Enumerable.Empty<IndexModel>()).ToImmutableArray();
         var relationshipArray = (relationships ?? Enumerable.Empty<RelationshipModel>()).ToImmutableArray();
         var triggerArray = (triggers ?? Enumerable.Empty<TriggerModel>()).ToImmutableArray();
 
-        if (HasDuplicates(triggerArray.Select(t => t.Name.Value), StringComparer.OrdinalIgnoreCase))
+        if (GetDuplicates(triggerArray.Select(t => t.Name.Value), StringComparer.OrdinalIgnoreCase).Count > 0)
         {
             return Result<EntityModel>.Failure(ValidationError.Create("entity.triggers.duplicateName", "Trigger names must be unique."));
         }
@@ -90,18 +100,28 @@ public sealed record EntityModel(
             metadata ?? EntityMetadata.Empty));
     }
 
-    private static bool HasDuplicates(IEnumerable<string> values, IEqualityComparer<string>? comparer = null)
+    private static IReadOnlyCollection<string> GetDuplicates(IEnumerable<string> values, IEqualityComparer<string>? comparer = null)
     {
         comparer ??= StringComparer.Ordinal;
         var set = new HashSet<string>(comparer);
+        var duplicates = new HashSet<string>(comparer);
         foreach (var value in values)
         {
             if (!set.Add(value))
             {
-                return true;
+                duplicates.Add(value);
             }
         }
 
-        return false;
+        return duplicates.Count == 0
+            ? Array.Empty<string>()
+            : duplicates.ToArray();
+    }
+
+    private static string FormatDuplicateMessage(string descriptor, IReadOnlyCollection<string> duplicates)
+    {
+        var formattedNames = string.Join(", ", duplicates.Select(static name => $"'{name}'"));
+        var suffix = duplicates.Count == 1 ? "name" : "names";
+        return $"Duplicate attribute {descriptor} {suffix} detected: {formattedNames}.";
     }
 }

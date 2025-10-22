@@ -151,7 +151,8 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         var warnings = new List<string>();
 
         var deserializeTimer = Stopwatch.StartNew();
-        var deserializerOptions = BuildDeserializerOptions(snapshot, command.OnlyActiveAttributes);
+        var deserializerOptions = EnsureDuplicateLogicalNameTolerance(
+            BuildDeserializerOptions(snapshot, command.OnlyActiveAttributes));
         var modelResult = _deserializer.Deserialize(jsonStream, warnings, deserializerOptions);
         deserializeTimer.Stop();
 
@@ -636,6 +637,13 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         }
 
         return new ModelJsonDeserializerOptions(overrideResult.Value);
+    }
+
+    private static ModelJsonDeserializerOptions EnsureDuplicateLogicalNameTolerance(
+        ModelJsonDeserializerOptions? options)
+    {
+        return (options ?? ModelJsonDeserializerOptions.Default)
+            .WithAllowDuplicateAttributeLogicalNames(true);
     }
 
 }

@@ -24,12 +24,14 @@ public sealed class ModelJsonDeserializerOptions
 {
     public ModelJsonDeserializerOptions(
         ModuleValidationOverrides? validationOverrides = null,
-        string? missingSchemaFallback = null)
+        string? missingSchemaFallback = null,
+        bool allowDuplicateAttributeLogicalNames = false)
     {
         ValidationOverrides = validationOverrides ?? ModuleValidationOverrides.Empty;
         MissingSchemaFallback = string.IsNullOrWhiteSpace(missingSchemaFallback)
             ? "dbo"
             : missingSchemaFallback.Trim();
+        AllowDuplicateAttributeLogicalNames = allowDuplicateAttributeLogicalNames;
 
         var fallbackResult = SchemaName.Create(MissingSchemaFallback);
         MissingSchemaFallbackSchemaResult = fallbackResult.IsSuccess
@@ -48,6 +50,13 @@ public sealed class ModelJsonDeserializerOptions
     public SchemaName? MissingSchemaFallbackSchema => MissingSchemaFallbackSchemaResult.IsSuccess
         ? MissingSchemaFallbackSchemaResult.Value
         : null;
+
+    public bool AllowDuplicateAttributeLogicalNames { get; }
+
+    public ModelJsonDeserializerOptions WithAllowDuplicateAttributeLogicalNames(bool allow)
+        => AllowDuplicateAttributeLogicalNames == allow
+            ? this
+            : new ModelJsonDeserializerOptions(ValidationOverrides, MissingSchemaFallback, allow);
 
     public static ModelJsonDeserializerOptions Default { get; } = new();
 }
