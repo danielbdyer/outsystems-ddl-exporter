@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
@@ -138,7 +139,8 @@ public class EntityModelTests
             new[] { id, duplicate });
 
         Assert.True(result.IsFailure);
-        Assert.Contains(result.Errors, e => e.Code == "entity.attributes.duplicateLogical");
+        var error = Assert.Single(result.Errors, e => e.Code == "entity.attributes.duplicateLogical");
+        Assert.Contains("mapped to columns", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -181,7 +183,51 @@ public class EntityModelTests
             new[] { id, conflicting });
 
         Assert.True(result.IsFailure);
-        Assert.Contains(result.Errors, e => e.Code == "entity.attributes.duplicateColumn");
+        var error = Assert.Single(result.Errors, e => e.Code == "entity.attributes.duplicateColumn");
+        Assert.Contains("shared by attributes", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Create_ShouldAllowDuplicateAttributeColumns_WhenOverrideEnabled()
+    {
+        var module = ModuleName.Create("Module").Value;
+        var logical = EntityName.Create("Entity").Value;
+        var schema = SchemaName.Create("dbo").Value;
+        var table = TableName.Create("OSUSR_ENTITY").Value;
+
+        var id = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true,
+            reference: AttributeReference.None).Value;
+
+        var conflicting = AttributeModel.Create(
+            AttributeName.Create("Code").Value,
+            ColumnName.Create("id").Value,
+            dataType: "Text",
+            isMandatory: false,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            reference: AttributeReference.None).Value;
+
+        var result = EntityModel.Create(
+            module,
+            logical,
+            table,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[] { id, conflicting },
+            allowDuplicateAttributeColumnNames: true);
+
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(e => e.Message)));
     }
 
     [Fact]

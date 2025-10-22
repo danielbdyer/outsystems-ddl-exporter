@@ -160,24 +160,54 @@ internal sealed class EntityDocumentMapper
 
         var metadata = EntityMetadata.Create(doc.Meta?.Description, propertyResult.Value, temporalResult.Value);
         var attributes = attributesResult.Value;
+        var attributesPath = path.Property("attributes");
 
         var allowDuplicateLogicalNames = _context.Options.AllowDuplicateAttributeLogicalNames;
         if (allowDuplicateLogicalNames)
         {
-            var duplicateLogicalNames = attributes
+            var duplicateLogicalGroups = attributes
                 .GroupBy(static attribute => attribute.LogicalName.Value, StringComparer.Ordinal)
                 .Where(static group => group.Count() > 1)
-                .Select(static group => group.Key)
+                .Select(static group => new
+                {
+                    Key = group.Key,
+                    Columns = group.Select(static attribute => attribute.ColumnName.Value).ToArray()
+                })
                 .ToArray();
 
-            if (duplicateLogicalNames.Length > 0)
+            if (duplicateLogicalGroups.Length > 0)
             {
                 serializedPayload ??= _context.SerializeEntityDocument(doc);
-                var attributePath = path.Property("attributes");
-                foreach (var duplicateName in duplicateLogicalNames)
+                foreach (var group in duplicateLogicalGroups)
                 {
+                    var columnList = string.Join(", ", group.Columns.Select(static name => $"'{name}'"));
                     _context.AddWarning(
-                        $"Entity '{moduleNameValue}::{entityNameValue}' contains duplicate attribute logical name '{duplicateName}'. Raw payload: {serializedPayload} (Path: {attributePath})");
+                        $"Entity '{moduleNameValue}::{entityNameValue}' contains duplicate attribute logical name '{group.Key}' mapped to columns {columnList}. Raw payload: {serializedPayload} (Path: {attributesPath})");
+                }
+            }
+        }
+
+        var allowDuplicateColumnNames = _context.Options.AllowDuplicateAttributeColumnNames;
+        if (allowDuplicateColumnNames)
+        {
+            var duplicateColumnGroups = attributes
+                .GroupBy(static attribute => attribute.ColumnName.Value, StringComparer.OrdinalIgnoreCase)
+                .Where(static group => group.Count() > 1)
+                .Select(static group => new
+                {
+                    Key = group.Key,
+                    LogicalNames = group.Select(static attribute => attribute.LogicalName.Value).ToArray()
+                })
+                .ToArray();
+
+            if (duplicateColumnGroups.Length > 0)
+            {
+                serializedPayload ??= _context.SerializeEntityDocument(doc);
+                foreach (var group in duplicateColumnGroups)
+                {
+                    var attributeList = string.Join(", ", group.LogicalNames.Select(static name => $"'{name}'"));
+                    _context.AddWarning(
+                        $"Entity '{moduleNameValue}::{entityNameValue}' contains duplicate attribute column name '{group.Key}' shared by attributes {attributeList}. Raw payload: {serializedPayload} (Path: {attributesPath})");
                 }
             }
         }
@@ -214,7 +244,8 @@ internal sealed class EntityDocumentMapper
             triggersResult.Value,
             metadata,
             allowMissingPrimaryKey: allowMissingPrimaryKey,
-            allowDuplicateAttributeLogicalNames: allowDuplicateLogicalNames);
+            allowDuplicateAttributeLogicalNames: allowDuplicateLogicalNames,
+            allowDuplicateAttributeColumnNames: allowDuplicateColumnNames);
 
         if (entityResult.IsFailure)
         {

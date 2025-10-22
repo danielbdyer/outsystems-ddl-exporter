@@ -497,6 +497,83 @@ public class SqlModelExtractionServiceTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldWarnWhenDuplicateAttributeColumnsPresent()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isSystem": false,
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    },
+                    {
+                      "name": "BusinessContext",
+                      "physicalName": "BUSINESSCONTEXTID",
+                      "dataType": "Identifier",
+                      "isMandatory": false,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isActive": true
+                    },
+                    {
+                      "name": "LegacyBusinessContext",
+                      "physicalName": "businesscontextid",
+                      "dataType": "Identifier",
+                      "isMandatory": false,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isActive": true
+                    }
+                  ],
+                  "relationships": [],
+                  "indexes": [],
+                  "triggers": []
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var snapshot = CreateSnapshotFromJson(json);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+
+        var result = await service.ExtractAsync(command);
+
+        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(error => error.Message)));
+        var warning = Assert.Single(result.Value.Warnings, message
+            => message.Contains("duplicate attribute column name", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("shared by attributes", warning, StringComparison.Ordinal);
+
+        var module = Assert.Single(result.Value.Model.Modules);
+        var entity = Assert.Single(module.Entities);
+        Assert.Equal(3, entity.Attributes.Length);
+        Assert.Contains(entity.Attributes, attribute => attribute.LogicalName.Value == "BusinessContext");
+        Assert.Contains(entity.Attributes, attribute => attribute.LogicalName.Value == "LegacyBusinessContext");
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldPersistJsonToFilePath()
     {
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.micro-unique.json"));
