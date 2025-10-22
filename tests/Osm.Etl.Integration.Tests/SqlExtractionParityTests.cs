@@ -41,7 +41,7 @@ public sealed class SqlExtractionParityTests
         _fixture = fixture;
     }
 
-    [Fact]
+    [RequiresDockerFact]
     public async Task ExtractModel_ShouldMatchEdgeCaseFixture()
     {
         var connectionFactory = new SqlConnectionFactory(_fixture.DatabaseConnectionString);
@@ -64,7 +64,7 @@ public sealed class SqlExtractionParityTests
         Assert.Equal(expectedHash, actualHash);
     }
 
-    [Fact]
+    [RequiresDockerFact]
     public async Task ExtractModel_WithInvalidPassword_ShouldReturnMetadataFailure()
     {
         var builder = new SqlConnectionStringBuilder(_fixture.DatabaseConnectionString)
@@ -85,7 +85,7 @@ public sealed class SqlExtractionParityTests
         Assert.Contains("login failed", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
+    [RequiresDockerFact]
     public async Task AdvancedSqlExecutor_ShouldSurfaceTimeoutMessage()
     {
         var connectionFactory = new SqlConnectionFactory(_fixture.DatabaseConnectionString);
@@ -236,7 +236,7 @@ public sealed class SqlExtractionParityTests
     {
         if (node is JsonObject obj && obj.TryGetPropertyValue(property, out var value) && value is not null)
         {
-            if (value.TryGetValue<int>(out var number))
+            if (value is JsonValue jsonValue && jsonValue.TryGetValue<int>(out var number))
             {
                 return number;
             }

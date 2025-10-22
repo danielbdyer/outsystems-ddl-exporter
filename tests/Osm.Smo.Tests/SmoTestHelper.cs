@@ -1,5 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using Microsoft.Data.SqlClient;
+using Microsoft.SqlServer.Management.Common;
+using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -66,5 +70,33 @@ internal static class SmoTestHelper
         }
 
         return builder.ToImmutable();
+    }
+
+    public static bool TryEnsureSqlServer(out string skipReason)
+    {
+        try
+        {
+            using var context = new SmoContext();
+            _ = context.Server.Version;
+            skipReason = string.Empty;
+            return true;
+        }
+        catch (Exception ex) when (IsSqlConnectionException(ex))
+        {
+            skipReason = $"SQL Server is not available for SMO tests: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static bool IsSqlConnectionException(Exception ex)
+    {
+        return ex switch
+        {
+            ConnectionFailureException => true,
+            FailedOperationException { InnerException: { } inner } => IsSqlConnectionException(inner),
+            SqlException => true,
+            _ when ex.InnerException is not null => IsSqlConnectionException(ex.InnerException),
+            _ => false
+        };
     }
 }

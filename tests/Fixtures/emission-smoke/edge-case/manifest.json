@@ -10,7 +10,7 @@
         "IDX_Customer_Name"
       ],
       "ForeignKeys": [
-        "FK_Customer_CityId"
+        "FK_Customer_Osusr_Def_City"
       ],
       "IncludesExtendedProperties": true
     },
@@ -60,101 +60,101 @@
     "ForeignKeyCount": 2,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
-      "DATA_HAS_ORPHANS": 1,
       "DELETE_RULE_IGNORE": 1,
-      "DEFAULT_PRESENT": 2,
       "UNIQUE_NO_NULLS": 2,
       "FK_ENFORCED": 1,
       "DATA_NO_NULLS": 10,
-      "PK": 4,
+      "PROFILE_MISSING": 1,
       "MANDATORY": 10,
       "PHYSICAL_NOT_NULL": 4,
-      "PROFILE_MISSING": 1
+      "DATA_HAS_ORPHANS": 1,
+      "DEFAULT_PRESENT": 2,
+      "PK": 4
     },
     "UniqueIndexRationales": {
       "UNIQUE_NO_NULLS": 2,
       "PHYSICAL_UNIQUE_KEY": 2
     },
     "ForeignKeyRationales": {
-      "DATA_HAS_ORPHANS": 1,
       "DELETE_RULE_IGNORE": 1,
+      "DATA_HAS_ORPHANS": 1,
       "DB_CONSTRAINT_PRESENT": 1
     },
     "ModuleRollups": {
+      "AppCore": {
+        "ColumnCount": 9,
+        "TightenedColumnCount": 6,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 1,
+        "UniqueIndexesEnforcedCount": 1,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 1,
+        "ForeignKeysCreatedCount": 1,
+        "ColumnRationales": {
+          "UNIQUE_NO_NULLS": 1,
+          "FK_ENFORCED": 1,
+          "DATA_NO_NULLS": 6,
+          "PROFILE_MISSING": 1,
+          "MANDATORY": 6,
+          "PHYSICAL_NOT_NULL": 2,
+          "DEFAULT_PRESENT": 1,
+          "PK": 2
+        },
+        "UniqueIndexRationales": {
+          "UNIQUE_NO_NULLS": 1,
+          "PHYSICAL_UNIQUE_KEY": 1
+        },
+        "ForeignKeyRationales": {
+          "DB_CONSTRAINT_PRESENT": 1
+        }
+      },
       "ExtBilling": {
         "ColumnCount": 3,
         "TightenedColumnCount": 2,
         "RemediationColumnCount": 0,
-      "UniqueIndexCount": 1,
-      "UniqueIndexesEnforcedCount": 1,
-      "UniqueIndexesRequireRemediationCount": 0,
-      "ForeignKeyCount": 0,
-      "ForeignKeysCreatedCount": 0,
-      "ColumnRationales": {
-        "DATA_NO_NULLS": 2,
-        "MANDATORY": 2,
-        "PHYSICAL_NOT_NULL": 1,
-        "PK": 1,
-        "UNIQUE_NO_NULLS": 1
+        "UniqueIndexCount": 1,
+        "UniqueIndexesEnforcedCount": 1,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 0,
+        "ForeignKeysCreatedCount": 0,
+        "ColumnRationales": {
+          "UNIQUE_NO_NULLS": 1,
+          "DATA_NO_NULLS": 2,
+          "MANDATORY": 2,
+          "PHYSICAL_NOT_NULL": 1,
+          "PK": 1
+        },
+        "UniqueIndexRationales": {
+          "UNIQUE_NO_NULLS": 1,
+          "PHYSICAL_UNIQUE_KEY": 1
+        },
+        "ForeignKeyRationales": {}
       },
-      "UniqueIndexRationales": {
-        "PHYSICAL_UNIQUE_KEY": 1,
-        "UNIQUE_NO_NULLS": 1
-      },
-      "ForeignKeyRationales": {}
-    },
-    "Ops": {
-      "ColumnCount": 3,
-      "TightenedColumnCount": 2,
-      "RemediationColumnCount": 0,
-      "UniqueIndexCount": 0,
-      "UniqueIndexesEnforcedCount": 0,
-      "UniqueIndexesRequireRemediationCount": 0,
-      "ForeignKeyCount": 1,
-      "ForeignKeysCreatedCount": 0,
-      "ColumnRationales": {
-        "DATA_HAS_ORPHANS": 1,
-        "DATA_NO_NULLS": 2,
-        "DEFAULT_PRESENT": 1,
-        "DELETE_RULE_IGNORE": 1,
-        "MANDATORY": 2,
-        "PHYSICAL_NOT_NULL": 1,
-        "PK": 1
-      },
-      "UniqueIndexRationales": {},
-      "ForeignKeyRationales": {
-        "DATA_HAS_ORPHANS": 1,
-        "DELETE_RULE_IGNORE": 1
+      "Ops": {
+        "ColumnCount": 3,
+        "TightenedColumnCount": 2,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 0,
+        "UniqueIndexesEnforcedCount": 0,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 1,
+        "ForeignKeysCreatedCount": 0,
+        "ColumnRationales": {
+          "DELETE_RULE_IGNORE": 1,
+          "DATA_NO_NULLS": 2,
+          "MANDATORY": 2,
+          "PHYSICAL_NOT_NULL": 1,
+          "DATA_HAS_ORPHANS": 1,
+          "DEFAULT_PRESENT": 1,
+          "PK": 1
+        },
+        "UniqueIndexRationales": {},
+        "ForeignKeyRationales": {
+          "DELETE_RULE_IGNORE": 1,
+          "DATA_HAS_ORPHANS": 1
+        }
       }
     },
-    "AppCore": {
-      "ColumnCount": 9,
-      "TightenedColumnCount": 6,
-      "RemediationColumnCount": 0,
-      "UniqueIndexCount": 1,
-      "UniqueIndexesEnforcedCount": 1,
-      "UniqueIndexesRequireRemediationCount": 0,
-      "ForeignKeyCount": 1,
-      "ForeignKeysCreatedCount": 1,
-      "ColumnRationales": {
-        "DATA_NO_NULLS": 6,
-        "DEFAULT_PRESENT": 1,
-        "FK_ENFORCED": 1,
-        "MANDATORY": 6,
-        "PHYSICAL_NOT_NULL": 2,
-        "PK": 2,
-        "PROFILE_MISSING": 1,
-        "UNIQUE_NO_NULLS": 1
-      },
-      "UniqueIndexRationales": {
-        "PHYSICAL_UNIQUE_KEY": 1,
-        "UNIQUE_NO_NULLS": 1
-      },
-      "ForeignKeyRationales": {
-        "DB_CONSTRAINT_PRESENT": 1
-      }
-    }
-  },
     "TogglePrecedence": {
       "policy.mode": {
         "Value": "EvidenceGated",
@@ -196,7 +196,7 @@
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "13ab16133d53404175eeb5a7d281696e9db2b3fba42cb85c1129d3c44d6d2291"
+    "Hash": "5a0ee9cfe1a6e8b1b4f6e1304840003e2a4b5db97afd25f390ab3adeb37e1d81"
   },
   "PreRemediation": [],
   "Coverage": {

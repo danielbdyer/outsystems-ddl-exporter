@@ -24,7 +24,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         _policy = new TighteningPolicy();
     }
 
-    [Fact]
+    [RequiresSqlServerFact]
     public void CreateTable_populates_columns_indexes_and_foreign_keys()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
@@ -56,7 +56,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
             column.Name.Equals("Email", StringComparison.OrdinalIgnoreCase) && !column.IsIncluded);
 
         var foreignKey = Assert.Single(customerTable.ForeignKeys.Cast<ForeignKey>());
-        Assert.Equal("FK_Customer_CityId", foreignKey.Name);
+        Assert.Equal("FK_Customer_Osusr_Def_City", foreignKey.Name);
         Assert.True(foreignKey.IsChecked);
         Assert.Equal(ForeignKeyAction.NoAction, foreignKey.DeleteAction);
         Assert.Equal("OSUSR_DEF_CITY", foreignKey.ReferencedTable);
@@ -66,7 +66,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
             column.ReferencedColumn.Equals("Id", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
+    [RequiresSqlServerFact]
     public void CreateTable_uses_smo_index_type_when_system_index_is_in_scope()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
@@ -87,7 +87,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         Assert.Equal(0, systemIndex.GetOffset(5));
     }
 
-    [Fact]
+    [RequiresSqlServerFact]
     public void CreateTable_respects_naming_overrides_for_referenced_tables()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
@@ -116,7 +116,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         Assert.Equal("CityArchive", foreignKey.ReferencedTable);
     }
 
-    [Fact]
+    [RequiresSqlServerFact]
     public void CreateTable_emits_all_columns_for_composite_foreign_keys()
     {
         var (model, decisions, snapshot) = SmoTestHelper.LoadCompositeForeignKeyArtifacts();

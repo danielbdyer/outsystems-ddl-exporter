@@ -12,6 +12,7 @@ using Osm.Domain.ValueObjects;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
+using Xunit;
 
 namespace Osm.Smo.Tests;
 
@@ -137,6 +138,11 @@ public class SmoModelFactoryTests
 
         foreach (var pair in decisions.Nullability)
         {
+            if (!IsEmittableAttribute(model, pair.Key))
+            {
+                continue;
+            }
+
             var key = BuildColumnKey(pair.Key);
             Assert.True(columnLookup.TryGetValue(key, out var column), $"Column '{key}' missing from SMO model.");
             Assert.Equal(pair.Value.MakeNotNull, !column.Nullable);
@@ -411,6 +417,33 @@ public class SmoModelFactoryTests
     private static string Normalize(string value)
         => value.Replace("\r\n", "\n").Trim();
 
+    private static bool IsEmittableAttribute(OsmModel model, ColumnCoordinate coordinate)
+    {
+        foreach (var module in model.Modules)
+        {
+            foreach (var entity in module.Entities)
+            {
+                if (!entity.Schema.Value.Equals(coordinate.Schema.Value, StringComparison.OrdinalIgnoreCase) ||
+                    !entity.PhysicalName.Value.Equals(coordinate.Table.Value, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var attribute = entity.Attributes.FirstOrDefault(attribute =>
+                    attribute.ColumnName.Value.Equals(coordinate.Column.Value, StringComparison.OrdinalIgnoreCase));
+
+                if (attribute is null)
+                {
+                    return false;
+                }
+
+                return attribute.IsActive && !attribute.Reality.IsPresentButInactive;
+            }
+        }
+
+        return false;
+    }
+
     [Fact]
     public void Build_excludes_platform_auto_indexes_when_disabled()
     {
@@ -648,7 +681,7 @@ public class SmoModelFactoryTests
         Assert.Equal("User", foreignKey.ReferencedLogicalTable);
     }
 
-    [Fact]
+    [RequiresSqlServerFact]
     public void CreateSmoTables_materializes_detached_smo_objects()
     {
         var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();

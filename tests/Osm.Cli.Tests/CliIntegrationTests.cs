@@ -456,7 +456,7 @@ CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
     CONSTRAINT [PK_JobRun] PRIMARY KEY ([ID])
 );
 ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
-ADD CONSTRAINT [FK_Customer_CityId]
+            ADD CONSTRAINT [FK_Customer_Osusr_Def_City]
 FOREIGN KEY ([CITYID]) REFERENCES [dbo].[OSUSR_DEF_CITY]([ID]);";
 
     private const string MismatchedScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
@@ -486,6 +486,6 @@ CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
     CONSTRAINT [PK_JobRun] PRIMARY KEY ([ID])
 );
 ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
-ADD CONSTRAINT [FK_Customer_CityId]
+            ADD CONSTRAINT [FK_Customer_Osusr_Def_City]
 FOREIGN KEY ([CITYID]) REFERENCES [dbo].[OSUSR_DEF_CITY]([ID]);";
 }

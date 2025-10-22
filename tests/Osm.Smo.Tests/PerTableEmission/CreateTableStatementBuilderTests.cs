@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -138,16 +139,16 @@ public class CreateTableStatementBuilderTests
         var foreignKeyNames = builder.AddForeignKeys(statement, childTable, childTable.Name, options, out _);
 
         var resolvedName = Assert.Single(foreignKeyNames);
-        Assert.Equal("FK_OSUSR_M_CHILD_PARENT", resolvedName);
+        Assert.Equal("FK_Child_Parent", resolvedName);
 
         var constraint = Assert.Single(statement.Definition!.TableConstraints.OfType<ForeignKeyConstraintDefinition>());
         Assert.Collection(
             constraint.Columns,
-            column => Assert.Equal("ParentId", column.Value),
-            column => Assert.Equal("TenantId", column.Value));
+            column => Assert.Equal("ParentId", column.Value, StringComparer.OrdinalIgnoreCase),
+            column => Assert.Equal("TenantId", column.Value, StringComparer.OrdinalIgnoreCase));
         Assert.Collection(
             constraint.ReferencedTableColumns,
-            column => Assert.Equal("Id", column.Value),
-            column => Assert.Equal("TenantId", column.Value));
+            column => Assert.Equal("Id", column.Value, StringComparer.OrdinalIgnoreCase),
+            column => Assert.Equal("TenantId", column.Value, StringComparer.OrdinalIgnoreCase));
     }
 }

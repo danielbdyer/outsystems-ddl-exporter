@@ -16,12 +16,22 @@ namespace Osm.Etl.Integration.Tests;
 public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
 {
     private const string DatabaseName = "OutsystemsIntegration";
-    private readonly MsSqlTestcontainer _container;
+    private readonly bool _dockerAvailable;
+    private readonly string _skipReason;
+    private readonly MsSqlTestcontainer? _container;
     private int _disposed;
     private string? _databaseConnectionString;
 
     public SqlServerFixture()
     {
+        _dockerAvailable = DockerTestHelper.TryEnsureDocker(out var skipReason);
+        _skipReason = skipReason;
+
+        if (!_dockerAvailable)
+        {
+            return;
+        }
+
         var configuration = new MsSqlTestcontainerConfiguration
         {
             Password = "yourStrong(!)Password"
@@ -34,10 +44,26 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
             .Build();
     }
 
-    public string DatabaseConnectionString => _databaseConnectionString ?? throw new InvalidOperationException("SQL Server container has not been initialized.");
+    public string DatabaseConnectionString
+    {
+        get
+        {
+            if (!_dockerAvailable)
+            {
+                throw new InvalidOperationException(_skipReason);
+            }
+
+            return _databaseConnectionString ?? throw new InvalidOperationException("SQL Server container has not been initialized.");
+        }
+    }
 
     public async Task InitializeAsync()
     {
+        if (!_dockerAvailable || _container is null)
+        {
+            return;
+        }
+
         await _container.StartAsync().ConfigureAwait(false);
 
         var masterBuilder = new SqlConnectionStringBuilder(_container.ConnectionString)
@@ -92,6 +118,11 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
 
     private ValueTask DisposeContainerAsync()
     {
+        if (!_dockerAvailable || _container is null)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return ValueTask.CompletedTask;
