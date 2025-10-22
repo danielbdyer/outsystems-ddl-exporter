@@ -25,13 +25,15 @@ public sealed class ModelJsonDeserializerOptions
     public ModelJsonDeserializerOptions(
         ModuleValidationOverrides? validationOverrides = null,
         string? missingSchemaFallback = null,
-        bool allowDuplicateAttributeLogicalNames = false)
+        bool allowDuplicateAttributeLogicalNames = false,
+        bool allowDuplicateAttributeColumnNames = false)
     {
         ValidationOverrides = validationOverrides ?? ModuleValidationOverrides.Empty;
         MissingSchemaFallback = string.IsNullOrWhiteSpace(missingSchemaFallback)
             ? "dbo"
             : missingSchemaFallback.Trim();
         AllowDuplicateAttributeLogicalNames = allowDuplicateAttributeLogicalNames;
+        AllowDuplicateAttributeColumnNames = allowDuplicateAttributeColumnNames;
 
         var fallbackResult = SchemaName.Create(MissingSchemaFallback);
         MissingSchemaFallbackSchemaResult = fallbackResult.IsSuccess
@@ -53,10 +55,25 @@ public sealed class ModelJsonDeserializerOptions
 
     public bool AllowDuplicateAttributeLogicalNames { get; }
 
+    public bool AllowDuplicateAttributeColumnNames { get; }
+
     public ModelJsonDeserializerOptions WithAllowDuplicateAttributeLogicalNames(bool allow)
         => AllowDuplicateAttributeLogicalNames == allow
             ? this
-            : new ModelJsonDeserializerOptions(ValidationOverrides, MissingSchemaFallback, allow);
+            : new ModelJsonDeserializerOptions(
+                ValidationOverrides,
+                MissingSchemaFallback,
+                allow,
+                AllowDuplicateAttributeColumnNames);
+
+    public ModelJsonDeserializerOptions WithAllowDuplicateAttributeColumnNames(bool allow)
+        => AllowDuplicateAttributeColumnNames == allow
+            ? this
+            : new ModelJsonDeserializerOptions(
+                ValidationOverrides,
+                MissingSchemaFallback,
+                AllowDuplicateAttributeLogicalNames,
+                allow);
 
     public static ModelJsonDeserializerOptions Default { get; } = new();
 }

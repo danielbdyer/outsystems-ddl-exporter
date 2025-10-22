@@ -160,6 +160,7 @@ internal sealed class EntityDocumentMapper
 
         var metadata = EntityMetadata.Create(doc.Meta?.Description, propertyResult.Value, temporalResult.Value);
         var attributes = attributesResult.Value;
+        var attributesPath = path.Property("attributes");
 
         var allowDuplicateLogicalNames = _context.Options.AllowDuplicateAttributeLogicalNames;
         if (allowDuplicateLogicalNames)
@@ -173,11 +174,30 @@ internal sealed class EntityDocumentMapper
             if (duplicateLogicalNames.Length > 0)
             {
                 serializedPayload ??= _context.SerializeEntityDocument(doc);
-                var attributePath = path.Property("attributes");
                 foreach (var duplicateName in duplicateLogicalNames)
                 {
                     _context.AddWarning(
-                        $"Entity '{moduleNameValue}::{entityNameValue}' contains duplicate attribute logical name '{duplicateName}'. Raw payload: {serializedPayload} (Path: {attributePath})");
+                        $"Entity '{moduleNameValue}::{entityNameValue}' contains duplicate attribute logical name '{duplicateName}'. Raw payload: {serializedPayload} (Path: {attributesPath})");
+                }
+            }
+        }
+
+        var allowDuplicateColumnNames = _context.Options.AllowDuplicateAttributeColumnNames;
+        if (allowDuplicateColumnNames)
+        {
+            var duplicateColumnNames = attributes
+                .GroupBy(static attribute => attribute.ColumnName.Value, StringComparer.OrdinalIgnoreCase)
+                .Where(static group => group.Count() > 1)
+                .Select(static group => group.Key)
+                .ToArray();
+
+            if (duplicateColumnNames.Length > 0)
+            {
+                serializedPayload ??= _context.SerializeEntityDocument(doc);
+                foreach (var duplicateColumn in duplicateColumnNames)
+                {
+                    _context.AddWarning(
+                        $"Entity '{moduleNameValue}::{entityNameValue}' contains duplicate attribute column name '{duplicateColumn}'. Raw payload: {serializedPayload} (Path: {attributesPath})");
                 }
             }
         }
@@ -214,7 +234,8 @@ internal sealed class EntityDocumentMapper
             triggersResult.Value,
             metadata,
             allowMissingPrimaryKey: allowMissingPrimaryKey,
-            allowDuplicateAttributeLogicalNames: allowDuplicateLogicalNames);
+            allowDuplicateAttributeLogicalNames: allowDuplicateLogicalNames,
+            allowDuplicateAttributeColumnNames: allowDuplicateColumnNames);
 
         if (entityResult.IsFailure)
         {
