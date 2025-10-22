@@ -36,7 +36,7 @@ Attributes are loaded via dynamic SQL because OutSystems payloads differ across 
 To map logical references back to entities, the script joins attributes to `#Ent` in four passes:
 
 1. Direct `RefEntityId` match.
-2. SS key match derived from the `LegacyType` pattern `bt*<module guid>*<entity guid>`.
+2. SS key match derived from the `LegacyType` pattern `bt<module guid>*<entity guid>`.
 3. Fallback lookups against `dbo.ossys_Entity` / `dbo.ossys_Espace` when the entity was filtered out of `#Ent` (e.g., system modules suppressed).【F:src/AdvancedSql/outsystems_model_export.sql†L161-L210】
 
 This produces `RefEntityId`, `RefEntityName`, and `RefPhysicalName` per attribute where any evidence is available.【F:src/AdvancedSql/outsystems_model_export.sql†L180-L212】

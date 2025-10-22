@@ -5,7 +5,7 @@ The `uat-users` verb discovers every foreign-key column that references `dbo.[Us
 ## Key Behaviors
 
 * **Deterministic discovery** – Metadata is sourced from the OutSystems model (or live metadata when `--from-live` is supplied) and flattened into a sorted, deduplicated catalog. Each catalog entry produces its own update block in the SQL script.
-* **Attribute-level fallback** – When exported models omit explicit relationships to the Users table, provide `--user-entity-id` (accepts `bt*GUID*GUID`, numeric IDs, entity names, or physical table names). The command synthesizes catalog entries directly from attribute metadata so remediation can proceed without a fully coherent model.
+* **Attribute-level fallback** – When exported models omit explicit relationships to the Users table, provide `--user-entity-id` (accepts `btGUID*GUID`, numeric IDs, entity names, or physical table names). The command synthesizes catalog entries directly from attribute metadata so remediation can proceed without a fully coherent model.
 * **Allowed-user hydration** – Either a `dbo.User` seed script (`--user-ddl`) or a plain identifier list (`--user-ids`) is parsed to determine the set of in-scope users. Any FK values outside of that set are treated as orphans.
 * **Live data analysis** – Using the supplied UAT connection, every catalogued column is scanned to collect distinct user identifiers and row counts. Results can be snapshotted to disk via `--snapshot` for repeatable dry runs.
 * **Operator-controlled mappings** – `00_user_map.template.csv` lists every orphan. Populate the corresponding `00_user_map.csv` (or provide `--user-map`) with `SourceUserId,TargetUserId` pairs. Missing mappings are surfaced in both the preview file and the generated SQL comments.
