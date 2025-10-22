@@ -129,7 +129,8 @@ public class SsdtEmitterTests
         var tablePath = Path.Combine(temp.Path, foreignKeyTable.TableFile);
         var script = await File.ReadAllTextAsync(tablePath).ConfigureAwait(false);
 
-        Assert.Contains("WITH CHECK ADD CONSTRAINT", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CONSTRAINT [FK_Customer_Osusr_Def_City]", script, StringComparison.Ordinal);
+        Assert.Contains("FOREIGN KEY ([CITYID]) REFERENCES [dbo].[City] ([ID])", script, StringComparison.Ordinal);
         Assert.DoesNotContain("WITH NOCHECK", script, StringComparison.OrdinalIgnoreCase);
     }
 
