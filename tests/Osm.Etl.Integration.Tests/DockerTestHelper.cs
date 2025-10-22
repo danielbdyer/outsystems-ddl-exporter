@@ -16,11 +16,12 @@ internal static class DockerTestHelper
 
     private static (bool IsAvailable, string Reason) CheckAvailability()
     {
-        var dockerHost = Environment.GetEnvironmentVariable("DOCKER_HOST") ?? "unix:///var/run/docker.sock";
+        var dockerHost = Environment.GetEnvironmentVariable("DOCKER_HOST");
+        var endpoint = string.IsNullOrWhiteSpace(dockerHost) ? GetDefaultDockerEndpoint() : dockerHost;
 
         try
         {
-            var uri = new Uri(dockerHost);
+            var uri = new Uri(endpoint);
             using var client = new DockerClientConfiguration(uri).CreateClient();
             client.System.PingAsync().GetAwaiter().GetResult();
             return (true, string.Empty);
@@ -29,5 +30,15 @@ internal static class DockerTestHelper
         {
             return (false, $"Docker is not available for integration tests: {ex.Message}");
         }
+    }
+
+    private static string GetDefaultDockerEndpoint()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return "npipe://./pipe/docker_engine";
+        }
+
+        return "unix:///var/run/docker.sock";
     }
 }
