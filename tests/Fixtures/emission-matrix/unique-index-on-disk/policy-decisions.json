@@ -1,0 +1,154 @@
+{
+  "ColumnCount": 2,
+  "TightenedColumnCount": 1,
+  "RemediationColumnCount": 0,
+  "UniqueIndexCount": 2,
+  "UniqueIndexesEnforcedCount": 2,
+  "UniqueIndexesRequireRemediationCount": 0,
+  "ForeignKeyCount": 0,
+  "ForeignKeysCreatedCount": 0,
+  "ColumnRationales": {
+    "PROFILE_MISSING": 2,
+    "MANDATORY": 2,
+    "PK": 1
+  },
+  "UniqueIndexRationales": {
+    "PHYSICAL_UNIQUE_KEY": 2
+  },
+  "ForeignKeyRationales": {},
+  "ModuleRollups": {
+    "Operator": {
+      "ColumnCount": 2,
+      "TightenedColumnCount": 1,
+      "RemediationColumnCount": 0,
+      "UniqueIndexCount": 2,
+      "UniqueIndexesEnforcedCount": 2,
+      "UniqueIndexesRequireRemediationCount": 0,
+      "ForeignKeyCount": 0,
+      "ForeignKeysCreatedCount": 0,
+      "ColumnRationales": {
+        "PROFILE_MISSING": 2,
+        "MANDATORY": 2,
+        "PK": 1
+      },
+      "UniqueIndexRationales": {
+        "PHYSICAL_UNIQUE_KEY": 2
+      },
+      "ForeignKeyRationales": {}
+    }
+  },
+  "TogglePrecedence": {
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
+    },
+    "policy.nullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    }
+  },
+  "Columns": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_OP_OPERATORPROFILE",
+      "Column": "ID",
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "MANDATORY",
+        "PK",
+        "PROFILE_MISSING"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_OP_OPERATORPROFILE",
+      "Column": "OPERATORCODE",
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "MANDATORY",
+        "PROFILE_MISSING"
+      ]
+    }
+  ],
+  "UniqueIndexes": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_OP_OPERATORPROFILE",
+      "Index": "PK_OPERATORPROFILE",
+      "EnforceUnique": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY"
+      ]
+    },
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_OP_OPERATORPROFILE",
+      "Index": "UIX_OPERATORPROFILE_OPERATORCODE",
+      "EnforceUnique": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY"
+      ]
+    }
+  ],
+  "ForeignKeys": [],
+  "Diagnostics": [],
+  "PredicateCoverage": {
+    "Tables": [
+      {
+        "Module": "Operator",
+        "Schema": "dbo",
+        "Table": "OSUSR_OP_OPERATORPROFILE",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      },
+      {
+        "Module": "UserExtension_CS",
+        "Schema": "dbo",
+        "Table": "ossys_User",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      }
+    ],
+    "PredicateCounts": {
+      "HasUniqueIndex": 2
+    }
+  }
+}

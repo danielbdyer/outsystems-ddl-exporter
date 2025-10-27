@@ -1,0 +1,151 @@
+{
+  "Tables": [
+    {
+      "Module": "Operator",
+      "Schema": "dbo",
+      "Table": "OperatorProfile",
+      "TableFile": "Modules/Operator/Tables/dbo.OperatorProfile.sql",
+      "Indexes": [
+        "UIX_OperatorProfile_OperatorCode"
+      ],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false
+    }
+  ],
+  "Options": {
+    "IncludePlatformAutoIndexes": false,
+    "EmitBareTableOnly": false,
+    "SanitizeModuleNames": true,
+    "ModuleParallelism": 1
+  },
+  "PolicySummary": {
+    "ColumnCount": 2,
+    "TightenedColumnCount": 1,
+    "RemediationColumnCount": 0,
+    "UniqueIndexCount": 2,
+    "UniqueIndexesEnforcedCount": 2,
+    "UniqueIndexesRequireRemediationCount": 0,
+    "ForeignKeyCount": 0,
+    "ForeignKeysCreatedCount": 0,
+    "ColumnRationales": {
+      "PROFILE_MISSING": 2,
+      "MANDATORY": 2,
+      "PK": 1
+    },
+    "UniqueIndexRationales": {
+      "PHYSICAL_UNIQUE_KEY": 2
+    },
+    "ForeignKeyRationales": {},
+    "ModuleRollups": {
+      "Operator": {
+        "ColumnCount": 2,
+        "TightenedColumnCount": 1,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 2,
+        "UniqueIndexesEnforcedCount": 2,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 0,
+        "ForeignKeysCreatedCount": 0,
+        "ColumnRationales": {
+          "PROFILE_MISSING": 2,
+          "MANDATORY": 2,
+          "PK": 1
+        },
+        "UniqueIndexRationales": {
+          "PHYSICAL_UNIQUE_KEY": 2
+        },
+        "ForeignKeyRationales": {}
+      }
+    },
+    "TogglePrecedence": {
+      "policy.mode": {
+        "Value": "EvidenceGated",
+        "Source": 0
+      },
+      "policy.nullBudget": {
+        "Value": 0,
+        "Source": 0
+      },
+      "foreignKeys.enableCreation": {
+        "Value": true,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossSchema": {
+        "Value": false,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossCatalog": {
+        "Value": false,
+        "Source": 0
+      },
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+        "Value": false,
+        "Source": 0
+      },
+      "uniqueness.enforceSingleColumn": {
+        "Value": true,
+        "Source": 0
+      },
+      "uniqueness.enforceMultiColumn": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.generatePreScripts": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.maxRowsDefaultBackfill": {
+        "Value": 100000,
+        "Source": 0
+      }
+    }
+  },
+  "Emission": {
+    "Algorithm": "SHA256",
+    "Hash": "a4ca9df063acc1966019c3627ebd01a1f91172c5b0335f57f9927b41831733df"
+  },
+  "PreRemediation": [],
+  "Coverage": {
+    "Tables": {
+      "Emitted": 1,
+      "Total": 2,
+      "Percentage": 50.0
+    },
+    "Columns": {
+      "Emitted": 2,
+      "Total": 5,
+      "Percentage": 40.0
+    },
+    "Constraints": {
+      "Emitted": 2,
+      "Total": 3,
+      "Percentage": 66.67
+    }
+  },
+  "PredicateCoverage": {
+    "Tables": [
+      {
+        "Module": "Operator",
+        "Schema": "dbo",
+        "Table": "OSUSR_OP_OPERATORPROFILE",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      },
+      {
+        "Module": "UserExtension_CS",
+        "Schema": "dbo",
+        "Table": "ossys_User",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      }
+    ],
+    "PredicateCounts": {
+      "HasUniqueIndex": 2
+    }
+  },
+  "Unsupported": [
+    "Table dbo.ossys_User missing from emission output."
+  ]
+}
