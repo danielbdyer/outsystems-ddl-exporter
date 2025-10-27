@@ -52,6 +52,45 @@ public sealed class UniqueIndexDecisionStrategyTests
     }
 
     [Fact]
+    public void EvidenceModeTreatsOnDiskUniqueAsPhysicalReality()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+        var entity = GetEntity(model, "User");
+        var index = entity.Indexes.Single(i => string.Equals(i.Name.Value, "UX_USER_EMAIL", StringComparison.Ordinal));
+
+        var updatedIndex = index with
+        {
+            OnDisk = index.OnDisk with { Kind = IndexKind.UniqueIndex }
+        };
+
+        var updatedModules = model.Modules
+            .Select(module => string.Equals(module.Name.Value, entity.Module.Value, StringComparison.Ordinal)
+                ? module with { Entities = module.Entities.Replace(entity, entity with { Indexes = entity.Indexes.Replace(index, updatedIndex) }) }
+                : module)
+            .ToImmutableArray();
+
+        var updatedModel = model with { Modules = updatedModules };
+
+        var emptyProfile = ProfileSnapshot.Create(
+            Array.Empty<ColumnProfile>(),
+            Array.Empty<UniqueCandidateProfile>(),
+            ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
+            Array.Empty<ForeignKeyReality>()).Value;
+
+        var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated);
+        var strategy = CreateStrategy(updatedModel, emptyProfile, options);
+        var updatedEntity = GetEntity(updatedModel, "User");
+        var updatedIndexReference = updatedEntity.Indexes.Single(i => string.Equals(i.Name.Value, "UX_USER_EMAIL", StringComparison.Ordinal));
+
+        var decision = strategy.Decide(updatedEntity, updatedIndexReference);
+
+        Assert.True(decision.EnforceUnique);
+        Assert.False(decision.RequiresRemediation);
+        Assert.Contains(TighteningRationales.PhysicalUniqueKey, decision.Rationales);
+        Assert.DoesNotContain(TighteningRationales.ProfileMissing, decision.Rationales);
+    }
+
+    [Fact]
     public void EvidenceModeTreatsIncludedColumnsAsSingleColumnIndex()
     {
         var model = ModelFixtures.LoadModel("model.micro-unique.json");

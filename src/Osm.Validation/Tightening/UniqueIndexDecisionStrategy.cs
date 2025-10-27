@@ -79,7 +79,10 @@ public sealed class UniqueIndexDecisionStrategy
             .Select(c => new ColumnCoordinate(entity.Schema, entity.PhysicalName, c.Column))
             .ToArray();
 
-        var physicalUnique = columnCoordinates.All(IsPhysicalUnique);
+        var hasOnDiskUnique = index.OnDisk.Kind is IndexKind.PrimaryKey
+            or IndexKind.UniqueConstraint
+            or IndexKind.UniqueIndex;
+        var physicalUnique = hasOnDiskUnique || columnCoordinates.All(IsPhysicalUnique);
         var isComposite = columnCoordinates.Length > 1;
         var policyDisabled = isComposite
             ? !_options.Uniqueness.EnforceMultiColumnUnique

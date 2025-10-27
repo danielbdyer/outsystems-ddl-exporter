@@ -1,0 +1,121 @@
+{
+  "exportedAtUtc": "2025-01-01T00:00:00Z",
+  "modules": [
+    {
+      "name": "Operator",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "OperatorProfile",
+          "physicalName": "OSUSR_OP_OPERATORPROFILE",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "OperatorCode",
+              "physicalName": "OPERATORCODE",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 50,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            }
+          ],
+          "indexes": [
+            {
+              "name": "PK_OPERATORPROFILE",
+              "isUnique": true,
+              "isPrimary": true,
+              "isPlatformAuto": 0,
+              "kind": "PK",
+              "isDisabled": false,
+              "isPadded": false,
+              "ignoreDupKey": false,
+              "allowRowLocks": true,
+              "allowPageLocks": true,
+              "noRecompute": false,
+              "filterDefinition": null,
+              "partitionColumns": [],
+              "dataCompression": [],
+              "columns": [
+                {
+                  "attribute": "Id",
+                  "physicalColumn": "ID",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                }
+              ]
+            },
+            {
+              "name": "UIX_OPERATORPROFILE_OPERATORCODE",
+              "isUnique": true,
+              "isPrimary": false,
+              "isPlatformAuto": 0,
+              "kind": "UIX",
+              "isDisabled": false,
+              "isPadded": false,
+              "ignoreDupKey": false,
+              "allowRowLocks": true,
+              "allowPageLocks": true,
+              "noRecompute": false,
+              "filterDefinition": null,
+              "partitionColumns": [],
+              "dataCompression": [],
+              "columns": [
+                {
+                  "attribute": "OperatorCode",
+                  "physicalColumn": "OPERATORCODE",
+                  "ordinal": 1,
+                  "isIncluded": false,
+                  "direction": "Ascending"
+                }
+              ]
+            }
+          ],
+          "relationships": [],
+          "triggers": []
+        }
+      ]
+    }
+  ]
+}

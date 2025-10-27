@@ -15,6 +15,20 @@
       ]
     },
     {
+      "name": "unique-index-on-disk",
+      "model": "model.micro-unique-operator.json",
+      "profile": "profiling/profile.empty.json",
+      "expected": "emission-matrix/unique-index-on-disk",
+      "entity": {
+        "module": "Operator",
+        "schema": "dbo",
+        "table": "OSUSR_OP_OPERATORPROFILE"
+      },
+      "predicates": [
+        "HasUniqueIndex"
+      ]
+    },
+    {
       "name": "composite-default",
       "model": "model.micro-unique-composite.json",
       "profile": "profiling/profile.micro-unique-composite.json",
