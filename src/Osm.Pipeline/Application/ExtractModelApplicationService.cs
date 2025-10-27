@@ -127,7 +127,11 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
             fixtureProvided);
 
         var commandModules = moduleNames.Length > 0 ? moduleNames : null;
-        var commandResult = ModelExtractionCommand.Create(commandModules, moduleFilter.IncludeSystemModules, onlyActiveAttributes);
+        var commandResult = ModelExtractionCommand.Create(
+            commandModules,
+            moduleFilter.IncludeSystemModules,
+            moduleFilter.IncludeInactiveModules,
+            onlyActiveAttributes);
         if (commandResult.IsFailure)
         {
             _logger.LogError(

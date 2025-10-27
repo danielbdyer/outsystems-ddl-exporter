@@ -74,12 +74,13 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var key = BuildKey(request.ModuleNames, request.IncludeSystemModules, request.OnlyActiveAttributes);
+        var key = BuildKey(request.ModuleNames, request.IncludeSystemModules, request.IncludeInactiveModules, request.OnlyActiveAttributes);
         _logger.LogInformation(
-            "Resolving advanced SQL fixture for key {FixtureKey} (modules: {Modules}, includeSystem: {IncludeSystem}, onlyActive: {OnlyActive}).",
+            "Resolving advanced SQL fixture for key {FixtureKey} (modules: {Modules}, includeSystem: {IncludeSystem}, includeInactive: {IncludeInactive}, onlyActive: {OnlyActive}).",
             key,
             string.Join(",", request.ModuleNames.Select(static module => module.Value)),
             request.IncludeSystemModules,
+            request.IncludeInactiveModules,
             request.OnlyActiveAttributes);
 
         if (!_entries.TryGetValue(key, out var entry))
@@ -88,7 +89,7 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
             var moduleList = string.Join(",", request.ModuleNames.Select(static module => module.Value));
             return Result<long>.Failure(ValidationError.Create(
                 "extraction.fixture.missing",
-                $"No fixture JSON registered for modules '{moduleList}', includeSystem={request.IncludeSystemModules}, onlyActive={request.OnlyActiveAttributes}."));
+                $"No fixture JSON registered for modules '{moduleList}', includeSystem={request.IncludeSystemModules}, includeInactive={request.IncludeInactiveModules}, onlyActive={request.OnlyActiveAttributes}."));
         }
 
         if (!_fileSystem.File.Exists(entry.JsonPath))
@@ -153,7 +154,11 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
 
             var normalizedModules = NormalizeModules(modules);
 
-            var key = BuildKey(normalizedModules, includeSystem, onlyActive);
+            var includeInactive = element.TryGetProperty("includeInactiveModules", out var includeInactiveElement)
+                ? includeInactiveElement.GetBoolean()
+                : true;
+
+            var key = BuildKey(normalizedModules, includeSystem, includeInactive, onlyActive);
             var jsonPath = jsonPathElement.GetString() ?? string.Empty;
             if (jsonPath.Length == 0)
             {
@@ -207,9 +212,11 @@ public sealed class FixtureAdvancedSqlExecutor : IAdvancedSqlExecutor
         return materialized;
     }
 
-    private static string BuildKey(IEnumerable<ModuleName> modules, bool includeSystem, bool onlyActive)
+    private static string BuildKey(IEnumerable<ModuleName> modules, bool includeSystem, bool includeInactive, bool onlyActive)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"modules:{string.Join("|", modules.Select(static module => module.Value))}|system:{includeSystem}|active:{onlyActive}");
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"modules:{string.Join("|", modules.Select(static module => module.Value))}|system:{includeSystem}|inactive:{includeInactive}|active:{onlyActive}");
     }
 
     private sealed record FixtureEntry(string JsonPath, ImmutableArray<ModuleName> Modules);

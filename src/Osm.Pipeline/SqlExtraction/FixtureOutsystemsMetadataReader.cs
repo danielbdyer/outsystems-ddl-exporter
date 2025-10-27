@@ -56,12 +56,13 @@ public sealed class FixtureOutsystemsMetadataReader : IOutsystemsMetadataReader
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var key = BuildKey(request.ModuleNames, request.IncludeSystemModules, request.OnlyActiveAttributes);
+        var key = BuildKey(request.ModuleNames, request.IncludeSystemModules, request.IncludeInactiveModules, request.OnlyActiveAttributes);
         _logger.LogInformation(
-            "Resolving metadata fixture for key {FixtureKey} (modules: {Modules}, includeSystem: {IncludeSystem}, onlyActive: {OnlyActive}).",
+            "Resolving metadata fixture for key {FixtureKey} (modules: {Modules}, includeSystem: {IncludeSystem}, includeInactive: {IncludeInactive}, onlyActive: {OnlyActive}).",
             key,
             string.Join(",", request.ModuleNames.Select(static module => module.Value)),
             request.IncludeSystemModules,
+            request.IncludeInactiveModules,
             request.OnlyActiveAttributes);
 
         if (!_entries.TryGetValue(key, out var entry))
@@ -69,7 +70,7 @@ public sealed class FixtureOutsystemsMetadataReader : IOutsystemsMetadataReader
             _logger.LogWarning("Metadata fixture entry not found for key {FixtureKey}.", key);
             return Task.FromResult(Result<OutsystemsMetadataSnapshot>.Failure(ValidationError.Create(
                 "extraction.fixture.missing",
-                $"No metadata fixture registered for modules '{string.Join(",", request.ModuleNames.Select(static module => module.Value))}', includeSystem={request.IncludeSystemModules}, onlyActive={request.OnlyActiveAttributes}.")));
+                $"No metadata fixture registered for modules '{string.Join(",", request.ModuleNames.Select(static module => module.Value))}', includeSystem={request.IncludeSystemModules}, includeInactive={request.IncludeInactiveModules}, onlyActive={request.OnlyActiveAttributes}.")));
         }
 
         if (!_fileSystem.File.Exists(entry.JsonPath))
@@ -154,7 +155,11 @@ public sealed class FixtureOutsystemsMetadataReader : IOutsystemsMetadataReader
             }
 
             var normalizedModules = NormalizeModules(modules);
-            var key = BuildKey(normalizedModules, includeSystem, onlyActive);
+            var includeInactive = element.TryGetProperty("includeInactiveModules", out var includeInactiveElement)
+                ? includeInactiveElement.GetBoolean()
+                : true;
+
+            var key = BuildKey(normalizedModules, includeSystem, includeInactive, onlyActive);
             var jsonPath = jsonPathElement.GetString() ?? string.Empty;
             if (jsonPath.Length == 0)
             {
@@ -208,9 +213,11 @@ public sealed class FixtureOutsystemsMetadataReader : IOutsystemsMetadataReader
         return materialized;
     }
 
-    private static string BuildKey(IEnumerable<ModuleName> modules, bool includeSystem, bool onlyActive)
+    private static string BuildKey(IEnumerable<ModuleName> modules, bool includeSystem, bool includeInactive, bool onlyActive)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"modules:{string.Join("|", modules.Select(static module => module.Value))}|system:{includeSystem}|active:{onlyActive}");
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"modules:{string.Join("|", modules.Select(static module => module.Value))}|system:{includeSystem}|inactive:{includeInactive}|active:{onlyActive}");
     }
 
     private sealed record FixtureEntry(string JsonPath, ImmutableArray<ModuleName> Modules);

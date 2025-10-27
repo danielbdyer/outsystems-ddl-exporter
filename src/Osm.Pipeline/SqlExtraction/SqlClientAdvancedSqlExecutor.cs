@@ -66,10 +66,11 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
         cancellationToken.ThrowIfCancellationRequested();
 
         _logger.LogInformation(
-            "Executing advanced SQL script via SQL client (timeoutSeconds: {TimeoutSeconds}, moduleCount: {ModuleCount}, includeSystem: {IncludeSystem}, onlyActive: {OnlyActive}).",
+            "Executing advanced SQL script via SQL client (timeoutSeconds: {TimeoutSeconds}, moduleCount: {ModuleCount}, includeSystem: {IncludeSystem}, includeInactive: {IncludeInactive}, onlyActive: {OnlyActive}).",
             _options.CommandTimeoutSeconds,
             request.ModuleNames.Length,
             request.IncludeSystemModules,
+            request.IncludeInactiveModules,
             request.OnlyActiveAttributes);
 
         if (request.ModuleNames.Length > 0)
@@ -217,6 +218,12 @@ public sealed class SqlClientAdvancedSqlExecutor : IAdvancedSqlExecutor
         includeParam.DbType = DbType.Boolean;
         includeParam.Value = request.IncludeSystemModules;
         command.Parameters.Add(includeParam);
+
+        var includeInactiveParam = command.CreateParameter();
+        includeInactiveParam.ParameterName = "@IncludeInactive";
+        includeInactiveParam.DbType = DbType.Boolean;
+        includeInactiveParam.Value = request.IncludeInactiveModules;
+        command.Parameters.Add(includeInactiveParam);
 
         var activeParam = command.CreateParameter();
         activeParam.ParameterName = "@OnlyActiveAttributes";

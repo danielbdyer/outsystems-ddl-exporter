@@ -36,7 +36,7 @@ public class SqlClientOutsystemsMetadataReaderTests
             SqlExecutionOptions.Default,
             NullLogger<SqlClientOutsystemsMetadataReader>.Instance);
 
-        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
@@ -62,7 +62,7 @@ public class SqlClientOutsystemsMetadataReaderTests
             NullLogger<SqlClientOutsystemsMetadataReader>.Instance);
 
         var module = new string('Z', 256);
-        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create(module).Value), includeSystemModules: false, onlyActiveAttributes: true);
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create(module).Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
@@ -117,7 +117,7 @@ public class SqlClientOutsystemsMetadataReaderTests
             SqlExecutionOptions.Default,
             NullLogger<SqlClientOutsystemsMetadataReader>.Instance);
 
-        var request = new AdvancedSqlRequest(ImmutableArray<ModuleName>.Empty, includeSystemModules: false, onlyActiveAttributes: true);
+        var request = new AdvancedSqlRequest(ImmutableArray<ModuleName>.Empty, includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
@@ -151,7 +151,7 @@ public class SqlClientOutsystemsMetadataReaderTests
             NullLogger<SqlClientOutsystemsMetadataReader>.Instance,
             executor);
 
-        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
@@ -178,7 +178,7 @@ public class SqlClientOutsystemsMetadataReaderTests
             NullLogger<SqlClientOutsystemsMetadataReader>.Instance,
             executor);
 
-        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
@@ -209,7 +209,7 @@ public class SqlClientOutsystemsMetadataReaderTests
             SqlExecutionOptions.Default,
             logger);
 
-        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
@@ -249,7 +249,7 @@ public class SqlClientOutsystemsMetadataReaderTests
             SqlExecutionOptions.Default,
             logger);
 
-        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
@@ -293,7 +293,7 @@ public class SqlClientOutsystemsMetadataReaderTests
             SqlExecutionOptions.Default,
             logger);
 
-        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
@@ -337,7 +337,7 @@ public class SqlClientOutsystemsMetadataReaderTests
             commandExecutor: null,
             contractOverrides: overrides);
 
-        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, onlyActiveAttributes: true);
+        var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 

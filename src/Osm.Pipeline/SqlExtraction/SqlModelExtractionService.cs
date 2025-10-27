@@ -66,9 +66,10 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
         options ??= ModelExtractionOptions.InMemory();
 
         _logger.LogInformation(
-            "Executing advanced SQL for {ModuleCount} module(s) (includeSystem: {IncludeSystem}, onlyActive: {OnlyActive}).",
+            "Executing advanced SQL for {ModuleCount} module(s) (includeSystem: {IncludeSystem}, includeInactive: {IncludeInactive}, onlyActive: {OnlyActive}).",
             command.ModuleNames.Length,
             command.IncludeSystemModules,
+            command.IncludeInactiveModules,
             command.OnlyActiveAttributes);
 
         if (command.ModuleNames.Length > 0)
@@ -78,13 +79,18 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
                 string.Join(",", command.ModuleNames.Select(static module => module.Value)));
         }
 
-        var request = new AdvancedSqlRequest(command.ModuleNames, command.IncludeSystemModules, command.OnlyActiveAttributes);
+        var request = new AdvancedSqlRequest(
+            command.ModuleNames,
+            command.IncludeSystemModules,
+            command.IncludeInactiveModules,
+            command.OnlyActiveAttributes);
         options.MetadataLog?.RecordRequest(
             "advancedSql.request",
             new
             {
                 modules = request.ModuleNames.Select(static module => module.Value).ToArray(),
                 includeSystem = request.IncludeSystemModules,
+                includeInactive = request.IncludeInactiveModules,
                 onlyActive = request.OnlyActiveAttributes
             });
 
@@ -818,10 +824,15 @@ public sealed class ModelExtractionOptions
 
 public sealed class ModelExtractionCommand
 {
-    private ModelExtractionCommand(ImmutableArray<ModuleName> moduleNames, bool includeSystemModules, bool onlyActiveAttributes)
+    private ModelExtractionCommand(
+        ImmutableArray<ModuleName> moduleNames,
+        bool includeSystemModules,
+        bool includeInactiveModules,
+        bool onlyActiveAttributes)
     {
         ModuleNames = moduleNames;
         IncludeSystemModules = includeSystemModules;
+        IncludeInactiveModules = includeInactiveModules;
         OnlyActiveAttributes = onlyActiveAttributes;
     }
 
@@ -829,13 +840,23 @@ public sealed class ModelExtractionCommand
 
     public bool IncludeSystemModules { get; }
 
+    public bool IncludeInactiveModules { get; }
+
     public bool OnlyActiveAttributes { get; }
 
-    public static Result<ModelExtractionCommand> Create(IEnumerable<string>? moduleNames, bool includeSystemModules, bool onlyActiveAttributes)
+    public static Result<ModelExtractionCommand> Create(
+        IEnumerable<string>? moduleNames,
+        bool includeSystemModules,
+        bool includeInactiveModules,
+        bool onlyActiveAttributes)
     {
         if (moduleNames is null)
         {
-            return new ModelExtractionCommand(ImmutableArray<ModuleName>.Empty, includeSystemModules, onlyActiveAttributes);
+            return new ModelExtractionCommand(
+                ImmutableArray<ModuleName>.Empty,
+                includeSystemModules,
+                includeInactiveModules,
+                onlyActiveAttributes);
         }
 
         var modules = ImmutableArray.CreateBuilder<ModuleName>();
@@ -898,6 +919,6 @@ public sealed class ModelExtractionCommand
                 => string.Compare(left.Value, right.Value, StringComparison.OrdinalIgnoreCase)));
         }
 
-        return new ModelExtractionCommand(normalized, includeSystemModules, onlyActiveAttributes);
+        return new ModelExtractionCommand(normalized, includeSystemModules, includeInactiveModules, onlyActiveAttributes);
     }
 }

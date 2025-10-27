@@ -22,6 +22,7 @@ public class FixtureOutsystemsMetadataReaderTests
                 ModuleName.Create("ExtBilling").Value,
                 ModuleName.Create("Ops").Value),
             includeSystemModules: false,
+            includeInactiveModules: true,
             onlyActiveAttributes: false);
 
         var result = await reader.ReadAsync(request);
@@ -37,6 +38,7 @@ public class FixtureOutsystemsMetadataReaderTests
         var request = new AdvancedSqlRequest(
             ImmutableArray.Create(ModuleName.Create("Unknown").Value),
             includeSystemModules: false,
+            includeInactiveModules: true,
             onlyActiveAttributes: false);
 
         var result = await reader.ReadAsync(request);
@@ -53,6 +55,7 @@ public class FixtureOutsystemsMetadataReaderTests
         var request = new AdvancedSqlRequest(
             ImmutableArray.Create(ModuleName.Create("AppCore").Value),
             includeSystemModules: false,
+            includeInactiveModules: true,
             onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request);
