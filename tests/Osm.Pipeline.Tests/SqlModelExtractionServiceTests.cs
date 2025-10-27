@@ -22,7 +22,7 @@ public class SqlModelExtractionServiceTests
     [Fact]
     public void CreateCommand_ShouldRejectNullModule()
     {
-        var result = ModelExtractionCommand.Create(new[] { "AppCore", null! }, includeSystemModules: false, onlyActiveAttributes: false);
+        var result = ModelExtractionCommand.Create(new[] { "AppCore", null! }, includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false);
         var error = Assert.Single(result.Errors);
         Assert.Equal("extraction.modules.null", error.Code);
     }
@@ -30,7 +30,7 @@ public class SqlModelExtractionServiceTests
     [Fact]
     public void CreateCommand_ShouldRejectEmptyModule()
     {
-        var result = ModelExtractionCommand.Create(new[] { "  " }, includeSystemModules: false, onlyActiveAttributes: false);
+        var result = ModelExtractionCommand.Create(new[] { "  " }, includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false);
         var error = Assert.Single(result.Errors);
         Assert.Equal("extraction.modules.empty", error.Code);
     }
@@ -38,12 +38,13 @@ public class SqlModelExtractionServiceTests
     [Fact]
     public void CreateCommand_ShouldSortAndDeduplicateModules()
     {
-        var result = ModelExtractionCommand.Create(new[] { "Ops", "AppCore", "ops" }, includeSystemModules: true, onlyActiveAttributes: false);
+        var result = ModelExtractionCommand.Create(new[] { "Ops", "AppCore", "ops" }, includeSystemModules: true, includeInactiveModules: true, onlyActiveAttributes: false);
         Assert.True(
             result.IsSuccess,
             string.Join(" | ", result.Errors.Select(error => $"{error.Code}: {error.Message}")));
         Assert.Equal(new[] { "AppCore", "Ops" }, result.Value.ModuleNames.Select(static module => module.Value));
         Assert.True(result.Value.IncludeSystemModules);
+        Assert.True(result.Value.IncludeInactiveModules);
         Assert.False(result.Value.OnlyActiveAttributes);
     }
 
@@ -54,7 +55,7 @@ public class SqlModelExtractionServiceTests
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
         var service = new SqlModelExtractionService(reader, new PassthroughModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
         Assert.True(result.IsSuccess);
@@ -70,7 +71,7 @@ public class SqlModelExtractionServiceTests
         var failure = Result<OutsystemsMetadataSnapshot>.Failure(ValidationError.Create("boom", "fail"));
         var reader = new StubMetadataReader(failure);
         var service = new SqlModelExtractionService(reader, new PassthroughModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
         Assert.True(result.IsFailure);
@@ -109,7 +110,7 @@ public class SqlModelExtractionServiceTests
 
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(emptySnapshot));
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
         Assert.True(result.IsSuccess);
@@ -171,7 +172,7 @@ public class SqlModelExtractionServiceTests
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
 
@@ -215,7 +216,7 @@ public class SqlModelExtractionServiceTests
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: true).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true).Value;
 
         var result = await service.ExtractAsync(command);
 
@@ -257,7 +258,7 @@ public class SqlModelExtractionServiceTests
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: true).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true).Value;
 
         var result = await service.ExtractAsync(command);
 
@@ -399,7 +400,7 @@ public class SqlModelExtractionServiceTests
 
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
         var service = new SqlModelExtractionService(reader, new PassthroughModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
 
@@ -427,7 +428,7 @@ public class SqlModelExtractionServiceTests
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: true, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: true, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
 
@@ -453,7 +454,7 @@ public class SqlModelExtractionServiceTests
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(
             new[] { "AppCore", "ExtBilling", "Ops" },
-            includeSystemModules: false,
+            includeSystemModules: false, includeInactiveModules: true,
             onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -479,7 +480,7 @@ public class SqlModelExtractionServiceTests
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         await using var destination = new MemoryStream();
         var result = await service.ExtractAsync(command, ModelExtractionOptions.ToStream(destination));
@@ -557,7 +558,7 @@ public class SqlModelExtractionServiceTests
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
 
@@ -580,7 +581,7 @@ public class SqlModelExtractionServiceTests
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         using var temp = new TempDirectory();
         var path = Path.Combine(temp.Path, "model.json");
@@ -604,7 +605,7 @@ public class SqlModelExtractionServiceTests
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         using var temp = new TempDirectory();
         var metadataPath = Path.Combine(temp.Path, "metadata.json");
@@ -637,7 +638,7 @@ public class SqlModelExtractionServiceTests
         var rowSnapshot = new MetadataRowSnapshot("AttributesJson", 3, new[] { column });
         var reader = new StubMetadataReader(failure, rowSnapshot);
         var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         using var temp = new TempDirectory();
         var metadataPath = Path.Combine(temp.Path, "metadata.json");

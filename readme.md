@@ -704,7 +704,7 @@ Copy `config/appsettings.example.json` to an environment-specific location (e.g.
       { "name": "ServiceCenter", "entities": ["User"] }
     ],
     "includeSystemModules": false,
-    "includeInactiveModules": true
+    "includeInactiveModules": false // false => drop inactive modules *and* inactive entities from SQL extraction
   },
   "profile": { "path": "tests/Fixtures/profiling/profile.edge-case.json" },
   "cache": { "root": ".artifacts/cache", "refresh": false },
@@ -714,6 +714,8 @@ Copy `config/appsettings.example.json` to an environment-specific location (e.g.
 ```
 
 Module filters declared in configuration act as defaults—`--modules`, `--exclude-system-modules`, and `--only-active-modules` override them on the command line. The evidence cache key incorporates the resolved module list and toggles so cached payloads stay aligned when you swap module selections between runs.
+
+`includeInactiveModules` now drives both the in-memory model filter and the Advanced SQL `@IncludeInactive` parameter. Set the toggle to `false` when you want inactive entities removed alongside inactive modules during extraction.
 
 Entries inside the `modules` array can be plain strings (include the entire module) or objects with a `name` plus an optional `entities` selector. Supplying an array (or CSV string) to `entities` trims and deduplicates values so you can scope extraction to specific logical or physical entity names—for example, `{ "name": "ServiceCenter", "entities": ["User"] }` keeps only the Service Center `User` entity while avoiding other tables that might fail validation. A wildcard (`"*"`) or boolean `true` keeps every entity in the module.
 

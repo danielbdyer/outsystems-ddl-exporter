@@ -29,6 +29,7 @@ public class SqlClientAdvancedSqlExecutorTests
         var request = new AdvancedSqlRequest(
             ImmutableArray.Create(moduleResult.Value),
             includeSystemModules: false,
+            includeInactiveModules: true,
             onlyActiveAttributes: true);
 
         var connection = new StubConnection(new StubCommand("chunk-1", "chunk-2"));
@@ -57,7 +58,7 @@ public class SqlClientAdvancedSqlExecutorTests
     [Fact]
     public async Task ExecuteAsync_ShouldReturnFailureWhenNoRows()
     {
-        var request = new AdvancedSqlRequest(ImmutableArray<ModuleName>.Empty, includeSystemModules: false, onlyActiveAttributes: true);
+        var request = new AdvancedSqlRequest(ImmutableArray<ModuleName>.Empty, includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
         var connection = new StubConnection(new StubCommand());
         var factory = new StubConnectionFactory(connection);
         var scriptProvider = new StubScriptProvider("SELECT 1");

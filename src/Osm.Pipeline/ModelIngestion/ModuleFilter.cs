@@ -58,19 +58,39 @@ public sealed class ModuleFilter
             selected.AddRange(modules);
         }
 
-        IEnumerable<ModuleModel> filtered = selected;
+        var filteredModules = new List<ModuleModel>();
 
-        if (!options.IncludeSystemModules)
+        foreach (var module in selected)
         {
-            filtered = filtered.Where(static module => !module.IsSystemModule);
+            if (!options.IncludeSystemModules && module.IsSystemModule)
+            {
+                continue;
+            }
+
+            if (!options.IncludeInactiveModules)
+            {
+                if (!module.IsActive)
+                {
+                    continue;
+                }
+
+                var activeEntities = module.Entities
+                    .Where(static entity => entity.IsActive)
+                    .ToImmutableArray();
+
+                if (activeEntities.IsDefaultOrEmpty)
+                {
+                    continue;
+                }
+
+                filteredModules.Add(module with { Entities = activeEntities });
+                continue;
+            }
+
+            filteredModules.Add(module);
         }
 
-        if (!options.IncludeInactiveModules)
-        {
-            filtered = filtered.Where(static module => module.IsActive);
-        }
-
-        var materialized = filtered.ToImmutableArray();
+        var materialized = filteredModules.ToImmutableArray();
         if (materialized.IsDefaultOrEmpty)
         {
             return ValidationError.Create(

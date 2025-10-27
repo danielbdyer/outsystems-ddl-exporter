@@ -47,7 +47,7 @@ public sealed class SqlExtractionParityTests
         var connectionFactory = new SqlConnectionFactory(_fixture.DatabaseConnectionString);
         var metadataReader = new SqlClientOutsystemsMetadataReader(connectionFactory, new EmbeddedOutsystemsMetadataScriptProvider());
         var extractionService = new SqlModelExtractionService(metadataReader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var extraction = await extractionService.ExtractAsync(command).ConfigureAwait(false);
         Assert.True(extraction.IsSuccess, string.Join(Environment.NewLine, extraction.Errors.Select(error => $"{error.Code}: {error.Message}")));
@@ -75,7 +75,7 @@ public sealed class SqlExtractionParityTests
         var connectionFactory = new SqlConnectionFactory(builder.ConnectionString);
         var metadataReader = new SqlClientOutsystemsMetadataReader(connectionFactory, new EmbeddedOutsystemsMetadataScriptProvider());
         var extractionService = new SqlModelExtractionService(metadataReader, new ModelJsonDeserializer());
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await extractionService.ExtractAsync(command).ConfigureAwait(false);
 
@@ -95,7 +95,7 @@ public sealed class SqlExtractionParityTests
             new SqlExecutionOptions(1, SqlSamplingOptions.Default));
 
         await using var destination = new MemoryStream();
-        var request = new AdvancedSqlRequest(ImmutableArray<ModuleName>.Empty, includeSystemModules: false, onlyActiveAttributes: false);
+        var request = new AdvancedSqlRequest(ImmutableArray<ModuleName>.Empty, includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false);
         var result = await executor.ExecuteAsync(request, destination, CancellationToken.None).ConfigureAwait(false);
 
         Assert.True(result.IsFailure, "Expected advanced SQL execution to time out.");

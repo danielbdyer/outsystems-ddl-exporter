@@ -71,6 +71,45 @@ public sealed class ModuleFilterTests
     }
 
     [Fact]
+    public void Apply_RemovesInactiveEntities_WhenInactiveModulesExcluded()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var sourceModule = model.Modules[0];
+        Assert.True(sourceModule.Entities.Length > 1);
+
+        var entitiesBuilder = sourceModule.Entities.ToBuilder();
+        entitiesBuilder[0] = entitiesBuilder[0] with { IsActive = false };
+        var mutatedModule = sourceModule with { Entities = entitiesBuilder.ToImmutable() };
+
+        var modulesBuilder = model.Modules.ToBuilder();
+        modulesBuilder[0] = mutatedModule;
+        var mutatedModel = model with { Modules = modulesBuilder.ToImmutable() };
+
+        var includeInactive = ModuleFilterOptions.Create(
+            new[] { mutatedModule.Name.Value },
+            includeSystemModules: true,
+            includeInactiveModules: true).Value;
+
+        var includeInactiveResult = new ModuleFilter().Apply(mutatedModel, includeInactive);
+
+        Assert.True(includeInactiveResult.IsSuccess);
+        var moduleWithInactive = Assert.Single(includeInactiveResult.Value.Modules);
+        Assert.Contains(moduleWithInactive.Entities, entity => !entity.IsActive);
+
+        var excludeInactive = ModuleFilterOptions.Create(
+            new[] { mutatedModule.Name.Value },
+            includeSystemModules: true,
+            includeInactiveModules: false).Value;
+
+        var excludeInactiveResult = new ModuleFilter().Apply(mutatedModel, excludeInactive);
+
+        Assert.True(excludeInactiveResult.IsSuccess);
+        var filteredModule = Assert.Single(excludeInactiveResult.Value.Modules);
+        Assert.All(filteredModule.Entities, entity => Assert.True(entity.IsActive));
+        Assert.True(filteredModule.Entities.Length < moduleWithInactive.Entities.Length);
+    }
+
+    [Fact]
     public void Apply_FiltersEntitiesWithinModule()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");

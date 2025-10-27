@@ -15,7 +15,7 @@ public class ExtractModelPipelineTests
     public async Task HandleAsync_ShouldUseFixtureExecutorWhenManifestProvided()
     {
         var pipeline = new ExtractModelPipeline();
-        var command = ModelExtractionCommand.Create(new[] { "AppCore", "ExtBilling", "Ops" }, includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(new[] { "AppCore", "ExtBilling", "Ops" }, includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
         var sqlOptions = new ResolvedSqlOptions(
             ConnectionString: null,
             CommandTimeoutSeconds: null,
@@ -36,7 +36,7 @@ public class ExtractModelPipelineTests
     public async Task HandleAsync_ShouldFailWhenConnectionStringMissingForLiveExtraction()
     {
         var pipeline = new ExtractModelPipeline();
-        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, onlyActiveAttributes: false).Value;
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
         var sqlOptions = new ResolvedSqlOptions(
             ConnectionString: null,
             CommandTimeoutSeconds: 30,

@@ -3,7 +3,7 @@
    GOAL #1: emit 100% of module/entity/attribute/index fields in README schema,
    GOAL #2: reconcile ossys intent with sys.* physical reality.
    Inputs:
-     @ModuleNamesCsv (Text), @IncludeSystem (Boolean), @OnlyActiveAttributes (Boolean)
+     @ModuleNamesCsv (Text), @IncludeSystem (Boolean), @IncludeInactive (Boolean), @OnlyActiveAttributes (Boolean)
    Output: JSON
    ============================================================================ */
 
@@ -23,6 +23,7 @@ END;
 /* Optional local defaults for standalone execution
 DECLARE @ModuleNamesCsv NVARCHAR(MAX) = N'OutSystemsModule1_CS,OutSystemsModel2_CS';
 DECLARE @IncludeSystem BIT = 1;
+DECLARE @IncludeInactive BIT = 0;
 DECLARE @OnlyActiveAttributes BIT = 1;
 */
 
@@ -102,7 +103,8 @@ SELECT
 INTO #Ent
 FROM dbo.ossys_Entity en
 JOIN #E ON #E.EspaceId = en.[Espace_Id]
-WHERE (@IncludeSystem = 1 OR ISNULL(en.[Is_System],0) = 0);
+WHERE (@IncludeSystem = 1 OR ISNULL(en.[Is_System],0) = 0)
+  AND (@IncludeInactive = 1 OR ISNULL(en.[Is_Active],1) = 1);
 CREATE CLUSTERED INDEX IX_Ent ON #Ent(EntityId);
 CREATE NONCLUSTERED INDEX IX_Ent_Espace ON #Ent(EspaceId) INCLUDE (PhysicalTableName);
 

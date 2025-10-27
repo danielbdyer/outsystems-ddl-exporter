@@ -52,6 +52,7 @@ public sealed class ModelResolutionService : IModelResolutionService
         var extractionCommandResult = ModelExtractionCommand.Create(
             moduleNames,
             moduleFilter.IncludeSystemModules,
+            moduleFilter.IncludeInactiveModules,
             onlyActiveAttributes: false);
         if (extractionCommandResult.IsFailure)
         {
