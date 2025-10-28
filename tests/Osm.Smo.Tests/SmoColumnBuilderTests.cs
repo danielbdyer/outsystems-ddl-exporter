@@ -1,7 +1,12 @@
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
+using Osm.Domain.Configuration;
+using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 using Osm.Smo;
+using Osm.Validation.Tightening;
 using Xunit;
 
 namespace Osm.Smo.Tests;
@@ -44,5 +49,84 @@ public class SmoColumnBuilderTests
         var cityColumns = SmoColumnBuilder.BuildColumns(cityContext, decisions, profileDefaults, TypeMappingPolicy.Default, contexts);
         var isActive = cityColumns.Single(c => c.LogicalName.Equals("IsActive", StringComparison.Ordinal));
         Assert.Equal("((1))", isActive.DefaultExpression);
+    }
+
+    [Fact]
+    public void BuildColumns_normalizes_boolean_word_defaults_to_bit_literals()
+    {
+        var moduleName = ModuleName.Create("TestModule").Value;
+        var idAttribute = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true,
+            reference: AttributeReference.None,
+            metadata: AttributeMetadata.Empty,
+            onDisk: AttributeOnDiskMetadata.Empty).Value;
+        var trueAttribute = AttributeModel.Create(
+            AttributeName.Create("IsEnabled").Value,
+            ColumnName.Create("ISENABLED").Value,
+            dataType: "Boolean",
+            isMandatory: true,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            reference: AttributeReference.None,
+            defaultValue: "True",
+            metadata: AttributeMetadata.Empty,
+            onDisk: AttributeOnDiskMetadata.Empty).Value;
+        var falseAttribute = AttributeModel.Create(
+            AttributeName.Create("IsDisabled").Value,
+            ColumnName.Create("ISDISABLED").Value,
+            dataType: "Boolean",
+            isMandatory: true,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            reference: AttributeReference.None,
+            defaultValue: "False",
+            metadata: AttributeMetadata.Empty,
+            onDisk: AttributeOnDiskMetadata.Empty).Value;
+
+        var entity = EntityModel.Create(
+            moduleName,
+            EntityName.Create("FlagHolder").Value,
+            TableName.Create("FLAG_HOLDER").Value,
+            SchemaName.Create("dbo").Value,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { idAttribute, trueAttribute, falseAttribute },
+            metadata: EntityMetadata.Empty).Value;
+        var module = ModuleModel.Create(moduleName, isSystemModule: false, isActive: true, new[] { entity }).Value;
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var decisions = PolicyDecisionSet.Create(
+            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            ImmutableDictionary<IndexCoordinate, string>.Empty,
+            TighteningOptions.Default);
+
+        var contexts = SmoModelFactory.BuildEntityContexts(model, supplementalEntities: null);
+        var context = contexts.GetContext(entity);
+        var columns = SmoColumnBuilder.BuildColumns(
+            context,
+            decisions,
+            ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            TypeMappingPolicy.Default,
+            contexts);
+
+        var enabled = columns.Single(c => c.LogicalName.Equals("IsEnabled", StringComparison.Ordinal));
+        Assert.Equal("((1))", enabled.DefaultExpression);
+
+        var disabled = columns.Single(c => c.LogicalName.Equals("IsDisabled", StringComparison.Ordinal));
+        Assert.Equal("((0))", disabled.DefaultExpression);
     }
 }

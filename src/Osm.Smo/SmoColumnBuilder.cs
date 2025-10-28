@@ -72,6 +72,11 @@ internal static class SmoColumnBuilder
             var coordinate = new ColumnCoordinate(context.Entity.Schema, context.Entity.PhysicalName, attribute.ColumnName);
             var defaultExpression = SmoNormalization.NormalizeSqlExpression(
                 ResolveDefaultExpression(onDisk.DefaultDefinition, profileDefaults, coordinate, attribute));
+
+            if (defaultExpression is not null && dataType.SqlDataType == SqlDataType.Bit)
+            {
+                defaultExpression = NormalizeBitDefaultExpression(defaultExpression);
+            }
             var collation = SmoNormalization.NormalizeWhitespace(onDisk.Collation);
             var description = SmoNormalization.NormalizeWhitespace(attribute.Metadata.Description);
             var defaultConstraint = CreateDefaultConstraint(attribute.OnDisk.DefaultConstraint);
@@ -174,6 +179,61 @@ internal static class SmoColumnBuilder
         }
 
         return string.IsNullOrWhiteSpace(attribute.DefaultValue) ? null : attribute.DefaultValue;
+    }
+
+    private static string NormalizeBitDefaultExpression(string expression)
+    {
+        var normalizedLiteral = TryNormalizeBooleanLiteral(expression);
+        if (normalizedLiteral is null)
+        {
+            return expression;
+        }
+
+        return normalizedLiteral.Value ? "((1))" : "((0))";
+    }
+
+    private static bool? TryNormalizeBooleanLiteral(string expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return null;
+        }
+
+        var candidate = expression.Trim();
+        for (var i = 0; i < 4 && candidate.Length > 0; i++)
+        {
+            if (IsBooleanLiteral(candidate, out var value))
+            {
+                return value;
+            }
+
+            if (candidate.Length < 2 || candidate[0] != '(' || candidate[^1] != ')')
+            {
+                break;
+            }
+
+            candidate = candidate[1..^1].Trim();
+        }
+
+        return null;
+    }
+
+    private static bool IsBooleanLiteral(string value, out bool result)
+    {
+        if (string.Equals(value, "True", StringComparison.OrdinalIgnoreCase) || string.Equals(value, "1", StringComparison.Ordinal))
+        {
+            result = true;
+            return true;
+        }
+
+        if (string.Equals(value, "False", StringComparison.OrdinalIgnoreCase) || string.Equals(value, "0", StringComparison.Ordinal))
+        {
+            result = false;
+            return true;
+        }
+
+        result = false;
+        return false;
     }
 
     private static bool ShouldEnforceNotNull(EntityModel entity, AttributeModel attribute, PolicyDecisionSet decisions)
