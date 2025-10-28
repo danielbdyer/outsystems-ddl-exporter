@@ -34,7 +34,20 @@ public static class OutSystemsInternalModel
             isMandatory: true,
             isIdentifier: true,
             isAutoNumber: false,
-            isActive: true).Value;
+            isActive: true,
+            precision: 19,
+            scale: 0,
+            onDisk: AttributeOnDiskMetadata.Create(
+                isNullable: false,
+                sqlType: "bigint",
+                maxLength: null,
+                precision: 19,
+                scale: 0,
+                collation: null,
+                isIdentity: true,
+                isComputed: false,
+                computedDefinition: null,
+                defaultDefinition: null)).Value;
 
         var usernameAttribute = AttributeModel.Create(
             AttributeName.Create("Username").Value,

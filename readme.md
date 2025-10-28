@@ -766,7 +766,16 @@ OutSystems modules frequently reference **system** or **external** tables (for e
           "isExternal": false,
           "isStatic": false,
           "attributes": [
-            { "name": "Id", "physicalName": "ID", "dataType": "Identifier", "isMandatory": true, "isIdentifier": true },
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "dataType": "Identifier",
+              "isMandatory": true,
+              "isIdentifier": true,
+              "precision": 19,
+              "scale": 0,
+              "onDisk": { "sqlType": "bigint", "isNullable": false, "isIdentity": true }
+            },
             { "name": "Username", "physicalName": "USERNAME", "dataType": "Text", "isMandatory": true, "length": 50 },
             { "name": "Email", "physicalName": "EMAIL", "dataType": "Text", "isMandatory": true, "length": 255 }
           ],
