@@ -52,6 +52,30 @@ public sealed class TypeMappingPolicyTests
         Assert.True(result.MaximumLength <= 0);
     }
 
+    [Theory]
+    [InlineData(2000)]
+    [InlineData(4000)]
+    public void Resolve_UsesMaxForUnicodeWhenLengthAtOrAboveThreshold(int declaredLength)
+    {
+        var attribute = CreateAttribute(
+            onDisk: AttributeOnDiskMetadata.Create(
+            isNullable: true,
+            sqlType: "nvarchar",
+            maxLength: declaredLength,
+            precision: null,
+            scale: null,
+            collation: null,
+            isIdentity: false,
+            isComputed: false,
+            computedDefinition: null,
+            defaultDefinition: null));
+
+        var result = Resolve(attribute);
+
+        Assert.Equal(SqlDataType.NVarCharMax, result.SqlDataType);
+        Assert.True(result.MaximumLength <= 0);
+    }
+
     [Fact]
     public void Resolve_UsesDecimalPrecisionAndScaleFromOnDiskMetadata()
     {
@@ -136,6 +160,30 @@ public sealed class TypeMappingPolicyTests
         Assert.True(result.MaximumLength <= 0);
     }
 
+    [Theory]
+    [InlineData(2000)]
+    [InlineData(4096)]
+    public void Resolve_UsesMaxForVarBinaryWhenLengthAtOrAboveThreshold(int declaredLength)
+    {
+        var attribute = CreateAttribute(
+            onDisk: AttributeOnDiskMetadata.Create(
+            isNullable: true,
+            sqlType: "varbinary",
+            maxLength: declaredLength,
+            precision: null,
+            scale: null,
+            collation: null,
+            isIdentity: false,
+            isComputed: false,
+            computedDefinition: null,
+            defaultDefinition: null));
+
+        var result = Resolve(attribute);
+
+        Assert.Equal(SqlDataType.VarBinaryMax, result.SqlDataType);
+        Assert.True(result.MaximumLength <= 0);
+    }
+
     [Fact]
     public void Resolve_MapsCurrencyToDecimalWithDefaultScale()
     {
@@ -172,6 +220,7 @@ public sealed class TypeMappingPolicyTests
 
     [Theory]
     [InlineData(200)]
+    [InlineData(2000)]
     [InlineData(2001)]
     public void Resolve_MapsTextualRuntimeTypesWithLength(int declaredLength)
     {
@@ -179,7 +228,7 @@ public sealed class TypeMappingPolicyTests
 
         var result = Resolve(attribute);
 
-        if (declaredLength > 2000)
+        if (declaredLength >= 2000)
         {
             Assert.Equal(SqlDataType.NVarCharMax, result.SqlDataType);
         }

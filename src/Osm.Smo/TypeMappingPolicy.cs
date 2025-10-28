@@ -11,6 +11,7 @@ namespace Osm.Smo;
 public sealed class TypeMappingPolicy
 {
     private const int DefaultUnicodeMaxLengthThreshold = 2000;
+    private const int DefaultVarBinaryMaxLengthThreshold = 2000;
 
     private static readonly Lazy<TypeMappingPolicy> DefaultInstance = new(() => LoadDefault());
 
@@ -228,7 +229,7 @@ public sealed class TypeMappingPolicy
             return DataType.NVarCharMax;
         }
 
-        if (effectiveLength == -1 || effectiveLength > maxThreshold)
+        if (effectiveLength == -1 || effectiveLength >= maxThreshold)
         {
             return DataType.NVarCharMax;
         }
@@ -264,7 +265,13 @@ public sealed class TypeMappingPolicy
             return DataType.VarBinaryMax;
         }
 
-        return length == -1 ? DataType.VarBinaryMax : DataType.VarBinary(length.Value);
+        var resolvedLength = length.Value;
+        if (resolvedLength >= DefaultVarBinaryMaxLengthThreshold)
+        {
+            return DataType.VarBinaryMax;
+        }
+
+        return DataType.VarBinary(resolvedLength);
     }
 
     private static DataType ResolveDecimal(int? precision, int? scale, int defaultPrecision = 18, int defaultScale = 0)
