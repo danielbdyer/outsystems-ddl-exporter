@@ -101,7 +101,7 @@ public class CreateTableStatementBuilderTests
             Columns: ImmutableArray.Create(column),
             Indexes: ImmutableArray<SmoIndexDefinition>.Empty,
             ForeignKeys: ImmutableArray.Create(new SmoForeignKeyDefinition(
-                Name: "FK_OSUSR_SALES_ORDER_CITY",
+                Name: "FK_Order_City_CityId",
                 Columns: ImmutableArray.Create("CityId"),
                 ReferencedModule: "Core",
                 ReferencedTable: "OSUSR_CORE_CITY",
@@ -117,7 +117,7 @@ public class CreateTableStatementBuilderTests
         var foreignKeyNames = builder.AddForeignKeys(statement, table, "Order", SmoBuildOptions.Default, out var trustLookup);
 
         var resolvedName = Assert.Single(foreignKeyNames);
-        Assert.Equal("FK_Order_CITY", resolvedName);
+        Assert.Equal("FK_Order_City_CityId", resolvedName);
         Assert.True(trustLookup[resolvedName]);
 
         var columnDefinition = Assert.Single(statement.Definition!.ColumnDefinitions);

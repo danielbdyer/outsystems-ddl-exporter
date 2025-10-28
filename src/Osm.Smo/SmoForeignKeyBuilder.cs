@@ -179,9 +179,12 @@ internal static class SmoForeignKeyBuilder
                             ? MapDeleteRule(constraint.OnDeleteAction)
                             : MapDeleteRule(attribute.Reference.DeleteRuleCode);
 
-                        var baseName = string.IsNullOrWhiteSpace(constraint.Name)
-                            ? $"FK_{context.Entity.PhysicalName.Value}_{string.Join('_', resolvedOwnerColumns)}"
-                            : constraint.Name;
+                        var referencedTableSegment = string.IsNullOrWhiteSpace(constraint.ReferencedTable)
+                            ? targetEntity.Entity.PhysicalName.Value
+                            : constraint.ReferencedTable;
+
+                        var ownerColumnsSegment = string.Join('_', resolvedOwnerColumns);
+                        var baseName = $"FK_{context.Entity.PhysicalName.Value}_{referencedTableSegment}_{ownerColumnsSegment}";
 
                         var name = ConstraintNameNormalizer.Normalize(
                             baseName,
@@ -218,7 +221,7 @@ internal static class SmoForeignKeyBuilder
             var referencedColumnsFallback = ImmutableArray.Create(referencedColumn.ColumnName.Value);
             var isNoCheckFallback = foreignKeyReality.TryGetValue(coordinate, out var realityFallback) && realityFallback.IsNoCheck;
             var nameFallback = ConstraintNameNormalizer.Normalize(
-                $"FK_{context.Entity.PhysicalName.Value}_{attribute.ColumnName.Value}",
+                $"FK_{context.Entity.PhysicalName.Value}_{targetEntity.Entity.PhysicalName.Value}_{attribute.ColumnName.Value}",
                 context.Entity,
                 new[] { attribute },
                 ConstraintNameKind.ForeignKey,

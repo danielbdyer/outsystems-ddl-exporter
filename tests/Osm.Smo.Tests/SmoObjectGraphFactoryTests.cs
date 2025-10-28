@@ -56,7 +56,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
             column.Name.Equals("Email", StringComparison.OrdinalIgnoreCase) && !column.IsIncluded);
 
         var foreignKey = Assert.Single(customerTable.ForeignKeys.Cast<ForeignKey>());
-        Assert.Equal("FK_Customer_CityId", foreignKey.Name);
+        Assert.Equal("FK_Customer_Osusr_Def_City_CityId", foreignKey.Name);
         Assert.True(foreignKey.IsChecked);
         Assert.Equal(ForeignKeyAction.NoAction, foreignKey.DeleteAction);
         Assert.Equal("OSUSR_DEF_CITY", foreignKey.ReferencedTable);

@@ -982,7 +982,7 @@ dotnet run --project src/Osm.Cli dmm-compare \
         "IDX_Customer_Name"
       ],
       "ForeignKeys": [
-        "FK_Customer_CityId"
+        "FK_Customer_City_CityId"
       ],
       "IncludesExtendedProperties": true
     }

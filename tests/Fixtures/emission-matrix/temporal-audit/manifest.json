@@ -18,7 +18,7 @@
         "IX_TemporalOrder_Status"
       ],
       "ForeignKeys": [
-        "FK_TemporalOrder_AuditId"
+        "FK_TemporalOrder_Audit_AuditId"
       ],
       "IncludesExtendedProperties": true
     }
