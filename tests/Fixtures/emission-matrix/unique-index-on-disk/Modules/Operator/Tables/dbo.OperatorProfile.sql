@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[OperatorProfile] (
     [Id]           BIGINT        NOT NULL
-        CONSTRAINT [PK_OperatorProfile]
+        CONSTRAINT [PK_OperatorProfile_Id]
             PRIMARY KEY CLUSTERED,
     [OperatorCode] NVARCHAR (50)
 )

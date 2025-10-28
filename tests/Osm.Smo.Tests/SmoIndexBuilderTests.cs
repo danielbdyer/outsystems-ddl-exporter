@@ -20,7 +20,7 @@ public class SmoIndexBuilderTests
         var indexes = SmoIndexBuilder.BuildIndexes(customerContext, decisions, includePlatformAuto: false, SmoFormatOptions.Default);
 
         var primaryKey = indexes.Single(index => index.IsPrimaryKey);
-        Assert.Equal("PK_Customer", primaryKey.Name);
+        Assert.Equal("PK_Customer_Id", primaryKey.Name);
         Assert.True(primaryKey.IsUnique);
         Assert.All(primaryKey.Columns, column => Assert.False(column.IsIncluded));
 

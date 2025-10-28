@@ -43,8 +43,21 @@ internal static class SmoIndexBuilder
         var primaryColumns = BuildPrimaryKeyColumns(context, domainPrimaryIndex, out var primaryAttributes);
         if (!primaryColumns.IsDefaultOrEmpty)
         {
+            var orderedPrimaryColumns = primaryColumns
+                .Where(static column => !column.IsIncluded)
+                .OrderBy(static column => column.Ordinal)
+                .ToImmutableArray();
+
+            var keyColumnSuffix = orderedPrimaryColumns.IsDefaultOrEmpty
+                ? string.Empty
+                : string.Join("_", orderedPrimaryColumns.Select(static column => column.Name));
+
+            var pkBaseName = string.IsNullOrWhiteSpace(keyColumnSuffix)
+                ? $"PK_{context.Entity.PhysicalName.Value}"
+                : $"PK_{context.Entity.PhysicalName.Value}_{keyColumnSuffix}";
+
             var pkName = ConstraintNameNormalizer.Normalize(
-                $"PK_{context.Entity.PhysicalName.Value}",
+                pkBaseName,
                 context.Entity,
                 primaryAttributes.IsDefaultOrEmpty ? context.IdentifierAttributes : primaryAttributes,
                 ConstraintNameKind.PrimaryKey,

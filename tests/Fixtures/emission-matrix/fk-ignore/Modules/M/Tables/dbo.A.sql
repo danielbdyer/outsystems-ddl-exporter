@@ -1,5 +1,5 @@
 CREATE TABLE [dbo].[A] (
     [Id] BIGINT NOT NULL
-        CONSTRAINT [PK_A]
+        CONSTRAINT [PK_A_Id]
             PRIMARY KEY CLUSTERED
 )

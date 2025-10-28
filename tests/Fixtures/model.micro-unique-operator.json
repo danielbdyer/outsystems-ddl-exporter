@@ -62,7 +62,7 @@
           ],
           "indexes": [
             {
-              "name": "PK_OPERATORPROFILE",
+              "name": "PK_OperatorProfile_Id",
               "isUnique": true,
               "isPrimary": true,
               "isPlatformAuto": 0,

@@ -134,7 +134,7 @@ public class DmmComparatorTests
     [Fact]
     public void Compare_detects_unexpected_table()
     {
-        var script = EdgeCaseScript + "CREATE TABLE [dbo].[EXTRA](\n    [ID] BIGINT NOT NULL,\n    CONSTRAINT [PK_EXTRA] PRIMARY KEY ([ID])\n);";
+        var script = EdgeCaseScript + "CREATE TABLE [dbo].[EXTRA](\n    [ID] BIGINT NOT NULL,\n    CONSTRAINT [PK_Extra_Id] PRIMARY KEY ([ID])\n);";
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(_baselineTables, ParseScript(script));
 
@@ -196,8 +196,8 @@ public class DmmComparatorTests
     public void Compare_detects_primary_key_difference()
     {
         var script = EdgeCaseScript.Replace(
-            "CONSTRAINT [PK_Customer] PRIMARY KEY ([ID])",
-            "CONSTRAINT [PK_Customer] PRIMARY KEY ([EMAIL])");
+            "CONSTRAINT [PK_Customer_Id] PRIMARY KEY ([ID])",
+            "CONSTRAINT [PK_Customer_Id] PRIMARY KEY ([EMAIL])");
 
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(_baselineTables, ParseScript(script));
@@ -272,7 +272,7 @@ public class DmmComparatorTests
         const string missingUniqueScript = @"CREATE TABLE [dbo].[CUSTOMERS](
     [ID] INT NOT NULL,
     [EMAIL] NVARCHAR(128) NOT NULL,
-    CONSTRAINT [PK_Customers] PRIMARY KEY ([ID])
+    CONSTRAINT [PK_Customers_Id] PRIMARY KEY ([ID])
 );";
 
         var actualTables = ParseScript(missingUniqueScript);
@@ -440,7 +440,7 @@ public class DmmComparatorTests
     [EMAIL] NVARCHAR(255) NOT NULL
 );
 ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
-    ADD CONSTRAINT [PK_Customer] PRIMARY KEY ([ID]);";
+    ADD CONSTRAINT [PK_Customer_Id] PRIMARY KEY ([ID]);";
 
         var tables = ParseScript(script);
         var table = Assert.Single(tables, t => string.Equals(t.Name, "OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
@@ -453,13 +453,13 @@ ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
         const string script = @"CREATE TABLE [dbo].[PARENT](
     [ID] INT NOT NULL,
     [TENANTID] INT NOT NULL,
-    CONSTRAINT [PK_PARENT] PRIMARY KEY ([ID], [TENANTID])
+    CONSTRAINT [PK_Parent_Id_TenantId] PRIMARY KEY ([ID], [TENANTID])
 );
 CREATE TABLE [dbo].[CHILD](
     [ID] INT NOT NULL,
     [TENANTID] INT NOT NULL,
     [PARENTID] INT NOT NULL,
-    CONSTRAINT [PK_CHILD] PRIMARY KEY ([ID], [TENANTID])
+    CONSTRAINT [PK_Child_Id_TenantId] PRIMARY KEY ([ID], [TENANTID])
 );
 ALTER TABLE [dbo].[CHILD]
     ADD CONSTRAINT [FK_CHILD_PARENT]
@@ -518,25 +518,25 @@ ALTER TABLE [dbo].[CHILD]
     [FIRSTNAME] NVARCHAR(100) NULL DEFAULT (''),
     [LASTNAME] NVARCHAR(100) NULL DEFAULT (''),
     [CITYID] BIGINT NOT NULL,
-    CONSTRAINT [PK_Customer] PRIMARY KEY ([ID])
+    CONSTRAINT [PK_Customer_Id] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_DEF_CITY](
     [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [NAME] NVARCHAR(200) NOT NULL,
     [ISACTIVE] BIT NOT NULL DEFAULT ((1)),
-    CONSTRAINT [PK_City] PRIMARY KEY ([ID])
+    CONSTRAINT [PK_City_Id] PRIMARY KEY ([ID])
 );
 CREATE TABLE [billing].[BILLING_ACCOUNT](
     [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [ACCOUNTNUMBER] VARCHAR(50) NOT NULL,
     [EXTREF] VARCHAR(50) NULL,
-    CONSTRAINT [PK_BillingAccount] PRIMARY KEY ([ID])
+    CONSTRAINT [PK_BillingAccount_Id] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
     [ID] BIGINT IDENTITY (1, 1) NOT NULL,
     [TRIGGEREDBYUSERID] BIGINT NULL,
     [CREATEDON] DATETIME NOT NULL DEFAULT (getutcdate()),
-    CONSTRAINT [PK_JobRun] PRIMARY KEY ([ID])
+    CONSTRAINT [PK_JobRun_Id] PRIMARY KEY ([ID])
 );
 ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
 ADD CONSTRAINT [FK_Customer_CityId]

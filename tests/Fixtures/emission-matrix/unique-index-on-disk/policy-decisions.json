@@ -108,7 +108,7 @@
     {
       "Schema": "dbo",
       "Table": "OSUSR_OP_OPERATORPROFILE",
-      "Index": "PK_OPERATORPROFILE",
+      "Index": "PK_OperatorProfile_Id",
       "EnforceUnique": true,
       "RequiresRemediation": false,
       "Rationales": [
