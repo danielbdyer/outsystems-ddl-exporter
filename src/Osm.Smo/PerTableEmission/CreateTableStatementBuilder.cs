@@ -396,13 +396,21 @@ internal sealed class CreateTableStatementBuilder
             SqlDataTypeOption = MapSqlDataType(dataType.SqlDataType),
         };
 
-        if (sqlType.SqlDataTypeOption is SqlDataTypeOption.VarChar or SqlDataTypeOption.NVarChar or SqlDataTypeOption.Char or SqlDataTypeOption.NChar)
+        if (sqlType.SqlDataTypeOption is SqlDataTypeOption.VarChar or SqlDataTypeOption.NVarChar or SqlDataTypeOption.VarBinary)
         {
-            if (dataType.MaximumLength < 0)
+            if (dataType.MaximumLength <= 0)
             {
                 sqlType.Parameters.Add(new MaxLiteral());
             }
             else if (dataType.MaximumLength > 0)
+            {
+                sqlType.Parameters.Add(new IntegerLiteral { Value = dataType.MaximumLength.ToString(CultureInfo.InvariantCulture) });
+            }
+        }
+
+        if (sqlType.SqlDataTypeOption is SqlDataTypeOption.Char or SqlDataTypeOption.NChar)
+        {
+            if (dataType.MaximumLength > 0)
             {
                 sqlType.Parameters.Add(new IntegerLiteral { Value = dataType.MaximumLength.ToString(CultureInfo.InvariantCulture) });
             }
