@@ -58,6 +58,60 @@
               "reference_hasDbConstraint": 0,
               "external_dbType": null,
               "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "BirthDate",
+              "physicalName": "BIRTHDATE",
+              "originalName": null,
+              "dataType": "Date",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "onDisk": {
+                "isNullable": true,
+                "sqlType": "datetime"
+              }
+            },
+            {
+              "name": "CreditLimit",
+              "physicalName": "CREDITLIMIT",
+              "originalName": null,
+              "dataType": "Decimal",
+              "length": null,
+              "precision": 37,
+              "scale": 8,
+              "default": null,
+              "isMandatory": false,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0,
+              "onDisk": {
+                "isNullable": true,
+                "sqlType": "decimal",
+                "precision": 37,
+                "scale": 8
+              }
             }
           ],
           "indexes": [

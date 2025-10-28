@@ -86,7 +86,8 @@ public sealed class TypeMappingPolicy
         var normalized = NormalizeKey(attribute.DataType);
         var preferRuntimeMapping = ShouldPreferRuntimeMapping(attribute, normalized);
 
-        if (!preferRuntimeMapping && TryResolveFromOnDisk(attribute, attribute.OnDisk, out var onDiskType))
+        if (!preferRuntimeMapping && TryResolveFromOnDisk(attribute, attribute.OnDisk, out var onDiskType)
+            && ShouldUseOnDisk(normalized, onDiskType))
         {
             return onDiskType;
         }
@@ -105,6 +106,16 @@ public sealed class TypeMappingPolicy
     }
 
     internal static string NormalizeKey(string? dataType) => NormalizeDataType(dataType ?? string.Empty);
+
+    private static bool ShouldUseOnDisk(string normalizedDataType, DataType onDiskType)
+    {
+        if (normalizedDataType == "date" && onDiskType.SqlDataType != SqlDataType.Date)
+        {
+            return false;
+        }
+
+        return true;
+    }
 
     private static bool TryResolveFromOnDisk(AttributeModel attribute, AttributeOnDiskMetadata? onDisk, out DataType dataType)
     {

@@ -152,4 +152,57 @@ public class CreateTableStatementBuilderTests
             column => Assert.Equal("Id", column.Value),
             column => Assert.Equal("TenantId", column.Value));
     }
+
+    [Fact]
+    public void BuildCreateTableStatement_WritesDecimalPrecisionBeforeScale()
+    {
+        var column = new SmoColumnDefinition(
+            PhysicalName: "CREDITLIMIT",
+            Name: "CreditLimit",
+            LogicalName: "CreditLimit",
+            DataType: DataType.Decimal(37, 8),
+            Nullable: true,
+            IsIdentity: false,
+            IdentitySeed: 0,
+            IdentityIncrement: 0,
+            IsComputed: false,
+            ComputedExpression: null,
+            DefaultExpression: null,
+            Collation: null,
+            Description: null,
+            DefaultConstraint: null,
+            CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty);
+
+        var table = new SmoTableDefinition(
+            Module: "Sales",
+            OriginalModule: "Sales",
+            Name: "OSUSR_SALES_ORDER",
+            Schema: "dbo",
+            Catalog: "OutSystems",
+            LogicalName: "Order",
+            Description: null,
+            Columns: ImmutableArray.Create(column),
+            Indexes: ImmutableArray<SmoIndexDefinition>.Empty,
+            ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
+            Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
+
+        var builder = new CreateTableStatementBuilder(_formatter);
+        var statement = builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
+
+        var columnDefinition = Assert.Single(statement.Definition!.ColumnDefinitions);
+        var dataType = Assert.IsType<SqlDataTypeReference>(columnDefinition.DataType);
+        Assert.Equal(SqlDataTypeOption.Decimal, dataType.SqlDataTypeOption);
+        Assert.Collection(
+            dataType.Parameters,
+            first =>
+            {
+                var precision = Assert.IsType<IntegerLiteral>(first);
+                Assert.Equal("37", precision.Value);
+            },
+            second =>
+            {
+                var scale = Assert.IsType<IntegerLiteral>(second);
+                Assert.Equal("8", scale.Value);
+            });
+    }
 }
