@@ -7,6 +7,7 @@ public static class TighteningRationales
     public const string UniqueNoNulls = "UNIQUE_NO_NULLS";
     public const string CompositeUniqueNoNulls = "COMPOSITE_UNIQUE_NO_NULLS";
     public const string DataNoNulls = "DATA_NO_NULLS";
+    public const string DataHasNulls = "DATA_HAS_NULLS";
     public const string NullBudgetEpsilon = "NULL_BUDGET_EPSILON";
     public const string Mandatory = "MANDATORY";
     public const string DefaultPresent = "DEFAULT_PRESENT";

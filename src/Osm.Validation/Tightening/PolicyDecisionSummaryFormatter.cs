@@ -35,6 +35,7 @@ public static class PolicyDecisionSummaryFormatter
         AddIfPresent(entries, BuildUniqueIndexSummary(report.UniqueIndexes));
         AddIfPresent(entries, BuildForeignKeyCreationSummary(report.ForeignKeys));
         AddIfPresent(entries, BuildProfileMissingSummary(report.Columns));
+        AddIfPresent(entries, BuildNullContradictionSummary(report.Columns));
         AddIfPresent(entries, BuildOrphanSummary(report.Columns));
 
         if (entries.Count == 0)
@@ -256,6 +257,23 @@ public static class PolicyDecisionSummaryFormatter
         var message =
             $"{FormatAttributeCount(missing.Length)} across {FormatEntityCount(entityCount)} stayed nullable because profiling evidence was unavailable.";
         return new SummaryEntry(missing.Length, 90, message);
+    }
+
+    private static SummaryEntry? BuildNullContradictionSummary(ImmutableArray<ColumnDecisionReport> columns)
+    {
+        var contradicting = columns
+            .Where(column => !column.MakeNotNull && HasRationale(column, TighteningRationales.DataHasNulls))
+            .ToArray();
+
+        if (contradicting.Length == 0)
+        {
+            return null;
+        }
+
+        var entityCount = CountEntities(contradicting);
+        var message =
+            $"{FormatAttributeCount(contradicting.Length)} across {FormatEntityCount(entityCount)} stayed nullable because profiling detected NULL values.";
+        return new SummaryEntry(contradicting.Length, 95, message);
     }
 
     private static SummaryEntry? BuildOrphanSummary(ImmutableArray<ColumnDecisionReport> columns)

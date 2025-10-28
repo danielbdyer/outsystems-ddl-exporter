@@ -22,7 +22,8 @@ public sealed class TighteningPolicyMatrixTests
             new[]
             {
                 TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Physical.ToString()
+                TighteningPolicyMatrix.NullabilitySignalKey.Physical.ToString(),
+                TighteningPolicyMatrix.NullabilitySignalKey.Mandatory.ToString()
             },
             Array.Empty<string>(),
             false
@@ -35,13 +36,13 @@ public sealed class TighteningPolicyMatrixTests
             new[]
             {
                 TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Physical.ToString()
+                TighteningPolicyMatrix.NullabilitySignalKey.Physical.ToString(),
+                TighteningPolicyMatrix.NullabilitySignalKey.Mandatory.ToString()
             },
             new[]
             {
                 TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Unique.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Mandatory.ToString()
+                TighteningPolicyMatrix.NullabilitySignalKey.Unique.ToString()
             },
             true
         };
@@ -53,13 +54,13 @@ public sealed class TighteningPolicyMatrixTests
             new[]
             {
                 TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Physical.ToString()
+                TighteningPolicyMatrix.NullabilitySignalKey.Physical.ToString(),
+                TighteningPolicyMatrix.NullabilitySignalKey.Mandatory.ToString()
             },
             new[]
             {
                 TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Unique.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Mandatory.ToString()
+                TighteningPolicyMatrix.NullabilitySignalKey.Unique.ToString()
             },
             false
         };
@@ -101,7 +102,7 @@ public sealed class TighteningPolicyMatrixTests
         var signals = TighteningPolicyMatrix.Nullability.ConditionalSignals;
         Assert.Contains(TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey, signals);
         Assert.Contains(TighteningPolicyMatrix.NullabilitySignalKey.Unique, signals);
-        Assert.Contains(TighteningPolicyMatrix.NullabilitySignalKey.Mandatory, signals);
+        Assert.DoesNotContain(TighteningPolicyMatrix.NullabilitySignalKey.Mandatory, signals);
     }
 
     public static IEnumerable<object[]> UniqueMatrixData()

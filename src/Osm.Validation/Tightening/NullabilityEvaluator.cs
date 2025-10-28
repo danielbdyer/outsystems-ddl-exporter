@@ -113,6 +113,12 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
         }
 
         var conditionalTriggered = signalTrace.ContainsSatisfiedCode(_policyDefinition.ConditionalSignalCodes);
+        var makeNotNull = signalTrace.Result;
+
+        if (attribute.IsMandatory)
+        {
+            conditionalTriggered = true;
+        }
 
         if (_options.Policy.Mode != TighteningMode.Cautious && conditionalTriggered)
         {
@@ -122,7 +128,6 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
             }
         }
 
-        var makeNotNull = signalTrace.Result;
         var requiresRemediation = false;
 
         if (_options.Policy.Mode == TighteningMode.Aggressive && makeNotNull && conditionalTriggered && !dataTrace.Result)
@@ -197,6 +202,11 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
         if (decision.Rationales.Contains(TighteningRationales.NullBudgetEpsilon))
         {
             return "Column exceeds the configured null budget.";
+        }
+
+        if (decision.Rationales.Contains(TighteningRationales.DataHasNulls))
+        {
+            return "Profiling detected NULL values that contradict the logical mandatory flag.";
         }
 
         return "Review policy blockers before enforcing NOT NULL.";
