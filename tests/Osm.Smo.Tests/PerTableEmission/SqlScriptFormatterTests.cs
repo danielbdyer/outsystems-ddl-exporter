@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
+using Microsoft.SqlServer.Management.Smo;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Osm.Smo;
 using Osm.Smo.PerTableEmission;
@@ -124,6 +127,30 @@ CREATE TABLE [dbo].[Order](
         Assert.Equal(script, formatted);
     }
 
+    [Fact]
+    public void FormatCreateTableScript_serializes_nvarchar_max_columns_with_max_literal()
+    {
+        var formatter = new SqlScriptFormatter();
+        var column = CreateSmoColumnDefinition("Description", DataType.NVarCharMax);
+
+        var script = GenerateCreateTableScript(formatter, column);
+        var normalized = script.Replace(" ", string.Empty, StringComparison.Ordinal);
+
+        Assert.Contains("NVARCHAR(MAX)", normalized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FormatCreateTableScript_serializes_varbinary_max_columns_with_max_literal()
+    {
+        var formatter = new SqlScriptFormatter();
+        var column = CreateSmoColumnDefinition("Payload", DataType.VarBinaryMax);
+
+        var script = GenerateCreateTableScript(formatter, column);
+        var normalized = script.Replace(" ", string.Empty, StringComparison.Ordinal);
+
+        Assert.Contains("VARBINARY(MAX)", normalized, StringComparison.Ordinal);
+    }
+
     private static CreateTableStatement CreateMinimalCreateTableStatement(params string[] columnNames)
     {
         var tableDefinition = new TableDefinition();
@@ -149,5 +176,58 @@ CREATE TABLE [dbo].[Order](
             },
             Definition = tableDefinition,
         };
+    }
+
+    private static string GenerateCreateTableScript(SqlScriptFormatter formatter, params SmoColumnDefinition[] columns)
+    {
+        var builder = new CreateTableStatementBuilder(formatter);
+        var options = SmoBuildOptions.Default;
+
+        var table = new SmoTableDefinition(
+            Module: "Sales",
+            OriginalModule: "Sales",
+            Name: "OSUSR_SALES_ORDER",
+            Schema: "dbo",
+            Catalog: "OutSystems",
+            LogicalName: "Order",
+            Description: null,
+            Columns: columns.ToImmutableArray(),
+            Indexes: ImmutableArray<SmoIndexDefinition>.Empty,
+            ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
+            Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
+
+        var statement = builder.BuildCreateTableStatement(table, table.LogicalName, options);
+
+        var generator = new Sql150ScriptGenerator(new SqlScriptGeneratorOptions
+        {
+            KeywordCasing = KeywordCasing.Uppercase,
+            IncludeSemicolons = true,
+            SqlVersion = SqlVersion.Sql150,
+        });
+
+        generator.GenerateScript(statement, out var script);
+        var trimmed = script.Trim();
+
+        return formatter.FormatCreateTableScript(trimmed, statement, foreignKeyTrustLookup: null, options.Format);
+    }
+
+    private static SmoColumnDefinition CreateSmoColumnDefinition(string name, DataType dataType)
+    {
+        return new SmoColumnDefinition(
+            PhysicalName: name.ToUpperInvariant(),
+            Name: name,
+            LogicalName: name,
+            DataType: dataType,
+            Nullable: true,
+            IsIdentity: false,
+            IdentitySeed: 0,
+            IdentityIncrement: 0,
+            IsComputed: false,
+            ComputedExpression: null,
+            DefaultExpression: null,
+            Collation: null,
+            Description: null,
+            DefaultConstraint: null,
+            CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty);
     }
 }
