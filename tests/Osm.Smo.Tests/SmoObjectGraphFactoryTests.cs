@@ -127,7 +127,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         var childTable = Assert.Single(tables.Where(t => t.Name.Equals("OSUSR_M_CHILD", StringComparison.OrdinalIgnoreCase)));
         var foreignKey = Assert.Single(childTable.ForeignKeys.Cast<ForeignKey>());
 
-        Assert.Equal("FK_Child_Parent", foreignKey.Name);
+        Assert.Equal("FK_Child_Parent_ParentId_TenantId", foreignKey.Name);
         Assert.Collection(
             foreignKey.Columns.Cast<ForeignKeyColumn>(),
             column =>

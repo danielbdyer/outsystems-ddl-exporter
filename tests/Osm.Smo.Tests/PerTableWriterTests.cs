@@ -167,7 +167,7 @@ public class PerTableWriterTests
             CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty);
 
         var foreignKey = new SmoForeignKeyDefinition(
-            Name: "FK_Order_CityId",
+            Name: "FK_Order_City_CityId",
             Columns: ImmutableArray.Create(foreignKeyColumn.Name),
             ReferencedModule: "AppCore",
             ReferencedTable: "OSUSR_DEF_CITY",
@@ -197,7 +197,7 @@ public class PerTableWriterTests
         var cityIndex = script.IndexOf("[CityId]", StringComparison.Ordinal);
         Assert.True(cityIndex >= 0);
 
-        var constraintIndex = script.IndexOf("CONSTRAINT [FK_Order_CityId]", cityIndex, StringComparison.Ordinal);
+        var constraintIndex = script.IndexOf("CONSTRAINT [FK_Order_City_CityId]", cityIndex, StringComparison.Ordinal);
         Assert.True(constraintIndex > cityIndex);
 
         var foreignKeyIndex = script.IndexOf("FOREIGN KEY ([CityId])", constraintIndex, StringComparison.Ordinal);

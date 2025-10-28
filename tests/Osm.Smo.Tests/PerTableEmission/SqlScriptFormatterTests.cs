@@ -19,14 +19,14 @@ public class SqlScriptFormatterTests
         var script = """
 CREATE TABLE [dbo].[Order](
     [Id] INT NOT NULL,
-    CONSTRAINT [FK_Order_City] FOREIGN KEY ([CityId]) REFERENCES [dbo].[City]([Id]) ON DELETE CASCADE,
+    CONSTRAINT [FK_Order_City_CityId] FOREIGN KEY ([CityId]) REFERENCES [dbo].[City]([Id]) ON DELETE CASCADE,
     [Name] NVARCHAR(100)
 );
 """.Trim();
 
         var lookup = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
         {
-            ["FK_Order_City"] = true,
+            ["FK_Order_City_CityId"] = true,
         };
 
         var formatted = formatter.FormatForeignKeyConstraints(script, lookup);
@@ -66,7 +66,7 @@ CREATE TABLE [dbo].[Order](
     [Code] NVARCHAR(20) CONSTRAINT [DF_Order_Code] DEFAULT ((N''))   ,
     [CustomerId] INT NOT NULL,
     CONSTRAINT [PK_Order_Id_Status] PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC) ,
-    CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
+    CONSTRAINT [FK_Order_Customer_CustomerId] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
 );
 """.Trim();
 
@@ -76,7 +76,7 @@ CREATE TABLE [dbo].[Order](
         Assert.Contains("    [Status] INT NOT NULL\n        CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0)),", formatted);
         Assert.Contains("    [Code] NVARCHAR(20)\n        CONSTRAINT [DF_Order_Code] DEFAULT ((N'')),", formatted);
         Assert.Contains("    CONSTRAINT [PK_Order_Id_Status]\n        PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC),", formatted);
-        Assert.Contains("    CONSTRAINT [FK_Order_Customer]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
+        Assert.Contains("    CONSTRAINT [FK_Order_Customer_CustomerId]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
         Assert.DoesNotContain("   ,", formatted);
     }
 
@@ -87,20 +87,20 @@ CREATE TABLE [dbo].[Order](
         var statement = CreateMinimalCreateTableStatement("Id", "CustomerId");
         var lookup = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
         {
-            ["FK_Order_Customer"] = true,
+            ["FK_Order_Customer_CustomerId"] = true,
         };
 
         var script = """
 CREATE TABLE [dbo].[Order](
     [Id] INT NOT NULL,
     [CustomerId] INT NOT NULL,
-    CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
+    CONSTRAINT [FK_Order_Customer_CustomerId] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
 );
 """.Trim();
 
         var formatted = formatter.FormatCreateTableScript(script, statement, lookup, SmoFormatOptions.Default);
 
-        Assert.Contains("    CONSTRAINT [FK_Order_Customer]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
+        Assert.Contains("    CONSTRAINT [FK_Order_Customer_CustomerId]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
         Assert.Contains("-- Source constraint was not trusted (WITH NOCHECK)", formatted);
     }
 
@@ -118,7 +118,7 @@ CREATE TABLE [dbo].[Order](
     [Code] NVARCHAR(20) CONSTRAINT [DF_Order_Code] DEFAULT ((N''))   ,
     [CustomerId] INT NOT NULL,
     CONSTRAINT [PK_Order_Id_Status] PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC) ,
-    CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
+    CONSTRAINT [FK_Order_Customer_CustomerId] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
 );
 """.Trim();
 
