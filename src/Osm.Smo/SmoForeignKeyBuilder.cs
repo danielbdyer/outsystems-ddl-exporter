@@ -179,9 +179,10 @@ internal static class SmoForeignKeyBuilder
                             ? MapDeleteRule(constraint.OnDeleteAction)
                             : MapDeleteRule(attribute.Reference.DeleteRuleCode);
 
+                        var ownerSegment = string.Join('_', resolvedOwnerColumns);
                         var baseName = string.IsNullOrWhiteSpace(constraint.Name)
-                            ? $"FK_{context.Entity.PhysicalName.Value}_{string.Join('_', resolvedOwnerColumns)}"
-                            : constraint.Name;
+                            ? $"FK_{context.Entity.PhysicalName.Value}_{referencedTable}_{ownerSegment}"
+                            : AppendColumnSegment(constraint.Name, resolvedOwnerColumns);
 
                         var name = ConstraintNameNormalizer.Normalize(
                             baseName,
@@ -219,7 +220,7 @@ internal static class SmoForeignKeyBuilder
             var referencedColumnsFallback = ImmutableArray.Create(referencedColumn.ColumnName.Value);
             var isNoCheckFallback = foreignKeyReality.TryGetValue(coordinate, out var realityFallback) && realityFallback.IsNoCheck;
             var nameFallback = ConstraintNameNormalizer.Normalize(
-                $"FK_{context.Entity.PhysicalName.Value}_{attribute.ColumnName.Value}",
+                $"FK_{context.Entity.PhysicalName.Value}_{targetEntity.Entity.PhysicalName.Value}_{attribute.ColumnName.Value}",
                 context.Entity,
                 new[] { attribute },
                 ConstraintNameKind.ForeignKey,
@@ -395,6 +396,33 @@ internal static class SmoForeignKeyBuilder
     {
         var namePart = string.IsNullOrWhiteSpace(constraint.Name) ? relationship.ViaAttribute.Value : constraint.Name;
         return $"{relationship.ViaAttribute.Value}|{namePart}|{string.Join('|', ownerColumns)}|{string.Join('|', referencedColumns)}";
+    }
+
+    private static string AppendColumnSegment(string name, ImmutableArray<string> ownerColumns)
+    {
+        if (string.IsNullOrWhiteSpace(name) || ownerColumns.IsDefaultOrEmpty)
+        {
+            return name;
+        }
+
+        var needsAppend = false;
+
+        foreach (var column in ownerColumns)
+        {
+            if (!name.Contains(column, StringComparison.OrdinalIgnoreCase))
+            {
+                needsAppend = true;
+                break;
+            }
+        }
+
+        if (!needsAppend)
+        {
+            return name;
+        }
+
+        var segment = string.Join('_', ownerColumns);
+        return $"{name}_{segment}";
     }
 
     private static ForeignKeyAction MapDeleteRule(string? deleteRule)

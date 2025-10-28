@@ -10,7 +10,7 @@
         "IDX_CUSTOMER_PORTAL_Name"
       ],
       "ForeignKeys": [
-        "FK_CUSTOMER_PORTAL_CityId"
+        "FK_CUSTOMER_PORTAL_City_CityId"
       ],
       "IncludesExtendedProperties": true
     },

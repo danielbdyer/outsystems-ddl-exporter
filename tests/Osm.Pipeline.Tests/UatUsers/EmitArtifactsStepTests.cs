@@ -40,7 +40,7 @@ public sealed class EmitArtifactsStepTests
 
         var catalog = new List<UserFkColumn>
         {
-            new("dbo", "Orders", "CreatedBy", "FK_Orders_Users")
+            new("dbo", "Orders", "CreatedBy", "FK_Orders_Users_CreatedBy")
         };
         context.SetUserFkCatalog(catalog);
         context.SetForeignKeyValueCounts(new Dictionary<UserFkColumn, IReadOnlyDictionary<long, long>>

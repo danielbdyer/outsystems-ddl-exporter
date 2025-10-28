@@ -122,6 +122,7 @@ public class CreateTableStatementBuilderTests
 
         var columnDefinition = Assert.Single(statement.Definition!.ColumnDefinitions);
         var fkConstraint = Assert.Single(columnDefinition.Constraints.OfType<ForeignKeyConstraintDefinition>());
+        Assert.Equal("FK_Order_City_CityId", fkConstraint.ConstraintIdentifier!.Value);
         Assert.Equal("CityId", fkConstraint.Columns[0].Value);
         Assert.Equal(DeleteUpdateAction.SetNull, fkConstraint.DeleteAction);
     }
@@ -140,7 +141,7 @@ public class CreateTableStatementBuilderTests
         var foreignKeyNames = builder.AddForeignKeys(statement, childTable, childTable.Name, options, out _);
 
         var resolvedName = Assert.Single(foreignKeyNames);
-        Assert.Equal("FK_Child_Parent", resolvedName);
+        Assert.Equal("FK_Child_Parent_ParentId_TenantId", resolvedName);
 
         var constraint = Assert.Single(statement.Definition!.TableConstraints.OfType<ForeignKeyConstraintDefinition>());
         Assert.Collection(
