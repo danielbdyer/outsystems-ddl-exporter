@@ -122,8 +122,8 @@ public sealed class EmissionFingerprintCalculator
             dataType.Name,
             dataType.SqlDataType.ToString(),
             dataType.MaximumLength,
-            dataType.NumericPrecision,
-            dataType.NumericScale);
+            dataType.GetDeclaredPrecision(),
+            dataType.GetDeclaredScale());
     }
 
     private static DefaultConstraintDocument? BuildDefaultConstraint(SmoDefaultConstraintDefinition? constraint)

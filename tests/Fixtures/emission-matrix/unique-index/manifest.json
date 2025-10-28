@@ -19,7 +19,7 @@
     "ModuleParallelism": 1
   },
   "PolicySummary": {
-    "ColumnCount": 2,
+    "ColumnCount": 4,
     "TightenedColumnCount": 2,
     "RemediationColumnCount": 0,
     "UniqueIndexCount": 1,
@@ -28,20 +28,20 @@
     "ForeignKeyCount": 0,
     "ForeignKeysCreatedCount": 0,
     "ColumnRationales": {
-      "DATA_NO_NULLS": 2,
+      "PHYSICAL_NOT_NULL": 1,
       "UNIQUE_NO_NULLS": 1,
       "PK": 1,
-      "PHYSICAL_NOT_NULL": 1,
-      "MANDATORY": 2
+      "MANDATORY": 2,
+      "DATA_NO_NULLS": 2
     },
     "UniqueIndexRationales": {
-      "UNIQUE_NO_NULLS": 1,
-      "PHYSICAL_UNIQUE_KEY": 1
+      "PHYSICAL_UNIQUE_KEY": 1,
+      "UNIQUE_NO_NULLS": 1
     },
     "ForeignKeyRationales": {},
     "ModuleRollups": {
       "M": {
-        "ColumnCount": 2,
+        "ColumnCount": 4,
         "TightenedColumnCount": 2,
         "RemediationColumnCount": 0,
         "UniqueIndexCount": 1,
@@ -50,15 +50,15 @@
         "ForeignKeyCount": 0,
         "ForeignKeysCreatedCount": 0,
         "ColumnRationales": {
-          "DATA_NO_NULLS": 2,
+          "PHYSICAL_NOT_NULL": 1,
           "UNIQUE_NO_NULLS": 1,
           "PK": 1,
-          "PHYSICAL_NOT_NULL": 1,
-          "MANDATORY": 2
+          "MANDATORY": 2,
+          "DATA_NO_NULLS": 2
         },
         "UniqueIndexRationales": {
-          "UNIQUE_NO_NULLS": 1,
-          "PHYSICAL_UNIQUE_KEY": 1
+          "PHYSICAL_UNIQUE_KEY": 1,
+          "UNIQUE_NO_NULLS": 1
         },
         "ForeignKeyRationales": {}
       }
@@ -84,6 +84,10 @@
         "Value": false,
         "Source": 0
       },
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+        "Value": false,
+        "Source": 0
+      },
       "uniqueness.enforceSingleColumn": {
         "Value": true,
         "Source": 0
@@ -104,7 +108,7 @@
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "03715549810e89be8ca76c6235e40e0c6e94c826281d87f2583c11fe8b18d1f6"
+    "Hash": "7d3e62cf15f3e85eb8fd5143c8a65e9cccd2783038b00277ecf830f154a81ef1"
   },
   "PreRemediation": [],
   "Coverage": {
@@ -114,9 +118,9 @@
       "Percentage": 50.0
     },
     "Columns": {
-      "Emitted": 2,
-      "Total": 5,
-      "Percentage": 40.0
+      "Emitted": 4,
+      "Total": 7,
+      "Percentage": 57.14
     },
     "Constraints": {
       "Emitted": 2,

@@ -2,6 +2,7 @@ using System;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
+using Osm.Smo;
 using Xunit;
 
 namespace Osm.Smo.Tests;
@@ -69,8 +70,8 @@ public sealed class TypeMappingPolicyTests
 
         var result = Resolve(attribute);
         Assert.Equal(SqlDataType.Decimal, result.SqlDataType);
-        Assert.Equal(4, result.NumericPrecision);
-        Assert.Equal(12, result.NumericScale);
+        Assert.Equal(12, result.GetDeclaredPrecision());
+        Assert.Equal(4, result.GetDeclaredScale());
     }
 
     [Fact]
@@ -143,9 +144,30 @@ public sealed class TypeMappingPolicyTests
         var result = Resolve(attribute);
 
         Assert.Equal(SqlDataType.Decimal, result.SqlDataType);
-        // SMO's Decimal stores the requested precision in NumericScale and the scale in NumericPrecision.
-        Assert.Equal(37, result.NumericScale);
-        Assert.Equal(8, result.NumericPrecision);
+        Assert.Equal(37, result.GetDeclaredPrecision());
+        Assert.Equal(8, result.GetDeclaredScale());
+    }
+
+    [Fact]
+    public void Resolve_DoesNotCoerceDateRuntimeTypesToDateTime()
+    {
+        var attribute = CreateAttribute(
+            dataType: "Date",
+            onDisk: AttributeOnDiskMetadata.Create(
+                isNullable: true,
+                sqlType: "datetime",
+                maxLength: null,
+                precision: null,
+                scale: null,
+                collation: null,
+                isIdentity: false,
+                isComputed: false,
+                computedDefinition: null,
+                defaultDefinition: null));
+
+        var result = Resolve(attribute);
+
+        Assert.Equal(SqlDataType.Date, result.SqlDataType);
     }
 
     [Theory]

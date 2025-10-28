@@ -410,8 +410,8 @@ internal sealed class CreateTableStatementBuilder
 
         if (sqlType.SqlDataTypeOption is SqlDataTypeOption.Decimal or SqlDataTypeOption.Numeric)
         {
-            sqlType.Parameters.Add(new IntegerLiteral { Value = dataType.NumericPrecision.ToString(CultureInfo.InvariantCulture) });
-            sqlType.Parameters.Add(new IntegerLiteral { Value = dataType.NumericScale.ToString(CultureInfo.InvariantCulture) });
+            sqlType.Parameters.Add(new IntegerLiteral { Value = dataType.GetDeclaredPrecision().ToString(CultureInfo.InvariantCulture) });
+            sqlType.Parameters.Add(new IntegerLiteral { Value = dataType.GetDeclaredScale().ToString(CultureInfo.InvariantCulture) });
         }
 
         return sqlType;
