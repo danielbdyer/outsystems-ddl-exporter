@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[TemporalOrder] (
     [Id]        BIGINT        NOT NULL
-        CONSTRAINT [PK_TemporalOrder]
+        CONSTRAINT [PK_TemporalOrder_Id]
             PRIMARY KEY CLUSTERED,
     [Status]    NVARCHAR (50) NOT NULL
         DEFAULT ('PENDING')

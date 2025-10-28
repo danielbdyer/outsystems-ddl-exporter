@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[OrderAllocation] (
     [Id]         BIGINT NOT NULL
-        CONSTRAINT [PK_OrderAllocation]
+        CONSTRAINT [PK_OrderAllocation_Id]
             PRIMARY KEY CLUSTERED,
     [CountryId]  BIGINT NOT NULL,
     [DocumentId] BIGINT NOT NULL,

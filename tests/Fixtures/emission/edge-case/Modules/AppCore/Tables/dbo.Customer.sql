@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[Customer] (
     [Id]        BIGINT         IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_Customer]
+        CONSTRAINT [PK_Customer_Id]
             PRIMARY KEY CLUSTERED,
     [Email]     NVARCHAR (255) NOT NULL,
     [FirstName] NVARCHAR (100)

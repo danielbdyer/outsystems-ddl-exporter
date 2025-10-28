@@ -63,9 +63,9 @@
       "Risk": "SafeToApply",
       "Schema": "dbo",
       "Table": "OSUSR_OP_OPERATORPROFILE",
-      "Name": "PK_OPERATORPROFILE",
+      "Name": "PK_OperatorProfile_Id",
       "Statements": [
-        "CREATE UNIQUE NONCLUSTERED INDEX [PK_OPERATORPROFILE] ON [dbo].[OSUSR_OP_OPERATORPROFILE] ([ID] ASC);"
+        "CREATE UNIQUE NONCLUSTERED INDEX [PK_OperatorProfile_Id] ON [dbo].[OSUSR_OP_OPERATORPROFILE] ([ID] ASC);"
       ],
       "Rationales": [
         "PHYSICAL_UNIQUE_KEY"

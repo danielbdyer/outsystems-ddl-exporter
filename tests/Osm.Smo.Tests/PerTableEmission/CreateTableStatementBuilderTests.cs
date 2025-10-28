@@ -36,7 +36,7 @@ public class CreateTableStatementBuilderTests
             CheckConstraints: ImmutableArray<SmoCheckConstraintDefinition>.Empty);
 
         var index = new SmoIndexDefinition(
-            Name: "PK_OSUSR_SALES_ORDER",
+            Name: "PK_Order_Id",
             IsUnique: true,
             IsPrimaryKey: true,
             IsPlatformAuto: false,
@@ -66,7 +66,7 @@ public class CreateTableStatementBuilderTests
         var inlineConstraint = Assert.Single(singleColumn.Constraints.OfType<UniqueConstraintDefinition>());
         Assert.True(inlineConstraint.IsPrimaryKey);
         Assert.True(inlineConstraint.Clustered);
-        Assert.Equal("PK_Order", inlineConstraint.ConstraintIdentifier.Value);
+        Assert.Equal("PK_Order_Id", inlineConstraint.ConstraintIdentifier.Value);
         Assert.Empty(statement.Definition.TableConstraints);
     }
 

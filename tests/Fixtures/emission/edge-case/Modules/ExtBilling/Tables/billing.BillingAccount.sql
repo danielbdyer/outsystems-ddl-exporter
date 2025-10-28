@@ -1,6 +1,6 @@
 CREATE TABLE [billing].[BillingAccount] (
     [Id]            BIGINT       IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_BillingAccount]
+        CONSTRAINT [PK_BillingAccount_Id]
             PRIMARY KEY CLUSTERED,
     [AccountNumber] VARCHAR (50) NOT NULL,
     [ExtRef]        VARCHAR (50)

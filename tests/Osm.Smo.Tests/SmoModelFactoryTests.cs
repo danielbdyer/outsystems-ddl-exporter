@@ -663,7 +663,7 @@ public class SmoModelFactoryTests
 
         var customer = tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
         var pk = Assert.Single(customer.Indexes.Cast<SmoIndex>(), index => index.IndexKeyType == IndexKeyType.DriPrimaryKey);
-        Assert.Equal("PK_Customer", pk.Name);
+        Assert.Equal("PK_Customer_Id", pk.Name);
 
         var foreignKey = Assert.Single(customer.ForeignKeys.Cast<ForeignKey>());
         Assert.True(foreignKey.IsChecked);
