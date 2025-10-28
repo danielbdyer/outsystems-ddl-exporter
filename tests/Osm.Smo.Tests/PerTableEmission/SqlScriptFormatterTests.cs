@@ -63,7 +63,7 @@ CREATE TABLE [dbo].[Order](
 CREATE TABLE [dbo].[Order](
     [Id] INT NOT NULL CONSTRAINT [PK_Order_Id] PRIMARY KEY CLUSTERED ,
     [Status] INT NOT NULL CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0))  ,
-    [Code] NVARCHAR(20) CONSTRAINT [DF_Order_Code] DEFAULT ((N''))   ,
+    [Code] NVARCHAR(20) NULL CONSTRAINT [DF_Order_Code] DEFAULT ((N''))   ,
     [CustomerId] INT NOT NULL,
     CONSTRAINT [PK_Order_Id_Status] PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC) ,
     CONSTRAINT [FK_Order_Customer_CustomerId] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
@@ -74,7 +74,7 @@ CREATE TABLE [dbo].[Order](
 
         Assert.Contains("    [Id] INT NOT NULL\n        CONSTRAINT [PK_Order_Id]\n            PRIMARY KEY CLUSTERED,", formatted);
         Assert.Contains("    [Status] INT NOT NULL\n        CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0)),", formatted);
-        Assert.Contains("    [Code] NVARCHAR(20)\n        CONSTRAINT [DF_Order_Code] DEFAULT ((N'')),", formatted);
+        Assert.Contains("    [Code] NVARCHAR(20) NULL\n        CONSTRAINT [DF_Order_Code] DEFAULT ((N'')),", formatted);
         Assert.Contains("    CONSTRAINT [PK_Order_Id_Status]\n        PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC),", formatted);
         Assert.Contains("    CONSTRAINT [FK_Order_Customer_CustomerId]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
         Assert.DoesNotContain("   ,", formatted);
@@ -115,7 +115,7 @@ CREATE TABLE [dbo].[Order](
 CREATE TABLE [dbo].[Order](
     [Id] INT NOT NULL CONSTRAINT [PK_Order_Id] PRIMARY KEY CLUSTERED ,
     [Status] INT NOT NULL CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0))  ,
-    [Code] NVARCHAR(20) CONSTRAINT [DF_Order_Code] DEFAULT ((N''))   ,
+    [Code] NVARCHAR(20) NULL CONSTRAINT [DF_Order_Code] DEFAULT ((N''))   ,
     [CustomerId] INT NOT NULL,
     CONSTRAINT [PK_Order_Id_Status] PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC) ,
     CONSTRAINT [FK_Order_Customer_CustomerId] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])
@@ -149,6 +149,17 @@ CREATE TABLE [dbo].[Order](
         var normalized = script.Replace(" ", string.Empty, StringComparison.Ordinal);
 
         Assert.Contains("VARBINARY(MAX)", normalized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FormatCreateTableScript_emits_null_keyword_for_nullable_columns()
+    {
+        var formatter = new SqlScriptFormatter();
+        var column = CreateSmoColumnDefinition("Optional", DataType.NVarChar(50));
+
+        var script = GenerateCreateTableScript(formatter, column);
+
+        Assert.Contains("[Optional] NVARCHAR(50) NULL", script, StringComparison.Ordinal);
     }
 
     private static CreateTableStatement CreateMinimalCreateTableStatement(params string[] columnNames)
