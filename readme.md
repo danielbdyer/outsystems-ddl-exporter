@@ -268,7 +268,7 @@ Key metadata surfaced by the reconciled extractor:
   "hasDbConstraint": 1,
   "actualConstraints": [
     {
-      "name": "FK_OSUSR_ABC_CUSTOMER_CITY",
+      "name": "FK_Customer_City_CityId",
       "onDelete": "NO_ACTION",
       "onUpdate": "NO_ACTION",
       "referencedSchema": "dbo",
@@ -982,7 +982,7 @@ dotnet run --project src/Osm.Cli dmm-compare \
         "IDX_Customer_Name"
       ],
       "ForeignKeys": [
-        "FK_Customer_CityId"
+        "FK_Customer_City_CityId"
       ],
       "IncludesExtendedProperties": true
     }

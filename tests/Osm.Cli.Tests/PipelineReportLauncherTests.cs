@@ -97,7 +97,7 @@ public class PipelineReportLauncherTests
                     "Customer",
                     "Modules/AppCore/Tables/dbo.Customer.sql",
                     new[] { "IX_Customer_Email" },
-                    new[] { "FK_Customer_City" },
+                    new[] { "FK_Customer_City_CityId" },
                     true),
                 new TableManifestEntry(
                     "ExtBilling",

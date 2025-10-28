@@ -13,7 +13,8 @@ public static class ConstraintNameNormalizer
         EntityModel entity,
         IReadOnlyCollection<AttributeModel> referencedAttributes,
         ConstraintNameKind kind,
-        SmoFormatOptions format)
+        SmoFormatOptions format,
+        EntityModel? referencedEntity = null)
     {
         if (string.IsNullOrWhiteSpace(originalName))
         {
@@ -22,6 +23,12 @@ public static class ConstraintNameNormalizer
 
         var normalized = ReplaceIgnoreCase(originalName, entity.PhysicalName.Value, entity.LogicalName.Value);
         normalized = ReplaceIgnoreCase(normalized, entity.LogicalName.Value, entity.LogicalName.Value);
+
+        if (kind == ConstraintNameKind.ForeignKey && referencedEntity is not null)
+        {
+            normalized = ReplaceIgnoreCase(normalized, referencedEntity.PhysicalName.Value, referencedEntity.LogicalName.Value);
+            normalized = ReplaceIgnoreCase(normalized, referencedEntity.LogicalName.Value, referencedEntity.LogicalName.Value);
+        }
 
         if (referencedAttributes is not null)
         {

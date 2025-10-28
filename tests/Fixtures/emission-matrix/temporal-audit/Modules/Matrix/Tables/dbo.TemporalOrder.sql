@@ -6,7 +6,7 @@ CREATE TABLE [dbo].[TemporalOrder] (
         DEFAULT ('PENDING')
         CONSTRAINT [CK_TEMPORALORDER_STATUS] CHECK ([Status] IN ('PENDING', 'APPROVED', 'ARCHIVED')),
     [AuditId]   BIGINT
-        CONSTRAINT [FK_TemporalOrder_AuditId]
+        CONSTRAINT [FK_TemporalOrder_Audit_AuditId]
             FOREIGN KEY ([AuditId]) REFERENCES [dbo].[Audit] ([Id]),
     [ValidFrom] DATETIME2     NOT NULL,
     [ValidTo]   DATETIME2     NOT NULL

@@ -188,7 +188,8 @@ internal static class SmoForeignKeyBuilder
                             context.Entity,
                             referencedAttributes,
                             ConstraintNameKind.ForeignKey,
-                            format);
+                            format,
+                            referencedEntity: targetEntity.Entity);
 
                         var ownerColumnNames = NormalizeColumnNames(resolvedOwnerColumns, context.AttributeLookup);
                         var referencedColumnNames = NormalizeColumnNames(resolvedReferencedColumns, targetEntity.AttributeLookup);
@@ -222,7 +223,8 @@ internal static class SmoForeignKeyBuilder
                 context.Entity,
                 new[] { attribute },
                 ConstraintNameKind.ForeignKey,
-                format);
+                format,
+                referencedEntity: targetEntity.Entity);
 
             var friendlyOwnerColumns = NormalizeColumnNames(ownerColumnsFallback, context.AttributeLookup);
             var friendlyReferencedColumns = NormalizeColumnNames(referencedColumnsFallback, targetEntity.AttributeLookup);
