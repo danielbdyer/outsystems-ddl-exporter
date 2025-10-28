@@ -70,8 +70,13 @@ internal static class SmoColumnBuilder
             var isComputed = onDisk.IsComputed ?? false;
             var computed = isComputed ? onDisk.ComputedDefinition : null;
             var coordinate = new ColumnCoordinate(context.Entity.Schema, context.Entity.PhysicalName, attribute.ColumnName);
-            var defaultExpression = SmoNormalization.NormalizeSqlExpression(
-                ResolveDefaultExpression(onDisk.DefaultDefinition, profileDefaults, coordinate, attribute));
+            var defaultExpression = ResolveDefaultExpression(
+                onDisk.DefaultDefinition,
+                profileDefaults,
+                coordinate,
+                attribute);
+            defaultExpression = NormalizeBooleanDefault(dataType, defaultExpression);
+            defaultExpression = SmoNormalization.NormalizeSqlExpression(defaultExpression);
             var collation = SmoNormalization.NormalizeWhitespace(onDisk.Collation);
             var description = SmoNormalization.NormalizeWhitespace(attribute.Metadata.Description);
             var defaultConstraint = CreateDefaultConstraint(attribute.OnDisk.DefaultConstraint);
@@ -174,6 +179,81 @@ internal static class SmoColumnBuilder
         }
 
         return string.IsNullOrWhiteSpace(attribute.DefaultValue) ? null : attribute.DefaultValue;
+    }
+
+    private static string? NormalizeBooleanDefault(DataType dataType, string? expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return expression;
+        }
+
+        if (dataType.SqlDataType != SqlDataType.Bit)
+        {
+            return expression;
+        }
+
+        if (TryFormatBooleanDefault(expression, out var formatted))
+        {
+            return formatted;
+        }
+
+        return expression;
+    }
+
+    private static bool TryFormatBooleanDefault(string expression, out string formatted)
+    {
+        var trimmed = expression.Trim();
+        if (trimmed.Length == 0)
+        {
+            formatted = string.Empty;
+            return false;
+        }
+
+        var candidate = StripOuterParentheses(trimmed);
+        candidate = StripOuterQuotes(candidate);
+
+        if (candidate.Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            formatted = "(1)";
+            return true;
+        }
+
+        if (candidate.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            formatted = "(0)";
+            return true;
+        }
+
+        formatted = string.Empty;
+        return false;
+    }
+
+    private static string StripOuterParentheses(string value)
+    {
+        var result = value;
+        while (result.Length > 1 && result[0] == '(' && result[^1] == ')')
+        {
+            var inner = result[1..^1].Trim();
+            if (inner.Length == result.Length)
+            {
+                break;
+            }
+
+            result = inner;
+        }
+
+        return result;
+    }
+
+    private static string StripOuterQuotes(string value)
+    {
+        if (value.Length > 1 && value[0] == '\'' && value[^1] == '\'')
+        {
+            return value[1..^1];
+        }
+
+        return value;
     }
 
     private static bool ShouldEnforceNotNull(EntityModel entity, AttributeModel attribute, PolicyDecisionSet decisions)
