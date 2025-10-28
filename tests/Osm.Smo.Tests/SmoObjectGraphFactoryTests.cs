@@ -56,7 +56,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
             column.Name.Equals("Email", StringComparison.OrdinalIgnoreCase) && !column.IsIncluded);
 
         var foreignKey = Assert.Single(customerTable.ForeignKeys.Cast<ForeignKey>());
-        Assert.Equal("FK_Customer_CityId", foreignKey.Name);
+        Assert.Equal("FK_Customer_City_CityId", foreignKey.Name);
         Assert.True(foreignKey.IsChecked);
         Assert.Equal(ForeignKeyAction.NoAction, foreignKey.DeleteAction);
         Assert.Equal("OSUSR_DEF_CITY", foreignKey.ReferencedTable);
@@ -127,7 +127,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         var childTable = Assert.Single(tables.Where(t => t.Name.Equals("OSUSR_M_CHILD", StringComparison.OrdinalIgnoreCase)));
         var foreignKey = Assert.Single(childTable.ForeignKeys.Cast<ForeignKey>());
 
-        Assert.Equal("FK_OSUSR_M_CHILD_PARENT", foreignKey.Name);
+        Assert.Equal("FK_Child_Parent", foreignKey.Name);
         Assert.Collection(
             foreignKey.Columns.Cast<ForeignKeyColumn>(),
             column =>

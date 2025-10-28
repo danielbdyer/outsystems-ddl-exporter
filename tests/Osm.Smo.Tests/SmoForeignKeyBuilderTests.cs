@@ -21,7 +21,7 @@ public class SmoForeignKeyBuilderTests
 
         var customerForeignKeys = SmoForeignKeyBuilder.BuildForeignKeys(customerContext, decisions, contexts, reality, SmoFormatOptions.Default);
         var cityForeignKey = Assert.Single(customerForeignKeys);
-        Assert.Equal("FK_Customer_Osusr_Def_City", cityForeignKey.Name);
+        Assert.Equal("FK_Customer_City_CityId", cityForeignKey.Name);
         Assert.False(cityForeignKey.IsNoCheck);
         Assert.Equal("City", cityForeignKey.ReferencedLogicalTable);
         Assert.Collection(cityForeignKey.Columns, column => Assert.Equal("CityId", column));
