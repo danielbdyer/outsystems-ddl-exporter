@@ -46,6 +46,27 @@ public class DecisionSummaryFormatterTests
     }
 
     [Fact]
+    public void FormatForConsole_WhenNullContradictions_ReturnsContradictionSummary()
+    {
+        var column = CreateColumn(
+            "dbo",
+            "CUSTOMER",
+            "EMAIL",
+            makeNotNull: false,
+            TighteningRationales.Mandatory,
+            TighteningRationales.DataHasNulls);
+
+        var report = CreateReport(ImmutableArray.Create(column));
+
+        var lines = PolicyDecisionSummaryFormatter.FormatForConsole(report);
+
+        var message = Assert.Single(lines);
+        Assert.Equal(
+            "1 attribute across 1 entity stayed nullable because profiling detected NULL values.",
+            message);
+    }
+
+    [Fact]
     public void FormatForConsole_SortsSummariesByMagnitude()
     {
         var columns = ImmutableArray.Create(

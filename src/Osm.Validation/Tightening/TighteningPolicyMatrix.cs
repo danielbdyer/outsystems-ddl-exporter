@@ -47,7 +47,8 @@ internal static class TighteningPolicyMatrix
                     Description: "Cautious policy (S1 ∪ S2)",
                     CoreSignals: ImmutableArray.Create(
                         NullabilitySignalKey.PrimaryKey,
-                        NullabilitySignalKey.Physical),
+                        NullabilitySignalKey.Physical,
+                        NullabilitySignalKey.Mandatory),
                     ConditionalGroup: null,
                     EvidenceEmbeddedInRoot: false),
                 new NullabilityModeDefinition(
@@ -56,15 +57,15 @@ internal static class TighteningPolicyMatrix
                     Description: "Evidence gated policy",
                     CoreSignals: ImmutableArray.Create(
                         NullabilitySignalKey.PrimaryKey,
-                        NullabilitySignalKey.Physical),
+                        NullabilitySignalKey.Physical,
+                        NullabilitySignalKey.Mandatory),
                     ConditionalGroup: new NullabilityConditionalGroup(
                         Code: "EVIDENCE_STRONG_SIGNALS",
                         Description: "Strong signals requiring evidence",
                         RequiresEvidence: true,
                         Signals: ImmutableArray.Create(
                             NullabilitySignalKey.ForeignKey,
-                            NullabilitySignalKey.Unique,
-                            NullabilitySignalKey.Mandatory)),
+                            NullabilitySignalKey.Unique)),
                     EvidenceEmbeddedInRoot: true),
                 new NullabilityModeDefinition(
                     TighteningMode.Aggressive,
@@ -72,15 +73,15 @@ internal static class TighteningPolicyMatrix
                     Description: "Aggressive policy (S1 ∪ S2 ∪ S3 ∪ S4 ∪ S5)",
                     CoreSignals: ImmutableArray.Create(
                         NullabilitySignalKey.PrimaryKey,
-                        NullabilitySignalKey.Physical),
+                        NullabilitySignalKey.Physical,
+                        NullabilitySignalKey.Mandatory),
                     ConditionalGroup: new NullabilityConditionalGroup(
                         Code: "AGGRESSIVE_STRONG_SIGNALS",
                         Description: "Strong signals tightened without profiling evidence",
                         RequiresEvidence: false,
                         Signals: ImmutableArray.Create(
                             NullabilitySignalKey.ForeignKey,
-                            NullabilitySignalKey.Unique,
-                            NullabilitySignalKey.Mandatory)),
+                            NullabilitySignalKey.Unique)),
                     EvidenceEmbeddedInRoot: false)
             };
 

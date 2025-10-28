@@ -1,4 +1,4 @@
-using System;
+using Osm.Domain.Profiling;
 using Osm.Validation.Tightening;
 
 namespace Osm.Validation.Tightening.Signals;
@@ -8,9 +8,53 @@ internal sealed record MandatorySignal()
 {
     protected override SignalEvaluation EvaluateCore(in NullabilitySignalContext context)
     {
-        var result = context.Attribute.IsMandatory;
-        var rationales = result ? new[] { TighteningRationales.Mandatory } : Array.Empty<string>();
+        if (!context.Attribute.IsMandatory)
+        {
+            return SignalEvaluation.Create(Code, Description, result: false);
+        }
 
-        return SignalEvaluation.Create(Code, Description, result, rationales);
+        if (context.ColumnProfile is not { } profile || profile.NullCountStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+        {
+            return SignalEvaluation.Create(
+                Code,
+                Description,
+                result: true,
+                rationales: new[] { TighteningRationales.Mandatory });
+        }
+
+        if (HasNullsBeyondBudget(profile, context.Options.Policy.NullBudget))
+        {
+            return SignalEvaluation.Create(
+                Code,
+                Description,
+                result: false,
+                rationales: new[]
+                {
+                    TighteningRationales.Mandatory,
+                    TighteningRationales.DataHasNulls
+                });
+        }
+
+        return SignalEvaluation.Create(
+            Code,
+            Description,
+            result: true,
+            rationales: new[] { TighteningRationales.Mandatory });
+    }
+
+    private static bool HasNullsBeyondBudget(ColumnProfile profile, double nullBudget)
+    {
+        if (profile.NullCount == 0 || profile.RowCount == 0)
+        {
+            return false;
+        }
+
+        if (nullBudget <= 0)
+        {
+            return true;
+        }
+
+        var allowedNulls = profile.RowCount * nullBudget;
+        return profile.NullCount > allowedNulls;
     }
 }
