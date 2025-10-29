@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
 using System.Linq;
+using Osm.Domain.Sql;
 
 namespace Osm.Pipeline.Profiling;
 

@@ -1,8 +1,8 @@
 using System;
 
-namespace Osm.Pipeline.Profiling;
+namespace Osm.Domain.Sql;
 
-internal static class SqlIdentifierFormatter
+public static class SqlIdentifierFormatter
 {
     public static string Quote(string identifier)
     {
