@@ -23,6 +23,65 @@ public class ModelJsonDeserializerTests
     private static MemoryStream ToStream(string json) => new(Encoding.UTF8.GetBytes(json));
 
     [Fact]
+    public void Deserialize_ShouldHonorCustomConverters()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Sample",
+              "entities": [
+                {
+                  "name": "Customer",
+                  "physicalName": "OSUSR_SAMPLE_CUSTOMER",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isReference": 0
+                    },
+                    {
+                      "name": "LegacyCode",
+                      "physicalName": "LEGACYCODE",
+                      "dataType": "Text",
+                      "isMandatory": false,
+                      "isIdentifier": false,
+                      "isAutoNumber": false,
+                      "isReference": 0,
+                      "physical_isPresentButInactive": true,
+                      "meta": {
+                        "description": {
+                          "text": "Legacy description"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var result = new ModelJsonDeserializer().Deserialize(ToStream(json));
+        Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(e => e.Message)));
+
+        var entity = Assert.Single(Assert.Single(result.Value.Modules).Entities);
+        var attribute = Assert.Single(entity.Attributes.Where(a => a.LogicalName.Value == "LegacyCode"));
+
+        Assert.True(attribute.Reality.IsPresentButInactive);
+        Assert.Equal("Legacy description", attribute.Metadata.Description);
+    }
+
+    [Fact]
     public void Deserialize_ShouldProduceDomainModel_ForRichPayload()
     {
         const string json = """

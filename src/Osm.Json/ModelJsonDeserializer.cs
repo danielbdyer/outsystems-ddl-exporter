@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
@@ -80,10 +79,6 @@ public sealed class ModelJsonDeserializerOptions
 
 public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 {
-    private static readonly JsonSerializerOptions PayloadSerializerOptions = new()
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
 
     public Result<OsmModel> Deserialize(Stream jsonStream, ICollection<string>? warnings = null, ModelJsonDeserializerOptions? options = null)
     {
