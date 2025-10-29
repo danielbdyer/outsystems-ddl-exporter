@@ -15,7 +15,7 @@ public static class FixtureFile
         return Cache.GetOrAdd(relativePath, static key =>
         {
             var absolute = Path.GetFullPath(Path.Combine(RepositoryRoot, "tests", "Fixtures", key));
-            if (!File.Exists(absolute))
+            if (!File.Exists(absolute) && !Directory.Exists(absolute))
             {
                 throw new FileNotFoundException($"Fixture '{key}' not found.", absolute);
             }

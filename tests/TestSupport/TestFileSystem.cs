@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
 
 namespace Tests.Support;
 
@@ -43,5 +46,29 @@ public static class TestFileSystem
 
             File.Copy(file, target, overwrite: true);
         }
+    }
+
+    public static MockFileSystem CreateMockFileSystem(IDictionary<string, MockFileData>? files = null)
+    {
+        var root = OperatingSystem.IsWindows() ? @"c:\" : "/";
+        var fileSystem = new MockFileSystem(files ?? new Dictionary<string, MockFileData>(), root);
+        fileSystem.Directory.SetCurrentDirectory(root);
+        return fileSystem;
+    }
+
+    public static string Combine(IFileSystem fileSystem, params string[] segments)
+    {
+        if (fileSystem is null)
+        {
+            throw new ArgumentNullException(nameof(fileSystem));
+        }
+
+        var path = fileSystem.Directory.GetCurrentDirectory();
+        foreach (var segment in segments)
+        {
+            path = fileSystem.Path.Combine(path, segment);
+        }
+
+        return path;
     }
 }

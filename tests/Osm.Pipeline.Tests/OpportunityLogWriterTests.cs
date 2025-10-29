@@ -19,18 +19,18 @@ public sealed class OpportunityLogWriterTests
     public async Task WriteAsync_PersistsDeterministicArtifacts()
     {
         var report = CreateReport();
-        var writer = new OpportunityLogWriter();
-
-        using var directory = new TempDirectory();
-        var artifacts = await writer.WriteAsync(directory.Path, report);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var writer = new OpportunityLogWriter(fileSystem);
+        var outputDirectory = TestFileSystem.Combine(fileSystem, "out");
+        var artifacts = await writer.WriteAsync(outputDirectory, report);
 
         var expectedJson = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/opportunities.json"));
         var expectedSafe = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/safe-to-apply.sql"));
         var expectedRemediation = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/needs-remediation.sql"));
 
-        Assert.Equal(expectedJson, await File.ReadAllTextAsync(artifacts.ReportPath));
-        Assert.Equal(expectedSafe, await File.ReadAllTextAsync(artifacts.SafeScriptPath));
-        Assert.Equal(expectedRemediation, await File.ReadAllTextAsync(artifacts.RemediationScriptPath));
+        Assert.Equal(expectedJson.TrimEnd(), fileSystem.File.ReadAllText(artifacts.ReportPath).TrimEnd());
+        Assert.Equal(expectedSafe, fileSystem.File.ReadAllText(artifacts.SafeScriptPath));
+        Assert.Equal(expectedRemediation, fileSystem.File.ReadAllText(artifacts.RemediationScriptPath));
         Assert.Equal(expectedSafe, artifacts.SafeScript);
         Assert.Equal(expectedRemediation, artifacts.RemediationScript);
     }

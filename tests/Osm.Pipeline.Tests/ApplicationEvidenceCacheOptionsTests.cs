@@ -12,6 +12,7 @@ using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
 using Xunit;
+using Tests.Support;
 
 namespace Osm.Pipeline.Tests;
 
@@ -169,7 +170,8 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             dmmPath: "config.dmm");
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var service = new CompareWithDmmApplicationService(dispatcher, fileSystem);
 
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
@@ -211,7 +213,8 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             profiler: new ProfilerConfiguration("fixture", null, null));
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var service = new CompareWithDmmApplicationService(dispatcher, fileSystem);
 
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",

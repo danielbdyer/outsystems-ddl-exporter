@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Immutable;
-using System.IO;
+using System.IO.Abstractions;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -21,10 +21,11 @@ public sealed class AnalyzeApplicationServiceTests
     [Fact]
     public async Task RunAsync_WhenModelPathMissing_ReturnsError()
     {
-        var dispatcher = new CapturingDispatcher();
-        var service = new AnalyzeApplicationService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var dispatcher = new CapturingDispatcher(fileSystem);
+        var service = new AnalyzeApplicationService(dispatcher, fileSystem);
         var context = CreateContext(modelPath: null, profilePath: "profile.json", profilerProfilePath: null);
-        var overrides = new AnalyzeOverrides(null, "profile.json", "out");
+        var overrides = new AnalyzeOverrides(null, "profile.json", TestFileSystem.Combine(fileSystem, "out"));
 
         var result = await service.RunAsync(new AnalyzeApplicationInput(context, overrides));
 
@@ -37,10 +38,11 @@ public sealed class AnalyzeApplicationServiceTests
     [Fact]
     public async Task RunAsync_WhenProfilePathMissing_ReturnsError()
     {
-        var dispatcher = new CapturingDispatcher();
-        var service = new AnalyzeApplicationService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var dispatcher = new CapturingDispatcher(fileSystem);
+        var service = new AnalyzeApplicationService(dispatcher, fileSystem);
         var context = CreateContext(modelPath: "model.json", profilePath: null, profilerProfilePath: null);
-        var overrides = new AnalyzeOverrides("model.json", null, "out");
+        var overrides = new AnalyzeOverrides("model.json", null, TestFileSystem.Combine(fileSystem, "out"));
 
         var result = await service.RunAsync(new AnalyzeApplicationInput(context, overrides));
 
@@ -53,16 +55,17 @@ public sealed class AnalyzeApplicationServiceTests
     [Fact]
     public async Task RunAsync_DispatchesRequestWithResolvedPaths()
     {
-        using var temp = new TempDirectory();
-        var dispatcher = new CapturingDispatcher();
-        var service = new AnalyzeApplicationService(dispatcher);
-        var modelPath = Path.Combine(temp.Path, "model.json");
-        var profilePath = Path.Combine(temp.Path, "profile.json");
-        File.WriteAllText(modelPath, "{}");
-        File.WriteAllText(profilePath, "{}");
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var dispatcher = new CapturingDispatcher(fileSystem);
+        var service = new AnalyzeApplicationService(dispatcher, fileSystem);
+        var outputDirectory = TestFileSystem.Combine(fileSystem, "out");
+        var modelPath = TestFileSystem.Combine(fileSystem, "model.json");
+        var profilePath = TestFileSystem.Combine(fileSystem, "profile.json");
+        fileSystem.File.WriteAllText(modelPath, "{}");
+        fileSystem.File.WriteAllText(profilePath, "{}");
 
         var context = CreateContext(modelPath: null, profilePath: profilePath, profilerProfilePath: null);
-        var overrides = new AnalyzeOverrides(modelPath, null, temp.Path);
+        var overrides = new AnalyzeOverrides(modelPath, null, outputDirectory);
 
         var result = await service.RunAsync(new AnalyzeApplicationInput(context, overrides));
 
@@ -71,8 +74,8 @@ public sealed class AnalyzeApplicationServiceTests
         var request = dispatcher.LastRequest!;
         Assert.Equal(modelPath, request.ModelPath);
         Assert.Equal(profilePath, request.ProfilePath);
-        Assert.Equal(temp.Path, request.OutputDirectory);
-        Assert.Equal(temp.Path, result.Value.OutputDirectory);
+        Assert.Equal(outputDirectory, request.OutputDirectory);
+        Assert.Equal(outputDirectory, result.Value.OutputDirectory);
         Assert.Equal(modelPath, result.Value.ModelPath);
         Assert.Equal(profilePath, result.Value.ProfilePath);
     }
@@ -98,6 +101,13 @@ public sealed class AnalyzeApplicationServiceTests
     {
         public TighteningAnalysisPipelineRequest? LastRequest { get; private set; }
 
+        private readonly IFileSystem _fileSystem;
+
+        public CapturingDispatcher(IFileSystem fileSystem)
+        {
+            _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+        }
+
         public Task<Result<TResult>> DispatchAsync<TRequest, TResult>(TRequest command, CancellationToken cancellationToken = default)
             where TRequest : ICommand<TResult>
         {
@@ -117,8 +127,8 @@ public sealed class AnalyzeApplicationServiceTests
                     report,
                     profile,
                     ImmutableArray.Create("summary"),
-                    Path.Combine(request.OutputDirectory, "summary.txt"),
-                    Path.Combine(request.OutputDirectory, "policy-decisions.json"),
+                    _fileSystem.Path.Combine(request.OutputDirectory, "summary.txt"),
+                    _fileSystem.Path.Combine(request.OutputDirectory, "policy-decisions.json"),
                     PipelineExecutionLog.Empty,
                     ImmutableArray<string>.Empty);
 

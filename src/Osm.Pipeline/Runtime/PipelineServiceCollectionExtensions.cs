@@ -1,4 +1,5 @@
 using System;
+using System.IO.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Emission;
 using Osm.Emission.Formatting;
@@ -45,6 +46,7 @@ public static class PipelineServiceCollectionExtensions
 
     internal static IServiceCollection AddPipelineInfrastructure(this IServiceCollection services)
     {
+        services.AddSingleton<IFileSystem>(_ => new FileSystem());
         services.AddSingleton<TimeProvider>(TimeProvider.System);
 
         return services;

@@ -1,5 +1,5 @@
 using System;
-using System.IO;
+using System.IO.Abstractions;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -24,10 +24,17 @@ public sealed record CompareWithDmmApplicationResult(
 public sealed class CompareWithDmmApplicationService : IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>
 {
     private readonly ICommandDispatcher _dispatcher;
+    private readonly IFileSystem _fileSystem;
 
     public CompareWithDmmApplicationService(ICommandDispatcher dispatcher)
+        : this(dispatcher, new FileSystem())
+    {
+    }
+
+    public CompareWithDmmApplicationService(ICommandDispatcher dispatcher, IFileSystem fileSystem)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
     }
 
     public async Task<Result<CompareWithDmmApplicationResult>> RunAsync(CompareWithDmmApplicationInput input, CancellationToken cancellationToken = default)
@@ -90,8 +97,8 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
         }
 
         var outputDirectory = ResolveOutputDirectory(input.Overrides.OutputDirectory);
-        Directory.CreateDirectory(outputDirectory);
-        var diffPath = Path.Combine(outputDirectory, "dmm-diff.json");
+        _fileSystem.Directory.CreateDirectory(outputDirectory);
+        var diffPath = _fileSystem.Path.Combine(outputDirectory, "dmm-diff.json");
 
         var smoOptions = SmoBuildOptions.FromEmission(tighteningOptions.Emission, applyNamingOverrides: false);
 

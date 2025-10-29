@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Immutable;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -11,6 +10,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Tests.Support;
 
 namespace Osm.Pipeline.Tests;
 
@@ -41,13 +41,15 @@ public sealed class CompareWithDmmApplicationServiceTests
     public async Task RunAsync_WhenModelPathMissing_ReturnsModelMissingError()
     {
         var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var service = new CompareWithDmmApplicationService(dispatcher, fileSystem);
         var context = CreateContext(modelPath: null, profilePath: null, profilerProfilePath: null, dmmPath: "baseline.dmm");
+        var outputDirectory = TestFileSystem.Combine(fileSystem, "out");
         var overrides = new CompareWithDmmOverrides(
             ModelPath: null,
             ProfilePath: "profile.snapshot",
             DmmPath: "baseline.dmm",
-            OutputDirectory: CreateTemporaryDirectory(),
+            OutputDirectory: outputDirectory,
             MaxDegreeOfParallelism: null);
 
         var result = await service.RunAsync(new CompareWithDmmApplicationInput(
@@ -67,13 +69,15 @@ public sealed class CompareWithDmmApplicationServiceTests
     public async Task RunAsync_WhenProfilePathMissing_ReturnsProfileMissingError()
     {
         var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var service = new CompareWithDmmApplicationService(dispatcher, fileSystem);
         var context = CreateContext(modelPath: "model.json", profilePath: null, profilerProfilePath: null, dmmPath: "baseline.dmm");
+        var outputDirectory = TestFileSystem.Combine(fileSystem, "out");
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
             ProfilePath: null,
             DmmPath: "baseline.dmm",
-            OutputDirectory: CreateTemporaryDirectory(),
+            OutputDirectory: outputDirectory,
             MaxDegreeOfParallelism: null);
 
         var result = await service.RunAsync(new CompareWithDmmApplicationInput(
@@ -93,13 +97,15 @@ public sealed class CompareWithDmmApplicationServiceTests
     public async Task RunAsync_WhenDmmPathMissing_ReturnsDmmMissingError()
     {
         var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var service = new CompareWithDmmApplicationService(dispatcher, fileSystem);
         var context = CreateContext(modelPath: "model.json", profilePath: "profile.snapshot", profilerProfilePath: null, dmmPath: null);
+        var outputDirectory = TestFileSystem.Combine(fileSystem, "out");
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
             DmmPath: null,
-            OutputDirectory: CreateTemporaryDirectory(),
+            OutputDirectory: outputDirectory,
             MaxDegreeOfParallelism: null);
 
         var result = await service.RunAsync(new CompareWithDmmApplicationInput(
@@ -121,13 +127,15 @@ public sealed class CompareWithDmmApplicationServiceTests
     public async Task RunAsync_WhenMaxDegreeOfParallelismNotPositive_ReturnsParallelismError(int parallelism)
     {
         var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var service = new CompareWithDmmApplicationService(dispatcher, fileSystem);
         var context = CreateContext(modelPath: "model.json", profilePath: "profile.snapshot", profilerProfilePath: null, dmmPath: "baseline.dmm");
+        var outputDirectory = TestFileSystem.Combine(fileSystem, "out");
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
             DmmPath: "baseline.dmm",
-            OutputDirectory: CreateTemporaryDirectory(),
+            OutputDirectory: outputDirectory,
             MaxDegreeOfParallelism: parallelism);
 
         var result = await service.RunAsync(new CompareWithDmmApplicationInput(
@@ -141,12 +149,6 @@ public sealed class CompareWithDmmApplicationServiceTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("cli.dmmCompare.parallelism.invalid", error.Code);
         Assert.False(dispatcher.WasInvoked);
-    }
-
-    private static string CreateTemporaryDirectory()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "osm-pipeline-tests", Guid.NewGuid().ToString("N"));
-        return path;
     }
 
     private static CliConfigurationContext CreateContext(

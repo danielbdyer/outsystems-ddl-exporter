@@ -11,8 +11,8 @@
       },
       "Disposition": "ReadyToApply",
       "Evidence": [
-        "Rows=100",
-        "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"
+        "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "Rows=100"
       ],
       "Column": {
         "Schema": {
@@ -172,5 +172,6 @@
     "Low": 1,
     "Moderate": 1
   },
-  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00"
+  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00",
+  "TotalCount": 2
 }

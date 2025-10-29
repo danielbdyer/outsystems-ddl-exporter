@@ -33,7 +33,8 @@ public sealed class ModelResolutionServiceTests
     public async Task ResolveModelAsync_ReturnsExistingModelPath_WhenOverrideProvided()
     {
         var dispatcher = new RecordingDispatcher();
-        var service = new ModelResolutionService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var service = new ModelResolutionService(dispatcher, fileSystem);
         var configuration = CreateConfiguration();
         var overrides = new BuildSsdtOverrides(
             ModelPath: "existing.json",
@@ -65,7 +66,8 @@ public sealed class ModelResolutionServiceTests
     public async Task ResolveModelAsync_FailsWhenConnectionStringMissing()
     {
         var dispatcher = new RecordingDispatcher();
-        var service = new ModelResolutionService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var service = new ModelResolutionService(dispatcher, fileSystem);
         var configuration = CreateConfiguration();
         var overrides = new BuildSsdtOverrides(null, null, null, null, null, null, null, null);
 
@@ -85,20 +87,21 @@ public sealed class ModelResolutionServiceTests
     [Fact]
     public async Task ResolveModelAsync_ExtractsModelAndWritesFile()
     {
-        using var output = new TempDirectory();
         var dispatcher = new RecordingDispatcher();
         dispatcher.SetExtractionResult(Result<ModelExtractionResult>.Success(CreateExtractionResult()));
-        var service = new ModelResolutionService(dispatcher);
+        var fileSystem = TestFileSystem.CreateMockFileSystem();
+        var service = new ModelResolutionService(dispatcher, fileSystem);
         var configuration = CreateConfiguration();
         var overrides = new BuildSsdtOverrides(null, null, null, null, null, null, null, null);
         var sqlOptions = DefaultSqlOptions with { ConnectionString = "Server=.;Database=Osm;" };
+        var outputDirectory = TestFileSystem.Combine(fileSystem, "out");
 
         var result = await service.ResolveModelAsync(
             configuration,
             overrides,
             ModuleFilterOptions.IncludeAll,
             sqlOptions,
-            output.Path,
+            outputDirectory,
             sqlMetadataLog: null,
             CancellationToken.None);
 
@@ -106,9 +109,9 @@ public sealed class ModelResolutionServiceTests
         Assert.True(result.Value.WasExtracted);
         Assert.Equal(new[] { "warning" }, result.Value.Warnings);
         Assert.NotNull(dispatcher.ExtractRequest);
-        Assert.True(File.Exists(result.Value.ModelPath));
-        Assert.Equal(Path.Combine(output.Path, "model.extracted.json"), result.Value.ModelPath);
-        var content = await File.ReadAllTextAsync(result.Value.ModelPath);
+        Assert.True(fileSystem.File.Exists(result.Value.ModelPath));
+        Assert.Equal(fileSystem.Path.Combine(outputDirectory, "model.extracted.json"), result.Value.ModelPath);
+        var content = fileSystem.File.ReadAllText(result.Value.ModelPath);
         Assert.Equal("{\"model\":true}", content);
     }
 

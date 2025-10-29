@@ -13,6 +13,7 @@ using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
+using Tests.Support;
 using Xunit;
 
 namespace Osm.Pipeline.Tests;
@@ -89,7 +90,8 @@ public sealed class ModuleFilterConsistencyTests
         Assert.False(buildRequest.ModuleFilter.IncludeInactiveModules);
 
         var compareDispatcher = new RecordingDispatcher();
-        var compareService = new CompareWithDmmApplicationService(compareDispatcher);
+        var compareFileSystem = TestFileSystem.CreateMockFileSystem();
+        var compareService = new CompareWithDmmApplicationService(compareDispatcher, compareFileSystem);
         var compareModuleFilter = new ModuleFilterOverrides(
             new[] { "Ops", "AppCore", "ops" },
             IncludeSystemModules: false,
@@ -171,7 +173,8 @@ public sealed class ModuleFilterConsistencyTests
         Assert.False(buildRequest.ModuleFilter.IncludeInactiveModules);
 
         var compareDispatcher = new RecordingDispatcher();
-        var compareService = new CompareWithDmmApplicationService(compareDispatcher);
+        var compareFileSystem = TestFileSystem.CreateMockFileSystem();
+        var compareService = new CompareWithDmmApplicationService(compareDispatcher, compareFileSystem);
         var compareOverrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
@@ -242,7 +245,7 @@ public sealed class ModuleFilterConsistencyTests
             new CacheOptionsOverrides(null, null)));
         AssertValidationOverrideFailure(buildResult);
 
-        var compareService = new CompareWithDmmApplicationService(new RecordingDispatcher());
+        var compareService = new CompareWithDmmApplicationService(new RecordingDispatcher(), TestFileSystem.CreateMockFileSystem());
         var compareOverrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
