@@ -1,12 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
-using System.Linq;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Json.Configuration;
@@ -16,16 +12,34 @@ namespace Osm.Pipeline.Configuration;
 
 public sealed class CliConfigurationLoader
 {
-    private readonly ITighteningOptionsDeserializer _tighteningDeserializer;
+    private readonly TighteningSectionReader _tighteningReader;
+    private readonly SqlSectionReader _sqlReader;
+    private readonly ModuleFilterSectionReader _moduleFilterReader;
 
     public CliConfigurationLoader()
-        : this(new TighteningOptionsDeserializer())
+        : this(
+            new TighteningSectionReader(new TighteningOptionsDeserializer()),
+            new SqlSectionReader(),
+            new ModuleFilterSectionReader())
     {
     }
 
     public CliConfigurationLoader(ITighteningOptionsDeserializer tighteningDeserializer)
+        : this(
+            new TighteningSectionReader(tighteningDeserializer ?? throw new ArgumentNullException(nameof(tighteningDeserializer))),
+            new SqlSectionReader(),
+            new ModuleFilterSectionReader())
     {
-        _tighteningDeserializer = tighteningDeserializer ?? throw new ArgumentNullException(nameof(tighteningDeserializer));
+    }
+
+    internal CliConfigurationLoader(
+        TighteningSectionReader tighteningReader,
+        SqlSectionReader sqlReader,
+        ModuleFilterSectionReader moduleFilterReader)
+    {
+        _tighteningReader = tighteningReader ?? throw new ArgumentNullException(nameof(tighteningReader));
+        _sqlReader = sqlReader ?? throw new ArgumentNullException(nameof(sqlReader));
+        _moduleFilterReader = moduleFilterReader ?? throw new ArgumentNullException(nameof(moduleFilterReader));
     }
 
     public async Task<Result<CliConfiguration>> LoadAsync(string? configPath)
@@ -42,72 +56,54 @@ public sealed class CliConfigurationLoader
         }
 
         await using var stream = File.OpenRead(fullPath);
-        using var document = await JsonDocument.ParseAsync(stream);
+        using var document = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
         var root = document.RootElement;
+        var baseDirectory = Path.GetDirectoryName(fullPath) ?? Directory.GetCurrentDirectory();
 
-        if (IsLegacyTighteningDocument(root))
+        var tighteningResult = await _tighteningReader.ReadAsync(root, baseDirectory, fullPath).ConfigureAwait(false);
+        if (tighteningResult.IsFailure)
         {
-            await using var tightStream = File.OpenRead(fullPath);
-            var legacyResult = _tighteningDeserializer.Deserialize(tightStream);
-            if (legacyResult.IsFailure)
-            {
-                return Result<CliConfiguration>.Failure(legacyResult.Errors);
-            }
+            return Result<CliConfiguration>.Failure(tighteningResult.Errors);
+        }
 
-            return CliConfiguration.Empty with { Tightening = legacyResult.Value };
+        var tighteningSection = tighteningResult.Value;
+        if (tighteningSection.IsLegacyDocument)
+        {
+            return CliConfiguration.Empty with { Tightening = tighteningSection.Options ?? TighteningOptions.Default };
         }
 
         var configuration = CliConfiguration.Empty;
-        var baseDirectory = Path.GetDirectoryName(fullPath) ?? Directory.GetCurrentDirectory();
-
-        if (TryResolveTighteningPath(root, baseDirectory, out var tightPath, out var pathError))
+        if (tighteningSection.Options is not null)
         {
-            await using var tightStream = File.OpenRead(tightPath);
-            var tightResult = _tighteningDeserializer.Deserialize(tightStream);
-            if (tightResult.IsFailure)
+            configuration = configuration with { Tightening = tighteningSection.Options };
+        }
+
+        var moduleSection = _moduleFilterReader.Read(root, baseDirectory);
+        if (moduleSection.HasValue)
+        {
+            if (!string.IsNullOrWhiteSpace(moduleSection.ModelPath))
             {
-                return Result<CliConfiguration>.Failure(tightResult.Errors);
+                configuration = configuration with { ModelPath = moduleSection.ModelPath };
             }
 
-            configuration = configuration with { Tightening = tightResult.Value };
-        }
-        else if (pathError is not null)
-        {
-            return Result<CliConfiguration>.Failure(pathError.Value);
-        }
-
-        if (TryReadTighteningInline(root, out var inlineElement))
-        {
-            using var buffer = new MemoryStream(Encoding.UTF8.GetBytes(inlineElement.GetRawText()));
-            var inlineResult = _tighteningDeserializer.Deserialize(buffer);
-            if (inlineResult.IsFailure)
+            if (moduleSection.ModuleFilter != ModuleFilterConfiguration.Empty)
             {
-                return Result<CliConfiguration>.Failure(inlineResult.Errors);
+                configuration = configuration with { ModuleFilter = moduleSection.ModuleFilter };
             }
-
-            configuration = configuration with { Tightening = inlineResult.Value };
         }
 
-        if (TryReadModel(root, baseDirectory, out var modelPath, out var moduleFilter))
-        {
-            if (!string.IsNullOrWhiteSpace(modelPath))
-            {
-                configuration = configuration with { ModelPath = modelPath };
-            }
-
-            configuration = configuration with { ModuleFilter = moduleFilter };
-        }
-        else if (TryReadPath(root, "model", baseDirectory, out var legacyModelPath))
+        if (ConfigurationJsonHelpers.TryReadPathProperty(root, "model", baseDirectory, out var legacyModelPath)
+            && moduleSection == ModuleFilterSectionReadResult.NotPresent)
         {
             configuration = configuration with { ModelPath = legacyModelPath };
         }
 
-        if (TryReadPath(root, "profile", baseDirectory, out var profilePath))
+        if (ConfigurationJsonHelpers.TryReadPathProperty(root, "profile", baseDirectory, out var profilePath))
         {
             configuration = configuration with { ProfilePath = profilePath };
         }
 
-        if (TryReadPath(root, "dmm", baseDirectory, out var dmmPath))
+        if (ConfigurationJsonHelpers.TryReadPathProperty(root, "dmm", baseDirectory, out var dmmPath))
         {
             configuration = configuration with { DmmPath = dmmPath };
         }
@@ -117,6 +113,7 @@ public sealed class CliConfigurationLoader
         {
             cache = cacheConfig;
         }
+
         configuration = configuration with { Cache = cache };
 
         var profiler = configuration.Profiler;
@@ -128,13 +125,15 @@ public sealed class CliConfigurationLoader
                 configuration = configuration with { ProfilePath = profiler.ProfilePath };
             }
         }
+
         configuration = configuration with { Profiler = profiler };
 
         var sql = configuration.Sql;
-        if (TryReadSql(root, out var sqlConfig))
+        if (_sqlReader.TryRead(root, out var sqlConfig))
         {
             sql = sqlConfig;
         }
+
         configuration = configuration with { Sql = sql };
 
         if (TryReadTypeMapping(root, baseDirectory, out var typeMappingConfig, out var typeMappingError))
@@ -154,55 +153,6 @@ public sealed class CliConfigurationLoader
         return configuration;
     }
 
-    private static bool IsLegacyTighteningDocument(JsonElement root)
-    {
-        if (root.ValueKind != JsonValueKind.Object)
-        {
-            return false;
-        }
-
-        return root.TryGetProperty("policy", out _);
-    }
-
-    private static bool TryResolveTighteningPath(JsonElement root, string baseDirectory, out string path, out ValidationError? error)
-    {
-        path = string.Empty;
-        error = null;
-
-        if (!root.TryGetProperty("tighteningPath", out var element) || element.ValueKind != JsonValueKind.String)
-        {
-            return false;
-        }
-
-        var raw = element.GetString();
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return false;
-        }
-
-        var resolved = ResolveRelativePath(baseDirectory, raw);
-        if (!File.Exists(resolved))
-        {
-            error = ValidationError.Create("cli.config.tighteningPath.missing", $"Tightening configuration '{resolved}' was not found.");
-            return false;
-        }
-
-        path = resolved;
-        return true;
-    }
-
-    private static bool TryReadTighteningInline(JsonElement root, out JsonElement inlineElement)
-    {
-        inlineElement = default;
-        if (!root.TryGetProperty("tightening", out var element) || element.ValueKind != JsonValueKind.Object)
-        {
-            return false;
-        }
-
-        inlineElement = element;
-        return true;
-    }
-
     private static bool TryReadCache(JsonElement root, string baseDirectory, out CacheConfiguration cache)
     {
         cache = CacheConfiguration.Empty;
@@ -211,24 +161,15 @@ public sealed class CliConfigurationLoader
             return false;
         }
 
-        var rootPath = TryReadPath(element, "root", baseDirectory, out var resolvedRoot)
+        var rootPath = ConfigurationJsonHelpers.TryReadPathProperty(element, "root", baseDirectory, out var resolvedRoot)
             ? resolvedRoot
             : null;
 
         bool? refresh = null;
-        if (element.TryGetProperty("refresh", out var refreshElement))
+        if (element.TryGetProperty("refresh", out var refreshElement)
+            && ConfigurationJsonHelpers.TryParseBoolean(refreshElement, out var parsedRefresh))
         {
-            if (refreshElement.ValueKind == JsonValueKind.String)
-            {
-                if (bool.TryParse(refreshElement.GetString(), out var parsedRefresh))
-                {
-                    refresh = parsedRefresh;
-                }
-            }
-            else if (refreshElement.ValueKind == JsonValueKind.True || refreshElement.ValueKind == JsonValueKind.False)
-            {
-                refresh = refreshElement.GetBoolean();
-            }
+            refresh = parsedRefresh;
         }
 
         cache = new CacheConfiguration(rootPath, refresh);
@@ -250,153 +191,18 @@ public sealed class CliConfigurationLoader
         }
 
         string? profilePath = null;
-        if (TryReadPath(element, "profilePath", baseDirectory, out var resolvedProfile))
+        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "profilePath", baseDirectory, out var resolvedProfile))
         {
             profilePath = resolvedProfile;
         }
 
         string? mockFolder = null;
-        if (TryReadPath(element, "mockFolder", baseDirectory, out var resolvedMock))
+        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "mockFolder", baseDirectory, out var resolvedMock))
         {
             mockFolder = resolvedMock;
         }
 
         profiler = new ProfilerConfiguration(provider, profilePath, mockFolder);
-        return true;
-    }
-
-    private static bool TryReadSql(JsonElement root, out SqlConfiguration configuration)
-    {
-        configuration = SqlConfiguration.Empty;
-        if (!root.TryGetProperty("sql", out var element) || element.ValueKind != JsonValueKind.Object)
-        {
-            return false;
-        }
-
-        string? connectionString = null;
-        if (element.TryGetProperty("connectionString", out var connectionElement) && connectionElement.ValueKind == JsonValueKind.String)
-        {
-            connectionString = connectionElement.GetString();
-        }
-
-        int? commandTimeout = null;
-        if (element.TryGetProperty("commandTimeoutSeconds", out var timeoutElement) && timeoutElement.ValueKind == JsonValueKind.Number)
-        {
-            if (timeoutElement.TryGetInt32(out var parsedTimeout))
-            {
-                commandTimeout = parsedTimeout;
-            }
-        }
-
-        var sampling = SqlSamplingConfiguration.Empty;
-        if (element.TryGetProperty("sampling", out var samplingElement) && samplingElement.ValueKind == JsonValueKind.Object)
-        {
-            long? threshold = null;
-            if (samplingElement.TryGetProperty("rowSamplingThreshold", out var thresholdElement) && thresholdElement.ValueKind == JsonValueKind.Number)
-            {
-                if (thresholdElement.TryGetInt64(out var parsedThreshold))
-                {
-                    threshold = parsedThreshold;
-                }
-            }
-
-            int? size = null;
-            if (samplingElement.TryGetProperty("sampleSize", out var sizeElement) && sizeElement.ValueKind == JsonValueKind.Number)
-            {
-                if (sizeElement.TryGetInt32(out var parsedSize))
-                {
-                    size = parsedSize;
-                }
-            }
-
-            sampling = new SqlSamplingConfiguration(threshold, size);
-        }
-
-        var authentication = SqlAuthenticationConfiguration.Empty;
-        if (element.TryGetProperty("authentication", out var authElement) && authElement.ValueKind == JsonValueKind.Object)
-        {
-            SqlAuthenticationMethod? method = null;
-            if (authElement.TryGetProperty("method", out var methodElement) && methodElement.ValueKind == JsonValueKind.String)
-            {
-                var raw = methodElement.GetString();
-                if (!string.IsNullOrWhiteSpace(raw) && Enum.TryParse(raw, ignoreCase: true, out SqlAuthenticationMethod parsedMethod))
-                {
-                    method = parsedMethod;
-                }
-            }
-
-            bool? trustServerCertificate = null;
-        if (authElement.TryGetProperty("trustServerCertificate", out var trustElement))
-        {
-            if (trustElement.ValueKind == JsonValueKind.String)
-            {
-                if (bool.TryParse(trustElement.GetString(), out var parsedTrust))
-                {
-                    trustServerCertificate = parsedTrust;
-                }
-            }
-            else if (trustElement.ValueKind == JsonValueKind.True || trustElement.ValueKind == JsonValueKind.False)
-            {
-                trustServerCertificate = trustElement.GetBoolean();
-            }
-        }
-
-            string? applicationName = null;
-            if (authElement.TryGetProperty("applicationName", out var appElement) && appElement.ValueKind == JsonValueKind.String)
-            {
-                applicationName = appElement.GetString();
-            }
-
-            string? accessToken = null;
-            if (authElement.TryGetProperty("accessToken", out var tokenElement) && tokenElement.ValueKind == JsonValueKind.String)
-            {
-                accessToken = tokenElement.GetString();
-            }
-
-            authentication = new SqlAuthenticationConfiguration(method, trustServerCertificate, applicationName, accessToken);
-        }
-
-        var metadataContract = MetadataContractConfiguration.Empty;
-        if (element.TryGetProperty("metadataContract", out var contractElement) && contractElement.ValueKind == JsonValueKind.Object)
-        {
-            var optionalColumns = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-            if (contractElement.TryGetProperty("optionalColumns", out var optionalElement) && optionalElement.ValueKind == JsonValueKind.Object)
-            {
-                foreach (var property in optionalElement.EnumerateObject())
-                {
-                    if (property.Value.ValueKind != JsonValueKind.Array)
-                    {
-                        continue;
-                    }
-
-                    var resultSetName = property.Name?.Trim();
-                    if (string.IsNullOrWhiteSpace(resultSetName))
-                    {
-                        continue;
-                    }
-
-                    var columns = property.Value
-                        .EnumerateArray()
-                        .Where(static item => item.ValueKind == JsonValueKind.String)
-                        .Select(static item => item.GetString())
-                        .Where(static name => !string.IsNullOrWhiteSpace(name))
-                        .Select(static name => name!.Trim())
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToArray();
-
-                    if (columns.Length > 0)
-                    {
-                        optionalColumns[resultSetName] = columns;
-                    }
-                }
-            }
-
-            metadataContract = optionalColumns.Count > 0
-                ? new MetadataContractConfiguration(optionalColumns)
-                : MetadataContractConfiguration.Empty;
-        }
-
-        configuration = new SqlConfiguration(connectionString, commandTimeout, sampling, authentication, metadataContract);
         return true;
     }
 
@@ -420,7 +226,7 @@ public sealed class CliConfigurationLoader
             var raw = pathElement.GetString();
             if (!string.IsNullOrWhiteSpace(raw))
             {
-                var resolved = ResolveRelativePath(baseDirectory, raw!);
+                var resolved = ConfigurationJsonHelpers.ResolveRelativePath(baseDirectory, raw!);
                 if (!File.Exists(resolved))
                 {
                     error = ValidationError.Create(
@@ -477,19 +283,10 @@ public sealed class CliConfigurationLoader
         }
 
         bool? includeUsers = null;
-        if (element.TryGetProperty("includeUsers", out var includeElement))
+        if (element.TryGetProperty("includeUsers", out var includeElement)
+            && ConfigurationJsonHelpers.TryParseBoolean(includeElement, out var parsedInclude))
         {
-            if (includeElement.ValueKind == JsonValueKind.String)
-            {
-                if (bool.TryParse(includeElement.GetString(), out var parsedInclude))
-                {
-                    includeUsers = parsedInclude;
-                }
-            }
-            else if (includeElement.ValueKind == JsonValueKind.True || includeElement.ValueKind == JsonValueKind.False)
-            {
-                includeUsers = includeElement.GetBoolean();
-            }
+            includeUsers = parsedInclude;
         }
 
         var paths = new List<string>();
@@ -499,7 +296,7 @@ public sealed class CliConfigurationLoader
             {
                 if (child.ValueKind == JsonValueKind.String)
                 {
-                    var resolved = ResolveRelativePath(baseDirectory, child.GetString() ?? string.Empty);
+                    var resolved = ConfigurationJsonHelpers.ResolveRelativePath(baseDirectory, child.GetString() ?? string.Empty);
                     paths.Add(resolved);
                 }
             }
@@ -507,364 +304,5 @@ public sealed class CliConfigurationLoader
 
         configuration = new SupplementalModelConfiguration(includeUsers, paths);
         return true;
-    }
-
-    private static bool TryReadModel(JsonElement root, string baseDirectory, out string? path, out ModuleFilterConfiguration moduleFilter)
-    {
-        path = null;
-        moduleFilter = ModuleFilterConfiguration.Empty;
-
-        if (!root.TryGetProperty("model", out var element) || element.ValueKind != JsonValueKind.Object)
-        {
-            return false;
-        }
-
-        if (TryReadPath(element, "path", baseDirectory, out var resolved))
-        {
-            path = resolved;
-        }
-
-        var moduleNames = new List<string>();
-        var moduleSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var entityFilters = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        var validationOverrides = new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase);
-        bool? includeSystem = null;
-        bool? includeInactive = null;
-
-        if (element.TryGetProperty("modules", out var modulesElement))
-        {
-            if (modulesElement.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var moduleElement in modulesElement.EnumerateArray())
-                {
-                    if (moduleElement.ValueKind == JsonValueKind.String)
-                    {
-                        AddModuleName(moduleElement.GetString());
-                    }
-                    else if (moduleElement.ValueKind == JsonValueKind.Object)
-                    {
-                        if (!moduleElement.TryGetProperty("name", out var nameElement) || nameElement.ValueKind != JsonValueKind.String)
-                        {
-                            continue;
-                        }
-
-                        var moduleName = AddModuleName(nameElement.GetString());
-                        if (moduleName is null)
-                        {
-                            continue;
-                        }
-
-                        if (moduleElement.TryGetProperty("entities", out var entitiesElement))
-                        {
-                            var parsedEntities = ParseEntityNames(entitiesElement);
-                            if (parsedEntities is null)
-                            {
-                                entityFilters.Remove(moduleName);
-                            }
-                            else
-                            {
-                                entityFilters[moduleName] = parsedEntities.Count > 0
-                                    ? parsedEntities.ToArray()
-                                    : Array.Empty<string>();
-                            }
-                        }
-
-                        var moduleOverride = ModuleValidationOverrideConfiguration.Empty;
-                        var hasOverride = false;
-
-                        if (moduleElement.TryGetProperty("allowMissingPrimaryKey", out var pkElement))
-                        {
-                            var primaryKeyEntities = ParseOverrideEntities(pkElement, out var pkAll);
-                            moduleOverride = moduleOverride.Merge(new ModuleValidationOverrideConfiguration(
-                                primaryKeyEntities.ToArray(),
-                                pkAll,
-                                Array.Empty<string>(),
-                                AllowMissingSchemaForAll: false));
-                            hasOverride |= pkAll || primaryKeyEntities.Count > 0;
-                        }
-
-                        if (moduleElement.TryGetProperty("allowMissingSchema", out var schemaElement))
-                        {
-                            var schemaEntities = ParseOverrideEntities(schemaElement, out var schemaAll);
-                            moduleOverride = moduleOverride.Merge(new ModuleValidationOverrideConfiguration(
-                                Array.Empty<string>(),
-                                AllowMissingPrimaryKeyForAll: false,
-                                schemaEntities.ToArray(),
-                                schemaAll));
-                            hasOverride |= schemaAll || schemaEntities.Count > 0;
-                        }
-
-                        if (hasOverride)
-                        {
-                            validationOverrides[moduleName] = moduleOverride;
-                        }
-                    }
-                }
-            }
-            else if (modulesElement.ValueKind == JsonValueKind.String)
-            {
-                var raw = modulesElement.GetString();
-                if (!string.IsNullOrWhiteSpace(raw))
-                {
-                    var separators = new[] { ';', ',', '|' };
-                    foreach (var token in raw.Split(separators, StringSplitOptions.RemoveEmptyEntries))
-                    {
-                        var trimmed = token.Trim();
-                        AddModuleName(trimmed);
-                    }
-                }
-            }
-        }
-
-        if (element.TryGetProperty("includeSystemModules", out var includeElement))
-        {
-            if (includeElement.ValueKind == JsonValueKind.String)
-            {
-                if (bool.TryParse(includeElement.GetString(), out var parsedInclude))
-                {
-                    includeSystem = parsedInclude;
-                }
-            }
-            else if (includeElement.ValueKind == JsonValueKind.True || includeElement.ValueKind == JsonValueKind.False)
-            {
-                includeSystem = includeElement.GetBoolean();
-            }
-        }
-
-        if (element.TryGetProperty("includeInactiveModules", out var inactiveElement))
-        {
-            if (inactiveElement.ValueKind == JsonValueKind.String)
-            {
-                if (bool.TryParse(inactiveElement.GetString(), out var parsedInactive))
-                {
-                    includeInactive = parsedInactive;
-                }
-            }
-            else if (inactiveElement.ValueKind == JsonValueKind.True || inactiveElement.ValueKind == JsonValueKind.False)
-            {
-                includeInactive = inactiveElement.GetBoolean();
-            }
-        }
-
-        var modules = moduleNames.Count > 0
-            ? moduleNames.ToArray()
-            : Array.Empty<string>();
-
-        moduleFilter = new ModuleFilterConfiguration(modules, includeSystem, includeInactive, entityFilters, validationOverrides);
-        return true;
-
-        string? AddModuleName(string? rawName)
-        {
-            if (string.IsNullOrWhiteSpace(rawName))
-            {
-                return null;
-            }
-
-            var trimmed = rawName.Trim();
-            if (moduleSet.Add(trimmed))
-            {
-                moduleNames.Add(trimmed);
-            }
-
-            return trimmed;
-        }
-
-        static List<string>? ParseEntityNames(JsonElement element)
-        {
-            return element.ValueKind switch
-            {
-                JsonValueKind.True or JsonValueKind.Null => null,
-                JsonValueKind.False => new List<string>(),
-                JsonValueKind.String => ParseEntityString(element.GetString()),
-                JsonValueKind.Array => ParseEntityArray(element),
-                _ => new List<string>()
-            };
-
-            static List<string>? ParseEntityArray(JsonElement arrayElement)
-            {
-                var list = new List<string>();
-                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var child in arrayElement.EnumerateArray())
-                {
-                    if (child.ValueKind != JsonValueKind.String)
-                    {
-                        continue;
-                    }
-
-                    var parsed = ParseEntityString(child.GetString());
-                    if (parsed is null)
-                    {
-                        return null;
-                    }
-
-                    foreach (var value in parsed)
-                    {
-                        if (seen.Add(value))
-                        {
-                            list.Add(value);
-                        }
-                    }
-                }
-
-                return list;
-            }
-
-            static List<string>? ParseEntityString(string? raw)
-            {
-                if (string.IsNullOrWhiteSpace(raw))
-                {
-                    return new List<string>();
-                }
-
-                var separators = new[] { ';', ',', '|' };
-                var tokens = raw.Split(separators, StringSplitOptions.RemoveEmptyEntries);
-                var list = new List<string>();
-                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var token in tokens)
-                {
-                    var trimmed = token.Trim();
-                    if (string.IsNullOrWhiteSpace(trimmed))
-                    {
-                        continue;
-                    }
-
-                    if (string.Equals(trimmed, "*", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return null;
-                    }
-
-                    if (seen.Add(trimmed))
-                    {
-                        list.Add(trimmed);
-                    }
-                }
-
-                return list;
-            }
-        }
-
-        static List<string> ParseOverrideEntities(JsonElement element, out bool appliesToAll)
-        {
-            appliesToAll = false;
-            var list = new List<string>();
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var separators = new[] { ';', ',', '|' };
-
-            switch (element.ValueKind)
-            {
-                case JsonValueKind.True:
-                    appliesToAll = true;
-                    break;
-                case JsonValueKind.False:
-                case JsonValueKind.Null:
-                    break;
-                case JsonValueKind.String:
-                    ParseOverrideTokens(element.GetString(), seen, list, ref appliesToAll, separators);
-                    break;
-                case JsonValueKind.Array:
-                    foreach (var child in element.EnumerateArray())
-                    {
-                        if (child.ValueKind == JsonValueKind.String)
-                        {
-                            ParseOverrideTokens(child.GetString(), seen, list, ref appliesToAll, separators);
-                        }
-                        else if (child.ValueKind == JsonValueKind.True)
-                        {
-                            appliesToAll = true;
-                        }
-                    }
-
-                    break;
-                default:
-                    break;
-            }
-
-            if (appliesToAll)
-            {
-                list.Clear();
-            }
-
-            return list;
-        }
-
-        static void ParseOverrideTokens(
-            string? raw,
-            HashSet<string> seen,
-            List<string> values,
-            ref bool appliesToAll,
-            char[] separators)
-        {
-            if (string.IsNullOrWhiteSpace(raw))
-            {
-                return;
-            }
-
-            var tokens = raw.Split(separators, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var token in tokens)
-            {
-                var trimmed = token.Trim();
-                if (string.IsNullOrWhiteSpace(trimmed))
-                {
-                    continue;
-                }
-
-                if (string.Equals(trimmed, "*", StringComparison.OrdinalIgnoreCase))
-                {
-                    appliesToAll = true;
-                    continue;
-                }
-
-                if (seen.Add(trimmed))
-                {
-                    values.Add(trimmed);
-                }
-            }
-        }
-    }
-
-    private static bool TryReadPath(JsonElement root, string property, string baseDirectory, out string path)
-    {
-        path = string.Empty;
-        if (!root.TryGetProperty(property, out var element))
-        {
-            return false;
-        }
-
-        if (element.ValueKind == JsonValueKind.String)
-        {
-            var value = element.GetString();
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return false;
-            }
-
-            path = ResolveRelativePath(baseDirectory, value);
-            return true;
-        }
-
-        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("path", out var pathElement) && pathElement.ValueKind == JsonValueKind.String)
-        {
-            var value = pathElement.GetString();
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return false;
-            }
-
-            path = ResolveRelativePath(baseDirectory, value);
-            return true;
-        }
-
-        return false;
-    }
-
-    private static string ResolveRelativePath(string baseDirectory, string value)
-    {
-        if (Path.IsPathRooted(value))
-        {
-            return Path.GetFullPath(value);
-        }
-
-        return Path.GetFullPath(Path.Combine(baseDirectory, value));
     }
 }
