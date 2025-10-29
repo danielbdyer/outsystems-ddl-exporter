@@ -21,7 +21,7 @@
 - [x] **2.2 Unique duplicate detection** — detect duplicates ignoring NULLs. *(Unit · P0 · [tests/Osm.Json.Tests/ProfileSnapshotDeserializerTests.cs](tests/Osm.Json.Tests/ProfileSnapshotDeserializerTests.cs), [tests/Osm.Pipeline.Tests/FixtureDataProfilerTests.cs](tests/Osm.Pipeline.Tests/FixtureDataProfilerTests.cs))*
 - [x] **2.3 FK orphan detection (no DB FK)** — identify orphans when constraints absent. *(Unit · P0 · [tests/Osm.Json.Tests/ProfileSnapshotDeserializerTests.cs](tests/Osm.Json.Tests/ProfileSnapshotDeserializerTests.cs), [tests/Osm.Pipeline.Tests/FixtureDataProfilerTests.cs](tests/Osm.Pipeline.Tests/FixtureDataProfilerTests.cs))*
 - [x] **2.4 Physical metadata snapshot** — capture computed/default/non-null flags. *(Unit · P1 · [tests/Osm.Pipeline.Tests/FixtureDataProfilerTests.cs](tests/Osm.Pipeline.Tests/FixtureDataProfilerTests.cs))*
-- [ ] **2.5 Performance: many columns** — confirm scaling for wide tables. *(Perf · P2 · [tests/Osm.Pipeline.Tests/Profiler/PerformanceWideTableTests.cs](tests/Osm.Pipeline.Tests/Profiler/PerformanceWideTableTests.cs))*
+- [x] **2.5 Performance: many columns** — confirm scaling for wide tables (512 columns) while keeping SQL sampling capped at 50k rows per probe. *(Perf · P2 · [tests/Osm.Pipeline.Tests/Performance/SqlDataProfilerPerformanceTests.cs](tests/Osm.Pipeline.Tests/Performance/SqlDataProfilerPerformanceTests.cs))*
 
 ## 3. Tightening Policy (Decisions) (`Osm.Validation` or dedicated policy project)
 - [x] **3.1 PK → NOT NULL** — PKs always tighten. *(Unit · P0 · [tests/Osm.Validation.Tests/Policy/PrimaryKeyTighteningTests.cs](tests/Osm.Validation.Tests/Policy/PrimaryKeyTighteningTests.cs))*
@@ -85,7 +85,7 @@
 - [ ] **9.3 Filesystem permissions** — graceful failure on unwritable output. *(Integration · P2 · [tests/Osm.Cli.Tests/FilesystemPermissionTests.cs](tests/Osm.Cli.Tests/FilesystemPermissionTests.cs))*
 
 ## 10. Performance & Scale
-- [ ] **10.1 Many entities** — ensure no quadratic behavior (500×10). *(Perf · P2 · [tests/Osm.Pipeline.Tests/Performance/ManyEntitiesTests.cs](tests/Osm.Pipeline.Tests/Performance/ManyEntitiesTests.cs))*
+- [x] **10.1 Many entities** — ensure no quadratic behavior (500×10) and enforce `MaxConcurrentTableProfiles <= 8` throughout execution. *(Perf · P2 · [tests/Osm.Pipeline.Tests/Performance/SqlDataProfilerPerformanceTests.cs](tests/Osm.Pipeline.Tests/Performance/SqlDataProfilerPerformanceTests.cs))*
 - [ ] **10.2 Hot path profiling on large table** — document runtime for large datasets. *(Perf · P3 · [tests/Osm.Pipeline.Tests/Performance/LargeTableProfilingTests.cs](tests/Osm.Pipeline.Tests/Performance/LargeTableProfilingTests.cs))*
 
 ## 11. Property-Based & Mutation-Resilience
