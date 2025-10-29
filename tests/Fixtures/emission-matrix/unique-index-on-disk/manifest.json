@@ -4,7 +4,7 @@
       "Module": "Operator",
       "Schema": "dbo",
       "Table": "OperatorProfile",
-      "TableFile": "Modules/Operator/Tables/dbo.OperatorProfile.sql",
+      "TableFile": "Modules/Operator/dbo.OperatorProfile.sql",
       "Indexes": [
         "UIX_OperatorProfile_OperatorCode"
       ],
@@ -15,7 +15,7 @@
       "Module": "UserExtension_CS",
       "Schema": "dbo",
       "Table": "User",
-      "TableFile": "Modules/UserExtension_CS/Tables/dbo.User.sql",
+      "TableFile": "Modules/UserExtension_CS/dbo.User.sql",
       "Indexes": [
         "UIX_User_Email",
         "UIX_User_Username"

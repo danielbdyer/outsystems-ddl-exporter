@@ -96,7 +96,7 @@ public class EmissionPipelineTests
         var customer = Assert.Single(emission.Manifest.Tables.Where(t => t.Table == "Customer"));
         Assert.Equal("AppCore", customer.Module);
         Assert.Equal("dbo", customer.Schema);
-        Assert.Equal("Modules/AppCore/Tables/dbo.Customer.sql", customer.TableFile);
+        Assert.Equal("Modules/AppCore/dbo.Customer.sql", customer.TableFile);
         Assert.Contains("FK_Customer_City_CityId", customer.ForeignKeys);
         Assert.Contains("UIX_Customer_Email", customer.Indexes);
 
@@ -123,8 +123,8 @@ public class EmissionPipelineTests
         Assert.Equal("AppCore", seedModule.Module);
         Assert.Contains("Seeds/AppCore/StaticEntities.seed.sql", seedModule.SeedFiles);
 
-        Assert.Contains("Modules/AppCore/Tables/dbo.Customer.sql", emission.TableScripts);
-        Assert.Contains("Modules/ExtBilling/Tables/billing.BillingAccount.sql", emission.TableScripts);
+        Assert.Contains("Modules/AppCore/dbo.Customer.sql", emission.TableScripts);
+        Assert.Contains("Modules/ExtBilling/billing.BillingAccount.sql", emission.TableScripts);
     }
 
     [Fact]
@@ -198,13 +198,13 @@ public class EmissionPipelineTests
 
         var renamed = Assert.Single(emission.Manifest.Tables.Where(t => t.Table == "CUSTOMER_PORTAL"));
         Assert.Equal("AppCore", renamed.Module);
-        Assert.Equal("Modules/AppCore/Tables/dbo.CUSTOMER_PORTAL.sql", renamed.TableFile);
+        Assert.Equal("Modules/AppCore/dbo.CUSTOMER_PORTAL.sql", renamed.TableFile);
         Assert.DoesNotContain(emission.Manifest.Tables, t => t.Table == "Customer");
 
-        Assert.Contains("Modules/AppCore/Tables/dbo.CUSTOMER_PORTAL.sql", emission.TableScripts);
+        Assert.Contains("Modules/AppCore/dbo.CUSTOMER_PORTAL.sql", emission.TableScripts);
         Assert.DoesNotContain(
             emission.TableScripts,
-            path => path.Equals("Modules/AppCore/Tables/dbo.Customer.sql", StringComparison.OrdinalIgnoreCase));
+            path => path.Equals("Modules/AppCore/dbo.Customer.sql", StringComparison.OrdinalIgnoreCase));
 
         var script = await File.ReadAllTextAsync(emission.GetAbsolutePath(renamed.TableFile));
         Assert.Contains("CREATE TABLE [dbo].[CUSTOMER_PORTAL]", script, StringComparison.OrdinalIgnoreCase);

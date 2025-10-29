@@ -607,7 +607,7 @@ When drift exists, `isMatch` flips to `false` and each difference entry carries 
   "property": "Nullability",
   "expected": "NOT NULL",
   "actual": "NULL",
-  "artifactPath": "Modules/AppCore/Tables/dbo.Customer.sql"
+  "artifactPath": "Modules/AppCore/dbo.Customer.sql"
 }
 ```
 
@@ -976,7 +976,7 @@ dotnet run --project src/Osm.Cli dmm-compare \
       "Module": "AppCore",
       "Schema": "dbo",
       "Table": "Customer",
-      "TableFile": "Modules/AppCore/Tables/dbo.Customer.sql",
+      "TableFile": "Modules/AppCore/dbo.Customer.sql",
       "Indexes": [
         "UIX_Customer_Email",
         "IX_Customer_LastName_FirstName"
@@ -1007,7 +1007,7 @@ This folder contains per-table DDL organized by OutSystems Module.
 
 Import guidance (SSDT):
 1) Create a new SQL Server Database Project.
-2) Add items from Modules/<Module>/Tables.
+2) Add items from Modules/<Module>/.
 3) Optional: add PreRemediation/*.pre.sql as Pre-Deployment, or run manually once.
 4) Build & publish / open PR.
 

@@ -330,7 +330,7 @@ public class BuildSsdtPipelineTests
             null);
 
         var issue = SsdtSqlValidationIssue.Create(
-            "Modules/Sample/Tables/dbo.Entity.sql",
+            "Modules/Sample/dbo.Entity.sql",
             new[]
             {
                 SsdtSqlValidationError.Create(102, 0, 16, 1, 1, "Incorrect syntax near '?'."),
