@@ -60,87 +60,53 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             throw new ArgumentNullException(nameof(input));
         }
 
-        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
-            input.ConfigurationContext,
-            input.ModuleFilter,
-            input.Sql,
-            input.Cache,
-            input.Overrides.SqlMetadataOutputPath,
-            new NamingOverridesRequest(input.Overrides, _namingOverridesBinder)));
-        if (contextResult.IsFailure)
+        var requestContextResult = BuildRequestContext(input);
+        if (requestContextResult.IsFailure)
         {
-            return Result<BuildSsdtApplicationResult>.Failure(contextResult.Errors);
+            return Result<BuildSsdtApplicationResult>.Failure(requestContextResult.Errors);
         }
 
-        var context = contextResult.Value;
+        var requestContext = requestContextResult.Value;
         var outputDirectory = _outputDirectoryResolver.Resolve(input.Overrides);
 
-        var modelResolutionResult = await _modelResolutionService.ResolveModelAsync(
-            context.Configuration,
-            input.Overrides,
-            context.ModuleFilter,
-            context.SqlOptions,
+        var modelResolutionResult = await ResolveModelAsync(
+            input,
+            requestContext,
             outputDirectory,
-            context.SqlMetadataLog,
             cancellationToken).ConfigureAwait(false);
         if (modelResolutionResult.IsFailure)
         {
-            await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
+            await requestContext.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(modelResolutionResult.Errors);
         }
 
-        var modelResolution = modelResolutionResult.Value;
-        var staticDataProviderResult = _staticDataProviderFactory.Create(input.Overrides, context.SqlOptions, context.Tightening);
+        var staticDataProviderResult = CreateStaticDataProvider(input, requestContext);
         if (staticDataProviderResult.IsFailure)
         {
-            await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
+            await requestContext.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(staticDataProviderResult.Errors);
         }
 
-        var baseSmoOptions = SmoBuildOptions.FromEmission(context.Tightening.Emission);
-        var namingOverrides = context.NamingOverrides ?? baseSmoOptions.NamingOverrides;
-        var smoOptions = baseSmoOptions.WithNamingOverrides(namingOverrides);
-
-        if (input.Overrides.MaxDegreeOfParallelism is int moduleParallelism)
-        {
-            if (moduleParallelism <= 0)
-            {
-                await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
-                return ValidationError.Create(
-                    "cli.buildSsdt.parallelism.invalid",
-                    "--max-degree-of-parallelism must be a positive integer when specified.");
-            }
-
-            smoOptions = smoOptions with { ModuleParallelism = moduleParallelism };
-        }
-
-        var assemblyResult = _assembler.Assemble(new BuildSsdtRequestAssemblerContext(
-            context.Configuration,
-            input.Overrides,
-            context.ModuleFilter,
-            context.SqlOptions,
-            context.Tightening,
-            context.TypeMappingPolicy,
-            smoOptions,
-            modelResolution.ModelPath,
+        var executionContext = new BuildSsdtExecutionContext(
+            requestContext,
             outputDirectory,
-            staticDataProviderResult.Value,
-            context.CacheOverrides,
-            context.ConfigPath,
-            context.SqlMetadataLog));
+            modelResolutionResult.Value,
+            staticDataProviderResult.Value);
+
+        var assemblyResult = AssemblePipelineRequest(input, executionContext);
         if (assemblyResult.IsFailure)
         {
-            await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
+            await requestContext.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(assemblyResult.Errors);
         }
 
         var assembly = assemblyResult.Value;
 
-        var pipelineResult = await _dispatcher.DispatchAsync<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>(
-            assembly.Request,
-            cancellationToken).ConfigureAwait(false);
+        var pipelineResult = await _dispatcher
+            .DispatchAsync<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>(assembly.Request, cancellationToken)
+            .ConfigureAwait(false);
 
-        await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
+        await requestContext.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
 
         if (pipelineResult.IsFailure)
         {
@@ -152,8 +118,88 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             assembly.ProfilerProvider,
             assembly.ProfilePath,
             assembly.OutputDirectory,
-            modelResolution.ModelPath,
-            modelResolution.WasExtracted,
-            modelResolution.Warnings);
+            executionContext.ModelResolution.ModelPath,
+            executionContext.ModelResolution.WasExtracted,
+            executionContext.ModelResolution.Warnings);
     }
+
+    private Result<PipelineRequestContext> BuildRequestContext(BuildSsdtApplicationInput input)
+    {
+        var namingOverrides = new NamingOverridesRequest(input.Overrides, _namingOverridesBinder);
+        var request = new PipelineRequestContextBuilderRequest(
+            input.ConfigurationContext,
+            input.ModuleFilter,
+            input.Sql,
+            input.Cache,
+            input.Overrides.SqlMetadataOutputPath,
+            namingOverrides);
+
+        return PipelineRequestContextBuilder.Build(request);
+    }
+
+    private Task<Result<ModelResolutionResult>> ResolveModelAsync(
+        BuildSsdtApplicationInput input,
+        PipelineRequestContext context,
+        string outputDirectory,
+        CancellationToken cancellationToken)
+    {
+        return _modelResolutionService.ResolveModelAsync(
+            context.Configuration,
+            input.Overrides,
+            context.ModuleFilter,
+            context.SqlOptions,
+            outputDirectory,
+            context.SqlMetadataLog,
+            cancellationToken);
+    }
+
+    private Result<IStaticEntityDataProvider?> CreateStaticDataProvider(
+        BuildSsdtApplicationInput input,
+        PipelineRequestContext context)
+    {
+        return _staticDataProviderFactory.Create(input.Overrides, context.SqlOptions, context.Tightening);
+    }
+
+    private Result<BuildSsdtRequestAssembly> AssemblePipelineRequest(
+        BuildSsdtApplicationInput input,
+        BuildSsdtExecutionContext context)
+    {
+        var baseSmoOptions = SmoBuildOptions.FromEmission(context.RequestContext.Tightening.Emission);
+        var namingOverrides = context.RequestContext.NamingOverrides ?? baseSmoOptions.NamingOverrides;
+        var smoOptions = baseSmoOptions.WithNamingOverrides(namingOverrides);
+
+        if (input.Overrides.MaxDegreeOfParallelism is int moduleParallelism)
+        {
+            if (moduleParallelism <= 0)
+            {
+                return ValidationError.Create(
+                    "cli.buildSsdt.parallelism.invalid",
+                    "--max-degree-of-parallelism must be a positive integer when specified.");
+            }
+
+            smoOptions = smoOptions with { ModuleParallelism = moduleParallelism };
+        }
+
+        var requestContext = context.RequestContext;
+        return _assembler.Assemble(new BuildSsdtRequestAssemblerContext(
+            requestContext.Configuration,
+            input.Overrides,
+            requestContext.ModuleFilter,
+            requestContext.SqlOptions,
+            requestContext.Tightening,
+            requestContext.TypeMappingPolicy,
+            smoOptions,
+            context.ModelResolution.ModelPath,
+            context.OutputDirectory,
+            context.StaticDataProvider,
+            requestContext.CacheOverrides,
+            requestContext.ConfigPath,
+            requestContext.SqlMetadataLog));
+    }
+
+    private readonly record struct BuildSsdtExecutionContext(
+        PipelineRequestContext RequestContext,
+        string OutputDirectory,
+        ModelResolutionResult ModelResolution,
+        IStaticEntityDataProvider? StaticDataProvider);
 }

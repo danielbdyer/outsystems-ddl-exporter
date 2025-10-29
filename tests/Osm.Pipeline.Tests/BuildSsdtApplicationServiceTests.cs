@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -24,7 +25,7 @@ public sealed class BuildSsdtApplicationServiceTests
     [Fact]
     public async Task RunAsync_ComposesPipelineRequestFromDependencies()
     {
-        var overrides = new BuildSsdtOverrides(
+        var input = CreateInput(overrides: new BuildSsdtOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
             OutputDirectory: "out",
@@ -32,28 +33,7 @@ public sealed class BuildSsdtApplicationServiceTests
             StaticDataPath: null,
             RenameOverrides: null,
             MaxDegreeOfParallelism: null,
-            SqlMetadataOutputPath: null);
-        var moduleFilterOverrides = new ModuleFilterOverrides(
-            Array.Empty<string>(),
-            IncludeSystemModules: null,
-            IncludeInactiveModules: null,
-            AllowMissingPrimaryKey: Array.Empty<string>(),
-            AllowMissingSchema: Array.Empty<string>());
-        var sqlOverrides = new SqlOptionsOverrides(null, null, null, null, null, null, null, null);
-        var cacheOverrides = new CacheOptionsOverrides(null, null);
-        var configuration = new CliConfiguration(
-            TighteningOptions.Default,
-            ModelPath: null,
-            ProfilePath: null,
-            DmmPath: null,
-            CacheConfiguration.Empty,
-            new ProfilerConfiguration("fixture", null, null),
-            SqlConfiguration.Empty,
-            ModuleFilterConfiguration.Empty,
-            TypeMappingConfiguration.Empty,
-            SupplementalModelConfiguration.Empty);
-        var context = new CliConfigurationContext(configuration, "config.json");
-        var input = new BuildSsdtApplicationInput(context, overrides, moduleFilterOverrides, sqlOverrides, cacheOverrides);
+            SqlMetadataOutputPath: null));
 
         var dispatcher = new RecordingDispatcher();
         dispatcher.SetResult(Result<BuildSsdtPipelineResult>.Success(CreatePipelineResult()));
@@ -80,6 +60,234 @@ public sealed class BuildSsdtApplicationServiceTests
         Assert.Equal("out", result.Value.OutputDirectory);
         Assert.Equal("model.json", result.Value.ModelPath);
         Assert.False(result.Value.ModelWasExtracted);
+    }
+
+    [Fact]
+    public async Task RunAsync_FlushesMetadataWhenModelResolutionFails()
+    {
+        var metadataPath = CreateMetadataPath();
+        try
+        {
+            var input = CreateInput(overrides: new BuildSsdtOverrides(
+                ModelPath: "model.json",
+                ProfilePath: "profile.snapshot",
+                OutputDirectory: "out",
+                ProfilerProvider: "fixture",
+                StaticDataPath: null,
+                RenameOverrides: null,
+                MaxDegreeOfParallelism: null,
+                SqlMetadataOutputPath: metadataPath));
+
+            var dispatcher = new RecordingDispatcher();
+            var assembler = new BuildSsdtRequestAssembler();
+            var modelResolution = new FailingModelResolutionService();
+            var outputResolver = new TestOutputDirectoryResolver();
+            var namingBinder = new TestNamingOverridesBinder();
+            var staticDataFactory = new TestStaticDataProviderFactory(new TestStaticEntityDataProvider());
+
+            var service = new BuildSsdtApplicationService(
+                dispatcher,
+                assembler,
+                modelResolution,
+                outputResolver,
+                namingBinder,
+                staticDataFactory);
+
+            var result = await service.RunAsync(input, CancellationToken.None);
+
+            Assert.True(result.IsFailure);
+            Assert.Contains(result.Errors, error => error.Code == FailingModelResolutionService.ErrorCode);
+            Assert.True(File.Exists(metadataPath));
+        }
+        finally
+        {
+            DeleteMetadataDirectory(metadataPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_FlushesMetadataWhenStaticProviderCreationFails()
+    {
+        var metadataPath = CreateMetadataPath();
+        try
+        {
+            var input = CreateInput(overrides: new BuildSsdtOverrides(
+                ModelPath: "model.json",
+                ProfilePath: "profile.snapshot",
+                OutputDirectory: "out",
+                ProfilerProvider: "fixture",
+                StaticDataPath: null,
+                RenameOverrides: null,
+                MaxDegreeOfParallelism: null,
+                SqlMetadataOutputPath: metadataPath));
+
+            var dispatcher = new RecordingDispatcher();
+            var assembler = new BuildSsdtRequestAssembler();
+            var modelResolution = RecordingModelResolutionService.CreateWithRequestLog();
+            var outputResolver = new TestOutputDirectoryResolver();
+            var namingBinder = new TestNamingOverridesBinder();
+            var staticDataFactory = new FailingStaticDataProviderFactory();
+
+            var service = new BuildSsdtApplicationService(
+                dispatcher,
+                assembler,
+                modelResolution,
+                outputResolver,
+                namingBinder,
+                staticDataFactory);
+
+            var result = await service.RunAsync(input, CancellationToken.None);
+
+            Assert.True(result.IsFailure);
+            Assert.Contains(result.Errors, error => error.Code == FailingStaticDataProviderFactory.ErrorCode);
+            Assert.True(File.Exists(metadataPath));
+        }
+        finally
+        {
+            DeleteMetadataDirectory(metadataPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_FlushesMetadataWhenAssemblerFails()
+    {
+        var metadataPath = CreateMetadataPath();
+        try
+        {
+            var input = CreateInput(
+                overrides: new BuildSsdtOverrides(
+                    ModelPath: "model.json",
+                    ProfilePath: null,
+                    OutputDirectory: "out",
+                    ProfilerProvider: "fixture",
+                    StaticDataPath: null,
+                    RenameOverrides: null,
+                    MaxDegreeOfParallelism: null,
+                    SqlMetadataOutputPath: metadataPath),
+                configuration: CreateConfiguration(profilePath: null));
+
+            var dispatcher = new RecordingDispatcher();
+            var assembler = new BuildSsdtRequestAssembler();
+            var modelResolution = RecordingModelResolutionService.CreateWithRequestLog();
+            var outputResolver = new TestOutputDirectoryResolver();
+            var namingBinder = new TestNamingOverridesBinder();
+            var staticDataFactory = new TestStaticDataProviderFactory(new TestStaticEntityDataProvider());
+
+            var service = new BuildSsdtApplicationService(
+                dispatcher,
+                assembler,
+                modelResolution,
+                outputResolver,
+                namingBinder,
+                staticDataFactory);
+
+            var result = await service.RunAsync(input, CancellationToken.None);
+
+            Assert.True(result.IsFailure);
+            Assert.Contains(result.Errors, error => error.Code == "pipeline.buildSsdt.profile.missing");
+            Assert.True(File.Exists(metadataPath));
+            Assert.Null(dispatcher.Request);
+        }
+        finally
+        {
+            DeleteMetadataDirectory(metadataPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_FlushesMetadataWhenParallelismInvalid()
+    {
+        var metadataPath = CreateMetadataPath();
+        try
+        {
+            var input = CreateInput(overrides: new BuildSsdtOverrides(
+                ModelPath: "model.json",
+                ProfilePath: "profile.snapshot",
+                OutputDirectory: "out",
+                ProfilerProvider: "fixture",
+                StaticDataPath: null,
+                RenameOverrides: null,
+                MaxDegreeOfParallelism: 0,
+                SqlMetadataOutputPath: metadataPath));
+
+            var dispatcher = new RecordingDispatcher();
+            var assembler = new BuildSsdtRequestAssembler();
+            var modelResolution = RecordingModelResolutionService.CreateWithRequestLog();
+            var outputResolver = new TestOutputDirectoryResolver();
+            var namingBinder = new TestNamingOverridesBinder();
+            var staticDataFactory = new TestStaticDataProviderFactory(new TestStaticEntityDataProvider());
+
+            var service = new BuildSsdtApplicationService(
+                dispatcher,
+                assembler,
+                modelResolution,
+                outputResolver,
+                namingBinder,
+                staticDataFactory);
+
+            var result = await service.RunAsync(input, CancellationToken.None);
+
+            Assert.True(result.IsFailure);
+            Assert.Contains(result.Errors, error => error.Code == "cli.buildSsdt.parallelism.invalid");
+            Assert.True(File.Exists(metadataPath));
+            Assert.Null(dispatcher.Request);
+        }
+        finally
+        {
+            DeleteMetadataDirectory(metadataPath);
+        }
+    }
+
+    private static BuildSsdtApplicationInput CreateInput(
+        BuildSsdtOverrides overrides,
+        CliConfiguration? configuration = null)
+    {
+        var moduleFilterOverrides = new ModuleFilterOverrides(
+            Array.Empty<string>(),
+            IncludeSystemModules: null,
+            IncludeInactiveModules: null,
+            AllowMissingPrimaryKey: Array.Empty<string>(),
+            AllowMissingSchema: Array.Empty<string>());
+        var sqlOverrides = new SqlOptionsOverrides(null, null, null, null, null, null, null, null);
+        var cacheOverrides = new CacheOptionsOverrides(null, null);
+        configuration ??= CreateConfiguration();
+        var context = new CliConfigurationContext(configuration, "config.json");
+        return new BuildSsdtApplicationInput(context, overrides, moduleFilterOverrides, sqlOverrides, cacheOverrides);
+    }
+
+    private static CliConfiguration CreateConfiguration(string? profilePath = "profile.snapshot")
+    {
+        return new CliConfiguration(
+            TighteningOptions.Default,
+            ModelPath: null,
+            ProfilePath: profilePath,
+            DmmPath: null,
+            CacheConfiguration.Empty,
+            new ProfilerConfiguration("fixture", profilePath, null),
+            SqlConfiguration.Empty,
+            ModuleFilterConfiguration.Empty,
+            TypeMappingConfiguration.Empty,
+            SupplementalModelConfiguration.Empty);
+    }
+
+    private static string CreateMetadataPath()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        return Path.Combine(directory, "sql-metadata.json");
+    }
+
+    private static void DeleteMetadataDirectory(string metadataPath)
+    {
+        if (string.IsNullOrWhiteSpace(metadataPath))
+        {
+            return;
+        }
+
+        var directory = Path.GetDirectoryName(metadataPath);
+        if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     private static BuildSsdtPipelineResult CreatePipelineResult()
@@ -184,6 +392,72 @@ public sealed class BuildSsdtApplicationServiceTests
         {
             var model = new ModelResolutionResult(overrides.ModelPath!, false, ImmutableArray<string>.Empty);
             return Task.FromResult(Result<ModelResolutionResult>.Success(model));
+        }
+    }
+
+    private sealed class FailingModelResolutionService : IModelResolutionService
+    {
+        public const string ErrorCode = "pipeline.modelResolution.failed";
+
+        public Task<Result<ModelResolutionResult>> ResolveModelAsync(
+            CliConfiguration configuration,
+            BuildSsdtOverrides overrides,
+            ModuleFilterOptions moduleFilter,
+            ResolvedSqlOptions sqlOptions,
+            string outputDirectory,
+            SqlMetadataLog? sqlMetadataLog,
+            CancellationToken cancellationToken)
+        {
+            sqlMetadataLog?.RecordFailure(
+                new[] { ValidationError.Create(ErrorCode, "Model resolution failed.") },
+                rowSnapshot: null);
+
+            return Task.FromResult(Result<ModelResolutionResult>.Failure(
+                ValidationError.Create(ErrorCode, "Model resolution failed.")));
+        }
+    }
+
+    private sealed class FailingStaticDataProviderFactory : IStaticDataProviderFactory
+    {
+        public const string ErrorCode = "pipeline.staticData.missingSource";
+
+        public Result<IStaticEntityDataProvider?> Create(
+            BuildSsdtOverrides overrides,
+            ResolvedSqlOptions sqlOptions,
+            TighteningOptions tighteningOptions)
+        {
+            return ValidationError.Create(ErrorCode, "Static data provider creation failed.");
+        }
+    }
+
+    private sealed class RecordingModelResolutionService : IModelResolutionService
+    {
+        private readonly ModelResolutionResult _result;
+        private readonly Action<SqlMetadataLog?> _logCallback;
+
+        private RecordingModelResolutionService(ModelResolutionResult result, Action<SqlMetadataLog?> logCallback)
+        {
+            _result = result;
+            _logCallback = logCallback;
+        }
+
+        public static RecordingModelResolutionService CreateWithRequestLog()
+        {
+            var model = new ModelResolutionResult("model.json", false, ImmutableArray<string>.Empty);
+            return new RecordingModelResolutionService(model, log => log?.RecordRequest("test", new { value = 1 }));
+        }
+
+        public Task<Result<ModelResolutionResult>> ResolveModelAsync(
+            CliConfiguration configuration,
+            BuildSsdtOverrides overrides,
+            ModuleFilterOptions moduleFilter,
+            ResolvedSqlOptions sqlOptions,
+            string outputDirectory,
+            SqlMetadataLog? sqlMetadataLog,
+            CancellationToken cancellationToken)
+        {
+            _logCallback(sqlMetadataLog);
+            return Task.FromResult(Result<ModelResolutionResult>.Success(_result));
         }
     }
 
