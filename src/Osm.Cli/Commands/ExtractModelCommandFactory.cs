@@ -107,17 +107,17 @@ internal sealed class ExtractModelCommandFactory : PipelineCommandFactory<Extrac
         return null;
     }
 
-    private async Task EmitResultsAsync(InvocationContext context, ExtractModelVerbResult payload)
+    private async Task EmitResultsAsync(InvocationContext context, ExtractModelVerbResult verbResult)
     {
-        var result = payload.ApplicationResult;
+        var result = verbResult.ApplicationResult;
         var requestedOutputPath = result.OutputPath ?? "model.extracted.json";
         var cancellationToken = context.GetCancellationToken();
-        var payload = result.ExtractionResult.JsonPayload;
+        var extractionPayload = result.ExtractionResult.JsonPayload;
 
         string resolvedOutputPath;
-        if (payload.IsPersisted)
+        if (extractionPayload.IsPersisted)
         {
-            var persistedPath = payload.FilePath;
+            var persistedPath = extractionPayload.FilePath;
             var requestedFullPath = Path.GetFullPath(requestedOutputPath);
             if (!string.IsNullOrWhiteSpace(persistedPath)
                 && string.Equals(persistedPath, requestedFullPath, StringComparison.OrdinalIgnoreCase))
@@ -128,7 +128,7 @@ internal sealed class ExtractModelCommandFactory : PipelineCommandFactory<Extrac
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(requestedFullPath) ?? Directory.GetCurrentDirectory());
                 await using var outputStream = File.Create(requestedFullPath);
-                await payload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
+                await extractionPayload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
                 resolvedOutputPath = requestedFullPath;
             }
         }
@@ -137,7 +137,7 @@ internal sealed class ExtractModelCommandFactory : PipelineCommandFactory<Extrac
             var requestedFullPath = Path.GetFullPath(requestedOutputPath);
             Directory.CreateDirectory(Path.GetDirectoryName(requestedFullPath) ?? Directory.GetCurrentDirectory());
             await using var outputStream = File.Create(requestedFullPath);
-            await payload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
+            await extractionPayload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
             resolvedOutputPath = requestedFullPath;
         }
 

@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <PackageReference Include="DotNet.Testcontainers" Version="1.7.0-beta.2269" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
@@ -17,19 +18,14 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\TestSupport\FixtureFile.cs" Link="TestSupport\FixtureFile.cs" />
     <Compile Include="..\TestSupport\TempDirectory.cs" Link="TestSupport\TempDirectory.cs" />
+    <Compile Include="..\TestSupport\FixtureFile.cs" Link="TestSupport\FixtureFile.cs" />
     <Compile Include="..\TestSupport\DirectorySnapshot.cs" Link="TestSupport\DirectorySnapshot.cs" />
-    <Compile Include="..\TestSupport\EmissionOutput.cs" Link="TestSupport\EmissionOutput.cs" />
     <Compile Include="..\TestSupport\SqlServerFixture.cs" Link="TestSupport\SqlServerFixture.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Osm.Domain\Osm.Domain.csproj" />
     <ProjectReference Include="..\..\src\Osm.Json\Osm.Json.csproj" />
-    <ProjectReference Include="..\..\src\Osm.Validation\Osm.Validation.csproj" />
-    <ProjectReference Include="..\..\src\Osm.Smo\Osm.Smo.csproj" />
-    <ProjectReference Include="..\..\src\Osm.Emission\Osm.Emission.csproj" />
     <ProjectReference Include="..\..\src\Osm.Pipeline\Osm.Pipeline.csproj" />
-    <ProjectReference Include="..\..\src\Osm.Cli\Osm.Cli.csproj" />
   </ItemGroup>
 </Project>
