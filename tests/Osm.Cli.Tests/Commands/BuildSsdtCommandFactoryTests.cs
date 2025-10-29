@@ -112,6 +112,53 @@ public class BuildSsdtCommandFactoryTests
     }
 
     [Fact]
+    public async Task Invoke_EmitsProfilingInsightsWhenPresent()
+    {
+        var configurationService = new FakeConfigurationService();
+        var application = new FakeBuildApplicationService
+        {
+            ProfilingInsights = ImmutableArray.Create(
+                new ProfilingInsight(
+                    ProfilingInsightSeverity.Info,
+                    ProfilingInsightCategory.Nullability,
+                    "Column contains 12.5% null values.",
+                    new ProfilingInsightCoordinate(
+                        new SchemaName("dbo"),
+                        new TableName("Orders"),
+                        new ColumnName("CustomerId"),
+                        null,
+                        null,
+                        null)))
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<BuildSsdtCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = "build-ssdt --model model.json --profile profile.json --out output";
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(0, exitCode);
+
+        var output = console.Out.ToString() ?? string.Empty;
+        Assert.Contains("Profiling insights:", output);
+        Assert.Contains("[info] dbo.Orders.CustomerId: Column contains 12.5% null values.", output);
+    }
+
+    [Fact]
     public async Task Invoke_WritesErrorsWhenPipelineFails()
     {
         var configurationService = new FakeConfigurationService();
@@ -213,6 +260,8 @@ public class BuildSsdtCommandFactoryTests
 
         public IReadOnlyList<ValidationError>? FailureErrors { get; init; }
 
+        public ImmutableArray<ProfilingInsight> ProfilingInsights { get; init; } = ImmutableArray<ProfilingInsight>.Empty;
+
         public Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
         {
             LastInput = input;
@@ -225,7 +274,7 @@ public class BuildSsdtCommandFactoryTests
             return Task.FromResult(Result<BuildSsdtApplicationResult>.Success(LastResult));
         }
 
-        private static BuildSsdtApplicationResult CreateResult()
+        private BuildSsdtApplicationResult CreateResult()
         {
             var snapshot = ProfileSnapshot.Create(
                 Array.Empty<ColumnProfile>(),
@@ -299,7 +348,7 @@ public class BuildSsdtCommandFactoryTests
 
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
-                ImmutableArray<ProfilingInsight>.Empty,
+                ProfilingInsights,
                 report,
                 opportunities,
                 manifest,
