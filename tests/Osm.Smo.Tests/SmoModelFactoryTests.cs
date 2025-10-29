@@ -151,6 +151,107 @@ public class SmoModelFactoryTests
     }
 
     [Fact]
+    public void Create_filters_inactive_columns_and_preserves_default_metadata()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
+
+        var customerTable = smoModel.Tables.Single(
+            table => table.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            customerTable.Columns,
+            column => column.PhysicalName.Equals("LEGACYCODE", StringComparison.OrdinalIgnoreCase));
+
+        var jobRunTable = smoModel.Tables.Single(
+            table => table.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
+        var createdOn = Assert.Single(
+            jobRunTable.Columns,
+            column => column.PhysicalName.Equals("CREATEDON", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Equal("getutcdate()", createdOn.DefaultExpression);
+        Assert.Null(createdOn.DefaultConstraint);
+        Assert.True(createdOn.CheckConstraints.IsDefaultOrEmpty);
+    }
+
+    [Fact]
+    public void Create_projects_rename_overrides_into_rename_lens()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var factory = new SmoModelFactory();
+        var baseOptions = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+
+        var renameRuleResult = NamingOverrideRule.Create(
+            schema: "dbo",
+            table: "OSUSR_ABC_CUSTOMER",
+            module: null,
+            logicalName: null,
+            target: "CUSTOMER_PORTAL");
+
+        Assert.True(renameRuleResult.IsSuccess);
+        var overrides = NamingOverrideOptions.Create(new[] { renameRuleResult.Value });
+        Assert.True(overrides.IsSuccess);
+
+        var options = baseOptions.WithNamingOverrides(overrides.Value);
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
+
+        var renameLens = new SmoRenameLens();
+        var mappings = renameLens.Project(new SmoRenameLensRequest(smoModel, options.NamingOverrides));
+        var customerMapping = Assert.Single(
+            mappings,
+            mapping => mapping.Schema.Equals("dbo", StringComparison.OrdinalIgnoreCase)
+                && mapping.PhysicalName.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Equal("CUSTOMER_PORTAL", customerMapping.EffectiveName);
+        Assert.Equal("Customer", customerMapping.LogicalName);
+        Assert.Equal("AppCore", customerMapping.OriginalModule);
+    }
+
+    [Fact]
+    public void Create_marks_foreign_keys_as_not_checked_when_evidence_is_untrusted()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var factory = new SmoModelFactory();
+
+        var triggeredCoordinate = new ColumnCoordinate(
+            new SchemaName("dbo"),
+            new TableName("OSUSR_XYZ_JOBRUN"),
+            new ColumnName("TRIGGEREDBYUSERID"));
+
+        Assert.True(decisions.ForeignKeys.TryGetValue(triggeredCoordinate, out var triggeredDecision));
+        var enabledDecision = triggeredDecision with { CreateConstraint = true };
+        var updatedForeignKeys = decisions.ForeignKeys.SetItem(triggeredCoordinate, enabledDecision);
+        var updatedDecisions = decisions with { ForeignKeys = updatedForeignKeys };
+
+        var supplementalEntities = LoadSupplementalUserEntities();
+        var smoModel = factory.Create(
+            model,
+            updatedDecisions,
+            profile: snapshot,
+            options: options,
+            supplementalEntities: supplementalEntities);
+
+        var jobRunTable = smoModel.Tables.Single(
+            table => table.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
+        var jobRunForeignKey = Assert.Single(jobRunTable.ForeignKeys);
+
+        Assert.True(jobRunForeignKey.IsNoCheck);
+        Assert.Equal("ossys_User", jobRunForeignKey.ReferencedTable);
+        Assert.Equal("User", jobRunForeignKey.ReferencedLogicalTable);
+        Assert.Equal(ForeignKeyAction.NoAction, jobRunForeignKey.DeleteAction);
+        Assert.Collection(
+            jobRunForeignKey.Columns,
+            column => Assert.Equal("TriggeredByUserId", column));
+
+        var customerTable = smoModel.Tables.Single(
+            table => table.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
+        var cityForeignKey = Assert.Single(customerTable.ForeignKeys);
+        Assert.False(cityForeignKey.IsNoCheck);
+    }
+
+    [Fact]
     public void Create_aligns_model_with_all_policy_decisions()
     {
         var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
@@ -385,19 +486,46 @@ public class SmoModelFactoryTests
         foreach (var table in smoModel.Tables)
         {
             var result = writer.Generate(table, options);
-            var expectedPath = Path.Combine(
-                FixtureFile.RepositoryRoot,
-                "tests",
-                "Fixtures",
-                "emission",
-                "edge-case",
-                "Modules",
-                table.Module,
-                "Tables",
-                $"{table.Schema}.{table.LogicalName}.sql");
+            var moduleCandidates = new[] { table.Module, table.OriginalModule }
+                .Where(candidate => !string.IsNullOrWhiteSpace(candidate))
+                .Distinct(StringComparer.OrdinalIgnoreCase);
 
-            Assert.True(File.Exists(expectedPath), $"Expected fixture '{expectedPath}' to exist.");
-            var expected = File.ReadAllText(expectedPath);
+            var fileNameCandidates = new[]
+            {
+                $"{table.Schema}.{table.LogicalName}.sql",
+                $"{table.Schema}.{table.Name}.sql"
+            };
+
+            string? expectedPath = null;
+            foreach (var module in moduleCandidates)
+            {
+                foreach (var fileName in fileNameCandidates)
+                {
+                    var candidatePath = Path.Combine(
+                        FixtureFile.RepositoryRoot,
+                        "tests",
+                        "Fixtures",
+                        "emission",
+                        "edge-case",
+                        "Modules",
+                        module,
+                        fileName);
+
+                    if (File.Exists(candidatePath))
+                    {
+                        expectedPath = candidatePath;
+                        break;
+                    }
+                }
+
+                if (expectedPath is not null)
+                {
+                    break;
+                }
+            }
+
+            Assert.True(expectedPath is not null, $"Expected fixture for '{table.Module}.{table.LogicalName}' to exist.");
+            var expected = File.ReadAllText(expectedPath!);
             Assert.Equal(Normalize(expected), Normalize(result.Script));
         }
     }
@@ -799,6 +927,23 @@ public class SmoModelFactoryTests
         var foreignKey = Assert.Single(customer.ForeignKeys.Cast<ForeignKey>());
         Assert.True(foreignKey.IsChecked);
         Assert.Equal("OSUSR_DEF_CITY", foreignKey.ReferencedTable);
+    }
+
+    private static ImmutableArray<EntityModel> LoadSupplementalUserEntities()
+    {
+        var supplementalPath = Path.Combine(FixtureFile.RepositoryRoot, "config", "supplemental", "ossys-user.json");
+        using var stream = File.OpenRead(supplementalPath);
+        var deserializer = new ModelJsonDeserializer();
+        var supplementalResult = deserializer.Deserialize(stream);
+
+        if (!supplementalResult.IsSuccess)
+        {
+            throw new InvalidOperationException(string.Join(Environment.NewLine, supplementalResult.Errors.Select(error => error.Message)));
+        }
+
+        return supplementalResult.Value.Modules
+            .SelectMany(module => module.Entities)
+            .ToImmutableArray();
     }
 
     private static EntityModel CreateCategoryEntity(string moduleName, string physicalName)
