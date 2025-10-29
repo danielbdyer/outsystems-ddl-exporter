@@ -137,7 +137,7 @@ public class CaptureProfilePipelineTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             TighteningOptions.Default,
-            TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault(),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             outputDirectory,
             SqlMetadataLog: null);

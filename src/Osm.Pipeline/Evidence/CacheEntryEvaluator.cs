@@ -126,6 +126,22 @@ internal sealed class CacheEntryEvaluator
                     continue;
                 }
 
+                if (manifest.ModuleSelection is not null
+                    && !ModuleSelectionEquals(manifest.ModuleSelection, context.ModuleSelection))
+                {
+                    var selectionMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        ["reason"] = EvidenceCacheReasonMapper.Map(EvidenceCacheInvalidationReason.ModuleSelectionChanged),
+                        ["expected.selection.hash"] = context.ModuleSelection.ModulesHash,
+                        ["actual.selection.hash"] = manifest.ModuleSelection.ModulesHash,
+                        ["expected.selection.count"] = context.ModuleSelection.ModuleCount.ToString(CultureInfo.InvariantCulture),
+                        ["actual.selection.count"] = manifest.ModuleSelection.ModuleCount.ToString(CultureInfo.InvariantCulture)
+                    };
+
+                    TryEvictDirectory(directory, manifest, selectionMetadata);
+                    return (EvidenceCacheInvalidationReason.ModuleSelectionChanged, selectionMetadata);
+                }
+
                 if (!MetadataEquals(manifest.Metadata, context.Metadata))
                 {
                     var mismatchMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -136,6 +152,7 @@ internal sealed class CacheEntryEvaluator
                         ["manifest.cacheKey"] = manifest.Key
                     };
 
+                    TryEvictDirectory(directory, manifest, mismatchMetadata);
                     return (EvidenceCacheInvalidationReason.MetadataMismatch, mismatchMetadata);
                 }
             }
@@ -221,5 +238,72 @@ internal sealed class CacheEntryEvaluator
         }
 
         return true;
+    }
+
+    private static bool ModuleSelectionEquals(
+        EvidenceCacheModuleSelection left,
+        EvidenceCacheModuleSelection right)
+    {
+        if (left.IncludeSystemModules != right.IncludeSystemModules)
+        {
+            return false;
+        }
+
+        if (left.IncludeInactiveModules != right.IncludeInactiveModules)
+        {
+            return false;
+        }
+
+        if (left.ModuleCount != right.ModuleCount)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(left.ModulesHash) || !string.IsNullOrEmpty(right.ModulesHash))
+        {
+            return string.Equals(left.ModulesHash, right.ModulesHash, StringComparison.Ordinal);
+        }
+
+        if (left.Modules.Count != right.Modules.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Modules.Count; index++)
+        {
+            if (!string.Equals(left.Modules[index], right.Modules[index], StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void TryEvictDirectory(
+        string directory,
+        EvidenceCacheManifest manifest,
+        IDictionary<string, string?> metadata)
+    {
+        metadata["evicted.directory"] = directory;
+        metadata["evicted.cacheKey"] = manifest.Key;
+
+        try
+        {
+            if (_fileSystem.Directory.Exists(directory))
+            {
+                _fileSystem.Directory.Delete(directory, recursive: true);
+            }
+
+            metadata["evicted"] = "true";
+        }
+        catch (IOException)
+        {
+            metadata["evicted"] = "false";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            metadata["evicted"] = "false";
+        }
     }
 }
