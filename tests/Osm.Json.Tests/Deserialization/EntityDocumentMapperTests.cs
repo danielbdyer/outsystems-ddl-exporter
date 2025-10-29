@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
 using Osm.Json;
 using Osm.Json.Deserialization;
@@ -142,6 +144,175 @@ public class EntityDocumentMapperTests
         var warning = Assert.Single(warnings, w => w.Contains("duplicate attribute logical name 'Id'", StringComparison.Ordinal));
         Assert.Contains("mapped to columns", warning);
         Assert.Contains("Path: $['modules'][0]['entities'][0]['attributes']", warning);
+    }
+
+    [Fact]
+    public void SchemaResolver_ShouldApplyFallback_WhenOverrideAllowsMissingSchema()
+    {
+        var warnings = new List<string>();
+        var overridesResult = ModuleValidationOverrides.Create(new Dictionary<string, ModuleValidationOverrideConfiguration>
+        {
+            ["Finance"] = new ModuleValidationOverrideConfiguration(
+                Array.Empty<string>(),
+                false,
+                new[] { "Invoice" },
+                false)
+        });
+        Assert.True(overridesResult.IsSuccess);
+
+        var context = CreateContext(warnings, overridesResult.Value);
+        var resolver = new EntityDocumentMapper.SchemaResolver(context);
+        var moduleName = ModuleName.Create("Finance").Value;
+        var entityName = EntityName.Create("Invoice").Value;
+        var document = new EntityDocument
+        {
+            Name = entityName.Value,
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            Attributes = new[] { CreateIdentifierAttribute() }
+        };
+
+        var path = DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0);
+        var result = resolver.Resolve(EntityDocumentMapper.MapContext.Create(moduleName, entityName, document, path));
+
+        Assert.True(result.Result.IsSuccess);
+        Assert.Equal(context.Options.MissingSchemaFallbackSchema?.Value, result.Result.Value.Value);
+        var warning = Assert.Single(warnings);
+        Assert.Contains("missing schema", warning, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(path.Property("schema").ToString(), warning);
+    }
+
+    [Fact]
+    public void DuplicateWarningEmitter_ShouldReportDuplicates_WhenAllowancesEnabled()
+    {
+        var warnings = new List<string>();
+        var context = CreateContext(warnings, allowDuplicateAttributeLogicalNames: true, allowDuplicateAttributeColumnNames: true);
+        var emitter = new EntityDocumentMapper.DuplicateWarningEmitter(context);
+        var moduleName = ModuleName.Create("Finance").Value;
+        var entityName = EntityName.Create("Invoice").Value;
+        var document = new EntityDocument
+        {
+            Name = entityName.Value,
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            Schema = "dbo",
+            Attributes = new[] { CreateIdentifierAttribute() }
+        };
+        var path = DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0);
+
+        var duplicateLogical = AttributeModel.Create(
+            AttributeName.Create("Id").Value,
+            ColumnName.Create("ID_SECONDARY").Value,
+            dataType: "Identifier",
+            isMandatory: false,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true).Value;
+        var duplicateColumn = AttributeModel.Create(
+            AttributeName.Create("LegacyId").Value,
+            ColumnName.Create("id").Value,
+            dataType: "Identifier",
+            isMandatory: false,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true).Value;
+
+        var attributes = ImmutableArray.Create(
+            AttributeModel.Create(
+                AttributeName.Create("Id").Value,
+                ColumnName.Create("ID").Value,
+                dataType: "Identifier",
+                isMandatory: true,
+                isIdentifier: true,
+                isAutoNumber: true,
+                isActive: true).Value,
+            duplicateLogical,
+            duplicateColumn);
+
+        var result = emitter.EmitWarnings(EntityDocumentMapper.MapContext.Create(moduleName, entityName, document, path), attributes);
+
+        Assert.True(result.Result.IsSuccess);
+        Assert.Equal(2, warnings.Count);
+        Assert.Contains(warnings, w => w.Contains("duplicate attribute logical name", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(warnings, w => w.Contains("duplicate attribute column name", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PrimaryKeyValidator_ShouldFail_WhenNoIdentifierAndOverrideMissing()
+    {
+        var warnings = new List<string>();
+        var context = CreateContext(warnings);
+        var validator = new EntityDocumentMapper.PrimaryKeyValidator(context);
+        var moduleName = ModuleName.Create("Finance").Value;
+        var entityName = EntityName.Create("Invoice").Value;
+        var document = new EntityDocument
+        {
+            Name = entityName.Value,
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            Schema = "dbo",
+            Attributes = Array.Empty<AttributeDocument>()
+        };
+        var path = DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0);
+
+        var attributes = ImmutableArray.Create(
+            AttributeModel.Create(
+                AttributeName.Create("Legacy").Value,
+                ColumnName.Create("LEGACY_ID").Value,
+                dataType: "Identifier",
+                isMandatory: false,
+                isIdentifier: false,
+                isAutoNumber: false,
+                isActive: true).Value);
+
+        var result = validator.Validate(EntityDocumentMapper.MapContext.Create(moduleName, entityName, document, path), attributes);
+
+        Assert.True(result.Result.IsFailure);
+        var error = Assert.Single(result.Result.Errors);
+        Assert.Equal("entity.attributes.missingPrimaryKey", error.Code);
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void PrimaryKeyValidator_ShouldWarn_WhenOverrideAllowsMissingPrimaryKey()
+    {
+        var warnings = new List<string>();
+        var overridesResult = ModuleValidationOverrides.Create(new Dictionary<string, ModuleValidationOverrideConfiguration>
+        {
+            ["Finance"] = new ModuleValidationOverrideConfiguration(
+                Array.Empty<string>(),
+                true,
+                Array.Empty<string>(),
+                false)
+        });
+        Assert.True(overridesResult.IsSuccess);
+
+        var context = CreateContext(warnings, overridesResult.Value);
+        var validator = new EntityDocumentMapper.PrimaryKeyValidator(context);
+        var moduleName = ModuleName.Create("Finance").Value;
+        var entityName = EntityName.Create("Invoice").Value;
+        var document = new EntityDocument
+        {
+            Name = entityName.Value,
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            Schema = "dbo",
+            Attributes = Array.Empty<AttributeDocument>()
+        };
+        var path = DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0);
+
+        var attributes = ImmutableArray.Create(
+            AttributeModel.Create(
+                AttributeName.Create("Legacy").Value,
+                ColumnName.Create("LEGACY_ID").Value,
+                dataType: "Identifier",
+                isMandatory: false,
+                isIdentifier: false,
+                isAutoNumber: false,
+                isActive: true).Value);
+
+        var result = validator.Validate(EntityDocumentMapper.MapContext.Create(moduleName, entityName, document, path), attributes);
+
+        Assert.True(result.Result.IsSuccess);
+        Assert.True(result.Result.Value);
+        var warning = Assert.Single(warnings);
+        Assert.Contains("missing primary key", warning, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
