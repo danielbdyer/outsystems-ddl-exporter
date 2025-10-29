@@ -4,5 +4,5 @@ CREATE TABLE [dbo].[City] (
             PRIMARY KEY CLUSTERED,
     [Name]     NVARCHAR (200) NOT NULL,
     [IsActive] BIT            NOT NULL
-        DEFAULT ((1))
+        DEFAULT (1)
 )

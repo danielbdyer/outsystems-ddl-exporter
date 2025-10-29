@@ -48,7 +48,7 @@ public class SmoColumnBuilderTests
         var cityContext = contexts.GetContext(cityEntity);
         var cityColumns = SmoColumnBuilder.BuildColumns(cityContext, decisions, profileDefaults, TypeMappingPolicy.Default, contexts);
         var isActive = cityColumns.Single(c => c.LogicalName.Equals("IsActive", StringComparison.Ordinal));
-        Assert.Equal("((1))", isActive.DefaultExpression);
+        Assert.Equal("(1)", isActive.DefaultExpression);
     }
 
     [Fact]
@@ -124,9 +124,9 @@ public class SmoColumnBuilderTests
             contexts);
 
         var enabled = columns.Single(c => c.LogicalName.Equals("IsEnabled", StringComparison.Ordinal));
-        Assert.Equal("((1))", enabled.DefaultExpression);
+        Assert.Equal("(1)", enabled.DefaultExpression);
 
         var disabled = columns.Single(c => c.LogicalName.Equals("IsDisabled", StringComparison.Ordinal));
-        Assert.Equal("((0))", disabled.DefaultExpression);
+        Assert.Equal("(0)", disabled.DefaultExpression);
     }
 }
