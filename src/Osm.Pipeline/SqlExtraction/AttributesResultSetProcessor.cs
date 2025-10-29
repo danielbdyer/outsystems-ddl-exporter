@@ -5,8 +5,6 @@ namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class AttributesResultSetProcessor : ResultSetProcessor<OutsystemsAttributeRow>
 {
-    private static readonly ResultSetReader<OutsystemsAttributeRow> Reader = ResultSetReader<OutsystemsAttributeRow>.Create(MapRow);
-
     private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
     private static readonly ColumnDefinition<int> EntityId = Column.Int32(1, "EntityId");
     private static readonly ColumnDefinition<string> AttrName = Column.String(2, "AttrName");
@@ -31,15 +29,42 @@ internal sealed class AttributesResultSetProcessor : ResultSetProcessor<Outsyste
     private static readonly ColumnDefinition<string?> OriginalType = Column.StringOrNull(21, "OriginalType");
     private static readonly ColumnDefinition<string?> AttrDescription = Column.StringOrNull(22, "AttrDescription");
 
+    internal static ResultSetMap<OutsystemsAttributeRow> Descriptor { get; } = ResultSetMap<OutsystemsAttributeRow>.Create(
+        "Attributes",
+        order: 2,
+        new IResultSetColumn[]
+        {
+            AttrId,
+            EntityId,
+            AttrName,
+            AttrSsKey,
+            DataType,
+            Length,
+            Precision,
+            Scale,
+            DefaultValue,
+            IsMandatory,
+            AttrIsActive,
+            IsAutoNumber,
+            IsIdentifier,
+            RefEntityId,
+            OriginalName,
+            ExternalColumnType,
+            DeleteRule,
+            PhysicalColumnName,
+            DatabaseColumnName,
+            LegacyType,
+            Decimals,
+            OriginalType,
+            AttrDescription
+        },
+        MapRow,
+        static (accumulator, rows) => accumulator.SetAttributes(rows));
+
     public AttributesResultSetProcessor()
-        : base("Attributes", order: 2)
+        : base(Descriptor)
     {
     }
-
-    protected override ResultSetReader<OutsystemsAttributeRow> CreateReader(ResultSetProcessingContext context) => Reader;
-
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsAttributeRow> rows)
-        => accumulator.SetAttributes(rows);
 
     private static OutsystemsAttributeRow MapRow(DbRow row) => new(
         AttrId.Read(row),
