@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
@@ -85,128 +84,32 @@ public sealed class TighteningPolicy
         var foreignKeyEvaluator = new ForeignKeyEvaluator(options.ForeignKeys, foreignKeyReality, foreignKeyTargets);
         var analyzers = new ITighteningAnalyzer[] { nullabilityEvaluator, foreignKeyEvaluator };
 
-        var nullabilityBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, NullabilityDecision>();
-        var foreignKeyBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ForeignKeyDecision>();
-        var uniqueIndexBuilder = ImmutableDictionary.CreateBuilder<IndexCoordinate, UniqueIndexDecision>();
-        var columnModuleBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, string>();
-        var indexModuleBuilder = ImmutableDictionary.CreateBuilder<IndexCoordinate, string>();
-        var columnAnalysisBuilder = new Dictionary<ColumnCoordinate, ColumnAnalysisBuilder>();
+        var columnAggregator = new ColumnDecisionAggregator();
+        var columnAggregation = columnAggregator.Aggregate(
+            model,
+            attributeIndex,
+            columnProfiles,
+            uniqueProfiles,
+            foreignKeyReality,
+            foreignKeyTargets,
+            uniqueEvidence,
+            analyzers);
 
-        foreach (var entity in model.Modules.SelectMany(m => m.Entities))
-        {
-            foreach (var attribute in attributeIndex.GetAttributes(entity))
-            {
-                var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
-                var builder = new ColumnAnalysisBuilder(coordinate);
-                columnAnalysisBuilder[coordinate] = builder;
-
-                var columnProfile = columnProfiles.TryGetValue(coordinate, out var profile) ? profile : null;
-                var uniqueProfile = uniqueProfiles.TryGetValue(coordinate, out var uniqueCandidate) ? uniqueCandidate : null;
-                var foreignKey = foreignKeyReality.TryGetValue(coordinate, out var fk) ? fk : null;
-
-                var context = new EntityContext(
-                    entity,
-                    attribute,
-                    coordinate,
-                    columnProfile,
-                    uniqueProfile,
-                    foreignKey,
-                    foreignKeyTargets.GetTarget(coordinate),
-                    uniqueEvidence.SingleColumnClean.Contains(coordinate),
-                    uniqueEvidence.SingleColumnDuplicates.Contains(coordinate),
-                    uniqueEvidence.CompositeClean.Contains(coordinate),
-                    uniqueEvidence.CompositeDuplicates.Contains(coordinate));
-
-                foreach (var analyzer in analyzers)
-                {
-                    analyzer.Analyze(context, builder);
-                }
-
-                nullabilityBuilder[coordinate] = builder.Nullability;
-                columnModuleBuilder[coordinate] = entity.Module.Value;
-
-                if (builder.ForeignKey is not null)
-                {
-                    foreignKeyBuilder[coordinate] = builder.ForeignKey;
-                }
-            }
-
-            foreach (var index in entity.Indexes.Where(static i => i.IsUnique))
-            {
-                var indexAnalysis = uniqueStrategy.Evaluate(entity, index);
-                uniqueIndexBuilder[indexAnalysis.Index] = indexAnalysis.Decision;
-                indexModuleBuilder[indexAnalysis.Index] = entity.Module.Value;
-
-                foreach (var column in indexAnalysis.Columns)
-                {
-                    if (!columnAnalysisBuilder.TryGetValue(column, out var builder))
-                    {
-                        continue;
-                    }
-
-                    builder.AddUniqueDecision(indexAnalysis.Decision);
-
-                    if (!ShouldCreateUniqueOpportunity(indexAnalysis))
-                    {
-                        continue;
-                    }
-
-                    var summary = BuildUniqueSummary(indexAnalysis);
-                    var risk = ChangeRiskClassifier.ForUniqueIndex(indexAnalysis);
-                    var opportunity = Opportunity.Create(
-                        OpportunityType.UniqueIndex,
-                        "UNIQUE",
-                        summary,
-                        risk,
-                        indexAnalysis.Rationales,
-                        column: column,
-                        index: indexAnalysis.Index,
-                        disposition: OpportunityDisposition.NeedsRemediation);
-
-                    builder.AddOpportunity(opportunity);
-                }
-            }
-        }
+        var uniqueOrchestrator = new UniqueIndexDecisionOrchestrator(new OpportunityBuilder());
+        var uniqueAggregation = uniqueOrchestrator.Evaluate(model, uniqueStrategy, columnAggregation.ColumnAnalyses);
 
         var decisions = PolicyDecisionSet.Create(
-            nullabilityBuilder.ToImmutable(),
-            foreignKeyBuilder.ToImmutable(),
-            uniqueIndexBuilder.ToImmutable(),
+            columnAggregation.Nullability,
+            columnAggregation.ForeignKeys,
+            uniqueAggregation.Decisions,
             lookupResolution.Diagnostics,
-            columnModuleBuilder.ToImmutable(),
-            indexModuleBuilder.ToImmutable(),
+            columnAggregation.ColumnModules,
+            uniqueAggregation.IndexModules,
             options);
 
-        var report = OpportunitiesReport.Create(columnAnalysisBuilder.Values.Select(builder => builder.Build()));
+        var report = OpportunitiesReport.Create(columnAggregation.ColumnAnalyses.Values.Select(builder => builder.Build()));
 
         return PolicyAnalysisResult.Create(decisions, report);
     }
 
-    private static bool ShouldCreateUniqueOpportunity(UniqueIndexDecisionStrategy.UniqueIndexAnalysis analysis)
-        => !analysis.Decision.EnforceUnique || analysis.Decision.RequiresRemediation;
-
-    private static string BuildUniqueSummary(UniqueIndexDecisionStrategy.UniqueIndexAnalysis analysis)
-    {
-        if (analysis.Decision.RequiresRemediation)
-        {
-            return "Remediate data before enforcing the unique index.";
-        }
-
-        if (analysis.HasDuplicates)
-        {
-            return "Resolve duplicate values before enforcing the unique index.";
-        }
-
-        if (analysis.PolicyDisabled)
-        {
-            return "Enable policy support before enforcing the unique index.";
-        }
-
-        if (!analysis.HasEvidence)
-        {
-            return "Collect profiling evidence before enforcing the unique index.";
-        }
-
-        return "Review unique index enforcement before applying.";
-    }
 }
