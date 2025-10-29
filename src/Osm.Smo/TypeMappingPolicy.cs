@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text.Json;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Model;
 
@@ -13,14 +11,12 @@ public sealed class TypeMappingPolicy
     private const int DefaultUnicodeMaxLengthThreshold = 2000;
     private const int DefaultVarBinaryMaxLengthThreshold = 2000;
 
-    private static readonly Lazy<TypeMappingPolicy> DefaultInstance = new(() => LoadDefault());
-
     private readonly IReadOnlyDictionary<string, TypeMappingRule> _attributeRules;
     private readonly IReadOnlyDictionary<string, TypeMappingRule> _onDiskRules;
     private readonly IReadOnlyDictionary<string, TypeMappingRule> _externalRules;
     private readonly TypeMappingRule _defaultRule;
 
-    private TypeMappingPolicy(
+    internal TypeMappingPolicy(
         IReadOnlyDictionary<string, TypeMappingRule> attributeRules,
         TypeMappingRule defaultRule,
         IReadOnlyDictionary<string, TypeMappingRule> onDiskRules,
@@ -32,59 +28,6 @@ public sealed class TypeMappingPolicy
         _externalRules = externalRules ?? throw new ArgumentNullException(nameof(externalRules));
     }
 
-    public static TypeMappingPolicy Default => DefaultInstance.Value;
-
-    public static TypeMappingPolicy LoadDefault(
-        TypeMappingRuleDefinition? defaultOverride = null,
-        IReadOnlyDictionary<string, TypeMappingRuleDefinition>? overrides = null)
-    {
-        using var stream = typeof(TypeMappingPolicy).Assembly.GetManifestResourceStream("Osm.Smo.Resources.type-mapping.default.json");
-        if (stream is null)
-        {
-            throw new InvalidOperationException("Embedded type mapping resource was not found.");
-        }
-
-        return Load(stream, defaultOverride, overrides);
-    }
-
-    public static TypeMappingPolicy LoadFromFile(
-        string path,
-        TypeMappingRuleDefinition? defaultOverride = null,
-        IReadOnlyDictionary<string, TypeMappingRuleDefinition>? overrides = null)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            throw new ArgumentException("Type mapping path must be provided.", nameof(path));
-        }
-
-        using var stream = File.OpenRead(path);
-        return Load(stream, defaultOverride, overrides);
-    }
-
-    internal static TypeMappingPolicy Load(
-        Stream jsonStream,
-        TypeMappingRuleDefinition? defaultOverride,
-        IReadOnlyDictionary<string, TypeMappingRuleDefinition>? overrides)
-    {
-        if (jsonStream is null)
-        {
-            throw new ArgumentNullException(nameof(jsonStream));
-        }
-
-        var definition = TypeMappingPolicyDefinition.Parse(jsonStream);
-        if (defaultOverride is not null)
-        {
-            definition = definition with { Default = defaultOverride };
-        }
-
-        if (overrides is not null && overrides.Count > 0)
-        {
-            definition = definition.WithOverrides(overrides);
-        }
-
-        return definition.ToPolicy();
-    }
-
     public DataType Resolve(AttributeModel attribute)
     {
         if (attribute is null)
@@ -92,7 +35,7 @@ public sealed class TypeMappingPolicy
             throw new ArgumentNullException(nameof(attribute));
         }
 
-        var normalized = NormalizeKey(attribute.DataType);
+        var normalized = TypeMappingKeyNormalizer.Normalize(attribute.DataType);
         var preferRuntimeMapping = ShouldPreferRuntimeMapping(attribute, normalized);
 
         if (!preferRuntimeMapping && TryResolveFromOnDisk(attribute, attribute.OnDisk, out var onDiskType)
@@ -114,8 +57,6 @@ public sealed class TypeMappingPolicy
         return rule.Apply(TypeMappingRequest.ForAttribute(attribute));
     }
 
-    internal static string NormalizeKey(string? dataType) => NormalizeDataType(dataType ?? string.Empty);
-
     private static bool ShouldUseOnDisk(string normalizedDataType, DataType onDiskType)
     {
         if (normalizedDataType == "date" && onDiskType.SqlDataType != SqlDataType.Date)
@@ -134,7 +75,7 @@ public sealed class TypeMappingPolicy
             return false;
         }
 
-        var key = NormalizeKey(onDisk.SqlType);
+        var key = TypeMappingKeyNormalizer.Normalize(onDisk.SqlType);
         if (!_onDiskRules.TryGetValue(key, out var rule))
         {
             return false;
@@ -146,8 +87,8 @@ public sealed class TypeMappingPolicy
 
     private DataType ResolveExternal(AttributeModel attribute, string externalType)
     {
-        var (baseType, parameters) = ParseExternal(externalType);
-        var key = NormalizeKey(baseType);
+        var (baseType, parameters) = TypeMappingExternalTypeParser.Parse(externalType);
+        var key = TypeMappingKeyNormalizer.Normalize(baseType);
 
         if (_externalRules.TryGetValue(key, out var rule))
         {
@@ -155,29 +96,6 @@ public sealed class TypeMappingPolicy
         }
 
         return _defaultRule.Apply(TypeMappingRequest.ForExternal(attribute, parameters));
-    }
-
-    private static (string BaseType, IReadOnlyList<int> Parameters) ParseExternal(string externalType)
-    {
-        var trimmed = externalType.Trim();
-        var openParen = trimmed.IndexOf('(');
-        if (openParen < 0)
-        {
-            return (trimmed, Array.Empty<int>());
-        }
-
-        var baseType = trimmed[..openParen].Trim();
-        var closeParen = trimmed.IndexOf(')', openParen + 1);
-        var argsSegment = closeParen > openParen
-            ? trimmed[(openParen + 1)..closeParen]
-            : trimmed[(openParen + 1)..];
-
-        var parts = argsSegment
-            .Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(ParseExternalParameter)
-            .ToArray();
-
-        return (baseType, parts);
     }
 
     private static DataType ResolveUnicodeText(int? length, int? fallbackLength, int maxThreshold)
@@ -240,27 +158,6 @@ public sealed class TypeMappingPolicy
         return DataType.Decimal(resolvedPrecision, resolvedScale);
     }
 
-    private static string NormalizeDataType(string dataType)
-    {
-        if (string.IsNullOrWhiteSpace(dataType))
-        {
-            return string.Empty;
-        }
-
-        var trimmed = dataType.Trim();
-        if (trimmed.StartsWith("rt", StringComparison.OrdinalIgnoreCase) && trimmed.Length > 2)
-        {
-            trimmed = trimmed[2..];
-        }
-
-        trimmed = trimmed
-            .Replace("_", string.Empty, StringComparison.Ordinal)
-            .Replace("-", string.Empty, StringComparison.Ordinal)
-            .Replace(" ", string.Empty, StringComparison.Ordinal);
-
-        return trimmed.ToLowerInvariant();
-    }
-
     private static int ResolvePrecision(int? value, int defaultValue)
     {
         if (value is not null && value > 0)
@@ -291,22 +188,6 @@ public sealed class TypeMappingPolicy
         return normalizedDataType is "identifier" or "autonumber" or "longinteger";
     }
 
-    private static int ParseExternalParameter(string segment)
-    {
-        if (string.IsNullOrWhiteSpace(segment))
-        {
-            return 0;
-        }
-
-        var trimmed = segment.Trim();
-        if (trimmed.Equals("max", StringComparison.OrdinalIgnoreCase))
-        {
-            return -1;
-        }
-
-        return int.TryParse(trimmed, out var value) ? value : 0;
-    }
-
     private static DataType ResolveFixedSqlType(string? sqlType)
     {
         if (string.IsNullOrWhiteSpace(sqlType))
@@ -314,8 +195,8 @@ public sealed class TypeMappingPolicy
             return DataType.NVarCharMax;
         }
 
-        var (baseType, parameters) = ParseExternal(sqlType);
-        var key = NormalizeKey(baseType);
+        var (baseType, parameters) = TypeMappingExternalTypeParser.Parse(sqlType);
+        var key = TypeMappingKeyNormalizer.Normalize(baseType);
 
         if (FixedTypeResolvers.TryGetValue(key, out var resolver))
         {
@@ -369,14 +250,14 @@ public sealed class TypeMappingPolicy
     private static int NormalizeFixedLength(int value)
         => value <= 0 ? 1 : value;
 
-    private enum TypeResolutionSource
+    internal enum TypeResolutionSource
     {
         Attribute,
         OnDisk,
         External,
     }
 
-    private sealed class TypeMappingRequest
+    internal sealed class TypeMappingRequest
     {
         private TypeMappingRequest(AttributeModel attribute, AttributeOnDiskMetadata? onDisk, IReadOnlyList<int> parameters, TypeResolutionSource source)
         {
@@ -414,7 +295,7 @@ public sealed class TypeMappingPolicy
         }
     }
 
-    private sealed class TypeMappingRule
+    internal sealed class TypeMappingRule
     {
         private readonly TypeMappingStrategy _strategy;
         private readonly string? _sqlType;
@@ -430,7 +311,7 @@ public sealed class TypeMappingPolicy
         private readonly int? _precisionParameterIndex;
         private readonly int? _scaleParameterIndex;
 
-        public TypeMappingRule(TypeMappingRuleDefinition definition, TypeResolutionSource source)
+        internal TypeMappingRule(TypeMappingRuleDefinition definition, TypeResolutionSource source)
         {
             if (definition is null)
             {
@@ -452,7 +333,7 @@ public sealed class TypeMappingPolicy
             _scaleParameterIndex = definition.ScaleParameterIndex;
         }
 
-        public DataType Apply(TypeMappingRequest request)
+        internal DataType Apply(TypeMappingRequest request)
         {
             return _strategy switch
             {
@@ -549,99 +430,4 @@ public sealed class TypeMappingPolicy
         }
     }
 
-    private sealed record TypeMappingPolicyDefinition(
-        TypeMappingRuleDefinition Default,
-        IReadOnlyDictionary<string, TypeMappingRuleDefinition> AttributeMappings,
-        IReadOnlyDictionary<string, TypeMappingRuleDefinition> OnDiskMappings,
-        IReadOnlyDictionary<string, TypeMappingRuleDefinition> ExternalMappings)
-    {
-        public static TypeMappingPolicyDefinition Parse(Stream stream)
-        {
-            using var document = JsonDocument.Parse(stream);
-            var root = document.RootElement;
-
-            TypeMappingRuleDefinition defaultRule;
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("default", out var defaultElement))
-            {
-                if (!TypeMappingRuleDefinition.TryParse(defaultElement, out defaultRule, out var error))
-                {
-                    throw new InvalidOperationException($"Failed to parse default type mapping: {error}");
-                }
-            }
-            else
-            {
-                defaultRule = new TypeMappingRuleDefinition(TypeMappingStrategy.Fixed, "nvarchar(max)", null, null, null, null, null);
-            }
-
-            var attributeMappings = ParseSection(root, "mappings");
-            var onDiskMappings = ParseSection(root, "onDisk");
-            var externalMappings = ParseSection(root, "external");
-
-            return new TypeMappingPolicyDefinition(defaultRule, attributeMappings, onDiskMappings, externalMappings);
-        }
-
-        private static IReadOnlyDictionary<string, TypeMappingRuleDefinition> ParseSection(JsonElement root, string propertyName)
-        {
-            var mappings = new Dictionary<string, TypeMappingRuleDefinition>(StringComparer.OrdinalIgnoreCase);
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty(propertyName, out var section) && section.ValueKind == JsonValueKind.Object)
-            {
-                foreach (var property in section.EnumerateObject())
-                {
-                    if (!TypeMappingRuleDefinition.TryParse(property.Value, out var rule, out var error))
-                    {
-                        throw new InvalidOperationException($"Failed to parse type mapping for '{property.Name}' in '{propertyName}': {error}");
-                    }
-
-                    var key = NormalizeKey(property.Name);
-                    mappings[key] = rule;
-                }
-            }
-
-            return mappings;
-        }
-
-        public TypeMappingPolicyDefinition WithOverrides(IReadOnlyDictionary<string, TypeMappingRuleDefinition> overrides)
-        {
-            if (overrides is null || overrides.Count == 0)
-            {
-                return this;
-            }
-
-            var builder = new Dictionary<string, TypeMappingRuleDefinition>(AttributeMappings, StringComparer.OrdinalIgnoreCase);
-            foreach (var pair in overrides)
-            {
-                if (string.IsNullOrWhiteSpace(pair.Key))
-                {
-                    continue;
-                }
-
-                var key = NormalizeKey(pair.Key);
-                builder[key] = pair.Value;
-            }
-
-            return this with { AttributeMappings = builder };
-        }
-
-        public TypeMappingPolicy ToPolicy()
-        {
-            var externalCompiled = CompileRules(ExternalMappings, TypeResolutionSource.External);
-            var onDiskCompiled = CompileRules(OnDiskMappings, TypeResolutionSource.OnDisk);
-            var attributeCompiled = CompileRules(AttributeMappings, TypeResolutionSource.Attribute);
-            return new TypeMappingPolicy(attributeCompiled, new TypeMappingRule(Default, TypeResolutionSource.Attribute), onDiskCompiled, externalCompiled);
-        }
-
-        private static IReadOnlyDictionary<string, TypeMappingRule> CompileRules(
-            IReadOnlyDictionary<string, TypeMappingRuleDefinition> source,
-            TypeResolutionSource resolutionSource)
-        {
-            var compiled = new Dictionary<string, TypeMappingRule>(StringComparer.OrdinalIgnoreCase);
-            foreach (var pair in source)
-            {
-                var key = NormalizeKey(pair.Key);
-                compiled[key] = new TypeMappingRule(pair.Value, resolutionSource);
-            }
-
-            return compiled;
-        }
-    }
 }

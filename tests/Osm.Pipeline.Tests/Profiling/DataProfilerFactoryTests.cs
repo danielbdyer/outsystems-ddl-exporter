@@ -125,7 +125,7 @@ public sealed class DataProfilerFactoryTests
             ProfilePath: profilePath,
             SqlOptions: sqlOptions,
             SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy: TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicy: TypeMappingPolicyLoader.LoadDefault(),
             EvidenceCache: null,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
