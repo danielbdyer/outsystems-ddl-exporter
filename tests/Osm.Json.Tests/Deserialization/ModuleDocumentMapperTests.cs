@@ -51,10 +51,7 @@ public class ModuleDocumentMapperTests
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
-        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
-        var entityMapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
-        var moduleMapper = new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);
+        var moduleMapper = CreateModuleMapper(context);
 
         var moduleDocument = new ModuleDocument
         {
@@ -80,10 +77,7 @@ public class ModuleDocumentMapperTests
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
-        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
-        var entityMapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
-        var moduleMapper = new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);
+        var moduleMapper = CreateModuleMapper(context);
 
         var moduleDocument = new ModuleDocument
         {
@@ -116,10 +110,7 @@ public class ModuleDocumentMapperTests
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
-        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
-        var entityMapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
-        var moduleMapper = new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);
+        var moduleMapper = CreateModuleMapper(context);
 
         var moduleDocument = new ModuleDocument
         {
@@ -136,5 +127,23 @@ public class ModuleDocumentMapperTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("module.entities.nullEntry", error.Code);
         Assert.Contains("$['modules'][0]['entities'][0]", error.Message);
+    }
+    private static ModuleDocumentMapper CreateModuleMapper(DocumentMapperContext context)
+    {
+        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
+        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
+        var indexMapper = new IndexDocumentMapper(context, extendedPropertyMapper);
+        var relationshipMapper = new RelationshipDocumentMapper(context);
+        var triggerMapper = new TriggerDocumentMapper(context);
+        var temporalMetadataMapper = new TemporalMetadataMapper(context, extendedPropertyMapper);
+        var entityMapper = new EntityDocumentMapper(
+            context,
+            attributeMapper,
+            extendedPropertyMapper,
+            indexMapper,
+            relationshipMapper,
+            triggerMapper,
+            temporalMetadataMapper);
+        return new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);
     }
 }

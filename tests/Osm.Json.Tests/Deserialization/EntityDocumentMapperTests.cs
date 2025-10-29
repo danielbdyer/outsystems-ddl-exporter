@@ -51,9 +51,7 @@ public class EntityDocumentMapperTests
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
-        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
-        var mapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
+        var mapper = CreateEntityMapper(context);
 
         var document = new EntityDocument
         {
@@ -89,9 +87,7 @@ public class EntityDocumentMapperTests
         Assert.True(overridesResult.IsSuccess, string.Join(", ", overridesResult.Errors.Select(e => e.Message)));
 
         var context = CreateContext(warnings, overridesResult.Value);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
-        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
-        var mapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
+        var mapper = CreateEntityMapper(context);
 
         var document = new EntityDocument
         {
@@ -116,9 +112,7 @@ public class EntityDocumentMapperTests
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings, allowDuplicateAttributeLogicalNames: true);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
-        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
-        var mapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
+        var mapper = CreateEntityMapper(context);
 
         var duplicateAttribute = new AttributeDocument
         {
@@ -155,9 +149,7 @@ public class EntityDocumentMapperTests
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings, allowDuplicateAttributeColumnNames: true);
-        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
-        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
-        var mapper = new EntityDocumentMapper(context, attributeMapper, extendedPropertyMapper);
+        var mapper = CreateEntityMapper(context);
 
         var duplicateAttribute = new AttributeDocument
         {
@@ -187,5 +179,23 @@ public class EntityDocumentMapperTests
         var warning = Assert.Single(warnings, w => w.Contains("duplicate attribute column name 'id'", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("shared by attributes", warning);
         Assert.Contains("Path: $['modules'][0]['entities'][0]['attributes']", warning);
+    }
+
+    private static EntityDocumentMapper CreateEntityMapper(DocumentMapperContext context)
+    {
+        var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(context);
+        var attributeMapper = new AttributeDocumentMapper(context, extendedPropertyMapper);
+        var indexMapper = new IndexDocumentMapper(context, extendedPropertyMapper);
+        var relationshipMapper = new RelationshipDocumentMapper(context);
+        var triggerMapper = new TriggerDocumentMapper(context);
+        var temporalMetadataMapper = new TemporalMetadataMapper(context, extendedPropertyMapper);
+        return new EntityDocumentMapper(
+            context,
+            attributeMapper,
+            extendedPropertyMapper,
+            indexMapper,
+            relationshipMapper,
+            triggerMapper,
+            temporalMetadataMapper);
     }
 }
