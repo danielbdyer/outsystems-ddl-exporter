@@ -1,11 +1,37 @@
 {
   "Opportunities": [
     {
-      "Constraint": "NotNull",
-      "Risk": "SafeToApply",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Column qualifies for NOT NULL enforcement."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Rows=1200",
+        "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "COMPOSITE_UNIQUE_NO_NULLS",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Column": {
+          "Value": "COUNTRYID"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_A_ORDERALLOCATION",
-      "Name": "COUNTRYID",
+      "ConstraintName": "COUNTRYID",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_A_ORDERALLOCATION]\n    ALTER COLUMN [COUNTRYID] Identifier NOT NULL;"
       ],
@@ -14,14 +40,7 @@
         "DATA_NO_NULLS",
         "MANDATORY"
       ],
-      "Evidence": [
-        "Rows=1200",
-        "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "COMPOSITE_UNIQUE_NO_NULLS",
-        "MANDATORY",
-        "DATA_NO_NULLS"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -65,11 +84,38 @@
       "HasStatements": true
     },
     {
-      "Constraint": "NotNull",
-      "Risk": "SafeToApply",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Column qualifies for NOT NULL enforcement."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Rows=1200",
+        "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PK",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_A_ORDERALLOCATION",
-      "Name": "ID",
+      "ConstraintName": "ID",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_A_ORDERALLOCATION]\n    ALTER COLUMN [ID] Identifier NOT NULL;"
       ],
@@ -79,15 +125,7 @@
         "PHYSICAL_NOT_NULL",
         "PK"
       ],
-      "Evidence": [
-        "Rows=1200",
-        "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "PK",
-        "PHYSICAL_NOT_NULL",
-        "MANDATORY",
-        "DATA_NO_NULLS"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -131,11 +169,37 @@
       "HasStatements": true
     },
     {
-      "Constraint": "NotNull",
-      "Risk": "SafeToApply",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Column qualifies for NOT NULL enforcement."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Rows=1200",
+        "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "COMPOSITE_UNIQUE_NO_NULLS",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Column": {
+          "Value": "DOCUMENTID"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_A_ORDERALLOCATION",
-      "Name": "DOCUMENTID",
+      "ConstraintName": "DOCUMENTID",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_A_ORDERALLOCATION]\n    ALTER COLUMN [DOCUMENTID] Identifier NOT NULL;"
       ],
@@ -144,14 +208,7 @@
         "DATA_NO_NULLS",
         "MANDATORY"
       ],
-      "Evidence": [
-        "Rows=1200",
-        "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "COMPOSITE_UNIQUE_NO_NULLS",
-        "MANDATORY",
-        "DATA_NO_NULLS"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -195,22 +252,41 @@
       "HasStatements": true
     },
     {
-      "Constraint": "Unique",
-      "Risk": "SafeToApply",
+      "Type": "UniqueIndex",
+      "Title": "UNIQUE",
+      "Summary": "Enforce the unique index automatically.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Unique index can be enforced automatically."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Composite duplicates=False",
+        "Composite duplicates=False"
+      ],
+      "Column": null,
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Index": {
+          "Value": "UX_ORDERALLOC_COUNTRY_DOCUMENT"
+        }
+      },
       "Schema": "dbo",
       "Table": "OSUSR_A_ORDERALLOCATION",
-      "Name": "UX_ORDERALLOC_COUNTRY_DOCUMENT",
+      "ConstraintName": "UX_ORDERALLOC_COUNTRY_DOCUMENT",
       "Statements": [
         "CREATE UNIQUE NONCLUSTERED INDEX [UX_ORDERALLOC_COUNTRY_DOCUMENT] ON [dbo].[OSUSR_A_ORDERALLOCATION] ([COUNTRYID] ASC, [DOCUMENTID] ASC);"
       ],
       "Rationales": [
         "COMPOSITE_UNIQUE_NO_NULLS"
       ],
-      "Evidence": [
-        "Composite duplicates=False",
-        "Composite duplicates=False"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -286,13 +362,15 @@
       "HasStatements": true
     }
   ],
+  "DispositionCounts": {
+    "ReadyToApply": 4
+  },
+  "TypeCounts": {
+    "Nullability": 3,
+    "UniqueIndex": 1
+  },
   "RiskCounts": {
-    "SafeToApply": 4
+    "Low": 4
   },
-  "ConstraintCounts": {
-    "NotNull": 3,
-    "Unique": 1
-  },
-  "GeneratedAtUtc": "2025-10-22T07:09:15.2293512+00:00",
-  "TotalCount": 4
+  "GeneratedAtUtc": "2025-10-22T07:09:15.2293512+00:00"
 }

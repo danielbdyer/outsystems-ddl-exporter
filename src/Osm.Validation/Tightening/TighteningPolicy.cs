@@ -6,6 +6,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
+using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Validation.Tightening;
 
@@ -153,13 +154,14 @@ public sealed class TighteningPolicy
                     var summary = BuildUniqueSummary(indexAnalysis);
                     var risk = ChangeRiskClassifier.ForUniqueIndex(indexAnalysis);
                     var opportunity = Opportunity.Create(
-                        OpportunityCategory.UniqueIndex,
+                        OpportunityType.UniqueIndex,
                         "UNIQUE",
                         summary,
                         risk,
                         indexAnalysis.Rationales,
                         column: column,
-                        index: indexAnalysis.Index);
+                        index: indexAnalysis.Index,
+                        disposition: OpportunityDisposition.NeedsRemediation);
 
                     builder.AddOpportunity(opportunity);
                 }

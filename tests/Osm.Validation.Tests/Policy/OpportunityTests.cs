@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 using Xunit;
 
 namespace Osm.Validation.Tests.Policy;
@@ -15,7 +16,7 @@ public sealed class OpportunityTests
         var evidence = new List<string> { "B", "A", "B", "" };
 
         var opportunity = Opportunity.Create(
-            OpportunityCategory.Nullability,
+            OpportunityType.Nullability,
             "NOT NULL",
             "Collect more evidence before tightening.",
             ChangeRisk.Moderate("Missing profiling evidence."),

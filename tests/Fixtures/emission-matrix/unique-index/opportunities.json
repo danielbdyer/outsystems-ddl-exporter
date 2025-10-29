@@ -1,11 +1,38 @@
 {
   "Opportunities": [
     {
-      "Constraint": "NotNull",
-      "Risk": "SafeToApply",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Column qualifies for NOT NULL enforcement."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Rows=100",
+        "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PK",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_U_USER"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_U_USER",
-      "Name": "ID",
+      "ConstraintName": "ID",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_U_USER]\n    ALTER COLUMN [ID] Identifier NOT NULL;"
       ],
@@ -15,15 +42,7 @@
         "PHYSICAL_NOT_NULL",
         "PK"
       ],
-      "Evidence": [
-        "Rows=100",
-        "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "PK",
-        "PHYSICAL_NOT_NULL",
-        "MANDATORY",
-        "DATA_NO_NULLS"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -67,11 +86,37 @@
       "HasStatements": true
     },
     {
-      "Constraint": "NotNull",
-      "Risk": "SafeToApply",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Column qualifies for NOT NULL enforcement."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Rows=100",
+        "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "UNIQUE_NO_NULLS",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_U_USER"
+        },
+        "Column": {
+          "Value": "EMAIL"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_U_USER",
-      "Name": "EMAIL",
+      "ConstraintName": "EMAIL",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_U_USER]\n    ALTER COLUMN [EMAIL] Text NOT NULL;"
       ],
@@ -80,14 +125,7 @@
         "MANDATORY",
         "UNIQUE_NO_NULLS"
       ],
-      "Evidence": [
-        "Rows=100",
-        "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "UNIQUE_NO_NULLS",
-        "MANDATORY",
-        "DATA_NO_NULLS"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -135,11 +173,33 @@
       "HasStatements": true
     },
     {
-      "Constraint": "Unique",
-      "Risk": "SafeToApply",
+      "Type": "UniqueIndex",
+      "Title": "UNIQUE",
+      "Summary": "Enforce the unique index automatically.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Unique index can be enforced automatically."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Unique duplicates=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)"
+      ],
+      "Column": null,
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_U_USER"
+        },
+        "Index": {
+          "Value": "UX_USER_EMAIL"
+        }
+      },
       "Schema": "dbo",
       "Table": "OSUSR_U_USER",
-      "Name": "UX_USER_EMAIL",
+      "ConstraintName": "UX_USER_EMAIL",
       "Statements": [
         "CREATE UNIQUE NONCLUSTERED INDEX [UX_USER_EMAIL] ON [dbo].[OSUSR_U_USER] ([EMAIL] ASC);"
       ],
@@ -147,10 +207,7 @@
         "PHYSICAL_UNIQUE_KEY",
         "UNIQUE_NO_NULLS"
       ],
-      "Evidence": [
-        "Unique duplicates=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -198,13 +255,15 @@
       "HasStatements": true
     }
   ],
+  "DispositionCounts": {
+    "ReadyToApply": 3
+  },
+  "TypeCounts": {
+    "Nullability": 2,
+    "UniqueIndex": 1
+  },
   "RiskCounts": {
-    "SafeToApply": 3
+    "Low": 3
   },
-  "ConstraintCounts": {
-    "NotNull": 2,
-    "Unique": 1
-  },
-  "GeneratedAtUtc": "2025-10-28T03:15:21.2116002+00:00",
-  "TotalCount": 3
+  "GeneratedAtUtc": "2025-10-28T03:15:21.2116002+00:00"
 }

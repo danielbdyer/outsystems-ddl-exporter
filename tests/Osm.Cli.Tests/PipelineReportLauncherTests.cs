@@ -11,8 +11,8 @@ using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
 using Opportunity = Osm.Validation.Tightening.Opportunities.Opportunity;
-using ChangeRisk = Osm.Validation.Tightening.Opportunities.ChangeRisk;
-using ConstraintType = Osm.Validation.Tightening.Opportunities.ConstraintType;
+using OpportunityType = Osm.Validation.Tightening.Opportunities.OpportunityType;
+using OpportunityDisposition = Osm.Validation.Tightening.Opportunities.OpportunityDisposition;
 using Tests.Support;
 using Xunit;
 
@@ -165,8 +165,9 @@ public class PipelineReportLauncherTests
 
         var opportunities = new OpportunitiesReport(
             ImmutableArray<Opportunity>.Empty,
-            ImmutableDictionary<ChangeRisk, int>.Empty,
-            ImmutableDictionary<ConstraintType, int>.Empty,
+            ImmutableDictionary<OpportunityDisposition, int>.Empty,
+            ImmutableDictionary<OpportunityType, int>.Empty,
+            ImmutableDictionary<RiskLevel, int>.Empty,
             DateTimeOffset.UnixEpoch);
 
         var opportunitiesPath = Path.Combine(output.Path, "opportunities.json");

@@ -55,10 +55,10 @@ public sealed class OpportunityLogWriter
         var json = JsonSerializer.Serialize(report, JsonOptions);
         await File.WriteAllTextAsync(reportPath, json, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
-        var safeScript = BuildSql(report.Opportunities.Where(o => o.Risk == ChangeRisk.SafeToApply));
+        var safeScript = BuildSql(report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.ReadyToApply));
         await File.WriteAllTextAsync(safePath, safeScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
-        var remediationScript = BuildSql(report.Opportunities.Where(o => o.Risk == ChangeRisk.NeedsRemediation));
+        var remediationScript = BuildSql(report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.NeedsRemediation));
         await File.WriteAllTextAsync(remediationPath, remediationScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
         return new OpportunityArtifacts(reportPath, safePath, safeScript, remediationPath, remediationScript);
@@ -73,15 +73,15 @@ public sealed class OpportunityLogWriter
         {
             any = true;
             builder.Append("-- ");
-            builder.Append(opportunity.Constraint);
+            builder.Append(opportunity.Type);
             builder.Append(' ');
             builder.Append(opportunity.Schema);
             builder.Append('.');
             builder.Append(opportunity.Table);
             builder.Append(" (");
-            builder.Append(opportunity.Name);
+            builder.Append(opportunity.ConstraintName);
             builder.Append(") Risk=");
-            builder.AppendLine(opportunity.Risk.ToString());
+            builder.AppendLine(opportunity.Risk.Label);
 
             if (!opportunity.Rationales.IsDefaultOrEmpty)
             {

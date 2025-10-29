@@ -1,11 +1,37 @@
 {
   "Opportunities": [
     {
-      "Constraint": "NotNull",
-      "Risk": "SafeToApply",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Column qualifies for NOT NULL enforcement."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Rows=1024",
+        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "VALIDFROM"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_M_TEMPORALORDER",
-      "Name": "VALIDFROM",
+      "ConstraintName": "VALIDFROM",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]\n    ALTER COLUMN [VALIDFROM] datetime2 NOT NULL;"
       ],
@@ -14,14 +40,7 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL"
       ],
-      "Evidence": [
-        "Rows=1024",
-        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "PHYSICAL_NOT_NULL",
-        "MANDATORY",
-        "DATA_NO_NULLS"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -65,11 +84,38 @@
       "HasStatements": true
     },
     {
-      "Constraint": "NotNull",
-      "Risk": "SafeToApply",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Column qualifies for NOT NULL enforcement."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Rows=250",
+        "Nulls=0 (Outcome=Succeeded, Sample=250, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PK",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_AUDIT"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_M_AUDIT",
-      "Name": "ID",
+      "ConstraintName": "ID",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_M_AUDIT]\n    ALTER COLUMN [ID] int NOT NULL;"
       ],
@@ -79,15 +125,7 @@
         "PHYSICAL_NOT_NULL",
         "PK"
       ],
-      "Evidence": [
-        "Rows=250",
-        "Nulls=0 (Outcome=Succeeded, Sample=250, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "PK",
-        "PHYSICAL_NOT_NULL",
-        "MANDATORY",
-        "DATA_NO_NULLS"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -131,11 +169,37 @@
       "HasStatements": true
     },
     {
-      "Constraint": "NotNull",
-      "Risk": "SafeToApply",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Column qualifies for NOT NULL enforcement."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Rows=1024",
+        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "VALIDTO"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_M_TEMPORALORDER",
-      "Name": "VALIDTO",
+      "ConstraintName": "VALIDTO",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]\n    ALTER COLUMN [VALIDTO] datetime2 NOT NULL;"
       ],
@@ -144,14 +208,7 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL"
       ],
-      "Evidence": [
-        "Rows=1024",
-        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "PHYSICAL_NOT_NULL",
-        "MANDATORY",
-        "DATA_NO_NULLS"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -195,11 +252,38 @@
       "HasStatements": true
     },
     {
-      "Constraint": "NotNull",
-      "Risk": "SafeToApply",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Column qualifies for NOT NULL enforcement."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Rows=1024",
+        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "STATUS"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_M_TEMPORALORDER",
-      "Name": "STATUS",
+      "ConstraintName": "STATUS",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]\n    ALTER COLUMN [STATUS] nvarchar NOT NULL;"
       ],
@@ -209,15 +293,7 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL"
       ],
-      "Evidence": [
-        "Rows=1024",
-        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "PHYSICAL_NOT_NULL",
-        "MANDATORY",
-        "DATA_NO_NULLS",
-        "DEFAULT_PRESENT"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -261,11 +337,38 @@
       "HasStatements": true
     },
     {
-      "Constraint": "NotNull",
-      "Risk": "SafeToApply",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Column qualifies for NOT NULL enforcement."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "Rows=1024",
+        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PK",
+        "PHYSICAL_NOT_NULL",
+        "MANDATORY",
+        "DATA_NO_NULLS"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_M_TEMPORALORDER",
-      "Name": "ID",
+      "ConstraintName": "ID",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]\n    ALTER COLUMN [ID] int NOT NULL;"
       ],
@@ -275,15 +378,7 @@
         "PHYSICAL_NOT_NULL",
         "PK"
       ],
-      "Evidence": [
-        "Rows=1024",
-        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "PK",
-        "PHYSICAL_NOT_NULL",
-        "MANDATORY",
-        "DATA_NO_NULLS"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -327,11 +422,34 @@
       "HasStatements": true
     },
     {
-      "Constraint": "ForeignKey",
-      "Risk": "SafeToApply",
+      "Type": "ForeignKey",
+      "Title": "FOREIGN KEY",
+      "Summary": "Create foreign key constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Foreign key creation is safe to apply."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "HasConstraint=True",
+        "HasOrphans=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "AUDITID"
+        }
+      },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_M_TEMPORALORDER",
-      "Name": "AUDITID",
+      "ConstraintName": "AUDITID",
       "Statements": [
         "ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER] WITH CHECK ADD CONSTRAINT [FK_TemporalOrder_Audit_AuditId] FOREIGN KEY ([AUDITID]) REFERENCES [dbo].[OSUSR_M_AUDIT] ([ID]);",
         "ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER] CHECK CONSTRAINT [FK_TemporalOrder_Audit_AuditId];"
@@ -339,11 +457,7 @@
       "Rationales": [
         "DB_CONSTRAINT_PRESENT"
       ],
-      "Evidence": [
-        "HasConstraint=True",
-        "HasOrphans=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)"
-      ],
-      "Metrics": {
+      "EvidenceSummary": {
         "RequiresRemediation": false,
         "EvidenceAvailable": true,
         "DataClean": true,
@@ -383,13 +497,15 @@
       "HasStatements": true
     }
   ],
-  "RiskCounts": {
-    "SafeToApply": 6
+  "DispositionCounts": {
+    "ReadyToApply": 6
   },
-  "ConstraintCounts": {
-    "NotNull": 5,
+  "TypeCounts": {
+    "Nullability": 5,
     "ForeignKey": 1
   },
-  "GeneratedAtUtc": "2025-10-22T07:08:25.3085159+00:00",
-  "TotalCount": 6
+  "RiskCounts": {
+    "Low": 6
+  },
+  "GeneratedAtUtc": "2025-10-22T07:08:25.3085159+00:00"
 }

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Osm.Validation.Tightening;
+namespace Osm.Validation.Tightening.Opportunities;
 
 public sealed record OpportunityMetrics(
     int Total,

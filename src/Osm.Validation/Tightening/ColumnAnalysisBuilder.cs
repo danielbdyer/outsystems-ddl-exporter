@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Validation.Tightening;
 

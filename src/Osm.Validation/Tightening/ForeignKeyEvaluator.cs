@@ -5,6 +5,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
+using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Validation.Tightening;
 
@@ -65,12 +66,13 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
             evaluation.CrossCatalogBlocked);
 
         var opportunity = Opportunity.Create(
-            OpportunityCategory.ForeignKey,
+            OpportunityType.ForeignKey,
             "FOREIGN KEY",
             summary,
             risk,
             evaluation.Decision.Rationales,
-            column: context.Column);
+            column: context.Column,
+            disposition: OpportunityDisposition.NeedsRemediation);
 
         builder.AddOpportunity(opportunity);
     }
