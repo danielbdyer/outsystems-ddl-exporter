@@ -2,7 +2,7 @@ CREATE TABLE [dbo].[Audit] (
     [Id]      BIGINT         IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_Audit_Id]
             PRIMARY KEY CLUSTERED,
-    [Details] NVARCHAR (200)
+    [Details] NVARCHAR (200) NULL
 )
 
 GO

@@ -8,11 +8,11 @@
   "ForeignKeyCount": 0,
   "ForeignKeysCreatedCount": 0,
   "ColumnRationales": {
-    "PK": 1,
+    "MANDATORY": 3,
     "COMPOSITE_UNIQUE_NO_NULLS": 2,
-    "PHYSICAL_NOT_NULL": 1,
     "DATA_NO_NULLS": 3,
-    "MANDATORY": 3
+    "PHYSICAL_NOT_NULL": 1,
+    "PK": 1
   },
   "UniqueIndexRationales": {
     "COMPOSITE_UNIQUE_NO_NULLS": 1
@@ -29,11 +29,11 @@
       "ForeignKeyCount": 0,
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
-        "PK": 1,
+        "MANDATORY": 3,
         "COMPOSITE_UNIQUE_NO_NULLS": 2,
-        "PHYSICAL_NOT_NULL": 1,
         "DATA_NO_NULLS": 3,
-        "MANDATORY": 3
+        "PHYSICAL_NOT_NULL": 1,
+        "PK": 1
       },
       "UniqueIndexRationales": {
         "COMPOSITE_UNIQUE_NO_NULLS": 1
@@ -59,6 +59,10 @@
       "Source": 0
     },
     "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
       "Value": false,
       "Source": 0
     },

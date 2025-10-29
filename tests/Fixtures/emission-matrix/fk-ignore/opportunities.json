@@ -7,16 +7,15 @@
       "Risk": {
         "Level": "Low",
         "Label": "Low",
-        "Description": "Column qualifies for NOT NULL enforcement."
+        "Description": "Policy determined the column is safe to enforce as NOT NULL."
       },
       "Disposition": "ReadyToApply",
       "Evidence": [
-        "Rows=200",
-        "Nulls=0 (Outcome=Succeeded, Sample=200, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "PK",
-        "PHYSICAL_NOT_NULL",
         "MANDATORY",
-        "DATA_NO_NULLS"
+        "Nulls=0 (Outcome=Succeeded, Sample=200, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PHYSICAL_NOT_NULL",
+        "PK",
+        "Rows=200"
       ],
       "Column": {
         "Schema": {
@@ -92,16 +91,15 @@
       "Risk": {
         "Level": "Low",
         "Label": "Low",
-        "Description": "Column qualifies for NOT NULL enforcement."
+        "Description": "Policy determined the column is safe to enforce as NOT NULL."
       },
       "Disposition": "ReadyToApply",
       "Evidence": [
-        "Rows=4000",
-        "Nulls=0 (Outcome=Succeeded, Sample=4000, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "PK",
-        "PHYSICAL_NOT_NULL",
         "MANDATORY",
-        "DATA_NO_NULLS"
+        "Nulls=0 (Outcome=Succeeded, Sample=4000, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PHYSICAL_NOT_NULL",
+        "PK",
+        "Rows=4000"
       ],
       "Column": {
         "Schema": {
@@ -180,5 +178,6 @@
   "RiskCounts": {
     "Low": 2
   },
-  "GeneratedAtUtc": "2025-10-22T07:09:24.8061413+00:00"
+  "GeneratedAtUtc": "2025-10-29T12:31:22.9334618+00:00",
+  "TotalCount": 2
 }

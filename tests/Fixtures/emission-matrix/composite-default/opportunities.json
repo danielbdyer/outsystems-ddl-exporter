@@ -7,99 +7,15 @@
       "Risk": {
         "Level": "Low",
         "Label": "Low",
-        "Description": "Column qualifies for NOT NULL enforcement."
+        "Description": "Policy determined the column is safe to enforce as NOT NULL."
       },
       "Disposition": "ReadyToApply",
       "Evidence": [
-        "Rows=1200",
-        "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "COMPOSITE_UNIQUE_NO_NULLS",
         "MANDATORY",
-        "DATA_NO_NULLS"
-      ],
-      "Column": {
-        "Schema": {
-          "Value": "dbo"
-        },
-        "Table": {
-          "Value": "OSUSR_A_ORDERALLOCATION"
-        },
-        "Column": {
-          "Value": "COUNTRYID"
-        }
-      },
-      "Index": null,
-      "Schema": "dbo",
-      "Table": "OSUSR_A_ORDERALLOCATION",
-      "ConstraintName": "COUNTRYID",
-      "Statements": [
-        "ALTER TABLE [dbo].[OSUSR_A_ORDERALLOCATION]\n    ALTER COLUMN [COUNTRYID] Identifier NOT NULL;"
-      ],
-      "Rationales": [
-        "COMPOSITE_UNIQUE_NO_NULLS",
-        "DATA_NO_NULLS",
-        "MANDATORY"
-      ],
-      "EvidenceSummary": {
-        "RequiresRemediation": false,
-        "EvidenceAvailable": true,
-        "DataClean": true,
-        "HasDuplicates": null,
-        "HasOrphans": null
-      },
-      "Columns": [
-        {
-          "Coordinate": {
-            "Schema": {
-              "Value": "dbo"
-            },
-            "Table": {
-              "Value": "OSUSR_A_ORDERALLOCATION"
-            },
-            "Column": {
-              "Value": "COUNTRYID"
-            }
-          },
-          "Module": "M",
-          "Entity": "OrderAllocation",
-          "Attribute": "CountryId",
-          "DataType": "Identifier",
-          "SqlType": null,
-          "PhysicalNullable": null,
-          "PhysicalUnique": null,
-          "RowCount": 1200,
-          "NullCount": 0,
-          "NullProbeStatus": {
-            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
-            "SampleSize": 1200,
-            "Outcome": "Succeeded"
-          },
-          "HasDuplicates": null,
-          "UniqueProbeStatus": null,
-          "HasOrphans": null,
-          "HasDatabaseConstraint": false,
-          "DeleteRule": null
-        }
-      ],
-      "HasStatements": true
-    },
-    {
-      "Type": "Nullability",
-      "Title": "NOT NULL",
-      "Summary": "Enforce NOT NULL constraint.",
-      "Risk": {
-        "Level": "Low",
-        "Label": "Low",
-        "Description": "Column qualifies for NOT NULL enforcement."
-      },
-      "Disposition": "ReadyToApply",
-      "Evidence": [
-        "Rows=1200",
         "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
-        "PK",
         "PHYSICAL_NOT_NULL",
-        "MANDATORY",
-        "DATA_NO_NULLS"
+        "PK",
+        "Rows=1200"
       ],
       "Column": {
         "Schema": {
@@ -175,15 +91,98 @@
       "Risk": {
         "Level": "Low",
         "Label": "Low",
-        "Description": "Column qualifies for NOT NULL enforcement."
+        "Description": "Policy determined the column is safe to enforce as NOT NULL."
       },
       "Disposition": "ReadyToApply",
       "Evidence": [
-        "Rows=1200",
-        "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
         "COMPOSITE_UNIQUE_NO_NULLS",
+        "DATA_NO_NULLS",
         "MANDATORY",
-        "DATA_NO_NULLS"
+        "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "Rows=1200"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Column": {
+          "Value": "COUNTRYID"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "ConstraintName": "COUNTRYID",
+      "Statements": [
+        "ALTER TABLE [dbo].[OSUSR_A_ORDERALLOCATION]\n    ALTER COLUMN [COUNTRYID] Identifier NOT NULL;"
+      ],
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS",
+        "DATA_NO_NULLS",
+        "MANDATORY"
+      ],
+      "EvidenceSummary": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_A_ORDERALLOCATION"
+            },
+            "Column": {
+              "Value": "COUNTRYID"
+            }
+          },
+          "Module": "M",
+          "Entity": "OrderAllocation",
+          "Attribute": "CountryId",
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 1200,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 1200,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null
+        }
+      ],
+      "HasStatements": true
+    },
+    {
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Policy determined the column is safe to enforce as NOT NULL."
+      },
+      "Disposition": "ReadyToApply",
+      "Evidence": [
+        "COMPOSITE_UNIQUE_NO_NULLS",
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "Nulls=0 (Outcome=Succeeded, Sample=1200, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "Rows=1200"
       ],
       "Column": {
         "Schema": {
@@ -250,127 +249,17 @@
         }
       ],
       "HasStatements": true
-    },
-    {
-      "Type": "UniqueIndex",
-      "Title": "UNIQUE",
-      "Summary": "Enforce the unique index automatically.",
-      "Risk": {
-        "Level": "Low",
-        "Label": "Low",
-        "Description": "Unique index can be enforced automatically."
-      },
-      "Disposition": "ReadyToApply",
-      "Evidence": [
-        "Composite duplicates=False",
-        "Composite duplicates=False"
-      ],
-      "Column": null,
-      "Index": {
-        "Schema": {
-          "Value": "dbo"
-        },
-        "Table": {
-          "Value": "OSUSR_A_ORDERALLOCATION"
-        },
-        "Index": {
-          "Value": "UX_ORDERALLOC_COUNTRY_DOCUMENT"
-        }
-      },
-      "Schema": "dbo",
-      "Table": "OSUSR_A_ORDERALLOCATION",
-      "ConstraintName": "UX_ORDERALLOC_COUNTRY_DOCUMENT",
-      "Statements": [
-        "CREATE UNIQUE NONCLUSTERED INDEX [UX_ORDERALLOC_COUNTRY_DOCUMENT] ON [dbo].[OSUSR_A_ORDERALLOCATION] ([COUNTRYID] ASC, [DOCUMENTID] ASC);"
-      ],
-      "Rationales": [
-        "COMPOSITE_UNIQUE_NO_NULLS"
-      ],
-      "EvidenceSummary": {
-        "RequiresRemediation": false,
-        "EvidenceAvailable": true,
-        "DataClean": true,
-        "HasDuplicates": false,
-        "HasOrphans": null
-      },
-      "Columns": [
-        {
-          "Coordinate": {
-            "Schema": {
-              "Value": "dbo"
-            },
-            "Table": {
-              "Value": "OSUSR_A_ORDERALLOCATION"
-            },
-            "Column": {
-              "Value": "COUNTRYID"
-            }
-          },
-          "Module": "M",
-          "Entity": "OrderAllocation",
-          "Attribute": "CountryId",
-          "DataType": "Identifier",
-          "SqlType": null,
-          "PhysicalNullable": null,
-          "PhysicalUnique": null,
-          "RowCount": 1200,
-          "NullCount": 0,
-          "NullProbeStatus": {
-            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
-            "SampleSize": 1200,
-            "Outcome": "Succeeded"
-          },
-          "HasDuplicates": null,
-          "UniqueProbeStatus": null,
-          "HasOrphans": null,
-          "HasDatabaseConstraint": false,
-          "DeleteRule": null
-        },
-        {
-          "Coordinate": {
-            "Schema": {
-              "Value": "dbo"
-            },
-            "Table": {
-              "Value": "OSUSR_A_ORDERALLOCATION"
-            },
-            "Column": {
-              "Value": "DOCUMENTID"
-            }
-          },
-          "Module": "M",
-          "Entity": "OrderAllocation",
-          "Attribute": "DocumentId",
-          "DataType": "Identifier",
-          "SqlType": null,
-          "PhysicalNullable": null,
-          "PhysicalUnique": null,
-          "RowCount": 1200,
-          "NullCount": 0,
-          "NullProbeStatus": {
-            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
-            "SampleSize": 1200,
-            "Outcome": "Succeeded"
-          },
-          "HasDuplicates": null,
-          "UniqueProbeStatus": null,
-          "HasOrphans": null,
-          "HasDatabaseConstraint": false,
-          "DeleteRule": null
-        }
-      ],
-      "HasStatements": true
     }
   ],
   "DispositionCounts": {
-    "ReadyToApply": 4
+    "ReadyToApply": 3
   },
   "TypeCounts": {
-    "Nullability": 3,
-    "UniqueIndex": 1
+    "Nullability": 3
   },
   "RiskCounts": {
-    "Low": 4
+    "Low": 3
   },
-  "GeneratedAtUtc": "2025-10-22T07:09:15.2293512+00:00"
+  "GeneratedAtUtc": "2025-10-29T12:31:12.2247542+00:00",
+  "TotalCount": 3
 }
