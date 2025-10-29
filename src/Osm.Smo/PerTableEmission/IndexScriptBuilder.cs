@@ -211,11 +211,14 @@ internal sealed class IndexScriptBuilder
             });
         }
 
-        options.Add(new IgnoreDupKeyIndexOption
+        if (metadata.IgnoreDuplicateKey)
         {
-            OptionKind = IndexOptionKind.IgnoreDupKey,
-            OptionState = metadata.IgnoreDuplicateKey ? OptionState.On : OptionState.Off,
-        });
+            options.Add(new IgnoreDupKeyIndexOption
+            {
+                OptionKind = IndexOptionKind.IgnoreDupKey,
+                OptionState = OptionState.On,
+            });
+        }
 
         if (metadata.StatisticsNoRecompute)
         {
@@ -226,17 +229,23 @@ internal sealed class IndexScriptBuilder
             });
         }
 
-        options.Add(new IndexStateOption
+        if (!metadata.AllowRowLocks)
         {
-            OptionKind = IndexOptionKind.AllowRowLocks,
-            OptionState = metadata.AllowRowLocks ? OptionState.On : OptionState.Off,
-        });
+            options.Add(new IndexStateOption
+            {
+                OptionKind = IndexOptionKind.AllowRowLocks,
+                OptionState = OptionState.Off,
+            });
+        }
 
-        options.Add(new IndexStateOption
+        if (!metadata.AllowPageLocks)
         {
-            OptionKind = IndexOptionKind.AllowPageLocks,
-            OptionState = metadata.AllowPageLocks ? OptionState.On : OptionState.Off,
-        });
+            options.Add(new IndexStateOption
+            {
+                OptionKind = IndexOptionKind.AllowPageLocks,
+                OptionState = OptionState.Off,
+            });
+        }
 
         foreach (var compression in BuildCompressionOptions(metadata.DataCompression))
         {
@@ -306,7 +315,7 @@ internal sealed class IndexScriptBuilder
 
     private FileGroupOrPartitionScheme? BuildFileGroupOrPartitionScheme(SmoIndexMetadata metadata, SmoFormatOptions format)
     {
-        if (metadata.DataSpace is null)
+        if (!ShouldEmitDataSpaceClause(metadata))
         {
             return null;
         }
@@ -328,6 +337,33 @@ internal sealed class IndexScriptBuilder
         }
 
         return clause;
+    }
+
+    private static bool ShouldEmitDataSpaceClause(SmoIndexMetadata metadata)
+    {
+        if (metadata.DataSpace is not { } dataSpace)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(dataSpace.Name))
+        {
+            return false;
+        }
+
+        if (string.Equals(dataSpace.Name, "PRIMARY", StringComparison.OrdinalIgnoreCase) &&
+            metadata.PartitionColumns.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        if (string.Equals(dataSpace.Type, "PARTITION_SCHEME", StringComparison.OrdinalIgnoreCase) &&
+            metadata.PartitionColumns.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static IEnumerable<(int Start, int End)> CollapseRanges(IEnumerable<int> numbers)
