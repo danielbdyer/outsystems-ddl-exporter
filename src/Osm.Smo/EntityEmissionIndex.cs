@@ -33,6 +33,25 @@ internal sealed class EntityEmissionIndex
 
     public int Count => _primaryBySchemaAndTable.Count;
 
+    public ImmutableArray<EntityEmissionContext> GetSupplementalContexts()
+    {
+        if (_supplementalBySchemaAndTable.Count == 0)
+        {
+            return ImmutableArray<EntityEmissionContext>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<EntityEmissionContext>(_supplementalBySchemaAndTable.Count);
+        foreach (var context in _supplementalBySchemaAndTable.Values)
+        {
+            if (context is not null)
+            {
+                builder.Add(context);
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
     public EntityEmissionContext GetContext(EntityModel entity)
     {
         if (entity is null)

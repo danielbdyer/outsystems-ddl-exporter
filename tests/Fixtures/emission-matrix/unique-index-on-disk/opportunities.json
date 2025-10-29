@@ -7,13 +7,13 @@
       "Risk": {
         "Level": "Low",
         "Label": "Low",
-        "Description": "Column qualifies for NOT NULL enforcement."
+        "Description": "Policy determined the column is safe to enforce as NOT NULL."
       },
       "Disposition": "ReadyToApply",
       "Evidence": [
+        "MANDATORY",
         "Null profile unavailable.",
-        "PK",
-        "MANDATORY"
+        "PK"
       ],
       "Column": {
         "Schema": {
@@ -78,107 +78,40 @@
       "HasStatements": true
     },
     {
-      "Type": "UniqueIndex",
-      "Title": "UNIQUE",
-      "Summary": "Enforce the unique index automatically.",
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Enforce NOT NULL constraint.",
       "Risk": {
         "Level": "Low",
         "Label": "Low",
-        "Description": "Unique index can be enforced automatically."
+        "Description": "Policy determined the column is safe to enforce as NOT NULL."
       },
       "Disposition": "ReadyToApply",
-      "Evidence": [],
-      "Column": null,
-      "Index": {
+      "Evidence": [
+        "MANDATORY",
+        "Null profile unavailable."
+      ],
+      "Column": {
         "Schema": {
           "Value": "dbo"
         },
         "Table": {
           "Value": "OSUSR_OP_OPERATORPROFILE"
         },
-        "Index": {
-          "Value": "PK_OperatorProfile_Id"
+        "Column": {
+          "Value": "OPERATORCODE"
         }
       },
+      "Index": null,
       "Schema": "dbo",
       "Table": "OSUSR_OP_OPERATORPROFILE",
-      "ConstraintName": "PK_OperatorProfile_Id",
+      "ConstraintName": "OPERATORCODE",
       "Statements": [
-        "CREATE UNIQUE NONCLUSTERED INDEX [PK_OperatorProfile_Id] ON [dbo].[OSUSR_OP_OPERATORPROFILE] ([ID] ASC);"
+        "ALTER TABLE [dbo].[OSUSR_OP_OPERATORPROFILE]\n    ALTER COLUMN [OPERATORCODE] Text NOT NULL;"
       ],
       "Rationales": [
-        "PHYSICAL_UNIQUE_KEY"
-      ],
-      "EvidenceSummary": {
-        "RequiresRemediation": false,
-        "EvidenceAvailable": false,
-        "DataClean": null,
-        "HasDuplicates": null,
-        "HasOrphans": null
-      },
-      "Columns": [
-        {
-          "Coordinate": {
-            "Schema": {
-              "Value": "dbo"
-            },
-            "Table": {
-              "Value": "OSUSR_OP_OPERATORPROFILE"
-            },
-            "Column": {
-              "Value": "ID"
-            }
-          },
-          "Module": "Operator",
-          "Entity": "OperatorProfile",
-          "Attribute": "Id",
-          "DataType": "Identifier",
-          "SqlType": null,
-          "PhysicalNullable": null,
-          "PhysicalUnique": null,
-          "RowCount": null,
-          "NullCount": null,
-          "NullProbeStatus": null,
-          "HasDuplicates": null,
-          "UniqueProbeStatus": null,
-          "HasOrphans": null,
-          "HasDatabaseConstraint": false,
-          "DeleteRule": null
-        }
-      ],
-      "HasStatements": true
-    },
-    {
-      "Type": "UniqueIndex",
-      "Title": "UNIQUE",
-      "Summary": "Enforce the unique index automatically.",
-      "Risk": {
-        "Level": "Low",
-        "Label": "Low",
-        "Description": "Unique index can be enforced automatically."
-      },
-      "Disposition": "ReadyToApply",
-      "Evidence": [],
-      "Column": null,
-      "Index": {
-        "Schema": {
-          "Value": "dbo"
-        },
-        "Table": {
-          "Value": "OSUSR_OP_OPERATORPROFILE"
-        },
-        "Index": {
-          "Value": "UIX_OPERATORPROFILE_OPERATORCODE"
-        }
-      },
-      "Schema": "dbo",
-      "Table": "OSUSR_OP_OPERATORPROFILE",
-      "ConstraintName": "UIX_OPERATORPROFILE_OPERATORCODE",
-      "Statements": [
-        "CREATE UNIQUE NONCLUSTERED INDEX [UIX_OPERATORPROFILE_OPERATORCODE] ON [dbo].[OSUSR_OP_OPERATORPROFILE] ([OPERATORCODE] ASC);"
-      ],
-      "Rationales": [
-        "PHYSICAL_UNIQUE_KEY"
+        "MANDATORY",
+        "PROFILE_MISSING"
       ],
       "EvidenceSummary": {
         "RequiresRemediation": false,
@@ -221,14 +154,14 @@
     }
   ],
   "DispositionCounts": {
-    "ReadyToApply": 3
+    "ReadyToApply": 2
   },
   "TypeCounts": {
-    "Nullability": 1,
-    "UniqueIndex": 2
+    "Nullability": 2
   },
   "RiskCounts": {
-    "Low": 3
+    "Low": 2
   },
-  "GeneratedAtUtc": "2025-10-27T02:56:28.2932221+00:00"
+  "GeneratedAtUtc": "2025-10-29T12:30:50.89521+00:00",
+  "TotalCount": 2
 }

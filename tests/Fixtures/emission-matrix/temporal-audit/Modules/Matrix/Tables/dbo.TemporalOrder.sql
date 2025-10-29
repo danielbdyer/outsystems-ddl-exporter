@@ -5,7 +5,7 @@ CREATE TABLE [dbo].[TemporalOrder] (
     [Status]    NVARCHAR (50) NOT NULL
         DEFAULT ('PENDING')
         CONSTRAINT [CK_TEMPORALORDER_STATUS] CHECK ([Status] IN ('PENDING', 'APPROVED', 'ARCHIVED')),
-    [AuditId]   BIGINT
+    [AuditId]   BIGINT        NULL
         CONSTRAINT [FK_TemporalOrder_Audit_AuditId]
             FOREIGN KEY ([AuditId]) REFERENCES [dbo].[Audit] ([Id]),
     [ValidFrom] DATETIME2     NOT NULL,
@@ -14,10 +14,9 @@ CREATE TABLE [dbo].[TemporalOrder] (
 
 GO
 
-CREATE INDEX [IX_TemporalOrder_Status]
+CREATE INDEX [IX_TemporalOrder_Status_AuditId]
     ON [dbo].[TemporalOrder]([Status], [AuditId])
-    INCLUDE([ValidFrom]) WHERE ([Status] <> 'DELETED') WITH (FILLFACTOR = 90, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
-    ON [PRIMARY]
+    INCLUDE([ValidFrom]) WHERE ([Status] <> 'DELETED') WITH (FILLFACTOR = 90)
 
 GO
 

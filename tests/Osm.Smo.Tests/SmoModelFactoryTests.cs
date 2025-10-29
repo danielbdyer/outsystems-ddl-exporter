@@ -9,6 +9,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
+using Osm.Json;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
@@ -715,6 +716,70 @@ public class SmoModelFactoryTests
         var foreignKey = Assert.Single(tableDefinition.ForeignKeys);
         Assert.Equal("OSUSR_U_USER", foreignKey.ReferencedTable);
         Assert.Equal("User", foreignKey.ReferencedLogicalTable);
+    }
+
+    [Fact]
+    public void Create_includes_ossys_user_supplemental_table_with_expected_shape()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var factory = new SmoModelFactory();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+
+        var supplementalPath = Path.Combine(FixtureFile.RepositoryRoot, "config", "supplemental", "ossys-user.json");
+        using var stream = File.OpenRead(supplementalPath);
+        var deserializer = new ModelJsonDeserializer();
+        var supplementalResult = deserializer.Deserialize(stream);
+        Assert.True(supplementalResult.IsSuccess, string.Join(Environment.NewLine, supplementalResult.Errors.Select(error => error.Message)));
+
+        var supplementalEntities = supplementalResult.Value.Modules
+            .SelectMany(module => module.Entities)
+            .ToImmutableArray();
+
+        var smoModel = factory.Create(
+            model,
+            decisions,
+            profile: snapshot,
+            options: options,
+            supplementalEntities: supplementalEntities);
+
+        var userTable = Assert.Single(
+            smoModel.Tables,
+            table => table.Name.Equals("ossys_User", StringComparison.OrdinalIgnoreCase));
+
+        Assert.True(string.Equals("UserExtension_CS", userTable.Module, StringComparison.Ordinal));
+        Assert.True(string.Equals("UserExtension_CS", userTable.OriginalModule, StringComparison.Ordinal));
+        Assert.True(string.Equals("User", userTable.LogicalName, StringComparison.Ordinal));
+        Assert.True(string.Equals("dbo", userTable.Schema, StringComparison.OrdinalIgnoreCase));
+
+        var idColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("ID", StringComparison.OrdinalIgnoreCase));
+        Assert.False(idColumn.Nullable);
+        Assert.True(idColumn.IsIdentity);
+        Assert.Equal(SqlDataType.BigInt, idColumn.DataType.SqlDataType);
+
+        var usernameColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("USERNAME", StringComparison.OrdinalIgnoreCase));
+        Assert.False(usernameColumn.Nullable);
+        Assert.Equal(SqlDataType.NVarChar, usernameColumn.DataType.SqlDataType);
+        Assert.Equal(50, usernameColumn.DataType.MaximumLength);
+
+        var emailColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("EMAIL", StringComparison.OrdinalIgnoreCase));
+        Assert.False(emailColumn.Nullable);
+        Assert.Equal(SqlDataType.NVarChar, emailColumn.DataType.SqlDataType);
+        Assert.Equal(255, emailColumn.DataType.MaximumLength);
+        Assert.Equal("Latin1_General_CI_AI", emailColumn.Collation);
+
+        Assert.Equal(3, userTable.Indexes.Length);
+        var primaryKey = Assert.Single(userTable.Indexes, index => index.IsPrimaryKey);
+        Assert.True(string.Equals("PK_ossys_User", primaryKey.Name, StringComparison.OrdinalIgnoreCase));
+
+        var uniqueNames = userTable.Indexes
+            .Where(index => !index.IsPrimaryKey)
+            .Select(index => index.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.Contains("UQ_ossys_User_Username", uniqueNames);
+        Assert.Contains("UQ_ossys_User_Email", uniqueNames);
+
+        Assert.Empty(userTable.ForeignKeys);
     }
 
     [Fact]

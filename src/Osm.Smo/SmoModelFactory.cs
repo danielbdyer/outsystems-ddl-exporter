@@ -37,8 +37,12 @@ public sealed class SmoModelFactory
         var foreignKeyReality = BuildForeignKeyReality(profile);
 
         var contexts = BuildEntityContexts(model, supplementalEntities);
+        var supplementalContexts = contexts.GetSupplementalContexts();
+        var totalTableCapacity = model.Modules.Sum(static m => m.Entities.Length)
+            + (supplementalContexts.IsDefaultOrEmpty ? 0 : supplementalContexts.Length);
+
         var tableBuilder = new SmoTableBuilder(decisions, options, contexts, profileDefaults, foreignKeyReality, resolvedTypeMapping);
-        var tablesBuilder = ImmutableArray.CreateBuilder<SmoTableDefinition>(model.Modules.Sum(static m => m.Entities.Length));
+        var tablesBuilder = ImmutableArray.CreateBuilder<SmoTableDefinition>(totalTableCapacity);
 
         var orderedModules = model.Modules
             .OrderBy(static module => module.Name.Value, StringComparer.Ordinal);
@@ -53,6 +57,20 @@ public sealed class SmoModelFactory
             foreach (var entity in orderedEntities)
             {
                 var context = contexts.GetContext(entity);
+                tablesBuilder.Add(tableBuilder.Build(context));
+            }
+        }
+
+        if (!supplementalContexts.IsDefaultOrEmpty)
+        {
+            var orderedSupplemental = supplementalContexts
+                .OrderBy(static context => context.ModuleName, StringComparer.Ordinal)
+                .ThenBy(static context => context.Entity.Schema.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static context => context.Entity.PhysicalName.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static context => context.Entity.LogicalName.Value, StringComparer.Ordinal);
+
+            foreach (var context in orderedSupplemental)
+            {
                 tablesBuilder.Add(tableBuilder.Build(context));
             }
         }

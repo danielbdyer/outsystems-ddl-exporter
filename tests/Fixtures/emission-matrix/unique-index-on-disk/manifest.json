@@ -10,6 +10,18 @@
       ],
       "ForeignKeys": [],
       "IncludesExtendedProperties": false
+    },
+    {
+      "Module": "UserExtension_CS",
+      "Schema": "dbo",
+      "Table": "User",
+      "TableFile": "Modules/UserExtension_CS/Tables/dbo.User.sql",
+      "Indexes": [
+        "UIX_User_Email",
+        "UIX_User_Username"
+      ],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": true
     }
   ],
   "Options": {
@@ -20,7 +32,7 @@
   },
   "PolicySummary": {
     "ColumnCount": 2,
-    "TightenedColumnCount": 1,
+    "TightenedColumnCount": 2,
     "RemediationColumnCount": 0,
     "UniqueIndexCount": 2,
     "UniqueIndexesEnforcedCount": 2,
@@ -28,9 +40,9 @@
     "ForeignKeyCount": 0,
     "ForeignKeysCreatedCount": 0,
     "ColumnRationales": {
-      "PROFILE_MISSING": 2,
       "MANDATORY": 2,
-      "PK": 1
+      "PK": 1,
+      "PROFILE_MISSING": 2
     },
     "UniqueIndexRationales": {
       "PHYSICAL_UNIQUE_KEY": 2
@@ -39,7 +51,7 @@
     "ModuleRollups": {
       "Operator": {
         "ColumnCount": 2,
-        "TightenedColumnCount": 1,
+        "TightenedColumnCount": 2,
         "RemediationColumnCount": 0,
         "UniqueIndexCount": 2,
         "UniqueIndexesEnforcedCount": 2,
@@ -47,9 +59,9 @@
         "ForeignKeyCount": 0,
         "ForeignKeysCreatedCount": 0,
         "ColumnRationales": {
-          "PROFILE_MISSING": 2,
           "MANDATORY": 2,
-          "PK": 1
+          "PK": 1,
+          "PROFILE_MISSING": 2
         },
         "UniqueIndexRationales": {
           "PHYSICAL_UNIQUE_KEY": 2
@@ -102,24 +114,24 @@
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "a4ca9df063acc1966019c3627ebd01a1f91172c5b0335f57f9927b41831733df"
+    "Hash": "b7bebd7b42cbf3b8dd7bef7bb5ed313f4ea7c4cf9ae5d36a850d4dcd60dc4f06"
   },
   "PreRemediation": [],
   "Coverage": {
     "Tables": {
-      "Emitted": 1,
+      "Emitted": 2,
       "Total": 2,
-      "Percentage": 50.0
+      "Percentage": 100
     },
     "Columns": {
-      "Emitted": 2,
+      "Emitted": 5,
       "Total": 5,
-      "Percentage": 40.0
+      "Percentage": 100
     },
     "Constraints": {
-      "Emitted": 2,
-      "Total": 3,
-      "Percentage": 66.67
+      "Emitted": 5,
+      "Total": 5,
+      "Percentage": 100
     }
   },
   "PredicateCoverage": {
@@ -145,7 +157,5 @@
       "HasUniqueIndex": 2
     }
   },
-  "Unsupported": [
-    "Table dbo.ossys_User missing from emission output."
-  ]
+  "Unsupported": []
 }

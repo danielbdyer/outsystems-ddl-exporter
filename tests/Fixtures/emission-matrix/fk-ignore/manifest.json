@@ -17,6 +17,18 @@
       "Indexes": [],
       "ForeignKeys": [],
       "IncludesExtendedProperties": false
+    },
+    {
+      "Module": "UserExtension_CS",
+      "Schema": "dbo",
+      "Table": "User",
+      "TableFile": "Modules/UserExtension_CS/Tables/dbo.User.sql",
+      "Indexes": [
+        "UIX_User_Email",
+        "UIX_User_Username"
+      ],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": true
     }
   ],
   "Options": {
@@ -35,17 +47,17 @@
     "ForeignKeyCount": 1,
     "ForeignKeysCreatedCount": 0,
     "ColumnRationales": {
-      "DELETE_RULE_IGNORE": 1,
-      "MANDATORY": 2,
-      "PHYSICAL_NOT_NULL": 2,
       "PK": 2,
+      "PHYSICAL_NOT_NULL": 2,
       "DATA_NO_NULLS": 2,
-      "DATA_HAS_ORPHANS": 1
+      "DATA_HAS_ORPHANS": 1,
+      "DELETE_RULE_IGNORE": 1,
+      "MANDATORY": 2
     },
     "UniqueIndexRationales": {},
     "ForeignKeyRationales": {
-      "DELETE_RULE_IGNORE": 1,
-      "DATA_HAS_ORPHANS": 1
+      "DATA_HAS_ORPHANS": 1,
+      "DELETE_RULE_IGNORE": 1
     },
     "ModuleRollups": {
       "M": {
@@ -58,17 +70,17 @@
         "ForeignKeyCount": 1,
         "ForeignKeysCreatedCount": 0,
         "ColumnRationales": {
-          "DELETE_RULE_IGNORE": 1,
-          "MANDATORY": 2,
-          "PHYSICAL_NOT_NULL": 2,
           "PK": 2,
+          "PHYSICAL_NOT_NULL": 2,
           "DATA_NO_NULLS": 2,
-          "DATA_HAS_ORPHANS": 1
+          "DATA_HAS_ORPHANS": 1,
+          "DELETE_RULE_IGNORE": 1,
+          "MANDATORY": 2
         },
         "UniqueIndexRationales": {},
         "ForeignKeyRationales": {
-          "DELETE_RULE_IGNORE": 1,
-          "DATA_HAS_ORPHANS": 1
+          "DATA_HAS_ORPHANS": 1,
+          "DELETE_RULE_IGNORE": 1
         }
       }
     },
@@ -93,6 +105,10 @@
         "Value": false,
         "Source": 0
       },
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+        "Value": false,
+        "Source": 0
+      },
       "uniqueness.enforceSingleColumn": {
         "Value": true,
         "Source": 0
@@ -113,24 +129,24 @@
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "edd1d6647ed54b41819bb03a71398a5c82ac35497c076f694ca84457278296d1"
+    "Hash": "8d75f26369ddc857cb0e8b72fe9942478cbb66dbe8fd0c29d539f931b66b3150"
   },
   "PreRemediation": [],
   "Coverage": {
     "Tables": {
-      "Emitted": 2,
+      "Emitted": 3,
       "Total": 3,
-      "Percentage": 66.67
+      "Percentage": 100
     },
     "Columns": {
-      "Emitted": 3,
+      "Emitted": 6,
       "Total": 6,
-      "Percentage": 50.0
+      "Percentage": 100
     },
     "Constraints": {
-      "Emitted": 2,
-      "Total": 3,
-      "Percentage": 66.67
+      "Emitted": 5,
+      "Total": 5,
+      "Percentage": 100
     }
   },
   "PredicateCoverage": {
@@ -165,7 +181,5 @@
       "HasUniqueIndex": 1
     }
   },
-  "Unsupported": [
-    "Table dbo.ossys_User missing from emission output."
-  ]
+  "Unsupported": []
 }

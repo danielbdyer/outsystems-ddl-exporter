@@ -6,10 +6,22 @@
       "Table": "User",
       "TableFile": "Modules/M/Tables/dbo.User.sql",
       "Indexes": [
-        "UX_User_Email"
+        "UIX_User_Email"
       ],
       "ForeignKeys": [],
       "IncludesExtendedProperties": false
+    },
+    {
+      "Module": "UserExtension_CS",
+      "Schema": "dbo",
+      "Table": "User",
+      "TableFile": "Modules/UserExtension_CS/Tables/dbo.User.sql",
+      "Indexes": [
+        "UIX_User_Email",
+        "UIX_User_Username"
+      ],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": true
     }
   ],
   "Options": {
@@ -28,10 +40,10 @@
     "ForeignKeyCount": 0,
     "ForeignKeysCreatedCount": 0,
     "ColumnRationales": {
-      "PHYSICAL_NOT_NULL": 1,
-      "UNIQUE_NO_NULLS": 1,
-      "PK": 1,
       "MANDATORY": 2,
+      "PK": 1,
+      "UNIQUE_NO_NULLS": 1,
+      "PHYSICAL_NOT_NULL": 1,
       "DATA_NO_NULLS": 2
     },
     "UniqueIndexRationales": {
@@ -50,10 +62,10 @@
         "ForeignKeyCount": 0,
         "ForeignKeysCreatedCount": 0,
         "ColumnRationales": {
-          "PHYSICAL_NOT_NULL": 1,
-          "UNIQUE_NO_NULLS": 1,
-          "PK": 1,
           "MANDATORY": 2,
+          "PK": 1,
+          "UNIQUE_NO_NULLS": 1,
+          "PHYSICAL_NOT_NULL": 1,
           "DATA_NO_NULLS": 2
         },
         "UniqueIndexRationales": {
@@ -108,24 +120,24 @@
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "7d3e62cf15f3e85eb8fd5143c8a65e9cccd2783038b00277ecf830f154a81ef1"
+    "Hash": "67028d81e1c8dce28d90a4be43135c97a06724c5347212582b918fe078abc4d6"
   },
   "PreRemediation": [],
   "Coverage": {
     "Tables": {
-      "Emitted": 1,
+      "Emitted": 2,
       "Total": 2,
-      "Percentage": 50.0
+      "Percentage": 100
     },
     "Columns": {
-      "Emitted": 4,
+      "Emitted": 7,
       "Total": 7,
-      "Percentage": 57.14
+      "Percentage": 100
     },
     "Constraints": {
-      "Emitted": 2,
-      "Total": 3,
-      "Percentage": 66.67
+      "Emitted": 5,
+      "Total": 5,
+      "Percentage": 100
     }
   },
   "PredicateCoverage": {
@@ -151,7 +163,5 @@
       "HasUniqueIndex": 2
     }
   },
-  "Unsupported": [
-    "Table dbo.ossys_User missing from emission output."
-  ]
+  "Unsupported": []
 }

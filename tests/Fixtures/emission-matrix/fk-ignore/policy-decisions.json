@@ -8,17 +8,17 @@
   "ForeignKeyCount": 1,
   "ForeignKeysCreatedCount": 0,
   "ColumnRationales": {
-    "DELETE_RULE_IGNORE": 1,
-    "MANDATORY": 2,
-    "PHYSICAL_NOT_NULL": 2,
     "PK": 2,
+    "PHYSICAL_NOT_NULL": 2,
     "DATA_NO_NULLS": 2,
-    "DATA_HAS_ORPHANS": 1
+    "DATA_HAS_ORPHANS": 1,
+    "DELETE_RULE_IGNORE": 1,
+    "MANDATORY": 2
   },
   "UniqueIndexRationales": {},
   "ForeignKeyRationales": {
-    "DELETE_RULE_IGNORE": 1,
-    "DATA_HAS_ORPHANS": 1
+    "DATA_HAS_ORPHANS": 1,
+    "DELETE_RULE_IGNORE": 1
   },
   "ModuleRollups": {
     "M": {
@@ -31,17 +31,17 @@
       "ForeignKeyCount": 1,
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
-        "DELETE_RULE_IGNORE": 1,
-        "MANDATORY": 2,
-        "PHYSICAL_NOT_NULL": 2,
         "PK": 2,
+        "PHYSICAL_NOT_NULL": 2,
         "DATA_NO_NULLS": 2,
-        "DATA_HAS_ORPHANS": 1
+        "DATA_HAS_ORPHANS": 1,
+        "DELETE_RULE_IGNORE": 1,
+        "MANDATORY": 2
       },
       "UniqueIndexRationales": {},
       "ForeignKeyRationales": {
-        "DELETE_RULE_IGNORE": 1,
-        "DATA_HAS_ORPHANS": 1
+        "DATA_HAS_ORPHANS": 1,
+        "DELETE_RULE_IGNORE": 1
       }
     }
   },
@@ -63,6 +63,10 @@
       "Source": 0
     },
     "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
       "Value": false,
       "Source": 0
     },

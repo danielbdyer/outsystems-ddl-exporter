@@ -1,6 +1,6 @@
 {
   "ColumnCount": 2,
-  "TightenedColumnCount": 1,
+  "TightenedColumnCount": 2,
   "RemediationColumnCount": 0,
   "UniqueIndexCount": 2,
   "UniqueIndexesEnforcedCount": 2,
@@ -8,9 +8,9 @@
   "ForeignKeyCount": 0,
   "ForeignKeysCreatedCount": 0,
   "ColumnRationales": {
-    "PROFILE_MISSING": 2,
     "MANDATORY": 2,
-    "PK": 1
+    "PK": 1,
+    "PROFILE_MISSING": 2
   },
   "UniqueIndexRationales": {
     "PHYSICAL_UNIQUE_KEY": 2
@@ -19,7 +19,7 @@
   "ModuleRollups": {
     "Operator": {
       "ColumnCount": 2,
-      "TightenedColumnCount": 1,
+      "TightenedColumnCount": 2,
       "RemediationColumnCount": 0,
       "UniqueIndexCount": 2,
       "UniqueIndexesEnforcedCount": 2,
@@ -27,9 +27,9 @@
       "ForeignKeyCount": 0,
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
-        "PROFILE_MISSING": 2,
         "MANDATORY": 2,
-        "PK": 1
+        "PK": 1,
+        "PROFILE_MISSING": 2
       },
       "UniqueIndexRationales": {
         "PHYSICAL_UNIQUE_KEY": 2
@@ -96,7 +96,7 @@
       "Schema": "dbo",
       "Table": "OSUSR_OP_OPERATORPROFILE",
       "Column": "OPERATORCODE",
-      "MakeNotNull": false,
+      "MakeNotNull": true,
       "RequiresRemediation": false,
       "Rationales": [
         "MANDATORY",

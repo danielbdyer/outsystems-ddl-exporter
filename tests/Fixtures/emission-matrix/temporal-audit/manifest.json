@@ -15,11 +15,23 @@
       "Table": "TemporalOrder",
       "TableFile": "Modules/Matrix/Tables/dbo.TemporalOrder.sql",
       "Indexes": [
-        "IX_TemporalOrder_Status"
+        "IX_TemporalOrder_Status_AuditId"
       ],
       "ForeignKeys": [
         "FK_TemporalOrder_Audit_AuditId"
       ],
+      "IncludesExtendedProperties": true
+    },
+    {
+      "Module": "UserExtension_CS",
+      "Schema": "dbo",
+      "Table": "User",
+      "TableFile": "Modules/UserExtension_CS/Tables/dbo.User.sql",
+      "Indexes": [
+        "UIX_User_Email",
+        "UIX_User_Username"
+      ],
+      "ForeignKeys": [],
       "IncludesExtendedProperties": true
     }
   ],
@@ -39,13 +51,13 @@
     "ForeignKeyCount": 1,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
+      "MANDATORY": 5,
       "FK_ENFORCED": 1,
+      "PHYSICAL_NOT_NULL": 5,
       "DEFAULT_PRESENT": 1,
       "PROFILE_MISSING": 1,
       "DATA_NO_NULLS": 5,
-      "MANDATORY": 5,
-      "PK": 2,
-      "PHYSICAL_NOT_NULL": 5
+      "PK": 2
     },
     "UniqueIndexRationales": {},
     "ForeignKeyRationales": {
@@ -62,13 +74,13 @@
         "ForeignKeyCount": 1,
         "ForeignKeysCreatedCount": 1,
         "ColumnRationales": {
+          "MANDATORY": 5,
           "FK_ENFORCED": 1,
+          "PHYSICAL_NOT_NULL": 5,
           "DEFAULT_PRESENT": 1,
           "PROFILE_MISSING": 1,
           "DATA_NO_NULLS": 5,
-          "MANDATORY": 5,
-          "PK": 2,
-          "PHYSICAL_NOT_NULL": 5
+          "PK": 2
         },
         "UniqueIndexRationales": {},
         "ForeignKeyRationales": {
@@ -97,6 +109,10 @@
         "Value": false,
         "Source": 0
       },
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+        "Value": false,
+        "Source": 0
+      },
       "uniqueness.enforceSingleColumn": {
         "Value": true,
         "Source": 0
@@ -117,24 +133,24 @@
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "2a53193fa1e4f055181757f8186211f696207ee9bdfae1177fc64ef4b4fef181"
+    "Hash": "192d89676d3285c4d0eac28c4454b92c072dbed34cc42b1c7fcc103c8658d603"
   },
   "PreRemediation": [],
   "Coverage": {
     "Tables": {
-      "Emitted": 2,
+      "Emitted": 3,
       "Total": 3,
-      "Percentage": 66.67
+      "Percentage": 100
     },
     "Columns": {
-      "Emitted": 7,
+      "Emitted": 10,
       "Total": 10,
-      "Percentage": 70.0
+      "Percentage": 100
     },
     "Constraints": {
-      "Emitted": 4,
-      "Total": 5,
-      "Percentage": 80.0
+      "Emitted": 7,
+      "Total": 7,
+      "Percentage": 100
     }
   },
   "PredicateCoverage": {
@@ -187,7 +203,5 @@
       "IsStaticEntity": 1
     }
   },
-  "Unsupported": [
-    "Table dbo.ossys_User missing from emission output."
-  ]
+  "Unsupported": []
 }
