@@ -67,9 +67,20 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
 
         _logger.LogInformation("Metadata reader resolved successfully. Beginning snapshot execution.");
 
-        var extractionService = new SqlModelExtractionService(
+        var metadataOrchestrator = new AdvancedSqlMetadataOrchestrator(
             readerResult.Value,
+            _loggerFactory.CreateLogger<AdvancedSqlMetadataOrchestrator>());
+        var snapshotJsonBuilder = new SnapshotJsonBuilder();
+        var snapshotValidator = new SnapshotValidator();
+        var modelDeserializerFacade = new ModelDeserializerFacade(
             _deserializer,
+            _loggerFactory.CreateLogger<ModelDeserializerFacade>());
+
+        var extractionService = new SqlModelExtractionService(
+            metadataOrchestrator,
+            snapshotJsonBuilder,
+            snapshotValidator,
+            modelDeserializerFacade,
             _loggerFactory.CreateLogger<SqlModelExtractionService>());
 
         var extractionResult = await extractionService

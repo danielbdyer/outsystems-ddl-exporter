@@ -54,7 +54,7 @@ public class SqlModelExtractionServiceTests
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.micro-unique.json"));
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new PassthroughModelJsonDeserializer());
+        var service = CreateService(reader, new PassthroughModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -70,7 +70,7 @@ public class SqlModelExtractionServiceTests
     {
         var failure = Result<OutsystemsMetadataSnapshot>.Failure(ValidationError.Create("boom", "fail"));
         var reader = new StubMetadataReader(failure);
-        var service = new SqlModelExtractionService(reader, new PassthroughModelJsonDeserializer());
+        var service = CreateService(reader, new PassthroughModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -109,7 +109,7 @@ public class SqlModelExtractionServiceTests
             "Fixture");
 
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(emptySnapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -171,7 +171,7 @@ public class SqlModelExtractionServiceTests
 
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -215,7 +215,7 @@ public class SqlModelExtractionServiceTests
 
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true).Value;
 
         var result = await service.ExtractAsync(command);
@@ -257,7 +257,7 @@ public class SqlModelExtractionServiceTests
 
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true).Value;
 
         var result = await service.ExtractAsync(command);
@@ -399,7 +399,7 @@ public class SqlModelExtractionServiceTests
             DatabaseName: "Fixture");
 
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new PassthroughModelJsonDeserializer());
+        var service = CreateService(reader, new PassthroughModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -427,7 +427,7 @@ public class SqlModelExtractionServiceTests
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.edge-case.json"));
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: true, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -451,7 +451,7 @@ public class SqlModelExtractionServiceTests
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.edge-case.json"));
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(
             new[] { "AppCore", "ExtBilling", "Ops" },
             includeSystemModules: false, includeInactiveModules: true,
@@ -479,7 +479,7 @@ public class SqlModelExtractionServiceTests
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.micro-unique.json"));
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         await using var destination = new MemoryStream();
@@ -557,7 +557,7 @@ public class SqlModelExtractionServiceTests
 
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await service.ExtractAsync(command);
@@ -580,7 +580,7 @@ public class SqlModelExtractionServiceTests
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.micro-unique.json"));
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         using var temp = new TempDirectory();
@@ -604,7 +604,7 @@ public class SqlModelExtractionServiceTests
         var json = await File.ReadAllTextAsync(FixtureFile.GetPath("model.micro-unique.json"));
         var snapshot = CreateSnapshotFromJson(json);
         var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         using var temp = new TempDirectory();
@@ -637,7 +637,7 @@ public class SqlModelExtractionServiceTests
             serializationError: null);
         var rowSnapshot = new MetadataRowSnapshot("AttributesJson", 3, new[] { column });
         var reader = new StubMetadataReader(failure, rowSnapshot);
-        var service = new SqlModelExtractionService(reader, new ModelJsonDeserializer());
+        var service = CreateService(reader, new ModelJsonDeserializer());
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         using var temp = new TempDirectory();
@@ -654,6 +654,17 @@ public class SqlModelExtractionServiceTests
         Assert.NotNull(state.FailureRowSnapshot);
         Assert.Equal("AttributesJson", state.FailureRowSnapshot!.ResultSetName);
         Assert.Equal(3, state.FailureRowSnapshot.RowIndex);
+    }
+
+    private static SqlModelExtractionService CreateService(
+        IOutsystemsMetadataReader reader,
+        IModelJsonDeserializer deserializer)
+    {
+        return new SqlModelExtractionService(
+            new AdvancedSqlMetadataOrchestrator(reader),
+            new SnapshotJsonBuilder(),
+            new SnapshotValidator(),
+            new ModelDeserializerFacade(deserializer));
     }
 
     private static OutsystemsMetadataSnapshot CreateSnapshotFromJson(string json)

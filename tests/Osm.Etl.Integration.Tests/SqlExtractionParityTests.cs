@@ -46,7 +46,11 @@ public sealed class SqlExtractionParityTests
     {
         var connectionFactory = new SqlConnectionFactory(_fixture.DatabaseConnectionString);
         var metadataReader = new SqlClientOutsystemsMetadataReader(connectionFactory, new EmbeddedOutsystemsMetadataScriptProvider());
-        var extractionService = new SqlModelExtractionService(metadataReader, new ModelJsonDeserializer());
+        var extractionService = new SqlModelExtractionService(
+            new AdvancedSqlMetadataOrchestrator(metadataReader),
+            new SnapshotJsonBuilder(),
+            new SnapshotValidator(),
+            new ModelDeserializerFacade(new ModelJsonDeserializer()));
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var extraction = await extractionService.ExtractAsync(command).ConfigureAwait(false);
@@ -74,7 +78,11 @@ public sealed class SqlExtractionParityTests
 
         var connectionFactory = new SqlConnectionFactory(builder.ConnectionString);
         var metadataReader = new SqlClientOutsystemsMetadataReader(connectionFactory, new EmbeddedOutsystemsMetadataScriptProvider());
-        var extractionService = new SqlModelExtractionService(metadataReader, new ModelJsonDeserializer());
+        var extractionService = new SqlModelExtractionService(
+            new AdvancedSqlMetadataOrchestrator(metadataReader),
+            new SnapshotJsonBuilder(),
+            new SnapshotValidator(),
+            new ModelDeserializerFacade(new ModelJsonDeserializer()));
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
 
         var result = await extractionService.ExtractAsync(command).ConfigureAwait(false);
