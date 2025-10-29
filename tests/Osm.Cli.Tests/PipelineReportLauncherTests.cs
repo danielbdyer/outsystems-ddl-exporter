@@ -197,6 +197,7 @@ public class PipelineReportLauncherTests
             remediationPath,
             string.Empty,
             seedPaths,
+            SsdtSqlValidationSummary.Empty,
             null,
             PipelineExecutionLog.Empty,
             ImmutableArray<string>.Empty);

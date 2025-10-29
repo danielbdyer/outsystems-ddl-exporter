@@ -181,9 +181,11 @@ public class BuildSsdtPipelineStepTests
             new EmissionFingerprintCalculator(),
             new OpportunityLogWriter());
         var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var validationStep = new BuildSsdtSqlValidationStep();
+        var validatedState = (await validationStep.ExecuteAsync(emissionState)).Value;
         var step = new BuildSsdtStaticSeedStep(new StaticEntitySeedScriptGenerator(), StaticEntitySeedTemplate.Load());
 
-        var result = await step.ExecuteAsync(emissionState);
+        var result = await step.ExecuteAsync(validatedState);
 
         Assert.True(result.IsSuccess);
         var state = result.Value;
@@ -191,6 +193,79 @@ public class BuildSsdtPipelineStepTests
         Assert.All(state.StaticSeedScriptPaths, path => Assert.True(File.Exists(path)));
         var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "staticData.seed.generated");
+    }
+
+    [Fact]
+    public async Task SqlValidationStep_records_summary_for_valid_scripts()
+    {
+        using var output = new TempDirectory();
+        var request = CreateRequest(output.Path);
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
+        var evidenceState = new EvidencePrepared(
+            bootstrapState.Request,
+            bootstrapState.Log,
+            bootstrapState.Bootstrap,
+            EvidenceCache: null);
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
+        var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
+        var emissionStep = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
+        var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var step = new BuildSsdtSqlValidationStep();
+
+        var result = await step.ExecuteAsync(emissionState);
+
+        Assert.True(result.IsSuccess);
+        var validated = result.Value;
+        Assert.Equal(emissionState.Manifest.Tables.Count, validated.SqlValidation.TotalFiles);
+        Assert.Equal(0, validated.SqlValidation.ErrorCount);
+        var log = validated.Log.Build();
+        Assert.Contains(log.Entries, entry => entry.Step == "ssdt.sql.validation.completed");
+        Assert.DoesNotContain(log.Entries, entry => entry.Step == "ssdt.sql.validation.error");
+    }
+
+    [Fact]
+    public async Task SqlValidationStep_returns_failure_when_scripts_invalid()
+    {
+        using var output = new TempDirectory();
+        var request = CreateRequest(output.Path);
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
+        var evidenceState = new EvidencePrepared(
+            bootstrapState.Request,
+            bootstrapState.Log,
+            bootstrapState.Bootstrap,
+            EvidenceCache: null);
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
+        var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
+        var emissionStep = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
+        var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        Assert.NotEmpty(emissionState.Manifest.Tables);
+        var firstTable = emissionState.Manifest.Tables[0];
+        var artifactPath = Path.Combine(request.OutputDirectory, firstTable.TableFile.Replace('/', Path.DirectorySeparatorChar));
+        await File.WriteAllTextAsync(artifactPath, "CREATE TABLE ???");
+        var step = new BuildSsdtSqlValidationStep();
+
+        var result = await step.ExecuteAsync(emissionState);
+
+        Assert.True(result.IsFailure);
+        var log = emissionState.Log.Build();
+        Assert.Contains(log.Entries, entry => entry.Step == "ssdt.sql.validation.completed");
+        Assert.Contains(log.Entries, entry => entry.Step == "ssdt.sql.validation.error");
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("pipeline.buildSsdt.sql.validationFailed", error.Code);
     }
 
     private static BuildSsdtPipelineRequest CreateRequest(

@@ -150,7 +150,8 @@ public class PipelineServiceCollectionExtensionsTests
             verbDescriptors,
             descriptor => Assert.Equal(typeof(BuildSsdtVerb), descriptor.ImplementationType),
             descriptor => Assert.Equal(typeof(DmmCompareVerb), descriptor.ImplementationType),
-            descriptor => Assert.Equal(typeof(ExtractModelVerb), descriptor.ImplementationType));
+            descriptor => Assert.Equal(typeof(ExtractModelVerb), descriptor.ImplementationType),
+            descriptor => Assert.Equal(typeof(AnalyzeVerb), descriptor.ImplementationType));
 
         Assert.Contains(services, d => d.ServiceType == typeof(IVerbRegistry) && d.ImplementationType == typeof(VerbRegistry));
     }

@@ -1,0 +1,128 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Osm.Domain.Abstractions;
+
+namespace Osm.Pipeline.Orchestration;
+
+public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<EmissionReady, SqlValidated>
+{
+    private readonly ISsdtSqlValidator _validator;
+
+    public BuildSsdtSqlValidationStep()
+        : this(new SsdtSqlValidator())
+    {
+    }
+
+    public BuildSsdtSqlValidationStep(ISsdtSqlValidator validator)
+    {
+        _validator = validator ?? throw new ArgumentNullException(nameof(validator));
+    }
+
+    public async Task<Result<SqlValidated>> ExecuteAsync(
+        EmissionReady state,
+        CancellationToken cancellationToken = default)
+    {
+        if (state is null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        var manifest = state.Manifest ?? throw new InvalidOperationException("Manifest must be available before SQL validation.");
+        var summary = await _validator
+            .ValidateAsync(state.Request.OutputDirectory, manifest.Tables, cancellationToken)
+            .ConfigureAwait(false);
+
+        RecordSummary(state, summary);
+
+        if (summary.ErrorCount > 0)
+        {
+            RecordGroupedErrors(state, summary);
+            return Result<SqlValidated>.Failure(ValidationError.Create(
+                "pipeline.buildSsdt.sql.validationFailed",
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Encountered {0} T-SQL parse error(s) across {1} emitted file(s).",
+                    summary.ErrorCount,
+                    summary.FilesWithErrors)));
+        }
+
+        return Result<SqlValidated>.Success(new SqlValidated(
+            state.Request,
+            state.Log,
+            state.Bootstrap,
+            state.EvidenceCache,
+            state.Decisions,
+            state.Report,
+            state.Opportunities,
+            state.Insights,
+            manifest,
+            state.DecisionLogPath,
+            state.OpportunityArtifacts,
+            summary));
+    }
+
+    private static void RecordSummary(EmissionReady state, SsdtSqlValidationSummary summary)
+    {
+        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["validatedFiles"] = summary.TotalFiles.ToString(CultureInfo.InvariantCulture),
+            ["filesWithErrors"] = summary.FilesWithErrors.ToString(CultureInfo.InvariantCulture),
+            ["errorCount"] = summary.ErrorCount.ToString(CultureInfo.InvariantCulture)
+        };
+
+        state.Log.Record(
+            "ssdt.sql.validation.completed",
+            "Validated emitted SQL scripts with ScriptDom.",
+            metadata);
+    }
+
+    private static void RecordGroupedErrors(EmissionReady state, SsdtSqlValidationSummary summary)
+    {
+        var groups = summary.Issues
+            .SelectMany(issue => issue.Errors.Select(error => new { issue.Path, Error = error }))
+            .GroupBy(
+                item => (item.Error.Number, item.Error.Message),
+                (key, items) => new
+                {
+                    key.Number,
+                    key.Message,
+                    Items = items.ToArray(),
+                });
+
+        foreach (var group in groups)
+        {
+            var sampleCount = Math.Min(3, group.Items.Length);
+            var examples = group.Items
+                .Take(sampleCount)
+                .Select(item => string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}:{1}:{2}",
+                    item.Path,
+                    item.Error.Line,
+                    item.Error.Column))
+                .ToArray();
+
+            var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["errorCode"] = group.Number.ToString(CultureInfo.InvariantCulture),
+                ["message"] = group.Message,
+                ["occurrences"] = group.Items.Length.ToString(CultureInfo.InvariantCulture),
+                ["examples"] = string.Join(" | ", examples)
+            };
+
+            if (group.Items.Length > sampleCount)
+            {
+                metadata["suppressed"] = (group.Items.Length - sampleCount).ToString(CultureInfo.InvariantCulture);
+            }
+
+            state.Log.Record(
+                "ssdt.sql.validation.error",
+                "ScriptDom parse failure detected.",
+                metadata);
+        }
+    }
+}

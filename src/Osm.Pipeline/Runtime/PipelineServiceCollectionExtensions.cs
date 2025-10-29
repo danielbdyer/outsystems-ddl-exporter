@@ -99,6 +99,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<OpportunityLogWriter>();
         services.AddSingleton<StaticEntitySeedScriptGenerator>();
         services.AddSingleton(static _ => StaticEntitySeedTemplate.Load());
+        services.AddSingleton<ISsdtSqlValidator, SsdtSqlValidator>();
 
         return services;
     }

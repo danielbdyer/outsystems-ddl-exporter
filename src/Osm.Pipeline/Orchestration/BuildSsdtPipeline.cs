@@ -24,6 +24,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
     private readonly BuildSsdtEvidenceCacheStep _evidenceCacheStep;
     private readonly BuildSsdtPolicyDecisionStep _policyStep;
     private readonly BuildSsdtEmissionStep _emissionStep;
+    private readonly BuildSsdtSqlValidationStep _sqlValidationStep;
     private readonly BuildSsdtStaticSeedStep _staticSeedStep;
 
     public BuildSsdtPipeline(
@@ -41,7 +42,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         TimeProvider? timeProvider = null,
         IDataProfilerFactory? dataProfilerFactory = null,
         ITighteningAnalyzer? analyzer = null,
-        OpportunityLogWriter? opportunityWriter = null)
+        OpportunityLogWriter? opportunityWriter = null,
+        ISsdtSqlValidator? sqlValidator = null)
     {
         var resolvedBootstrapper = bootstrapper ?? new PipelineBootstrapper();
         var resolvedTighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
@@ -56,6 +58,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         var resolvedFingerprintCalculator = fingerprintCalculator ?? new EmissionFingerprintCalculator();
         var resolvedAnalyzer = analyzer ?? new TighteningOpportunitiesAnalyzer();
         var resolvedOpportunityWriter = opportunityWriter ?? new OpportunityLogWriter();
+        var resolvedSqlValidator = sqlValidator ?? new SsdtSqlValidator(new FileSystem());
         var resolvedProfilerFactory = dataProfilerFactory
             ?? new DataProfilerFactory(
                 resolvedProfileDeserializer,
@@ -65,6 +68,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         _evidenceCacheStep = new BuildSsdtEvidenceCacheStep(resolvedCacheCoordinator);
         _policyStep = new BuildSsdtPolicyDecisionStep(resolvedTighteningPolicy, resolvedAnalyzer);
         _emissionStep = new BuildSsdtEmissionStep(resolvedSmoModelFactory, resolvedEmitter, resolvedDecisionLogWriter, resolvedFingerprintCalculator, resolvedOpportunityWriter);
+        _sqlValidationStep = new BuildSsdtSqlValidationStep(resolvedSqlValidator);
         _staticSeedStep = new BuildSsdtStaticSeedStep(resolvedSeedGenerator, resolvedSeedTemplate);
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -100,7 +104,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             .BindAsync((bootstrap, token) => _evidenceCacheStep.ExecuteAsync(bootstrap, token), cancellationToken)
             .BindAsync((evidence, token) => _policyStep.ExecuteAsync(evidence, token), cancellationToken)
             .BindAsync((decisions, token) => _emissionStep.ExecuteAsync(decisions, token), cancellationToken)
-            .BindAsync((emission, token) => _staticSeedStep.ExecuteAsync(emission, token), cancellationToken)
+            .BindAsync((emission, token) => _sqlValidationStep.ExecuteAsync(emission, token), cancellationToken)
+            .BindAsync((validation, token) => _staticSeedStep.ExecuteAsync(validation, token), cancellationToken)
             .ConfigureAwait(false);
 
         if (finalStateResult.IsFailure)
@@ -136,6 +141,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.OpportunityArtifacts.RemediationScriptPath,
             finalState.OpportunityArtifacts.RemediationScript,
             finalState.StaticSeedScriptPaths,
+            finalState.SqlValidation,
             finalState.EvidenceCache,
             finalState.Log.Build(),
             finalState.Bootstrap.Warnings);

@@ -13,7 +13,7 @@ using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<EmissionReady, StaticSeedsGenerated>
+public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, StaticSeedsGenerated>
 {
     private readonly StaticEntitySeedScriptGenerator _seedGenerator;
     private readonly StaticEntitySeedTemplate _seedTemplate;
@@ -27,7 +27,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<EmissionReady, Stat
     }
 
     public async Task<Result<StaticSeedsGenerated>> ExecuteAsync(
-        EmissionReady state,
+        SqlValidated state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -55,6 +55,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<EmissionReady, Stat
                 state.Manifest,
                 state.DecisionLogPath,
                 state.OpportunityArtifacts,
+                state.SqlValidation,
                 ImmutableArray<string>.Empty));
         }
 
@@ -139,9 +140,10 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<EmissionReady, Stat
             state.Report,
             state.Opportunities,
             state.Insights,
-            state.Manifest,
-            state.DecisionLogPath,
-            state.OpportunityArtifacts,
-            seedPaths));
+                state.Manifest,
+                state.DecisionLogPath,
+                state.OpportunityArtifacts,
+                state.SqlValidation,
+                seedPaths));
     }
 }
