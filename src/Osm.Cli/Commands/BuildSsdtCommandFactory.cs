@@ -3,7 +3,6 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.IO;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Runtime;
@@ -12,9 +11,8 @@ using Osm.Validation.Tightening;
 
 namespace Osm.Cli.Commands;
 
-internal sealed class BuildSsdtCommandFactory : ICommandFactory
+internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdtVerbOptions, BuildSsdtVerbResult>
 {
-    private readonly IServiceScopeFactory _scopeFactory;
     private readonly CliGlobalOptions _globalOptions;
     private readonly ModuleFilterOptionBinder _moduleFilterBinder;
     private readonly CacheOptionBinder _cacheOptionBinder;
@@ -35,15 +33,17 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
         ModuleFilterOptionBinder moduleFilterBinder,
         CacheOptionBinder cacheOptionBinder,
         SqlOptionBinder sqlOptionBinder)
+        : base(scopeFactory)
     {
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
         _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
         _cacheOptionBinder = cacheOptionBinder ?? throw new ArgumentNullException(nameof(cacheOptionBinder));
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
     }
 
-    public Command Create()
+    protected override string VerbName => BuildSsdtVerb.VerbName;
+
+    protected override Command CreateCommandCore()
     {
         var command = new Command("build-ssdt", "Emit SSDT artifacts from an OutSystems model.")
         {
@@ -62,59 +62,45 @@ internal sealed class BuildSsdtCommandFactory : ICommandFactory
         CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
         CommandOptionBuilder.AddCacheOptions(command, _cacheOptionBinder);
         CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
-
-        command.SetHandler(async context => await ExecuteAsync(context).ConfigureAwait(false));
         return command;
     }
 
-    private async Task ExecuteAsync(InvocationContext context)
+    protected override BuildSsdtVerbOptions BindOptions(InvocationContext context)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var services = scope.ServiceProvider;
-        var registry = services.GetRequiredService<IVerbRegistry>();
-        var verb = registry.Get(BuildSsdtVerb.VerbName);
+        if (context is null)
+        {
+            throw new ArgumentNullException(nameof(context));
+        }
 
-        var cancellationToken = context.GetCancellationToken();
-        var moduleFilter = _moduleFilterBinder.Bind(context.ParseResult);
-        var cache = _cacheOptionBinder.Bind(context.ParseResult);
-        var sqlOverrides = _sqlOptionBinder.Bind(context.ParseResult);
+        var parseResult = context.ParseResult;
+        var moduleFilter = _moduleFilterBinder.Bind(parseResult);
+        var cache = _cacheOptionBinder.Bind(parseResult);
+        var sqlOverrides = _sqlOptionBinder.Bind(parseResult);
 
         var overrides = new BuildSsdtOverrides(
-            context.ParseResult.GetValueForOption(_modelOption),
-            context.ParseResult.GetValueForOption(_profileOption),
-            context.ParseResult.GetValueForOption(_outputOption),
-            context.ParseResult.GetValueForOption(_profilerProviderOption),
-            context.ParseResult.GetValueForOption(_staticDataOption),
-            context.ParseResult.GetValueForOption(_renameOption),
-            context.ParseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
-            context.ParseResult.GetValueForOption(_sqlMetadataOption));
+            parseResult.GetValueForOption(_modelOption),
+            parseResult.GetValueForOption(_profileOption),
+            parseResult.GetValueForOption(_outputOption),
+            parseResult.GetValueForOption(_profilerProviderOption),
+            parseResult.GetValueForOption(_staticDataOption),
+            parseResult.GetValueForOption(_renameOption),
+            parseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
+            parseResult.GetValueForOption(_sqlMetadataOption));
 
-        var options = new BuildSsdtVerbOptions
+        return new BuildSsdtVerbOptions
         {
-            ConfigurationPath = context.ParseResult.GetValueForOption(_globalOptions.ConfigPath),
+            ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
             Overrides = overrides,
             ModuleFilter = moduleFilter,
             Sql = sqlOverrides,
             Cache = cache
         };
+    }
 
-        var run = await verb.RunAsync(options, cancellationToken).ConfigureAwait(false);
-        if (!run.IsSuccess)
-        {
-            CommandConsole.WriteErrors(context.Console, run.Errors);
-            context.ExitCode = 1;
-            return;
-        }
-
-        if (run.Payload is not BuildSsdtVerbResult payload)
-        {
-            CommandConsole.WriteErrorLine(context.Console, "[error] Unexpected result type for build-ssdt verb.");
-            context.ExitCode = 1;
-            return;
-        }
-
+    protected override async Task<int> OnRunSucceededAsync(InvocationContext context, BuildSsdtVerbResult payload)
+    {
         await EmitResultsAsync(context, payload).ConfigureAwait(false);
-        context.ExitCode = 0;
+        return 0;
     }
 
     private async Task EmitResultsAsync(InvocationContext context, BuildSsdtVerbResult payload)
