@@ -144,7 +144,18 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
             var mapperContext = new DocumentMapperContext(options, warnings, PayloadSerializerOptions);
             var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(mapperContext);
             var attributeMapper = new AttributeDocumentMapper(mapperContext, extendedPropertyMapper);
-            var entityMapper = new EntityDocumentMapper(mapperContext, attributeMapper, extendedPropertyMapper);
+            var indexMapper = new IndexDocumentMapper(mapperContext, extendedPropertyMapper);
+            var relationshipMapper = new RelationshipDocumentMapper(mapperContext);
+            var triggerMapper = new TriggerDocumentMapper(mapperContext);
+            var temporalMetadataMapper = new TemporalMetadataMapper(mapperContext, extendedPropertyMapper);
+            var entityMapper = new EntityDocumentMapper(
+                mapperContext,
+                attributeMapper,
+                extendedPropertyMapper,
+                indexMapper,
+                relationshipMapper,
+                triggerMapper,
+                temporalMetadataMapper);
             var moduleMapper = new ModuleDocumentMapper(mapperContext, entityMapper, extendedPropertyMapper);
             var sequenceMapper = new SequenceDocumentMapper(mapperContext, extendedPropertyMapper);
             var rootPath = DocumentPathContext.Root;
