@@ -74,14 +74,34 @@ public sealed class SqlDataProfiler : IDataProfiler
             var plans = _planBuilder.BuildPlans(metadata, rowCounts);
             var resultsLookup = new ConcurrentDictionary<(string Schema, string Table), TableProfilingResults>(TableKeyComparer.Instance);
 
-            using var gate = new SemaphoreSlim(_options.MaxConcurrentTableProfiles);
-            var tasks = new List<Task>(plans.Count);
-            foreach (var plan in plans.Values)
+            var maxConcurrency = Math.Max(1, _options.MaxConcurrentTableProfiles);
+            if (maxConcurrency == 1 || plans.Count <= 1)
             {
-                tasks.Add(ProfileTableWithGateAsync(plan, resultsLookup, gate, cancellationToken));
+                foreach (var plan in plans.Values)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var results = await _queryExecutor.ExecuteAsync(plan, cancellationToken).ConfigureAwait(false);
+                    resultsLookup[(plan.Schema, plan.Table)] = results;
+                }
             }
+            else
+            {
+                var parallelOptions = new ParallelOptions
+                {
+                    CancellationToken = cancellationToken,
+                    MaxDegreeOfParallelism = maxConcurrency,
+                };
 
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+                await Parallel.ForEachAsync(
+                        plans.Values,
+                        parallelOptions,
+                        async (plan, ct) =>
+                        {
+                            var results = await _queryExecutor.ExecuteAsync(plan, ct).ConfigureAwait(false);
+                            resultsLookup[(plan.Schema, plan.Table)] = results;
+                        })
+                    .ConfigureAwait(false);
+            }
 
             var columnProfiles = new List<ColumnProfile>();
             var uniqueProfiles = new List<UniqueCandidateProfile>();
@@ -256,25 +276,6 @@ public sealed class SqlDataProfiler : IDataProfiler
         }
 
         return tables;
-    }
-
-    private async Task ProfileTableWithGateAsync(
-        TableProfilingPlan plan,
-        ConcurrentDictionary<(string Schema, string Table), TableProfilingResults> resultsLookup,
-        SemaphoreSlim gate,
-        CancellationToken cancellationToken)
-    {
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-        try
-        {
-            var results = await _queryExecutor.ExecuteAsync(plan, cancellationToken).ConfigureAwait(false);
-            resultsLookup[(plan.Schema, plan.Table)] = results;
-        }
-        finally
-        {
-            gate.Release();
-        }
     }
 
     private static bool IsSingleColumnUnique(EntityModel entity, string columnName)
