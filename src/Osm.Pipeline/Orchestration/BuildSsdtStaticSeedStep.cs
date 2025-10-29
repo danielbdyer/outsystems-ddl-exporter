@@ -16,14 +16,11 @@ namespace Osm.Pipeline.Orchestration;
 public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, StaticSeedsGenerated>
 {
     private readonly StaticEntitySeedScriptGenerator _seedGenerator;
-    private readonly StaticEntitySeedTemplate _seedTemplate;
 
     public BuildSsdtStaticSeedStep(
-        StaticEntitySeedScriptGenerator seedGenerator,
-        StaticEntitySeedTemplate seedTemplate)
+        StaticEntitySeedScriptGenerator seedGenerator)
     {
         _seedGenerator = seedGenerator ?? throw new ArgumentNullException(nameof(seedGenerator));
-        _seedTemplate = seedTemplate ?? throw new ArgumentNullException(nameof(seedTemplate));
     }
 
     public async Task<Result<StaticSeedsGenerated>> ExecuteAsync(
@@ -107,7 +104,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
 
                 var modulePath = Path.Combine(moduleDirectory, "StaticEntities.seed.sql");
                 await _seedGenerator
-                    .WriteAsync(modulePath, _seedTemplate, moduleTables, seedOptions.SynchronizationMode, cancellationToken)
+                    .WriteAsync(modulePath, moduleTables, seedOptions.SynchronizationMode, cancellationToken)
                     .ConfigureAwait(false);
                 seedPathBuilder.Add(modulePath);
             }
@@ -116,7 +113,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         {
             var seedPath = Path.Combine(seedsRoot!, "StaticEntities.seed.sql");
             await _seedGenerator
-                .WriteAsync(seedPath, _seedTemplate, deterministicData, seedOptions.SynchronizationMode, cancellationToken)
+                .WriteAsync(seedPath, deterministicData, seedOptions.SynchronizationMode, cancellationToken)
                 .ConfigureAwait(false);
             seedPathBuilder.Add(seedPath);
         }

@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Emission;
+using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Pipeline.Application;
@@ -107,8 +108,10 @@ public class PipelineServiceCollectionExtensionsTests
         Assert.Contains(services, d => d.ServiceType == typeof(SsdtEmitter) && d.ImplementationType == typeof(SsdtEmitter));
         Assert.Contains(services, d => d.ServiceType == typeof(PolicyDecisionLogWriter) && d.ImplementationType == typeof(PolicyDecisionLogWriter));
         Assert.Contains(services, d => d.ServiceType == typeof(EmissionFingerprintCalculator) && d.ImplementationType == typeof(EmissionFingerprintCalculator));
+        Assert.Contains(services, d => d.ServiceType == typeof(SqlLiteralFormatter) && d.ImplementationType == typeof(SqlLiteralFormatter));
+        Assert.Contains(services, d => d.ServiceType == typeof(StaticSeedSqlBuilder) && d.ImplementationType == typeof(StaticSeedSqlBuilder));
+        Assert.Contains(services, d => d.ServiceType == typeof(StaticEntitySeedTemplateService) && d.ImplementationType == typeof(StaticEntitySeedTemplateService));
         Assert.Contains(services, d => d.ServiceType == typeof(StaticEntitySeedScriptGenerator) && d.ImplementationType == typeof(StaticEntitySeedScriptGenerator));
-        Assert.Contains(services, d => d.ServiceType == typeof(StaticEntitySeedTemplate));
     }
 
     [Fact]

@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Osm.Domain.Configuration;
-using Osm.Emission;
+using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Pipeline.Evidence;
@@ -120,7 +120,7 @@ public sealed class SsdtMatrixTests
             new EmissionFingerprintCalculator(),
             new OpportunityLogWriter());
         var sqlValidationStep = new BuildSsdtSqlValidationStep(new SsdtSqlValidator());
-        var staticSeedStep = new BuildSsdtStaticSeedStep(new StaticEntitySeedScriptGenerator(), StaticEntitySeedTemplate.Load());
+        var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
 
         return new BuildSsdtPipeline(
             TimeProvider.System,
@@ -146,6 +146,14 @@ public sealed class SsdtMatrixTests
         return new DataProfilerFactory(
             new ProfileSnapshotDeserializer(),
             static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
+    }
+
+    private static StaticEntitySeedScriptGenerator CreateSeedGenerator()
+    {
+        var literalFormatter = new SqlLiteralFormatter();
+        var sqlBuilder = new StaticSeedSqlBuilder(literalFormatter);
+        var templateService = new StaticEntitySeedTemplateService();
+        return new StaticEntitySeedScriptGenerator(templateService, sqlBuilder);
     }
 
     private static readonly JsonSerializerOptions SerializerOptions = new()

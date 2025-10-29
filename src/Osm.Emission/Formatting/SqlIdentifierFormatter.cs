@@ -1,8 +1,8 @@
 using System;
 
-namespace Osm.Pipeline.Profiling;
+namespace Osm.Emission.Formatting;
 
-internal static class SqlIdentifierFormatter
+public static class SqlIdentifierFormatter
 {
     public static string Quote(string identifier)
     {
@@ -16,6 +16,16 @@ internal static class SqlIdentifierFormatter
 
     public static string Qualify(string schema, string table)
     {
+        if (schema is null)
+        {
+            throw new ArgumentNullException(nameof(schema));
+        }
+
+        if (table is null)
+        {
+            throw new ArgumentNullException(nameof(table));
+        }
+
         return Quote(schema) + "." + Quote(table);
     }
 }
