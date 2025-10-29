@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -28,6 +28,17 @@ public sealed class OpportunityLogWriter
         Converters = { new JsonStringEnumConverter() }
     };
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+    private readonly IFileSystem _fileSystem;
+
+    public OpportunityLogWriter()
+        : this(new FileSystem())
+    {
+    }
+
+    public OpportunityLogWriter(IFileSystem fileSystem)
+    {
+        _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+    }
 
     public async Task<OpportunityArtifacts> WriteAsync(
         string outputDirectory,
@@ -44,22 +55,22 @@ public sealed class OpportunityLogWriter
             throw new ArgumentNullException(nameof(report));
         }
 
-        Directory.CreateDirectory(outputDirectory);
-        var suggestionsDirectory = Path.Combine(outputDirectory, "suggestions");
-        Directory.CreateDirectory(suggestionsDirectory);
+        _fileSystem.Directory.CreateDirectory(outputDirectory);
+        var suggestionsDirectory = _fileSystem.Path.Combine(outputDirectory, "suggestions");
+        _fileSystem.Directory.CreateDirectory(suggestionsDirectory);
 
-        var reportPath = Path.Combine(outputDirectory, "opportunities.json");
-        var safePath = Path.Combine(suggestionsDirectory, "safe-to-apply.sql");
-        var remediationPath = Path.Combine(suggestionsDirectory, "needs-remediation.sql");
+        var reportPath = _fileSystem.Path.Combine(outputDirectory, "opportunities.json");
+        var safePath = _fileSystem.Path.Combine(suggestionsDirectory, "safe-to-apply.sql");
+        var remediationPath = _fileSystem.Path.Combine(suggestionsDirectory, "needs-remediation.sql");
 
         var json = JsonSerializer.Serialize(report, JsonOptions);
-        await File.WriteAllTextAsync(reportPath, json, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+        await _fileSystem.File.WriteAllTextAsync(reportPath, json, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
         var safeScript = BuildSql(report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.ReadyToApply));
-        await File.WriteAllTextAsync(safePath, safeScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+        await _fileSystem.File.WriteAllTextAsync(safePath, safeScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
         var remediationScript = BuildSql(report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.NeedsRemediation));
-        await File.WriteAllTextAsync(remediationPath, remediationScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+        await _fileSystem.File.WriteAllTextAsync(remediationPath, remediationScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
         return new OpportunityArtifacts(reportPath, safePath, safeScript, remediationPath, remediationScript);
     }

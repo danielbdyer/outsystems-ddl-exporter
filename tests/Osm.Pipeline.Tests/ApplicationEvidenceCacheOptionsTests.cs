@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using System.IO.Abstractions.TestingHelpers;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -169,7 +171,10 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             dmmPath: "config.dmm");
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
+        fileSystem.AddDirectory("/work");
+        fileSystem.Directory.SetCurrentDirectory("/work");
+        var service = new CompareWithDmmApplicationService(dispatcher, fileSystem);
 
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
@@ -211,7 +216,10 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             profiler: new ProfilerConfiguration("fixture", null, null));
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
+        fileSystem.AddDirectory("/work");
+        fileSystem.Directory.SetCurrentDirectory("/work");
+        var service = new CompareWithDmmApplicationService(dispatcher, fileSystem);
 
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",

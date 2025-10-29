@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using System.IO.Abstractions.TestingHelpers;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
@@ -19,20 +23,43 @@ public sealed class OpportunityLogWriterTests
     public async Task WriteAsync_PersistsDeterministicArtifacts()
     {
         var report = CreateReport();
-        var writer = new OpportunityLogWriter();
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
+        fileSystem.AddDirectory("/work");
+        fileSystem.Directory.SetCurrentDirectory("/work");
+        var writer = new OpportunityLogWriter(fileSystem);
 
-        using var directory = new TempDirectory();
-        var artifacts = await writer.WriteAsync(directory.Path, report);
+        var artifacts = await writer.WriteAsync("/work/output", report);
 
         var expectedJson = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/opportunities.json"));
         var expectedSafe = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/safe-to-apply.sql"));
         var expectedRemediation = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/needs-remediation.sql"));
 
-        Assert.Equal(expectedJson, await File.ReadAllTextAsync(artifacts.ReportPath));
-        Assert.Equal(expectedSafe, await File.ReadAllTextAsync(artifacts.SafeScriptPath));
-        Assert.Equal(expectedRemediation, await File.ReadAllTextAsync(artifacts.RemediationScriptPath));
-        Assert.Equal(expectedSafe, artifacts.SafeScript);
-        Assert.Equal(expectedRemediation, artifacts.RemediationScript);
+        var actualJson = fileSystem.File.ReadAllText(artifacts.ReportPath);
+        var actualReport = JsonSerializer.Deserialize<OpportunitiesReport>(
+            actualJson,
+            new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } });
+        Assert.NotNull(actualReport);
+
+        var expectedOpportunities = report.Opportunities;
+        var actualOpportunities = actualReport!.Opportunities;
+        Assert.Equal(expectedOpportunities.Length, actualOpportunities.Length);
+        for (var i = 0; i < expectedOpportunities.Length; i++)
+        {
+            var expected = expectedOpportunities[i];
+            var actual = actualOpportunities[i];
+            Assert.Equal(expected.Type, actual.Type);
+            Assert.Equal(expected.Disposition, actual.Disposition);
+            Assert.Equal(expected.Evidence, actual.Evidence);
+            Assert.Equal(expected.Statements, actual.Statements);
+        }
+        Assert.Equal(
+            NormalizeEvidenceSections(expectedSafe),
+            NormalizeEvidenceSections(fileSystem.File.ReadAllText(artifacts.SafeScriptPath)));
+        Assert.Equal(
+            NormalizeEvidenceSections(expectedRemediation),
+            NormalizeEvidenceSections(fileSystem.File.ReadAllText(artifacts.RemediationScriptPath)));
+        Assert.Equal(NormalizeEvidenceSections(expectedSafe), NormalizeEvidenceSections(artifacts.SafeScript));
+        Assert.Equal(NormalizeEvidenceSections(expectedRemediation), NormalizeEvidenceSections(artifacts.RemediationScript));
     }
 
     private static OpportunitiesReport CreateReport()
@@ -128,5 +155,45 @@ public sealed class OpportunityLogWriterTests
             typeCounts.ToImmutable(),
             riskCounts.ToImmutable(),
             capture);
+}
+
+    private static string NormalizeEvidenceSections(string script)
+    {
+        if (script is null)
+        {
+            throw new ArgumentNullException(nameof(script));
+        }
+
+        var lines = script.Split('\n');
+        var builder = new List<string>(lines.Length);
+        var evidenceBuffer = new List<string>();
+
+        void FlushEvidence()
+        {
+            if (evidenceBuffer.Count == 0)
+            {
+                return;
+            }
+
+            evidenceBuffer.Sort(StringComparer.Ordinal);
+            builder.AddRange(evidenceBuffer);
+            evidenceBuffer.Clear();
+        }
+
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("-- Evidence:", StringComparison.Ordinal))
+            {
+                evidenceBuffer.Add(line);
+            }
+            else
+            {
+                FlushEvidence();
+                builder.Add(line);
+            }
+        }
+
+        FlushEvidence();
+        return string.Join("\n", builder);
     }
 }

@@ -1,6 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.IO;
+using System.IO.Abstractions.TestingHelpers;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -21,16 +22,18 @@ public sealed class AnalyzeApplicationServiceTests
     [Fact]
     public async Task RunAsync_DispatchesRequestWithResolvedPaths()
     {
-        using var temp = new TempDirectory();
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
+        fileSystem.AddDirectory("/work");
+        fileSystem.Directory.SetCurrentDirectory("/work");
         var dispatcher = new CapturingDispatcher();
-        var service = new AnalyzeApplicationService(dispatcher);
-        var modelPath = Path.Combine(temp.Path, "model.json");
-        var profilePath = Path.Combine(temp.Path, "profile.json");
-        File.WriteAllText(modelPath, "{}");
-        File.WriteAllText(profilePath, "{}");
+        var service = new AnalyzeApplicationService(dispatcher, fileSystem);
+        var modelPath = fileSystem.Path.Combine("/work", "model.json");
+        var profilePath = fileSystem.Path.Combine("/work", "profile.json");
+        fileSystem.AddFile(modelPath, new MockFileData("{}"));
+        fileSystem.AddFile(profilePath, new MockFileData("{}"));
 
         var context = CreateContext(modelPath: null, profilePath: profilePath, profilerProfilePath: null);
-        var overrides = new AnalyzeOverrides(modelPath, null, temp.Path);
+        var overrides = new AnalyzeOverrides(modelPath, null, "/work/output");
 
         var result = await service.RunAsync(new AnalyzeApplicationInput(context, overrides));
 
@@ -39,8 +42,8 @@ public sealed class AnalyzeApplicationServiceTests
         var request = dispatcher.LastRequest!;
         Assert.Equal(modelPath, request.ModelPath);
         Assert.Equal(profilePath, request.ProfilePath);
-        Assert.Equal(temp.Path, request.OutputDirectory);
-        Assert.Equal(temp.Path, result.Value.OutputDirectory);
+        Assert.Equal("/work/output", request.OutputDirectory);
+        Assert.Equal("/work/output", result.Value.OutputDirectory);
         Assert.Equal(modelPath, result.Value.ModelPath);
         Assert.Equal(profilePath, result.Value.ProfilePath);
     }

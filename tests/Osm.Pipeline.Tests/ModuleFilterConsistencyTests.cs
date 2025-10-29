@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Immutable;
+using System.IO.Abstractions.TestingHelpers;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Application;
@@ -89,7 +90,10 @@ public sealed class ModuleFilterConsistencyTests
         Assert.False(buildRequest.ModuleFilter.IncludeInactiveModules);
 
         var compareDispatcher = new RecordingDispatcher();
-        var compareService = new CompareWithDmmApplicationService(compareDispatcher);
+        var compareFileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
+        compareFileSystem.AddDirectory("/work/compare1");
+        compareFileSystem.Directory.SetCurrentDirectory("/work/compare1");
+        var compareService = new CompareWithDmmApplicationService(compareDispatcher, compareFileSystem);
         var compareModuleFilter = new ModuleFilterOverrides(
             new[] { "Ops", "AppCore", "ops" },
             IncludeSystemModules: false,
@@ -171,7 +175,10 @@ public sealed class ModuleFilterConsistencyTests
         Assert.False(buildRequest.ModuleFilter.IncludeInactiveModules);
 
         var compareDispatcher = new RecordingDispatcher();
-        var compareService = new CompareWithDmmApplicationService(compareDispatcher);
+        var compareFileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
+        compareFileSystem.AddDirectory("/work/compare2");
+        compareFileSystem.Directory.SetCurrentDirectory("/work/compare2");
+        var compareService = new CompareWithDmmApplicationService(compareDispatcher, compareFileSystem);
         var compareOverrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
@@ -242,7 +249,10 @@ public sealed class ModuleFilterConsistencyTests
             new CacheOptionsOverrides(null, null)));
         AssertValidationOverrideFailure(buildResult);
 
-        var compareService = new CompareWithDmmApplicationService(new RecordingDispatcher());
+        var compareFileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
+        compareFileSystem.AddDirectory("/work/compare3");
+        compareFileSystem.Directory.SetCurrentDirectory("/work/compare3");
+        var compareService = new CompareWithDmmApplicationService(new RecordingDispatcher(), compareFileSystem);
         var compareOverrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
