@@ -48,6 +48,21 @@ public record EmissionReady(
     OpportunityArtifacts OpportunityArtifacts)
     : DecisionsSynthesized(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights);
 
+public record SqlValidated(
+    BuildSsdtPipelineRequest Request,
+    PipelineExecutionLogBuilder Log,
+    PipelineBootstrapContext Bootstrap,
+    EvidenceCacheResult? EvidenceCache,
+    PolicyDecisionSet Decisions,
+    PolicyDecisionReport Report,
+    OpportunitiesReport Opportunities,
+    ImmutableArray<PipelineInsight> Insights,
+    SsdtManifest Manifest,
+    string DecisionLogPath,
+    OpportunityArtifacts OpportunityArtifacts,
+    SsdtSqlValidationSummary SqlValidation)
+    : EmissionReady(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights, Manifest, DecisionLogPath, OpportunityArtifacts);
+
 public record StaticSeedsGenerated(
     BuildSsdtPipelineRequest Request,
     PipelineExecutionLogBuilder Log,
@@ -60,5 +75,6 @@ public record StaticSeedsGenerated(
     SsdtManifest Manifest,
     string DecisionLogPath,
     OpportunityArtifacts OpportunityArtifacts,
+    SsdtSqlValidationSummary SqlValidation,
     ImmutableArray<string> StaticSeedScriptPaths)
-    : EmissionReady(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights, Manifest, DecisionLogPath, OpportunityArtifacts);
+    : SqlValidated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation);

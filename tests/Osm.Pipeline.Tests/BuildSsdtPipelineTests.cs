@@ -9,6 +9,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Emission.Seeds;
+using Osm.Emission;
 using Osm.Json;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
@@ -248,9 +249,13 @@ public class BuildSsdtPipelineTests
         Assert.Contains("policy.decisions.synthesized", steps);
         Assert.Contains("smo.model.created", steps);
         Assert.Contains("ssdt.emission.completed", steps);
+        Assert.Contains("ssdt.sql.validation.completed", steps);
         Assert.Contains("policy.log.persisted", steps);
         Assert.Contains("staticData.seed.generated", steps);
         Assert.Contains(steps, step => step is "evidence.cache.persisted" or "evidence.cache.reused");
+
+        Assert.Equal(value.Manifest.Tables.Count, value.SqlValidation.TotalFiles);
+        Assert.Equal(0, value.SqlValidation.ErrorCount);
 
         var requestIndex = Array.IndexOf(steps, "request.received");
         var completedIndex = Array.IndexOf(steps, "pipeline.completed");
@@ -290,6 +295,49 @@ public class BuildSsdtPipelineTests
         Assert.Equal(JsonValueKind.Array, manifestDocument.RootElement.GetProperty("Unsupported").ValueKind);
     }
 
+    [Fact]
+    public async Task HandleAsync_returns_failure_when_sql_validation_reports_errors()
+    {
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+
+        using var output = new TempDirectory();
+
+        var request = new BuildSsdtPipelineRequest(
+            modelPath,
+            ModuleFilterOptions.IncludeAll,
+            output.Path,
+            TighteningOptions.Default,
+            SupplementalModelOptions.Default,
+            "fixture",
+            profilePath,
+            new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict),
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicy.LoadDefault(),
+            null,
+            null,
+            null);
+
+        var issue = SsdtSqlValidationIssue.Create(
+            "Modules/Sample/Tables/dbo.Entity.sql",
+            new[]
+            {
+                SsdtSqlValidationError.Create(102, 0, 16, 1, 1, "Incorrect syntax near '?'."),
+            });
+        var summary = SsdtSqlValidationSummary.Create(1, new[] { issue });
+        var pipeline = new BuildSsdtPipeline(sqlValidator: new FakeSqlValidator(summary));
+
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "pipeline.buildSsdt.sql.validationFailed");
+    }
+
     private sealed class FakePipelineBootstrapper : IPipelineBootstrapper
     {
         private readonly Func<PipelineExecutionLogBuilder, PipelineBootstrapRequest, CancellationToken, Task<Result<PipelineBootstrapContext>>> _callback;
@@ -322,6 +370,24 @@ public class BuildSsdtPipelineTests
                 .Select(definition => StaticEntityTableData.Create(definition, Enumerable.Empty<StaticEntityRow>()))
                 .ToArray();
             return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success((IReadOnlyList<StaticEntityTableData>)data));
+        }
+    }
+
+    private sealed class FakeSqlValidator : ISsdtSqlValidator
+    {
+        private readonly SsdtSqlValidationSummary _summary;
+
+        public FakeSqlValidator(SsdtSqlValidationSummary summary)
+        {
+            _summary = summary;
+        }
+
+        public Task<SsdtSqlValidationSummary> ValidateAsync(
+            string outputDirectory,
+            IReadOnlyList<TableManifestEntry> tables,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_summary);
         }
     }
 
