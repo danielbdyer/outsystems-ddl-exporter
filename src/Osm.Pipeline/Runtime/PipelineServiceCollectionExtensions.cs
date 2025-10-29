@@ -70,6 +70,10 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IModelJsonDeserializer, ModelJsonDeserializer>();
         services.AddSingleton<IProfileSnapshotDeserializer, ProfileSnapshotDeserializer>();
         services.AddSingleton<IDataProfilerFactory, DataProfilerFactory>();
+        services.AddSingleton<NullCountQueryBuilder>();
+        services.AddSingleton<UniqueCandidateQueryBuilder>();
+        services.AddSingleton<ForeignKeyProbeQueryBuilder>();
+        services.AddSingleton<IProfilingProbePolicy, ProfilingProbePolicy>();
         services.AddSingleton<IModelIngestionService, ModelIngestionService>();
         services.AddSingleton<ModuleFilter>();
         services.AddSingleton<SupplementalEntityLoader>();
