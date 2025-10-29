@@ -56,7 +56,9 @@ public sealed class PolicyDecisionLogWriterTests
 
         using var output = new TempDirectory();
         var writer = new PolicyDecisionLogWriter();
-        var path = await writer.WriteAsync(output.Path, report, CancellationToken.None);
+        var result = await writer.WriteAsync(output.Path, report, CancellationToken.None);
+        Assert.True(result.IsSuccess);
+        var path = result.Value;
 
         var json = await File.ReadAllTextAsync(path);
         using var document = JsonDocument.Parse(json);

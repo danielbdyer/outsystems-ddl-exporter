@@ -28,7 +28,9 @@ public sealed class OpportunityLogWriterTests
         fileSystem.Directory.SetCurrentDirectory("/work");
         var writer = new OpportunityLogWriter(fileSystem);
 
-        var artifacts = await writer.WriteAsync("/work/output", report);
+        var result = await writer.WriteAsync("/work/output", report);
+        Assert.True(result.IsSuccess);
+        var artifacts = result.Value;
 
         var expectedJson = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/opportunities.json"));
         var expectedSafe = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/safe-to-apply.sql"));

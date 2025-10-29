@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Text;
@@ -8,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.Abstractions;
 using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Pipeline.Orchestration;
@@ -19,7 +21,7 @@ public sealed record OpportunityArtifacts(
     string RemediationScriptPath,
     string RemediationScript);
 
-public sealed class OpportunityLogWriter
+public sealed class OpportunityLogWriter : IOpportunityLogWriter
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -40,7 +42,7 @@ public sealed class OpportunityLogWriter
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
     }
 
-    public async Task<OpportunityArtifacts> WriteAsync(
+    public async Task<Result<OpportunityArtifacts>> WriteAsync(
         string outputDirectory,
         OpportunitiesReport report,
         CancellationToken cancellationToken = default)
@@ -55,24 +57,33 @@ public sealed class OpportunityLogWriter
             throw new ArgumentNullException(nameof(report));
         }
 
-        _fileSystem.Directory.CreateDirectory(outputDirectory);
-        var suggestionsDirectory = _fileSystem.Path.Combine(outputDirectory, "suggestions");
-        _fileSystem.Directory.CreateDirectory(suggestionsDirectory);
+        try
+        {
+            _fileSystem.Directory.CreateDirectory(outputDirectory);
+            var suggestionsDirectory = _fileSystem.Path.Combine(outputDirectory, "suggestions");
+            _fileSystem.Directory.CreateDirectory(suggestionsDirectory);
 
-        var reportPath = _fileSystem.Path.Combine(outputDirectory, "opportunities.json");
-        var safePath = _fileSystem.Path.Combine(suggestionsDirectory, "safe-to-apply.sql");
-        var remediationPath = _fileSystem.Path.Combine(suggestionsDirectory, "needs-remediation.sql");
+            var reportPath = _fileSystem.Path.Combine(outputDirectory, "opportunities.json");
+            var safePath = _fileSystem.Path.Combine(suggestionsDirectory, "safe-to-apply.sql");
+            var remediationPath = _fileSystem.Path.Combine(suggestionsDirectory, "needs-remediation.sql");
 
-        var json = JsonSerializer.Serialize(report, JsonOptions);
-        await _fileSystem.File.WriteAllTextAsync(reportPath, json, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+            var json = JsonSerializer.Serialize(report, JsonOptions);
+            await _fileSystem.File.WriteAllTextAsync(reportPath, json, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
-        var safeScript = BuildSql(report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.ReadyToApply));
-        await _fileSystem.File.WriteAllTextAsync(safePath, safeScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+            var safeScript = BuildSql(report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.ReadyToApply));
+            await _fileSystem.File.WriteAllTextAsync(safePath, safeScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
-        var remediationScript = BuildSql(report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.NeedsRemediation));
-        await _fileSystem.File.WriteAllTextAsync(remediationPath, remediationScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+            var remediationScript = BuildSql(report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.NeedsRemediation));
+            await _fileSystem.File.WriteAllTextAsync(remediationPath, remediationScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
-        return new OpportunityArtifacts(reportPath, safePath, safeScript, remediationPath, remediationScript);
+            return Result<OpportunityArtifacts>.Success(new OpportunityArtifacts(reportPath, safePath, safeScript, remediationPath, remediationScript));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Result<OpportunityArtifacts>.Failure(ValidationError.Create(
+                "pipeline.buildSsdt.output.permissionDenied",
+                $"Failed to write tightening opportunities to '{outputDirectory}': {ex.Message}"));
+        }
     }
 
     private static string BuildSql(IEnumerable<Opportunity> opportunities)

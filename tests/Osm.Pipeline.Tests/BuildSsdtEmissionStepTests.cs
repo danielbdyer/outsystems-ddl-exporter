@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.SqlServer.Management.Smo;
+using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -71,11 +72,12 @@ public sealed class BuildSsdtEmissionStepTests
 
         var factory = new FakeSmoModelFactory(smoModel);
         var emitter = new FakeSsdtEmitter(manifest);
+        var decisionWriter = new FakePolicyDecisionLogWriter(Path.Combine(output.Path, "policy-decisions.json"));
         var opportunityWriter = new FakeOpportunityLogWriter(artifacts);
         var step = new BuildSsdtEmissionStep(
             factory,
             emitter,
-            new PolicyDecisionLogWriter(),
+            decisionWriter,
             new EmissionFingerprintCalculator(),
             opportunityWriter);
 
@@ -105,6 +107,101 @@ public sealed class BuildSsdtEmissionStepTests
         Assert.Equal(artifacts.SafeScriptPath, opportunityEntry.Metadata["paths.safeScript"]);
         Assert.Equal(artifacts.RemediationScriptPath, opportunityEntry.Metadata["paths.remediationScript"]);
         Assert.Equal(state.Opportunities.TotalCount.ToString(), opportunityEntry.Metadata["counts.total"]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_returns_failure_when_ssdt_emitter_fails()
+    {
+        using var output = new TempDirectory();
+        var request = CreateRequest(output.Path);
+        var bootstrap = CreateBootstrapContext();
+        var state = CreateDecisionState(request, bootstrap);
+
+        var smoModel = CreateSampleSmoModel();
+        var error = ValidationError.Create("pipeline.buildSsdt.output.permissionDenied", "Permission denied.");
+        var factory = new FakeSmoModelFactory(smoModel);
+        var emitter = new FakeSsdtEmitter(Result<SsdtManifest>.Failure(error));
+        var decisionWriter = new FakePolicyDecisionLogWriter(Path.Combine(output.Path, "policy-decisions.json"));
+        var opportunityWriter = new FakeOpportunityLogWriter(CreateOpportunityArtifacts(output.Path));
+        var step = new BuildSsdtEmissionStep(
+            factory,
+            emitter,
+            decisionWriter,
+            new EmissionFingerprintCalculator(),
+            opportunityWriter);
+
+        var result = await step.ExecuteAsync(state);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == error.Code);
+        var log = state.Log.Build();
+        var failureEntry = Assert.Single(log.Entries.Where(entry => entry.Step == "ssdt.emission.failed"));
+        Assert.Equal(output.Path, failureEntry.Metadata["paths.output"]);
+        Assert.Equal(error.Code, failureEntry.Metadata["error.code"]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_returns_failure_when_decision_log_writer_fails()
+    {
+        using var output = new TempDirectory();
+        var request = CreateRequest(output.Path);
+        var bootstrap = CreateBootstrapContext();
+        var state = CreateDecisionState(request, bootstrap);
+
+        var smoModel = CreateSampleSmoModel();
+        var manifest = CreateManifest();
+        var error = ValidationError.Create("pipeline.buildSsdt.output.permissionDenied", "Unable to persist decision log.");
+        var factory = new FakeSmoModelFactory(smoModel);
+        var emitter = new FakeSsdtEmitter(manifest);
+        var decisionWriter = new FakePolicyDecisionLogWriter(Result<string>.Failure(error));
+        var opportunityWriter = new FakeOpportunityLogWriter(CreateOpportunityArtifacts(output.Path));
+        var step = new BuildSsdtEmissionStep(
+            factory,
+            emitter,
+            decisionWriter,
+            new EmissionFingerprintCalculator(),
+            opportunityWriter);
+
+        var result = await step.ExecuteAsync(state);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == error.Code);
+        var log = state.Log.Build();
+        var failureEntry = Assert.Single(log.Entries.Where(entry => entry.Step == "policy.log.failed"));
+        Assert.Equal(output.Path, failureEntry.Metadata["paths.output"]);
+        Assert.Equal(error.Code, failureEntry.Metadata["error.code"]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_returns_failure_when_opportunity_writer_fails()
+    {
+        using var output = new TempDirectory();
+        var request = CreateRequest(output.Path);
+        var bootstrap = CreateBootstrapContext();
+        var state = CreateDecisionState(request, bootstrap);
+
+        var smoModel = CreateSampleSmoModel();
+        var manifest = CreateManifest();
+        var error = ValidationError.Create("pipeline.buildSsdt.output.permissionDenied", "Opportunities write failed.");
+        var factory = new FakeSmoModelFactory(smoModel);
+        var emitter = new FakeSsdtEmitter(manifest);
+        var decisionWriter = new FakePolicyDecisionLogWriter(Path.Combine(output.Path, "policy-decisions.json"));
+        var opportunityWriter = new FakeOpportunityLogWriter(Result<OpportunityArtifacts>.Failure(error));
+        var step = new BuildSsdtEmissionStep(
+            factory,
+            emitter,
+            decisionWriter,
+            new EmissionFingerprintCalculator(),
+            opportunityWriter);
+
+        var result = await step.ExecuteAsync(state);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, e => e.Code == error.Code);
+        var log = state.Log.Build();
+        var failureEntry = Assert.Single(log.Entries.Where(entry => entry.Step == "opportunities.persist.failed"));
+        Assert.Equal(output.Path, failureEntry.Metadata["paths.output"]);
+        Assert.Equal(error.Code, failureEntry.Metadata["error.code"]);
     }
 
     private static BuildSsdtPipelineRequest CreateRequest(string outputDirectory)
@@ -327,16 +424,26 @@ public sealed class BuildSsdtEmissionStepTests
 
     private sealed class FakeSsdtEmitter : ISsdtEmitter
     {
-        private readonly SsdtManifest _manifest;
+        private readonly Result<SsdtManifest> _result;
 
         public FakeSsdtEmitter(SsdtManifest manifest)
         {
-            _manifest = manifest ?? throw new ArgumentNullException(nameof(manifest));
+            if (manifest is null)
+            {
+                throw new ArgumentNullException(nameof(manifest));
+            }
+
+            _result = Result<SsdtManifest>.Success(manifest);
+        }
+
+        public FakeSsdtEmitter(Result<SsdtManifest> result)
+        {
+            _result = result;
         }
 
         public bool Invoked { get; private set; }
 
-        public Task<SsdtManifest> EmitAsync(
+        public Task<Result<SsdtManifest>> EmitAsync(
             SmoModel model,
             string outputDirectory,
             SmoBuildOptions options,
@@ -349,28 +456,62 @@ public sealed class BuildSsdtEmissionStepTests
             CancellationToken cancellationToken = default)
         {
             Invoked = true;
-            return Task.FromResult(_manifest);
+            return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class FakePolicyDecisionLogWriter : IPolicyDecisionLogWriter
+    {
+        private readonly Result<string> _result;
+
+        public FakePolicyDecisionLogWriter(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentException("Path must be provided.", nameof(path));
+            }
+
+            _result = Result<string>.Success(path);
+        }
+
+        public FakePolicyDecisionLogWriter(Result<string> result)
+        {
+            _result = result;
+        }
+
+        public Task<Result<string>> WriteAsync(
+            string outputDirectory,
+            PolicyDecisionReport report,
+            CancellationToken cancellationToken = default,
+            SsdtPredicateCoverage? predicateCoverage = null)
+        {
+            return Task.FromResult(_result);
         }
     }
 
     private sealed class FakeOpportunityLogWriter : IOpportunityLogWriter
     {
-        private readonly OpportunityArtifacts _artifacts;
+        private readonly Result<OpportunityArtifacts> _result;
 
         public FakeOpportunityLogWriter(OpportunityArtifacts artifacts)
         {
-            _artifacts = artifacts;
+            _result = Result<OpportunityArtifacts>.Success(artifacts);
+        }
+
+        public FakeOpportunityLogWriter(Result<OpportunityArtifacts> result)
+        {
+            _result = result;
         }
 
         public bool Invoked { get; private set; }
 
-        public Task<OpportunityArtifacts> WriteAsync(
+        public Task<Result<OpportunityArtifacts>> WriteAsync(
             string outputDirectory,
             OpportunitiesReport report,
             CancellationToken cancellationToken = default)
         {
             Invoked = true;
-            return Task.FromResult(_artifacts);
+            return Task.FromResult(_result);
         }
     }
 }

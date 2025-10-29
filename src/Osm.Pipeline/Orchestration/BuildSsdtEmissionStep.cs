@@ -30,7 +30,7 @@ public interface ISmoModelFactory
 
 public interface ISsdtEmitter
 {
-    Task<SsdtManifest> EmitAsync(
+    Task<Result<SsdtManifest>> EmitAsync(
         SmoModel model,
         string outputDirectory,
         SmoBuildOptions options,
@@ -45,17 +45,26 @@ public interface ISsdtEmitter
 
 public interface IOpportunityLogWriter
 {
-    Task<OpportunityArtifacts> WriteAsync(
+    Task<Result<OpportunityArtifacts>> WriteAsync(
         string outputDirectory,
         OpportunitiesReport report,
         CancellationToken cancellationToken = default);
+}
+
+public interface IPolicyDecisionLogWriter
+{
+    Task<Result<string>> WriteAsync(
+        string outputDirectory,
+        PolicyDecisionReport report,
+        CancellationToken cancellationToken = default,
+        SsdtPredicateCoverage? predicateCoverage = null);
 }
 
 public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized, EmissionReady>
 {
     private readonly ISmoModelFactory _smoModelFactory;
     private readonly ISsdtEmitter _ssdtEmitter;
-    private readonly PolicyDecisionLogWriter _decisionLogWriter;
+    private readonly IPolicyDecisionLogWriter _decisionLogWriter;
     private readonly EmissionFingerprintCalculator _fingerprintCalculator;
     private readonly IOpportunityLogWriter _opportunityWriter;
 
@@ -68,7 +77,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         : this(
             new SmoModelFactoryAdapter(smoModelFactory),
             new SsdtEmitterAdapter(ssdtEmitter),
-            decisionLogWriter,
+            new PolicyDecisionLogWriterAdapter(decisionLogWriter),
             fingerprintCalculator,
             new OpportunityLogWriterAdapter(opportunityWriter))
     {
@@ -77,7 +86,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
     public BuildSsdtEmissionStep(
         ISmoModelFactory smoModelFactory,
         ISsdtEmitter ssdtEmitter,
-        PolicyDecisionLogWriter decisionLogWriter,
+        IPolicyDecisionLogWriter decisionLogWriter,
         EmissionFingerprintCalculator fingerprintCalculator,
         IOpportunityLogWriter opportunityWriter)
     {
@@ -117,19 +126,37 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
                 decisions,
                 cancellationToken)
             .ConfigureAwait(false);
-        RecordSsdtEmission(state.Log, emissionResult);
+        if (emissionResult.IsFailure)
+        {
+            RecordSsdtEmissionFailure(state.Log, state.Request.OutputDirectory, emissionResult.Errors);
+            return Result<EmissionReady>.Failure(emissionResult.Errors);
+        }
+
+        RecordSsdtEmission(state.Log, emissionResult.Value);
 
         var decisionLogResult = await PersistDecisionLogAsync(
                 state,
                 report,
-                emissionResult.Coverage.PredicateCoverage,
+                emissionResult.Value.Coverage.PredicateCoverage,
                 cancellationToken)
             .ConfigureAwait(false);
-        RecordDecisionLogPersisted(state.Log, decisionLogResult);
+        if (decisionLogResult.IsFailure)
+        {
+            RecordDecisionLogFailure(state.Log, state.Request.OutputDirectory, decisionLogResult.Errors);
+            return Result<EmissionReady>.Failure(decisionLogResult.Errors);
+        }
+
+        RecordDecisionLogPersisted(state.Log, decisionLogResult.Value);
 
         var opportunityResult = await PersistOpportunityArtifactsAsync(state, cancellationToken)
             .ConfigureAwait(false);
-        RecordOpportunitiesPersisted(state.Log, opportunityResult);
+        if (opportunityResult.IsFailure)
+        {
+            RecordOpportunitiesFailure(state.Log, state.Request.OutputDirectory, opportunityResult.Errors);
+            return Result<EmissionReady>.Failure(opportunityResult.Errors);
+        }
+
+        RecordOpportunitiesPersisted(state.Log, opportunityResult.Value);
 
         return Result<EmissionReady>.Success(new EmissionReady(
             state.Request,
@@ -140,9 +167,9 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             state.Report,
             state.Opportunities,
             state.Insights,
-            emissionResult.Manifest,
-            decisionLogResult.Path,
-            opportunityResult.Artifacts));
+            emissionResult.Value.Manifest,
+            decisionLogResult.Value.Path,
+            opportunityResult.Value.Artifacts));
     }
 
     private SmoModelCreationResult CreateSmoModel(
@@ -170,7 +197,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         return new SmoModelCreationResult(smoModel, metadata);
     }
 
-    private async Task<SsdtEmissionResult> EmitSsdtArtifactsAsync(
+    private async Task<Result<SsdtEmissionResult>> EmitSsdtArtifactsAsync(
         DecisionsSynthesized state,
         PolicyDecisionReport report,
         SmoModel smoModel,
@@ -189,7 +216,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             smoModel,
             emissionOptions);
 
-        var manifest = await _ssdtEmitter
+        var manifestResult = await _ssdtEmitter
             .EmitAsync(
                 smoModel,
                 state.Request.OutputDirectory,
@@ -201,6 +228,12 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
                 unsupported: coverageResult.Unsupported,
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+        if (manifestResult.IsFailure)
+        {
+            return Result<SsdtEmissionResult>.Failure(manifestResult.Errors);
+        }
+
+        var manifest = manifestResult.Value;
 
         var metadata = new PipelineLogMetadataBuilder()
             .WithPath("output", state.Request.OutputDirectory)
@@ -208,38 +241,50 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             .WithFlag("policySummary.included", manifest.PolicySummary is not null)
             .Build();
 
-        return new SsdtEmissionResult(manifest, coverageResult, metadata);
+        return Result<SsdtEmissionResult>.Success(new SsdtEmissionResult(manifest, coverageResult, metadata));
     }
 
-    private async Task<DecisionLogPersistenceResult> PersistDecisionLogAsync(
+    private async Task<Result<DecisionLogPersistenceResult>> PersistDecisionLogAsync(
         DecisionsSynthesized state,
         PolicyDecisionReport report,
         SsdtPredicateCoverage predicateCoverage,
         CancellationToken cancellationToken)
     {
-        var decisionLogPath = await _decisionLogWriter
+        var decisionLogResult = await _decisionLogWriter
             .WriteAsync(
                 state.Request.OutputDirectory,
                 report,
                 cancellationToken,
                 predicateCoverage)
             .ConfigureAwait(false);
+        if (decisionLogResult.IsFailure)
+        {
+            return Result<DecisionLogPersistenceResult>.Failure(decisionLogResult.Errors);
+        }
+
+        var decisionLogPath = decisionLogResult.Value;
 
         var metadata = new PipelineLogMetadataBuilder()
             .WithPath("decision", decisionLogPath)
             .WithCount("diagnostics", report.Diagnostics.Length)
             .Build();
 
-        return new DecisionLogPersistenceResult(decisionLogPath, metadata);
+        return Result<DecisionLogPersistenceResult>.Success(new DecisionLogPersistenceResult(decisionLogPath, metadata));
     }
 
-    private async Task<OpportunityPersistenceResult> PersistOpportunityArtifactsAsync(
+    private async Task<Result<OpportunityPersistenceResult>> PersistOpportunityArtifactsAsync(
         DecisionsSynthesized state,
         CancellationToken cancellationToken)
     {
-        var opportunityArtifacts = await _opportunityWriter
+        var artifactsResult = await _opportunityWriter
             .WriteAsync(state.Request.OutputDirectory, state.Opportunities, cancellationToken)
             .ConfigureAwait(false);
+        if (artifactsResult.IsFailure)
+        {
+            return Result<OpportunityPersistenceResult>.Failure(artifactsResult.Errors);
+        }
+
+        var opportunityArtifacts = artifactsResult.Value;
 
         var metadata = new PipelineLogMetadataBuilder()
             .WithPath("report", opportunityArtifacts.ReportPath)
@@ -248,7 +293,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             .WithCount("total", state.Opportunities.TotalCount)
             .Build();
 
-        return new OpportunityPersistenceResult(opportunityArtifacts, metadata);
+        return Result<OpportunityPersistenceResult>.Success(new OpportunityPersistenceResult(opportunityArtifacts, metadata));
     }
 
     private static void RecordSmoModelCreated(
@@ -265,6 +310,22 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         log.Record("ssdt.emission.completed", "Emitted SSDT artifacts.", result.Metadata);
     }
 
+    private static void RecordSsdtEmissionFailure(
+        PipelineExecutionLogBuilder log,
+        string outputDirectory,
+        ImmutableArray<ValidationError> errors)
+    {
+        var metadataBuilder = new PipelineLogMetadataBuilder()
+            .WithPath("output", outputDirectory);
+
+        if (!errors.IsDefaultOrEmpty && errors.Length > 0)
+        {
+            metadataBuilder.WithValue("error.code", errors[0].Code);
+        }
+
+        log.Record("ssdt.emission.failed", "Failed to emit SSDT artifacts.", metadataBuilder.Build());
+    }
+
     private static void RecordDecisionLogPersisted(
         PipelineExecutionLogBuilder log,
         DecisionLogPersistenceResult result)
@@ -272,11 +333,43 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         log.Record("policy.log.persisted", "Persisted policy decision log.", result.Metadata);
     }
 
+    private static void RecordDecisionLogFailure(
+        PipelineExecutionLogBuilder log,
+        string outputDirectory,
+        ImmutableArray<ValidationError> errors)
+    {
+        var metadataBuilder = new PipelineLogMetadataBuilder()
+            .WithPath("output", outputDirectory);
+
+        if (!errors.IsDefaultOrEmpty && errors.Length > 0)
+        {
+            metadataBuilder.WithValue("error.code", errors[0].Code);
+        }
+
+        log.Record("policy.log.failed", "Failed to persist policy decision log.", metadataBuilder.Build());
+    }
+
     private static void RecordOpportunitiesPersisted(
         PipelineExecutionLogBuilder log,
         OpportunityPersistenceResult result)
     {
         log.Record("opportunities.persisted", "Persisted tightening opportunities.", result.Metadata);
+    }
+
+    private static void RecordOpportunitiesFailure(
+        PipelineExecutionLogBuilder log,
+        string outputDirectory,
+        ImmutableArray<ValidationError> errors)
+    {
+        var metadataBuilder = new PipelineLogMetadataBuilder()
+            .WithPath("output", outputDirectory);
+
+        if (!errors.IsDefaultOrEmpty && errors.Length > 0)
+        {
+            metadataBuilder.WithValue("error.code", errors[0].Code);
+        }
+
+        log.Record("opportunities.persist.failed", "Failed to persist tightening opportunities.", metadataBuilder.Build());
     }
 
     private SmoBuildOptions BuildEmissionOptions(
@@ -366,7 +459,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }
 
-        public Task<SsdtManifest> EmitAsync(
+        public Task<Result<SsdtManifest>> EmitAsync(
             SmoModel model,
             string outputDirectory,
             SmoBuildOptions options,
@@ -392,6 +485,25 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         }
     }
 
+    private sealed class PolicyDecisionLogWriterAdapter : IPolicyDecisionLogWriter
+    {
+        private readonly PolicyDecisionLogWriter _inner;
+
+        public PolicyDecisionLogWriterAdapter(PolicyDecisionLogWriter inner)
+        {
+            _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        }
+
+        public Task<Result<string>> WriteAsync(
+            string outputDirectory,
+            PolicyDecisionReport report,
+            CancellationToken cancellationToken = default,
+            SsdtPredicateCoverage? predicateCoverage = null)
+        {
+            return _inner.WriteAsync(outputDirectory, report, cancellationToken, predicateCoverage);
+        }
+    }
+
     private sealed class OpportunityLogWriterAdapter : IOpportunityLogWriter
     {
         private readonly OpportunityLogWriter _inner;
@@ -401,7 +513,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }
 
-        public Task<OpportunityArtifacts> WriteAsync(
+        public Task<Result<OpportunityArtifacts>> WriteAsync(
             string outputDirectory,
             OpportunitiesReport report,
             CancellationToken cancellationToken = default)

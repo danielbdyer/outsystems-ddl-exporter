@@ -133,9 +133,15 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
         var summaryPath = Path.Combine(request.OutputDirectory, "tightening-summary.txt");
         await File.WriteAllLinesAsync(summaryPath, summaryLines, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
-        var decisionLogPath = await _decisionLogWriter
+        var decisionLogResult = await _decisionLogWriter
             .WriteAsync(request.OutputDirectory, report, cancellationToken)
             .ConfigureAwait(false);
+        if (decisionLogResult.IsFailure)
+        {
+            return Result<TighteningAnalysisPipelineResult>.Failure(decisionLogResult.Errors);
+        }
+
+        var decisionLogPath = decisionLogResult.Value;
 
         log.Record(
             "analysis.outputs.written",

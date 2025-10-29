@@ -82,7 +82,7 @@
 ## 9. Error Handling & Diagnostics
 - [ ] **9.1 Helpful JSON parse errors** — include JSON path context. *(Unit · P1 · [tests/Osm.Json.Tests/ErrorReporting/JsonParseErrorTests.cs](tests/Osm.Json.Tests/ErrorReporting/JsonParseErrorTests.cs))*
 - [ ] **9.2 ScriptDom parse failures** — report file + line positions. *(Unit · P1 · [tests/Osm.Dmm.Tests/ErrorReporting/ScriptDomErrorTests.cs](tests/Osm.Dmm.Tests/ErrorReporting/ScriptDomErrorTests.cs))*
-- [ ] **9.3 Filesystem permissions** — graceful failure on unwritable output. *(Integration · P2 · [tests/Osm.Cli.Tests/FilesystemPermissionTests.cs](tests/Osm.Cli.Tests/FilesystemPermissionTests.cs))*
+- [x] **9.3 Filesystem permissions** — graceful failure on unwritable output. *(Integration · P2 · [tests/Osm.Cli.Tests/FilesystemPermissionTests.cs](tests/Osm.Cli.Tests/FilesystemPermissionTests.cs))*
 
 ## 10. Performance & Scale
 - [ ] **10.1 Many entities** — ensure no quadratic behavior (500×10). *(Perf · P2 · [tests/Osm.Pipeline.Tests/Performance/ManyEntitiesTests.cs](tests/Osm.Pipeline.Tests/Performance/ManyEntitiesTests.cs))*
