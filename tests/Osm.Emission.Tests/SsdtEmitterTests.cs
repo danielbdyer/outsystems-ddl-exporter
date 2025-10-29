@@ -29,7 +29,9 @@ public class SsdtEmitterTests
         var model = CreateMinimalModel();
         var options = SmoBuildOptions.Default;
 
-        var manifest = await emitter.EmitAsync(model, outputDirectory, options, DefaultMetadata).ConfigureAwait(false);
+        var result = await emitter.EmitAsync(model, outputDirectory, options, DefaultMetadata).ConfigureAwait(false);
+        Assert.True(result.IsSuccess);
+        var manifest = result.Value;
 
         var table = Assert.Single(manifest.Tables);
         Assert.Equal("SampleModule", table.Module);
@@ -95,7 +97,9 @@ public class SsdtEmitterTests
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+        var result = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+        Assert.True(result.IsSuccess);
+        var manifest = result.Value;
 
         Assert.Equal(4, manifest.Tables.Count);
         Assert.Equal("manifest.json", Path.GetFileName(temp.GetFiles("manifest.json").Single()));
@@ -123,7 +127,9 @@ public class SsdtEmitterTests
 
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
-        var manifest = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+        var result = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+        Assert.True(result.IsSuccess);
+        var manifest = result.Value;
 
         var foreignKeyTable = manifest.Tables.First(table => table.ForeignKeys.Count > 0);
         var tablePath = Path.Combine(temp.Path, foreignKeyTable.TableFile);
@@ -149,10 +155,12 @@ public class SsdtEmitterTests
         using var temp = new TempDirectory();
         var emitter = new SsdtEmitter();
 
-        await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+        var firstResult = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+        Assert.True(firstResult.IsSuccess);
         var firstSnapshot = CaptureFiles(temp);
 
-        await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+        var secondResult = await emitter.EmitAsync(smoModel, temp.Path, smoOptions, DefaultMetadata, report).ConfigureAwait(false);
+        Assert.True(secondResult.IsSuccess);
         var secondSnapshot = CaptureFiles(temp);
 
         Assert.Equal(firstSnapshot.Count, secondSnapshot.Count);

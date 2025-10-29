@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.Abstractions;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
@@ -50,7 +52,7 @@ public sealed class SsdtEmitter
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
     }
 
-    public async Task<SsdtManifest> EmitAsync(
+    public async Task<Result<SsdtManifest>> EmitAsync(
         SmoModel model,
         string outputDirectory,
         SmoBuildOptions options,
@@ -74,38 +76,47 @@ public sealed class SsdtEmitter
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        _fileSystem.Directory.CreateDirectory(outputDirectory);
-        _fileSystem.Directory.CreateDirectory(_fileSystem.Path.Combine(outputDirectory, "Modules"));
-
-        var tableCount = model.Tables.Length;
-        var columnCount = model.Tables.Sum(static table => table.Columns.Length);
-        var constraintCount = model.Tables.Sum(static table => table.Indexes.Length + table.ForeignKeys.Length);
-
-        var plans = await _planner.PlanAsync(model, outputDirectory, options, cancellationToken).ConfigureAwait(false);
-        await _planWriter.WriteAsync(plans, options.ModuleParallelism, cancellationToken).ConfigureAwait(false);
-
-        var manifestEntries = new List<TableManifestEntry>(plans.Count);
-        for (var i = 0; i < plans.Count; i++)
+        try
         {
-            manifestEntries.Add(plans[i].ManifestEntry);
+            _fileSystem.Directory.CreateDirectory(outputDirectory);
+            _fileSystem.Directory.CreateDirectory(_fileSystem.Path.Combine(outputDirectory, "Modules"));
+
+            var tableCount = model.Tables.Length;
+            var columnCount = model.Tables.Sum(static table => table.Columns.Length);
+            var constraintCount = model.Tables.Sum(static table => table.Indexes.Length + table.ForeignKeys.Length);
+
+            var plans = await _planner.PlanAsync(model, outputDirectory, options, cancellationToken).ConfigureAwait(false);
+            await _planWriter.WriteAsync(plans, options.ModuleParallelism, cancellationToken).ConfigureAwait(false);
+
+            var manifestEntries = new List<TableManifestEntry>(plans.Count);
+            for (var i = 0; i < plans.Count; i++)
+            {
+                manifestEntries.Add(plans[i].ManifestEntry);
+            }
+
+            var manifest = _manifestBuilder.Build(
+                manifestEntries,
+                options,
+                emission,
+                decisionReport,
+                preRemediation,
+                coverage,
+                predicateCoverage,
+                unsupported,
+                tableCount,
+                columnCount,
+                constraintCount);
+
+            await WriteManifestAsync(outputDirectory, manifest, cancellationToken).ConfigureAwait(false);
+
+            return Result<SsdtManifest>.Success(manifest);
         }
-
-        var manifest = _manifestBuilder.Build(
-            manifestEntries,
-            options,
-            emission,
-            decisionReport,
-            preRemediation,
-            coverage,
-            predicateCoverage,
-            unsupported,
-            tableCount,
-            columnCount,
-            constraintCount);
-
-        await WriteManifestAsync(outputDirectory, manifest, cancellationToken).ConfigureAwait(false);
-
-        return manifest;
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Result<SsdtManifest>.Failure(ValidationError.Create(
+                "pipeline.buildSsdt.output.permissionDenied",
+                $"Failed to emit SSDT artifacts to '{outputDirectory}': {ex.Message}"));
+        }
     }
 
     private async Task WriteManifestAsync(string outputDirectory, SsdtManifest manifest, CancellationToken cancellationToken)

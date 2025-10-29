@@ -47,7 +47,8 @@ public class EmissionPipelineTests
         var emitter = new Osm.Emission.SsdtEmitter();
         var fingerprintCalculator = new EmissionFingerprintCalculator();
         var metadata = fingerprintCalculator.Compute(smoModel, decisions, smoOptions);
-        await emitter.EmitAsync(smoModel, output.Path, smoOptions, metadata, decisionReport);
+        var emitResult = await emitter.EmitAsync(smoModel, output.Path, smoOptions, metadata, decisionReport);
+        AssertResultSucceeded(emitResult);
         await WriteDecisionLogAsync(output.Path, decisionReport);
 
         var staticDefinitions = StaticEntitySeedDefinitionBuilder.Build(model, smoOptions.NamingOverrides);
@@ -161,7 +162,8 @@ public class EmissionPipelineTests
         var emitter = new Osm.Emission.SsdtEmitter();
         var fingerprintCalculator = new EmissionFingerprintCalculator();
         var metadata = fingerprintCalculator.Compute(smoModel, decisions, smoOptions);
-        await emitter.EmitAsync(smoModel, output.Path, smoOptions, metadata, decisionReport);
+        var emitResult = await emitter.EmitAsync(smoModel, output.Path, smoOptions, metadata, decisionReport);
+        AssertResultSucceeded(emitResult);
         await WriteDecisionLogAsync(output.Path, decisionReport);
 
         var staticDefinitions = StaticEntitySeedDefinitionBuilder.Build(model, smoOptions.NamingOverrides);

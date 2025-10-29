@@ -1,14 +1,17 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Osm.Domain.Abstractions;
 using Osm.Emission;
 using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class PolicyDecisionLogWriter
+public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
 {
-    public async Task<string> WriteAsync(
+    public async Task<Result<string>> WriteAsync(
         string outputDirectory,
         PolicyDecisionReport report,
         CancellationToken cancellationToken = default,
@@ -80,10 +83,20 @@ public sealed class PolicyDecisionLogWriter
             predicateCoverage ?? SsdtPredicateCoverage.Empty);
 
         var path = Path.Combine(outputDirectory, "policy-decisions.json");
-        Directory.CreateDirectory(outputDirectory);
-        var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(path, json, cancellationToken).ConfigureAwait(false);
-        return path;
+
+        try
+        {
+            Directory.CreateDirectory(outputDirectory);
+            var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(path, json, cancellationToken).ConfigureAwait(false);
+            return Result<string>.Success(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Result<string>.Failure(ValidationError.Create(
+                "pipeline.buildSsdt.output.permissionDenied",
+                $"Failed to write policy decision log to '{outputDirectory}': {ex.Message}"));
+        }
     }
 
     private sealed record PolicyDecisionLog(
