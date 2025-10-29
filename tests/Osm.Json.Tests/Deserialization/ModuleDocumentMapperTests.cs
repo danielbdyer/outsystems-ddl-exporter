@@ -136,6 +136,10 @@ public class ModuleDocumentMapperTests
         var relationshipMapper = new RelationshipDocumentMapper(context);
         var triggerMapper = new TriggerDocumentMapper(context);
         var temporalMetadataMapper = new TemporalMetadataMapper(context, extendedPropertyMapper);
+        var schemaResolver = new EntitySchemaResolver(context);
+        var metadataFactory = new EntityMetadataFactory();
+        var duplicateWarningEmitter = new DuplicateWarningEmitter(context);
+        var primaryKeyValidator = new PrimaryKeyValidator(context);
         var entityMapper = new EntityDocumentMapper(
             context,
             attributeMapper,
@@ -143,7 +147,11 @@ public class ModuleDocumentMapperTests
             indexMapper,
             relationshipMapper,
             triggerMapper,
-            temporalMetadataMapper);
+            temporalMetadataMapper,
+            schemaResolver,
+            metadataFactory,
+            duplicateWarningEmitter,
+            primaryKeyValidator);
         return new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);
     }
 }
