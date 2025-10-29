@@ -293,7 +293,7 @@ public class BuildSsdtPipelineStepTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault(),
             cacheOptions,
             staticDataProvider,
             null);

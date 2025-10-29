@@ -29,7 +29,7 @@ public sealed class TypeMappingRuleSetTests
                 computedDefinition: null,
                 defaultDefinition: null));
 
-        var defaultPolicy = TypeMappingPolicy.LoadDefault();
+        var defaultPolicy = TypeMappingPolicyLoader.LoadDefault();
         var defaultResult = defaultPolicy.Resolve(attribute);
 
         Assert.Equal(SqlDataType.NVarChar, defaultResult.SqlDataType);
@@ -79,7 +79,7 @@ public sealed class TypeMappingRuleSetTests
                 computedDefinition: null,
                 defaultDefinition: null));
 
-        var defaultPolicy = TypeMappingPolicy.LoadDefault();
+        var defaultPolicy = TypeMappingPolicyLoader.LoadDefault();
         var defaultResult = defaultPolicy.Resolve(attribute);
 
         Assert.Equal(SqlDataType.Decimal, defaultResult.SqlDataType);
@@ -129,7 +129,7 @@ public sealed class TypeMappingRuleSetTests
                 computedDefinition: null,
                 defaultDefinition: null));
 
-        var defaultPolicy = TypeMappingPolicy.LoadDefault();
+        var defaultPolicy = TypeMappingPolicyLoader.LoadDefault();
         var defaultResult = defaultPolicy.Resolve(attribute);
 
         Assert.Equal(SqlDataType.VarBinaryMax, defaultResult.SqlDataType);
@@ -165,7 +165,7 @@ public sealed class TypeMappingRuleSetTests
             length: null,
             externalDatabaseType: "NVARCHAR(128)");
 
-        var defaultPolicy = TypeMappingPolicy.LoadDefault();
+        var defaultPolicy = TypeMappingPolicyLoader.LoadDefault();
         var defaultResult = defaultPolicy.Resolve(attribute);
 
         Assert.Equal(SqlDataType.NVarChar, defaultResult.SqlDataType);
@@ -198,7 +198,7 @@ public sealed class TypeMappingRuleSetTests
     {
         var bytes = Encoding.UTF8.GetBytes(json);
         using var stream = new MemoryStream(bytes);
-        return TypeMappingPolicy.Load(stream, null, null);
+        return TypeMappingPolicyLoader.Load(stream, null, null);
     }
 
     private static AttributeModel CreateAttribute(
