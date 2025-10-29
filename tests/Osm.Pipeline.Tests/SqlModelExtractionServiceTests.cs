@@ -656,6 +656,34 @@ public class SqlModelExtractionServiceTests
         Assert.Equal(3, state.FailureRowSnapshot.RowIndex);
     }
 
+    [Fact]
+    public async Task ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers()
+    {
+        var snapshot = CreateLargeSnapshot(moduleCount: 64, entitiesPerModule: 24, attributesPerEntity: 32);
+        var reader = new StubMetadataReader(Result<OutsystemsMetadataSnapshot>.Success(snapshot));
+        var service = CreateService(reader, new PassthroughModelJsonDeserializer());
+        var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
+
+        using var temp = new TempDirectory();
+        var outputPath = Path.Combine(temp.Path, "large-model.json");
+
+        var baseline = GC.GetTotalMemory(forceFullCollection: true);
+        var result = await service.ExtractAsync(command, ModelExtractionOptions.ToFile(outputPath)).ConfigureAwait(false);
+
+        Assert.True(result.IsSuccess, string.Join(" | ", result.Errors.Select(error => $"{error.Code}:{error.Message}")));
+
+        var payload = result.Value.JsonPayload;
+        Assert.True(payload.IsPersisted);
+        Assert.Equal(Path.GetFullPath(outputPath), payload.FilePath);
+
+        var fileInfo = new FileInfo(outputPath);
+        Assert.True(fileInfo.Length > 5_000_000);
+
+        var after = GC.GetTotalMemory(forceFullCollection: true);
+        var retained = Math.Max(0L, after - baseline);
+        Assert.True(retained < fileInfo.Length / 2, $"Retained memory ({retained} bytes) exceeded half of payload size ({fileInfo.Length} bytes).");
+    }
+
     private static SqlModelExtractionService CreateService(
         IOutsystemsMetadataReader reader,
         IModelJsonDeserializer deserializer)
@@ -825,6 +853,107 @@ public class SqlModelExtractionServiceTests
             triggerJsonRows,
             Array.Empty<OutsystemsModuleJsonRow>(),
             string.Empty);
+    }
+
+    private static OutsystemsMetadataSnapshot CreateLargeSnapshot(int moduleCount, int entitiesPerModule, int attributesPerEntity)
+    {
+        var modules = new List<OutsystemsModuleRow>(moduleCount);
+        var entities = new List<OutsystemsEntityRow>(moduleCount * entitiesPerModule);
+        var physicalTables = new List<OutsystemsPhysicalTableRow>(moduleCount * entitiesPerModule);
+        var attributeJson = new List<OutsystemsAttributeJsonRow>(moduleCount * entitiesPerModule);
+        var relationshipJson = new List<OutsystemsRelationshipJsonRow>(moduleCount * entitiesPerModule);
+        var indexJson = new List<OutsystemsIndexJsonRow>(moduleCount * entitiesPerModule);
+        var triggerJson = new List<OutsystemsTriggerJsonRow>(moduleCount * entitiesPerModule);
+
+        var attributeTemplate = BuildAttributeArrayJson(attributesPerEntity);
+        const string emptyArray = "[]";
+
+        var moduleId = 1;
+        var entityId = 1;
+
+        for (var moduleIndex = 0; moduleIndex < moduleCount; moduleIndex++)
+        {
+            modules.Add(new OutsystemsModuleRow(moduleId, $"Module{moduleId:D4}", IsSystemModule: false, ModuleIsActive: true, EspaceKind: null, EspaceSsKey: null));
+
+            for (var entityIndex = 0; entityIndex < entitiesPerModule; entityIndex++)
+            {
+                var entityName = $"Entity_{moduleId:D4}_{entityIndex:D4}";
+                var tableName = $"OSUSR_{moduleId:D4}_{entityIndex:D4}";
+
+                entities.Add(new OutsystemsEntityRow(
+                    entityId,
+                    entityName,
+                    tableName,
+                    moduleId,
+                    EntityIsActive: true,
+                    IsSystemEntity: false,
+                    IsExternalEntity: false,
+                    DataKind: null,
+                    PrimaryKeySsKey: null,
+                    EntitySsKey: null,
+                    EntityDescription: null));
+
+                physicalTables.Add(new OutsystemsPhysicalTableRow(entityId, "dbo", tableName, 0));
+                attributeJson.Add(new OutsystemsAttributeJsonRow(entityId, attributeTemplate));
+                relationshipJson.Add(new OutsystemsRelationshipJsonRow(entityId, emptyArray));
+                indexJson.Add(new OutsystemsIndexJsonRow(entityId, emptyArray));
+                triggerJson.Add(new OutsystemsTriggerJsonRow(entityId, emptyArray));
+
+                entityId++;
+            }
+
+            moduleId++;
+        }
+
+        return new OutsystemsMetadataSnapshot(
+            modules,
+            entities,
+            Array.Empty<OutsystemsAttributeRow>(),
+            Array.Empty<OutsystemsReferenceRow>(),
+            physicalTables,
+            Array.Empty<OutsystemsColumnRealityRow>(),
+            Array.Empty<OutsystemsColumnCheckRow>(),
+            Array.Empty<OutsystemsColumnCheckJsonRow>(),
+            Array.Empty<OutsystemsPhysicalColumnPresenceRow>(),
+            Array.Empty<OutsystemsIndexRow>(),
+            Array.Empty<OutsystemsIndexColumnRow>(),
+            Array.Empty<OutsystemsForeignKeyRow>(),
+            Array.Empty<OutsystemsForeignKeyColumnRow>(),
+            Array.Empty<OutsystemsForeignKeyAttrMapRow>(),
+            Array.Empty<OutsystemsAttributeHasFkRow>(),
+            Array.Empty<OutsystemsForeignKeyColumnsJsonRow>(),
+            Array.Empty<OutsystemsForeignKeyAttributeJsonRow>(),
+            Array.Empty<OutsystemsTriggerRow>(),
+            attributeJson,
+            relationshipJson,
+            indexJson,
+            triggerJson,
+            Array.Empty<OutsystemsModuleJsonRow>(),
+            "LargeDb");
+    }
+
+    private static string BuildAttributeArrayJson(int attributeCount)
+    {
+        var builder = new StringBuilder();
+        builder.Append('[');
+        for (var i = 0; i < attributeCount; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(',');
+            }
+
+            builder
+                .Append('{')
+                .Append("\"name\":\"Attribute")
+                .Append(i.ToString(CultureInfo.InvariantCulture))
+                .Append("\",\"physicalName\":\"ATTR")
+                .Append(i.ToString(CultureInfo.InvariantCulture))
+                .Append("\",\"dataType\":\"Text\",\"isMandatory\":false,\"isIdentifier\":false,\"isAutoNumber\":false,\"isActive\":true}");
+        }
+
+        builder.Append(']');
+        return builder.ToString();
     }
 
     private static string Minify(JsonElement element)

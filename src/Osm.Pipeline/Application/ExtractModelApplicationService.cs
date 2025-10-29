@@ -142,11 +142,12 @@ public sealed class ExtractModelApplicationService : PipelineApplicationServiceB
 
         var outputPath = string.IsNullOrWhiteSpace(overrides.OutputPath)
             ? "model.extracted.json"
-            : overrides.OutputPath!;
+            : overrides.OutputPath!.Trim();
         var request = new ExtractModelPipelineRequest(
             commandResult.Value,
             context.SqlOptions,
             overrides.MockAdvancedSqlManifest,
+            outputPath,
             overrides.SqlMetadataOutputPath,
             context.SqlMetadataLog);
 

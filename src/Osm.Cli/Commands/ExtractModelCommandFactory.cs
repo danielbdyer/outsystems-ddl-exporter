@@ -110,12 +110,35 @@ internal sealed class ExtractModelCommandFactory : PipelineCommandFactory<Extrac
     private async Task EmitResultsAsync(InvocationContext context, ExtractModelVerbResult payload)
     {
         var result = payload.ApplicationResult;
-        var outputPath = result.OutputPath ?? "model.extracted.json";
+        var requestedOutputPath = result.OutputPath ?? "model.extracted.json";
         var cancellationToken = context.GetCancellationToken();
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath)) ?? Directory.GetCurrentDirectory());
-        await using (var outputStream = File.Create(outputPath))
+        var payload = result.ExtractionResult.JsonPayload;
+
+        string resolvedOutputPath;
+        if (payload.IsPersisted)
         {
-            await result.ExtractionResult.JsonPayload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
+            var persistedPath = payload.FilePath;
+            var requestedFullPath = Path.GetFullPath(requestedOutputPath);
+            if (!string.IsNullOrWhiteSpace(persistedPath)
+                && string.Equals(persistedPath, requestedFullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                resolvedOutputPath = persistedPath;
+            }
+            else
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(requestedFullPath) ?? Directory.GetCurrentDirectory());
+                await using var outputStream = File.Create(requestedFullPath);
+                await payload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
+                resolvedOutputPath = requestedFullPath;
+            }
+        }
+        else
+        {
+            var requestedFullPath = Path.GetFullPath(requestedOutputPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(requestedFullPath) ?? Directory.GetCurrentDirectory());
+            await using var outputStream = File.Create(requestedFullPath);
+            await payload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
+            resolvedOutputPath = requestedFullPath;
         }
 
         var model = result.ExtractionResult.Model;
@@ -133,7 +156,7 @@ internal sealed class ExtractModelCommandFactory : PipelineCommandFactory<Extrac
 
         CommandConsole.WriteLine(context.Console, $"Extracted {moduleCount} modules spanning {entityCount} entities.");
         CommandConsole.WriteLine(context.Console, $"Attributes: {attributeCount}");
-        CommandConsole.WriteLine(context.Console, $"Model written to {outputPath}.");
+        CommandConsole.WriteLine(context.Console, $"Model written to {resolvedOutputPath}.");
         CommandConsole.WriteLine(context.Console, $"Extraction timestamp (UTC): {result.ExtractionResult.ExtractedAtUtc:O}");
     }
 }

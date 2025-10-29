@@ -77,6 +77,7 @@ public sealed class ModelResolutionService : IModelResolutionService
             extractionCommandResult.Value,
             sqlOptions,
             AdvancedSqlFixtureManifestPath: null,
+            OutputPath: null,
             SqlMetadataOutputPath: overrides.SqlMetadataOutputPath,
             SqlMetadataLog: sqlMetadataLog);
 

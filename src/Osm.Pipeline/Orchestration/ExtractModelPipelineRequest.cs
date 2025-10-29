@@ -8,5 +8,6 @@ public sealed record ExtractModelPipelineRequest(
     ModelExtractionCommand Command,
     ResolvedSqlOptions SqlOptions,
     string? AdvancedSqlFixtureManifestPath,
+    string? OutputPath,
     string? SqlMetadataOutputPath,
     SqlMetadataLog? SqlMetadataLog = null) : ICommand<ModelExtractionResult>;
