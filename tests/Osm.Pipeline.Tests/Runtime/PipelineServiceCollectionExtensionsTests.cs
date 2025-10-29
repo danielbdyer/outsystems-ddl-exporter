@@ -68,6 +68,7 @@ public class PipelineServiceCollectionExtensionsTests
 
         Assert.Contains(services, d => d.ServiceType == typeof(IModelJsonDeserializer) && d.ImplementationType == typeof(ModelJsonDeserializer));
         Assert.Contains(services, d => d.ServiceType == typeof(IProfileSnapshotDeserializer) && d.ImplementationType == typeof(ProfileSnapshotDeserializer));
+        Assert.Contains(services, d => d.ServiceType == typeof(IProfileSnapshotSerializer) && d.ImplementationType == typeof(ProfileSnapshotSerializer));
         Assert.Contains(services, d => d.ServiceType == typeof(IDataProfilerFactory) && d.ImplementationType == typeof(DataProfilerFactory));
         Assert.Contains(services, d => d.ServiceType == typeof(IModelIngestionService) && d.ImplementationType == typeof(ModelIngestionService));
         Assert.Contains(services, d => d.ServiceType == typeof(ModuleFilter) && d.ImplementationType == typeof(ModuleFilter));
@@ -138,6 +139,7 @@ public class PipelineServiceCollectionExtensionsTests
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>) && d.ImplementationType == typeof(BuildSsdtPipeline));
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>) && d.ImplementationType == typeof(DmmComparePipeline));
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>) && d.ImplementationType == typeof(ExtractModelPipeline));
+        Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>) && d.ImplementationType == typeof(CaptureProfilePipeline));
     }
 
     [Fact]
@@ -150,6 +152,7 @@ public class PipelineServiceCollectionExtensionsTests
         Assert.Contains(services, d => d.ServiceType == typeof(IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>) && d.ImplementationType == typeof(BuildSsdtApplicationService));
         Assert.Contains(services, d => d.ServiceType == typeof(IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>) && d.ImplementationType == typeof(CompareWithDmmApplicationService));
         Assert.Contains(services, d => d.ServiceType == typeof(IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>) && d.ImplementationType == typeof(ExtractModelApplicationService));
+        Assert.Contains(services, d => d.ServiceType == typeof(IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult>) && d.ImplementationType == typeof(CaptureProfileApplicationService));
     }
 
     [Fact]
@@ -163,6 +166,7 @@ public class PipelineServiceCollectionExtensionsTests
         Assert.Collection(
             verbDescriptors,
             descriptor => Assert.Equal(typeof(BuildSsdtVerb), descriptor.ImplementationType),
+            descriptor => Assert.Equal(typeof(ProfileVerb), descriptor.ImplementationType),
             descriptor => Assert.Equal(typeof(DmmCompareVerb), descriptor.ImplementationType),
             descriptor => Assert.Equal(typeof(ExtractModelVerb), descriptor.ImplementationType),
             descriptor => Assert.Equal(typeof(AnalyzeVerb), descriptor.ImplementationType));
@@ -183,7 +187,9 @@ public class PipelineServiceCollectionExtensionsTests
         Assert.Contains(services, d => d.ServiceType == typeof(TighteningPolicy));
         Assert.Contains(services, d => d.ServiceType == typeof(SsdtEmitter));
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>));
+        Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>));
         Assert.Contains(services, d => d.ServiceType == typeof(IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>));
+        Assert.Contains(services, d => d.ServiceType == typeof(IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult>));
         Assert.Contains(services, d => d.ServiceType == typeof(IVerbRegistry));
     }
 }

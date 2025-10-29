@@ -92,6 +92,34 @@ public class CliIntegrationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task Profile_command_captures_fixture_snapshot()
+    {
+        var repoRoot = FixtureFile.RepositoryRoot;
+        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+
+        using var output = new TempDirectory();
+        var result = await RunCliAsync(repoRoot, $"run --project {cliProject} -- profile --model {modelPath} --profile {profilePath} --profiler-provider fixture --out {output.Path}");
+        AssertExitCode(result, 0);
+
+        var capturedProfilePath = Path.Combine(output.Path, "profile.json");
+        var manifestPath = Path.Combine(output.Path, "manifest.json");
+
+        Assert.True(File.Exists(capturedProfilePath));
+        Assert.True(File.Exists(manifestPath));
+
+        using var manifestStream = File.OpenRead(manifestPath);
+        using var manifestJson = JsonDocument.Parse(manifestStream);
+        var root = manifestJson.RootElement;
+
+        Assert.Equal(modelPath, root.GetProperty("modelPath").GetString());
+        Assert.Equal(capturedProfilePath, root.GetProperty("profilePath").GetString());
+        Assert.Equal("fixture", root.GetProperty("profilerProvider").GetString());
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task DmmCompare_writes_diff_artifact_when_drift_detected()
     {
         var repoRoot = FixtureFile.RepositoryRoot;

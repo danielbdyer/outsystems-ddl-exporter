@@ -71,6 +71,7 @@ public static class PipelineServiceCollectionExtensions
     {
         services.AddSingleton<IModelJsonDeserializer, ModelJsonDeserializer>();
         services.AddSingleton<IProfileSnapshotDeserializer, ProfileSnapshotDeserializer>();
+        services.AddSingleton<IProfileSnapshotSerializer, ProfileSnapshotSerializer>();
         services.AddSingleton<IDataProfilerFactory, DataProfilerFactory>();
         services.AddSingleton<NullCountQueryBuilder>();
         services.AddSingleton<UniqueCandidateQueryBuilder>();
@@ -135,6 +136,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
         services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();
         services.AddSingleton<ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>, ExtractModelPipeline>();
+        services.AddSingleton<ICommandHandler<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>, CaptureProfilePipeline>();
         services.AddSingleton<ICommandHandler<TighteningAnalysisPipelineRequest, TighteningAnalysisPipelineResult>, TighteningAnalysisPipeline>();
 
         return services;
@@ -146,6 +148,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>, CompareWithDmmApplicationService>();
         services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();
         services.AddSingleton<IApplicationService<AnalyzeApplicationInput, AnalyzeApplicationResult>, AnalyzeApplicationService>();
+        services.AddSingleton<IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult>, CaptureProfileApplicationService>();
 
         return services;
     }
@@ -153,6 +156,7 @@ public static class PipelineServiceCollectionExtensions
     internal static IServiceCollection AddPipelineVerbs(this IServiceCollection services)
     {
         services.AddSingleton<IPipelineVerb, BuildSsdtVerb>();
+        services.AddSingleton<IPipelineVerb, ProfileVerb>();
         services.AddSingleton<IPipelineVerb, DmmCompareVerb>();
         services.AddSingleton<IPipelineVerb, ExtractModelVerb>();
         services.AddSingleton<IPipelineVerb, AnalyzeVerb>();
