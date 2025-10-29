@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
 using System.Linq;
+using Osm.Emission.Formatting;
 
 namespace Osm.Pipeline.Profiling;
 

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Emission;
+using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.ModelIngestion;
@@ -185,7 +186,7 @@ public class BuildSsdtPipelineStepTests
         var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
         var validationStep = new BuildSsdtSqlValidationStep();
         var validatedState = (await validationStep.ExecuteAsync(emissionState)).Value;
-        var step = new BuildSsdtStaticSeedStep(new StaticEntitySeedScriptGenerator(), StaticEntitySeedTemplate.Load());
+        var step = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
 
         var result = await step.ExecuteAsync(validatedState);
 
@@ -303,6 +304,14 @@ public class BuildSsdtPipelineStepTests
         return new DataProfilerFactory(
             new ProfileSnapshotDeserializer(),
             static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
+    }
+
+    private static StaticEntitySeedScriptGenerator CreateSeedGenerator()
+    {
+        var literalFormatter = new SqlLiteralFormatter();
+        var sqlBuilder = new StaticSeedSqlBuilder(literalFormatter);
+        var templateService = new StaticEntitySeedTemplateService();
+        return new StaticEntitySeedScriptGenerator(templateService, sqlBuilder);
     }
 
     private static PipelineBootstrapper CreatePipelineBootstrapper()

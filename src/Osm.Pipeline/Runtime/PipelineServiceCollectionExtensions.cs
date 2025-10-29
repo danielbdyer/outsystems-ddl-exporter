@@ -1,6 +1,7 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Emission;
+using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Pipeline.Application;
@@ -106,8 +107,10 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<PolicyDecisionLogWriter>();
         services.AddSingleton<EmissionFingerprintCalculator>();
         services.AddSingleton<OpportunityLogWriter>();
+        services.AddSingleton<SqlLiteralFormatter>();
+        services.AddSingleton<StaticSeedSqlBuilder>();
+        services.AddSingleton<StaticEntitySeedTemplateService>();
         services.AddSingleton<StaticEntitySeedScriptGenerator>();
-        services.AddSingleton(static _ => StaticEntitySeedTemplate.Load());
         services.AddSingleton<ISsdtSqlValidator, SsdtSqlValidator>();
 
         return services;

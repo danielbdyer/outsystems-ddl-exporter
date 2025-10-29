@@ -57,8 +57,7 @@ public class EmissionPipelineTests
             var seedResult = await provider.GetDataAsync(staticDefinitions);
             AssertResultSucceeded(seedResult);
 
-        var template = StaticEntitySeedTemplate.Load();
-        var generator = new StaticEntitySeedScriptGenerator();
+        var generator = CreateSeedGenerator();
         var seedsRoot = Path.Combine(output.Path, "Seeds");
         Directory.CreateDirectory(seedsRoot);
         var deterministicSeeds = StaticEntitySeedDeterminizer.Normalize(seedResult.Value);
@@ -75,7 +74,6 @@ public class EmissionPipelineTests
             Directory.CreateDirectory(moduleDirectory);
             await generator.WriteAsync(
                 Path.Combine(moduleDirectory, "StaticEntities.seed.sql"),
-                template,
                 group.ToArray(),
                 StaticSeedSynchronizationMode.NonDestructive);
         }
@@ -173,28 +171,26 @@ public class EmissionPipelineTests
             var seedResult = await provider.GetDataAsync(staticDefinitions);
             AssertResultSucceeded(seedResult);
 
-        var template = StaticEntitySeedTemplate.Load();
-        var generator = new StaticEntitySeedScriptGenerator();
-        var seedsRoot = Path.Combine(output.Path, "Seeds");
-        Directory.CreateDirectory(seedsRoot);
-        var deterministicSeeds = StaticEntitySeedDeterminizer.Normalize(seedResult.Value);
-        var seedGroups = deterministicSeeds
-            .GroupBy(data => data.Definition.Module, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
+            var generator = CreateSeedGenerator();
+            var seedsRoot = Path.Combine(output.Path, "Seeds");
+            Directory.CreateDirectory(seedsRoot);
+            var deterministicSeeds = StaticEntitySeedDeterminizer.Normalize(seedResult.Value);
+            var seedGroups = deterministicSeeds
+                .GroupBy(data => data.Definition.Module, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var group in seedGroups)
-        {
-            var sanitizedModule = smoOptions.SanitizeModuleNames
-                ? ModuleNameSanitizer.Sanitize(group.Key)
-                : group.Key;
-            var moduleDirectory = Path.Combine(seedsRoot, sanitizedModule);
-            Directory.CreateDirectory(moduleDirectory);
-            await generator.WriteAsync(
-                Path.Combine(moduleDirectory, "StaticEntities.seed.sql"),
-                template,
-                group.ToArray(),
-                StaticSeedSynchronizationMode.NonDestructive);
-        }
+            foreach (var group in seedGroups)
+            {
+                var sanitizedModule = smoOptions.SanitizeModuleNames
+                    ? ModuleNameSanitizer.Sanitize(group.Key)
+                    : group.Key;
+                var moduleDirectory = Path.Combine(seedsRoot, sanitizedModule);
+                Directory.CreateDirectory(moduleDirectory);
+                await generator.WriteAsync(
+                    Path.Combine(moduleDirectory, "StaticEntities.seed.sql"),
+                    group.ToArray(),
+                    StaticSeedSynchronizationMode.NonDestructive);
+            }
         }
 
         var emission = EmissionOutput.Load(output.Path);
@@ -273,6 +269,14 @@ public class EmissionPipelineTests
         AssertResultSucceeded(tightened);
 
         return tightened.Value;
+    }
+
+    private static StaticEntitySeedScriptGenerator CreateSeedGenerator()
+    {
+        var literalFormatter = new SqlLiteralFormatter();
+        var sqlBuilder = new StaticSeedSqlBuilder(literalFormatter);
+        var templateService = new StaticEntitySeedTemplateService();
+        return new StaticEntitySeedScriptGenerator(templateService, sqlBuilder);
     }
 
     private static async Task WriteDecisionLogAsync(string outputDirectory, PolicyDecisionReport report)

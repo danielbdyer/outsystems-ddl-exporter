@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
-using Osm.Emission;
 using Osm.Json;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Evidence;
@@ -360,7 +360,7 @@ public class BuildSsdtPipelineTests
             new EmissionFingerprintCalculator(),
             new OpportunityLogWriter());
         var validationStep = new BuildSsdtSqlValidationStep(sqlValidator ?? new SsdtSqlValidator());
-        var staticSeedStep = new BuildSsdtStaticSeedStep(new StaticEntitySeedScriptGenerator(), StaticEntitySeedTemplate.Load());
+        var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
 
         return new BuildSsdtPipeline(
             timeProvider,
@@ -386,6 +386,14 @@ public class BuildSsdtPipelineTests
         return new DataProfilerFactory(
             new ProfileSnapshotDeserializer(),
             static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
+    }
+
+    private static StaticEntitySeedScriptGenerator CreateSeedGenerator()
+    {
+        var literalFormatter = new SqlLiteralFormatter();
+        var sqlBuilder = new StaticSeedSqlBuilder(literalFormatter);
+        var templateService = new StaticEntitySeedTemplateService();
+        return new StaticEntitySeedScriptGenerator(templateService, sqlBuilder);
     }
 
     private sealed class FakePipelineBootstrapper : IPipelineBootstrapper
