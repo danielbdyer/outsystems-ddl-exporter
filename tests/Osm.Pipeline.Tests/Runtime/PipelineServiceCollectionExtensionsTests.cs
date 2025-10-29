@@ -134,6 +134,7 @@ public class PipelineServiceCollectionExtensionsTests
         Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtEmissionStep) && d.ImplementationType == typeof(BuildSsdtEmissionStep));
         Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtSqlValidationStep) && d.ImplementationType == typeof(BuildSsdtSqlValidationStep));
         Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtStaticSeedStep) && d.ImplementationType == typeof(BuildSsdtStaticSeedStep));
+        Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtTelemetryPackagingStep) && d.ImplementationType == typeof(BuildSsdtTelemetryPackagingStep));
 
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>) && d.ImplementationType == typeof(BuildSsdtPipeline));
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>) && d.ImplementationType == typeof(DmmComparePipeline));

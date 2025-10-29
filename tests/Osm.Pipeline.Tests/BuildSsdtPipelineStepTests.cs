@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -196,6 +197,75 @@ public class BuildSsdtPipelineStepTests
         Assert.All(state.StaticSeedScriptPaths, path => Assert.True(File.Exists(path)));
         var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "staticData.seed.generated");
+    }
+
+    [Fact]
+    public async Task TelemetryPackagingStep_creates_archive_with_expected_artifacts()
+    {
+        using var output = new TempDirectory();
+        var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
+        var evidenceState = new EvidencePrepared(
+            bootstrapState.Request,
+            bootstrapState.Log,
+            bootstrapState.Bootstrap,
+            EvidenceCache: null);
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
+        var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
+        var emissionStep = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
+        var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var validationStep = new BuildSsdtSqlValidationStep();
+        var validatedState = (await validationStep.ExecuteAsync(emissionState)).Value;
+        var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
+        var seedState = (await staticSeedStep.ExecuteAsync(validatedState)).Value;
+
+        var step = new BuildSsdtTelemetryPackagingStep();
+        var result = await step.ExecuteAsync(seedState);
+
+        Assert.True(result.IsSuccess);
+        var packaged = result.Value;
+        var packagePath = Assert.Single(packaged.TelemetryPackagePaths);
+        Assert.True(File.Exists(packagePath));
+
+        using (var archive = ZipFile.OpenRead(packagePath))
+        {
+            var entries = archive.Entries.Select(entry => entry.FullName).ToArray();
+            var expectedEntries = new[]
+            {
+                NormalizeRelative(output.Path, Path.Combine(output.Path, "manifest.json")),
+                NormalizeRelative(output.Path, packaged.DecisionLogPath),
+                NormalizeRelative(output.Path, packaged.OpportunityArtifacts.SafeScriptPath),
+                NormalizeRelative(output.Path, packaged.OpportunityArtifacts.RemediationScriptPath),
+            };
+
+            foreach (var expected in expectedEntries)
+            {
+                Assert.Contains(expected, entries);
+            }
+        }
+
+        var log = packaged.Log.Build();
+        Assert.Contains(log.Entries, entry => entry.Step == "pipeline.execution");
+
+        static string NormalizeRelative(string root, string path)
+        {
+            var absoluteRoot = Path.GetFullPath(root);
+            var absolutePath = Path.GetFullPath(path);
+            var relative = Path.GetRelativePath(absoluteRoot, absolutePath);
+            if (relative.StartsWith("..", StringComparison.Ordinal))
+            {
+                return Path.GetFileName(absolutePath);
+            }
+
+            return relative.Replace('\\', '/');
+        }
     }
 
     [Fact]

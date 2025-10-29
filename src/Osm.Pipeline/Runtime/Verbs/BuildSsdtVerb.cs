@@ -121,6 +121,17 @@ public sealed class BuildSsdtVerb : PipelineVerb<BuildSsdtVerbOptions, BuildSsdt
             }
         }
 
+        if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty)
+        {
+            foreach (var packagePath in pipelineResult.TelemetryPackagePaths)
+            {
+                if (!string.IsNullOrWhiteSpace(packagePath))
+                {
+                    artifacts.Add(new PipelineArtifact("telemetry-package", packagePath, "application/zip"));
+                }
+            }
+        }
+
         if (pipelineResult.EvidenceCache is { } cache)
         {
             artifacts.Add(new PipelineArtifact("evidence-cache", cache.CacheDirectory));

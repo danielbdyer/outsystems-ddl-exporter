@@ -131,6 +131,7 @@ public sealed class BuildSsdtApplicationServiceTests
             "suggestions/needs-remediation.sql",
             "-- remediation script\nGO\n",
             ImmutableArray<string>.Empty,
+            ImmutableArray<string>.Empty,
             SsdtSqlValidationSummary.Empty,
             null,
             PipelineExecutionLog.Empty,

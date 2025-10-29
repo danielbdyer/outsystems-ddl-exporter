@@ -122,6 +122,7 @@ public sealed class SsdtMatrixTests
             new OpportunityLogWriter());
         var sqlValidationStep = new BuildSsdtSqlValidationStep(new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
+        var telemetryPackagingStep = new BuildSsdtTelemetryPackagingStep();
 
         return new BuildSsdtPipeline(
             TimeProvider.System,
@@ -130,7 +131,8 @@ public sealed class SsdtMatrixTests
             policyStep,
             emissionStep,
             sqlValidationStep,
-            staticSeedStep);
+            staticSeedStep,
+            telemetryPackagingStep);
     }
 
     private static PipelineBootstrapper CreatePipelineBootstrapper()

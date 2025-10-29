@@ -131,6 +131,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<BuildSsdtEmissionStep>();
         services.AddSingleton<BuildSsdtSqlValidationStep>();
         services.AddSingleton<BuildSsdtStaticSeedStep>();
+        services.AddSingleton<BuildSsdtTelemetryPackagingStep>();
 
         services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
         services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();

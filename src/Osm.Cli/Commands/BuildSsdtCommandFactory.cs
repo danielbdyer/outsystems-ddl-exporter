@@ -153,6 +153,14 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             }
         }
 
+        if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty && pipelineResult.TelemetryPackagePaths.Length > 0)
+        {
+            foreach (var packagePath in pipelineResult.TelemetryPackagePaths)
+            {
+                CommandConsole.WriteLine(context.Console, $"Telemetry package written to {packagePath}");
+            }
+        }
+
         CommandConsole.WriteLine(context.Console, $"Emitted {pipelineResult.Manifest.Tables.Count} tables to {applicationResult.OutputDirectory}.");
         CommandConsole.WriteLine(context.Console, $"Manifest written to {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
         CommandConsole.WriteLine(context.Console, $"Columns tightened: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount}");

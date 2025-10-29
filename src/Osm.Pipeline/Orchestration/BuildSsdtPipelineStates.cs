@@ -78,3 +78,20 @@ public record StaticSeedsGenerated(
     SsdtSqlValidationSummary SqlValidation,
     ImmutableArray<string> StaticSeedScriptPaths)
     : SqlValidated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation);
+
+public record TelemetryPackaged(
+    BuildSsdtPipelineRequest Request,
+    PipelineExecutionLogBuilder Log,
+    PipelineBootstrapContext Bootstrap,
+    EvidenceCacheResult? EvidenceCache,
+    PolicyDecisionSet Decisions,
+    PolicyDecisionReport Report,
+    OpportunitiesReport Opportunities,
+    ImmutableArray<PipelineInsight> Insights,
+    SsdtManifest Manifest,
+    string DecisionLogPath,
+    OpportunityArtifacts OpportunityArtifacts,
+    SsdtSqlValidationSummary SqlValidation,
+    ImmutableArray<string> StaticSeedScriptPaths,
+    ImmutableArray<string> TelemetryPackagePaths)
+    : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation, StaticSeedScriptPaths);
