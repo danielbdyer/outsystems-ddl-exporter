@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.CommandLine;
 using System.CommandLine.Builder;
+using System.CommandLine.Parsing;
 using System.CommandLine.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -167,7 +168,7 @@ public class PipelineCommandFactorySharedTests
         Type FactoryType,
         string VerbName,
         Type OptionsType,
-        Action<ServiceCollection, TestPipelineVerb> ConfigureServices,
+        Action<ServiceCollection, IPipelineVerb> ConfigureServices,
         Action<object?> AssertOptions);
 
     private sealed class TestPipelineVerb : IPipelineVerb

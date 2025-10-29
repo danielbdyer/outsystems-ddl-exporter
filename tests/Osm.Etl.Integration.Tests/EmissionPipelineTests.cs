@@ -11,6 +11,7 @@ using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Emission;
+using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
 using Osm.Smo;
 using Osm.Validation.Tightening;
