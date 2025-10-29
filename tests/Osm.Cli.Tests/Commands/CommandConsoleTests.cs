@@ -59,6 +59,38 @@ public class CommandConsoleTests
     }
 
     [Fact]
+    public void EmitPipelineInsights_WritesSeverityPrefixedSummaries()
+    {
+        var console = new TestConsole();
+        var insights = ImmutableArray.Create(
+            new PipelineInsight(
+                "pipeline.info.cache",
+                "Cache warmed",
+                "Cache warmed successfully.",
+                PipelineInsightSeverity.Info,
+                ImmutableArray<string>.Empty,
+                string.Empty),
+            new PipelineInsight(
+                "pipeline.critical.validation",
+                "Validation failed",
+                "Emission aborted due to validation failure.",
+                PipelineInsightSeverity.Critical,
+                ImmutableArray<string>.Empty,
+                "Inspect pipeline logs."));
+
+        CommandConsole.EmitPipelineInsights(console, insights);
+
+        var outLines = console.Out!.ToString()!
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal("Pipeline insights:", outLines[0]);
+        Assert.Contains("[info] Cache warmed successfully.", outLines);
+
+        var errorLines = console.Error!.ToString()!
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains("[critical] Emission aborted due to validation failure.", errorLines);
+    }
+
+    [Fact]
     public void EmitPipelineLog_GroupsDuplicatesAndEmitsSamples()
     {
         var console = new TestConsole();

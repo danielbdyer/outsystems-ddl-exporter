@@ -130,6 +130,7 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
         CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
         CommandConsole.EmitProfilingInsights(context.Console, pipelineResult.ProfilingInsights);
+        CommandConsole.EmitPipelineInsights(context.Console, pipelineResult.PipelineInsights);
 
         foreach (var diagnostic in pipelineResult.DecisionReport.Diagnostics)
         {

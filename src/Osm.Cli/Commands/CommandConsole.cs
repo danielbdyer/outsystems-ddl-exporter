@@ -124,6 +124,42 @@ internal static class CommandConsole
         }
     }
 
+    public static void EmitPipelineInsights(IConsole console, ImmutableArray<PipelineInsight> insights)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (insights.IsDefaultOrEmpty || insights.Length == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, "Pipeline insights:");
+
+        foreach (var insight in insights)
+        {
+            if (insight is null)
+            {
+                continue;
+            }
+
+            var message = $"{FormatPipelineInsightPrefix(insight.Severity)}{insight.Summary}";
+
+            switch (insight.Severity)
+            {
+                case PipelineInsightSeverity.Warning:
+                case PipelineInsightSeverity.Critical:
+                    WriteErrorLine(console, message);
+                    break;
+                default:
+                    WriteLine(console, message);
+                    break;
+            }
+        }
+    }
+
     public static void EmitPipelineLog(IConsole console, PipelineExecutionLog log)
     {
         if (log is null || log.Entries.Count == 0)
@@ -197,6 +233,16 @@ internal static class CommandConsole
 
     private static string FormatMetadataValue(string? value)
         => value ?? "<null>";
+
+    private static string FormatPipelineInsightPrefix(PipelineInsightSeverity severity)
+        => severity switch
+        {
+            PipelineInsightSeverity.Info => "[info] ",
+            PipelineInsightSeverity.Advisory => "[advisory] ",
+            PipelineInsightSeverity.Warning => "[warning] ",
+            PipelineInsightSeverity.Critical => "[critical] ",
+            _ => "[info] "
+        };
 
     private static string FormatProfilingInsight(ProfilingInsight insight)
     {

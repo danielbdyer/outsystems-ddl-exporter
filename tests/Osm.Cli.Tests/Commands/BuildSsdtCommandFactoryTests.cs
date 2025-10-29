@@ -159,6 +159,50 @@ public class BuildSsdtCommandFactoryTests
     }
 
     [Fact]
+    public async Task Invoke_EmitsPipelineInsightsWhenPresent()
+    {
+        var configurationService = new FakeConfigurationService();
+        var application = new FakeBuildApplicationService
+        {
+            PipelineInsights = ImmutableArray.Create(
+                new PipelineInsight(
+                    "pipeline.test.warning",
+                    "Test insight",
+                    "Static data manifest missing for Finance module.",
+                    PipelineInsightSeverity.Warning,
+                    ImmutableArray<string>.Empty,
+                    "Provide static data manifest."))
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<BuildSsdtCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var exitCode = await parser.InvokeAsync("build-ssdt --model model.json --profile profile.json --out output", console);
+
+        Assert.Equal(0, exitCode);
+
+        var output = console.Out.ToString() ?? string.Empty;
+        Assert.Contains("Pipeline insights:", output);
+
+        var error = console.Error.ToString() ?? string.Empty;
+        Assert.Contains("[warning] Static data manifest missing for Finance module.", error);
+    }
+
+    [Fact]
     public async Task Invoke_WritesErrorsWhenPipelineFails()
     {
         var configurationService = new FakeConfigurationService();
@@ -262,6 +306,8 @@ public class BuildSsdtCommandFactoryTests
 
         public ImmutableArray<ProfilingInsight> ProfilingInsights { get; init; } = ImmutableArray<ProfilingInsight>.Empty;
 
+        public ImmutableArray<PipelineInsight> PipelineInsights { get; init; } = ImmutableArray<PipelineInsight>.Empty;
+
         public Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
         {
             LastInput = input;
@@ -352,7 +398,7 @@ public class BuildSsdtCommandFactoryTests
                 report,
                 opportunities,
                 manifest,
-                ImmutableArray<PipelineInsight>.Empty,
+                PipelineInsights,
                 "decision.log",
                 "opportunities.json",
                 "suggestions/safe-to-apply.sql",
