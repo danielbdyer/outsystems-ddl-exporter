@@ -15,13 +15,21 @@ public sealed class TypeMappingPolicy
 
     private static readonly Lazy<TypeMappingPolicy> DefaultInstance = new(() => LoadDefault());
 
-    private readonly IReadOnlyDictionary<string, TypeMappingRule> _rules;
+    private readonly IReadOnlyDictionary<string, TypeMappingRule> _attributeRules;
+    private readonly IReadOnlyDictionary<string, TypeMappingRule> _onDiskRules;
+    private readonly IReadOnlyDictionary<string, TypeMappingRule> _externalRules;
     private readonly TypeMappingRule _defaultRule;
 
-    private TypeMappingPolicy(IReadOnlyDictionary<string, TypeMappingRule> rules, TypeMappingRule defaultRule)
+    private TypeMappingPolicy(
+        IReadOnlyDictionary<string, TypeMappingRule> attributeRules,
+        TypeMappingRule defaultRule,
+        IReadOnlyDictionary<string, TypeMappingRule> onDiskRules,
+        IReadOnlyDictionary<string, TypeMappingRule> externalRules)
     {
-        _rules = rules ?? throw new ArgumentNullException(nameof(rules));
+        _attributeRules = attributeRules ?? throw new ArgumentNullException(nameof(attributeRules));
         _defaultRule = defaultRule ?? throw new ArgumentNullException(nameof(defaultRule));
+        _onDiskRules = onDiskRules ?? throw new ArgumentNullException(nameof(onDiskRules));
+        _externalRules = externalRules ?? throw new ArgumentNullException(nameof(externalRules));
     }
 
     public static TypeMappingPolicy Default => DefaultInstance.Value;
@@ -95,15 +103,15 @@ public sealed class TypeMappingPolicy
 
         if (!preferRuntimeMapping && !string.IsNullOrWhiteSpace(attribute.ExternalDatabaseType))
         {
-            return ResolveExternal(attribute.ExternalDatabaseType!);
+            return ResolveExternal(attribute, attribute.ExternalDatabaseType!);
         }
 
-        if (!_rules.TryGetValue(normalized, out var rule))
+        if (!_attributeRules.TryGetValue(normalized, out var rule))
         {
             rule = _defaultRule;
         }
 
-        return rule.Apply(attribute);
+        return rule.Apply(TypeMappingRequest.ForAttribute(attribute));
     }
 
     internal static string NormalizeKey(string? dataType) => NormalizeDataType(dataType ?? string.Empty);
@@ -118,7 +126,7 @@ public sealed class TypeMappingPolicy
         return true;
     }
 
-    private static bool TryResolveFromOnDisk(AttributeModel attribute, AttributeOnDiskMetadata? onDisk, out DataType dataType)
+    private bool TryResolveFromOnDisk(AttributeModel attribute, AttributeOnDiskMetadata? onDisk, out DataType dataType)
     {
         dataType = DataType.NVarCharMax;
         if (onDisk is null || string.IsNullOrWhiteSpace(onDisk.SqlType))
@@ -126,99 +134,50 @@ public sealed class TypeMappingPolicy
             return false;
         }
 
-        var sqlType = onDisk.SqlType!.Trim().ToLowerInvariant();
-        switch (sqlType)
+        var key = NormalizeKey(onDisk.SqlType);
+        if (!_onDiskRules.TryGetValue(key, out var rule))
         {
-            case "nvarchar":
-                dataType = ResolveUnicodeText(onDisk.MaxLength, attribute.Length, DefaultUnicodeMaxLengthThreshold);
-                return true;
-            case "nchar":
-                var ncharLength = onDisk.MaxLength ?? attribute.Length ?? 1;
-                dataType = DataType.NChar(Math.Max(1, ncharLength));
-                return true;
-            case "varchar":
-                dataType = ResolveVarChar(onDisk.MaxLength ?? attribute.Length ?? 0);
-                return true;
-            case "char":
-                var charLength = onDisk.MaxLength ?? attribute.Length ?? 1;
-                dataType = DataType.Char(Math.Max(1, charLength));
-                return true;
-            case "varbinary":
-                dataType = ResolveVarBinary(onDisk.MaxLength ?? attribute.Length ?? 0);
-                return true;
-            case "binary":
-                var binaryLength = onDisk.MaxLength ?? attribute.Length ?? 1;
-                dataType = DataType.Binary(Math.Max(1, binaryLength));
-                return true;
-            case "decimal":
-            case "numeric":
-                dataType = DataType.Decimal(
-                    ResolvePrecision(onDisk.Precision, attribute.Precision),
-                    ResolveScale(onDisk.Scale, attribute.Scale));
-                return true;
-            case "money":
-                dataType = DataType.Money;
-                return true;
-            case "smallmoney":
-                dataType = DataType.SmallMoney;
-                return true;
-            case "bit":
-                dataType = DataType.Bit;
-                return true;
-            case "bigint":
-                dataType = DataType.BigInt;
-                return true;
-            case "int":
-                dataType = DataType.Int;
-                return true;
-            case "smallint":
-                dataType = DataType.SmallInt;
-                return true;
-            case "tinyint":
-                dataType = DataType.TinyInt;
-                return true;
-            case "datetime":
-                dataType = DataType.DateTime;
-                return true;
-            case "smalldatetime":
-                dataType = DataType.SmallDateTime;
-                return true;
-            case "datetime2":
-                dataType = DataType.DateTime2(ResolveScale(onDisk.Scale, attribute.Scale, 7));
-                return true;
-            case "datetimeoffset":
-                dataType = DataType.DateTimeOffset(ResolveScale(onDisk.Scale, attribute.Scale, 7));
-                return true;
-            case "date":
-                dataType = DataType.Date;
-                return true;
-            case "time":
-                dataType = DataType.Time(ResolveScale(onDisk.Scale, attribute.Scale, 7));
-                return true;
-            case "uniqueidentifier":
-                dataType = DataType.UniqueIdentifier;
-                return true;
-            case "float":
-                dataType = DataType.Float;
-                return true;
-            case "real":
-                dataType = DataType.Real;
-                return true;
-            case "xml":
-                dataType = new DataType(SqlDataType.Xml);
-                return true;
-            case "text":
-                dataType = DataType.Text;
-                return true;
-            case "ntext":
-                dataType = DataType.NText;
-                return true;
-            case "image":
-                dataType = DataType.Image;
-                return true;
+            return false;
         }
 
-        return false;
+        dataType = rule.Apply(TypeMappingRequest.ForOnDisk(attribute, onDisk));
+        return true;
+    }
+
+    private DataType ResolveExternal(AttributeModel attribute, string externalType)
+    {
+        var (baseType, parameters) = ParseExternal(externalType);
+        var key = NormalizeKey(baseType);
+
+        if (_externalRules.TryGetValue(key, out var rule))
+        {
+            return rule.Apply(TypeMappingRequest.ForExternal(attribute, parameters));
+        }
+
+        return _defaultRule.Apply(TypeMappingRequest.ForExternal(attribute, parameters));
+    }
+
+    private static (string BaseType, IReadOnlyList<int> Parameters) ParseExternal(string externalType)
+    {
+        var trimmed = externalType.Trim();
+        var openParen = trimmed.IndexOf('(');
+        if (openParen < 0)
+        {
+            return (trimmed, Array.Empty<int>());
+        }
+
+        var baseType = trimmed[..openParen].Trim();
+        var closeParen = trimmed.IndexOf(')', openParen + 1);
+        var argsSegment = closeParen > openParen
+            ? trimmed[(openParen + 1)..closeParen]
+            : trimmed[(openParen + 1)..];
+
+        var parts = argsSegment
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(ParseExternalParameter)
+            .ToArray();
+
+        return (baseType, parts);
     }
 
     private static DataType ResolveUnicodeText(int? length, int? fallbackLength, int maxThreshold)
@@ -258,7 +217,7 @@ public sealed class TypeMappingPolicy
         return ResolveVarChar(effectiveLength);
     }
 
-    private static DataType ResolveVarBinary(int? length)
+    private static DataType ResolveVarBinary(int? length, int maxThreshold)
     {
         if (length is null or <= 0)
         {
@@ -266,7 +225,7 @@ public sealed class TypeMappingPolicy
         }
 
         var resolvedLength = length.Value;
-        if (resolvedLength >= DefaultVarBinaryMaxLengthThreshold)
+        if (resolvedLength == -1 || resolvedLength >= maxThreshold)
         {
             return DataType.VarBinaryMax;
         }
@@ -274,10 +233,10 @@ public sealed class TypeMappingPolicy
         return DataType.VarBinary(resolvedLength);
     }
 
-    private static DataType ResolveDecimal(int? precision, int? scale, int defaultPrecision = 18, int defaultScale = 0)
+    private static DataType ResolveDecimal(int? precision, int? scale, int defaultPrecision, int defaultScale)
     {
-        var resolvedPrecision = precision is null or <= 0 ? defaultPrecision : precision.Value;
-        var resolvedScale = scale is null or < 0 ? defaultScale : scale.Value;
+        var resolvedPrecision = ResolvePrecision(precision, defaultPrecision);
+        var resolvedScale = ResolveScaleValue(scale, defaultScale);
         return DataType.Decimal(resolvedPrecision, resolvedScale);
     }
 
@@ -302,126 +261,24 @@ public sealed class TypeMappingPolicy
         return trimmed.ToLowerInvariant();
     }
 
-    private static int ResolvePrecision(int? onDisk, int? attribute, int defaultValue = 18)
+    private static int ResolvePrecision(int? value, int defaultValue)
     {
-        if (onDisk is not null && onDisk > 0)
+        if (value is not null && value > 0)
         {
-            return onDisk.Value;
-        }
-
-        if (attribute is not null && attribute > 0)
-        {
-            return attribute.Value;
+            return value.Value;
         }
 
         return defaultValue;
     }
 
-    private static int ResolveScale(int? onDisk, int? attribute, int defaultValue = 0)
+    private static int ResolveScaleValue(int? value, int defaultValue)
     {
-        if (onDisk is not null && onDisk >= 0)
+        if (value is not null && value >= 0)
         {
-            return onDisk.Value;
-        }
-
-        if (attribute is not null && attribute >= 0)
-        {
-            return attribute.Value;
+            return value.Value;
         }
 
         return defaultValue;
-    }
-
-    private static DataType ResolveExternal(string externalType)
-    {
-        var trimmed = externalType.Trim();
-        var openParen = trimmed.IndexOf('(');
-        if (openParen < 0)
-        {
-            return ResolveExternalCore(trimmed, Array.Empty<int>());
-        }
-
-        var baseType = trimmed[..openParen].Trim();
-        var closeParen = trimmed.IndexOf(')', openParen + 1);
-        var argsSegment = closeParen > openParen
-            ? trimmed[(openParen + 1)..closeParen]
-            : trimmed[(openParen + 1)..];
-
-        var parts = argsSegment
-            .Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(ParseExternalParameter)
-            .ToArray();
-
-        return ResolveExternalCore(baseType, parts);
-    }
-
-    private static DataType ResolveExternalCore(string baseType, IReadOnlyList<int> parameters)
-    {
-        switch (baseType.ToLowerInvariant())
-        {
-            case "varchar":
-                var varcharLength = parameters.Count > 0 ? parameters[0] : 0;
-                return ResolveVarChar(varcharLength);
-            case "nvarchar":
-                var nvarcharLength = parameters.Count > 0 ? parameters[0] : 0;
-                return ResolveUnicodeText(nvarcharLength, null, DefaultUnicodeMaxLengthThreshold);
-            case "nchar":
-                var ncharLength = parameters.Count > 0 ? parameters[0] : 0;
-                return DataType.NChar(Math.Max(1, ncharLength <= 0 ? 1 : ncharLength));
-            case "char":
-                var charLength = parameters.Count > 0 ? parameters[0] : 0;
-                return DataType.Char(Math.Max(1, charLength <= 0 ? 1 : charLength));
-            case "varbinary":
-                var varBinaryLength = parameters.Count > 0 ? parameters[0] : 0;
-                return ResolveVarBinary(varBinaryLength);
-            case "binary":
-                var binaryLength = parameters.Count > 0 ? parameters[0] : 0;
-                return DataType.Binary(Math.Max(1, binaryLength <= 0 ? 1 : binaryLength));
-            case "decimal":
-            case "numeric":
-                var precision = parameters.Count > 0 ? parameters[0] : 18;
-                var scale = parameters.Count > 1 ? parameters[1] : 0;
-                return DataType.Decimal(precision, scale);
-            case "int":
-                return DataType.Int;
-            case "bigint":
-                return DataType.BigInt;
-            case "smallint":
-                return DataType.SmallInt;
-            case "tinyint":
-                return DataType.TinyInt;
-            case "bit":
-                return DataType.Bit;
-            case "datetime":
-                return DataType.DateTime;
-            case "datetime2":
-                var datetime2Scale = parameters.Count > 0 ? parameters[0] : 7;
-                return DataType.DateTime2(Math.Clamp(datetime2Scale, 0, 7));
-            case "datetimeoffset":
-                var offsetScale = parameters.Count > 0 ? parameters[0] : 7;
-                return DataType.DateTimeOffset(Math.Clamp(offsetScale, 0, 7));
-            case "smalldatetime":
-                return DataType.SmallDateTime;
-            case "date":
-                return DataType.Date;
-            case "time":
-                var timeScale = parameters.Count > 0 ? parameters[0] : 7;
-                return DataType.Time(Math.Clamp(timeScale, 0, 7));
-            case "uniqueidentifier":
-                return DataType.UniqueIdentifier;
-            case "float":
-                return DataType.Float;
-            case "real":
-                return DataType.Real;
-            case "money":
-                return DataType.Money;
-            case "smallmoney":
-                return DataType.SmallMoney;
-            case "image":
-                return DataType.Image;
-            default:
-                return DataType.NVarCharMax;
-        }
     }
 
     private static bool ShouldPreferRuntimeMapping(AttributeModel attribute, string normalizedDataType)
@@ -450,6 +307,113 @@ public sealed class TypeMappingPolicy
         return int.TryParse(trimmed, out var value) ? value : 0;
     }
 
+    private static DataType ResolveFixedSqlType(string? sqlType)
+    {
+        if (string.IsNullOrWhiteSpace(sqlType))
+        {
+            return DataType.NVarCharMax;
+        }
+
+        var (baseType, parameters) = ParseExternal(sqlType);
+        var key = NormalizeKey(baseType);
+
+        if (FixedTypeResolvers.TryGetValue(key, out var resolver))
+        {
+            return resolver(parameters);
+        }
+
+        return DataType.NVarCharMax;
+    }
+
+    private static readonly IReadOnlyDictionary<string, Func<IReadOnlyList<int>, DataType>> FixedTypeResolvers =
+        new Dictionary<string, Func<IReadOnlyList<int>, DataType>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["varchar"] = parameters => ResolveVarChar(parameters.Count > 0 ? parameters[0] : (int?)null),
+            ["nvarchar"] = parameters => ResolveUnicodeText(parameters.Count > 0 ? parameters[0] : (int?)null, null, DefaultUnicodeMaxLengthThreshold),
+            ["nchar"] = parameters => DataType.NChar(Math.Max(1, parameters.Count > 0 ? NormalizeFixedLength(parameters[0]) : 1)),
+            ["char"] = parameters => DataType.Char(Math.Max(1, parameters.Count > 0 ? NormalizeFixedLength(parameters[0]) : 1)),
+            ["varbinary"] = parameters => ResolveVarBinary(parameters.Count > 0 ? parameters[0] : (int?)null, DefaultVarBinaryMaxLengthThreshold),
+            ["binary"] = parameters => DataType.Binary(Math.Max(1, parameters.Count > 0 ? NormalizeFixedLength(parameters[0]) : 1)),
+            ["decimal"] = parameters => ResolveDecimal(
+                parameters.Count > 0 ? parameters[0] : (int?)null,
+                parameters.Count > 1 ? parameters[1] : (int?)null,
+                18,
+                0),
+            ["numeric"] = parameters => ResolveDecimal(
+                parameters.Count > 0 ? parameters[0] : (int?)null,
+                parameters.Count > 1 ? parameters[1] : (int?)null,
+                18,
+                0),
+            ["int"] = _ => DataType.Int,
+            ["bigint"] = _ => DataType.BigInt,
+            ["smallint"] = _ => DataType.SmallInt,
+            ["tinyint"] = _ => DataType.TinyInt,
+            ["bit"] = _ => DataType.Bit,
+            ["datetime"] = _ => DataType.DateTime,
+            ["datetime2"] = parameters => DataType.DateTime2(ResolveScaleValue(parameters.Count > 0 ? parameters[0] : null, 7)),
+            ["datetimeoffset"] = parameters => DataType.DateTimeOffset(ResolveScaleValue(parameters.Count > 0 ? parameters[0] : null, 7)),
+            ["smalldatetime"] = _ => DataType.SmallDateTime,
+            ["date"] = _ => DataType.Date,
+            ["time"] = parameters => DataType.Time(ResolveScaleValue(parameters.Count > 0 ? parameters[0] : null, 7)),
+            ["uniqueidentifier"] = _ => DataType.UniqueIdentifier,
+            ["float"] = _ => DataType.Float,
+            ["real"] = _ => DataType.Real,
+            ["money"] = _ => DataType.Money,
+            ["smallmoney"] = _ => DataType.SmallMoney,
+            ["xml"] = _ => new DataType(SqlDataType.Xml),
+            ["text"] = _ => DataType.Text,
+            ["ntext"] = _ => DataType.NText,
+            ["image"] = _ => DataType.Image,
+        };
+
+    private static int NormalizeFixedLength(int value)
+        => value <= 0 ? 1 : value;
+
+    private enum TypeResolutionSource
+    {
+        Attribute,
+        OnDisk,
+        External,
+    }
+
+    private sealed class TypeMappingRequest
+    {
+        private TypeMappingRequest(AttributeModel attribute, AttributeOnDiskMetadata? onDisk, IReadOnlyList<int> parameters, TypeResolutionSource source)
+        {
+            Attribute = attribute ?? throw new ArgumentNullException(nameof(attribute));
+            OnDisk = onDisk;
+            Parameters = parameters ?? Array.Empty<int>();
+            Source = source;
+        }
+
+        public AttributeModel Attribute { get; }
+
+        public AttributeOnDiskMetadata? OnDisk { get; }
+
+        public IReadOnlyList<int> Parameters { get; }
+
+        public TypeResolutionSource Source { get; }
+
+        public static TypeMappingRequest ForAttribute(AttributeModel attribute)
+            => new(attribute, attribute.OnDisk, Array.Empty<int>(), TypeResolutionSource.Attribute);
+
+        public static TypeMappingRequest ForOnDisk(AttributeModel attribute, AttributeOnDiskMetadata onDisk)
+            => new(attribute, onDisk, Array.Empty<int>(), TypeResolutionSource.OnDisk);
+
+        public static TypeMappingRequest ForExternal(AttributeModel attribute, IReadOnlyList<int> parameters)
+            => new(attribute, attribute.OnDisk, parameters, TypeResolutionSource.External);
+
+        public int? GetParameter(int index)
+        {
+            if (index < 0 || Parameters.Count <= index)
+            {
+                return null;
+            }
+
+            return Parameters[index];
+        }
+    }
+
     private sealed class TypeMappingRule
     {
         private readonly TypeMappingStrategy _strategy;
@@ -459,8 +423,14 @@ public sealed class TypeMappingPolicy
         private readonly int? _defaultScale;
         private readonly int? _scale;
         private readonly int? _maxLengthThreshold;
+        private readonly TypeValueSource _lengthSource;
+        private readonly TypeValueSource _precisionSource;
+        private readonly TypeValueSource _scaleSource;
+        private readonly int? _lengthParameterIndex;
+        private readonly int? _precisionParameterIndex;
+        private readonly int? _scaleParameterIndex;
 
-        public TypeMappingRule(TypeMappingRuleDefinition definition)
+        public TypeMappingRule(TypeMappingRuleDefinition definition, TypeResolutionSource source)
         {
             if (definition is null)
             {
@@ -474,34 +444,116 @@ public sealed class TypeMappingPolicy
             _defaultScale = definition.DefaultScale;
             _scale = definition.Scale;
             _maxLengthThreshold = definition.MaxLengthThreshold;
+            _lengthSource = definition.LengthSource ?? GetDefaultLengthSource(source);
+            _precisionSource = definition.PrecisionSource ?? GetDefaultPrecisionSource(source);
+            _scaleSource = definition.ScaleSource ?? GetDefaultScaleSource(source);
+            _lengthParameterIndex = definition.LengthParameterIndex;
+            _precisionParameterIndex = definition.PrecisionParameterIndex;
+            _scaleParameterIndex = definition.ScaleParameterIndex;
         }
 
-        public DataType Apply(AttributeModel attribute)
+        public DataType Apply(TypeMappingRequest request)
         {
             return _strategy switch
             {
-                TypeMappingStrategy.Fixed => ResolveFixed(_sqlType),
-                TypeMappingStrategy.UnicodeText => ResolveUnicodeText(attribute.Length, _fallbackLength, _maxLengthThreshold ?? DefaultUnicodeMaxLengthThreshold),
-                TypeMappingStrategy.VarChar => ResolveVarChar(attribute.Length ?? _fallbackLength),
-                TypeMappingStrategy.VarCharText => ResolveVarCharText(attribute.Length, _fallbackLength ?? 0),
-                TypeMappingStrategy.VarBinary => ResolveVarBinary(attribute.Length ?? _fallbackLength),
-                TypeMappingStrategy.Decimal => ResolveDecimal(attribute.Precision, attribute.Scale, _defaultPrecision ?? 18, _defaultScale ?? 0),
-                TypeMappingStrategy.DateTime2 => DataType.DateTime2(ResolveScale(null, attribute.Scale, _scale ?? 7)),
-                TypeMappingStrategy.DateTimeOffset => DataType.DateTimeOffset(ResolveScale(null, attribute.Scale, _scale ?? 7)),
-                TypeMappingStrategy.Time => DataType.Time(ResolveScale(null, attribute.Scale, _scale ?? 7)),
-                _ => ResolveFixed(_sqlType),
+                TypeMappingStrategy.Fixed => ResolveFixedSqlType(_sqlType),
+                TypeMappingStrategy.UnicodeText => ResolveUnicodeText(
+                    GetLength(request),
+                    _fallbackLength,
+                    _maxLengthThreshold ?? DefaultUnicodeMaxLengthThreshold),
+                TypeMappingStrategy.VarChar => ResolveVarChar(GetLength(request) ?? _fallbackLength),
+                TypeMappingStrategy.VarCharText => ResolveVarCharText(GetLength(request), _fallbackLength ?? 0),
+                TypeMappingStrategy.VarBinary => ResolveVarBinary(GetLength(request) ?? _fallbackLength, _maxLengthThreshold ?? DefaultVarBinaryMaxLengthThreshold),
+                TypeMappingStrategy.Decimal => ResolveDecimal(
+                    GetPrecision(request),
+                    GetScale(request),
+                    _defaultPrecision ?? 18,
+                    _defaultScale ?? 0),
+                TypeMappingStrategy.DateTime2 => DataType.DateTime2(ResolveScaleValue(GetScale(request), _scale ?? 7)),
+                TypeMappingStrategy.DateTimeOffset => DataType.DateTimeOffset(ResolveScaleValue(GetScale(request), _scale ?? 7)),
+                TypeMappingStrategy.Time => DataType.Time(ResolveScaleValue(GetScale(request), _scale ?? 7)),
+                TypeMappingStrategy.NChar => DataType.NChar(Math.Max(1, GetLength(request) ?? _fallbackLength ?? 1)),
+                TypeMappingStrategy.Char => DataType.Char(Math.Max(1, GetLength(request) ?? _fallbackLength ?? 1)),
+                TypeMappingStrategy.Binary => DataType.Binary(Math.Max(1, GetLength(request) ?? _fallbackLength ?? 1)),
+                _ => ResolveFixedSqlType(_sqlType),
             };
         }
 
-        private static DataType ResolveFixed(string? sqlType)
+        private int? GetLength(TypeMappingRequest request)
         {
-            return string.IsNullOrWhiteSpace(sqlType) ? DataType.NVarCharMax : ResolveExternal(sqlType);
+            return _lengthSource switch
+            {
+                TypeValueSource.Attribute => request.Attribute.Length,
+                TypeValueSource.OnDisk => request.OnDisk?.MaxLength,
+                TypeValueSource.OnDiskOrAttribute => request.OnDisk?.MaxLength ?? request.Attribute.Length,
+                TypeValueSource.Parameters => request.GetParameter(_lengthParameterIndex ?? 0),
+                _ => request.Attribute.Length,
+            };
+        }
+
+        private int? GetPrecision(TypeMappingRequest request)
+        {
+            return _precisionSource switch
+            {
+                TypeValueSource.Attribute => request.Attribute.Precision,
+                TypeValueSource.OnDisk => request.OnDisk?.Precision,
+                TypeValueSource.OnDiskOrAttribute => request.OnDisk?.Precision ?? request.Attribute.Precision,
+                TypeValueSource.Parameters => request.GetParameter(_precisionParameterIndex ?? 0),
+                _ => request.Attribute.Precision,
+            };
+        }
+
+        private int? GetScale(TypeMappingRequest request)
+        {
+            return _scaleSource switch
+            {
+                TypeValueSource.Attribute => request.Attribute.Scale,
+                TypeValueSource.OnDisk => request.OnDisk?.Scale,
+                TypeValueSource.OnDiskOrAttribute => request.OnDisk?.Scale ?? request.Attribute.Scale,
+                TypeValueSource.Parameters => request.GetParameter(_scaleParameterIndex ?? 0),
+                _ => request.Attribute.Scale,
+            };
+        }
+
+        private static TypeValueSource GetDefaultLengthSource(TypeResolutionSource source)
+        {
+            return source switch
+            {
+                TypeResolutionSource.Attribute => TypeValueSource.Attribute,
+                TypeResolutionSource.OnDisk => TypeValueSource.OnDiskOrAttribute,
+                TypeResolutionSource.External => TypeValueSource.Parameters,
+                _ => TypeValueSource.Attribute,
+            };
+        }
+
+        private static TypeValueSource GetDefaultPrecisionSource(TypeResolutionSource source)
+        {
+            return source switch
+            {
+                TypeResolutionSource.Attribute => TypeValueSource.Attribute,
+                TypeResolutionSource.OnDisk => TypeValueSource.OnDiskOrAttribute,
+                TypeResolutionSource.External => TypeValueSource.Parameters,
+                _ => TypeValueSource.Attribute,
+            };
+        }
+
+        private static TypeValueSource GetDefaultScaleSource(TypeResolutionSource source)
+        {
+            return source switch
+            {
+                TypeResolutionSource.Attribute => TypeValueSource.Attribute,
+                TypeResolutionSource.OnDisk => TypeValueSource.OnDiskOrAttribute,
+                TypeResolutionSource.External => TypeValueSource.Parameters,
+                _ => TypeValueSource.Attribute,
+            };
         }
     }
 
     private sealed record TypeMappingPolicyDefinition(
         TypeMappingRuleDefinition Default,
-        IReadOnlyDictionary<string, TypeMappingRuleDefinition> Mappings)
+        IReadOnlyDictionary<string, TypeMappingRuleDefinition> AttributeMappings,
+        IReadOnlyDictionary<string, TypeMappingRuleDefinition> OnDiskMappings,
+        IReadOnlyDictionary<string, TypeMappingRuleDefinition> ExternalMappings)
     {
         public static TypeMappingPolicyDefinition Parse(Stream stream)
         {
@@ -521,14 +573,23 @@ public sealed class TypeMappingPolicy
                 defaultRule = new TypeMappingRuleDefinition(TypeMappingStrategy.Fixed, "nvarchar(max)", null, null, null, null, null);
             }
 
+            var attributeMappings = ParseSection(root, "mappings");
+            var onDiskMappings = ParseSection(root, "onDisk");
+            var externalMappings = ParseSection(root, "external");
+
+            return new TypeMappingPolicyDefinition(defaultRule, attributeMappings, onDiskMappings, externalMappings);
+        }
+
+        private static IReadOnlyDictionary<string, TypeMappingRuleDefinition> ParseSection(JsonElement root, string propertyName)
+        {
             var mappings = new Dictionary<string, TypeMappingRuleDefinition>(StringComparer.OrdinalIgnoreCase);
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("mappings", out var mappingsElement) && mappingsElement.ValueKind == JsonValueKind.Object)
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty(propertyName, out var section) && section.ValueKind == JsonValueKind.Object)
             {
-                foreach (var property in mappingsElement.EnumerateObject())
+                foreach (var property in section.EnumerateObject())
                 {
                     if (!TypeMappingRuleDefinition.TryParse(property.Value, out var rule, out var error))
                     {
-                        throw new InvalidOperationException($"Failed to parse type mapping for '{property.Name}': {error}");
+                        throw new InvalidOperationException($"Failed to parse type mapping for '{property.Name}' in '{propertyName}': {error}");
                     }
 
                     var key = NormalizeKey(property.Name);
@@ -536,7 +597,7 @@ public sealed class TypeMappingPolicy
                 }
             }
 
-            return new TypeMappingPolicyDefinition(defaultRule, mappings);
+            return mappings;
         }
 
         public TypeMappingPolicyDefinition WithOverrides(IReadOnlyDictionary<string, TypeMappingRuleDefinition> overrides)
@@ -546,7 +607,7 @@ public sealed class TypeMappingPolicy
                 return this;
             }
 
-            var builder = new Dictionary<string, TypeMappingRuleDefinition>(Mappings, StringComparer.OrdinalIgnoreCase);
+            var builder = new Dictionary<string, TypeMappingRuleDefinition>(AttributeMappings, StringComparer.OrdinalIgnoreCase);
             foreach (var pair in overrides)
             {
                 if (string.IsNullOrWhiteSpace(pair.Key))
@@ -558,19 +619,29 @@ public sealed class TypeMappingPolicy
                 builder[key] = pair.Value;
             }
 
-            return this with { Mappings = builder };
+            return this with { AttributeMappings = builder };
         }
 
         public TypeMappingPolicy ToPolicy()
         {
+            var externalCompiled = CompileRules(ExternalMappings, TypeResolutionSource.External);
+            var onDiskCompiled = CompileRules(OnDiskMappings, TypeResolutionSource.OnDisk);
+            var attributeCompiled = CompileRules(AttributeMappings, TypeResolutionSource.Attribute);
+            return new TypeMappingPolicy(attributeCompiled, new TypeMappingRule(Default, TypeResolutionSource.Attribute), onDiskCompiled, externalCompiled);
+        }
+
+        private static IReadOnlyDictionary<string, TypeMappingRule> CompileRules(
+            IReadOnlyDictionary<string, TypeMappingRuleDefinition> source,
+            TypeResolutionSource resolutionSource)
+        {
             var compiled = new Dictionary<string, TypeMappingRule>(StringComparer.OrdinalIgnoreCase);
-            foreach (var pair in Mappings)
+            foreach (var pair in source)
             {
                 var key = NormalizeKey(pair.Key);
-                compiled[key] = new TypeMappingRule(pair.Value);
+                compiled[key] = new TypeMappingRule(pair.Value, resolutionSource);
             }
 
-            return new TypeMappingPolicy(compiled, new TypeMappingRule(Default));
+            return compiled;
         }
     }
 }

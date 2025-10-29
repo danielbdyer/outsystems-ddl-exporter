@@ -85,5 +85,155 @@
     "guid": "uniqueidentifier",
     "uniqueidentifier": "uniqueidentifier",
     "xml": "xml"
+  },
+  "onDisk": {
+    "nvarchar": {
+      "strategy": "UnicodeText",
+      "lengthSource": "OnDiskOrAttribute",
+      "maxLengthThreshold": 2000
+    },
+    "nchar": {
+      "strategy": "NChar",
+      "lengthSource": "OnDiskOrAttribute"
+    },
+    "varchar": {
+      "strategy": "VarChar",
+      "lengthSource": "OnDiskOrAttribute"
+    },
+    "char": {
+      "strategy": "Char",
+      "lengthSource": "OnDiskOrAttribute"
+    },
+    "varbinary": {
+      "strategy": "VarBinary",
+      "lengthSource": "OnDiskOrAttribute",
+      "maxLengthThreshold": 2000
+    },
+    "binary": {
+      "strategy": "Binary",
+      "lengthSource": "OnDiskOrAttribute"
+    },
+    "decimal": {
+      "strategy": "Decimal",
+      "precisionSource": "OnDiskOrAttribute",
+      "scaleSource": "OnDiskOrAttribute"
+    },
+    "numeric": {
+      "strategy": "Decimal",
+      "precisionSource": "OnDiskOrAttribute",
+      "scaleSource": "OnDiskOrAttribute"
+    },
+    "money": "money",
+    "smallmoney": "smallmoney",
+    "bit": "bit",
+    "bigint": "bigint",
+    "int": "int",
+    "smallint": "smallint",
+    "tinyint": "tinyint",
+    "datetime": "datetime",
+    "smalldatetime": "smalldatetime",
+    "datetime2": {
+      "strategy": "DateTime2",
+      "scaleSource": "OnDiskOrAttribute",
+      "scale": 7
+    },
+    "datetimeoffset": {
+      "strategy": "DateTimeOffset",
+      "scaleSource": "OnDiskOrAttribute",
+      "scale": 7
+    },
+    "date": "date",
+    "time": {
+      "strategy": "Time",
+      "scaleSource": "OnDiskOrAttribute",
+      "scale": 7
+    },
+    "uniqueidentifier": "uniqueidentifier",
+    "float": "float",
+    "real": "real",
+    "xml": "xml",
+    "text": "text",
+    "ntext": "ntext",
+    "image": "image"
+  },
+  "external": {
+    "varchar": {
+      "strategy": "VarChar",
+      "lengthSource": "Parameters",
+      "lengthParameterIndex": 0
+    },
+    "nvarchar": {
+      "strategy": "UnicodeText",
+      "lengthSource": "Parameters",
+      "lengthParameterIndex": 0,
+      "maxLengthThreshold": 2000
+    },
+    "nchar": {
+      "strategy": "NChar",
+      "lengthSource": "Parameters",
+      "lengthParameterIndex": 0
+    },
+    "char": {
+      "strategy": "Char",
+      "lengthSource": "Parameters",
+      "lengthParameterIndex": 0
+    },
+    "varbinary": {
+      "strategy": "VarBinary",
+      "lengthSource": "Parameters",
+      "lengthParameterIndex": 0,
+      "maxLengthThreshold": 2000
+    },
+    "binary": {
+      "strategy": "Binary",
+      "lengthSource": "Parameters",
+      "lengthParameterIndex": 0
+    },
+    "decimal": {
+      "strategy": "Decimal",
+      "precisionSource": "Parameters",
+      "precisionParameterIndex": 0,
+      "scaleSource": "Parameters",
+      "scaleParameterIndex": 1
+    },
+    "numeric": {
+      "strategy": "Decimal",
+      "precisionSource": "Parameters",
+      "precisionParameterIndex": 0,
+      "scaleSource": "Parameters",
+      "scaleParameterIndex": 1
+    },
+    "int": "int",
+    "bigint": "bigint",
+    "smallint": "smallint",
+    "tinyint": "tinyint",
+    "bit": "bit",
+    "datetime": "datetime",
+    "datetime2": {
+      "strategy": "DateTime2",
+      "scaleSource": "Parameters",
+      "scaleParameterIndex": 0,
+      "scale": 7
+    },
+    "datetimeoffset": {
+      "strategy": "DateTimeOffset",
+      "scaleSource": "Parameters",
+      "scaleParameterIndex": 0,
+      "scale": 7
+    },
+    "smalldatetime": "smalldatetime",
+    "date": "date",
+    "time": {
+      "strategy": "Time",
+      "scaleSource": "Parameters",
+      "scaleParameterIndex": 0,
+      "scale": 7
+    },
+    "uniqueidentifier": "uniqueidentifier",
+    "float": "float",
+    "real": "real",
+    "money": "money",
+    "smallmoney": "smallmoney",
+    "image": "image"
   }
 }

@@ -15,6 +15,17 @@ public enum TypeMappingStrategy
     DateTime2,
     DateTimeOffset,
     Time,
+    Char,
+    NChar,
+    Binary,
+}
+
+public enum TypeValueSource
+{
+    Attribute,
+    OnDisk,
+    OnDiskOrAttribute,
+    Parameters,
 }
 
 public sealed record TypeMappingRuleDefinition(
@@ -24,7 +35,13 @@ public sealed record TypeMappingRuleDefinition(
     int? DefaultPrecision,
     int? DefaultScale,
     int? Scale,
-    int? MaxLengthThreshold)
+    int? MaxLengthThreshold,
+    TypeValueSource? LengthSource = null,
+    TypeValueSource? PrecisionSource = null,
+    TypeValueSource? ScaleSource = null,
+    int? LengthParameterIndex = null,
+    int? PrecisionParameterIndex = null,
+    int? ScaleParameterIndex = null)
 {
     private const string StrategyProperty = "strategy";
     private const string SqlTypeProperty = "sqlType";
@@ -33,6 +50,12 @@ public sealed record TypeMappingRuleDefinition(
     private const string DefaultScaleProperty = "defaultScale";
     private const string ScaleProperty = "scale";
     private const string MaxLengthThresholdProperty = "maxLengthThreshold";
+    private const string LengthSourceProperty = "lengthSource";
+    private const string PrecisionSourceProperty = "precisionSource";
+    private const string ScaleSourceProperty = "scaleSource";
+    private const string LengthParameterIndexProperty = "lengthParameterIndex";
+    private const string PrecisionParameterIndexProperty = "precisionParameterIndex";
+    private const string ScaleParameterIndexProperty = "scaleParameterIndex";
 
     public static bool TryParse(JsonElement element, out TypeMappingRuleDefinition definition, out string? error)
     {
@@ -83,7 +106,13 @@ public sealed record TypeMappingRuleDefinition(
                     !TryReadInt(element, DefaultPrecisionProperty, out var defaultPrecision, out error) ||
                     !TryReadInt(element, DefaultScaleProperty, out var defaultScale, out error) ||
                     !TryReadInt(element, ScaleProperty, out var scale, out error) ||
-                    !TryReadInt(element, MaxLengthThresholdProperty, out var maxLengthThreshold, out error))
+                    !TryReadInt(element, MaxLengthThresholdProperty, out var maxLengthThreshold, out error) ||
+                    !TryReadValueSource(element, LengthSourceProperty, out var lengthSource, out error) ||
+                    !TryReadValueSource(element, PrecisionSourceProperty, out var precisionSource, out error) ||
+                    !TryReadValueSource(element, ScaleSourceProperty, out var scaleSource, out error) ||
+                    !TryReadInt(element, LengthParameterIndexProperty, out var lengthParameterIndex, out error) ||
+                    !TryReadInt(element, PrecisionParameterIndexProperty, out var precisionParameterIndex, out error) ||
+                    !TryReadInt(element, ScaleParameterIndexProperty, out var scaleParameterIndex, out error))
                 {
                     return false;
                 }
@@ -95,7 +124,13 @@ public sealed record TypeMappingRuleDefinition(
                     defaultPrecision,
                     defaultScale,
                     scale,
-                    maxLengthThreshold);
+                    maxLengthThreshold,
+                    lengthSource,
+                    precisionSource,
+                    scaleSource,
+                    lengthParameterIndex,
+                    precisionParameterIndex,
+                    scaleParameterIndex);
                 return true;
             }
 
@@ -202,6 +237,43 @@ public sealed record TypeMappingRuleDefinition(
         return false;
     }
 
+    private static bool TryReadValueSource(JsonElement element, string propertyName, out TypeValueSource? value, out string? error)
+    {
+        value = null;
+        error = null;
+
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return true;
+        }
+
+        if (property.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (property.ValueKind != JsonValueKind.String)
+        {
+            error = $"Property '{propertyName}' must be a string.";
+            return false;
+        }
+
+        var text = property.GetString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return true;
+        }
+
+        if (!Enum.TryParse(text, ignoreCase: true, out TypeValueSource parsed))
+        {
+            error = $"Unrecognized value source '{text}' for property '{propertyName}'.";
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
     public string ToMetadataString()
     {
         var parts = new List<string>
@@ -237,6 +309,36 @@ public sealed record TypeMappingRuleDefinition(
         if (MaxLengthThreshold.HasValue)
         {
             parts.Add($"maxLengthThreshold={MaxLengthThreshold.Value}");
+        }
+
+        if (LengthSource.HasValue)
+        {
+            parts.Add($"lengthSource={LengthSource.Value}");
+        }
+
+        if (PrecisionSource.HasValue)
+        {
+            parts.Add($"precisionSource={PrecisionSource.Value}");
+        }
+
+        if (ScaleSource.HasValue)
+        {
+            parts.Add($"scaleSource={ScaleSource.Value}");
+        }
+
+        if (LengthParameterIndex.HasValue)
+        {
+            parts.Add($"lengthParameterIndex={LengthParameterIndex.Value}");
+        }
+
+        if (PrecisionParameterIndex.HasValue)
+        {
+            parts.Add($"precisionParameterIndex={PrecisionParameterIndex.Value}");
+        }
+
+        if (ScaleParameterIndex.HasValue)
+        {
+            parts.Add($"scaleParameterIndex={ScaleParameterIndex.Value}");
         }
 
         return string.Join(';', parts);
