@@ -1,23 +1,23 @@
-using System.Collections.Generic;
 
 namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class ForeignKeyAttributeMapResultSetProcessor : ResultSetProcessor<OutsystemsForeignKeyAttrMapRow>
 {
-    private static readonly ResultSetReader<OutsystemsForeignKeyAttrMapRow> Reader = ResultSetReader<OutsystemsForeignKeyAttrMapRow>.Create(MapRow);
-
     private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
     private static readonly ColumnDefinition<int> FkObjectId = Column.Int32(1, "FkObjectId");
 
+    internal static ResultSetDescriptor<OutsystemsForeignKeyAttrMapRow> Descriptor { get; } = ResultSetDescriptorFactory.Create<OutsystemsForeignKeyAttrMapRow>(
+        "ForeignKeyAttrMap",
+        order: 13,
+        builder => builder
+            .Columns(AttrId, FkObjectId)
+            .Map(MapRow)
+            .Assign(static (accumulator, rows) => accumulator.SetForeignKeyAttributeMap(rows)));
+
     public ForeignKeyAttributeMapResultSetProcessor()
-        : base("ForeignKeyAttrMap", order: 13)
+        : base(Descriptor)
     {
     }
-
-    protected override ResultSetReader<OutsystemsForeignKeyAttrMapRow> CreateReader(ResultSetProcessingContext context) => Reader;
-
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsForeignKeyAttrMapRow> rows)
-        => accumulator.SetForeignKeyAttributeMap(rows);
 
     private static OutsystemsForeignKeyAttrMapRow MapRow(DbRow row) => new(
         AttrId.Read(row),

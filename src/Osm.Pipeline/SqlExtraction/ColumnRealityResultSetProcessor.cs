@@ -1,11 +1,8 @@
-using System.Collections.Generic;
 
 namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class ColumnRealityResultSetProcessor : ResultSetProcessor<OutsystemsColumnRealityRow>
 {
-    private static readonly ResultSetReader<OutsystemsColumnRealityRow> Reader = ResultSetReader<OutsystemsColumnRealityRow>.Create(MapRow);
-
     private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
     private static readonly ColumnDefinition<bool> IsNullable = Column.Boolean(1, "IsNullable");
     private static readonly ColumnDefinition<string> SqlType = Column.String(2, "SqlType");
@@ -20,15 +17,31 @@ internal sealed class ColumnRealityResultSetProcessor : ResultSetProcessor<Outsy
     private static readonly ColumnDefinition<string?> DefaultDefinition = Column.StringOrNull(11, "DefaultDefinition");
     private static readonly ColumnDefinition<string> PhysicalColumn = Column.String(12, "PhysicalColumn");
 
+    internal static ResultSetDescriptor<OutsystemsColumnRealityRow> Descriptor { get; } = ResultSetDescriptorFactory.Create<OutsystemsColumnRealityRow>(
+        "ColumnReality",
+        order: 5,
+        builder => builder
+            .Columns(
+                AttrId,
+                IsNullable,
+                SqlType,
+                MaxLength,
+                Precision,
+                Scale,
+                CollationName,
+                IsIdentity,
+                IsComputed,
+                ComputedDefinition,
+                DefaultConstraintName,
+                DefaultDefinition,
+                PhysicalColumn)
+            .Map(MapRow)
+            .Assign(static (accumulator, rows) => accumulator.SetColumnReality(rows)));
+
     public ColumnRealityResultSetProcessor()
-        : base("ColumnReality", order: 5)
+        : base(Descriptor)
     {
     }
-
-    protected override ResultSetReader<OutsystemsColumnRealityRow> CreateReader(ResultSetProcessingContext context) => Reader;
-
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsColumnRealityRow> rows)
-        => accumulator.SetColumnReality(rows);
 
     private static OutsystemsColumnRealityRow MapRow(DbRow row) => new(
         AttrId.Read(row),

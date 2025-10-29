@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 
 namespace Osm.Pipeline.SqlExtraction;
 
@@ -29,37 +28,36 @@ internal sealed class AttributesResultSetProcessor : ResultSetProcessor<Outsyste
     private static readonly ColumnDefinition<string?> OriginalType = Column.StringOrNull(21, "OriginalType");
     private static readonly ColumnDefinition<string?> AttrDescription = Column.StringOrNull(22, "AttrDescription");
 
-    internal static ResultSetMap<OutsystemsAttributeRow> Descriptor { get; } = ResultSetMap<OutsystemsAttributeRow>.Create(
+    internal static ResultSetDescriptor<OutsystemsAttributeRow> Descriptor { get; } = ResultSetDescriptorFactory.Create<OutsystemsAttributeRow>(
         "Attributes",
         order: 2,
-        new IResultSetColumn[]
-        {
-            AttrId,
-            EntityId,
-            AttrName,
-            AttrSsKey,
-            DataType,
-            Length,
-            Precision,
-            Scale,
-            DefaultValue,
-            IsMandatory,
-            AttrIsActive,
-            IsAutoNumber,
-            IsIdentifier,
-            RefEntityId,
-            OriginalName,
-            ExternalColumnType,
-            DeleteRule,
-            PhysicalColumnName,
-            DatabaseColumnName,
-            LegacyType,
-            Decimals,
-            OriginalType,
-            AttrDescription
-        },
-        MapRow,
-        static (accumulator, rows) => accumulator.SetAttributes(rows));
+        builder => builder
+            .Columns(
+                AttrId,
+                EntityId,
+                AttrName,
+                AttrSsKey,
+                DataType,
+                Length,
+                Precision,
+                Scale,
+                DefaultValue,
+                IsMandatory,
+                AttrIsActive,
+                IsAutoNumber,
+                IsIdentifier,
+                RefEntityId,
+                OriginalName,
+                ExternalColumnType,
+                DeleteRule,
+                PhysicalColumnName,
+                DatabaseColumnName,
+                LegacyType,
+                Decimals,
+                OriginalType,
+                AttrDescription)
+            .Map(MapRow)
+            .Assign(static (accumulator, rows) => accumulator.SetAttributes(rows)));
 
     public AttributesResultSetProcessor()
         : base(Descriptor)

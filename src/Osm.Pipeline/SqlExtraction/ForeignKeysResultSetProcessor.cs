@@ -1,11 +1,8 @@
-using System.Collections.Generic;
 
 namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class ForeignKeysResultSetProcessor : ResultSetProcessor<OutsystemsForeignKeyRow>
 {
-    private static readonly ResultSetReader<OutsystemsForeignKeyRow> Reader = ResultSetReader<OutsystemsForeignKeyRow>.Create(MapRow);
-
     private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
     private static readonly ColumnDefinition<int> FkObjectId = Column.Int32(1, "FkObjectId");
     private static readonly ColumnDefinition<string> FkName = Column.String(2, "FkName");
@@ -17,15 +14,28 @@ internal sealed class ForeignKeysResultSetProcessor : ResultSetProcessor<Outsyst
     private static readonly ColumnDefinition<string> ReferencedTable = Column.String(8, "ReferencedTable");
     private static readonly ColumnDefinition<bool> IsNoCheck = Column.Boolean(9, "IsNoCheck");
 
+    internal static ResultSetDescriptor<OutsystemsForeignKeyRow> Descriptor { get; } = ResultSetDescriptorFactory.Create<OutsystemsForeignKeyRow>(
+        "ForeignKeys",
+        order: 11,
+        builder => builder
+            .Columns(
+                EntityId,
+                FkObjectId,
+                FkName,
+                DeleteAction,
+                UpdateAction,
+                ReferencedObjectId,
+                ReferencedEntityId,
+                ReferencedSchema,
+                ReferencedTable,
+                IsNoCheck)
+            .Map(MapRow)
+            .Assign(static (accumulator, rows) => accumulator.SetForeignKeys(rows)));
+
     public ForeignKeysResultSetProcessor()
-        : base("ForeignKeys", order: 11)
+        : base(Descriptor)
     {
     }
-
-    protected override ResultSetReader<OutsystemsForeignKeyRow> CreateReader(ResultSetProcessingContext context) => Reader;
-
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsForeignKeyRow> rows)
-        => accumulator.SetForeignKeys(rows);
 
     private static OutsystemsForeignKeyRow MapRow(DbRow row) => new(
         EntityId.Read(row),

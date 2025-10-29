@@ -1,22 +1,22 @@
-using System.Collections.Generic;
 
 namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class PhysicalColumnsPresentResultSetProcessor : ResultSetProcessor<OutsystemsPhysicalColumnPresenceRow>
 {
-    private static readonly ResultSetReader<OutsystemsPhysicalColumnPresenceRow> Reader = ResultSetReader<OutsystemsPhysicalColumnPresenceRow>.Create(MapRow);
-
     private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
 
+    internal static ResultSetDescriptor<OutsystemsPhysicalColumnPresenceRow> Descriptor { get; } = ResultSetDescriptorFactory.Create<OutsystemsPhysicalColumnPresenceRow>(
+        "PhysicalColumnsPresent",
+        order: 8,
+        builder => builder
+            .Columns(AttrId)
+            .Map(MapRow)
+            .Assign(static (accumulator, rows) => accumulator.SetPhysicalColumnsPresent(rows)));
+
     public PhysicalColumnsPresentResultSetProcessor()
-        : base("PhysicalColumnsPresent", order: 8)
+        : base(Descriptor)
     {
     }
-
-    protected override ResultSetReader<OutsystemsPhysicalColumnPresenceRow> CreateReader(ResultSetProcessingContext context) => Reader;
-
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsPhysicalColumnPresenceRow> rows)
-        => accumulator.SetPhysicalColumnsPresent(rows);
 
     private static OutsystemsPhysicalColumnPresenceRow MapRow(DbRow row) => new(AttrId.Read(row));
 }

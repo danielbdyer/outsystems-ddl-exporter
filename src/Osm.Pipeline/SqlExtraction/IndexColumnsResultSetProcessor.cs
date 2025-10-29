@@ -1,11 +1,8 @@
-using System.Collections.Generic;
 
 namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class IndexColumnsResultSetProcessor : ResultSetProcessor<OutsystemsIndexColumnRow>
 {
-    private static readonly ResultSetReader<OutsystemsIndexColumnRow> Reader = ResultSetReader<OutsystemsIndexColumnRow>.Create(MapRow);
-
     private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
     private static readonly ColumnDefinition<string> IndexName = Column.String(1, "IndexName");
     private static readonly ColumnDefinition<int> Ordinal = Column.Int32(2, "Ordinal");
@@ -14,15 +11,18 @@ internal sealed class IndexColumnsResultSetProcessor : ResultSetProcessor<Outsys
     private static readonly ColumnDefinition<string?> Direction = Column.StringOrNull(5, "Direction");
     private static readonly ColumnDefinition<string?> HumanAttr = Column.StringOrNull(6, "HumanAttr");
 
+    internal static ResultSetDescriptor<OutsystemsIndexColumnRow> Descriptor { get; } = ResultSetDescriptorFactory.Create<OutsystemsIndexColumnRow>(
+        "IndexColumns",
+        order: 10,
+        builder => builder
+            .Columns(EntityId, IndexName, Ordinal, PhysicalColumn, IsIncluded, Direction, HumanAttr)
+            .Map(MapRow)
+            .Assign(static (accumulator, rows) => accumulator.SetIndexColumns(rows)));
+
     public IndexColumnsResultSetProcessor()
-        : base("IndexColumns", order: 10)
+        : base(Descriptor)
     {
     }
-
-    protected override ResultSetReader<OutsystemsIndexColumnRow> CreateReader(ResultSetProcessingContext context) => Reader;
-
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsIndexColumnRow> rows)
-        => accumulator.SetIndexColumns(rows);
 
     private static OutsystemsIndexColumnRow MapRow(DbRow row) => new(
         EntityId.Read(row),

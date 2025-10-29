@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -11,28 +10,43 @@ internal sealed class AttributeJsonResultSetProcessor : ResultSetProcessor<Outsy
     private static readonly ColumnDefinition<string> AttributesJsonRequired = Column.String(1, "AttributesJson");
     private static readonly ColumnDefinition<string?> AttributesJsonOptional = Column.StringOrNull(1, "AttributesJson");
 
-    private readonly MetadataContractOverrides _contractOverrides;
-    private readonly ILogger<AttributeJsonResultSetProcessor> _logger;
-
     public AttributeJsonResultSetProcessor(
         MetadataContractOverrides contractOverrides,
         ILogger<AttributeJsonResultSetProcessor>? logger = null)
-        : base("AttributeJson", order: 18)
+        : base(CreateDescriptor(
+            contractOverrides ?? throw new ArgumentNullException(nameof(contractOverrides)),
+            logger ?? NullLogger<AttributeJsonResultSetProcessor>.Instance))
     {
-        _contractOverrides = contractOverrides ?? throw new ArgumentNullException(nameof(contractOverrides));
-        _logger = logger ?? NullLogger<AttributeJsonResultSetProcessor>.Instance;
     }
 
-    protected override ResultSetReader<OutsystemsAttributeJsonRow> CreateReader(ResultSetProcessingContext context)
+    private static ResultSetDescriptor<OutsystemsAttributeJsonRow> CreateDescriptor(
+        MetadataContractOverrides contractOverrides,
+        ILogger<AttributeJsonResultSetProcessor> logger)
     {
-        var allowNull = _contractOverrides.IsColumnOptional("AttributeJson", "AttributesJson");
-        return ResultSetReader<OutsystemsAttributeJsonRow>.Create(row => MapRow(row, allowNull));
+        if (logger is null)
+        {
+            throw new ArgumentNullException(nameof(logger));
+        }
+
+        var allowNull = contractOverrides.IsColumnOptional("AttributeJson", "AttributesJson");
+        IResultSetColumn column = allowNull
+            ? (IResultSetColumn)AttributesJsonOptional
+            : AttributesJsonRequired;
+        var reader = ResultSetReader<OutsystemsAttributeJsonRow>.Create(row => MapRow(row, allowNull, logger));
+
+        return ResultSetDescriptorFactory.Create<OutsystemsAttributeJsonRow>(
+            "AttributeJson",
+            order: 18,
+            builder => builder
+                .Columns(EntityId, column)
+                .Reader(_ => reader)
+                .Assign(static (accumulator, rows) => accumulator.SetAttributeJson(rows)));
     }
 
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsAttributeJsonRow> rows)
-        => accumulator.SetAttributeJson(rows);
-
-    private OutsystemsAttributeJsonRow MapRow(DbRow row, bool allowNull)
+    private static OutsystemsAttributeJsonRow MapRow(
+        DbRow row,
+        bool allowNull,
+        ILogger<AttributeJsonResultSetProcessor> logger)
     {
         var entityId = EntityId.Read(row);
         if (!allowNull)
@@ -44,7 +58,7 @@ internal sealed class AttributeJsonResultSetProcessor : ResultSetProcessor<Outsy
         var optionalValue = AttributesJsonOptional.Read(row);
         if (optionalValue is null)
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "AttributeJson result set row {RowIndex} returned NULL for AttributesJson and was accepted due to contract overrides.",
                 row.RowIndex);
         }
