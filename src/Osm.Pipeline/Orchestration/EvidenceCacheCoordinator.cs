@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -42,12 +41,11 @@ public sealed class EvidenceCacheCoordinator
         log.Record(
             "evidence.cache.requested",
             "Caching pipeline inputs.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["rootDirectory"] = trimmedRoot,
-                ["refresh"] = cacheOptions.Refresh ? "true" : "false",
-                ["metadataCount"] = metadata.Count.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithPath("root", trimmedRoot)
+                .WithFlag("refresh", cacheOptions.Refresh)
+                .WithCount("metadata.entries", metadata.Count)
+                .Build());
 
         var cacheRequest = new EvidenceCacheRequest(
             trimmedRoot,
@@ -67,18 +65,16 @@ public sealed class EvidenceCacheCoordinator
 
         var cacheResult = cacheExecution.Value;
         var evaluation = cacheResult.Evaluation;
-        var cacheMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["cacheDirectory"] = cacheResult.CacheDirectory,
-            ["artifactCount"] = cacheResult.Manifest.Artifacts.Count.ToString(CultureInfo.InvariantCulture),
-            ["cacheKey"] = cacheResult.Manifest.Key,
-            ["cacheOutcome"] = evaluation.Outcome.ToString(),
-            ["cacheReason"] = evaluation.Reason.ToString(),
-        };
+        var cacheMetadataBuilder = new PipelineLogMetadataBuilder()
+            .WithPath("cache.directory", cacheResult.CacheDirectory)
+            .WithCount("manifest.artifacts", cacheResult.Manifest.Artifacts.Count)
+            .WithValue("cache.key", cacheResult.Manifest.Key)
+            .WithValue("cache.outcome", evaluation.Outcome.ToString())
+            .WithValue("cache.reason", evaluation.Reason.ToString());
 
         foreach (var pair in evaluation.Metadata)
         {
-            cacheMetadata[pair.Key] = pair.Value;
+            cacheMetadataBuilder.WithValue($"evaluation.{pair.Key}", pair.Value);
         }
 
         var cacheEvent = evaluation.Outcome == EvidenceCacheOutcome.Reused
@@ -88,7 +84,7 @@ public sealed class EvidenceCacheCoordinator
             ? "Reused evidence cache manifest."
             : "Persisted evidence cache manifest.";
 
-        log.Record(cacheEvent, cacheMessage, cacheMetadata);
+        log.Record(cacheEvent, cacheMessage, cacheMetadataBuilder.Build());
 
         return Result<EvidenceCacheResult?>.Success(cacheResult);
     }

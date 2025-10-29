@@ -31,7 +31,7 @@ public class DmmComparePipelineTests
 
         var bootstrapper = new FakePipelineBootstrapper(async (_, request, token) =>
         {
-            Assert.Equal(profilePath, request.Telemetry.ProfilingStartMetadata["profilePath"]);
+            Assert.Equal(profilePath, request.Telemetry.ProfilingStartMetadata["paths.profile"]);
             var captureResult = await request.ProfileCaptureAsync(default!, token);
             Assert.True(captureResult.IsSuccess);
 

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -67,13 +66,12 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         state.Log.Record(
             "smo.model.created",
             "Materialized SMO table graph.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["tables"] = smoTableCount.ToString(CultureInfo.InvariantCulture),
-                ["columns"] = smoColumnCount.ToString(CultureInfo.InvariantCulture),
-                ["indexes"] = smoIndexCount.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeys"] = smoForeignKeyCount.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithCount("tables", smoTableCount)
+                .WithCount("columns", smoColumnCount)
+                .WithCount("indexes", smoIndexCount)
+                .WithCount("foreignKeys", smoForeignKeyCount)
+                .Build());
 
         var emissionMetadata = _fingerprintCalculator.Compute(smoModel, decisions, state.Request.SmoOptions);
         var emissionOptions = BuildEmissionOptions(state, report, emissionMetadata);
@@ -101,12 +99,11 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         state.Log.Record(
             "ssdt.emission.completed",
             "Emitted SSDT artifacts.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["outputDirectory"] = state.Request.OutputDirectory,
-                ["tableArtifacts"] = manifest.Tables.Count.ToString(CultureInfo.InvariantCulture),
-                ["includesPolicySummary"] = (manifest.PolicySummary is not null) ? "true" : "false"
-            });
+            new PipelineLogMetadataBuilder()
+                .WithPath("output", state.Request.OutputDirectory)
+                .WithCount("tableArtifacts", manifest.Tables.Count)
+                .WithFlag("policySummary.included", manifest.PolicySummary is not null)
+                .Build());
 
         var decisionLogPath = await _decisionLogWriter
             .WriteAsync(
@@ -119,11 +116,10 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         state.Log.Record(
             "policy.log.persisted",
             "Persisted policy decision log.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["path"] = decisionLogPath,
-                ["diagnostics"] = report.Diagnostics.Length.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithPath("decision", decisionLogPath)
+                .WithCount("diagnostics", report.Diagnostics.Length)
+                .Build());
 
         var opportunityArtifacts = await _opportunityWriter
             .WriteAsync(state.Request.OutputDirectory, state.Opportunities, cancellationToken)
@@ -132,13 +128,12 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         state.Log.Record(
             "opportunities.persisted",
             "Persisted tightening opportunities.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["report"] = opportunityArtifacts.ReportPath,
-                ["safeScript"] = opportunityArtifacts.SafeScriptPath,
-                ["remediationScript"] = opportunityArtifacts.RemediationScriptPath,
-                ["count"] = state.Opportunities.TotalCount.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithPath("report", opportunityArtifacts.ReportPath)
+                .WithPath("safeScript", opportunityArtifacts.SafeScriptPath)
+                .WithPath("remediationScript", opportunityArtifacts.RemediationScriptPath)
+                .WithCount("total", state.Opportunities.TotalCount)
+                .Build());
 
         return Result<EmissionReady>.Success(new EmissionReady(
             state.Request,

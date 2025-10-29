@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -113,16 +111,15 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
         log.Record(
             "policy.decisions.synthesized",
             "Synthesized tightening decisions.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["columns"] = report.ColumnCount.ToString(CultureInfo.InvariantCulture),
-                ["tightenedColumns"] = report.TightenedColumnCount.ToString(CultureInfo.InvariantCulture),
-                ["remediationColumns"] = report.RemediationColumnCount.ToString(CultureInfo.InvariantCulture),
-                ["uniqueIndexes"] = report.UniqueIndexCount.ToString(CultureInfo.InvariantCulture),
-                ["uniqueIndexesEnforced"] = report.UniqueIndexesEnforcedCount.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeys"] = report.ForeignKeyCount.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeysCreated"] = report.ForeignKeysCreatedCount.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithCount("columns.total", report.ColumnCount)
+                .WithCount("columns.tightened", report.TightenedColumnCount)
+                .WithCount("columns.remediation", report.RemediationColumnCount)
+                .WithCount("indexes.unique", report.UniqueIndexCount)
+                .WithCount("indexes.uniqueEnforced", report.UniqueIndexesEnforcedCount)
+                .WithCount("foreignKeys.total", report.ForeignKeyCount)
+                .WithCount("foreignKeys.created", report.ForeignKeysCreatedCount)
+                .Build());
 
         Directory.CreateDirectory(request.OutputDirectory);
 
@@ -143,11 +140,10 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
         log.Record(
             "analysis.outputs.written",
             "Wrote tightening analysis artifacts.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["summaryPath"] = summaryPath,
-                ["decisionLogPath"] = decisionLogPath
-            });
+            new PipelineLogMetadataBuilder()
+                .WithPath("summary", summaryPath)
+                .WithPath("decisionLog", decisionLogPath)
+                .Build());
 
         return new TighteningAnalysisPipelineResult(
             report,
@@ -163,20 +159,18 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
     {
         return new PipelineBootstrapTelemetry(
             "Received tightening analysis request.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["modelPath"] = request.ModelPath,
-                ["profilePath"] = request.ProfilePath,
-                ["moduleFilter.hasFilter"] = request.ModuleFilter.HasFilter ? "true" : "false",
-                ["moduleFilter.moduleCount"] = request.ModuleFilter.Modules.Length.ToString(CultureInfo.InvariantCulture),
-                ["tightening.mode"] = request.TighteningOptions.Policy.Mode.ToString(),
-                ["tightening.nullBudget"] = request.TighteningOptions.Policy.NullBudget.ToString(CultureInfo.InvariantCulture)
-            },
+            new PipelineLogMetadataBuilder()
+                .WithPath("model", request.ModelPath)
+                .WithPath("profile", request.ProfilePath)
+                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
+                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
+                .WithValue("tightening.mode", request.TighteningOptions.Policy.Mode.ToString())
+                .WithMetric("tightening.nullBudget", request.TighteningOptions.Policy.NullBudget)
+                .Build(),
             "Loading profiling snapshot from disk.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["profilePath"] = request.ProfilePath
-            },
+            new PipelineLogMetadataBuilder()
+                .WithPath("profile", request.ProfilePath)
+                .Build(),
             "Loaded profiling snapshot from disk.");
     }
 

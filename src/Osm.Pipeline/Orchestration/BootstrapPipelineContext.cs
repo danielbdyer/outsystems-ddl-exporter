@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Linq;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
@@ -52,36 +51,34 @@ internal sealed class BootstrapPipelineContext
         {
             _warnings.AddRange(ingestionWarnings);
 
-            var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["summary"] = ingestionWarnings[0],
-                ["lineCount"] = ingestionWarnings.Count.ToString(CultureInfo.InvariantCulture)
-            };
+            var warningMetadata = new PipelineLogMetadataBuilder()
+                .WithValue("warnings.summary", ingestionWarnings[0])
+                .WithCount("warnings.lines", ingestionWarnings.Count);
 
             if (ingestionWarnings.Count > 1)
             {
-                metadata["example1"] = ingestionWarnings[1];
+                warningMetadata.WithValue("warnings.example1", ingestionWarnings[1]);
             }
 
             if (ingestionWarnings.Count > 2)
             {
-                metadata["example2"] = ingestionWarnings[2];
+                warningMetadata.WithValue("warnings.example2", ingestionWarnings[2]);
             }
 
             if (ingestionWarnings.Count > 3)
             {
-                metadata["example3"] = ingestionWarnings[3];
+                warningMetadata.WithValue("warnings.example3", ingestionWarnings[3]);
             }
 
             if (ingestionWarnings.Count > 4)
             {
-                metadata["suppressed"] = ingestionWarnings[^1];
+                warningMetadata.WithValue("warnings.suppressed", ingestionWarnings[^1]);
             }
 
             Log.Record(
                 "model.schema.warnings",
                 "Model JSON schema validation produced warnings.",
-                metadata);
+                warningMetadata.Build());
         }
 
         var moduleCount = model.Modules.Length;
@@ -91,13 +88,12 @@ internal sealed class BootstrapPipelineContext
         Log.Record(
             "model.ingested",
             "Loaded OutSystems model from disk.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["modules"] = moduleCount.ToString(CultureInfo.InvariantCulture),
-                ["entities"] = entityCount.ToString(CultureInfo.InvariantCulture),
-                ["attributes"] = attributeCount.ToString(CultureInfo.InvariantCulture),
-                ["exportedAtUtc"] = model.ExportedAtUtc.ToString("O", CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithCount("modules", moduleCount)
+                .WithCount("entities", entityCount)
+                .WithCount("attributes", attributeCount)
+                .WithTimestamp("model.exported", model.ExportedAtUtc)
+                .Build());
     }
 
     public void SetFilteredModel(OsmModel filteredModel)
@@ -112,13 +108,12 @@ internal sealed class BootstrapPipelineContext
         Log.Record(
             "model.filtered",
             "Applied module filter options.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["originalModules"] = Model.Modules.Length.ToString(CultureInfo.InvariantCulture),
-                ["filteredModules"] = filteredModel.Modules.Length.ToString(CultureInfo.InvariantCulture),
-                ["filter.includeSystemModules"] = Request.ModuleFilter.IncludeSystemModules ? "true" : "false",
-                ["filter.includeInactiveModules"] = Request.ModuleFilter.IncludeInactiveModules ? "true" : "false"
-            });
+            new PipelineLogMetadataBuilder()
+                .WithCount("modules.original", Model.Modules.Length)
+                .WithCount("modules.filtered", filteredModel.Modules.Length)
+                .WithFlag("filters.includeSystemModules", Request.ModuleFilter.IncludeSystemModules)
+                .WithFlag("filters.includeInactiveModules", Request.ModuleFilter.IncludeInactiveModules)
+                .Build());
     }
 
     public void SetSupplementalEntities(ImmutableArray<EntityModel> supplementalEntities)
@@ -128,11 +123,10 @@ internal sealed class BootstrapPipelineContext
         Log.Record(
             "supplemental.loaded",
             "Loaded supplemental entity definitions.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["supplementalEntityCount"] = supplementalEntities.Length.ToString(CultureInfo.InvariantCulture),
-                ["requestedPaths"] = Request.SupplementalModels.Paths.Count.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithCount("entities.supplemental", supplementalEntities.Length)
+                .WithCount("supplemental.paths", Request.SupplementalModels.Paths.Count)
+                .Build());
     }
 
     public void LogProfilingStarted()
@@ -150,13 +144,12 @@ internal sealed class BootstrapPipelineContext
         Log.Record(
             "profiling.capture.completed",
             Request.Telemetry.ProfilingCompletedMessage,
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["columnProfiles"] = profile.Columns.Length.ToString(CultureInfo.InvariantCulture),
-                ["uniqueCandidates"] = profile.UniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
-                ["compositeUniqueCandidates"] = profile.CompositeUniqueCandidates.Length.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeys"] = profile.ForeignKeys.Length.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithCount("profiles.columns", profile.Columns.Length)
+                .WithCount("profiles.uniqueCandidates", profile.UniqueCandidates.Length)
+                .WithCount("profiles.compositeUniqueCandidates", profile.CompositeUniqueCandidates.Length)
+                .WithCount("profiles.foreignKeys", profile.ForeignKeys.Length)
+                .Build());
     }
 
     public void SetInsights(ImmutableArray<ProfilingInsight> insights)

@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -59,28 +57,26 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
     {
         return new PipelineBootstrapTelemetry(
             "Received build-ssdt pipeline request.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["modelPath"] = request.ModelPath,
-                ["outputDirectory"] = request.OutputDirectory,
-                ["profilerProvider"] = request.ProfilerProvider,
-                ["moduleFilter.hasFilter"] = request.ModuleFilter.HasFilter ? "true" : "false",
-                ["moduleFilter.moduleCount"] = request.ModuleFilter.Modules.Length.ToString(CultureInfo.InvariantCulture),
-                ["supplemental.includeUsers"] = request.SupplementalModels.IncludeUsers ? "true" : "false",
-                ["supplemental.pathCount"] = request.SupplementalModels.Paths.Count.ToString(CultureInfo.InvariantCulture),
-                ["tightening.mode"] = request.TighteningOptions.Policy.Mode.ToString(),
-                ["tightening.nullBudget"] = request.TighteningOptions.Policy.NullBudget.ToString(CultureInfo.InvariantCulture),
-                ["emission.includePlatformAutoIndexes"] = request.SmoOptions.IncludePlatformAutoIndexes ? "true" : "false",
-                ["emission.emitBareTableOnly"] = request.SmoOptions.EmitBareTableOnly ? "true" : "false",
-                ["emission.sanitizeModuleNames"] = request.SmoOptions.SanitizeModuleNames ? "true" : "false",
-                ["emission.moduleParallelism"] = request.SmoOptions.ModuleParallelism.ToString(CultureInfo.InvariantCulture)
-            },
+            new PipelineLogMetadataBuilder()
+                .WithPath("model", request.ModelPath)
+                .WithPath("output", request.OutputDirectory)
+                .WithValue("profiling.provider", request.ProfilerProvider)
+                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
+                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
+                .WithFlag("supplemental.includeUsers", request.SupplementalModels.IncludeUsers)
+                .WithCount("supplemental.paths", request.SupplementalModels.Paths.Count)
+                .WithValue("tightening.mode", request.TighteningOptions.Policy.Mode.ToString())
+                .WithMetric("tightening.nullBudget", request.TighteningOptions.Policy.NullBudget)
+                .WithFlag("emission.includePlatformAutoIndexes", request.SmoOptions.IncludePlatformAutoIndexes)
+                .WithFlag("emission.emitBareTableOnly", request.SmoOptions.EmitBareTableOnly)
+                .WithFlag("emission.sanitizeModuleNames", request.SmoOptions.SanitizeModuleNames)
+                .WithCount("emission.moduleParallelism", request.SmoOptions.ModuleParallelism)
+                .Build(),
             "Capturing profiling snapshot.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["provider"] = request.ProfilerProvider,
-                ["profilePath"] = request.ProfilePath
-            },
+            new PipelineLogMetadataBuilder()
+                .WithValue("profiling.provider", request.ProfilerProvider)
+                .WithPath("profile", request.ProfilePath)
+                .Build(),
             "Captured profiling snapshot.");
     }
 
