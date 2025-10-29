@@ -39,9 +39,19 @@ internal sealed class SmoTableBuilder
             throw new ArgumentNullException(nameof(context));
         }
 
-        var columns = SmoColumnBuilder.BuildColumns(context, _decisions, _profileDefaults, _typeMappingPolicy, _entityLookup);
-        var indexes = SmoIndexBuilder.BuildIndexes(context, _decisions, _options.IncludePlatformAutoIndexes, _options.Format);
-        var foreignKeys = SmoForeignKeyBuilder.BuildForeignKeys(context, _decisions, _entityLookup, _foreignKeyReality, _options.Format);
+        var emitter = new SmoEntityEmitter(
+            context,
+            _decisions,
+            _entityLookup,
+            _profileDefaults,
+            _foreignKeyReality,
+            _typeMappingPolicy,
+            _options.Format,
+            _options.IncludePlatformAutoIndexes);
+
+        var columns = SmoColumnBuilder.BuildColumns(emitter);
+        var indexes = SmoIndexBuilder.BuildIndexes(emitter);
+        var foreignKeys = SmoForeignKeyBuilder.BuildForeignKeys(emitter);
         var triggers = SmoTriggerBuilder.Build(context);
         var catalog = string.IsNullOrWhiteSpace(context.Entity.Catalog) ? _options.DefaultCatalogName : context.Entity.Catalog!;
         var description = MsDescriptionResolver.Resolve(context.Entity.Metadata);

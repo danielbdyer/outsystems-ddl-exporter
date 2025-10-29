@@ -10,27 +10,16 @@ namespace Osm.Smo;
 
 internal static class SmoIndexBuilder
 {
-    public static ImmutableArray<SmoIndexDefinition> BuildIndexes(
-        EntityEmissionContext context,
-        PolicyDecisionSet decisions,
-        bool includePlatformAuto,
-        SmoFormatOptions format)
+    public static ImmutableArray<SmoIndexDefinition> BuildIndexes(SmoEntityEmitter emitter)
     {
-        if (context is null)
+        if (emitter is null)
         {
-            throw new ArgumentNullException(nameof(context));
+            throw new ArgumentNullException(nameof(emitter));
         }
 
-        if (decisions is null)
-        {
-            throw new ArgumentNullException(nameof(decisions));
-        }
-
-        if (format is null)
-        {
-            throw new ArgumentNullException(nameof(format));
-        }
-
+        var context = emitter.Context;
+        var decisions = emitter.Decisions;
+        var format = emitter.Format;
         var builder = ImmutableArray.CreateBuilder<SmoIndexDefinition>();
         var uniqueDecisions = decisions.UniqueIndexes;
 
@@ -42,7 +31,7 @@ internal static class SmoIndexBuilder
             ? MsDescriptionResolver.Resolve(domainPrimaryIndex)
             : null;
 
-        var primaryColumns = BuildPrimaryKeyColumns(context, domainPrimaryIndex, out var primaryAttributes);
+        var primaryColumns = BuildPrimaryKeyColumns(emitter, domainPrimaryIndex, out var primaryAttributes);
         if (!primaryColumns.IsDefaultOrEmpty)
         {
             var orderedPrimaryColumns = primaryColumns
@@ -82,7 +71,7 @@ internal static class SmoIndexBuilder
                 continue;
             }
 
-            if (!includePlatformAuto && index.IsPlatformAuto && !index.IsUnique)
+            if (!emitter.IncludePlatformAutoIndexes && index.IsPlatformAuto && !index.IsUnique)
             {
                 continue;
             }
@@ -107,7 +96,7 @@ internal static class SmoIndexBuilder
                 }
 
                 var isDescending = column.Direction == IndexColumnDirection.Descending;
-                var emittedName = ResolveEmissionColumnName(attribute);
+                var emittedName = emitter.ResolveEmissionColumnName(attribute);
                 columnsBuilder.Add(new SmoIndexColumnDefinition(emittedName, column.Ordinal, column.IsIncluded, isDescending));
             }
 
@@ -152,10 +141,11 @@ internal static class SmoIndexBuilder
     }
 
     private static ImmutableArray<SmoIndexColumnDefinition> BuildPrimaryKeyColumns(
-        EntityEmissionContext context,
+        SmoEntityEmitter emitter,
         IndexModel? domainPrimaryIndex,
         out ImmutableArray<AttributeModel> referencedAttributes)
     {
+        var context = emitter.Context;
         if (domainPrimaryIndex is not null && !domainPrimaryIndex.Columns.IsDefaultOrEmpty)
         {
             var orderedColumns = domainPrimaryIndex.Columns
@@ -179,7 +169,7 @@ internal static class SmoIndexBuilder
                     }
 
                     var isDescending = column.Direction == IndexColumnDirection.Descending;
-                    var emittedName = ResolveEmissionColumnName(attribute);
+                    var emittedName = emitter.ResolveEmissionColumnName(attribute);
                     columnBuilder.Add(new SmoIndexColumnDefinition(emittedName, ordinal++, IsIncluded: false, isDescending));
                     attributeBuilder.Add(attribute);
                 }
@@ -205,21 +195,11 @@ internal static class SmoIndexBuilder
         for (var i = 0; i < referencedAttributes.Length; i++)
         {
             var attribute = referencedAttributes[i];
-            var emittedName = ResolveEmissionColumnName(attribute);
+            var emittedName = emitter.ResolveEmissionColumnName(attribute);
             fallback.Add(new SmoIndexColumnDefinition(emittedName, i + 1, IsIncluded: false, IsDescending: false));
         }
 
         return fallback.ToImmutable();
-    }
-
-    private static string ResolveEmissionColumnName(AttributeModel attribute)
-    {
-        if (!string.IsNullOrWhiteSpace(attribute.LogicalName.Value))
-        {
-            return attribute.LogicalName.Value;
-        }
-
-        return attribute.ColumnName.Value;
     }
 
     private static SmoIndexMetadata MapIndexMetadata(IndexModel index)

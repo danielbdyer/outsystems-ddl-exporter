@@ -4,72 +4,35 @@ using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Model;
-using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
-using Osm.Validation.Tightening;
 
 namespace Osm.Smo;
 
 internal static class SmoColumnBuilder
 {
-    public static ImmutableArray<SmoColumnDefinition> BuildColumns(
-        EntityEmissionContext context,
-        PolicyDecisionSet decisions,
-        IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults,
-        TypeMappingPolicy typeMappingPolicy,
-        EntityEmissionIndex entityLookup)
+    public static ImmutableArray<SmoColumnDefinition> BuildColumns(SmoEntityEmitter emitter)
     {
-        if (context is null)
+        if (emitter is null)
         {
-            throw new ArgumentNullException(nameof(context));
+            throw new ArgumentNullException(nameof(emitter));
         }
 
-        if (decisions is null)
-        {
-            throw new ArgumentNullException(nameof(decisions));
-        }
-
-        if (profileDefaults is null)
-        {
-            throw new ArgumentNullException(nameof(profileDefaults));
-        }
-
-        if (typeMappingPolicy is null)
-        {
-            throw new ArgumentNullException(nameof(typeMappingPolicy));
-        }
-
-        if (entityLookup is null)
-        {
-            throw new ArgumentNullException(nameof(entityLookup));
-        }
-
+        var context = emitter.Context;
         var builder = ImmutableArray.CreateBuilder<SmoColumnDefinition>();
 
         foreach (var attribute in context.EmittableAttributes)
         {
-            var dataType = typeMappingPolicy.Resolve(attribute);
-
-            if (attribute.Reference.IsReference &&
-                entityLookup.TryResolveReference(attribute.Reference, context, out var targetContext))
-            {
-                var referencedIdentifier = targetContext.GetPreferredIdentifier();
-                if (referencedIdentifier is not null)
-                {
-                    dataType = typeMappingPolicy.Resolve(referencedIdentifier);
-                }
-            }
-
-            var nullable = !ShouldEnforceNotNull(context.Entity, attribute, decisions);
+            var dataType = emitter.ResolveAttributeDataType(attribute);
+            var nullable = !emitter.ShouldEnforceNotNull(attribute);
             var onDisk = attribute.OnDisk;
             var isIdentity = onDisk.IsIdentity ?? attribute.IsAutoNumber;
             var identitySeed = isIdentity ? 1 : 0;
             var identityIncrement = isIdentity ? 1 : 0;
             var isComputed = onDisk.IsComputed ?? false;
             var computed = isComputed ? onDisk.ComputedDefinition : null;
-            var coordinate = new ColumnCoordinate(context.Entity.Schema, context.Entity.PhysicalName, attribute.ColumnName);
+            var coordinate = emitter.CreateCoordinate(attribute);
             var defaultExpression = SmoNormalization.NormalizeSqlExpression(
-                ResolveDefaultExpression(onDisk.DefaultDefinition, profileDefaults, coordinate, attribute));
+                emitter.ResolveDefaultExpression(attribute, coordinate));
 
             if (defaultExpression is not null && dataType.SqlDataType == SqlDataType.Bit)
             {
@@ -110,7 +73,7 @@ internal static class SmoColumnBuilder
 
             builder.Add(new SmoColumnDefinition(
                 attribute.ColumnName.Value,
-                ResolveEmissionColumnName(attribute),
+                emitter.ResolveEmissionColumnName(attribute),
                 attribute.LogicalName.Value,
                 dataType,
                 nullable,
@@ -127,17 +90,6 @@ internal static class SmoColumnBuilder
         }
 
         return builder.ToImmutable();
-    }
-
-    private static string ResolveEmissionColumnName(AttributeModel attribute)
-    {
-        var logical = attribute.LogicalName.Value;
-        if (!string.IsNullOrWhiteSpace(logical))
-        {
-            return logical;
-        }
-
-        return attribute.ColumnName.Value;
     }
 
     private static SmoDefaultConstraintDefinition? CreateDefaultConstraint(AttributeOnDiskDefaultConstraint? constraint)
@@ -157,26 +109,6 @@ internal static class SmoColumnBuilder
             SmoNormalization.NormalizeWhitespace(constraint.Name),
             expression,
             constraint.IsNotTrusted);
-    }
-
-    private static string? ResolveDefaultExpression(
-        string? onDiskDefault,
-        IReadOnlyDictionary<ColumnCoordinate, string> profileDefaults,
-        ColumnCoordinate coordinate,
-        AttributeModel attribute)
-    {
-        if (!string.IsNullOrWhiteSpace(onDiskDefault))
-        {
-            return onDiskDefault;
-        }
-
-        if (profileDefaults.TryGetValue(coordinate, out var profileDefault) &&
-            !string.IsNullOrWhiteSpace(profileDefault))
-        {
-            return profileDefault;
-        }
-
-        return string.IsNullOrWhiteSpace(attribute.DefaultValue) ? null : attribute.DefaultValue;
     }
 
     private static string NormalizeBitDefaultExpression(string expression)
@@ -232,17 +164,6 @@ internal static class SmoColumnBuilder
 
         result = false;
         return false;
-    }
-
-    private static bool ShouldEnforceNotNull(EntityModel entity, AttributeModel attribute, PolicyDecisionSet decisions)
-    {
-        var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
-        if (decisions.Nullability.TryGetValue(coordinate, out var decision))
-        {
-            return decision.MakeNotNull;
-        }
-
-        return attribute.IsMandatory;
     }
 
     private sealed class SmoCheckConstraintComparer : IComparer<SmoCheckConstraintDefinition>

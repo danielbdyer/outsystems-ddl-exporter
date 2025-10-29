@@ -4,6 +4,7 @@ using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -23,7 +24,17 @@ public class SmoColumnBuilderTests
             .First(entity => entity.LogicalName.Value.Equals("Customer", StringComparison.Ordinal));
         var customerContext = contexts.GetContext(customerEntity);
         var profileDefaults = SmoTestHelper.BuildProfileDefaults(snapshot);
-        var columns = SmoColumnBuilder.BuildColumns(customerContext, decisions, profileDefaults, TypeMappingPolicy.Default, contexts);
+        var foreignKeyReality = SmoTestHelper.BuildForeignKeyReality(snapshot);
+        var customerEmitter = new SmoEntityEmitter(
+            customerContext,
+            decisions,
+            contexts,
+            profileDefaults,
+            foreignKeyReality,
+            TypeMappingPolicy.Default,
+            SmoFormatOptions.Default,
+            includePlatformAutoIndexes: false);
+        var columns = SmoColumnBuilder.BuildColumns(customerEmitter);
 
         var idColumn = columns.Single(c => c.LogicalName.Equals("Id", StringComparison.Ordinal));
         Assert.False(idColumn.Nullable);
@@ -46,7 +57,16 @@ public class SmoColumnBuilderTests
             .SelectMany(module => module.Entities)
             .First(entity => entity.LogicalName.Value.Equals("City", StringComparison.Ordinal));
         var cityContext = contexts.GetContext(cityEntity);
-        var cityColumns = SmoColumnBuilder.BuildColumns(cityContext, decisions, profileDefaults, TypeMappingPolicy.Default, contexts);
+        var cityEmitter = new SmoEntityEmitter(
+            cityContext,
+            decisions,
+            contexts,
+            profileDefaults,
+            foreignKeyReality,
+            TypeMappingPolicy.Default,
+            SmoFormatOptions.Default,
+            includePlatformAutoIndexes: false);
+        var cityColumns = SmoColumnBuilder.BuildColumns(cityEmitter);
         var isActive = cityColumns.Single(c => c.LogicalName.Equals("IsActive", StringComparison.Ordinal));
         Assert.Equal("(1)", isActive.DefaultExpression);
     }
@@ -116,12 +136,16 @@ public class SmoColumnBuilderTests
 
         var contexts = SmoModelFactory.BuildEntityContexts(model, supplementalEntities: null);
         var context = contexts.GetContext(entity);
-        var columns = SmoColumnBuilder.BuildColumns(
+        var emitter = new SmoEntityEmitter(
             context,
             decisions,
+            contexts,
             ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyReality>.Empty,
             TypeMappingPolicy.Default,
-            contexts);
+            SmoFormatOptions.Default,
+            includePlatformAutoIndexes: false);
+        var columns = SmoColumnBuilder.BuildColumns(emitter);
 
         var enabled = columns.Single(c => c.LogicalName.Equals("IsEnabled", StringComparison.Ordinal));
         Assert.Equal("(1)", enabled.DefaultExpression);
