@@ -7,8 +7,6 @@ using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
-using EntityEmissionContext = Osm.Smo.SmoModelFactory.EntityEmissionContext;
-using EntityEmissionIndex = Osm.Smo.SmoModelFactory.EntityEmissionIndex;
 
 namespace Osm.Smo;
 

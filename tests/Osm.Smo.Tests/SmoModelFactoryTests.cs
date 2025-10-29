@@ -121,6 +121,24 @@ public class SmoModelFactoryTests
         var triggerDefinition = Assert.Single(jobRunTable.Triggers);
         Assert.Equal("TR_OSUSR_XYZ_JOBRUN_AUDIT", triggerDefinition.Name);
         Assert.True(triggerDefinition.IsDisabled);
+
+        var orderingKeys = smoModel.Tables
+            .Select(table => (table.Module, table.Schema, table.Name, table.LogicalName, Catalog: table.Catalog ?? string.Empty))
+            .ToImmutableArray();
+        var expectedOrdering = orderingKeys
+            .OrderBy(tuple => tuple.Module, StringComparer.Ordinal)
+            .ThenBy(tuple => tuple.Schema, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(tuple => tuple.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(tuple => tuple.LogicalName, StringComparer.Ordinal)
+            .ThenBy(tuple => tuple.Catalog, StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
+        Assert.Equal(expectedOrdering, orderingKeys);
+
+        var customerEntity = model.Modules
+            .SelectMany(module => module.Entities)
+            .First(entity => entity.LogicalName.Value.Equals("Customer", StringComparison.Ordinal));
+        Assert.Equal(customerEntity.Metadata.Description, customerTable.Description);
+        Assert.Equal(customerEntity.Module.Value, customerTable.OriginalModule);
     }
 
     [Fact]
