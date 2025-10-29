@@ -1,6 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.IO;
+using System.IO.Abstractions.TestingHelpers;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -11,7 +12,6 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
-using Tests.Support;
 
 namespace Osm.Pipeline.Tests;
 
@@ -44,13 +44,16 @@ public sealed class CompareWithDmmApplicationServiceTests
     public async Task RunAsync_WhenMaxDegreeOfParallelismNotPositive_ReturnsParallelismError(int parallelism)
     {
         var dispatcher = new CapturingDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
+        fileSystem.AddDirectory("/work");
+        var service = new CompareWithDmmApplicationService(dispatcher, fileSystem);
+        var outputDirectory = "/work/out";
         var context = CreateContext(modelPath: "model.json", profilePath: "profile.snapshot", profilerProfilePath: null, dmmPath: "baseline.dmm");
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
             DmmPath: "baseline.dmm",
-            OutputDirectory: CreateTemporaryDirectory(),
+            OutputDirectory: outputDirectory,
             MaxDegreeOfParallelism: parallelism);
 
         var result = await service.RunAsync(new CompareWithDmmApplicationInput(
@@ -69,17 +72,19 @@ public sealed class CompareWithDmmApplicationServiceTests
     [Fact]
     public async Task RunAsync_ComposesPipelineRequestWithCacheOptions()
     {
-        using var temp = new TempDirectory();
-        var cacheRoot = Path.Combine(temp.Path, "cache");
-        var outputDirectory = Path.Combine(temp.Path, "out");
-        var modelPath = Path.Combine(temp.Path, "model.json");
-        var profilePath = Path.Combine(temp.Path, "profile.snapshot");
-        var dmmPath = Path.Combine(temp.Path, "baseline.dmm");
-        Directory.CreateDirectory(cacheRoot);
-        Directory.CreateDirectory(outputDirectory);
-        File.WriteAllText(modelPath, "{}");
-        File.WriteAllText(profilePath, "{}");
-        File.WriteAllText(dmmPath, "{}");
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
+        fileSystem.AddDirectory("/work");
+        fileSystem.Directory.SetCurrentDirectory("/work");
+        var cacheRoot = fileSystem.Path.Combine("/work", "cache");
+        var outputDirectory = fileSystem.Path.Combine("/work", "out");
+        var modelPath = fileSystem.Path.Combine("/work", "model.json");
+        var profilePath = fileSystem.Path.Combine("/work", "profile.snapshot");
+        var dmmPath = fileSystem.Path.Combine("/work", "baseline.dmm");
+        fileSystem.Directory.CreateDirectory(cacheRoot);
+        fileSystem.Directory.CreateDirectory(outputDirectory);
+        fileSystem.AddFile(modelPath, new MockFileData("{}"));
+        fileSystem.AddFile(profilePath, new MockFileData("{}"));
+        fileSystem.AddFile(dmmPath, new MockFileData("{}"));
 
         var configuration = new CliConfiguration(
             TighteningOptions.Default,
@@ -96,7 +101,7 @@ public sealed class CompareWithDmmApplicationServiceTests
         var context = new CliConfigurationContext(configuration, "config.json");
         var overrides = new CompareWithDmmOverrides(null, null, null, outputDirectory, MaxDegreeOfParallelism: null);
         var dispatcher = new CapturingDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var service = new CompareWithDmmApplicationService(dispatcher, fileSystem);
 
         var result = await service.RunAsync(new CompareWithDmmApplicationInput(
             context,
@@ -112,17 +117,11 @@ public sealed class CompareWithDmmApplicationServiceTests
         Assert.Equal(modelPath, request!.ModelPath);
         Assert.Equal(profilePath, request.ProfilePath);
         Assert.Equal(dmmPath, request.DmmPath);
-        Assert.Equal(Path.Combine(outputDirectory, "dmm-diff.json"), request.DiffOutputPath);
+        Assert.Equal(fileSystem.Path.Combine(outputDirectory, "dmm-diff.json"), request.DiffOutputPath);
         Assert.NotNull(request.EvidenceCache);
         Assert.Equal("dmm-compare", request.EvidenceCache!.Command);
         Assert.Equal(cacheRoot, request.EvidenceCache.RootDirectory);
         Assert.Equal(result.Value.PipelineResult.DiffArtifactPath, result.Value.DiffOutputPath);
-    }
-
-    private static string CreateTemporaryDirectory()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "osm-pipeline-tests", Guid.NewGuid().ToString("N"));
-        return path;
     }
 
     private static CliConfigurationContext CreateContext(

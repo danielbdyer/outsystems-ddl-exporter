@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Immutable;
-using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,10 +17,17 @@ namespace Osm.Pipeline.Application;
 public sealed class ModelResolutionService : IModelResolutionService
 {
     private readonly ICommandDispatcher _dispatcher;
+    private readonly IFileSystem _fileSystem;
 
     public ModelResolutionService(ICommandDispatcher dispatcher)
+        : this(dispatcher, new FileSystem())
+    {
+    }
+
+    public ModelResolutionService(ICommandDispatcher dispatcher, IFileSystem fileSystem)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
     }
 
     public async Task<Result<ModelResolutionResult>> ResolveModelAsync(
@@ -83,12 +90,12 @@ public sealed class ModelResolutionService : IModelResolutionService
 
         var extraction = extractionResult.Value;
         var resolvedOutputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
-            ? Directory.GetCurrentDirectory()
-            : Path.GetFullPath(outputDirectory);
+            ? _fileSystem.Directory.GetCurrentDirectory()
+            : _fileSystem.Path.GetFullPath(outputDirectory);
 
-        Directory.CreateDirectory(resolvedOutputDirectory);
-        var modelPath = Path.Combine(resolvedOutputDirectory, "model.extracted.json");
-        await using (var outputStream = File.Create(modelPath))
+        _fileSystem.Directory.CreateDirectory(resolvedOutputDirectory);
+        var modelPath = _fileSystem.Path.Combine(resolvedOutputDirectory, "model.extracted.json");
+        await using (var outputStream = _fileSystem.File.Create(modelPath))
         {
             await extraction.JsonPayload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
         }
@@ -97,6 +104,6 @@ public sealed class ModelResolutionService : IModelResolutionService
             ? ImmutableArray<string>.Empty
             : ImmutableArray.CreateRange(extraction.Warnings);
 
-        return new ModelResolutionResult(Path.GetFullPath(modelPath), true, warnings);
+        return new ModelResolutionResult(_fileSystem.Path.GetFullPath(modelPath), true, warnings);
     }
 }

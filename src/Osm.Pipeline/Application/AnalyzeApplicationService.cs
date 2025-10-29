@@ -1,5 +1,5 @@
 using System;
-using System.IO;
+using System.IO.Abstractions;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -23,10 +23,17 @@ public sealed record AnalyzeApplicationResult(
 public sealed class AnalyzeApplicationService : PipelineApplicationServiceBase, IApplicationService<AnalyzeApplicationInput, AnalyzeApplicationResult>
 {
     private readonly ICommandDispatcher _dispatcher;
+    private readonly IFileSystem _fileSystem;
 
     public AnalyzeApplicationService(ICommandDispatcher dispatcher)
+        : this(dispatcher, new FileSystem())
+    {
+    }
+
+    public AnalyzeApplicationService(ICommandDispatcher dispatcher, IFileSystem fileSystem)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
     }
 
     public async Task<Result<AnalyzeApplicationResult>> RunAsync(
@@ -86,7 +93,7 @@ public sealed class AnalyzeApplicationService : PipelineApplicationServiceBase, 
 
         var outputDirectory = ResolveOutputDirectory(overrides.OutputDirectory);
 
-        Directory.CreateDirectory(outputDirectory);
+        _fileSystem.Directory.CreateDirectory(outputDirectory);
 
         var request = new TighteningAnalysisPipelineRequest(
             modelPath,
