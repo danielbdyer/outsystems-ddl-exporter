@@ -94,6 +94,76 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         Assert.Equal(OpportunityDisposition.NeedsRemediation, opportunity.Disposition);
         Assert.Equal(RiskLevel.Moderate, opportunity.Risk.Level);
         Assert.Contains("CREATE UNIQUE", opportunity.Statements[0]);
+        Assert.True(opportunity.EvidenceSummary?.RequiresRemediation);
+        Assert.Equal(1, report.DispositionCounts[OpportunityDisposition.NeedsRemediation]);
+        Assert.Equal(1, report.TypeCounts[OpportunityType.UniqueIndex]);
+        Assert.Equal(1, report.RiskCounts[RiskLevel.Moderate]);
+    }
+
+    [Fact]
+    public void Analyze_collates_composite_unique_evidence()
+    {
+        var codeAttribute = TighteningEvaluatorTestHelper.CreateAttribute("Code", "CODE");
+        var tenantAttribute = TighteningEvaluatorTestHelper.CreateAttribute("TenantId", "TENANTID");
+        var entity = TighteningEvaluatorTestHelper.CreateEntity(
+            "Module",
+            "CustomerTenant",
+            "OSUSR_PRO_CUSTOMER_TENANT",
+            new[] { codeAttribute, tenantAttribute },
+            indexes: new[]
+            {
+                IndexModel.Create(
+                        new IndexName("IX_CUSTOMER_TENANT"),
+                        isUnique: true,
+                        isPrimary: false,
+                        isPlatformAuto: false,
+                        new[]
+                        {
+                            IndexColumnModel.Create(new AttributeName("Code"), new ColumnName("CODE"), 1, false, IndexColumnDirection.Ascending).Value,
+                            IndexColumnModel.Create(new AttributeName("TenantId"), new ColumnName("TENANTID"), 2, false, IndexColumnDirection.Ascending).Value
+                        })
+                    .Value
+            });
+        var model = TighteningEvaluatorTestHelper.CreateModel(TighteningEvaluatorTestHelper.CreateModule("Module", entity));
+
+        var schema = new SchemaName("dbo");
+        var table = new TableName("OSUSR_PRO_CUSTOMER_TENANT");
+        var codeCoordinate = new ColumnCoordinate(schema, table, new ColumnName("CODE"));
+        var tenantCoordinate = new ColumnCoordinate(schema, table, new ColumnName("TENANTID"));
+        var codeProfile = TighteningEvaluatorTestHelper.CreateColumnProfile(codeCoordinate, isNullablePhysical: false, rowCount: 100, nullCount: 0);
+        var tenantProfile = TighteningEvaluatorTestHelper.CreateColumnProfile(tenantCoordinate, isNullablePhysical: false, rowCount: 100, nullCount: 0);
+        var compositeProfile = CompositeUniqueCandidateProfile.Create(
+            schema,
+            table,
+            new[] { new ColumnName("CODE"), new ColumnName("TENANTID") },
+            hasDuplicate: true).Value;
+
+        var snapshot = ProfileSnapshot.Create(
+            new[] { codeProfile, tenantProfile },
+            Array.Empty<UniqueCandidateProfile>(),
+            new[] { compositeProfile },
+            Array.Empty<ForeignKeyReality>()).Value;
+
+        var indexCoordinate = new IndexCoordinate(schema, table, new IndexName("IX_CUSTOMER_TENANT"));
+        var decision = UniqueIndexDecision.Create(indexCoordinate, enforceUnique: true, requiresRemediation: true, ImmutableArray<string>.Empty);
+        var decisions = PolicyDecisionSet.Create(
+            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty.Add(indexCoordinate, decision),
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            ImmutableDictionary<IndexCoordinate, string>.Empty.Add(indexCoordinate, entity.Module.Value),
+            TighteningOptions.Default);
+
+        var analyzer = new TighteningOpportunitiesAnalyzer();
+        var report = analyzer.Analyze(model, snapshot, decisions);
+
+        var opportunity = Assert.Single(report.Opportunities);
+        Assert.Equal(OpportunityType.UniqueIndex, opportunity.Type);
+        Assert.Contains("Composite duplicates=True", opportunity.Evidence);
+        Assert.False(opportunity.EvidenceSummary?.DataClean);
+        Assert.True(opportunity.EvidenceSummary?.HasDuplicates);
+        Assert.Equal(2, opportunity.Columns.Length);
     }
 
     [Fact]
