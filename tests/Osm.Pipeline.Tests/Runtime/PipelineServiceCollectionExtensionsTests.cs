@@ -144,6 +144,7 @@ public class PipelineServiceCollectionExtensionsTests
 
         services.AddPipelineApplications();
 
+        Assert.Contains(services, d => d.ServiceType == typeof(PipelineRequestContextFactory) && d.ImplementationType == typeof(PipelineRequestContextFactory));
         Assert.Contains(services, d => d.ServiceType == typeof(IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>) && d.ImplementationType == typeof(BuildSsdtApplicationService));
         Assert.Contains(services, d => d.ServiceType == typeof(IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>) && d.ImplementationType == typeof(CompareWithDmmApplicationService));
         Assert.Contains(services, d => d.ServiceType == typeof(IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>) && d.ImplementationType == typeof(ExtractModelApplicationService));
@@ -176,6 +177,7 @@ public class PipelineServiceCollectionExtensionsTests
 
         Assert.Contains(services, d => d.ServiceType == typeof(TimeProvider));
         Assert.Contains(services, d => d.ServiceType == typeof(ICliConfigurationService));
+        Assert.Contains(services, d => d.ServiceType == typeof(PipelineRequestContextFactory));
         Assert.Contains(services, d => d.ServiceType == typeof(IModelIngestionService));
         Assert.Contains(services, d => d.ServiceType == typeof(TighteningPolicy));
         Assert.Contains(services, d => d.ServiceType == typeof(SsdtEmitter));

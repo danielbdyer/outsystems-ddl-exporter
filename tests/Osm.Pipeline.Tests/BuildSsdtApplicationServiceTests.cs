@@ -70,7 +70,8 @@ public sealed class BuildSsdtApplicationServiceTests
             modelResolution,
             outputResolver,
             namingBinder,
-            staticDataFactory);
+            staticDataFactory,
+            new PipelineRequestContextFactory());
 
         var result = await service.RunAsync(input, CancellationToken.None);
 

@@ -138,6 +138,7 @@ public static class PipelineServiceCollectionExtensions
 
     internal static IServiceCollection AddPipelineApplications(this IServiceCollection services)
     {
+        services.AddSingleton<PipelineRequestContextFactory>();
         services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>, BuildSsdtApplicationService>();
         services.AddSingleton<IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>, CompareWithDmmApplicationService>();
         services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();

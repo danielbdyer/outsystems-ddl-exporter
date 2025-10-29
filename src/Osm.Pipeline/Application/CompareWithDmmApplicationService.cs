@@ -21,14 +21,18 @@ public sealed record CompareWithDmmApplicationResult(
     DmmComparePipelineResult PipelineResult,
     string DiffOutputPath);
 
-public sealed class CompareWithDmmApplicationService : IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>
-{
-    private readonly ICommandDispatcher _dispatcher;
-
-    public CompareWithDmmApplicationService(ICommandDispatcher dispatcher)
+    public sealed class CompareWithDmmApplicationService : IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>
     {
-        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
-    }
+        private readonly ICommandDispatcher _dispatcher;
+        private readonly PipelineRequestContextFactory _contextFactory;
+
+        public CompareWithDmmApplicationService(
+            ICommandDispatcher dispatcher,
+            PipelineRequestContextFactory contextFactory)
+        {
+            _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+            _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
+        }
 
     public async Task<Result<CompareWithDmmApplicationResult>> RunAsync(CompareWithDmmApplicationInput input, CancellationToken cancellationToken = default)
     {
@@ -37,19 +41,24 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
             throw new ArgumentNullException(nameof(input));
         }
 
-        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
-            input.ConfigurationContext,
-            input.ModuleFilter,
-            input.Sql,
-            input.Cache,
-            SqlMetadataOutputPath: null,
-            NamingOverrides: null));
-        if (contextResult.IsFailure)
+        await using var contextScope = await _contextFactory
+            .CreateAsync(
+                new PipelineRequestContextFactoryRequest(
+                    input.ConfigurationContext,
+                    input.ModuleFilter,
+                    input.Sql,
+                    input.Cache,
+                    SqlMetadataOutputPath: null,
+                    NamingOverrides: null),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (contextScope.IsFailure)
         {
-            return Result<CompareWithDmmApplicationResult>.Failure(contextResult.Errors);
+            return Result<CompareWithDmmApplicationResult>.Failure(contextScope.Errors);
         }
 
-        var context = contextResult.Value;
+        var context = contextScope.Context;
 
         var configuration = context.Configuration;
         var tighteningOptions = context.Tightening;
@@ -129,7 +138,6 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
         var pipelineResult = await _dispatcher.DispatchAsync<DmmComparePipelineRequest, DmmComparePipelineResult>(
             request,
             cancellationToken).ConfigureAwait(false);
-        await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
         if (pipelineResult.IsFailure)
         {
             return Result<CompareWithDmmApplicationResult>.Failure(pipelineResult.Errors);

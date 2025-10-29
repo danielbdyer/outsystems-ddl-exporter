@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
@@ -13,10 +11,10 @@ using Xunit;
 
 namespace Osm.Pipeline.Tests;
 
-public sealed class PipelineRequestContextBuilderTests
+public sealed class PipelineRequestContextFactoryTests
 {
     [Fact]
-    public void Build_ComposesResolvedContext()
+    public async Task CreateAsync_ComposesResolvedContext()
     {
         var configuration = new CliConfiguration(
             TighteningOptions.Default,
@@ -38,7 +36,7 @@ public sealed class PipelineRequestContextBuilderTests
                 new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase),
                 new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase)),
             TypeMappingConfiguration.Empty,
-            new SupplementalModelConfiguration(includeUsers: true, Paths: new[] { "users.json" }));
+            new SupplementalModelConfiguration(IncludeUsers: true, Paths: new[] { "users.json" }));
 
         var configurationContext = new CliConfigurationContext(configuration, "cli.config.json");
         var moduleFilterOverrides = new ModuleFilterOverrides(
@@ -60,16 +58,18 @@ public sealed class PipelineRequestContextBuilderTests
         var overrides = new BuildSsdtOverrides(null, null, null, null, null, null, null, null);
         var binder = new RecordingNamingBinder();
 
-        var result = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
-            configurationContext,
-            moduleFilterOverrides,
-            sqlOverrides,
-            cacheOverrides,
-            SqlMetadataOutputPath: null,
-            new NamingOverridesRequest(overrides, binder)));
+        var factory = new PipelineRequestContextFactory();
+        await using var scope = await factory.CreateAsync(
+            new PipelineRequestContextFactoryRequest(
+                configurationContext,
+                moduleFilterOverrides,
+                sqlOverrides,
+                cacheOverrides,
+                SqlMetadataOutputPath: null,
+                new NamingOverridesRequest(overrides, binder)));
 
-        Assert.True(result.IsSuccess);
-        var context = result.Value;
+        Assert.True(scope.IsSuccess);
+        var context = scope.Context;
         Assert.Equal(configuration, context.Configuration);
         Assert.Equal(configuration.Tightening, context.Tightening);
         Assert.Equal(configurationContext.ConfigPath, context.ConfigPath);
@@ -87,34 +87,36 @@ public sealed class PipelineRequestContextBuilderTests
             "baseline.dmm");
 
         Assert.NotNull(cacheOptions);
-        Assert.Equal("cache-root", cacheOptions!.Root);
+        Assert.Equal("cache-root", cacheOptions!.RootDirectory);
         Assert.Equal("dmm-compare", cacheOptions.Command);
         Assert.NotNull(cacheOptions.Metadata);
         Assert.Contains("moduleFilter.selectionScope", cacheOptions.Metadata!.Keys);
     }
 
     [Fact]
-    public async Task FlushMetadataAsync_WritesFileWhenLogHasEntries()
+    public async Task Scope_DisposeAsync_WritesFileWhenLogHasEntries()
     {
         using var temp = new TempDirectory();
         var metadataPath = Path.Combine(temp.Path, "metadata.json");
 
         var configuration = CliConfiguration.Empty;
-        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
-            new CliConfigurationContext(configuration, null),
-            ModuleFilterOverrides: null,
-            SqlOptionsOverrides: null,
-            CacheOptionsOverrides: null,
-            SqlMetadataOutputPath: metadataPath,
-            NamingOverrides: null));
+        var factory = new PipelineRequestContextFactory();
+        var scope = await factory.CreateAsync(
+            new PipelineRequestContextFactoryRequest(
+                new CliConfigurationContext(configuration, null),
+                ModuleFilterOverrides: null,
+                SqlOptionsOverrides: null,
+                CacheOptionsOverrides: null,
+                SqlMetadataOutputPath: metadataPath,
+                NamingOverrides: null));
 
-        Assert.True(contextResult.IsSuccess);
-        var context = contextResult.Value;
+        Assert.True(scope.IsSuccess);
+        var context = scope.Context;
         Assert.NotNull(context.SqlMetadataLog);
 
         context.SqlMetadataLog!.RecordRequest("test", new { value = 1 });
 
-        await context.FlushMetadataAsync(CancellationToken.None);
+        await scope.DisposeAsync();
 
         Assert.True(File.Exists(metadataPath));
         var contents = await File.ReadAllTextAsync(metadataPath);
@@ -123,24 +125,25 @@ public sealed class PipelineRequestContextBuilderTests
     }
 
     [Fact]
-    public async Task FlushMetadataAsync_DoesNotWriteWhenLogEmpty()
+    public async Task Scope_DisposeAsync_DoesNotWriteWhenLogEmpty()
     {
         using var temp = new TempDirectory();
         var metadataPath = Path.Combine(temp.Path, "metadata.json");
 
         var configuration = CliConfiguration.Empty;
-        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
-            new CliConfigurationContext(configuration, null),
-            ModuleFilterOverrides: null,
-            SqlOptionsOverrides: null,
-            CacheOptionsOverrides: null,
-            SqlMetadataOutputPath: metadataPath,
-            NamingOverrides: null));
+        var factory = new PipelineRequestContextFactory();
+        var scope = await factory.CreateAsync(
+            new PipelineRequestContextFactoryRequest(
+                new CliConfigurationContext(configuration, null),
+                ModuleFilterOverrides: null,
+                SqlOptionsOverrides: null,
+                CacheOptionsOverrides: null,
+                SqlMetadataOutputPath: metadataPath,
+                NamingOverrides: null));
 
-        Assert.True(contextResult.IsSuccess);
-        var context = contextResult.Value;
+        Assert.True(scope.IsSuccess);
 
-        await context.FlushMetadataAsync(CancellationToken.None);
+        await scope.DisposeAsync();
 
         Assert.False(File.Exists(metadataPath));
     }

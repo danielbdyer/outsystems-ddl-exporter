@@ -169,7 +169,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             dmmPath: "config.dmm");
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var service = new CompareWithDmmApplicationService(dispatcher, new PipelineRequestContextFactory());
 
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
@@ -211,7 +211,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             profiler: new ProfilerConfiguration("fixture", null, null));
         var context = new CliConfigurationContext(configuration, "config.json");
         var dispatcher = new RecordingDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var service = new CompareWithDmmApplicationService(dispatcher, new PipelineRequestContextFactory());
 
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
@@ -274,7 +274,8 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             modelResolution,
             outputDirectoryResolver,
             namingOverridesBinder,
-            staticDataProviderFactory);
+            staticDataProviderFactory,
+            new PipelineRequestContextFactory());
     }
 
     private sealed class RecordingDispatcher : ICommandDispatcher

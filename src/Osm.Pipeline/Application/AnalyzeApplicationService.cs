@@ -23,10 +23,14 @@ public sealed record AnalyzeApplicationResult(
 public sealed class AnalyzeApplicationService : IApplicationService<AnalyzeApplicationInput, AnalyzeApplicationResult>
 {
     private readonly ICommandDispatcher _dispatcher;
+    private readonly PipelineRequestContextFactory _contextFactory;
 
-    public AnalyzeApplicationService(ICommandDispatcher dispatcher)
+    public AnalyzeApplicationService(
+        ICommandDispatcher dispatcher,
+        PipelineRequestContextFactory contextFactory)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
     }
 
     public async Task<Result<AnalyzeApplicationResult>> RunAsync(
@@ -50,19 +54,24 @@ public sealed class AnalyzeApplicationService : IApplicationService<AnalyzeAppli
             Array.Empty<string>(),
             Array.Empty<string>());
 
-        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
-            input.ConfigurationContext,
-            moduleFilterOverrides,
-            SqlOptionsOverrides: null,
-            CacheOptionsOverrides: null,
-            SqlMetadataOutputPath: null,
-            NamingOverrides: null));
-        if (contextResult.IsFailure)
+        await using var contextScope = await _contextFactory
+            .CreateAsync(
+                new PipelineRequestContextFactoryRequest(
+                    input.ConfigurationContext,
+                    moduleFilterOverrides,
+                    SqlOptionsOverrides: null,
+                    CacheOptionsOverrides: null,
+                    SqlMetadataOutputPath: null,
+                    NamingOverrides: null),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (contextScope.IsFailure)
         {
-            return Result<AnalyzeApplicationResult>.Failure(contextResult.Errors);
+            return Result<AnalyzeApplicationResult>.Failure(contextScope.Errors);
         }
 
-        var context = contextResult.Value;
+        var context = contextScope.Context;
         var configuration = context.Configuration;
         var overrides = input.Overrides ?? new AnalyzeOverrides(null, null, null);
         var tighteningOptions = context.Tightening;

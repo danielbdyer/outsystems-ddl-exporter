@@ -22,7 +22,7 @@ public sealed class AnalyzeApplicationServiceTests
     public async Task RunAsync_WhenModelPathMissing_ReturnsError()
     {
         var dispatcher = new CapturingDispatcher();
-        var service = new AnalyzeApplicationService(dispatcher);
+        var service = new AnalyzeApplicationService(dispatcher, new PipelineRequestContextFactory());
         var context = CreateContext(modelPath: null, profilePath: "profile.json", profilerProfilePath: null);
         var overrides = new AnalyzeOverrides(null, "profile.json", "out");
 
@@ -38,7 +38,7 @@ public sealed class AnalyzeApplicationServiceTests
     public async Task RunAsync_WhenProfilePathMissing_ReturnsError()
     {
         var dispatcher = new CapturingDispatcher();
-        var service = new AnalyzeApplicationService(dispatcher);
+        var service = new AnalyzeApplicationService(dispatcher, new PipelineRequestContextFactory());
         var context = CreateContext(modelPath: "model.json", profilePath: null, profilerProfilePath: null);
         var overrides = new AnalyzeOverrides("model.json", null, "out");
 
@@ -55,7 +55,7 @@ public sealed class AnalyzeApplicationServiceTests
     {
         using var temp = new TempDirectory();
         var dispatcher = new CapturingDispatcher();
-        var service = new AnalyzeApplicationService(dispatcher);
+        var service = new AnalyzeApplicationService(dispatcher, new PipelineRequestContextFactory());
         var modelPath = Path.Combine(temp.Path, "model.json");
         var profilePath = Path.Combine(temp.Path, "profile.json");
         File.WriteAllText(modelPath, "{}");

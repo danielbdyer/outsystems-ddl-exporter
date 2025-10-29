@@ -7,6 +7,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.SqlExtraction;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -21,18 +22,21 @@ public sealed record ExtractModelApplicationResult(
     ModelExtractionResult ExtractionResult,
     string OutputPath);
 
-public sealed class ExtractModelApplicationService : IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>
-{
-    private readonly ICommandDispatcher _dispatcher;
-    private readonly ILogger<ExtractModelApplicationService> _logger;
-
-    public ExtractModelApplicationService(
-        ICommandDispatcher dispatcher,
-        ILogger<ExtractModelApplicationService>? logger = null)
+    public sealed class ExtractModelApplicationService : IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>
     {
-        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
-        _logger = logger ?? NullLogger<ExtractModelApplicationService>.Instance;
-    }
+        private readonly ICommandDispatcher _dispatcher;
+        private readonly ILogger<ExtractModelApplicationService> _logger;
+        private readonly PipelineRequestContextFactory _contextFactory;
+
+        public ExtractModelApplicationService(
+            ICommandDispatcher dispatcher,
+            PipelineRequestContextFactory contextFactory,
+            ILogger<ExtractModelApplicationService>? logger = null)
+        {
+            _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+            _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
+            _logger = logger ?? NullLogger<ExtractModelApplicationService>.Instance;
+        }
 
     public async Task<Result<ExtractModelApplicationResult>> RunAsync(ExtractModelApplicationInput input, CancellationToken cancellationToken = default)
     {
@@ -61,22 +65,27 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
             Array.Empty<string>(),
             Array.Empty<string>());
 
-        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
-            configurationContext,
-            moduleFilterOverrides,
-            input.Sql,
-            CacheOptionsOverrides: null,
-            overrides.SqlMetadataOutputPath,
-            NamingOverrides: null));
-        if (contextResult.IsFailure)
+        await using var contextScope = await _contextFactory
+            .CreateAsync(
+                new PipelineRequestContextFactoryRequest(
+                    configurationContext,
+                    moduleFilterOverrides,
+                    input.Sql,
+                    CacheOptionsOverrides: null,
+                    overrides.SqlMetadataOutputPath,
+                    NamingOverrides: null),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (contextScope.IsFailure)
         {
             _logger.LogError(
                 "Failed to build extract-model context: {Errors}.",
-                string.Join(", ", contextResult.Errors.Select(static error => error.Code)));
-            return Result<ExtractModelApplicationResult>.Failure(contextResult.Errors);
+                string.Join(", ", contextScope.Errors.Select(static error => error.Code)));
+            return Result<ExtractModelApplicationResult>.Failure(contextScope.Errors);
         }
 
-        var context = contextResult.Value;
+        var context = contextScope.Context;
         var moduleFilter = context.ModuleFilter;
         var moduleNames = moduleFilter.Modules.IsDefaultOrEmpty
             ? Array.Empty<string>()
@@ -164,8 +173,6 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
         var extractionResult = await _dispatcher.DispatchAsync<ExtractModelPipelineRequest, ModelExtractionResult>(
             request,
             cancellationToken).ConfigureAwait(false);
-
-        await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
 
         if (extractionResult.IsFailure)
         {

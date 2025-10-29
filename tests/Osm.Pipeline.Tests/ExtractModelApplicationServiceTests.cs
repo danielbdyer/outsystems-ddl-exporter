@@ -29,7 +29,10 @@ public class ExtractModelApplicationServiceTests
         var context = new CliConfigurationContext(configuration, ConfigPath: "config/appsettings.json");
 
         var dispatcher = new RecordingDispatcher();
-        var service = new ExtractModelApplicationService(dispatcher, NullLogger<ExtractModelApplicationService>.Instance);
+        var service = new ExtractModelApplicationService(
+            dispatcher,
+            new PipelineRequestContextFactory(),
+            NullLogger<ExtractModelApplicationService>.Instance);
 
         var input = new ExtractModelApplicationInput(
             context,
@@ -59,7 +62,10 @@ public class ExtractModelApplicationServiceTests
         var context = new CliConfigurationContext(configuration, ConfigPath: "config/appsettings.json");
 
         var dispatcher = new RecordingDispatcher();
-        var service = new ExtractModelApplicationService(dispatcher, NullLogger<ExtractModelApplicationService>.Instance);
+        var service = new ExtractModelApplicationService(
+            dispatcher,
+            new PipelineRequestContextFactory(),
+            NullLogger<ExtractModelApplicationService>.Instance);
 
         var input = new ExtractModelApplicationInput(
             context,
@@ -87,7 +93,10 @@ public class ExtractModelApplicationServiceTests
         var context = new CliConfigurationContext(configuration, ConfigPath: "config/appsettings.json");
 
         var dispatcher = new MetadataRecordingDispatcher();
-        var service = new ExtractModelApplicationService(dispatcher, NullLogger<ExtractModelApplicationService>.Instance);
+        var service = new ExtractModelApplicationService(
+            dispatcher,
+            new PipelineRequestContextFactory(),
+            NullLogger<ExtractModelApplicationService>.Instance);
 
         var input = new ExtractModelApplicationInput(
             context,

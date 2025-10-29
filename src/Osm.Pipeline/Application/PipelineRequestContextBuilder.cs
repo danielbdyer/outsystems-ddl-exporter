@@ -31,24 +31,13 @@ internal static class PipelineRequestContextBuilder
         var configuration = request.ConfigurationContext.Configuration ?? CliConfiguration.Empty;
         var tightening = configuration.Tightening ?? TighteningOptions.Default;
 
-        var moduleFilterOverrides = request.ModuleFilterOverrides
-            ?? new ModuleFilterOverrides(
-                Array.Empty<string>(),
-                null,
-                null,
-                Array.Empty<string>(),
-                Array.Empty<string>());
-
-        var moduleFilterResult = ModuleFilterResolver.Resolve(configuration, moduleFilterOverrides);
+        var moduleFilterResult = ModuleFilterResolver.Resolve(configuration, request.ModuleFilterOverrides);
         if (moduleFilterResult.IsFailure)
         {
             return Result<PipelineRequestContext>.Failure(moduleFilterResult.Errors);
         }
 
-        var sqlOverrides = request.SqlOptionsOverrides
-            ?? new SqlOptionsOverrides(null, null, null, null, null, null, null, null);
-
-        var sqlOptionsResult = SqlOptionsResolver.Resolve(configuration, sqlOverrides);
+        var sqlOptionsResult = SqlOptionsResolver.Resolve(configuration, request.SqlOptionsOverrides);
         if (sqlOptionsResult.IsFailure)
         {
             return Result<PipelineRequestContext>.Failure(sqlOptionsResult.Errors);
@@ -93,8 +82,6 @@ internal static class PipelineRequestContextBuilder
                     .ConfigureAwait(false);
             };
 
-        var cacheOverrides = request.CacheOptionsOverrides ?? new CacheOptionsOverrides(null, null);
-
         var context = new PipelineRequestContext(
             configuration,
             request.ConfigurationContext.ConfigPath,
@@ -104,7 +91,7 @@ internal static class PipelineRequestContextBuilder
             typeMappingResult.Value,
             supplementalOptions,
             namingOverrides,
-            cacheOverrides,
+            request.CacheOptionsOverrides,
             request.SqlMetadataOutputPath,
             metadataLog,
             flushMetadataAsync);
@@ -123,15 +110,15 @@ internal static class PipelineRequestContextBuilder
 
 internal sealed record PipelineRequestContextBuilderRequest(
     CliConfigurationContext ConfigurationContext,
-    ModuleFilterOverrides? ModuleFilterOverrides,
-    SqlOptionsOverrides? SqlOptionsOverrides,
-    CacheOptionsOverrides? CacheOptionsOverrides,
+    ModuleFilterOverrides ModuleFilterOverrides,
+    SqlOptionsOverrides SqlOptionsOverrides,
+    CacheOptionsOverrides CacheOptionsOverrides,
     string? SqlMetadataOutputPath,
     NamingOverridesRequest? NamingOverrides);
 
-internal sealed record NamingOverridesRequest(BuildSsdtOverrides Overrides, INamingOverridesBinder Binder);
+public sealed record NamingOverridesRequest(BuildSsdtOverrides Overrides, INamingOverridesBinder Binder);
 
-internal sealed record PipelineRequestContext(
+public sealed record PipelineRequestContext(
     CliConfiguration Configuration,
     string? ConfigPath,
     TighteningOptions Tightening,

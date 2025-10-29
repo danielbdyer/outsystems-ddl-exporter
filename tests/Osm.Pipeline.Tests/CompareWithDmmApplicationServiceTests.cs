@@ -41,7 +41,7 @@ public sealed class CompareWithDmmApplicationServiceTests
     public async Task RunAsync_WhenModelPathMissing_ReturnsModelMissingError()
     {
         var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var service = new CompareWithDmmApplicationService(dispatcher, new PipelineRequestContextFactory());
         var context = CreateContext(modelPath: null, profilePath: null, profilerProfilePath: null, dmmPath: "baseline.dmm");
         var overrides = new CompareWithDmmOverrides(
             ModelPath: null,
@@ -67,7 +67,7 @@ public sealed class CompareWithDmmApplicationServiceTests
     public async Task RunAsync_WhenProfilePathMissing_ReturnsProfileMissingError()
     {
         var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var service = new CompareWithDmmApplicationService(dispatcher, new PipelineRequestContextFactory());
         var context = CreateContext(modelPath: "model.json", profilePath: null, profilerProfilePath: null, dmmPath: "baseline.dmm");
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
@@ -93,7 +93,7 @@ public sealed class CompareWithDmmApplicationServiceTests
     public async Task RunAsync_WhenDmmPathMissing_ReturnsDmmMissingError()
     {
         var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var service = new CompareWithDmmApplicationService(dispatcher, new PipelineRequestContextFactory());
         var context = CreateContext(modelPath: "model.json", profilePath: "profile.snapshot", profilerProfilePath: null, dmmPath: null);
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
@@ -121,7 +121,7 @@ public sealed class CompareWithDmmApplicationServiceTests
     public async Task RunAsync_WhenMaxDegreeOfParallelismNotPositive_ReturnsParallelismError(int parallelism)
     {
         var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
+        var service = new CompareWithDmmApplicationService(dispatcher, new PipelineRequestContextFactory());
         var context = CreateContext(modelPath: "model.json", profilePath: "profile.snapshot", profilerProfilePath: null, dmmPath: "baseline.dmm");
         var overrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",

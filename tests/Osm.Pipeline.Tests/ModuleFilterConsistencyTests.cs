@@ -39,7 +39,7 @@ public sealed class ModuleFilterConsistencyTests
         var context = new CliConfigurationContext(configuration, "config.json");
 
         var extractDispatcher = new RecordingDispatcher();
-        var extractService = new ExtractModelApplicationService(extractDispatcher);
+        var extractService = new ExtractModelApplicationService(extractDispatcher, new PipelineRequestContextFactory());
         var extractOverrides = new ExtractModelOverrides(
             new[] { "Ops", "AppCore", "ops" },
             IncludeSystemModules: false,
@@ -89,7 +89,7 @@ public sealed class ModuleFilterConsistencyTests
         Assert.False(buildRequest.ModuleFilter.IncludeInactiveModules);
 
         var compareDispatcher = new RecordingDispatcher();
-        var compareService = new CompareWithDmmApplicationService(compareDispatcher);
+        var compareService = new CompareWithDmmApplicationService(compareDispatcher, new PipelineRequestContextFactory());
         var compareModuleFilter = new ModuleFilterOverrides(
             new[] { "Ops", "AppCore", "ops" },
             IncludeSystemModules: false,
@@ -127,7 +127,7 @@ public sealed class ModuleFilterConsistencyTests
         var context = new CliConfigurationContext(configuration, "config.json");
 
         var extractDispatcher = new RecordingDispatcher();
-        var extractService = new ExtractModelApplicationService(extractDispatcher);
+        var extractService = new ExtractModelApplicationService(extractDispatcher, new PipelineRequestContextFactory());
         await extractService.RunAsync(new ExtractModelApplicationInput(
             context,
             new ExtractModelOverrides(null, null, null, null, null, null),
@@ -171,7 +171,7 @@ public sealed class ModuleFilterConsistencyTests
         Assert.False(buildRequest.ModuleFilter.IncludeInactiveModules);
 
         var compareDispatcher = new RecordingDispatcher();
-        var compareService = new CompareWithDmmApplicationService(compareDispatcher);
+        var compareService = new CompareWithDmmApplicationService(compareDispatcher, new PipelineRequestContextFactory());
         var compareOverrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
@@ -212,7 +212,9 @@ public sealed class ModuleFilterConsistencyTests
             validationOverrides: validationOverrides);
         var context = new CliConfigurationContext(configuration, "config.json");
 
-        var extractService = new ExtractModelApplicationService(new RecordingDispatcher());
+        var extractService = new ExtractModelApplicationService(
+            new RecordingDispatcher(),
+            new PipelineRequestContextFactory());
         var extractResult = await extractService.RunAsync(new ExtractModelApplicationInput(
             context,
             new ExtractModelOverrides(null, null, null, null, null, null),
@@ -242,7 +244,7 @@ public sealed class ModuleFilterConsistencyTests
             new CacheOptionsOverrides(null, null)));
         AssertValidationOverrideFailure(buildResult);
 
-        var compareService = new CompareWithDmmApplicationService(new RecordingDispatcher());
+        var compareService = new CompareWithDmmApplicationService(new RecordingDispatcher(), new PipelineRequestContextFactory());
         var compareOverrides = new CompareWithDmmOverrides(
             ModelPath: "model.json",
             ProfilePath: "profile.snapshot",
@@ -306,7 +308,8 @@ public sealed class ModuleFilterConsistencyTests
             modelResolution,
             outputDirectoryResolver,
             namingOverridesBinder,
-            staticDataProviderFactory);
+            staticDataProviderFactory,
+            new PipelineRequestContextFactory());
     }
 
     private sealed class RecordingDispatcher : ICommandDispatcher
