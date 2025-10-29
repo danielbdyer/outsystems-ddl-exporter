@@ -73,12 +73,14 @@ internal sealed class MetadataSnapshotRunner : IMetadataSnapshotDiagnostics
             : string.Empty;
 
         _logger.LogInformation(
-            "Executing metadata snapshot script via SQL client (timeoutSeconds: {TimeoutSeconds}, moduleCount: {ModuleCount}, includeSystem: {IncludeSystem}, includeInactive: {IncludeInactive}, onlyActive: {OnlyActive}).",
+            "Executing metadata snapshot script via SQL client (timeoutSeconds: {TimeoutSeconds}, moduleCount: {ModuleCount}, includeSystem: {IncludeSystem}, includeInactive: {IncludeInactive}, onlyActive: {OnlyActive}, samplingThreshold: {SamplingThreshold}, sampleSize: {SampleSize}).",
             _options.CommandTimeoutSeconds,
             request.ModuleNames.Length,
             request.IncludeSystemModules,
             request.IncludeInactiveModules,
-            request.OnlyActiveAttributes);
+            request.OnlyActiveAttributes,
+            _options.Sampling.RowCountSamplingThreshold,
+            _options.Sampling.SampleSize);
 
         var stopwatch = Stopwatch.StartNew();
         var accumulator = new MetadataAccumulator();
@@ -206,28 +208,40 @@ internal sealed class MetadataSnapshotRunner : IMetadataSnapshotDiagnostics
         }
 
         var moduleParam = command.CreateParameter();
-        moduleParam.ParameterName = "@ModuleNamesCsv";
+        moduleParam.ParameterName = AdvancedSqlParameterNames.ModuleNamesCsv;
         moduleParam.DbType = DbType.String;
         moduleParam.Value = moduleCsv;
         command.Parameters.Add(moduleParam);
 
         var includeParam = command.CreateParameter();
-        includeParam.ParameterName = "@IncludeSystem";
+        includeParam.ParameterName = AdvancedSqlParameterNames.IncludeSystem;
         includeParam.DbType = DbType.Boolean;
         includeParam.Value = request.IncludeSystemModules;
         command.Parameters.Add(includeParam);
 
         var includeInactiveParam = command.CreateParameter();
-        includeInactiveParam.ParameterName = "@IncludeInactive";
+        includeInactiveParam.ParameterName = AdvancedSqlParameterNames.IncludeInactive;
         includeInactiveParam.DbType = DbType.Boolean;
         includeInactiveParam.Value = request.IncludeInactiveModules;
         command.Parameters.Add(includeInactiveParam);
 
         var activeParam = command.CreateParameter();
-        activeParam.ParameterName = "@OnlyActiveAttributes";
+        activeParam.ParameterName = AdvancedSqlParameterNames.OnlyActiveAttributes;
         activeParam.DbType = DbType.Boolean;
         activeParam.Value = request.OnlyActiveAttributes;
         command.Parameters.Add(activeParam);
+
+        var thresholdParam = command.CreateParameter();
+        thresholdParam.ParameterName = AdvancedSqlParameterNames.RowSamplingThreshold;
+        thresholdParam.DbType = DbType.Int64;
+        thresholdParam.Value = options.Sampling.RowCountSamplingThreshold;
+        command.Parameters.Add(thresholdParam);
+
+        var sampleSizeParam = command.CreateParameter();
+        sampleSizeParam.ParameterName = AdvancedSqlParameterNames.SampleSize;
+        sampleSizeParam.DbType = DbType.Int32;
+        sampleSizeParam.Value = options.Sampling.SampleSize;
+        command.Parameters.Add(sampleSizeParam);
 
         return command;
     }

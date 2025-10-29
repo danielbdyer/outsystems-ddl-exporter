@@ -8,6 +8,8 @@ namespace Osm.Pipeline.SqlExtraction;
 public sealed class EmbeddedOutsystemsMetadataScriptProvider : IAdvancedSqlScriptProvider
 {
     private const string ResourceName = "Osm.Pipeline.AdvancedSql.outsystems_metadata_rowsets.sql";
+    public const string RowSamplingThresholdSessionContextKey = "osm.sqlSampling.rowThreshold";
+    public const string SampleSizeSessionContextKey = "osm.sqlSampling.sampleSize";
     private readonly Lazy<string> _script;
 
     public EmbeddedOutsystemsMetadataScriptProvider()
