@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -44,25 +43,30 @@ public sealed class AnalyzeApplicationService : IApplicationService<AnalyzeAppli
             throw new ArgumentNullException(nameof(input.ConfigurationContext));
         }
 
-        var configuration = input.ConfigurationContext.Configuration ?? CliConfiguration.Empty;
-        var overrides = input.Overrides ?? new AnalyzeOverrides(null, null, null);
-        var tighteningOptions = configuration.Tightening;
+        var moduleFilterOverrides = new ModuleFilterOverrides(
+            Array.Empty<string>(),
+            null,
+            null,
+            Array.Empty<string>(),
+            Array.Empty<string>());
 
-        var moduleFilterResult = ModuleFilterResolver.Resolve(
-            configuration,
-            new ModuleFilterOverrides(
-                Array.Empty<string>(),
-                null,
-                null,
-                Array.Empty<string>(),
-                Array.Empty<string>()));
-
-        if (moduleFilterResult.IsFailure)
+        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
+            input.ConfigurationContext,
+            moduleFilterOverrides,
+            SqlOptionsOverrides: null,
+            CacheOptionsOverrides: null,
+            SqlMetadataOutputPath: null,
+            NamingOverrides: null));
+        if (contextResult.IsFailure)
         {
-            return Result<AnalyzeApplicationResult>.Failure(moduleFilterResult.Errors);
+            return Result<AnalyzeApplicationResult>.Failure(contextResult.Errors);
         }
 
-        var moduleFilter = moduleFilterResult.Value;
+        var context = contextResult.Value;
+        var configuration = context.Configuration;
+        var overrides = input.Overrides ?? new AnalyzeOverrides(null, null, null);
+        var tighteningOptions = context.Tightening;
+        var moduleFilter = context.ModuleFilter;
 
         var modelPath = overrides.ModelPath ?? configuration.ModelPath;
         if (string.IsNullOrWhiteSpace(modelPath))
@@ -92,7 +96,7 @@ public sealed class AnalyzeApplicationService : IApplicationService<AnalyzeAppli
             modelPath,
             moduleFilter,
             tighteningOptions,
-            ResolveSupplementalOptions(configuration.SupplementalModels),
+            context.SupplementalModels,
             profilePath,
             outputDirectory);
 
@@ -112,11 +116,4 @@ public sealed class AnalyzeApplicationService : IApplicationService<AnalyzeAppli
             profilePath);
     }
 
-    private static SupplementalModelOptions ResolveSupplementalOptions(SupplementalModelConfiguration configuration)
-    {
-        configuration ??= SupplementalModelConfiguration.Empty;
-        var includeUsers = configuration.IncludeUsers ?? true;
-        var paths = configuration.Paths ?? Array.Empty<string>();
-        return new SupplementalModelOptions(includeUsers, paths.ToArray());
-    }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
+using Tests.Support;
 using Xunit;
 
 namespace Osm.Pipeline.Tests;
@@ -76,6 +78,29 @@ public class ExtractModelApplicationServiceTests
         Assert.True(command.OnlyActiveAttributes);
     }
 
+    [Fact]
+    public async Task RunAsync_FlushesMetadataLogWhenEntriesRecorded()
+    {
+        using var temp = new TempDirectory();
+        var metadataPath = Path.Combine(temp.Path, "metadata.json");
+        var configuration = CreateConfiguration(Array.Empty<string>(), includeSystem: null, includeInactive: null);
+        var context = new CliConfigurationContext(configuration, ConfigPath: "config/appsettings.json");
+
+        var dispatcher = new MetadataRecordingDispatcher();
+        var service = new ExtractModelApplicationService(dispatcher, NullLogger<ExtractModelApplicationService>.Instance);
+
+        var input = new ExtractModelApplicationInput(
+            context,
+            new ExtractModelOverrides(null, null, null, null, null, metadataPath),
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null));
+
+        var result = await service.RunAsync(input);
+
+        Assert.True(result.IsFailure);
+        Assert.True(File.Exists(metadataPath));
+        dispatcher.AssertRequestLogged();
+    }
+
     private static CliConfiguration CreateConfiguration(
         string[] modules,
         bool? includeSystem,
@@ -109,6 +134,30 @@ public class ExtractModelApplicationServiceTests
             if (command is ExtractModelPipelineRequest request)
             {
                 Request = request;
+                return Task.FromResult(Result<TResponse>.Failure(ValidationError.Create("test.dispatch", "stub failure")));
+            }
+
+            throw new InvalidOperationException($"Unexpected command type: {typeof(TCommand).Name}");
+        }
+    }
+
+    private sealed class MetadataRecordingDispatcher : ICommandDispatcher
+    {
+        public ExtractModelPipelineRequest? Request { get; private set; }
+
+        public void AssertRequestLogged()
+        {
+            Assert.NotNull(Request);
+            Assert.NotNull(Request!.SqlMetadataLog);
+        }
+
+        public Task<Result<TResponse>> DispatchAsync<TCommand, TResponse>(TCommand command, CancellationToken cancellationToken = default)
+            where TCommand : ICommand<TResponse>
+        {
+            if (command is ExtractModelPipelineRequest request)
+            {
+                Request = request;
+                request.SqlMetadataLog?.RecordRequest("extract", new { value = 1 });
                 return Task.FromResult(Result<TResponse>.Failure(ValidationError.Create("test.dispatch", "stub failure")));
             }
 
