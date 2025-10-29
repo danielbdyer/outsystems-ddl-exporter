@@ -89,6 +89,41 @@ internal static class CommandConsole
         WriteLine(console, ProfileSnapshotDebugFormatter.ToJson(snapshot));
     }
 
+    public static void EmitProfilingInsights(IConsole console, ImmutableArray<ProfilingInsight> insights)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (insights.IsDefaultOrEmpty || insights.Length == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, "Profiling insights:");
+
+        foreach (var insight in insights)
+        {
+            if (insight is null)
+            {
+                continue;
+            }
+
+            var formatted = FormatProfilingInsight(insight);
+            switch (insight.Severity)
+            {
+                case ProfilingInsightSeverity.Warning:
+                case ProfilingInsightSeverity.Error:
+                    WriteErrorLine(console, formatted);
+                    break;
+                default:
+                    WriteLine(console, formatted);
+                    break;
+            }
+        }
+    }
+
     public static void EmitPipelineLog(IConsole console, PipelineExecutionLog log)
     {
         if (log is null || log.Entries.Count == 0)
@@ -162,6 +197,58 @@ internal static class CommandConsole
 
     private static string FormatMetadataValue(string? value)
         => value ?? "<null>";
+
+    private static string FormatProfilingInsight(ProfilingInsight insight)
+    {
+        var severityText = insight.Severity.ToString().ToLowerInvariant();
+        var coordinateText = FormatProfilingInsightCoordinate(insight.Coordinate);
+
+        if (string.IsNullOrWhiteSpace(coordinateText))
+        {
+            return $"[{severityText}] {insight.Message}";
+        }
+
+        return $"[{severityText}] {coordinateText}: {insight.Message}";
+    }
+
+    private static string FormatProfilingInsightCoordinate(ProfilingInsightCoordinate? coordinate)
+    {
+        if (coordinate is null)
+        {
+            return string.Empty;
+        }
+
+        var primary = BuildCoordinateSegment(coordinate.Schema.Value, coordinate.Table.Value, coordinate.Column?.Value);
+
+        if (coordinate.RelatedSchema is null || coordinate.RelatedTable is null)
+        {
+            return primary;
+        }
+
+        var related = BuildCoordinateSegment(
+            coordinate.RelatedSchema.Value.Value,
+            coordinate.RelatedTable.Value.Value,
+            coordinate.RelatedColumn?.Value);
+
+        if (string.IsNullOrWhiteSpace(related))
+        {
+            return primary;
+        }
+
+        return $"{primary} -> {related}";
+    }
+
+    private static string BuildCoordinateSegment(string schema, string table, string? column)
+    {
+        var segment = $"{schema}.{table}";
+
+        if (!string.IsNullOrWhiteSpace(column))
+        {
+            segment += $".{column}";
+        }
+
+        return segment;
+    }
 
     public static void EmitNamingOverrideTemplate(
         IConsole console,
