@@ -1,11 +1,8 @@
-using System.Collections.Generic;
 
 namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class IndexesResultSetProcessor : ResultSetProcessor<OutsystemsIndexRow>
 {
-    private static readonly ResultSetReader<OutsystemsIndexRow> Reader = ResultSetReader<OutsystemsIndexRow>.Create(MapRow);
-
     private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
     private static readonly ColumnDefinition<int> ObjectId = Column.Int32(1, "object_id");
     private static readonly ColumnDefinition<int> IndexId = Column.Int32(2, "index_id");
@@ -26,15 +23,37 @@ internal sealed class IndexesResultSetProcessor : ResultSetProcessor<OutsystemsI
     private static readonly ColumnDefinition<string?> PartitionColumnsJson = Column.StringOrNull(17, "PartitionColumnsJson");
     private static readonly ColumnDefinition<string?> DataCompressionJson = Column.StringOrNull(18, "DataCompressionJson");
 
+    internal static ResultSetDescriptor<OutsystemsIndexRow> Descriptor { get; } = ResultSetDescriptorFactory.Create<OutsystemsIndexRow>(
+        "Indexes",
+        order: 9,
+        builder => builder
+            .Columns(
+                EntityId,
+                ObjectId,
+                IndexId,
+                IndexName,
+                IsUnique,
+                IsPrimary,
+                Kind,
+                FilterDefinition,
+                IsDisabled,
+                IsPadded,
+                FillFactor,
+                IgnoreDupKey,
+                AllowRowLocks,
+                AllowPageLocks,
+                NoRecompute,
+                DataSpaceName,
+                DataSpaceType,
+                PartitionColumnsJson,
+                DataCompressionJson)
+            .Map(MapRow)
+            .Assign(static (accumulator, rows) => accumulator.SetIndexes(rows)));
+
     public IndexesResultSetProcessor()
-        : base("Indexes", order: 9)
+        : base(Descriptor)
     {
     }
-
-    protected override ResultSetReader<OutsystemsIndexRow> CreateReader(ResultSetProcessingContext context) => Reader;
-
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsIndexRow> rows)
-        => accumulator.SetIndexes(rows);
 
     private static OutsystemsIndexRow MapRow(DbRow row) => new(
         EntityId.Read(row),

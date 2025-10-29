@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 
 namespace Osm.Pipeline.SqlExtraction;
 
@@ -17,25 +16,24 @@ internal sealed class EntitiesResultSetProcessor : ResultSetProcessor<Outsystems
     private static readonly ColumnDefinition<Guid?> EntitySsKey = Column.GuidOrNull(9, "EntitySSKey");
     private static readonly ColumnDefinition<string?> EntityDescription = Column.StringOrNull(10, "EntityDescription");
 
-    internal static ResultSetMap<OutsystemsEntityRow> Descriptor { get; } = ResultSetMap<OutsystemsEntityRow>.Create(
+    internal static ResultSetDescriptor<OutsystemsEntityRow> Descriptor { get; } = ResultSetDescriptorFactory.Create<OutsystemsEntityRow>(
         "Entities",
         order: 1,
-        new IResultSetColumn[]
-        {
-            EntityId,
-            EntityName,
-            PhysicalTableName,
-            EspaceId,
-            EntityIsActive,
-            IsSystemEntity,
-            IsExternalEntity,
-            DataKind,
-            PrimaryKeySsKey,
-            EntitySsKey,
-            EntityDescription
-        },
-        MapRow,
-        static (accumulator, rows) => accumulator.SetEntities(rows));
+        builder => builder
+            .Columns(
+                EntityId,
+                EntityName,
+                PhysicalTableName,
+                EspaceId,
+                EntityIsActive,
+                IsSystemEntity,
+                IsExternalEntity,
+                DataKind,
+                PrimaryKeySsKey,
+                EntitySsKey,
+                EntityDescription)
+            .Map(MapRow)
+            .Assign(static (accumulator, rows) => accumulator.SetEntities(rows)));
 
     public EntitiesResultSetProcessor()
         : base(Descriptor)

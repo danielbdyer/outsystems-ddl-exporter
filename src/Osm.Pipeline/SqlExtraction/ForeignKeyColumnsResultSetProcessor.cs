@@ -1,11 +1,8 @@
-using System.Collections.Generic;
 
 namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class ForeignKeyColumnsResultSetProcessor : ResultSetProcessor<OutsystemsForeignKeyColumnRow>
 {
-    private static readonly ResultSetReader<OutsystemsForeignKeyColumnRow> Reader = ResultSetReader<OutsystemsForeignKeyColumnRow>.Create(MapRow);
-
     private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
     private static readonly ColumnDefinition<int> FkObjectId = Column.Int32(1, "FkObjectId");
     private static readonly ColumnDefinition<int> Ordinal = Column.Int32(2, "Ordinal");
@@ -16,15 +13,27 @@ internal sealed class ForeignKeyColumnsResultSetProcessor : ResultSetProcessor<O
     private static readonly ColumnDefinition<int?> ReferencedAttrId = Column.Int32OrNull(7, "ReferencedAttrId");
     private static readonly ColumnDefinition<string?> ReferencedAttrName = Column.StringOrNull(8, "ReferencedAttrName");
 
+    internal static ResultSetDescriptor<OutsystemsForeignKeyColumnRow> Descriptor { get; } = ResultSetDescriptorFactory.Create<OutsystemsForeignKeyColumnRow>(
+        "ForeignKeyColumns",
+        order: 12,
+        builder => builder
+            .Columns(
+                EntityId,
+                FkObjectId,
+                Ordinal,
+                ParentColumn,
+                ReferencedColumn,
+                ParentAttrId,
+                ParentAttrName,
+                ReferencedAttrId,
+                ReferencedAttrName)
+            .Map(MapRow)
+            .Assign(static (accumulator, rows) => accumulator.SetForeignKeyColumns(rows)));
+
     public ForeignKeyColumnsResultSetProcessor()
-        : base("ForeignKeyColumns", order: 12)
+        : base(Descriptor)
     {
     }
-
-    protected override ResultSetReader<OutsystemsForeignKeyColumnRow> CreateReader(ResultSetProcessingContext context) => Reader;
-
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsForeignKeyColumnRow> rows)
-        => accumulator.SetForeignKeyColumns(rows);
 
     private static OutsystemsForeignKeyColumnRow MapRow(DbRow row) => new(
         EntityId.Read(row),

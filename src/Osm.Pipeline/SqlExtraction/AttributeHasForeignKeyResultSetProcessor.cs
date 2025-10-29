@@ -1,23 +1,23 @@
-using System.Collections.Generic;
 
 namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class AttributeHasForeignKeyResultSetProcessor : ResultSetProcessor<OutsystemsAttributeHasFkRow>
 {
-    private static readonly ResultSetReader<OutsystemsAttributeHasFkRow> Reader = ResultSetReader<OutsystemsAttributeHasFkRow>.Create(MapRow);
-
     private static readonly ColumnDefinition<int> AttrId = Column.Int32(0, "AttrId");
     private static readonly ColumnDefinition<bool> HasForeignKey = Column.Boolean(1, "HasFk");
 
+    internal static ResultSetDescriptor<OutsystemsAttributeHasFkRow> Descriptor { get; } = ResultSetDescriptorFactory.Create<OutsystemsAttributeHasFkRow>(
+        "AttributeHasFk",
+        order: 14,
+        builder => builder
+            .Columns(AttrId, HasForeignKey)
+            .Map(MapRow)
+            .Assign(static (accumulator, rows) => accumulator.SetAttributeForeignKeys(rows)));
+
     public AttributeHasForeignKeyResultSetProcessor()
-        : base("AttributeHasFk", order: 14)
+        : base(Descriptor)
     {
     }
-
-    protected override ResultSetReader<OutsystemsAttributeHasFkRow> CreateReader(ResultSetProcessingContext context) => Reader;
-
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsAttributeHasFkRow> rows)
-        => accumulator.SetAttributeForeignKeys(rows);
 
     private static OutsystemsAttributeHasFkRow MapRow(DbRow row) => new(
         AttrId.Read(row),
