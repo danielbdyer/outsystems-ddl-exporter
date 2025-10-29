@@ -7,11 +7,11 @@ namespace Osm.Smo.PerTableEmission;
 
 internal sealed class ExtendedPropertyScriptBuilder
 {
-    private readonly SqlScriptFormatter _formatter;
+    private readonly IdentifierFormatter _identifierFormatter;
 
-    public ExtendedPropertyScriptBuilder(SqlScriptFormatter formatter)
+    public ExtendedPropertyScriptBuilder(IdentifierFormatter identifierFormatter)
     {
-        _formatter = formatter ?? throw new ArgumentNullException(nameof(formatter));
+        _identifierFormatter = identifierFormatter ?? throw new ArgumentNullException(nameof(identifierFormatter));
     }
 
     public ImmutableArray<string> BuildExtendedPropertyScripts(
@@ -67,7 +67,7 @@ internal sealed class ExtendedPropertyScriptBuilder
                 continue;
             }
 
-            var resolvedName = _formatter.ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
+            var resolvedName = _identifierFormatter.ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
             scripts.Add(BuildIndexExtendedPropertyScript(
                 table.Schema,
                 effectiveTableName,

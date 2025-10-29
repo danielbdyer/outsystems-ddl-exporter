@@ -13,7 +13,7 @@ namespace Osm.Smo.Tests.PerTableEmission;
 
 public class CreateTableStatementBuilderTests
 {
-    private readonly SqlScriptFormatter _formatter = new();
+    private readonly IdentifierFormatter _identifierFormatter = new();
 
     [Fact]
     public void BuildCreateTableStatement_inlines_single_column_primary_key()
@@ -57,7 +57,7 @@ public class CreateTableStatementBuilderTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new CreateTableStatementBuilder(_formatter);
+        var builder = new CreateTableStatementBuilder(_identifierFormatter);
         var statement = builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
 
         Assert.NotNull(statement.Definition);
@@ -113,7 +113,7 @@ public class CreateTableStatementBuilderTests
                 IsNoCheck: true)),
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new CreateTableStatementBuilder(_formatter);
+        var builder = new CreateTableStatementBuilder(_identifierFormatter);
         var statement = builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
         var foreignKeyNames = builder.AddForeignKeys(statement, table, "Order", SmoBuildOptions.Default, out var trustLookup);
 
@@ -137,7 +137,7 @@ public class CreateTableStatementBuilderTests
         var smoModel = factory.Create(model, decisions, snapshot, options);
         var childTable = Assert.Single(smoModel.Tables.Where(t => t.LogicalName.Equals("Child", StringComparison.Ordinal)));
 
-        var builder = new CreateTableStatementBuilder(_formatter);
+        var builder = new CreateTableStatementBuilder(_identifierFormatter);
         var statement = builder.BuildCreateTableStatement(childTable, childTable.Name, options);
         var foreignKeyNames = builder.AddForeignKeys(statement, childTable, childTable.Name, options, out _);
 
@@ -188,7 +188,7 @@ public class CreateTableStatementBuilderTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new CreateTableStatementBuilder(_formatter);
+        var builder = new CreateTableStatementBuilder(_identifierFormatter);
         var statement = builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
 
         var columnDefinition = Assert.Single(statement.Definition!.ColumnDefinitions);

@@ -14,11 +14,11 @@ namespace Osm.Smo.PerTableEmission;
 
 internal sealed class IndexScriptBuilder
 {
-    private readonly SqlScriptFormatter _formatter;
+    private readonly IdentifierFormatter _identifierFormatter;
 
-    public IndexScriptBuilder(SqlScriptFormatter formatter)
+    public IndexScriptBuilder(IdentifierFormatter identifierFormatter)
     {
-        _formatter = formatter ?? throw new ArgumentNullException(nameof(formatter));
+        _identifierFormatter = identifierFormatter ?? throw new ArgumentNullException(nameof(identifierFormatter));
     }
 
     public CreateIndexStatement BuildCreateIndexStatement(
@@ -55,8 +55,8 @@ internal sealed class IndexScriptBuilder
 
         var statement = new CreateIndexStatement
         {
-            Name = _formatter.CreateIdentifier(indexName, format),
-            OnName = _formatter.BuildSchemaObjectName(table.Schema, effectiveTableName, format),
+            Name = _identifierFormatter.CreateIdentifier(indexName, format),
+            OnName = _identifierFormatter.BuildSchemaObjectName(table.Schema, effectiveTableName, format),
             Unique = index.IsUnique,
         };
 
@@ -66,13 +66,13 @@ internal sealed class IndexScriptBuilder
         {
             if (column.IsIncluded)
             {
-                statement.IncludeColumns.Add(_formatter.BuildColumnReference(column.Name, format));
+                statement.IncludeColumns.Add(_identifierFormatter.BuildColumnReference(column.Name, format));
                 continue;
             }
 
             var orderedColumn = new ColumnWithSortOrder
             {
-                Column = _formatter.BuildColumnReference(column.Name, format),
+                Column = _identifierFormatter.BuildColumnReference(column.Name, format),
             };
 
             if (column.IsDescending)
@@ -117,8 +117,8 @@ internal sealed class IndexScriptBuilder
         return new AlterIndexStatement
         {
             AlterIndexType = AlterIndexType.Disable,
-            Name = _formatter.CreateIdentifier(indexName, format),
-            OnName = _formatter.BuildSchemaObjectName(table.Schema, effectiveTableName, format),
+            Name = _identifierFormatter.CreateIdentifier(indexName, format),
+            OnName = _identifierFormatter.BuildSchemaObjectName(table.Schema, effectiveTableName, format),
         };
     }
 
