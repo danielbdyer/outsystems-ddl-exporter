@@ -223,10 +223,10 @@ public class SmoModelFactoryTests
         var smoTable = smoModel.Tables.Single(t => t.Name.Equals(entity.PhysicalName.Value, StringComparison.OrdinalIgnoreCase));
         var smoColumn = smoTable.Columns.Single(c => c.LogicalName.Equals(updatedAttribute.LogicalName.Value, StringComparison.Ordinal));
 
-        Assert.Equal("((1))", smoColumn.DefaultExpression);
+        Assert.Equal("(1)", smoColumn.DefaultExpression);
         Assert.NotNull(smoColumn.DefaultConstraint);
         Assert.Equal("DF_Custom_Default", smoColumn.DefaultConstraint!.Name);
-        Assert.Equal("((1))", smoColumn.DefaultConstraint!.Expression);
+        Assert.Equal("(1)", smoColumn.DefaultConstraint!.Expression);
         Assert.True(smoColumn.CheckConstraints.Any());
         var checkConstraint = Assert.Single(smoColumn.CheckConstraints);
         Assert.Equal("CK_Custom_Check", checkConstraint.Name);

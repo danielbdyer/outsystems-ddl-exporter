@@ -189,7 +189,7 @@ internal static class SmoColumnBuilder
             return expression;
         }
 
-        return normalizedLiteral.Value ? "((1))" : "((0))";
+        return normalizedLiteral.Value ? "(1)" : "(0)";
     }
 
     private static bool? TryNormalizeBooleanLiteral(string expression)
