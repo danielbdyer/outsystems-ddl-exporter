@@ -240,6 +240,9 @@ public class BuildSsdtPipelineTests
         {
             Assert.True(File.Exists(path));
         }
+        Assert.False(value.TelemetryPackagePaths.IsDefaultOrEmpty);
+        var packagePath = Assert.Single(value.TelemetryPackagePaths);
+        Assert.True(File.Exists(packagePath));
         Assert.True(File.Exists(Path.Combine(output.Path, "policy-decisions.json")));
         Assert.NotNull(value.ExecutionLog);
         Assert.True(value.ExecutionLog.Entries.Count > 0);
@@ -258,6 +261,7 @@ public class BuildSsdtPipelineTests
         Assert.Contains("ssdt.sql.validation.completed", steps);
         Assert.Contains("policy.log.persisted", steps);
         Assert.Contains("staticData.seed.generated", steps);
+        Assert.Contains("pipeline.execution", steps);
         Assert.Contains(steps, step => step is "evidence.cache.persisted" or "evidence.cache.reused");
 
         Assert.Equal(value.Manifest.Tables.Count, value.SqlValidation.TotalFiles);
@@ -362,6 +366,7 @@ public class BuildSsdtPipelineTests
             new OpportunityLogWriter());
         var validationStep = new BuildSsdtSqlValidationStep(sqlValidator ?? new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
+        var telemetryPackagingStep = new BuildSsdtTelemetryPackagingStep();
 
         return new BuildSsdtPipeline(
             timeProvider,
@@ -370,7 +375,8 @@ public class BuildSsdtPipelineTests
             policyStep,
             emissionStep,
             validationStep,
-            staticSeedStep);
+            staticSeedStep,
+            telemetryPackagingStep);
     }
 
     private static PipelineBootstrapper CreatePipelineBootstrapper()

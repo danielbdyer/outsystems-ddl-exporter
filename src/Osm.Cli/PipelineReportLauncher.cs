@@ -55,6 +55,12 @@ internal static class PipelineReportLauncher
                 .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path!))
                 .ToArray();
 
+        var telemetryPackages = applicationResult.PipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty
+            ? Array.Empty<string>()
+            : applicationResult.PipelineResult.TelemetryPackagePaths
+                .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path!))
+                .ToArray();
+
         var html = BuildHtml(
             applicationResult,
             manifest,
@@ -65,7 +71,8 @@ internal static class PipelineReportLauncher
             totalForeignKeys,
             pipelineResult.PipelineInsights,
             hasDiff,
-            staticSeedPaths);
+            staticSeedPaths,
+            telemetryPackages);
 
         Directory.CreateDirectory(outputDirectory);
         var reportPath = Path.Combine(outputDirectory, "report.html");
@@ -125,7 +132,8 @@ internal static class PipelineReportLauncher
         int totalForeignKeys,
         ImmutableArray<PipelineInsight> insights,
         bool hasDiff,
-        IReadOnlyList<string> staticSeedPaths)
+        IReadOnlyList<string> staticSeedPaths,
+        IReadOnlyList<string> telemetryPackagePaths)
     {
         var builder = new StringBuilder();
         var outputDirectory = applicationResult.OutputDirectory;
@@ -235,6 +243,14 @@ internal static class PipelineReportLauncher
             {
                 var relativeSeedPath = Relativize(outputDirectory, seedPath);
                 builder.AppendLine($"      <li><a href=\"{relativeSeedPath}\">{HtmlEncode(relativeSeedPath)}</a> – Static entity seed script.</li>");
+            }
+        }
+        if (telemetryPackagePaths is { Count: > 0 })
+        {
+            foreach (var packagePath in telemetryPackagePaths)
+            {
+                var relativePackagePath = Relativize(outputDirectory, packagePath);
+                builder.AppendLine($"      <li><a href=\"{relativePackagePath}\">{HtmlEncode(relativePackagePath)}</a> – Telemetry archive.</li>");
             }
         }
         builder.AppendLine("    </ul>");

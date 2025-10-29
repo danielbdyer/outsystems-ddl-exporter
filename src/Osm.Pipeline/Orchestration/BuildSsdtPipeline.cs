@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Pipeline.Mediation;
 
@@ -14,6 +16,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
     private readonly BuildSsdtEmissionStep _emissionStep;
     private readonly BuildSsdtSqlValidationStep _sqlValidationStep;
     private readonly BuildSsdtStaticSeedStep _staticSeedStep;
+    private readonly BuildSsdtTelemetryPackagingStep _telemetryPackagingStep;
 
     public BuildSsdtPipeline(
         TimeProvider timeProvider,
@@ -22,7 +25,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         BuildSsdtPolicyDecisionStep policyStep,
         BuildSsdtEmissionStep emissionStep,
         BuildSsdtSqlValidationStep sqlValidationStep,
-        BuildSsdtStaticSeedStep staticSeedStep)
+        BuildSsdtStaticSeedStep staticSeedStep,
+        BuildSsdtTelemetryPackagingStep telemetryPackagingStep)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _bootstrapStep = bootstrapStep ?? throw new ArgumentNullException(nameof(bootstrapStep));
@@ -31,6 +35,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         _emissionStep = emissionStep ?? throw new ArgumentNullException(nameof(emissionStep));
         _sqlValidationStep = sqlValidationStep ?? throw new ArgumentNullException(nameof(sqlValidationStep));
         _staticSeedStep = staticSeedStep ?? throw new ArgumentNullException(nameof(staticSeedStep));
+        _telemetryPackagingStep = telemetryPackagingStep ?? throw new ArgumentNullException(nameof(telemetryPackagingStep));
     }
 
     public async Task<Result<BuildSsdtPipelineResult>> HandleAsync(
@@ -66,6 +71,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             .BindAsync((decisions, token) => _emissionStep.ExecuteAsync(decisions, token), cancellationToken)
             .BindAsync((emission, token) => _sqlValidationStep.ExecuteAsync(emission, token), cancellationToken)
             .BindAsync((validation, token) => _staticSeedStep.ExecuteAsync(validation, token), cancellationToken)
+            .BindAsync((seeds, token) => _telemetryPackagingStep.ExecuteAsync(seeds, token), cancellationToken)
             .ConfigureAwait(false);
 
         if (finalStateResult.IsFailure)
@@ -87,6 +93,11 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                     finalState.StaticSeedScriptPaths.IsDefaultOrEmpty
                         ? "<none>"
                         : string.Join(";", finalState.StaticSeedScriptPaths))
+                .WithValue(
+                    "outputs.telemetryPackages",
+                    finalState.TelemetryPackagePaths.IsDefaultOrEmpty
+                        ? "<none>"
+                        : string.Join(";", finalState.TelemetryPackagePaths))
                 .WithPath("cache.directory", finalState.EvidenceCache?.CacheDirectory)
                 .Build());
 
@@ -104,6 +115,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.OpportunityArtifacts.RemediationScriptPath,
             finalState.OpportunityArtifacts.RemediationScript,
             finalState.StaticSeedScriptPaths,
+            finalState.TelemetryPackagePaths,
             finalState.SqlValidation,
             finalState.EvidenceCache,
             finalState.Log.Build(),

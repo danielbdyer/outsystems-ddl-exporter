@@ -311,6 +311,7 @@ public class BuildSsdtCommandFactoryTests
                 "suggestions/needs-remediation.sql",
                 string.Empty,
                 ImmutableArray<string>.Empty,
+                ImmutableArray<string>.Empty,
                 SsdtSqlValidationSummary.Empty,
                 null,
                 PipelineExecutionLog.Empty,
