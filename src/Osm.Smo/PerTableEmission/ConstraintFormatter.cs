@@ -100,23 +100,66 @@ internal sealed class ConstraintFormatter
         var referencesSegment = working[referencesIndex..].Trim();
 
         var onDeleteIndex = referencesSegment.IndexOf("ON DELETE", StringComparison.OrdinalIgnoreCase);
+        var onUpdateIndex = referencesSegment.IndexOf("ON UPDATE", StringComparison.OrdinalIgnoreCase);
         string? onDeleteSegment = null;
-        if (onDeleteIndex >= 0)
+        string? onUpdateSegment = null;
+
+        if (onDeleteIndex >= 0 && onUpdateIndex >= 0)
+        {
+            if (onDeleteIndex < onUpdateIndex)
+            {
+                onDeleteSegment = referencesSegment[onDeleteIndex..onUpdateIndex].TrimEnd();
+                onUpdateSegment = referencesSegment[onUpdateIndex..].TrimEnd();
+                referencesSegment = referencesSegment[..onDeleteIndex].TrimEnd();
+            }
+            else
+            {
+                onUpdateSegment = referencesSegment[onUpdateIndex..onDeleteIndex].TrimEnd();
+                onDeleteSegment = referencesSegment[onDeleteIndex..].TrimEnd();
+                referencesSegment = referencesSegment[..onUpdateIndex].TrimEnd();
+            }
+        }
+        else if (onDeleteIndex >= 0)
         {
             onDeleteSegment = referencesSegment[onDeleteIndex..].TrimEnd();
             referencesSegment = referencesSegment[..onDeleteIndex].TrimEnd();
         }
-
-        var onUpdateIndex = referencesSegment.IndexOf("ON UPDATE", StringComparison.OrdinalIgnoreCase);
-        string? onUpdateSegment = null;
-        if (onUpdateIndex >= 0)
+        else if (onUpdateIndex >= 0)
         {
             onUpdateSegment = referencesSegment[onUpdateIndex..].TrimEnd();
             referencesSegment = referencesSegment[..onUpdateIndex].TrimEnd();
         }
+        else
+        {
+            referencesSegment = referencesSegment.TrimEnd();
+        }
 
         var hasOnDelete = !string.IsNullOrEmpty(onDeleteSegment);
         var hasOnUpdate = !string.IsNullOrEmpty(onUpdateSegment);
+
+        if (hasOnDelete ^ hasOnUpdate)
+        {
+            if (!hasOnDelete)
+            {
+                onDeleteSegment = "ON DELETE NO ACTION";
+                hasOnDelete = true;
+            }
+            else
+            {
+                onUpdateSegment = "ON UPDATE NO ACTION";
+                hasOnUpdate = true;
+            }
+        }
+
+        if (IsNoActionClause(onDeleteSegment, "ON DELETE") &&
+            IsNoActionClause(onUpdateSegment, "ON UPDATE"))
+        {
+            onDeleteSegment = null;
+            onUpdateSegment = null;
+            hasOnDelete = false;
+            hasOnUpdate = false;
+        }
+
         var hasOnClauses = hasOnDelete || hasOnUpdate;
 
         var ownerIndent = indent + new string(' ', 4);
@@ -199,6 +242,17 @@ internal sealed class ConstraintFormatter
             builder.Append(ownerIndent);
             builder.AppendLine("-- Source constraint was not trusted (WITH NOCHECK)");
         }
+    }
+
+    private static bool IsNoActionClause(string? clause, string prefix)
+    {
+        if (string.IsNullOrEmpty(clause))
+        {
+            return false;
+        }
+
+        return clause.Equals($"{prefix} NO ACTION", StringComparison.OrdinalIgnoreCase) ||
+               clause.Equals($"{prefix} DO NOTHING", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void AppendFormattedPrimaryKey(StringBuilder builder, string line, string trimmed)
