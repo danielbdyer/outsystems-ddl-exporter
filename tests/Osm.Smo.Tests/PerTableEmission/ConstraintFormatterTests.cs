@@ -29,8 +29,45 @@ CREATE TABLE [dbo].[Order](
 
         Assert.Contains("FOREIGN KEY ([CityId]) REFERENCES", formatted, StringComparison.Ordinal);
         Assert.Contains("ON DELETE CASCADE", formatted, StringComparison.Ordinal);
+        Assert.Contains("ON UPDATE NO ACTION", formatted, StringComparison.Ordinal);
         Assert.Contains("-- Source constraint was not trusted", formatted, StringComparison.Ordinal);
         Assert.Contains("\n        FOREIGN KEY", formatted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FormatForeignKeyConstraints_preserves_explicit_update_and_delete_clauses()
+    {
+        var script = """
+CREATE TABLE [dbo].[Order](
+    [Id] INT NOT NULL,
+    CONSTRAINT [FK_Order_City_CityId] FOREIGN KEY ([CityId]) REFERENCES [dbo].[City]([Id]) ON DELETE CASCADE ON UPDATE NO ACTION,
+    [Name] NVARCHAR(100)
+);
+""".Trim();
+
+        var formatted = _formatter.FormatForeignKeyConstraints(script, foreignKeyTrustLookup: null);
+
+        Assert.Contains("ON DELETE CASCADE", formatted, StringComparison.Ordinal);
+        Assert.Contains("ON UPDATE NO ACTION", formatted, StringComparison.Ordinal);
+        Assert.Contains("\n            ON DELETE", formatted, StringComparison.Ordinal);
+        Assert.Contains("\n            ON UPDATE", formatted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FormatForeignKeyConstraints_omits_default_clauses_when_both_are_no_action()
+    {
+        var script = """
+CREATE TABLE [dbo].[Order](
+    [Id] INT NOT NULL,
+    CONSTRAINT [FK_Order_City_CityId] FOREIGN KEY ([CityId]) REFERENCES [dbo].[City]([Id]) ON DELETE NO ACTION ON UPDATE NO ACTION,
+    [Name] NVARCHAR(100)
+);
+""".Trim();
+
+        var formatted = _formatter.FormatForeignKeyConstraints(script, foreignKeyTrustLookup: null);
+
+        Assert.DoesNotContain("ON DELETE NO ACTION", formatted, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ON UPDATE NO ACTION", formatted, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
