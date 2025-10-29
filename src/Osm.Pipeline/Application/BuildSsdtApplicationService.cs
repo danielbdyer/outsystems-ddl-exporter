@@ -28,7 +28,7 @@ public sealed record BuildSsdtApplicationResult(
     bool ModelWasExtracted,
     ImmutableArray<string> ModelExtractionWarnings);
 
-public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>
+public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase, IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>
 {
     private readonly ICommandDispatcher _dispatcher;
     private readonly BuildSsdtRequestAssembler _assembler;
@@ -55,13 +55,12 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
 
     public async Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
     {
-        if (input is null)
-        {
-            throw new ArgumentNullException(nameof(input));
-        }
+        input = EnsureNotNull(input, nameof(input));
 
-        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
-            input.ConfigurationContext,
+        var configurationContext = EnsureNotNull(input.ConfigurationContext, nameof(input.ConfigurationContext));
+
+        var contextResult = BuildContext(new PipelineRequestContextBuilderRequest(
+            configurationContext,
             input.ModuleFilter,
             input.Sql,
             input.Cache,
@@ -83,17 +82,17 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             outputDirectory,
             context.SqlMetadataLog,
             cancellationToken).ConfigureAwait(false);
+        modelResolutionResult = await EnsureSuccessOrFlushAsync(modelResolutionResult, context, cancellationToken).ConfigureAwait(false);
         if (modelResolutionResult.IsFailure)
         {
-            await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(modelResolutionResult.Errors);
         }
 
         var modelResolution = modelResolutionResult.Value;
         var staticDataProviderResult = _staticDataProviderFactory.Create(input.Overrides, context.SqlOptions, context.Tightening);
+        staticDataProviderResult = await EnsureSuccessOrFlushAsync(staticDataProviderResult, context, cancellationToken).ConfigureAwait(false);
         if (staticDataProviderResult.IsFailure)
         {
-            await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(staticDataProviderResult.Errors);
         }
 
@@ -105,7 +104,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
         {
             if (moduleParallelism <= 0)
             {
-                await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
+                await FlushMetadataAsync(context, cancellationToken).ConfigureAwait(false);
                 return ValidationError.Create(
                     "cli.buildSsdt.parallelism.invalid",
                     "--max-degree-of-parallelism must be a positive integer when specified.");
@@ -128,9 +127,9 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             context.CacheOverrides,
             context.ConfigPath,
             context.SqlMetadataLog));
+        assemblyResult = await EnsureSuccessOrFlushAsync(assemblyResult, context, cancellationToken).ConfigureAwait(false);
         if (assemblyResult.IsFailure)
         {
-            await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
             return Result<BuildSsdtApplicationResult>.Failure(assemblyResult.Errors);
         }
 
@@ -140,7 +139,7 @@ public sealed class BuildSsdtApplicationService : IApplicationService<BuildSsdtA
             assembly.Request,
             cancellationToken).ConfigureAwait(false);
 
-        await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
+        await FlushMetadataAsync(context, cancellationToken).ConfigureAwait(false);
 
         if (pipelineResult.IsFailure)
         {
