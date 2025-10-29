@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
@@ -79,6 +79,24 @@ public sealed class ModelJsonDeserializerOptions
 
 public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 {
+    private static readonly Lazy<ModelDocumentPipeline> SharedPipeline = new(
+        () => new ModelDocumentPipeline(
+            PayloadSerializerOptions,
+            new CirSchemaValidatorAdapter(),
+            new ModelDocumentMapperFactory()),
+        LazyThreadSafetyMode.ExecutionAndPublication);
+
+    private readonly ModelDocumentPipeline _pipeline;
+
+    public ModelJsonDeserializer()
+        : this(SharedPipeline.Value)
+    {
+    }
+
+    internal ModelJsonDeserializer(ModelDocumentPipeline pipeline)
+    {
+        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+    }
 
     public Result<OsmModel> Deserialize(Stream jsonStream, ICollection<string>? warnings = null, ModelJsonDeserializerOptions? options = null)
     {
@@ -105,12 +123,6 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
         {
             options ??= ModelJsonDeserializerOptions.Default;
 
-            var schemaResult = CirSchemaValidator.Validate(document.RootElement);
-            if (schemaResult.IsFailure)
-            {
-                AppendSchemaWarnings(warnings, schemaResult.Errors);
-            }
-
             ModelDocument? model;
             try
             {
@@ -136,101 +148,23 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
                 return Result<OsmModel>.Failure(ValidationError.Create("json.document.null", "JSON document is empty."));
             }
 
-            var mapperContext = new DocumentMapperContext(options, warnings, PayloadSerializerOptions);
-            var extendedPropertyMapper = new ExtendedPropertyDocumentMapper(mapperContext);
-            var attributeMapper = new AttributeDocumentMapper(mapperContext, extendedPropertyMapper);
-            var indexMapper = new IndexDocumentMapper(mapperContext, extendedPropertyMapper);
-            var relationshipMapper = new RelationshipDocumentMapper(mapperContext);
-            var triggerMapper = new TriggerDocumentMapper(mapperContext);
-            var temporalMetadataMapper = new TemporalMetadataMapper(mapperContext, extendedPropertyMapper);
-            var entityMapper = new EntityDocumentMapper(
-                mapperContext,
-                attributeMapper,
-                extendedPropertyMapper,
-                indexMapper,
-                relationshipMapper,
-                triggerMapper,
-                temporalMetadataMapper);
-            var moduleMapper = new ModuleDocumentMapper(mapperContext, entityMapper, extendedPropertyMapper);
-            var sequenceMapper = new SequenceDocumentMapper(mapperContext, extendedPropertyMapper);
-            var rootPath = DocumentPathContext.Root;
+            var pipelineResult = _pipeline.Process(
+                document.RootElement,
+                model,
+                options,
+                warnings);
 
-            var modules = model.Modules ?? Array.Empty<ModuleDocument>();
-            var moduleResults = new List<ModuleModel>(modules.Length);
-            for (var moduleIndex = 0; moduleIndex < modules.Length; moduleIndex++)
+            if (pipelineResult.IsFailure)
             {
-                var modulePath = rootPath.Property("modules").Index(moduleIndex);
-                var module = modules[moduleIndex];
-                if (module is null)
-                {
-                    return Result<OsmModel>.Failure(
-                        mapperContext.CreateError(
-                            "json.module.null",
-                            "Modules array cannot contain null entries.",
-                            modulePath));
-                }
-
-                var moduleNameResult = ModuleName.Create(module.Name);
-                if (moduleNameResult.IsFailure)
-                {
-                    return Result<OsmModel>.Failure(
-                        mapperContext.WithPath(modulePath.Property("name"), moduleNameResult.Errors));
-                }
-
-                if (moduleMapper.ShouldSkipInactiveModule(module))
-                {
-                    continue;
-                }
-
-                var moduleResult = moduleMapper.Map(module, moduleNameResult.Value, modulePath);
-                if (moduleResult.IsFailure)
-                {
-                    return Result<OsmModel>.Failure(moduleResult.Errors);
-                }
-
-                if (moduleResult.Value is { } mappedModule)
-                {
-                    moduleResults.Add(mappedModule);
-                }
+                return Result<OsmModel>.Failure(pipelineResult.Errors);
             }
 
-            var sequencesResult = sequenceMapper.Map(model.Sequences, rootPath.Property("sequences"));
-            if (sequencesResult.IsFailure)
-            {
-                return Result<OsmModel>.Failure(sequencesResult.Errors);
-            }
-
-            var propertyResult = extendedPropertyMapper.Map(
-                model.ExtendedProperties,
-                rootPath.Property("extendedProperties"));
-            if (propertyResult.IsFailure)
-            {
-                return Result<OsmModel>.Failure(propertyResult.Errors);
-            }
-
-            return OsmModel.Create(model.ExportedAtUtc, moduleResults, sequencesResult.Value, propertyResult.Value);
-        }
-    }
-
-    private static void AppendSchemaWarnings(ICollection<string>? warnings, ImmutableArray<ValidationError> errors)
-    {
-        if (warnings is null || errors.IsDefaultOrEmpty)
-        {
-            return;
-        }
-
-        var totalIssues = errors.Length;
-        warnings.Add($"Schema validation encountered {totalIssues} issue(s). Proceeding with best-effort import.");
-
-        var sampleCount = Math.Min(3, totalIssues);
-        for (var i = 0; i < sampleCount; i++)
-        {
-            warnings.Add($"  Example {i + 1}: {errors[i].Message}");
-        }
-
-        if (totalIssues > sampleCount)
-        {
-            warnings.Add($"  … {totalIssues - sampleCount} additional issue(s) suppressed.");
+            var value = pipelineResult.Value;
+            return OsmModel.Create(
+                model.ExportedAtUtc,
+                value.Modules,
+                value.Sequences,
+                value.ExtendedProperties);
         }
     }
 }

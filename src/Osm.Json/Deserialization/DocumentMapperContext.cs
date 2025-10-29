@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Text.Json;
@@ -15,16 +16,21 @@ internal sealed class DocumentMapperContext
         ICollection<string>? warnings,
         JsonSerializerOptions payloadSerializerOptions)
     {
-        Options = options;
-        Warnings = warnings;
-        PayloadSerializerOptions = payloadSerializerOptions;
+        PayloadSerializerOptions = payloadSerializerOptions ?? throw new ArgumentNullException(nameof(payloadSerializerOptions));
+        Reset(options, warnings);
     }
 
-    public ModelJsonDeserializerOptions Options { get; }
+    public ModelJsonDeserializerOptions Options { get; private set; } = ModelJsonDeserializerOptions.Default;
 
-    public ICollection<string>? Warnings { get; }
+    public ICollection<string>? Warnings { get; private set; }
 
     public JsonSerializerOptions PayloadSerializerOptions { get; }
+
+    public void Reset(ModelJsonDeserializerOptions options, ICollection<string>? warnings)
+    {
+        Options = options ?? throw new ArgumentNullException(nameof(options));
+        Warnings = warnings;
+    }
 
     public void AddWarning(string message)
     {
