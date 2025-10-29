@@ -15,6 +15,7 @@ using Osm.Domain.ValueObjects;
 using Osm.Json;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
+using Osm.TestSupport;
 using Xunit;
 
 namespace Osm.Etl.Integration.Tests;

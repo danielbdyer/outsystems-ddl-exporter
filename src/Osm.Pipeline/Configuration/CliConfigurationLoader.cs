@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -172,7 +173,22 @@ public sealed class CliConfigurationLoader
             refresh = parsedRefresh;
         }
 
-        cache = new CacheConfiguration(rootPath, refresh);
+        int? ttlSeconds = null;
+        if (element.TryGetProperty("ttlSeconds", out var ttlElement))
+        {
+            if (ttlElement.ValueKind == JsonValueKind.Number && ttlElement.TryGetInt32(out var numericTtl) && numericTtl > 0)
+            {
+                ttlSeconds = numericTtl;
+            }
+            else if (ttlElement.ValueKind == JsonValueKind.String
+                && int.TryParse(ttlElement.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTtl)
+                && parsedTtl > 0)
+            {
+                ttlSeconds = parsedTtl;
+            }
+        }
+
+        cache = new CacheConfiguration(rootPath, refresh, ttlSeconds);
         return true;
     }
 

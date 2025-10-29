@@ -11,11 +11,12 @@ using DotNet.Testcontainers.Containers;
 using Microsoft.Data.SqlClient;
 using Xunit;
 
-namespace Osm.Etl.Integration.Tests;
+namespace Osm.TestSupport;
 
 public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
 {
     private const string DatabaseName = "OutsystemsIntegration";
+
     private readonly MsSqlTestcontainer _container;
     private int _disposed;
     private string? _databaseConnectionString;
@@ -34,7 +35,8 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
             .Build();
     }
 
-    public string DatabaseConnectionString => _databaseConnectionString ?? throw new InvalidOperationException("SQL Server container has not been initialized.");
+    public string DatabaseConnectionString
+        => _databaseConnectionString ?? throw new InvalidOperationException("SQL Server container has not been initialized.");
 
     public async Task InitializeAsync()
     {
@@ -71,6 +73,12 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
                 includeParam.SqlDbType = SqlDbType.Bit;
                 includeParam.Value = 0;
                 command.Parameters.Add(includeParam);
+
+                var inactiveParam = command.CreateParameter();
+                inactiveParam.ParameterName = "@IncludeInactive";
+                inactiveParam.SqlDbType = SqlDbType.Bit;
+                inactiveParam.Value = 1;
+                command.Parameters.Add(inactiveParam);
 
                 var activeParam = command.CreateParameter();
                 activeParam.ParameterName = "@OnlyActiveAttributes";
@@ -110,7 +118,7 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
             await using var command = connection.CreateCommand();
             command.CommandText = batch;
             command.CommandType = CommandType.Text;
-            configure?.Invoke(command);
+            configure?.Invoke((SqlCommand)command);
             try
             {
                 await command.ExecuteNonQueryAsync().ConfigureAwait(false);
@@ -136,6 +144,7 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
                     yield return builder.ToString();
                     builder.Clear();
                 }
+
                 continue;
             }
 

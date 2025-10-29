@@ -105,6 +105,12 @@ internal static class CacheMetadataBuilder
             metadata["cache.refreshRequested"] = configuration.Cache.Refresh.Value.ToString();
         }
 
+        if (configuration.Cache.TimeToLiveSeconds.HasValue)
+        {
+            metadata["cache.ttlSeconds"] = configuration.Cache.TimeToLiveSeconds.Value
+                .ToString(CultureInfo.InvariantCulture);
+        }
+
         if (!string.IsNullOrWhiteSpace(configuration.Profiler.Provider))
         {
             metadata["profiler.provider"] = configuration.Profiler.Provider;
