@@ -210,7 +210,7 @@ public sealed class EvidenceCacheCoordinatorIntegrationTests
         Directory.Exists(subset.Value.CacheDirectory).Should().BeTrue();
 
         var persisted = subsetLog.Build().Entries.Single(entry => entry.Step == "evidence.cache.persisted");
-        persisted.Metadata.Should().Contain(new KeyValuePair<string, string?>("evaluation.reason", "moduleSelection.changed"));
+        persisted.Metadata.Should().Contain(new KeyValuePair<string, string?>("evaluation.reason", "module.selection.changed"));
     }
 
     private static EvidenceCachePipelineOptions CreateCacheOptions(
