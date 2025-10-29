@@ -1,13 +1,17 @@
 using System;
+using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;
 using Xunit;
 using SmoIndex = Microsoft.SqlServer.Management.Smo.Index;
 using SystemIndex = System.Index;
+using Osm.Json;
 
 namespace Osm.Smo.Tests;
 
@@ -54,6 +58,14 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         Assert.Equal(IndexKeyType.DriUniqueKey, uniqueIndex.IndexKeyType);
         Assert.Contains(uniqueIndex.IndexedColumns.Cast<IndexedColumn>(), column =>
             column.Name.Equals("Email", StringComparison.OrdinalIgnoreCase) && !column.IsIncluded);
+        Assert.Equal("[EMAIL] IS NOT NULL", uniqueIndex.FilterDefinition);
+        Assert.True(uniqueIndex.IgnoreDuplicateKeys);
+        Assert.False(uniqueIndex.PadIndex);
+        Assert.False(uniqueIndex.DisallowRowLocks);
+        Assert.False(uniqueIndex.DisallowPageLocks);
+        Assert.False(uniqueIndex.NoAutomaticRecomputation);
+        Assert.Equal(85, uniqueIndex.FillFactor);
+        Assert.Equal("FG_Customers", uniqueIndex.FileGroup);
 
         var foreignKey = Assert.Single(customerTable.ForeignKeys.Cast<ForeignKey>());
         Assert.Equal("FK_Customer_City_CityId", foreignKey.Name);
@@ -142,8 +154,59 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
             });
     }
 
+    [Fact]
+    public void CreateTable_marks_untrusted_foreign_keys_as_not_checked()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var profile = ProfileFixtures.LoadSnapshot(FixtureProfileSource.EdgeCase);
+        var decisions = _policy.Decide(model, profile, TighteningOptions.Default);
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+
+        var triggeredCoordinate = new ColumnCoordinate(
+            new SchemaName("dbo"),
+            new TableName("OSUSR_XYZ_JOBRUN"),
+            new ColumnName("TRIGGEREDBYUSERID"));
+
+        Assert.True(decisions.ForeignKeys.TryGetValue(triggeredCoordinate, out var triggeredDecision));
+        var enabledDecision = triggeredDecision with { CreateConstraint = true };
+        var updatedForeignKeys = decisions.ForeignKeys.SetItem(triggeredCoordinate, enabledDecision);
+        var updatedDecisions = decisions with { ForeignKeys = updatedForeignKeys };
+
+        var supplementalEntities = LoadSupplementalUserEntities();
+        var smoModel = _modelFactory.Create(model, updatedDecisions, profile, options, supplementalEntities);
+
+        var tables = _factory.CreateTables(smoModel, options);
+        var jobRunTable = Assert.Single(tables.Where(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase)));
+        var jobRunForeignKey = Assert.Single(jobRunTable.ForeignKeys.Cast<ForeignKey>());
+
+        Assert.False(jobRunForeignKey.IsChecked);
+        Assert.Equal("ossys_User", jobRunForeignKey.ReferencedTable);
+        Assert.Equal("dbo", jobRunForeignKey.ReferencedTableSchema);
+
+        var customerTable = Assert.Single(tables.Where(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase)));
+        var cityForeignKey = Assert.Single(customerTable.ForeignKeys.Cast<ForeignKey>());
+        Assert.True(cityForeignKey.IsChecked);
+    }
+
     public void Dispose()
     {
         _factory.Dispose();
+    }
+
+    private static ImmutableArray<EntityModel> LoadSupplementalUserEntities()
+    {
+        var supplementalPath = Path.Combine(FixtureFile.RepositoryRoot, "config", "supplemental", "ossys-user.json");
+        using var stream = File.OpenRead(supplementalPath);
+        var deserializer = new ModelJsonDeserializer();
+        var supplementalResult = deserializer.Deserialize(stream);
+
+        if (!supplementalResult.IsSuccess)
+        {
+            throw new InvalidOperationException(string.Join(Environment.NewLine, supplementalResult.Errors.Select(error => error.Message)));
+        }
+
+        return supplementalResult.Value.Modules
+            .SelectMany(module => module.Entities)
+            .ToImmutableArray();
     }
 }

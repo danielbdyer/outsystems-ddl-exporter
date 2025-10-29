@@ -1,0 +1,224 @@
+{
+  "Tables": [
+    {
+      "Module": "AppCore",
+      "Schema": "dbo",
+      "Table": "Customer",
+      "TableFile": "Modules/AppCore/dbo.Customer.sql",
+      "Indexes": [
+        "UIX_Customer_Email",
+        "IX_Customer_LastName_FirstName"
+      ],
+      "ForeignKeys": [
+        "FK_Customer_City_CityId"
+      ],
+      "IncludesExtendedProperties": true
+    },
+    {
+      "Module": "AppCore",
+      "Schema": "dbo",
+      "Table": "City",
+      "TableFile": "Modules/AppCore/dbo.City.sql",
+      "Indexes": [],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false
+    },
+    {
+      "Module": "ExtBilling",
+      "Schema": "billing",
+      "Table": "BillingAccount",
+      "TableFile": "Modules/ExtBilling/billing.BillingAccount.sql",
+      "Indexes": [
+        "UIX_BillingAccount_AccountNumber"
+      ],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false
+    },
+    {
+      "Module": "Ops",
+      "Schema": "dbo",
+      "Table": "JobRun",
+      "TableFile": "Modules/Ops/dbo.JobRun.sql",
+      "Indexes": [],
+      "ForeignKeys": [
+        "FK_JobRun_User_TriggeredByUserId"
+      ],
+      "IncludesExtendedProperties": false
+    }
+  ],
+  "Options": {
+    "IncludePlatformAutoIndexes": false,
+    "EmitBareTableOnly": false,
+    "SanitizeModuleNames": true,
+    "ModuleParallelism": 2
+  },
+  "PolicySummary": {
+    "ColumnCount": 15,
+    "TightenedColumnCount": 10,
+    "RemediationColumnCount": 0,
+    "UniqueIndexCount": 2,
+    "UniqueIndexesEnforcedCount": 2,
+    "UniqueIndexesRequireRemediationCount": 0,
+    "ForeignKeyCount": 2,
+    "ForeignKeysCreatedCount": 2,
+    "ColumnRationales": {
+      "DEFAULT_PRESENT": 2,
+      "PHYSICAL_NOT_NULL": 4,
+      "MANDATORY": 10,
+      "DATA_HAS_ORPHANS": 1,
+      "DELETE_RULE_IGNORE": 1,
+      "PROFILE_MISSING": 1,
+      "PK": 4,
+      "FK_ENFORCED": 1,
+      "UNIQUE_NO_NULLS": 2,
+      "DATA_NO_NULLS": 10
+    },
+    "UniqueIndexRationales": {
+      "PHYSICAL_UNIQUE_KEY": 2,
+      "UNIQUE_NO_NULLS": 2
+    },
+    "ForeignKeyRationales": {
+      "DATA_HAS_ORPHANS": 1,
+      "DELETE_RULE_IGNORE": 1,
+      "DB_CONSTRAINT_PRESENT": 1
+    },
+    "ModuleRollups": {
+      "Ops": {
+        "ColumnCount": 3,
+        "TightenedColumnCount": 2,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 0,
+        "UniqueIndexesEnforcedCount": 0,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 1,
+        "ForeignKeysCreatedCount": 1,
+        "ColumnRationales": {
+          "DATA_HAS_ORPHANS": 1,
+          "DATA_NO_NULLS": 2,
+          "DEFAULT_PRESENT": 1,
+          "DELETE_RULE_IGNORE": 1,
+          "MANDATORY": 2,
+          "PHYSICAL_NOT_NULL": 1,
+          "PK": 1
+        },
+        "UniqueIndexRationales": {},
+        "ForeignKeyRationales": {
+          "DATA_HAS_ORPHANS": 1,
+          "DELETE_RULE_IGNORE": 1
+        }
+      },
+      "ExtBilling": {
+        "ColumnCount": 3,
+        "TightenedColumnCount": 2,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 1,
+        "UniqueIndexesEnforcedCount": 1,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 0,
+        "ForeignKeysCreatedCount": 0,
+        "ColumnRationales": {
+          "DATA_NO_NULLS": 2,
+          "MANDATORY": 2,
+          "PHYSICAL_NOT_NULL": 1,
+          "PK": 1,
+          "UNIQUE_NO_NULLS": 1
+        },
+        "UniqueIndexRationales": {
+          "PHYSICAL_UNIQUE_KEY": 1,
+          "UNIQUE_NO_NULLS": 1
+        },
+        "ForeignKeyRationales": {}
+      },
+      "AppCore": {
+        "ColumnCount": 9,
+        "TightenedColumnCount": 6,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 1,
+        "UniqueIndexesEnforcedCount": 1,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 1,
+        "ForeignKeysCreatedCount": 1,
+        "ColumnRationales": {
+          "DATA_NO_NULLS": 6,
+          "DEFAULT_PRESENT": 1,
+          "FK_ENFORCED": 1,
+          "MANDATORY": 6,
+          "PHYSICAL_NOT_NULL": 2,
+          "PK": 2,
+          "PROFILE_MISSING": 1,
+          "UNIQUE_NO_NULLS": 1
+        },
+        "UniqueIndexRationales": {
+          "PHYSICAL_UNIQUE_KEY": 1,
+          "UNIQUE_NO_NULLS": 1
+        },
+        "ForeignKeyRationales": {
+          "DB_CONSTRAINT_PRESENT": 1
+        }
+      }
+    },
+    "TogglePrecedence": {
+      "policy.mode": {
+        "Value": "EvidenceGated",
+        "Source": 0
+      },
+      "policy.nullBudget": {
+        "Value": 0,
+        "Source": 0
+      },
+      "foreignKeys.enableCreation": {
+        "Value": true,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossSchema": {
+        "Value": false,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossCatalog": {
+        "Value": false,
+        "Source": 0
+      },
+      "uniqueness.enforceSingleColumn": {
+        "Value": true,
+        "Source": 0
+      },
+      "uniqueness.enforceMultiColumn": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.generatePreScripts": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.maxRowsDefaultBackfill": {
+        "Value": 100000,
+        "Source": 0
+      }
+    }
+  },
+  "Emission": {
+    "Algorithm": "SHA256",
+    "Hash": "86b3f7ab7c7cbbd4c467b0c2f2a24905b49b3fa5f45a954d39f3fe0841867f9f"
+  },
+  "PreRemediation": [],
+  "Coverage": {
+    "Tables": {
+      "Emitted": 4,
+      "Total": 5,
+      "Percentage": 80.0
+    },
+    "Columns": {
+      "Emitted": 14,
+      "Total": 17,
+      "Percentage": 82.35
+    },
+    "Constraints": {
+      "Emitted": 9,
+      "Total": 9,
+      "Percentage": 100.0
+    }
+  },
+  "Unsupported": [
+    "Table dbo.OSUSR_U_USER missing from emission output."
+  ]
+}
