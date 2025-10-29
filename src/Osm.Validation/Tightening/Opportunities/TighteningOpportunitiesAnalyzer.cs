@@ -35,96 +35,104 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             throw new ArgumentNullException(nameof(decisions));
         }
 
-        var attributeIndex = EntityAttributeIndex.Create(model);
-        var attributeLookup = attributeIndex.Entries.ToDictionary(static entry => entry.Coordinate, static entry => entry);
-        var entityLookup = BuildEntityLookup(model);
-        var columnProfiles = new Dictionary<ColumnCoordinate, ColumnProfile>();
-        foreach (var column in profile.Columns)
+        var context = OpportunityAnalysisContext.Create(model, profile);
+        var accumulator = new OpportunityAccumulator();
+
+        foreach (var opportunity in AnalyzeNullability(decisions.Nullability.Values, context))
         {
-            columnProfiles[ColumnCoordinate.From(column)] = column;
+            accumulator.Record(opportunity);
         }
 
-        var uniqueProfiles = new Dictionary<ColumnCoordinate, UniqueCandidateProfile>();
-        foreach (var unique in profile.UniqueCandidates)
+        foreach (var opportunity in AnalyzeUniqueIndexes(decisions.UniqueIndexes.Values, context))
         {
-            uniqueProfiles[ColumnCoordinate.From(unique)] = unique;
+            accumulator.Record(opportunity);
         }
-        var compositeProfiles = BuildCompositeProfileLookup(profile.CompositeUniqueCandidates);
-        var foreignKeys = new Dictionary<ColumnCoordinate, ForeignKeyReality>();
-        foreach (var foreignKey in profile.ForeignKeys)
+
+        foreach (var opportunity in AnalyzeForeignKeys(decisions.ForeignKeys.Values, context))
         {
-            foreignKeys[ColumnCoordinate.From(foreignKey.Reference)] = foreignKey;
+            accumulator.Record(opportunity);
         }
-        var indexLookup = BuildIndexLookup(model);
 
-        var opportunities = ImmutableArray.CreateBuilder<Opportunity>();
-        var dispositionCounts = new Dictionary<OpportunityDisposition, int>();
-        var typeCounts = new Dictionary<OpportunityType, int>();
-        var riskCounts = new Dictionary<RiskLevel, int>();
+        return accumulator.BuildReport();
+    }
 
-        foreach (var decision in decisions.Nullability.Values)
+    private static IEnumerable<Opportunity> AnalyzeNullability(
+        IEnumerable<NullabilityDecision> decisions,
+        OpportunityAnalysisContext context)
+    {
+        foreach (var decision in decisions)
         {
-            if (!decision.MakeNotNull || !attributeLookup.TryGetValue(decision.Column, out var entry))
+            if (!decision.MakeNotNull)
             {
                 continue;
             }
 
-            columnProfiles.TryGetValue(decision.Column, out var profileRecord);
-            uniqueProfiles.TryGetValue(decision.Column, out var uniqueProfile);
-            foreignKeys.TryGetValue(decision.Column, out var fkReality);
-
-            var opportunity = CreateNotNullOpportunity(decision, entry, profileRecord, uniqueProfile, fkReality);
-            RecordOpportunity(opportunity, opportunities, dispositionCounts, typeCounts, riskCounts);
-        }
-
-        foreach (var decision in decisions.UniqueIndexes.Values)
-        {
-            if (!decision.EnforceUnique || !indexLookup.TryGetValue(decision.Index, out var indexEntry))
+            if (!context.Attributes.TryGet(decision.Column, out var entry))
             {
                 continue;
             }
 
-        }
+            var opportunity = CreateNotNullOpportunity(
+                decision,
+                entry,
+                context.ColumnProfiles.Find(decision.Column),
+                context.UniqueProfiles.Find(decision.Column),
+                context.ForeignKeys.Find(decision.Column));
 
-        foreach (var decision in decisions.ForeignKeys.Values)
+            yield return opportunity;
+        }
+    }
+
+    private static IEnumerable<Opportunity> AnalyzeUniqueIndexes(
+        IEnumerable<UniqueIndexDecision> decisions,
+        OpportunityAnalysisContext context)
+    {
+        foreach (var decision in decisions)
         {
-            if (!decision.CreateConstraint || !attributeLookup.TryGetValue(decision.Column, out var entry))
+            if (!decision.EnforceUnique)
             {
                 continue;
             }
 
-            var fkReality = foreignKeys.TryGetValue(decision.Column, out var fkProfile) ? fkProfile : null;
-            var targetEntity = ResolveTargetEntity(entry, entityLookup);
+            if (!context.UniqueIndexes.TryGet(decision.Index, out var indexEntry))
+            {
+                continue;
+            }
+
+            yield return CreateUniqueOpportunity(
+                decision,
+                indexEntry,
+                context.ColumnProfiles,
+                context.UniqueProfiles,
+                context.CompositeUniqueProfiles);
+        }
+    }
+
+    private static IEnumerable<Opportunity> AnalyzeForeignKeys(
+        IEnumerable<ForeignKeyDecision> decisions,
+        OpportunityAnalysisContext context)
+    {
+        foreach (var decision in decisions)
+        {
+            if (!decision.CreateConstraint)
+            {
+                continue;
+            }
+
+            if (!context.Attributes.TryGet(decision.Column, out var entry))
+            {
+                continue;
+            }
+
+            var fkReality = context.ForeignKeys.Find(decision.Column);
+            var targetEntity = ResolveTargetEntity(entry, context.Entities);
             if (targetEntity is null)
             {
                 continue;
             }
 
-            var opportunity = CreateForeignKeyOpportunity(decision, entry, targetEntity, fkReality);
-            RecordOpportunity(opportunity, opportunities, dispositionCounts, typeCounts, riskCounts);
+            yield return CreateForeignKeyOpportunity(decision, entry, targetEntity, fkReality);
         }
-
-        var report = new OpportunitiesReport(
-            opportunities.ToImmutable(),
-            dispositionCounts.ToImmutableDictionary(),
-            typeCounts.ToImmutableDictionary(),
-            riskCounts.ToImmutableDictionary(),
-            DateTimeOffset.UtcNow);
-
-        return report;
-    }
-
-    private static void RecordOpportunity(
-        Opportunity opportunity,
-        ImmutableArray<Opportunity>.Builder accumulator,
-        IDictionary<OpportunityDisposition, int> dispositionCounts,
-        IDictionary<OpportunityType, int> typeCounts,
-        IDictionary<RiskLevel, int> riskCounts)
-    {
-        accumulator.Add(opportunity);
-        Increment(dispositionCounts, opportunity.Disposition);
-        Increment(typeCounts, opportunity.Type);
-        Increment(riskCounts, opportunity.Risk.Level);
     }
 
     private static void Increment<TKey>(IDictionary<TKey, int> map, TKey key)
@@ -138,42 +146,6 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         {
             map[key] = 1;
         }
-    }
-
-    private static Dictionary<IndexCoordinate, (EntityModel Entity, IndexModel Index)> BuildIndexLookup(OsmModel model)
-    {
-        var result = new Dictionary<IndexCoordinate, (EntityModel, IndexModel)>();
-        foreach (var entity in model.Modules.SelectMany(static module => module.Entities))
-        {
-            foreach (var index in entity.Indexes.Where(static i => i.IsUnique))
-            {
-                var coordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
-                result[coordinate] = (entity, index);
-            }
-        }
-
-        return result;
-    }
-
-    private static Dictionary<string, CompositeUniqueCandidateProfile> BuildCompositeProfileLookup(
-        ImmutableArray<CompositeUniqueCandidateProfile> profiles)
-    {
-        var result = new Dictionary<string, CompositeUniqueCandidateProfile>(StringComparer.OrdinalIgnoreCase);
-        if (profiles.IsDefaultOrEmpty)
-        {
-            return result;
-        }
-
-        foreach (var profile in profiles)
-        {
-            var key = global::Osm.Validation.Tightening.UniqueIndexEvidenceKey.Create(
-                profile.Schema.Value,
-                profile.Table.Value,
-                profile.Columns.Select(static c => c.Value));
-            result[key] = profile;
-        }
-
-        return result;
     }
 
     private static Opportunity CreateNotNullOpportunity(
@@ -276,9 +248,9 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
     private static Opportunity CreateUniqueOpportunity(
         UniqueIndexDecision decision,
         (EntityModel Entity, IndexModel Index) entry,
-        IReadOnlyDictionary<ColumnCoordinate, ColumnProfile> columnProfiles,
-        IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> uniqueProfiles,
-        IReadOnlyDictionary<string, CompositeUniqueCandidateProfile> compositeProfiles)
+        ColumnProfileLookup columnProfiles,
+        UniqueCandidateLookup uniqueProfiles,
+        CompositeUniqueProfileLookup compositeProfiles)
     {
         var disposition = decision.RequiresRemediation
             ? OpportunityDisposition.NeedsRemediation
@@ -300,17 +272,13 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 
         bool? dataClean = null;
         bool? hasDuplicates = null;
+        compositeProfiles.TryGet(entry.Entity, keyColumns, out var compositeProfile);
+
         foreach (var coordinate in keyColumns)
         {
-            columnProfiles.TryGetValue(coordinate, out var profile);
-            uniqueProfiles.TryGetValue(coordinate, out var uniqueProfile);
+            var profile = columnProfiles.Find(coordinate);
+            var uniqueProfile = uniqueProfiles.Find(coordinate);
             var uniqueProbe = uniqueProfile?.ProbeStatus;
-
-            var compositeKey = global::Osm.Validation.Tightening.UniqueIndexEvidenceKey.Create(
-                coordinate.Schema.Value,
-                coordinate.Table.Value,
-                keyColumns.Select(static c => c.Column.Value));
-            compositeProfiles.TryGetValue(compositeKey, out var compositeProfile);
 
             if (compositeProfile is not null)
             {
@@ -504,31 +472,14 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 
     private static EntityModel? ResolveTargetEntity(
         EntityAttributeIndex.EntityAttributeIndexEntry entry,
-        IReadOnlyDictionary<string, EntityModel> entityLookup)
+        EntityLookup entityLookup)
     {
         if (!entry.Attribute.Reference.IsReference || entry.Attribute.Reference.TargetEntity is null)
         {
             return null;
         }
 
-        if (entityLookup.TryGetValue(entry.Attribute.Reference.TargetEntity.Value.Value, out var entity))
-        {
-            return entity;
-        }
-
-        return null;
-    }
-
-    private static IReadOnlyDictionary<string, EntityModel> BuildEntityLookup(OsmModel model)
-    {
-        var lookup = new Dictionary<string, EntityModel>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var entity in model.Modules.SelectMany(static module => module.Entities))
-        {
-            lookup.TryAdd(entity.LogicalName.Value, entity);
-        }
-
-        return lookup;
+        return entityLookup.Find(entry.Attribute.Reference.TargetEntity.Value.Value);
     }
 
     private static string BuildCreateUniqueStatement(EntityModel entity, IndexModel index)
@@ -548,4 +499,257 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 
     private static string Quote(string identifier)
         => $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
+
+    private sealed class OpportunityAccumulator
+    {
+        private readonly ImmutableArray<Opportunity>.Builder _opportunities = ImmutableArray.CreateBuilder<Opportunity>();
+        private readonly Dictionary<OpportunityDisposition, int> _dispositionCounts = new();
+        private readonly Dictionary<OpportunityType, int> _typeCounts = new();
+        private readonly Dictionary<RiskLevel, int> _riskCounts = new();
+
+        public void Record(Opportunity opportunity)
+        {
+            _opportunities.Add(opportunity);
+            Increment(_dispositionCounts, opportunity.Disposition);
+            Increment(_typeCounts, opportunity.Type);
+            Increment(_riskCounts, opportunity.Risk.Level);
+        }
+
+        public OpportunitiesReport BuildReport()
+        {
+            return new OpportunitiesReport(
+                _opportunities.ToImmutable(),
+                _dispositionCounts.ToImmutableDictionary(),
+                _typeCounts.ToImmutableDictionary(),
+                _riskCounts.ToImmutableDictionary(),
+                DateTimeOffset.UtcNow);
+        }
+    }
+
+    private sealed class OpportunityAnalysisContext
+    {
+        private OpportunityAnalysisContext(
+            AttributeLookup attributes,
+            EntityLookup entities,
+            ColumnProfileLookup columnProfiles,
+            UniqueCandidateLookup uniqueProfiles,
+            CompositeUniqueProfileLookup compositeUniqueProfiles,
+            ForeignKeyRealityLookup foreignKeys,
+            UniqueIndexLookup uniqueIndexes)
+        {
+            Attributes = attributes;
+            Entities = entities;
+            ColumnProfiles = columnProfiles;
+            UniqueProfiles = uniqueProfiles;
+            CompositeUniqueProfiles = compositeUniqueProfiles;
+            ForeignKeys = foreignKeys;
+            UniqueIndexes = uniqueIndexes;
+        }
+
+        public AttributeLookup Attributes { get; }
+
+        public EntityLookup Entities { get; }
+
+        public ColumnProfileLookup ColumnProfiles { get; }
+
+        public UniqueCandidateLookup UniqueProfiles { get; }
+
+        public CompositeUniqueProfileLookup CompositeUniqueProfiles { get; }
+
+        public ForeignKeyRealityLookup ForeignKeys { get; }
+
+        public UniqueIndexLookup UniqueIndexes { get; }
+
+        public static OpportunityAnalysisContext Create(OsmModel model, ProfileSnapshot profile)
+        {
+            return new OpportunityAnalysisContext(
+                AttributeLookup.Create(model),
+                EntityLookup.Create(model),
+                ColumnProfileLookup.Create(profile),
+                UniqueCandidateLookup.Create(profile),
+                CompositeUniqueProfileLookup.Create(profile),
+                ForeignKeyRealityLookup.Create(profile),
+                UniqueIndexLookup.Create(model));
+        }
+    }
+
+    private readonly struct AttributeLookup
+    {
+        private readonly IReadOnlyDictionary<ColumnCoordinate, EntityAttributeIndex.EntityAttributeIndexEntry> _entries;
+
+        private AttributeLookup(IReadOnlyDictionary<ColumnCoordinate, EntityAttributeIndex.EntityAttributeIndexEntry> entries)
+        {
+            _entries = entries;
+        }
+
+        public static AttributeLookup Create(OsmModel model)
+        {
+            var attributeIndex = EntityAttributeIndex.Create(model);
+            var map = attributeIndex.Entries
+                .ToDictionary(static entry => entry.Coordinate, static entry => entry);
+            return new AttributeLookup(map);
+        }
+
+        public bool TryGet(ColumnCoordinate coordinate, out EntityAttributeIndex.EntityAttributeIndexEntry entry)
+            => _entries.TryGetValue(coordinate, out entry);
+    }
+
+    private readonly struct EntityLookup
+    {
+        private readonly IReadOnlyDictionary<string, EntityModel> _entities;
+
+        private EntityLookup(IReadOnlyDictionary<string, EntityModel> entities)
+        {
+            _entities = entities;
+        }
+
+        public static EntityLookup Create(OsmModel model)
+        {
+            var map = new Dictionary<string, EntityModel>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entity in model.Modules.SelectMany(static module => module.Entities))
+            {
+                map.TryAdd(entity.LogicalName.Value, entity);
+            }
+
+            return new EntityLookup(map);
+        }
+
+        public EntityModel? Find(string logicalName)
+            => _entities.TryGetValue(logicalName, out var entity) ? entity : null;
+    }
+
+    private readonly struct ColumnProfileLookup
+    {
+        private readonly IReadOnlyDictionary<ColumnCoordinate, ColumnProfile> _profiles;
+
+        private ColumnProfileLookup(IReadOnlyDictionary<ColumnCoordinate, ColumnProfile> profiles)
+        {
+            _profiles = profiles;
+        }
+
+        public static ColumnProfileLookup Create(ProfileSnapshot profile)
+        {
+            var map = profile.Columns
+                .ToDictionary(static column => ColumnCoordinate.From(column), static column => column);
+            return new ColumnProfileLookup(map);
+        }
+
+        public ColumnProfile? Find(ColumnCoordinate coordinate)
+            => _profiles.TryGetValue(coordinate, out var profile) ? profile : null;
+    }
+
+    private readonly struct UniqueCandidateLookup
+    {
+        private readonly IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> _profiles;
+
+        private UniqueCandidateLookup(IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> profiles)
+        {
+            _profiles = profiles;
+        }
+
+        public static UniqueCandidateLookup Create(ProfileSnapshot profile)
+        {
+            var map = profile.UniqueCandidates
+                .ToDictionary(static candidate => ColumnCoordinate.From(candidate), static candidate => candidate);
+            return new UniqueCandidateLookup(map);
+        }
+
+        public UniqueCandidateProfile? Find(ColumnCoordinate coordinate)
+            => _profiles.TryGetValue(coordinate, out var profile) ? profile : null;
+    }
+
+    private readonly struct CompositeUniqueProfileLookup
+    {
+        private readonly IReadOnlyDictionary<string, CompositeUniqueCandidateProfile> _profiles;
+
+        private CompositeUniqueProfileLookup(IReadOnlyDictionary<string, CompositeUniqueCandidateProfile> profiles)
+        {
+            _profiles = profiles;
+        }
+
+        public static CompositeUniqueProfileLookup Create(ProfileSnapshot profile)
+        {
+            if (profile.CompositeUniqueCandidates.IsDefaultOrEmpty)
+            {
+                return new CompositeUniqueProfileLookup(new Dictionary<string, CompositeUniqueCandidateProfile>(StringComparer.OrdinalIgnoreCase));
+            }
+
+            var map = new Dictionary<string, CompositeUniqueCandidateProfile>(StringComparer.OrdinalIgnoreCase);
+            foreach (var candidate in profile.CompositeUniqueCandidates)
+            {
+                var key = global::Osm.Validation.Tightening.UniqueIndexEvidenceKey.Create(
+                    candidate.Schema.Value,
+                    candidate.Table.Value,
+                    candidate.Columns.Select(static c => c.Value));
+                map[key] = candidate;
+            }
+
+            return new CompositeUniqueProfileLookup(map);
+        }
+
+        public bool TryGet(EntityModel entity, IReadOnlyList<ColumnCoordinate> columns, out CompositeUniqueCandidateProfile? profile)
+        {
+            var key = global::Osm.Validation.Tightening.UniqueIndexEvidenceKey.Create(
+                entity.Schema.Value,
+                entity.PhysicalName.Value,
+                columns.Select(static c => c.Column.Value));
+
+            if (_profiles.TryGetValue(key, out var resolved))
+            {
+                profile = resolved;
+                return true;
+            }
+
+            profile = null;
+            return false;
+        }
+    }
+
+    private readonly struct ForeignKeyRealityLookup
+    {
+        private readonly IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> _realities;
+
+        private ForeignKeyRealityLookup(IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> realities)
+        {
+            _realities = realities;
+        }
+
+        public static ForeignKeyRealityLookup Create(ProfileSnapshot profile)
+        {
+            var map = profile.ForeignKeys
+                .ToDictionary(static fk => ColumnCoordinate.From(fk.Reference), static fk => fk);
+            return new ForeignKeyRealityLookup(map);
+        }
+
+        public ForeignKeyReality? Find(ColumnCoordinate coordinate)
+            => _realities.TryGetValue(coordinate, out var reality) ? reality : null;
+    }
+
+    private readonly struct UniqueIndexLookup
+    {
+        private readonly IReadOnlyDictionary<IndexCoordinate, (EntityModel Entity, IndexModel Index)> _indexes;
+
+        private UniqueIndexLookup(IReadOnlyDictionary<IndexCoordinate, (EntityModel Entity, IndexModel Index)> indexes)
+        {
+            _indexes = indexes;
+        }
+
+        public static UniqueIndexLookup Create(OsmModel model)
+        {
+            var map = new Dictionary<IndexCoordinate, (EntityModel, IndexModel)>();
+            foreach (var entity in model.Modules.SelectMany(static module => module.Entities))
+            {
+                foreach (var index in entity.Indexes.Where(static i => i.IsUnique))
+                {
+                    var coordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, index.Name);
+                    map[coordinate] = (entity, index);
+                }
+            }
+
+            return new UniqueIndexLookup(map);
+        }
+
+        public bool TryGet(IndexCoordinate coordinate, out (EntityModel Entity, IndexModel Index) entry)
+            => _indexes.TryGetValue(coordinate, out entry);
+    }
 }
