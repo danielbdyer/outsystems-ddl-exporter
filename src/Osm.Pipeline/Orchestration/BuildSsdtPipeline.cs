@@ -1,8 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
+using Osm.Emission;
 using Osm.Pipeline.Mediation;
 
 namespace Osm.Pipeline.Orchestration;
@@ -101,12 +105,15 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 .WithPath("cache.directory", finalState.EvidenceCache?.CacheDirectory)
                 .Build());
 
+        var moduleManifestRollups = BuildModuleManifestRollups(finalState.Manifest);
+
         return new BuildSsdtPipelineResult(
             finalState.Bootstrap.Profile!,
             finalState.Bootstrap.Insights,
             finalState.Report,
             finalState.Opportunities,
             finalState.Manifest,
+            moduleManifestRollups,
             finalState.Insights,
             finalState.DecisionLogPath,
             finalState.OpportunityArtifacts.ReportPath,
@@ -120,5 +127,27 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.EvidenceCache,
             finalState.Log.Build(),
             finalState.Bootstrap.Warnings);
+    }
+
+    private static ImmutableDictionary<string, ModuleManifestRollup> BuildModuleManifestRollups(SsdtManifest manifest)
+    {
+        if (manifest is null)
+        {
+            throw new ArgumentNullException(nameof(manifest));
+        }
+
+        var groups = manifest.Tables
+            .GroupBy(table => table.Module, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new KeyValuePair<string, ModuleManifestRollup>(
+                group.Key,
+                new ModuleManifestRollup(
+                    TableCount: group.Count(),
+                    IndexCount: group.Sum(entry => entry.Indexes?.Count ?? 0),
+                    ForeignKeyCount: group.Sum(entry => entry.ForeignKeys?.Count ?? 0))))
+            .ToImmutableDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+        return groups.Count == 0
+            ? ImmutableDictionary<string, ModuleManifestRollup>.Empty.WithComparers(StringComparer.OrdinalIgnoreCase)
+            : groups;
     }
 }

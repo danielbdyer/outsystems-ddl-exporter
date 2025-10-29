@@ -50,7 +50,7 @@ public sealed class ManifestBuilder
                 decisionReport.UniqueIndexRationaleCounts,
                 decisionReport.ForeignKeyRationaleCounts,
                 decisionReport.ModuleRollups,
-                decisionReport.Toggles.ToExportDictionary());
+                decisionReport.TogglePrecedence);
 
         var preRemediationEntries = preRemediation ?? Array.Empty<PreRemediationManifestEntry>();
         var coverageSummary = coverage ?? SsdtCoverageSummary.CreateComplete(tableCount, columnCount, constraintCount);

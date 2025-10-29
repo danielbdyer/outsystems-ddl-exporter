@@ -168,6 +168,13 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         CommandConsole.WriteLine(context.Console, $"Unique indexes enforced: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount}");
         CommandConsole.WriteLine(context.Console, $"Foreign keys created: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount}");
 
+        CommandConsole.EmitModuleRollups(
+            context.Console,
+            pipelineResult.ModuleManifestRollups,
+            pipelineResult.DecisionReport.ModuleRollups);
+
+        CommandConsole.EmitTogglePrecedence(context.Console, pipelineResult.DecisionReport.TogglePrecedence);
+
         foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(pipelineResult.DecisionReport))
         {
             CommandConsole.WriteLine(context.Console, summary);

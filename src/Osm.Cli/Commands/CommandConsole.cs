@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.CommandLine;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -124,6 +125,83 @@ internal static class CommandConsole
         }
     }
 
+    public static void EmitModuleRollups(
+        IConsole console,
+        ImmutableDictionary<string, ModuleManifestRollup> manifestRollups,
+        ImmutableDictionary<string, ModuleDecisionRollup> decisionRollups)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        manifestRollups ??= ImmutableDictionary<string, ModuleManifestRollup>.Empty;
+        decisionRollups ??= ImmutableDictionary<string, ModuleDecisionRollup>.Empty;
+
+        if (manifestRollups.Count == 0 && decisionRollups.Count == 0)
+        {
+            return;
+        }
+
+        var modules = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        modules.UnionWith(manifestRollups.Keys);
+        modules.UnionWith(decisionRollups.Keys);
+
+        if (modules.Count == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, "Module rollups:");
+        foreach (var module in modules)
+        {
+            if (!manifestRollups.TryGetValue(module, out var manifest))
+            {
+                manifest = ModuleManifestRollup.Empty;
+            }
+
+            decisionRollups.TryGetValue(module, out var decision);
+
+            var parts = new[]
+            {
+                $"tables={manifest.TableCount:N0}",
+                $"indexes={manifest.IndexCount:N0}",
+                $"foreignKeys={manifest.ForeignKeyCount:N0}",
+                $"columns={decision?.ColumnCount ?? 0:N0}",
+                $"tightened={decision?.TightenedColumnCount ?? 0:N0}",
+                $"remediation={decision?.RemediationColumnCount ?? 0:N0}",
+                $"uniqueEnforced={decision?.UniqueIndexesEnforcedCount ?? 0:N0}",
+                $"uniqueRemediation={decision?.UniqueIndexesRequireRemediationCount ?? 0:N0}",
+                $"foreignKeysCreated={decision?.ForeignKeysCreatedCount ?? 0:N0}"
+            };
+
+            WriteLine(console, $"  {module}: {string.Join(", ", parts)}");
+        }
+    }
+
+    public static void EmitTogglePrecedence(
+        IConsole console,
+        IReadOnlyDictionary<string, ToggleExportValue> togglePrecedence)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (togglePrecedence is null || togglePrecedence.Count == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, "Tightening toggles:");
+
+        foreach (var pair in togglePrecedence.OrderBy(static p => p.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var formattedValue = FormatToggleValue(pair.Value.Value);
+            WriteLine(console, $"  {pair.Key} = {formattedValue} ({pair.Value.Source})");
+        }
+    }
+
     public static void EmitPipelineLog(IConsole console, PipelineExecutionLog log)
     {
         if (log is null || log.Entries.Count == 0)
@@ -197,6 +275,16 @@ internal static class CommandConsole
 
     private static string FormatMetadataValue(string? value)
         => value ?? "<null>";
+
+    private static string FormatToggleValue(object? value)
+        => value switch
+        {
+            null => "<null>",
+            bool boolean => boolean ? "true" : "false",
+            double number => number.ToString("0.###", CultureInfo.InvariantCulture),
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => value.ToString() ?? string.Empty
+        };
 
     private static string FormatProfilingInsight(ProfilingInsight insight)
     {

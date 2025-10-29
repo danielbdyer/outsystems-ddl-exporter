@@ -34,6 +34,12 @@ This appendix complements `architecture-guardrails.md` by describing the executa
 - **Failures**: Policy evaluation always succeeds; guardrails use assertions/tests instead of runtime errors. Misconfiguration (e.g., unsupported mode) should be caught during option deserialization.
 - **Telemetry hooks**: counts of tightened columns, remediation requirements, suppressed FKs, unique index enforcement, and rationale histograms.
 
+### Telemetry surfaces
+
+- `PolicyDecisionReport` emits per-module rollups capturing column, unique index, and foreign key counts alongside tightened/remediation totals so the CLI and HTML report can display module-level coverage without re-running aggregation logic. Each entry lives under `ModuleRollups[moduleName]` with rationale histograms preserved for downstream analysis.
+- `PolicyDecisionReport.TogglePrecedence` projects every tightening toggle into a `{ value, source }` shape, where `source` resolves to `CommandLine`, `Environment`, `Configuration`, or `Default` in that precedence order. The CLI surfaces this table directly so operators can audit which layer overrode the baseline configuration.
+- `BuildSsdtPipelineResult.ModuleManifestRollups` records the emitted table/index/foreign key counts per module to complement the decision rollups above. HTML reports and telemetry zips consume this snapshot alongside the manifest for at-a-glance coverage summaries.
+
 ### Mode matrix (source: [`TighteningPolicyMatrix`](../src/Osm.Validation/Tightening/TighteningPolicyMatrix.cs))
 
 #### Nullability (NOT NULL)
