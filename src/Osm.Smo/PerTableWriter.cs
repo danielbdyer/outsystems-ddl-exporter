@@ -15,20 +15,32 @@ public sealed class PerTableWriter
     private readonly CreateTableStatementBuilder _createTableStatementBuilder;
     private readonly IndexScriptBuilder _indexScriptBuilder;
     private readonly ExtendedPropertyScriptBuilder _extendedPropertyScriptBuilder;
-    private readonly SqlScriptFormatter _sqlScriptFormatter;
+    private readonly CreateTableFormatter _createTableFormatter;
+    private readonly IdentifierFormatter _identifierFormatter;
+    private readonly StatementBatchFormatter _statementBatchFormatter;
 
     public PerTableWriter()
-        : this(new SmoContext(), new SqlScriptFormatter())
+        : this(
+            new SmoContext(),
+            new IdentifierFormatter(),
+            new ConstraintFormatter(),
+            new StatementBatchFormatter())
     {
     }
 
-    private PerTableWriter(SmoContext context, SqlScriptFormatter sqlScriptFormatter)
+    private PerTableWriter(
+        SmoContext context,
+        IdentifierFormatter identifierFormatter,
+        ConstraintFormatter constraintFormatter,
+        StatementBatchFormatter statementBatchFormatter)
         : this(
             context,
-            new CreateTableStatementBuilder(sqlScriptFormatter),
-            new IndexScriptBuilder(sqlScriptFormatter),
-            new ExtendedPropertyScriptBuilder(sqlScriptFormatter),
-            sqlScriptFormatter)
+            new CreateTableStatementBuilder(identifierFormatter),
+            new IndexScriptBuilder(identifierFormatter),
+            new ExtendedPropertyScriptBuilder(identifierFormatter),
+            new CreateTableFormatter(constraintFormatter),
+            identifierFormatter,
+            statementBatchFormatter)
     {
     }
 
@@ -37,13 +49,17 @@ public sealed class PerTableWriter
         CreateTableStatementBuilder createTableStatementBuilder,
         IndexScriptBuilder indexScriptBuilder,
         ExtendedPropertyScriptBuilder extendedPropertyScriptBuilder,
-        SqlScriptFormatter sqlScriptFormatter)
+        CreateTableFormatter createTableFormatter,
+        IdentifierFormatter identifierFormatter,
+        StatementBatchFormatter statementBatchFormatter)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _createTableStatementBuilder = createTableStatementBuilder ?? throw new ArgumentNullException(nameof(createTableStatementBuilder));
         _indexScriptBuilder = indexScriptBuilder ?? throw new ArgumentNullException(nameof(indexScriptBuilder));
         _extendedPropertyScriptBuilder = extendedPropertyScriptBuilder ?? throw new ArgumentNullException(nameof(extendedPropertyScriptBuilder));
-        _sqlScriptFormatter = sqlScriptFormatter ?? throw new ArgumentNullException(nameof(sqlScriptFormatter));
+        _createTableFormatter = createTableFormatter ?? throw new ArgumentNullException(nameof(createTableFormatter));
+        _identifierFormatter = identifierFormatter ?? throw new ArgumentNullException(nameof(identifierFormatter));
+        _statementBatchFormatter = statementBatchFormatter ?? throw new ArgumentNullException(nameof(statementBatchFormatter));
     }
 
     public PerTableWriteResult Generate(
@@ -89,7 +105,7 @@ public sealed class PerTableWriter
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                var indexName = _sqlScriptFormatter.ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
+                var indexName = _identifierFormatter.ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
                 var indexStatement = _indexScriptBuilder.BuildCreateIndexStatement(table, index, effectiveTableName, indexName, options.Format);
                 var indexScript = Script(indexStatement, format: options.Format);
                 statements.Add(indexScript);
@@ -133,7 +149,7 @@ public sealed class PerTableWriter
             foreignKeyNames = foreignKeyNames.Sort(StringComparer.OrdinalIgnoreCase);
         }
 
-        var script = _sqlScriptFormatter.JoinStatements(statements, options.Format);
+        var script = _statementBatchFormatter.JoinStatements(statements, options.Format);
         var header = BuildHeader(options.Header, tableHeaderItems);
         if (!string.IsNullOrEmpty(header))
         {
@@ -276,9 +292,9 @@ public sealed class PerTableWriter
 
             if (trigger.IsDisabled)
             {
-                var schemaIdentifier = _sqlScriptFormatter.QuoteIdentifier(trigger.Schema, format);
-                var tableIdentifier = _sqlScriptFormatter.QuoteIdentifier(effectiveTableName, format);
-                var triggerIdentifier = _sqlScriptFormatter.QuoteIdentifier(trigger.Name, format);
+                var schemaIdentifier = _identifierFormatter.QuoteIdentifier(trigger.Schema, format);
+                var tableIdentifier = _identifierFormatter.QuoteIdentifier(effectiveTableName, format);
+                var triggerIdentifier = _identifierFormatter.QuoteIdentifier(trigger.Name, format);
                 builder.AppendLine($"ALTER TABLE {schemaIdentifier}.{tableIdentifier} DISABLE TRIGGER {triggerIdentifier};");
             }
 
@@ -297,9 +313,9 @@ public sealed class PerTableWriter
     {
         var rewritten = definition;
 
-        var schemaIdentifier = _sqlScriptFormatter.QuoteIdentifier(trigger.Schema, format);
-        var physicalTableIdentifier = _sqlScriptFormatter.QuoteIdentifier(trigger.Table, format);
-        var effectiveTableIdentifier = _sqlScriptFormatter.QuoteIdentifier(effectiveTableName, format);
+        var schemaIdentifier = _identifierFormatter.QuoteIdentifier(trigger.Schema, format);
+        var physicalTableIdentifier = _identifierFormatter.QuoteIdentifier(trigger.Table, format);
+        var effectiveTableIdentifier = _identifierFormatter.QuoteIdentifier(effectiveTableName, format);
 
         rewritten = ReplaceIgnoreCase(rewritten, $"{schemaIdentifier}.{physicalTableIdentifier}", $"{schemaIdentifier}.{effectiveTableIdentifier}");
         rewritten = ReplaceIgnoreCase(rewritten, physicalTableIdentifier, effectiveTableIdentifier);
@@ -307,8 +323,8 @@ public sealed class PerTableWriter
 
         foreach (var pair in columnNameMap)
         {
-            var physicalColumn = _sqlScriptFormatter.QuoteIdentifier(pair.Key, format);
-            var effectiveColumn = _sqlScriptFormatter.QuoteIdentifier(pair.Value, format);
+            var physicalColumn = _identifierFormatter.QuoteIdentifier(pair.Key, format);
+            var effectiveColumn = _identifierFormatter.QuoteIdentifier(pair.Value, format);
 
             rewritten = ReplaceIgnoreCase(rewritten, physicalColumn, effectiveColumn);
             rewritten = ReplaceIgnoreCase(rewritten, pair.Key, pair.Value);
@@ -356,8 +372,8 @@ public sealed class PerTableWriter
 
         return statement switch
         {
-            CreateTableStatement createTable => _sqlScriptFormatter.FormatCreateTableScript(trimmed, createTable, foreignKeyTrustLookup, effectiveFormat),
-            _ => effectiveFormat.NormalizeWhitespace ? _sqlScriptFormatter.NormalizeWhitespace(trimmed) : trimmed,
+            CreateTableStatement createTable => _createTableFormatter.FormatCreateTableScript(trimmed, createTable, foreignKeyTrustLookup, effectiveFormat),
+            _ => effectiveFormat.NormalizeWhitespace ? _statementBatchFormatter.NormalizeWhitespace(trimmed) : trimmed,
         };
     }
 

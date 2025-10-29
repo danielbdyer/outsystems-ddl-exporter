@@ -11,21 +11,21 @@ namespace Osm.Emission.Seeds;
 public sealed class StaticSeedSqlBuilder
 {
     private readonly SqlLiteralFormatter _literalFormatter;
-    private readonly SqlScriptFormatter _scriptFormatter;
+    private readonly IdentifierFormatter _identifierFormatter;
     private readonly SmoFormatOptions _formatOptions;
 
     public StaticSeedSqlBuilder(SqlLiteralFormatter literalFormatter)
-        : this(literalFormatter, new SqlScriptFormatter(), SmoFormatOptions.Default)
+        : this(literalFormatter, new IdentifierFormatter(), SmoFormatOptions.Default)
     {
     }
 
     internal StaticSeedSqlBuilder(
         SqlLiteralFormatter literalFormatter,
-        SqlScriptFormatter scriptFormatter,
+        IdentifierFormatter identifierFormatter,
         SmoFormatOptions formatOptions)
     {
         _literalFormatter = literalFormatter ?? throw new ArgumentNullException(nameof(literalFormatter));
-        _scriptFormatter = scriptFormatter ?? throw new ArgumentNullException(nameof(scriptFormatter));
+        _identifierFormatter = identifierFormatter ?? throw new ArgumentNullException(nameof(identifierFormatter));
         _formatOptions = formatOptions ?? throw new ArgumentNullException(nameof(formatOptions));
     }
 
@@ -189,7 +189,7 @@ public sealed class StaticSeedSqlBuilder
     }
 
     private string QuoteColumn(string columnName)
-        => _scriptFormatter.QuoteIdentifier(columnName, _formatOptions);
+        => _identifierFormatter.QuoteIdentifier(columnName, _formatOptions);
 
     private void AppendValuesClause(StringBuilder builder, StaticEntityTableData tableData, string indent)
     {

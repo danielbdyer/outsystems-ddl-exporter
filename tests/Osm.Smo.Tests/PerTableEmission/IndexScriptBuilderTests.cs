@@ -9,7 +9,7 @@ namespace Osm.Smo.Tests.PerTableEmission;
 
 public class IndexScriptBuilderTests
 {
-    private readonly SqlScriptFormatter _formatter = new();
+    private readonly IdentifierFormatter _identifierFormatter = new();
 
     [Fact]
     public void BuildCreateIndexStatement_includes_filter_and_compression_options()
@@ -54,7 +54,7 @@ public class IndexScriptBuilderTests
                 new SmoIndexColumnDefinition("AuditId", 1, IsIncluded: true, IsDescending: false)),
             Metadata: metadata);
 
-        var builder = new IndexScriptBuilder(_formatter);
+        var builder = new IndexScriptBuilder(_identifierFormatter);
         var statement = builder.BuildCreateIndexStatement(table, index, "Order", "IX_Order_Status", SmoFormatOptions.Default);
 
         Assert.Equal("IX_Order_Status", statement.Name.Value);
@@ -92,7 +92,7 @@ public class IndexScriptBuilderTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new IndexScriptBuilder(_formatter);
+        var builder = new IndexScriptBuilder(_identifierFormatter);
         var statement = builder.BuildDisableIndexStatement(table, "Order", "IX_Order_Status", SmoFormatOptions.Default);
 
         Assert.Equal("IX_Order_Status", statement.Name.Value);
@@ -130,7 +130,7 @@ public class IndexScriptBuilderTests
             Columns: ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 0, IsIncluded: false, IsDescending: false)),
             Metadata: metadata);
 
-        var builder = new IndexScriptBuilder(_formatter);
+        var builder = new IndexScriptBuilder(_identifierFormatter);
         var statement = builder.BuildCreateIndexStatement(table, index, "Order", index.Name, SmoFormatOptions.Default);
 
         Assert.Empty(statement.IndexOptions.OfType<DataCompressionOption>());
@@ -168,7 +168,7 @@ public class IndexScriptBuilderTests
             Columns: ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 0, IsIncluded: false, IsDescending: false)),
             Metadata: metadata);
 
-        var builder = new IndexScriptBuilder(_formatter);
+        var builder = new IndexScriptBuilder(_identifierFormatter);
         var statement = builder.BuildCreateIndexStatement(table, index, "Order", index.Name, SmoFormatOptions.Default);
 
         Assert.Empty(statement.IndexOptions);
