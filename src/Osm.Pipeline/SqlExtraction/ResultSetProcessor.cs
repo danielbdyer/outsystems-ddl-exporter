@@ -7,6 +7,8 @@ namespace Osm.Pipeline.SqlExtraction;
 
 internal abstract class ResultSetProcessor<T> : IResultSetProcessor
 {
+    private readonly ResultSetMap<T>? _map;
+
     protected ResultSetProcessor(string name, int order)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -16,6 +18,12 @@ internal abstract class ResultSetProcessor<T> : IResultSetProcessor
 
         Name = name;
         Order = order;
+    }
+
+    protected ResultSetProcessor(ResultSetMap<T> map)
+        : this(map?.Name ?? throw new ArgumentNullException(nameof(map)), map.Order)
+    {
+        _map = map;
     }
 
     public int Order { get; }
@@ -35,7 +43,24 @@ internal abstract class ResultSetProcessor<T> : IResultSetProcessor
         return rows.Count;
     }
 
-    protected abstract ResultSetReader<T> CreateReader(ResultSetProcessingContext context);
+    protected virtual ResultSetReader<T> CreateReader(ResultSetProcessingContext context)
+    {
+        if (_map is not null)
+        {
+            return _map.Reader;
+        }
 
-    protected abstract void Assign(MetadataAccumulator accumulator, List<T> rows);
+        throw new InvalidOperationException($"Derived result set processor '{GetType().Name}' must override CreateReader when not configured with a descriptor.");
+    }
+
+    protected virtual void Assign(MetadataAccumulator accumulator, List<T> rows)
+    {
+        if (_map is not null)
+        {
+            _map.Assign(accumulator, rows);
+            return;
+        }
+
+        throw new InvalidOperationException($"Derived result set processor '{GetType().Name}' must override Assign when not configured with a descriptor.");
+    }
 }

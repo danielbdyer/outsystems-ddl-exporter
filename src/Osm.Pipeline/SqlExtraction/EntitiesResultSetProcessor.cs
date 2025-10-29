@@ -5,8 +5,6 @@ namespace Osm.Pipeline.SqlExtraction;
 
 internal sealed class EntitiesResultSetProcessor : ResultSetProcessor<OutsystemsEntityRow>
 {
-    private static readonly ResultSetReader<OutsystemsEntityRow> Reader = ResultSetReader<OutsystemsEntityRow>.Create(MapRow);
-
     private static readonly ColumnDefinition<int> EntityId = Column.Int32(0, "EntityId");
     private static readonly ColumnDefinition<string> EntityName = Column.String(1, "EntityName");
     private static readonly ColumnDefinition<string> PhysicalTableName = Column.String(2, "PhysicalTableName");
@@ -19,15 +17,30 @@ internal sealed class EntitiesResultSetProcessor : ResultSetProcessor<Outsystems
     private static readonly ColumnDefinition<Guid?> EntitySsKey = Column.GuidOrNull(9, "EntitySSKey");
     private static readonly ColumnDefinition<string?> EntityDescription = Column.StringOrNull(10, "EntityDescription");
 
+    internal static ResultSetMap<OutsystemsEntityRow> Descriptor { get; } = ResultSetMap<OutsystemsEntityRow>.Create(
+        "Entities",
+        order: 1,
+        new IResultSetColumn[]
+        {
+            EntityId,
+            EntityName,
+            PhysicalTableName,
+            EspaceId,
+            EntityIsActive,
+            IsSystemEntity,
+            IsExternalEntity,
+            DataKind,
+            PrimaryKeySsKey,
+            EntitySsKey,
+            EntityDescription
+        },
+        MapRow,
+        static (accumulator, rows) => accumulator.SetEntities(rows));
+
     public EntitiesResultSetProcessor()
-        : base("Entities", order: 1)
+        : base(Descriptor)
     {
     }
-
-    protected override ResultSetReader<OutsystemsEntityRow> CreateReader(ResultSetProcessingContext context) => Reader;
-
-    protected override void Assign(MetadataAccumulator accumulator, List<OutsystemsEntityRow> rows)
-        => accumulator.SetEntities(rows);
 
     private static OutsystemsEntityRow MapRow(DbRow row) => new(
         EntityId.Read(row),
