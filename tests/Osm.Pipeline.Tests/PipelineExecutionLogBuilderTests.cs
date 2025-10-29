@@ -27,6 +27,26 @@ public sealed class PipelineExecutionLogBuilderTests
         Assert.Equal(second, log.Entries[^1].TimestampUtc);
     }
 
+    [Fact]
+    public void MetadataBuilder_ProducesCategorizedKeys()
+    {
+        var timestamp = new DateTimeOffset(2024, 02, 03, 04, 05, 06, TimeSpan.Zero);
+
+        var metadata = new PipelineLogMetadataBuilder()
+            .WithCount("items", 3)
+            .WithFlag("feature.enabled", true)
+            .WithPath("output", "/tmp/output")
+            .WithTimestamp("event.start", timestamp)
+            .WithValue("custom.note", "value")
+            .Build();
+
+        Assert.Equal("3", metadata["counts.items"]);
+        Assert.Equal("true", metadata["flags.feature.enabled"]);
+        Assert.Equal("/tmp/output", metadata["paths.output"]);
+        Assert.Equal(timestamp.ToString("O"), metadata["timestamps.event.start"]);
+        Assert.Equal("value", metadata["custom.note"]);
+    }
+
     private sealed class StubTimeProvider : TimeProvider
     {
         private DateTimeOffset _utcNow;

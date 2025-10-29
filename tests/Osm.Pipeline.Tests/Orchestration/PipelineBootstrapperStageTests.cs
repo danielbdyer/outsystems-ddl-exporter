@@ -39,8 +39,8 @@ public sealed class PipelineBootstrapperStageTests
         Assert.Equal(ingestion.Warnings, context.Warnings);
 
         var entries = context.Log.Build().Entries;
-        Assert.Contains(entries, entry => entry.Step == "model.schema.warnings" && entry.Metadata["summary"] == "First warning");
-        Assert.Contains(entries, entry => entry.Step == "model.ingested" && entry.Metadata["modules"] == model.Modules.Length.ToString());
+        Assert.Contains(entries, entry => entry.Step == "model.schema.warnings" && entry.Metadata["warnings.summary"] == "First warning");
+        Assert.Contains(entries, entry => entry.Step == "model.ingested" && entry.Metadata["counts.modules"] == model.Modules.Length.ToString());
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public sealed class PipelineBootstrapperStageTests
         Assert.Equal(moduleName, filteredModule.Name.Value);
 
         var filteredEntry = Assert.Single(context.Log.Build().Entries.Where(e => e.Step == "model.filtered"));
-        Assert.Equal("1", filteredEntry.Metadata["filteredModules"]);
+        Assert.Equal("1", filteredEntry.Metadata["counts.modules.filtered"]);
     }
 
     [Fact]
@@ -112,10 +112,10 @@ public sealed class PipelineBootstrapperStageTests
         var supplementalEntry = Assert.Single(context.Log.Build().Entries.Where(e => e.Step == "supplemental.loaded"));
         Assert.Equal(
             context.SupplementalEntities.Length.ToString(CultureInfo.InvariantCulture),
-            supplementalEntry.Metadata["supplementalEntityCount"]);
+            supplementalEntry.Metadata["counts.entities.supplemental"]);
         Assert.Equal(
             context.Request.SupplementalModels.Paths.Count.ToString(CultureInfo.InvariantCulture),
-            supplementalEntry.Metadata["requestedPaths"]);
+            supplementalEntry.Metadata["counts.supplemental.paths"]);
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed class PipelineBootstrapperStageTests
 
         var entries = context.Log.Build().Entries;
         Assert.Contains(entries, entry => entry.Step == "profiling.capture.start");
-        Assert.Contains(entries, entry => entry.Step == "profiling.capture.completed" && entry.Metadata["columnProfiles"] == profile.Columns.Length.ToString());
+        Assert.Contains(entries, entry => entry.Step == "profiling.capture.completed" && entry.Metadata["counts.profiles.columns"] == profile.Columns.Length.ToString());
     }
 
     [Fact]
@@ -181,9 +181,9 @@ public sealed class PipelineBootstrapperStageTests
     {
         var telemetry = new PipelineBootstrapTelemetry(
             "Request received",
-            new Dictionary<string, string?>(),
+            new PipelineLogMetadataBuilder().Build(),
             "Profiling started",
-            new Dictionary<string, string?>(),
+            new PipelineLogMetadataBuilder().Build(),
             "Profiling completed");
 
         var request = new PipelineBootstrapRequest(
@@ -219,9 +219,13 @@ public sealed class PipelineBootstrapperIntegrationTests
 
         var telemetry = new PipelineBootstrapTelemetry(
             "Bootstrap request received",
-            new Dictionary<string, string?> { ["test"] = "true" },
+            new PipelineLogMetadataBuilder()
+                .WithFlag("test.enabled", true)
+                .Build(),
             "Profiling start",
-            new Dictionary<string, string?> { ["phase"] = "profiling" },
+            new PipelineLogMetadataBuilder()
+                .WithValue("phase", "profiling")
+                .Build(),
             "Profiling done");
 
         var filterOptions = ModuleFilterOptions.IncludeAll;
@@ -254,7 +258,7 @@ public sealed class PipelineBootstrapperIntegrationTests
         }, entries.Select(entry => entry.Step));
 
         var warningEntry = entries.First(entry => entry.Step == "model.schema.warnings");
-        Assert.Equal("Schema warning", warningEntry.Metadata["summary"]);
+        Assert.Equal("Schema warning", warningEntry.Metadata["warnings.summary"]);
     }
 }
 

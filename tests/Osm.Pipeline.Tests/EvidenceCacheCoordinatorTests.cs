@@ -43,7 +43,7 @@ public class EvidenceCacheCoordinatorTests
         Assert.Contains(entries, entry => entry.Step == "evidence.cache.requested");
         var persisted = Assert.Single(entries, entry => entry.Step == "evidence.cache.persisted");
         Assert.Equal("Persisted evidence cache manifest.", persisted.Message);
-        Assert.Equal("initial", persisted.Metadata["cacheGeneration"]);
+        Assert.Equal("initial", persisted.Metadata["evaluation.cacheGeneration"]);
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public class EvidenceCacheCoordinatorTests
         Assert.Contains(entries, entry => entry.Step == "evidence.cache.requested");
         var reused = Assert.Single(entries, entry => entry.Step == "evidence.cache.reused");
         Assert.Equal("Reused evidence cache manifest.", reused.Message);
-        Assert.True(reused.Metadata.ContainsKey("lastValidated"));
+        Assert.True(reused.Metadata.ContainsKey("evaluation.lastValidated"));
     }
 
     private static EvidenceCacheManifest CreateManifest()

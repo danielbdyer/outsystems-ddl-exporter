@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using Osm.Domain.Abstractions;
 using Osm.Pipeline.Mediation;
@@ -80,14 +78,17 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         finalState.Log.Record(
             "pipeline.completed",
             "Build-SSDT pipeline completed successfully.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["manifestPath"] = Path.Combine(request.OutputDirectory, "manifest.json"),
-                ["decisionLogPath"] = finalState.DecisionLogPath,
-                ["opportunitiesPath"] = finalState.OpportunityArtifacts.ReportPath,
-                ["seedScriptPaths"] = finalState.StaticSeedScriptPaths.IsDefaultOrEmpty ? "<none>" : string.Join(";", finalState.StaticSeedScriptPaths),
-                ["cacheDirectory"] = finalState.EvidenceCache?.CacheDirectory
-            });
+            new PipelineLogMetadataBuilder()
+                .WithPath("manifest", Path.Combine(request.OutputDirectory, "manifest.json"))
+                .WithPath("decisionLog", finalState.DecisionLogPath)
+                .WithPath("opportunities", finalState.OpportunityArtifacts.ReportPath)
+                .WithValue(
+                    "outputs.seedScripts",
+                    finalState.StaticSeedScriptPaths.IsDefaultOrEmpty
+                        ? "<none>"
+                        : string.Join(";", finalState.StaticSeedScriptPaths))
+                .WithPath("cache.directory", finalState.EvidenceCache?.CacheDirectory)
+                .Build());
 
         return new BuildSsdtPipelineResult(
             finalState.Bootstrap.Profile!,

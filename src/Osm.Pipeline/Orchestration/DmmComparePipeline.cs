@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
@@ -104,25 +103,23 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         var log = new PipelineExecutionLogBuilder(_timeProvider);
         var telemetry = new PipelineBootstrapTelemetry(
             "Received dmm-compare pipeline request.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["modelPath"] = request.ModelPath,
-                ["profilePath"] = request.ProfilePath,
-                ["dmmPath"] = request.DmmPath,
-                ["baseline.type"] = isSsdtProject ? "ssdt" : "dmm",
-                ["moduleFilter.hasFilter"] = request.ModuleFilter.HasFilter ? "true" : "false",
-                ["moduleFilter.moduleCount"] = request.ModuleFilter.Modules.Length.ToString(CultureInfo.InvariantCulture),
-                ["tightening.mode"] = request.TighteningOptions.Policy.Mode.ToString(),
-                ["tightening.nullBudget"] = request.TighteningOptions.Policy.NullBudget.ToString(CultureInfo.InvariantCulture),
-                ["emission.includePlatformAutoIndexes"] = request.SmoOptions.IncludePlatformAutoIndexes ? "true" : "false",
-                ["emission.emitBareTableOnly"] = request.SmoOptions.EmitBareTableOnly ? "true" : "false",
-                ["emission.sanitizeModuleNames"] = request.SmoOptions.SanitizeModuleNames ? "true" : "false"
-            },
+            new PipelineLogMetadataBuilder()
+                .WithPath("model", request.ModelPath)
+                .WithPath("profile", request.ProfilePath)
+                .WithPath("baseline", request.DmmPath)
+                .WithValue("baseline.type", isSsdtProject ? "ssdt" : "dmm")
+                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
+                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
+                .WithValue("tightening.mode", request.TighteningOptions.Policy.Mode.ToString())
+                .WithMetric("tightening.nullBudget", request.TighteningOptions.Policy.NullBudget)
+                .WithFlag("emission.includePlatformAutoIndexes", request.SmoOptions.IncludePlatformAutoIndexes)
+                .WithFlag("emission.emitBareTableOnly", request.SmoOptions.EmitBareTableOnly)
+                .WithFlag("emission.sanitizeModuleNames", request.SmoOptions.SanitizeModuleNames)
+                .Build(),
             "Loading profiling snapshot from fixtures.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["profilePath"] = request.ProfilePath
-            },
+            new PipelineLogMetadataBuilder()
+                .WithPath("profile", request.ProfilePath)
+                .Build(),
             "Loaded profiling snapshot.");
 
         var bootstrapRequest = new PipelineBootstrapRequest(
@@ -168,13 +165,12 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         log.Record(
             "smo.model.created",
             "Materialized SMO table graph for comparison.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["tables"] = smoTableCount.ToString(CultureInfo.InvariantCulture),
-                ["columns"] = smoColumnCount.ToString(CultureInfo.InvariantCulture),
-                ["indexes"] = smoIndexCount.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeys"] = smoForeignKeyCount.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithCount("tables", smoTableCount)
+                .WithCount("columns", smoColumnCount)
+                .WithCount("indexes", smoIndexCount)
+                .WithCount("foreignKeys", smoForeignKeyCount)
+                .Build());
 
         var projectedResult = _smoLens.Project(new SmoDmmLensRequest(smoModel, request.SmoOptions));
         if (projectedResult.IsFailure)
@@ -186,10 +182,9 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         log.Record(
             "smo.model.projected",
             "Projected SMO model into DMM comparison shape.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["tableCount"] = modelTables.Count.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithCount("tables", modelTables.Count)
+                .Build());
 
         DmmComparisonFeatures comparisonFeatures;
         IReadOnlyList<DmmTable> dmmTables;
@@ -208,21 +203,19 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             log.Record(
                 "dmm.ssdt.parsed",
                 "Parsed SSDT project baseline.",
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["tableCount"] = dmmTables.Count.ToString(CultureInfo.InvariantCulture)
-                });
+                new PipelineLogMetadataBuilder()
+                    .WithCount("tables", dmmTables.Count)
+                    .Build());
 
             layoutComparison = _ssdtLayoutComparator.Compare(smoModel, request.SmoOptions, request.DmmPath);
             log.Record(
                 "dmm.ssdt.layout",
                 "Validated SSDT project table layout.",
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["isMatch"] = layoutComparison.IsMatch ? "true" : "false",
-                    ["modelDifferences"] = layoutComparison.ModelDifferences.Count.ToString(CultureInfo.InvariantCulture),
-                    ["ssdtDifferences"] = layoutComparison.SsdtDifferences.Count.ToString(CultureInfo.InvariantCulture)
-                });
+                new PipelineLogMetadataBuilder()
+                    .WithFlag("layout.match", layoutComparison.IsMatch)
+                    .WithCount("layout.modelDifferences", layoutComparison.ModelDifferences.Count)
+                    .WithCount("layout.ssdtDifferences", layoutComparison.SsdtDifferences.Count)
+                    .Build());
         }
         else
         {
@@ -238,10 +231,9 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             log.Record(
                 "dmm.script.parsed",
                 "Parsed DMM baseline script.",
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["tableCount"] = dmmTables.Count.ToString(CultureInfo.InvariantCulture)
-                });
+                new PipelineLogMetadataBuilder()
+                    .WithCount("tables", dmmTables.Count)
+                    .Build());
         }
 
         var comparison = _dmmComparator.Compare(modelTables, dmmTables, comparisonFeatures);
@@ -273,12 +265,11 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         log.Record(
             "dmm.comparison.completed",
             "Compared SMO output against DMM baseline.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["isMatch"] = comparison.IsMatch ? "true" : "false",
-                ["modelDifferences"] = comparison.ModelDifferences.Count.ToString(CultureInfo.InvariantCulture),
-                ["ssdtDifferences"] = comparison.SsdtDifferences.Count.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithFlag("comparison.match", comparison.IsMatch)
+                .WithCount("comparison.modelDifferences", comparison.ModelDifferences.Count)
+                .WithCount("comparison.ssdtDifferences", comparison.SsdtDifferences.Count)
+                .Build());
 
         var diffPath = await _diffLogWriter.WriteAsync(
             request.DiffOutputPath,
@@ -290,19 +281,17 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         log.Record(
             "dmm.diff.persisted",
             "Persisted DMM comparison diff artifact.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["path"] = diffPath
-            });
+            new PipelineLogMetadataBuilder()
+                .WithPath("diff", diffPath)
+                .Build());
 
         log.Record(
             "pipeline.completed",
             "DMM comparison pipeline completed successfully.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["diffPath"] = diffPath,
-                ["cacheDirectory"] = evidenceCache?.CacheDirectory
-            });
+            new PipelineLogMetadataBuilder()
+                .WithPath("diff", diffPath)
+                .WithPath("cache.directory", evidenceCache?.CacheDirectory)
+                .Build());
 
         return new DmmComparePipelineResult(
             profile,

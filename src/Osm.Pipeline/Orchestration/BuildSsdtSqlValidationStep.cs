@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -67,17 +66,14 @@ public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<EmissionReady, S
 
     private static void RecordSummary(EmissionReady state, SsdtSqlValidationSummary summary)
     {
-        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["validatedFiles"] = summary.TotalFiles.ToString(CultureInfo.InvariantCulture),
-            ["filesWithErrors"] = summary.FilesWithErrors.ToString(CultureInfo.InvariantCulture),
-            ["errorCount"] = summary.ErrorCount.ToString(CultureInfo.InvariantCulture)
-        };
-
         state.Log.Record(
             "ssdt.sql.validation.completed",
             "Validated emitted SQL scripts with ScriptDom.",
-            metadata);
+            new PipelineLogMetadataBuilder()
+                .WithCount("validatedFiles", summary.TotalFiles)
+                .WithCount("filesWithErrors", summary.FilesWithErrors)
+                .WithCount("errorCount", summary.ErrorCount)
+                .Build());
     }
 
     private static void RecordGroupedErrors(EmissionReady state, SsdtSqlValidationSummary summary)
@@ -106,23 +102,23 @@ public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<EmissionReady, S
                     item.Error.Column))
                 .ToArray();
 
-            var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["errorCode"] = group.Number.ToString(CultureInfo.InvariantCulture),
-                ["message"] = group.Message,
-                ["occurrences"] = group.Items.Length.ToString(CultureInfo.InvariantCulture),
-                ["examples"] = string.Join(" | ", examples)
-            };
+            var totalOccurrences = group.Items.Length;
+            var builder = new PipelineLogMetadataBuilder()
+                .WithValue("error.code", group.Number.ToString(CultureInfo.InvariantCulture))
+                .WithValue("error.message", group.Message)
+                .WithCount("error.occurrences", totalOccurrences)
+                .WithValue("error.examples", string.Join(" | ", examples));
 
-            if (group.Items.Length > sampleCount)
+            var suppressed = totalOccurrences - sampleCount;
+            if (suppressed > 0)
             {
-                metadata["suppressed"] = (group.Items.Length - sampleCount).ToString(CultureInfo.InvariantCulture);
+                builder.WithCount("error.suppressed", suppressed);
             }
 
             state.Log.Record(
                 "ssdt.sql.validation.error",
                 "ScriptDom parse failure detected.",
-                metadata);
+                builder.Build());
         }
     }
 }

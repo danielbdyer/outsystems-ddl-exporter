@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -43,18 +41,17 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
         state.Log.Record(
             "policy.decisions.synthesized",
             "Synthesized tightening decisions.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["columns"] = report.ColumnCount.ToString(CultureInfo.InvariantCulture),
-                ["tightenedColumns"] = report.TightenedColumnCount.ToString(CultureInfo.InvariantCulture),
-                ["remediationColumns"] = report.RemediationColumnCount.ToString(CultureInfo.InvariantCulture),
-                ["uniqueIndexes"] = report.UniqueIndexCount.ToString(CultureInfo.InvariantCulture),
-                ["uniqueIndexesEnforced"] = report.UniqueIndexesEnforcedCount.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeys"] = report.ForeignKeyCount.ToString(CultureInfo.InvariantCulture),
-                ["foreignKeysCreated"] = report.ForeignKeysCreatedCount.ToString(CultureInfo.InvariantCulture),
-                ["opportunities"] = opportunities.TotalCount.ToString(CultureInfo.InvariantCulture),
-                ["modules"] = report.ModuleCount.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithCount("columns.total", report.ColumnCount)
+                .WithCount("columns.tightened", report.TightenedColumnCount)
+                .WithCount("columns.remediation", report.RemediationColumnCount)
+                .WithCount("indexes.unique", report.UniqueIndexCount)
+                .WithCount("indexes.uniqueEnforced", report.UniqueIndexesEnforcedCount)
+                .WithCount("foreignKeys.total", report.ForeignKeyCount)
+                .WithCount("foreignKeys.created", report.ForeignKeysCreatedCount)
+                .WithCount("opportunities.total", opportunities.TotalCount)
+                .WithCount("modules", report.ModuleCount)
+                .Build());
 
         var moduleInsights = BuildModuleInsights(report);
 

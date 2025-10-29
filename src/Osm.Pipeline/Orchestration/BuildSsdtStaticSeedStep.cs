@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -125,11 +123,12 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         state.Log.Record(
             "staticData.seed.generated",
             "Generated static entity seed scripts.",
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["paths"] = seedPaths.IsDefaultOrEmpty ? string.Empty : string.Join(";", seedPaths),
-                ["tableCount"] = seedDefinitions.Length.ToString(CultureInfo.InvariantCulture)
-            });
+            new PipelineLogMetadataBuilder()
+                .WithValue(
+                    "outputs.seedPaths",
+                    seedPaths.IsDefaultOrEmpty ? string.Empty : string.Join(";", seedPaths))
+                .WithCount("tables", seedDefinitions.Length)
+                .Build());
 
         return Result<StaticSeedsGenerated>.Success(new StaticSeedsGenerated(
             state.Request,

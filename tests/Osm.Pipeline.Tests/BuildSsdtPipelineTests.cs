@@ -101,7 +101,7 @@ public class BuildSsdtPipelineTests
         var bootstrapper = new FakePipelineBootstrapper(async (_, request, token) =>
         {
             Assert.Equal("Received build-ssdt pipeline request.", request.Telemetry.RequestMessage);
-            Assert.Equal("fixture", request.Telemetry.ProfilingStartMetadata["provider"]);
+            Assert.Equal("fixture", request.Telemetry.ProfilingStartMetadata["profiling.provider"]);
 
             var model = LoadModel(request.ModelPath);
             var captureResult = await request.ProfileCaptureAsync(model, token);
@@ -148,7 +148,7 @@ public class BuildSsdtPipelineTests
 
         var bootstrapper = new FakePipelineBootstrapper(async (_, request, token) =>
         {
-            Assert.Equal("sql", request.Telemetry.ProfilingStartMetadata["provider"]);
+            Assert.Equal("sql", request.Telemetry.ProfilingStartMetadata["profiling.provider"]);
 
             var model = LoadModel(request.ModelPath);
             var captureResult = await request.ProfileCaptureAsync(model, token);
