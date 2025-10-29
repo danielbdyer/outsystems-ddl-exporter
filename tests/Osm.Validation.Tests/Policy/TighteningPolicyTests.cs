@@ -12,10 +12,10 @@ namespace Osm.Validation.Tests.Policy;
 public sealed class TighteningPolicyTests
 {
     [Theory]
-    [InlineData(TighteningMode.Cautious, false)]
-    [InlineData(TighteningMode.EvidenceGated, true)]
-    [InlineData(TighteningMode.Aggressive, true)]
-    public void UniqueColumn_TighteningDependsOnMode(TighteningMode mode, bool expected)
+    [InlineData(TighteningMode.Cautious, true, false)]
+    [InlineData(TighteningMode.EvidenceGated, true, true)]
+    [InlineData(TighteningMode.Aggressive, true, true)]
+    public void UniqueColumn_TighteningDependsOnMode(TighteningMode mode, bool expected, bool expectDataRationales)
     {
         var model = ModelFixtures.LoadModel("model.micro-unique.json");
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroUnique);
@@ -31,7 +31,14 @@ public sealed class TighteningPolicyTests
         if (expected)
         {
             Assert.Contains(TighteningRationales.UniqueNoNulls, decision.Rationales);
-            Assert.Contains(TighteningRationales.DataNoNulls, decision.Rationales);
+            if (expectDataRationales)
+            {
+                Assert.Contains(TighteningRationales.DataNoNulls, decision.Rationales);
+            }
+            else
+            {
+                Assert.DoesNotContain(TighteningRationales.DataNoNulls, decision.Rationales);
+            }
         }
         else
         {
@@ -127,10 +134,10 @@ public sealed class TighteningPolicyTests
     }
 
     [Theory]
-    [InlineData(TighteningMode.Cautious, false)]
-    [InlineData(TighteningMode.EvidenceGated, true)]
-    [InlineData(TighteningMode.Aggressive, true)]
-    public void CompositeUnique_TighteningDependsOnMode(TighteningMode mode, bool expected)
+    [InlineData(TighteningMode.Cautious, true, false)]
+    [InlineData(TighteningMode.EvidenceGated, true, true)]
+    [InlineData(TighteningMode.Aggressive, true, true)]
+    public void CompositeUnique_TighteningDependsOnMode(TighteningMode mode, bool expected, bool expectDataRationales)
     {
         var model = ModelFixtures.LoadModel("model.micro-unique-composite.json");
         var snapshot = ProfileFixtures.LoadSnapshot(FixtureProfileSource.MicroCompositeUnique);
@@ -146,7 +153,14 @@ public sealed class TighteningPolicyTests
         if (expected)
         {
             Assert.Contains(TighteningRationales.CompositeUniqueNoNulls, decision.Rationales);
-            Assert.Contains(TighteningRationales.DataNoNulls, decision.Rationales);
+            if (expectDataRationales)
+            {
+                Assert.Contains(TighteningRationales.DataNoNulls, decision.Rationales);
+            }
+            else
+            {
+                Assert.DoesNotContain(TighteningRationales.DataNoNulls, decision.Rationales);
+            }
         }
         else
         {

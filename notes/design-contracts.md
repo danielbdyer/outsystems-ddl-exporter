@@ -42,39 +42,75 @@ This appendix complements `architecture-guardrails.md` by describing the executa
 
 ### Mode matrix (source: [`TighteningPolicyMatrix`](../src/Osm.Validation/Tightening/TighteningPolicyMatrix.cs))
 
+#### Toggle precedence
+
+1. **CLI flags** (`--model`, `--profile`, module filters, profiler provider, etc.) win over every other source. Command factories hand overrides to the application services before any configuration is consulted, guaranteeing the operator’s intent is honoured for the current run.
+2. **Environment variables** (`OSM_CLI_*`) override configuration files. `CliConfigurationService` applies these overrides after deserialising the JSON document so CI agents can opt into cache refreshes, profiler locations, or SQL overrides without editing repo-managed files.
+3. **Configuration file** (`pipeline.json`, `pipeline.yaml`, or the explicit `--config` path) supplies defaults for unattended runs. `tighteningPath` indirection is applied before inline `tightening` sections so the last configured value wins.
+4. **Built-in defaults** (`TighteningOptions.Default`) are used only when no other layer provides a value. They keep local development unblocked while still surfacing every decision in the policy report.
+
+This precedence chain makes toggle sources explicit and predictable: CLI ↦ environment ↦ config ↦ defaults.
+
 #### Nullability (NOT NULL)
 
-| Mode | Signals that tighten without evidence | Strong signals requiring evidence | Evidence threshold | Remediation behaviour |
-| --- | --- | --- | --- | --- |
-| `Cautious` | Primary keys (`S1_PK`), physical NOT NULL columns (`S2_DB_NOT_NULL`). | None – foreign-key attributes, unique cleans, and mandatory attributes (`S3`–`S5`) are observed for telemetry only. | _n/a_ | Never emits remediation: nullable columns stay nullable whenever only strong signals fire. |
-| `EvidenceGated` | Same as `Cautious`. | Foreign key attributes (`S3_FK_SUPPORT`), unique cleans (`S4_UNIQUE_CLEAN`), and logical mandatory attributes (`S5_LOGICAL_MANDATORY`). | Profiling must succeed (`NullCountStatus.Outcome == Succeeded`) and prove `NullCount <= RowCount × NullBudget`. The default budget `0.0` requires zero null rows. | No remediation is generated because a decision only flips once the budget check succeeds. Missing evidence yields `PROFILE_MISSING` diagnostics and the column remains nullable. |
-| `Aggressive` | Same as `EvidenceGated`. | Same signals as `EvidenceGated`, but evidence is optional. | Evidence (when present) must pass the same budget check. If evidence is missing or stale, the decision still tightens but records `REMEDIATE_BEFORE_TIGHTEN` so operators know additional validation is required before promotion. | Remediation is attached to every strong-signal tighten lacking clean evidence. |
+| Mode | Signal (code) | Participation | Evidence requirement | Missing-evidence remediation | Rationale payload |
+| --- | --- | --- | --- | --- | --- |
+| `Cautious` | Primary key (`S1_PK`) | Tightens immediately | None | Not applicable | `PK` |
+| `Cautious` | Physical NOT NULL (`S2_DB_NOT_NULL`) | Tightens immediately | None | Not applicable | `PHYSICAL_NOT_NULL` |
+| `Cautious` | Logical mandatory (`S5_LOGICAL_MANDATORY`) | Tightens when OutSystems marks the attribute mandatory; honours `nullBudget` before failing | Adds no remediation; missing evidence records telemetry only | `MANDATORY`, `DATA_HAS_NULLS` (when budget exceeded) |
+| `Cautious` | FK support (`S3_FK_SUPPORT`) | Telemetry only | _n/a_ | _n/a_ | `FK_ENFORCED`, `DELETE_RULE_IGNORE`, `DATA_HAS_ORPHANS` |
+| `Cautious` | Unique clean (`S4_UNIQUE_CLEAN`) | Telemetry only | _n/a_ | _n/a_ | `UNIQUE_NO_NULLS`, `COMPOSITE_UNIQUE_NO_NULLS`, `UNIQUE_DUPLICATES_PRESENT`, `COMPOSITE_UNIQUE_DUPLICATES_PRESENT` |
+| `EvidenceGated` | Primary key (`S1_PK`) | Tightens immediately | None | Not applicable | `PK` |
+| `EvidenceGated` | Physical NOT NULL (`S2_DB_NOT_NULL`) | Tightens immediately | None | Not applicable | `PHYSICAL_NOT_NULL` |
+| `EvidenceGated` | Logical mandatory (`S5_LOGICAL_MANDATORY`) | Tightens; uses evidence to emit `DATA_HAS_NULLS` when budget exceeded | Not applicable | `MANDATORY`, `DATA_HAS_NULLS` |
+| `EvidenceGated` | FK support (`S3_FK_SUPPORT`) | Tightens only when profiling evidence proves `NullCount` within the configured `nullBudget` | No remediation because the decision never flips without evidence | `FK_ENFORCED`, `DELETE_RULE_IGNORE`, `DATA_HAS_ORPHANS`, `PROFILE_MISSING`, `DATA_NO_NULLS`, `NULL_BUDGET_EPSILON` |
+| `EvidenceGated` | Unique clean (`S4_UNIQUE_CLEAN`) | Tightens only when profiling evidence proves no NULLs or duplicates | No remediation because the decision never flips without evidence | `UNIQUE_NO_NULLS`, `COMPOSITE_UNIQUE_NO_NULLS`, `UNIQUE_DUPLICATES_PRESENT`, `COMPOSITE_UNIQUE_DUPLICATES_PRESENT`, `PROFILE_MISSING`, `DATA_NO_NULLS`, `NULL_BUDGET_EPSILON` |
+| `Aggressive` | Primary key (`S1_PK`) | Tightens immediately | None | Not applicable | `PK` |
+| `Aggressive` | Physical NOT NULL (`S2_DB_NOT_NULL`) | Tightens immediately | None | Not applicable | `PHYSICAL_NOT_NULL` |
+| `Aggressive` | Logical mandatory (`S5_LOGICAL_MANDATORY`) | Tightens; uses evidence for telemetry and remediation hints | Missing evidence does not block, but remediation is added when the budget fails | `MANDATORY`, `DATA_HAS_NULLS`, `PROFILE_MISSING` |
+| `Aggressive` | FK support (`S3_FK_SUPPORT`) | Tightens even when profiling evidence is missing; emits remediation so operators validate before promotion | `REMEDIATE_BEFORE_TIGHTEN` is attached when evidence is missing or stale | `FK_ENFORCED`, `DELETE_RULE_IGNORE`, `DATA_HAS_ORPHANS`, `PROFILE_MISSING`, `REMEDIATE_BEFORE_TIGHTEN` |
+| `Aggressive` | Unique clean (`S4_UNIQUE_CLEAN`) | Tightens even when profiling evidence is missing; emits remediation so operators validate before promotion | `REMEDIATE_BEFORE_TIGHTEN` is attached when evidence is missing or stale | `UNIQUE_NO_NULLS`, `COMPOSITE_UNIQUE_NO_NULLS`, `UNIQUE_DUPLICATES_PRESENT`, `COMPOSITE_UNIQUE_DUPLICATES_PRESENT`, `PROFILE_MISSING`, `REMEDIATE_BEFORE_TIGHTEN` |
 
-Additional notes:
-
-- Profiling evidence consumes the caller supplied `NullBudget` so CI can allow residual nulls (e.g., `0.001` for sampled data) without losing monotonic guarantees.
-- Every signal appends rationale codes (`PRIMARY_KEY`, `PHYSICAL_NOT_NULL`, `MANDATORY`, `DATA_NO_NULLS`, etc.) so downstream emitters can reason about decisions without reevaluating predicates.
+The `D1_DATA_NO_NULLS` evidence signal appends `DATA_NO_NULLS`, `NULL_BUDGET_EPSILON`, or `PROFILE_MISSING` depending on probe results. Every signal participates in the telemetry tree even when it does not directly gate tightening so operators can explain decisions post-hoc.
 
 #### Unique index enforcement
 
-| Mode | Policy disabled | Physical unique reality | Duplicates observed | Clean evidence present | Clean evidence missing |
-| --- | --- | --- | --- | --- | --- |
-| `Cautious` | Never enforce. | Enforce (honours existing constraint metadata). | Enforce when a physical constraint exists; otherwise do not tighten. | Do not enforce. | Do not enforce. |
-| `EvidenceGated` | Never enforce. | Enforce. | Enforce only when a physical constraint exists; duplicates without physical reality stay unenforced. | Enforce. | Do not enforce. |
-| `Aggressive` | Respect the toggle but otherwise enforce. | Enforce. | Enforce and flag `REMEDIATE_BEFORE_TIGHTEN` so duplicates must be cleaned before release. | Enforce. | Enforce but require remediation when the profiler was absent or inconclusive. |
+| Mode | Scenario | Enforcement | Remediation | Primary rationales |
+| --- | --- | --- | --- | --- |
+| `Cautious` | Policy disabled | Never enforce | None | `UNIQUE_POLICY_DISABLED` |
+| `Cautious` | Physical unique reality | Enforce | None | `PHYSICAL_UNIQUE_KEY` |
+| `Cautious` | Duplicates with physical unique reality | Enforce | None | `PHYSICAL_UNIQUE_KEY`, `UNIQUE_DUPLICATES_PRESENT` / `COMPOSITE_UNIQUE_DUPLICATES_PRESENT` |
+| `Cautious` | Duplicates without physical unique reality | Do not enforce | None | `UNIQUE_DUPLICATES_PRESENT` / `COMPOSITE_UNIQUE_DUPLICATES_PRESENT`, `PROFILE_MISSING` when probes absent |
+| `Cautious` | Clean with evidence | Do not enforce | None | `DATA_NO_NULLS`, `UNIQUE_NO_NULLS`, `COMPOSITE_UNIQUE_NO_NULLS` |
+| `Cautious` | Clean without evidence | Do not enforce | None | `PROFILE_MISSING`, `UNIQUE_NO_NULLS`, `COMPOSITE_UNIQUE_NO_NULLS` |
+| `EvidenceGated` | Policy disabled | Never enforce | None | `UNIQUE_POLICY_DISABLED` |
+| `EvidenceGated` | Physical unique reality | Enforce | None | `PHYSICAL_UNIQUE_KEY` |
+| `EvidenceGated` | Duplicates with physical unique reality | Enforce | None | `PHYSICAL_UNIQUE_KEY`, `UNIQUE_DUPLICATES_PRESENT` / `COMPOSITE_UNIQUE_DUPLICATES_PRESENT` |
+| `EvidenceGated` | Duplicates without physical unique reality | Do not enforce | None | `UNIQUE_DUPLICATES_PRESENT` / `COMPOSITE_UNIQUE_DUPLICATES_PRESENT`, `PROFILE_MISSING` |
+| `EvidenceGated` | Clean with evidence | Enforce | None | `DATA_NO_NULLS`, `UNIQUE_NO_NULLS`, `COMPOSITE_UNIQUE_NO_NULLS` |
+| `EvidenceGated` | Clean without evidence | Do not enforce | None | `PROFILE_MISSING`, `UNIQUE_NO_NULLS`, `COMPOSITE_UNIQUE_NO_NULLS` |
+| `Aggressive` | Policy disabled | Respect toggle (no enforcement) | None | `UNIQUE_POLICY_DISABLED` |
+| `Aggressive` | Physical unique reality | Enforce | None | `PHYSICAL_UNIQUE_KEY` |
+| `Aggressive` | Duplicates with physical unique reality | Enforce | `REMEDIATE_BEFORE_TIGHTEN` | `PHYSICAL_UNIQUE_KEY`, `UNIQUE_DUPLICATES_PRESENT` / `COMPOSITE_UNIQUE_DUPLICATES_PRESENT`, `REMEDIATE_BEFORE_TIGHTEN` |
+| `Aggressive` | Duplicates without physical unique reality | Enforce | `REMEDIATE_BEFORE_TIGHTEN` | `UNIQUE_DUPLICATES_PRESENT` / `COMPOSITE_UNIQUE_DUPLICATES_PRESENT`, `REMEDIATE_BEFORE_TIGHTEN`, `PROFILE_MISSING` |
+| `Aggressive` | Clean with evidence | Enforce | None | `DATA_NO_NULLS`, `UNIQUE_NO_NULLS`, `COMPOSITE_UNIQUE_NO_NULLS` |
+| `Aggressive` | Clean without evidence | Enforce | `REMEDIATE_BEFORE_TIGHTEN` when probes missing | `PROFILE_MISSING`, `UNIQUE_NO_NULLS`, `COMPOSITE_UNIQUE_NO_NULLS`, `REMEDIATE_BEFORE_TIGHTEN` |
 
-- “Physical unique reality” refers to columns where the profiler reports an existing unique key or the database metadata says the index is already unique; these are trusted regardless of mode.
-- Evidence clean means the profiler ran and reported no duplicates (single-column or composite). Evidence missing covers both missing probes and disabled profiler inputs.
+Single-column and composite candidates share the same remediation semantics; the rationale codes surface whether the duplicates/no-null check came from a single-column or composite probe.
 
 #### Foreign key creation
 
-All modes share the same gating rules because safety depends on relational evidence rather than tightening aggressiveness:
+| Scenario | Policy participation | Evidence requirement | Remediation | Rationale payload |
+| --- | --- | --- | --- | --- |
+| Delete rule `Ignore` | Suppressed regardless of mode | None | None | `DELETE_RULE_IGNORE` |
+| Profiler reports orphans | Suppressed | Profiler must succeed to lift block | None | `DATA_HAS_ORPHANS` |
+| Existing database constraint | Always re-surfaced | None | None | `DB_CONSTRAINT_PRESENT` |
+| Policy toggle disabled | Suppressed | None | None | `FK_CREATION_DISABLED` |
+| Cross-schema blocked | Suppressed unless `AllowCrossSchema` is true | None | None | `CROSS_SCHEMA` |
+| Cross-catalog blocked | Suppressed unless `AllowCrossCatalog` is true | None | None | `CROSS_CATALOG` |
+| Eligible relationship | Created with `WITH CHECK` trust | Profiler must report no orphans when creation is required | None | `POLICY_ENABLE_CREATION`, `FK_ENFORCED` |
 
-- Delete rules set to `Ignore` always suppress creation and attach `DELETE_RULE_IGNORE`. Missing `deleteRuleCode` values fall back to the platform default (`NoAction`) unless the `foreignKeys.treatMissingDeleteRuleAsIgnore` toggle is enabled. Orphan detections still attach `DATA_HAS_ORPHANS` and block creation.
-- Existing database constraints (`HasDbConstraint=true`) are re-surfaced even if the policy toggle disables creation so emitted SMO graphs mirror reality.
-- New creations require the policy toggle to allow them (`ForeignKeyOptions.EnableCreation`), the profiler to show no orphans, and cross-schema/catalog blocks to be lifted. When allowed, SMO scripts are emitted with `WITH CHECK` to ensure the constraint is trusted.
-
-The matrix is enforced via `TighteningPolicyMatrixTests` so documentation, code, and tests stay aligned. Every row maps to specific rationale codes emitted in policy decisions (`PRIMARY_KEY`, `PHYSICAL_NOT_NULL`, `FOREIGN_KEY_ENFORCED`, `UNIQUE_NO_NULLS`, `REMEDIATE_BEFORE_TIGHTEN`, `POLICY_ENABLE_CREATION`, etc.), providing an auditable trail whenever toggles or profiling evidence change outcomes.
+These rows cover every combination asserted by `TighteningPolicyMatrixTests`. The evaluator appends telemetry for ignored delete rules, orphan detection, and toggle blocks even when the relationship cannot be created so the CLI report mirrors operator expectations.
 
 ## SMO model construction (`SmoModelFactory` / `SmoBuildOptions`)
 - **Input**: Domain model, `PolicyDecisionSet`, and `SmoBuildOptions` (including naming overrides and emission toggles).
