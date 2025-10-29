@@ -38,7 +38,7 @@ public sealed class PipelineRequestContextBuilderTests
                 new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase),
                 new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase)),
             TypeMappingConfiguration.Empty,
-            new SupplementalModelConfiguration(includeUsers: true, Paths: new[] { "users.json" }));
+            new SupplementalModelConfiguration(IncludeUsers: true, Paths: new[] { "users.json" }));
 
         var configurationContext = new CliConfigurationContext(configuration, "cli.config.json");
         var moduleFilterOverrides = new ModuleFilterOverrides(
@@ -87,7 +87,7 @@ public sealed class PipelineRequestContextBuilderTests
             "baseline.dmm");
 
         Assert.NotNull(cacheOptions);
-        Assert.Equal("cache-root", cacheOptions!.Root);
+        Assert.Equal("cache-root", cacheOptions!.RootDirectory);
         Assert.Equal("dmm-compare", cacheOptions.Command);
         Assert.NotNull(cacheOptions.Metadata);
         Assert.Contains("moduleFilter.selectionScope", cacheOptions.Metadata!.Keys);
