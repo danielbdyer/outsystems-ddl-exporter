@@ -89,12 +89,12 @@ public sealed class CacheEntryEvaluatorTests
         var request = new EvidenceCacheRequest(
             context.NormalizedRootDirectory,
             context.Command,
-            context.Descriptors.First().OriginalPath,
+            context.Descriptors.First().SourcePath,
             null,
             null,
             null,
             metadata,
-            refresh: false);
+            Refresh: false);
 
         var normalized = await normalizer.TryNormalizeAsync(request, CancellationToken.None);
         var missingContext = normalized.Value;
@@ -127,7 +127,7 @@ public sealed class CacheEntryEvaluatorTests
             null,
             null,
             new Dictionary<string, string?>(StringComparer.Ordinal),
-            refresh: false);
+            Refresh: false);
 
         var normalized = await normalizer.TryNormalizeAsync(request, CancellationToken.None);
         var context = normalized.Value;

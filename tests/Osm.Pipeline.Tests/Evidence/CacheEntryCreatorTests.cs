@@ -35,7 +35,7 @@ public sealed class CacheEntryCreatorTests
             metadata,
             new[] { descriptor },
             moduleSelection,
-            refresh: false);
+            Refresh: false);
 
         var invalidationMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
         {

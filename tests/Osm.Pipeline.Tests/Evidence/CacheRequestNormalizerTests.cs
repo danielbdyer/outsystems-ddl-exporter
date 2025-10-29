@@ -52,7 +52,7 @@ public sealed class CacheRequestNormalizerTests
             null,
             null,
             metadata,
-            refresh: false);
+            Refresh: false);
 
         var result = await normalizer.TryNormalizeAsync(request, CancellationToken.None);
 
