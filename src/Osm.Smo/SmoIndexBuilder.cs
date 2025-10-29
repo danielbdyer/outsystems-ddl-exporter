@@ -5,7 +5,6 @@ using System.Linq;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
-using EntityEmissionContext = Osm.Smo.SmoModelFactory.EntityEmissionContext;
 
 namespace Osm.Smo;
 
