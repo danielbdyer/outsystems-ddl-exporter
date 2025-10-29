@@ -1,6 +1,8 @@
 using System;
 using System.Threading.Tasks;
 using System.Linq;
+using Microsoft.Extensions.Logging.Abstractions;
+using Osm.Json;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Pipeline.Sql;
@@ -14,7 +16,7 @@ public class ExtractModelPipelineTests
     [Fact]
     public async Task HandleAsync_ShouldUseFixtureExecutorWhenManifestProvided()
     {
-        var pipeline = new ExtractModelPipeline();
+        var pipeline = CreatePipeline();
         var command = ModelExtractionCommand.Create(new[] { "AppCore", "ExtBilling", "Ops" }, includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
         var sqlOptions = new ResolvedSqlOptions(
             ConnectionString: null,
@@ -35,7 +37,7 @@ public class ExtractModelPipelineTests
     [Fact]
     public async Task HandleAsync_ShouldFailWhenConnectionStringMissingForLiveExtraction()
     {
-        var pipeline = new ExtractModelPipeline();
+        var pipeline = CreatePipeline();
         var command = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false).Value;
         var sqlOptions = new ResolvedSqlOptions(
             ConnectionString: null,
@@ -50,5 +52,9 @@ public class ExtractModelPipelineTests
         Assert.True(result.IsFailure);
         var error = Assert.Single(result.Errors);
         Assert.Equal("pipeline.extractModel.sqlConnection.missing", error.Code);
+    }
+    private static ExtractModelPipeline CreatePipeline()
+    {
+        return new ExtractModelPipeline(new ModelJsonDeserializer(), NullLoggerFactory.Instance);
     }
 }

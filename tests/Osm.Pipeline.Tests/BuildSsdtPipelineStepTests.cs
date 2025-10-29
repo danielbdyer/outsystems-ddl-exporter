@@ -9,6 +9,7 @@ using Osm.Domain.Configuration;
 using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Evidence;
+using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
@@ -17,6 +18,7 @@ using Osm.Json;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
+using Osm.Validation.Profiling;
 using Tests.Support;
 using Xunit;
 
@@ -30,7 +32,7 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var step = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
+        var step = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
 
         var result = await step.ExecuteAsync(initial);
 
@@ -83,7 +85,7 @@ public class BuildSsdtPipelineStepTests
 
         var request = CreateRequest(output.Path, cacheOptions: cacheOptions);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var coordinator = new EvidenceCacheCoordinator(cacheService);
         var step = new BuildSsdtEvidenceCacheStep(coordinator);
@@ -104,7 +106,7 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -129,7 +131,7 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -165,7 +167,7 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -201,7 +203,7 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -236,7 +238,7 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(new PipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -301,6 +303,15 @@ public class BuildSsdtPipelineStepTests
         return new DataProfilerFactory(
             new ProfileSnapshotDeserializer(),
             static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
+    }
+
+    private static PipelineBootstrapper CreatePipelineBootstrapper()
+    {
+        return new PipelineBootstrapper(
+            new ModelIngestionService(new ModelJsonDeserializer()),
+            new ModuleFilter(),
+            new SupplementalEntityLoader(new ModelJsonDeserializer()),
+            new ProfilingInsightGenerator());
     }
 
     private sealed class FakeEvidenceCacheService : IEvidenceCacheService

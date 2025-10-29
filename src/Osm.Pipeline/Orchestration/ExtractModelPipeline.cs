@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Osm.Domain.Abstractions;
 using Osm.Json;
 using Osm.Pipeline.Mediation;
@@ -19,10 +18,10 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<ExtractModelPipeline> _logger;
 
-    public ExtractModelPipeline(IModelJsonDeserializer? deserializer = null, ILoggerFactory? loggerFactory = null)
+    public ExtractModelPipeline(IModelJsonDeserializer deserializer, ILoggerFactory loggerFactory)
     {
-        _deserializer = deserializer ?? new ModelJsonDeserializer();
-        _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+        _deserializer = deserializer ?? throw new ArgumentNullException(nameof(deserializer));
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _logger = _loggerFactory.CreateLogger<ExtractModelPipeline>();
     }
 

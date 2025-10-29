@@ -17,6 +17,7 @@ using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+using Osm.Validation.Profiling;
 using Xunit;
 
 namespace Osm.Pipeline.Tests.Runtime;
@@ -68,6 +69,9 @@ public class PipelineServiceCollectionExtensionsTests
         Assert.Contains(services, d => d.ServiceType == typeof(IProfileSnapshotDeserializer) && d.ImplementationType == typeof(ProfileSnapshotDeserializer));
         Assert.Contains(services, d => d.ServiceType == typeof(IDataProfilerFactory) && d.ImplementationType == typeof(DataProfilerFactory));
         Assert.Contains(services, d => d.ServiceType == typeof(IModelIngestionService) && d.ImplementationType == typeof(ModelIngestionService));
+        Assert.Contains(services, d => d.ServiceType == typeof(ModuleFilter) && d.ImplementationType == typeof(ModuleFilter));
+        Assert.Contains(services, d => d.ServiceType == typeof(SupplementalEntityLoader) && d.ImplementationType == typeof(SupplementalEntityLoader));
+        Assert.Contains(services, d => d.ServiceType == typeof(IProfilingInsightGenerator) && d.ImplementationType == typeof(ProfilingInsightGenerator));
     }
 
     [Fact]
@@ -120,6 +124,13 @@ public class PipelineServiceCollectionExtensionsTests
         Assert.Contains(services, d => d.ServiceType == typeof(IOutputDirectoryResolver) && d.ImplementationType == typeof(OutputDirectoryResolver));
         Assert.Contains(services, d => d.ServiceType == typeof(INamingOverridesBinder) && d.ImplementationType == typeof(NamingOverridesBinder));
         Assert.Contains(services, d => d.ServiceType == typeof(IStaticDataProviderFactory) && d.ImplementationType == typeof(StaticDataProviderFactory));
+        Assert.Contains(services, d => d.ServiceType == typeof(IPipelineBootstrapper) && d.ImplementationType == typeof(PipelineBootstrapper));
+        Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtBootstrapStep) && d.ImplementationType == typeof(BuildSsdtBootstrapStep));
+        Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtEvidenceCacheStep) && d.ImplementationType == typeof(BuildSsdtEvidenceCacheStep));
+        Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtPolicyDecisionStep) && d.ImplementationType == typeof(BuildSsdtPolicyDecisionStep));
+        Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtEmissionStep) && d.ImplementationType == typeof(BuildSsdtEmissionStep));
+        Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtSqlValidationStep) && d.ImplementationType == typeof(BuildSsdtSqlValidationStep));
+        Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtStaticSeedStep) && d.ImplementationType == typeof(BuildSsdtStaticSeedStep));
 
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>) && d.ImplementationType == typeof(BuildSsdtPipeline));
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>) && d.ImplementationType == typeof(DmmComparePipeline));

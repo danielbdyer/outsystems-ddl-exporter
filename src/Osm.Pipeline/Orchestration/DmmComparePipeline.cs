@@ -33,7 +33,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
     private readonly TimeProvider _timeProvider;
 
     public DmmComparePipeline(
-        IPipelineBootstrapper? bootstrapper = null,
+        IPipelineBootstrapper bootstrapper,
         TighteningPolicy? tighteningPolicy = null,
         SmoModelFactory? smoModelFactory = null,
         IDmmLens<TextReader>? dmmScriptLens = null,
@@ -46,7 +46,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
         TimeProvider? timeProvider = null)
     {
-        _bootstrapper = bootstrapper ?? new PipelineBootstrapper();
+        _bootstrapper = bootstrapper ?? throw new ArgumentNullException(nameof(bootstrapper));
         _tighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
         _smoModelFactory = smoModelFactory ?? new SmoModelFactory();
         _dmmScriptLens = dmmScriptLens ?? new ScriptDomDmmLens();

@@ -43,17 +43,17 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
     private readonly TimeProvider _timeProvider;
 
     public TighteningAnalysisPipeline(
-        IPipelineBootstrapper? bootstrapper = null,
-        TighteningPolicy? tighteningPolicy = null,
-        PolicyDecisionLogWriter? decisionLogWriter = null,
-        IProfileSnapshotDeserializer? profileDeserializer = null,
-        TimeProvider? timeProvider = null)
+        IPipelineBootstrapper bootstrapper,
+        TighteningPolicy tighteningPolicy,
+        PolicyDecisionLogWriter decisionLogWriter,
+        IProfileSnapshotDeserializer profileDeserializer,
+        TimeProvider timeProvider)
     {
-        _bootstrapper = bootstrapper ?? new PipelineBootstrapper();
-        _tighteningPolicy = tighteningPolicy ?? new TighteningPolicy();
-        _decisionLogWriter = decisionLogWriter ?? new PolicyDecisionLogWriter();
-        _profileDeserializer = profileDeserializer ?? new ProfileSnapshotDeserializer();
-        _timeProvider = timeProvider ?? TimeProvider.System;
+        _bootstrapper = bootstrapper ?? throw new ArgumentNullException(nameof(bootstrapper));
+        _tighteningPolicy = tighteningPolicy ?? throw new ArgumentNullException(nameof(tighteningPolicy));
+        _decisionLogWriter = decisionLogWriter ?? throw new ArgumentNullException(nameof(decisionLogWriter));
+        _profileDeserializer = profileDeserializer ?? throw new ArgumentNullException(nameof(profileDeserializer));
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     public async Task<Result<TighteningAnalysisPipelineResult>> HandleAsync(

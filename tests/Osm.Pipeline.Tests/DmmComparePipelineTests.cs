@@ -6,12 +6,15 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Json;
+using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Validation.Tightening;
 using Osm.Smo;
 using Tests.Support;
 using Xunit;
+using Osm.Validation.Profiling;
 
 namespace Osm.Pipeline.Tests;
 
@@ -54,7 +57,7 @@ public class DmmComparePipelineTests
             Path.Combine(workspace.Path, "dmm-diff.json"),
             null);
 
-        var pipeline = new DmmComparePipeline(bootstrapper: bootstrapper);
+        var pipeline = CreatePipeline(bootstrapper);
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsFailure);
@@ -102,7 +105,7 @@ public class DmmComparePipelineTests
                 ConfigPath: null,
                 Metadata: new Dictionary<string, string?>()));
 
-        var pipeline = new DmmComparePipeline();
+        var pipeline = CreatePipeline();
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsSuccess);
@@ -154,7 +157,7 @@ public class DmmComparePipelineTests
             diffPath,
             null);
 
-        var pipeline = new DmmComparePipeline();
+        var pipeline = CreatePipeline();
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsSuccess);
@@ -165,6 +168,20 @@ public class DmmComparePipelineTests
             diff => string.Equals(diff.Property, "FilePresence", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Table, "Customer", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static DmmComparePipeline CreatePipeline(IPipelineBootstrapper? bootstrapper = null)
+    {
+        return new DmmComparePipeline(bootstrapper ?? CreatePipelineBootstrapper());
+    }
+
+    private static PipelineBootstrapper CreatePipelineBootstrapper()
+    {
+        return new PipelineBootstrapper(
+            new ModelIngestionService(new ModelJsonDeserializer()),
+            new ModuleFilter(),
+            new SupplementalEntityLoader(new ModelJsonDeserializer()),
+            new ProfilingInsightGenerator());
     }
 
     private sealed class FakePipelineBootstrapper : IPipelineBootstrapper
