@@ -7,7 +7,6 @@ using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
-using OpportunitiesChangeRisk = Osm.Validation.Tightening.Opportunities.ChangeRisk;
 using Osm.Validation.Tests.Policy;
 using Xunit;
 
@@ -41,8 +40,9 @@ public sealed class TighteningOpportunitiesAnalyzerTests
 
         Assert.Equal(1, report.TotalCount);
         var opportunity = Assert.Single(report.Opportunities);
-        Assert.Equal(ConstraintType.NotNull, opportunity.Constraint);
-        Assert.Equal(OpportunitiesChangeRisk.SafeToApply, opportunity.Risk);
+        Assert.Equal(OpportunityType.Nullability, opportunity.Type);
+        Assert.Equal(OpportunityDisposition.ReadyToApply, opportunity.Disposition);
+        Assert.Equal(RiskLevel.Low, opportunity.Risk.Level);
         Assert.Contains("ALTER TABLE", opportunity.Statements[0]);
     }
 
@@ -90,8 +90,9 @@ public sealed class TighteningOpportunitiesAnalyzerTests
 
         Assert.Equal(1, report.TotalCount);
         var opportunity = Assert.Single(report.Opportunities);
-        Assert.Equal(ConstraintType.Unique, opportunity.Constraint);
-        Assert.Equal(OpportunitiesChangeRisk.NeedsRemediation, opportunity.Risk);
+        Assert.Equal(OpportunityType.UniqueIndex, opportunity.Type);
+        Assert.Equal(OpportunityDisposition.NeedsRemediation, opportunity.Disposition);
+        Assert.Equal(RiskLevel.Moderate, opportunity.Risk.Level);
         Assert.Contains("CREATE UNIQUE", opportunity.Statements[0]);
     }
 
@@ -131,8 +132,9 @@ public sealed class TighteningOpportunitiesAnalyzerTests
 
         Assert.Equal(1, report.TotalCount);
         var opportunity = Assert.Single(report.Opportunities);
-        Assert.Equal(ConstraintType.ForeignKey, opportunity.Constraint);
-        Assert.Equal(OpportunitiesChangeRisk.SafeToApply, opportunity.Risk);
+        Assert.Equal(OpportunityType.ForeignKey, opportunity.Type);
+        Assert.Equal(OpportunityDisposition.ReadyToApply, opportunity.Disposition);
+        Assert.Equal(RiskLevel.Low, opportunity.Risk.Level);
         Assert.Contains("FOREIGN KEY", opportunity.Statements[0]);
     }
 

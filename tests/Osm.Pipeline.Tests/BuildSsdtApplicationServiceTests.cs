@@ -112,8 +112,9 @@ public sealed class BuildSsdtApplicationServiceTests
             Array.Empty<string>());
         var opportunities = new Opportunities.OpportunitiesReport(
             ImmutableArray<Opportunities.Opportunity>.Empty,
-            ImmutableDictionary<Opportunities.ChangeRisk, int>.Empty,
-            ImmutableDictionary<Opportunities.ConstraintType, int>.Empty,
+            ImmutableDictionary<Opportunities.OpportunityDisposition, int>.Empty,
+            ImmutableDictionary<Opportunities.OpportunityType, int>.Empty,
+            ImmutableDictionary<RiskLevel, int>.Empty,
             DateTimeOffset.UtcNow);
 
         return new BuildSsdtPipelineResult(

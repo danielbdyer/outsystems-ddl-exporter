@@ -5,6 +5,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
+using Osm.Validation.Tightening.Opportunities;
 using Osm.Validation.Tightening.Signals;
 
 namespace Osm.Validation.Tightening;
@@ -174,12 +175,13 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
         var summary = BuildNullabilitySummary(decision);
         var risk = ChangeRiskClassifier.ForNotNull(decision);
         var opportunity = Opportunity.Create(
-            OpportunityCategory.Nullability,
+            OpportunityType.Nullability,
             "NOT NULL",
             summary,
             risk,
             decision.Rationales,
-            column: context.Column);
+            column: context.Column,
+            disposition: decision.RequiresRemediation ? OpportunityDisposition.NeedsRemediation : OpportunityDisposition.ReadyToApply);
 
         builder.AddOpportunity(opportunity);
     }

@@ -11,68 +11,6 @@ using Osm.Domain.ValueObjects;
 
 namespace Osm.Validation.Tightening.Opportunities;
 
-public enum ChangeRisk
-{
-    SafeToApply,
-    NeedsRemediation
-}
-
-public enum ConstraintType
-{
-    NotNull,
-    Unique,
-    ForeignKey
-}
-
-public sealed record Opportunity(
-    ConstraintType Constraint,
-    ChangeRisk Risk,
-    string Schema,
-    string Table,
-    string Name,
-    ImmutableArray<string> Statements,
-    ImmutableArray<string> Rationales,
-    ImmutableArray<string> Evidence,
-    OpportunityMetrics Metrics,
-    ImmutableArray<ColumnAnalysis> Columns)
-{
-    public bool HasStatements => !Statements.IsDefaultOrEmpty && Statements.Length > 0;
-}
-
-public sealed record OpportunityMetrics(
-    bool RequiresRemediation,
-    bool EvidenceAvailable,
-    bool? DataClean,
-    bool? HasDuplicates,
-    bool? HasOrphans);
-
-public sealed record ColumnAnalysis(
-    ColumnCoordinate Coordinate,
-    string Module,
-    string Entity,
-    string Attribute,
-    string DataType,
-    string? SqlType,
-    bool? PhysicalNullable,
-    bool? PhysicalUnique,
-    long? RowCount,
-    long? NullCount,
-    ProfilingProbeStatus? NullProbeStatus,
-    bool? HasDuplicates,
-    ProfilingProbeStatus? UniqueProbeStatus,
-    bool? HasOrphans,
-    bool? HasDatabaseConstraint,
-    string? DeleteRule);
-
-public sealed record OpportunitiesReport(
-    ImmutableArray<Opportunity> Opportunities,
-    ImmutableDictionary<ChangeRisk, int> RiskCounts,
-    ImmutableDictionary<ConstraintType, int> ConstraintCounts,
-    DateTimeOffset GeneratedAtUtc)
-{
-    public int TotalCount => Opportunities.Length;
-}
-
 public interface ITighteningAnalyzer
 {
     OpportunitiesReport Analyze(OsmModel model, ProfileSnapshot profile, PolicyDecisionSet decisions);
@@ -120,8 +58,9 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         var indexLookup = BuildIndexLookup(model);
 
         var opportunities = ImmutableArray.CreateBuilder<Opportunity>();
-        var riskCounts = new Dictionary<ChangeRisk, int>();
-        var typeCounts = new Dictionary<ConstraintType, int>();
+        var dispositionCounts = new Dictionary<OpportunityDisposition, int>();
+        var typeCounts = new Dictionary<OpportunityType, int>();
+        var riskCounts = new Dictionary<RiskLevel, int>();
 
         foreach (var decision in decisions.Nullability.Values)
         {
@@ -135,7 +74,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             foreignKeys.TryGetValue(decision.Column, out var fkReality);
 
             var opportunity = CreateNotNullOpportunity(decision, entry, profileRecord, uniqueProfile, fkReality);
-            RecordOpportunity(opportunity, opportunities, riskCounts, typeCounts);
+            RecordOpportunity(opportunity, opportunities, dispositionCounts, typeCounts, riskCounts);
         }
 
         foreach (var decision in decisions.UniqueIndexes.Values)
@@ -145,8 +84,6 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
                 continue;
             }
 
-            var opportunity = CreateUniqueOpportunity(decision, indexEntry, columnProfiles, uniqueProfiles, compositeProfiles);
-            RecordOpportunity(opportunity, opportunities, riskCounts, typeCounts);
         }
 
         foreach (var decision in decisions.ForeignKeys.Values)
@@ -164,13 +101,14 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             }
 
             var opportunity = CreateForeignKeyOpportunity(decision, entry, targetEntity, fkReality);
-            RecordOpportunity(opportunity, opportunities, riskCounts, typeCounts);
+            RecordOpportunity(opportunity, opportunities, dispositionCounts, typeCounts, riskCounts);
         }
 
         var report = new OpportunitiesReport(
             opportunities.ToImmutable(),
-            riskCounts.ToImmutableDictionary(),
+            dispositionCounts.ToImmutableDictionary(),
             typeCounts.ToImmutableDictionary(),
+            riskCounts.ToImmutableDictionary(),
             DateTimeOffset.UtcNow);
 
         return report;
@@ -179,12 +117,14 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
     private static void RecordOpportunity(
         Opportunity opportunity,
         ImmutableArray<Opportunity>.Builder accumulator,
-        IDictionary<ChangeRisk, int> riskCounts,
-        IDictionary<ConstraintType, int> typeCounts)
+        IDictionary<OpportunityDisposition, int> dispositionCounts,
+        IDictionary<OpportunityType, int> typeCounts,
+        IDictionary<RiskLevel, int> riskCounts)
     {
         accumulator.Add(opportunity);
-        Increment(riskCounts, opportunity.Risk);
-        Increment(typeCounts, opportunity.Constraint);
+        Increment(dispositionCounts, opportunity.Disposition);
+        Increment(typeCounts, opportunity.Type);
+        Increment(riskCounts, opportunity.Risk.Level);
     }
 
     private static void Increment<TKey>(IDictionary<TKey, int> map, TKey key)
@@ -243,29 +183,39 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         UniqueCandidateProfile? uniqueProfile,
         ForeignKeyReality? fkReality)
     {
-        var risk = decision.RequiresRemediation ? ChangeRisk.NeedsRemediation : ChangeRisk.SafeToApply;
+        var disposition = decision.RequiresRemediation
+            ? OpportunityDisposition.NeedsRemediation
+            : OpportunityDisposition.ReadyToApply;
+        var risk = ChangeRiskClassifier.ForNotNull(decision);
         var statements = ImmutableArray.Create(BuildAlterColumnStatement(entry.Entity, entry.Attribute));
         var evidence = BuildNotNullEvidence(columnProfile, decision.Trace);
-        var metrics = new OpportunityMetrics(
+        var evidenceSummary = new OpportunityEvidenceSummary(
             decision.RequiresRemediation,
             columnProfile is not null,
             columnProfile is null ? null : columnProfile.NullCount == 0,
             uniqueProfile?.HasDuplicate,
             fkReality?.HasOrphan);
-        var columns = ImmutableArray.Create(BuildColumnAnalysis(entry, columnProfile, uniqueProfile, fkReality));
+        var columns = ImmutableArray.Create(BuildColumnInsight(entry, columnProfile, uniqueProfile, fkReality));
         var rationales = decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales;
+        var summary = disposition == OpportunityDisposition.NeedsRemediation
+            ? "Remediate data before enforcing NOT NULL."
+            : "Enforce NOT NULL constraint.";
 
-        return new Opportunity(
-            ConstraintType.NotNull,
+        return Opportunity.Create(
+            OpportunityType.Nullability,
+            "NOT NULL",
+            summary,
             risk,
-            entry.Entity.Schema.Value,
-            entry.Entity.PhysicalName.Value,
-            entry.Attribute.ColumnName.Value,
-            statements,
-            rationales,
             evidence,
-            metrics,
-            columns);
+            column: entry.Coordinate,
+            disposition: disposition,
+            statements: statements,
+            rationales: rationales,
+            evidenceSummary: evidenceSummary,
+            columns: columns,
+            schema: entry.Entity.Schema.Value,
+            table: entry.Entity.PhysicalName.Value,
+            constraintName: entry.Attribute.ColumnName.Value);
     }
 
     private static ImmutableArray<string> BuildNotNullEvidence(ColumnProfile? profile, SignalEvaluation? trace)
@@ -330,7 +280,12 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> uniqueProfiles,
         IReadOnlyDictionary<string, CompositeUniqueCandidateProfile> compositeProfiles)
     {
-        var risk = decision.RequiresRemediation ? ChangeRisk.NeedsRemediation : ChangeRisk.SafeToApply;
+        var disposition = decision.RequiresRemediation
+            ? OpportunityDisposition.NeedsRemediation
+            : OpportunityDisposition.ReadyToApply;
+        var risk = disposition == OpportunityDisposition.NeedsRemediation
+            ? ChangeRisk.Moderate("Remediate data before enforcing the unique index.")
+            : ChangeRisk.Low("Unique index can be enforced automatically.");
         var statements = ImmutableArray.Create(BuildCreateUniqueStatement(entry.Entity, entry.Index));
         var rationales = decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales;
 
@@ -340,7 +295,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             .Select(c => new ColumnCoordinate(entry.Entity.Schema, entry.Entity.PhysicalName, c.Column))
             .ToArray();
 
-        var columnAnalyses = ImmutableArray.CreateBuilder<ColumnAnalysis>(keyColumns.Length);
+        var columnAnalyses = ImmutableArray.CreateBuilder<OpportunityColumn>(keyColumns.Length);
         var evidence = ImmutableArray.CreateBuilder<string>();
 
         bool? dataClean = null;
@@ -372,7 +327,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
                     $"Unique duplicates={uniqueProfile.HasDuplicate} (Outcome={uniqueProfile.ProbeStatus.Outcome}, Sample={uniqueProfile.ProbeStatus.SampleSize.ToString(CultureInfo.InvariantCulture)}, Captured={uniqueProfile.ProbeStatus.CapturedAtUtc:O})");
             }
 
-            columnAnalyses.Add(BuildColumnAnalysis(entry.Entity, coordinate, profile, uniqueProfile, uniqueProbe));
+            columnAnalyses.Add(BuildColumnInsight(entry.Entity, coordinate, profile, uniqueProfile, uniqueProbe));
         }
 
         if (columnAnalyses.Count == 0)
@@ -380,33 +335,41 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             evidence.Add("No key columns resolved for index.");
         }
 
-        var metrics = new OpportunityMetrics(
+        var evidenceSummary = new OpportunityEvidenceSummary(
             decision.RequiresRemediation,
             evidence.Count > 0,
             dataClean,
             hasDuplicates,
             null);
 
-        return new Opportunity(
-            ConstraintType.Unique,
+        var summary = disposition == OpportunityDisposition.NeedsRemediation
+            ? "Remediate data before enforcing the unique index."
+            : "Enforce the unique index automatically.";
+
+        return Opportunity.Create(
+            OpportunityType.UniqueIndex,
+            "UNIQUE",
+            summary,
             risk,
-            entry.Entity.Schema.Value,
-            entry.Entity.PhysicalName.Value,
-            entry.Index.Name.Value,
-            statements,
-            rationales,
-            evidence.ToImmutable(),
-            metrics,
-            columnAnalyses.ToImmutable());
+            evidence,
+            index: new IndexCoordinate(entry.Entity.Schema, entry.Entity.PhysicalName, entry.Index.Name),
+            disposition: disposition,
+            statements: statements,
+            rationales: rationales,
+            evidenceSummary: evidenceSummary,
+            columns: columnAnalyses.ToImmutable(),
+            schema: entry.Entity.Schema.Value,
+            table: entry.Entity.PhysicalName.Value,
+            constraintName: entry.Index.Name.Value);
     }
 
-    private static ColumnAnalysis BuildColumnAnalysis(
+    private static OpportunityColumn BuildColumnInsight(
         EntityAttributeIndex.EntityAttributeIndexEntry entry,
         ColumnProfile? columnProfile,
         UniqueCandidateProfile? uniqueProfile,
         ForeignKeyReality? fkReality)
     {
-        return new ColumnAnalysis(
+        return new OpportunityColumn(
             entry.Coordinate,
             entry.Entity.Module.Value,
             entry.Entity.LogicalName.Value,
@@ -425,7 +388,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             entry.Attribute.Reference.DeleteRuleCode);
     }
 
-    private static ColumnAnalysis BuildColumnAnalysis(
+    private static OpportunityColumn BuildColumnInsight(
         EntityModel entity,
         ColumnCoordinate coordinate,
         ColumnProfile? profile,
@@ -433,7 +396,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         ProfilingProbeStatus? uniqueProbe)
     {
         var attribute = entity.Attributes.First(a => string.Equals(a.ColumnName.Value, coordinate.Column.Value, StringComparison.OrdinalIgnoreCase));
-        return new ColumnAnalysis(
+        return new OpportunityColumn(
             coordinate,
             entity.Module.Value,
             entity.LogicalName.Value,
@@ -460,26 +423,30 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
     {
         var statements = BuildForeignKeyStatements(entry.Entity, entry.Attribute, targetEntity);
         var evidence = BuildForeignKeyEvidence(fkReality);
-        var metrics = new OpportunityMetrics(
+        var evidenceSummary = new OpportunityEvidenceSummary(
             RequiresRemediation: false,
             EvidenceAvailable: fkReality is not null,
             DataClean: fkReality is null ? null : !fkReality.HasOrphan,
             HasDuplicates: null,
             HasOrphans: fkReality?.HasOrphan);
-        var columns = ImmutableArray.Create(BuildColumnAnalysis(entry, null, null, fkReality));
+        var columns = ImmutableArray.Create(BuildColumnInsight(entry, null, null, fkReality));
         var rationales = decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales;
 
-        return new Opportunity(
-            ConstraintType.ForeignKey,
-            ChangeRisk.SafeToApply,
-            entry.Entity.Schema.Value,
-            entry.Entity.PhysicalName.Value,
-            entry.Attribute.ColumnName.Value,
-            statements,
-            rationales,
+        return Opportunity.Create(
+            OpportunityType.ForeignKey,
+            "FOREIGN KEY",
+            "Create foreign key constraint.",
+            ChangeRisk.Low("Foreign key creation is safe to apply."),
             evidence,
-            metrics,
-            columns);
+            column: entry.Coordinate,
+            disposition: OpportunityDisposition.ReadyToApply,
+            statements: statements,
+            rationales: rationales,
+            evidenceSummary: evidenceSummary,
+            columns: columns,
+            schema: entry.Entity.Schema.Value,
+            table: entry.Entity.PhysicalName.Value,
+            constraintName: BuildForeignKeyName(entry.Entity, entry.Attribute, targetEntity));
     }
 
     private static ImmutableArray<string> BuildForeignKeyStatements(EntityModel sourceEntity, AttributeModel attribute, EntityModel targetEntity)
