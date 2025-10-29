@@ -7,8 +7,6 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
-using Osm.Pipeline.Sql;
-using Osm.Pipeline.SqlExtraction;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -63,16 +61,23 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
             Array.Empty<string>(),
             Array.Empty<string>());
 
-        var moduleFilterResult = ModuleFilterResolver.Resolve(configuration, moduleFilterOverrides);
-        if (moduleFilterResult.IsFailure)
+        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
+            configurationContext,
+            moduleFilterOverrides,
+            input.Sql,
+            CacheOptionsOverrides: null,
+            overrides.SqlMetadataOutputPath,
+            NamingOverrides: null));
+        if (contextResult.IsFailure)
         {
             _logger.LogError(
-                "Failed to resolve module filter: {Errors}.",
-                string.Join(", ", moduleFilterResult.Errors.Select(static error => error.Code)));
-            return Result<ExtractModelApplicationResult>.Failure(moduleFilterResult.Errors);
+                "Failed to build extract-model context: {Errors}.",
+                string.Join(", ", contextResult.Errors.Select(static error => error.Code)));
+            return Result<ExtractModelApplicationResult>.Failure(contextResult.Errors);
         }
 
-        var moduleFilter = moduleFilterResult.Value;
+        var context = contextResult.Value;
+        var moduleFilter = context.ModuleFilter;
         var moduleNames = moduleFilter.Modules.IsDefaultOrEmpty
             ? Array.Empty<string>()
             : moduleFilter.Modules.Select(static module => module.Value).ToArray();
@@ -143,26 +148,12 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
         var outputPath = string.IsNullOrWhiteSpace(overrides.OutputPath)
             ? "model.extracted.json"
             : overrides.OutputPath!;
-
-        var sqlOptionsResult = SqlOptionsResolver.Resolve(configuration, input.Sql);
-        if (sqlOptionsResult.IsFailure)
-        {
-            _logger.LogError(
-                "Failed to resolve SQL options: {Errors}.",
-                string.Join(", ", sqlOptionsResult.Errors.Select(static error => error.Code)));
-            return Result<ExtractModelApplicationResult>.Failure(sqlOptionsResult.Errors);
-        }
-
-        var metadataLog = string.IsNullOrWhiteSpace(overrides.SqlMetadataOutputPath)
-            ? null
-            : new SqlMetadataLog();
-
         var request = new ExtractModelPipelineRequest(
             commandResult.Value,
-            sqlOptionsResult.Value,
+            context.SqlOptions,
             overrides.MockAdvancedSqlManifest,
             overrides.SqlMetadataOutputPath,
-            metadataLog);
+            context.SqlMetadataLog);
 
         _logger.LogInformation(
             "Dispatching extract-model pipeline (outputPath: {OutputPath}, metadataPath: {MetadataPath}, fixtureProvided: {FixtureProvided}).",
@@ -174,12 +165,7 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
             request,
             cancellationToken).ConfigureAwait(false);
 
-        if (metadataLog is not null && !string.IsNullOrWhiteSpace(overrides.SqlMetadataOutputPath))
-        {
-            await SqlMetadataDiagnosticsWriter
-                .WriteAsync(overrides.SqlMetadataOutputPath!, metadataLog, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
 
         if (extractionResult.IsFailure)
         {

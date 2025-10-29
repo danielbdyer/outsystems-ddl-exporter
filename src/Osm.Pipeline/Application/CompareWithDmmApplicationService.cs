@@ -3,7 +3,6 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
-using Osm.Domain.Configuration;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
@@ -38,30 +37,24 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
             throw new ArgumentNullException(nameof(input));
         }
 
-        var configuration = input.ConfigurationContext.Configuration;
-        var tighteningOptions = configuration.Tightening;
-
-        var sqlOptionsResult = SqlOptionsResolver.Resolve(configuration, input.Sql);
-        if (sqlOptionsResult.IsFailure)
+        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
+            input.ConfigurationContext,
+            input.ModuleFilter,
+            input.Sql,
+            input.Cache,
+            SqlMetadataOutputPath: null,
+            NamingOverrides: null));
+        if (contextResult.IsFailure)
         {
-            return Result<CompareWithDmmApplicationResult>.Failure(sqlOptionsResult.Errors);
+            return Result<CompareWithDmmApplicationResult>.Failure(contextResult.Errors);
         }
 
-        var moduleFilterResult = ModuleFilterResolver.Resolve(configuration, input.ModuleFilter);
-        if (moduleFilterResult.IsFailure)
-        {
-            return Result<CompareWithDmmApplicationResult>.Failure(moduleFilterResult.Errors);
-        }
+        var context = contextResult.Value;
 
-        var moduleFilter = moduleFilterResult.Value;
-
-        var typeMappingResult = TypeMappingPolicyResolver.Resolve(input.ConfigurationContext);
-        if (typeMappingResult.IsFailure)
-        {
-            return Result<CompareWithDmmApplicationResult>.Failure(typeMappingResult.Errors);
-        }
-
-        var typeMappingPolicy = typeMappingResult.Value;
+        var configuration = context.Configuration;
+        var tighteningOptions = context.Tightening;
+        var moduleFilter = context.ModuleFilter;
+        var typeMappingPolicy = context.TypeMappingPolicy;
 
         var modelPathResult = ResolveRequiredPath(
             input.Overrides.ModelPath,
@@ -114,16 +107,11 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
             smoOptions = smoOptions with { ModuleParallelism = moduleParallelism };
         }
 
-        var cacheOptions = EvidenceCacheOptionsFactory.Create(
+        var cacheOptions = context.CreateCacheOptions(
             "dmm-compare",
-            configuration,
-            tighteningOptions,
-            moduleFilter,
             modelPathResult.Value,
             profilePathResult.Value,
-            dmmPathResult.Value,
-            input.Cache,
-            input.ConfigurationContext.ConfigPath);
+            dmmPathResult.Value);
 
         var request = new DmmComparePipelineRequest(
             modelPathResult.Value,
@@ -131,8 +119,8 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
             profilePathResult.Value,
             dmmPathResult.Value,
             tighteningOptions,
-            ResolveSupplementalOptions(configuration.SupplementalModels),
-            sqlOptionsResult.Value,
+            context.SupplementalModels,
+            context.SqlOptions,
             smoOptions,
             typeMappingPolicy,
             diffPath,
@@ -141,6 +129,7 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
         var pipelineResult = await _dispatcher.DispatchAsync<DmmComparePipelineRequest, DmmComparePipelineResult>(
             request,
             cancellationToken).ConfigureAwait(false);
+        await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
         if (pipelineResult.IsFailure)
         {
             return Result<CompareWithDmmApplicationResult>.Failure(pipelineResult.Errors);
@@ -159,14 +148,6 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
         }
 
         return Result<string>.Success(resolved);
-    }
-
-    private static SupplementalModelOptions ResolveSupplementalOptions(SupplementalModelConfiguration configuration)
-    {
-        configuration ??= SupplementalModelConfiguration.Empty;
-        var includeUsers = configuration.IncludeUsers ?? true;
-        var paths = configuration.Paths ?? Array.Empty<string>();
-        return new SupplementalModelOptions(includeUsers, paths.ToArray());
     }
 
     private static string ResolveOutputDirectory(string? overridePath)
