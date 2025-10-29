@@ -4,10 +4,8 @@ using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Data.SqlClient;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Sql;
 
@@ -19,13 +17,29 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
     private readonly SqlProfilerOptions _options;
     private readonly SqlMetadataLog? _metadataLog;
 
-    private readonly record struct ProfilingProbeResult<T>(T Value, ProfilingProbeStatus Status);
+    private readonly NullCountQueryBuilder _nullCountQueryBuilder;
+    private readonly UniqueCandidateQueryBuilder _uniqueCandidateQueryBuilder;
+    private readonly ForeignKeyProbeQueryBuilder _foreignKeyProbeQueryBuilder;
+    private readonly IProfilingProbePolicy _probePolicy;
 
-    public ProfilingQueryExecutor(IDbConnectionFactory connectionFactory, SqlProfilerOptions options, SqlMetadataLog? metadataLog = null)
+    public ProfilingQueryExecutor(
+        IDbConnectionFactory connectionFactory,
+        SqlProfilerOptions options,
+        SqlMetadataLog? metadataLog = null,
+        NullCountQueryBuilder? nullCountQueryBuilder = null,
+        UniqueCandidateQueryBuilder? uniqueCandidateQueryBuilder = null,
+        ForeignKeyProbeQueryBuilder? foreignKeyProbeQueryBuilder = null,
+        IProfilingProbePolicy? probePolicy = null,
+        TimeProvider? timeProvider = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _metadataLog = metadataLog;
+        _nullCountQueryBuilder = nullCountQueryBuilder ?? new NullCountQueryBuilder();
+        _uniqueCandidateQueryBuilder = uniqueCandidateQueryBuilder ?? new UniqueCandidateQueryBuilder();
+        _foreignKeyProbeQueryBuilder = foreignKeyProbeQueryBuilder ?? new ForeignKeyProbeQueryBuilder();
+        var provider = timeProvider ?? TimeProvider.System;
+        _probePolicy = probePolicy ?? new ProfilingProbePolicy(provider);
     }
 
     public async Task<TableProfilingResults> ExecuteAsync(TableProfilingPlan plan, CancellationToken cancellationToken)
@@ -38,22 +52,23 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         using var tableCancellation = CreateTableCancellationSource(cancellationToken);
 
-        var shouldSample = ShouldSample(plan.RowCount);
-        var nullCountSample = DetermineSampleSize(plan.RowCount, shouldSample);
-        var nullCounts = await ExecuteWithTimeoutFallback(
-            ct => ComputeNullCountsAsync(connection, plan, ct),
+        var shouldSample = TableSamplingPolicy.ShouldSample(plan.RowCount, _options);
+        var samplingParameter = shouldSample ? TableSamplingPolicy.GetSampleSize(plan.RowCount, _options) : 0;
+        var sampleSize = shouldSample ? (long)samplingParameter : Math.Max(0L, plan.RowCount);
+
+        var nullCounts = await _probePolicy.ExecuteAsync(
+            ct => ComputeNullCountsAsync(connection, plan, shouldSample, samplingParameter, ct),
             BuildConservativeNullCounts(plan),
-            nullCountSample,
+            sampleSize,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
         var nullCountStatuses = BuildStatusDictionary(nullCounts.Value.Keys, nullCounts.Status);
 
-        var duplicateSample = DetermineSampleSize(plan.RowCount, shouldSample);
-        var duplicateFlags = await ExecuteWithTimeoutFallback(
-            ct => ComputeDuplicateCandidatesAsync(connection, plan, ct),
+        var duplicateFlags = await _probePolicy.ExecuteAsync(
+            ct => ComputeDuplicateCandidatesAsync(connection, plan, shouldSample, samplingParameter, ct),
             BuildConservativeUniqueResults(plan),
-            duplicateSample,
+            sampleSize,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
@@ -63,11 +78,10 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             Orphans: BuildConservativeForeignKeyResults(plan),
             IsNoCheck: BuildConservativeForeignKeyNoCheckResults(plan));
 
-        var foreignKeySample = DetermineSampleSize(plan.RowCount, shouldSample);
-        var foreignKeyReality = await ExecuteWithTimeoutFallback(
-            ct => ComputeForeignKeyRealityAsync(connection, plan, ct),
+        var foreignKeyReality = await _probePolicy.ExecuteAsync(
+            ct => ComputeForeignKeyRealityAsync(connection, plan, shouldSample, samplingParameter, ct),
             foreignKeyFallback,
-            foreignKeySample,
+            sampleSize,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
@@ -85,161 +99,11 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             foreignKeyNoCheckStatuses);
     }
 
-    internal static string BuildUniqueCandidatesSql(
-        string schema,
-        string table,
-        IEnumerable<string> columnSet,
-        ImmutableArray<UniqueCandidatePlan> candidates,
-        bool useSampling,
-        DbCommand command)
-    {
-        var builder = new StringBuilder();
-        var projectedColumns = columnSet.Select(QuoteIdentifier).ToArray();
-        builder.AppendLine("WITH Source AS (");
-        builder.Append("    SELECT ");
-        if (useSampling)
-        {
-            builder.Append("TOP (@SampleSize) ");
-        }
-
-        builder.Append(string.Join(", ", projectedColumns));
-        builder.AppendLine();
-        builder.Append("    FROM ").Append(QualifyIdentifier(schema, table)).Append(" WITH (NOLOCK)");
-        if (useSampling)
-        {
-            builder.AppendLine();
-            builder.AppendLine("    ORDER BY (SELECT NULL)");
-        }
-
-        builder.AppendLine(")");
-        builder.AppendLine("SELECT CandidateId, HasDuplicates");
-        builder.AppendLine("FROM (");
-        for (var i = 0; i < candidates.Length; i++)
-        {
-            if (i > 0)
-            {
-                builder.AppendLine("    UNION ALL");
-            }
-
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = $"@candidate{i}";
-            parameter.DbType = DbType.String;
-            parameter.Value = candidates[i].Key;
-            command.Parameters.Add(parameter);
-
-            builder.Append("    SELECT ");
-            builder.Append(parameter.ParameterName);
-            builder.Append(" AS CandidateId, CASE WHEN EXISTS (SELECT 1 FROM Source GROUP BY ");
-            builder.Append(string.Join(", ", candidates[i].Columns.Select(QuoteIdentifier)));
-            builder.Append(" HAVING COUNT(*) > 1) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasDuplicates");
-            builder.AppendLine();
-        }
-
-        builder.AppendLine(") AS results;");
-        return builder.ToString();
-    }
-
-    internal static string BuildForeignKeySql(
-        string schema,
-        string table,
-        IReadOnlyCollection<string> sourceColumns,
-        ImmutableArray<ForeignKeyPlan> candidates,
-        bool useSampling,
-        DbCommand command)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine("WITH Source AS (");
-        builder.Append("    SELECT ");
-        if (useSampling)
-        {
-            builder.Append("TOP (@SampleSize) ");
-        }
-
-        builder.Append(string.Join(", ", sourceColumns));
-        builder.AppendLine();
-        builder.Append("    FROM ").Append(QualifyIdentifier(schema, table)).Append(" WITH (NOLOCK)");
-        if (useSampling)
-        {
-            builder.AppendLine();
-            builder.AppendLine("    ORDER BY (SELECT NULL)");
-        }
-
-        builder.AppendLine(")");
-        builder.AppendLine("SELECT CandidateId, HasOrphans");
-        builder.AppendLine("FROM (");
-        for (var i = 0; i < candidates.Length; i++)
-        {
-            if (i > 0)
-            {
-                builder.AppendLine("    UNION ALL");
-            }
-
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = $"@fk{i}";
-            parameter.DbType = DbType.String;
-            parameter.Value = candidates[i].Key;
-            command.Parameters.Add(parameter);
-
-            builder.Append("    SELECT ");
-            builder.Append(parameter.ParameterName);
-            builder.Append(" AS CandidateId, CASE WHEN EXISTS (SELECT 1 FROM Source AS source LEFT JOIN ");
-            builder.Append(QualifyIdentifier(candidates[i].TargetSchema, candidates[i].TargetTable));
-            builder.Append(" AS target WITH (NOLOCK) ON source.");
-            builder.Append(QuoteIdentifier(candidates[i].Column));
-            builder.Append(" = target.");
-            builder.Append(QuoteIdentifier(candidates[i].TargetColumn));
-            builder.Append(" WHERE source.");
-            builder.Append(QuoteIdentifier(candidates[i].Column));
-            builder.Append(" IS NOT NULL AND target.");
-            builder.Append(QuoteIdentifier(candidates[i].TargetColumn));
-            builder.Append(" IS NULL) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasOrphans");
-            builder.AppendLine();
-        }
-
-        builder.AppendLine(") AS results;");
-        return builder.ToString();
-    }
-
-    internal static string BuildForeignKeyMetadataSql(string schema, string table, DbCommand command)
-    {
-        if (command is null)
-        {
-            throw new ArgumentNullException(nameof(command));
-        }
-
-        var schemaParameter = command.CreateParameter();
-        schemaParameter.ParameterName = "@SchemaName";
-        schemaParameter.DbType = DbType.String;
-        schemaParameter.Value = schema;
-        command.Parameters.Add(schemaParameter);
-
-        var tableParameter = command.CreateParameter();
-        tableParameter.ParameterName = "@TableName";
-        tableParameter.DbType = DbType.String;
-        tableParameter.Value = table;
-        command.Parameters.Add(tableParameter);
-
-        return @"SELECT
-    parentColumn.name AS ColumnName,
-    targetSchema.name AS TargetSchema,
-    targetTable.name AS TargetTable,
-    targetColumn.name AS TargetColumn,
-    fk.is_not_trusted AS IsNotTrusted,
-    fk.is_disabled AS IsDisabled
-FROM sys.foreign_keys AS fk
-JOIN sys.tables AS parentTable ON fk.parent_object_id = parentTable.object_id
-JOIN sys.schemas AS parentSchema ON parentTable.schema_id = parentSchema.schema_id
-JOIN sys.foreign_key_columns AS fkc ON fk.object_id = fkc.constraint_object_id
-JOIN sys.columns AS parentColumn ON fkc.parent_object_id = parentColumn.object_id AND fkc.parent_column_id = parentColumn.column_id
-JOIN sys.tables AS targetTable ON fk.referenced_object_id = targetTable.object_id
-JOIN sys.schemas AS targetSchema ON targetTable.schema_id = targetSchema.schema_id
-JOIN sys.columns AS targetColumn ON fkc.referenced_object_id = targetColumn.object_id AND fkc.referenced_column_id = targetColumn.column_id
-WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
-    }
-
     private async Task<IReadOnlyDictionary<string, long>> ComputeNullCountsAsync(
         DbConnection connection,
         TableProfilingPlan plan,
+        bool useSampling,
+        int samplingParameter,
         CancellationToken cancellationToken)
     {
         if (plan.Columns.IsDefaultOrEmpty)
@@ -258,20 +122,10 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
             return zeroBuilder.ToImmutable();
         }
 
-        var useSampling = ShouldSample(plan.RowCount);
         await using var command = connection.CreateCommand();
-        command.CommandText = BuildNullCountSql(plan.Schema, plan.Table, plan.Columns, useSampling);
+        _nullCountQueryBuilder.Configure(command, plan, useSampling, samplingParameter);
 
         ApplyCommandTimeout(command);
-
-        if (useSampling)
-        {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@SampleSize";
-            parameter.DbType = DbType.Int32;
-            parameter.Value = GetSampleSize(plan.RowCount);
-            command.Parameters.Add(parameter);
-        }
 
         var results = ImmutableDictionary.CreateBuilder<string, long>(StringComparer.OrdinalIgnoreCase);
 
@@ -311,6 +165,8 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
     private async Task<IReadOnlyDictionary<string, bool>> ComputeDuplicateCandidatesAsync(
         DbConnection connection,
         TableProfilingPlan plan,
+        bool useSampling,
+        int samplingParameter,
         CancellationToken cancellationToken)
     {
         if (plan.UniqueCandidates.IsDefaultOrEmpty)
@@ -318,25 +174,10 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
             return ImmutableDictionary<string, bool>.Empty;
         }
 
-        var columnSet = plan.UniqueCandidates
-            .SelectMany(static candidate => candidate.Columns)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        var useSampling = ShouldSample(plan.RowCount);
         await using var command = connection.CreateCommand();
-        command.CommandText = BuildUniqueCandidatesSql(plan.Schema, plan.Table, columnSet, plan.UniqueCandidates, useSampling, command);
+        _uniqueCandidateQueryBuilder.Configure(command, plan, useSampling, samplingParameter);
 
         ApplyCommandTimeout(command);
-
-        if (useSampling)
-        {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@SampleSize";
-            parameter.DbType = DbType.Int32;
-            parameter.Value = GetSampleSize(plan.RowCount);
-            command.Parameters.Add(parameter);
-        }
 
         var results = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
 
@@ -377,6 +218,8 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
     private async Task<(IReadOnlyDictionary<string, bool> Orphans, IReadOnlyDictionary<string, bool> IsNoCheck)> ComputeForeignKeyRealityAsync(
         DbConnection connection,
         TableProfilingPlan plan,
+        bool useSampling,
+        int samplingParameter,
         CancellationToken cancellationToken)
     {
         if (plan.ForeignKeys.IsDefaultOrEmpty)
@@ -384,21 +227,10 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
             return (ImmutableDictionary<string, bool>.Empty, ImmutableDictionary<string, bool>.Empty);
         }
 
-        var useSampling = ShouldSample(plan.RowCount);
         await using var command = connection.CreateCommand();
-        var columnSet = plan.ForeignKeys.Select(static fk => fk.Column).Distinct(StringComparer.OrdinalIgnoreCase).Select(QuoteIdentifier).ToArray();
-        command.CommandText = BuildForeignKeySql(plan.Schema, plan.Table, columnSet, plan.ForeignKeys, useSampling, command);
+        _foreignKeyProbeQueryBuilder.ConfigureRealityCommand(command, plan, useSampling, samplingParameter);
 
         ApplyCommandTimeout(command);
-
-        if (useSampling)
-        {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@SampleSize";
-            parameter.DbType = DbType.Int32;
-            parameter.Value = GetSampleSize(plan.RowCount);
-            command.Parameters.Add(parameter);
-        }
 
         var results = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
 
@@ -444,7 +276,7 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = BuildForeignKeyMetadataSql(plan.Schema, plan.Table, command);
+        _foreignKeyProbeQueryBuilder.ConfigureMetadataCommand(command, plan.Schema, plan.Table);
 
         ApplyCommandTimeout(command);
 
@@ -482,29 +314,6 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
         return dictionary;
     }
 
-    private async Task<ProfilingProbeResult<T>> ExecuteWithTimeoutFallback<T>(
-        Func<CancellationToken, Task<T>> operation,
-        T fallback,
-        long sampleSize,
-        CancellationTokenSource? tableCancellation,
-        CancellationToken originalToken)
-    {
-        try
-        {
-            var token = tableCancellation?.Token ?? originalToken;
-            var result = await operation(token).ConfigureAwait(false);
-            return new ProfilingProbeResult<T>(result, ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UtcNow, sampleSize));
-        }
-        catch (OperationCanceledException) when (IsTableTimeout(tableCancellation, originalToken))
-        {
-            return new ProfilingProbeResult<T>(fallback, ProfilingProbeStatus.CreateCancelled(DateTimeOffset.UtcNow, sampleSize));
-        }
-        catch (DbException ex) when (IsTimeoutException(ex))
-        {
-            return new ProfilingProbeResult<T>(fallback, ProfilingProbeStatus.CreateFallbackTimeout(DateTimeOffset.UtcNow, sampleSize));
-        }
-    }
-
     private static IReadOnlyDictionary<string, ProfilingProbeStatus> BuildStatusDictionary(
         IEnumerable<string> keys,
         ProfilingProbeStatus status)
@@ -523,16 +332,6 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
         return builder.ToImmutable();
     }
 
-    private long DetermineSampleSize(long rowCount, bool useSampling)
-    {
-        if (!useSampling)
-        {
-            return Math.Max(0, rowCount);
-        }
-
-        return GetSampleSize(rowCount);
-    }
-
     private CancellationTokenSource? CreateTableCancellationSource(CancellationToken cancellationToken)
     {
         if (!_options.Limits.TableTimeout.HasValue)
@@ -543,39 +342,6 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
         var source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         source.CancelAfter(_options.Limits.TableTimeout.Value);
         return source;
-    }
-
-    private bool ShouldSample(long rowCount)
-    {
-        if (rowCount <= 0)
-        {
-            return false;
-        }
-
-        var threshold = _options.Sampling.RowCountSamplingThreshold;
-        if (_options.Limits.MaxRowsPerTable.HasValue)
-        {
-            threshold = Math.Min(threshold, _options.Limits.MaxRowsPerTable.Value);
-        }
-
-        return rowCount > threshold;
-    }
-
-    private int GetSampleSize(long rowCount)
-    {
-        var sample = (long)_options.Sampling.SampleSize;
-        if (_options.Limits.MaxRowsPerTable.HasValue)
-        {
-            sample = Math.Min(sample, _options.Limits.MaxRowsPerTable.Value);
-        }
-
-        if (rowCount > 0)
-        {
-            sample = Math.Min(sample, rowCount);
-        }
-
-        sample = Math.Clamp(sample, 1, (long)int.MaxValue);
-        return (int)sample;
     }
 
     private void ApplyCommandTimeout(DbCommand command)
@@ -650,83 +416,4 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;";
         return builder.ToImmutable();
     }
 
-    private static bool IsTableTimeout(CancellationTokenSource? tableCancellation, CancellationToken originalToken)
-    {
-        return tableCancellation is not null && tableCancellation.IsCancellationRequested && !originalToken.IsCancellationRequested;
-    }
-
-    private static bool IsTimeoutException(DbException exception)
-    {
-        if (exception is SqlException sqlException)
-        {
-            foreach (SqlError error in sqlException.Errors)
-            {
-                if (error.Number == -2)
-                {
-                    return true;
-                }
-            }
-        }
-
-        return exception.ErrorCode == -2;
-    }
-
-    private static string BuildNullCountSql(string schema, string table, ImmutableArray<string> columns, bool useSampling)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine("WITH Source AS (");
-        builder.Append("    SELECT ");
-        if (useSampling)
-        {
-            builder.Append("TOP (@SampleSize) ");
-        }
-
-        builder.Append(string.Join(", ", columns.Select(QuoteIdentifier)));
-        builder.AppendLine();
-        builder.Append("    FROM ").Append(QualifyIdentifier(schema, table)).Append(" WITH (NOLOCK)");
-        if (useSampling)
-        {
-            builder.AppendLine();
-            builder.AppendLine("    ORDER BY (SELECT NULL)");
-        }
-
-        builder.AppendLine(")");
-        builder.AppendLine("SELECT ColumnName, NullCount");
-        builder.AppendLine("FROM (");
-        for (var i = 0; i < columns.Length; i++)
-        {
-            if (i > 0)
-            {
-                builder.AppendLine("    UNION ALL");
-            }
-
-            var column = QuoteIdentifier(columns[i]);
-            builder.Append("    SELECT '");
-            builder.Append(columns[i]);
-            builder.Append("' AS ColumnName, SUM(CASE WHEN ");
-            builder.Append(column);
-            builder.Append(" IS NULL THEN 1 ELSE 0 END) AS NullCount");
-            builder.AppendLine();
-            builder.Append("    FROM Source");
-            builder.AppendLine();
-        }
-
-        builder.AppendLine(") AS results;");
-        return builder.ToString();
-    }
-
-    private static string QuoteIdentifier(string identifier)
-    {
-        if (string.IsNullOrEmpty(identifier))
-        {
-            return "[]";
-        }
-
-        return "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]";
-    }
-
-    private static string QualifyIdentifier(string schema, string table)
-    {
-        return QuoteIdentifier(schema) + "." + QuoteIdentifier(table);
-    }
 }
