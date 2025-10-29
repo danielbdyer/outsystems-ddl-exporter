@@ -14,19 +14,19 @@ CREATE TABLE [dbo].[Customer] (
 
 GO
 
-CREATE UNIQUE INDEX [IDX_Customer_Email]
+CREATE UNIQUE INDEX [UIX_Customer_Email]
     ON [dbo].[Customer]([Email]) WHERE ([Email] IS NOT NULL) WITH (FILLFACTOR = 85, IGNORE_DUP_KEY = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
     ON [FG_Customers]
 
 GO
 
-CREATE INDEX [IDX_Customer_Name]
+CREATE INDEX [IX_Customer_LastName_FirstName]
     ON [dbo].[Customer]([LastName], [FirstName]) WITH (IGNORE_DUP_KEY = OFF, STATISTICS_NORECOMPUTE = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
     ON [FG_Customers]
 
 GO
 
-ALTER INDEX [IDX_Customer_Name]
+ALTER INDEX [IX_Customer_LastName_FirstName]
     ON [dbo].[Customer] DISABLE
 
 GO

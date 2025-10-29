@@ -128,11 +128,10 @@ public static class EmissionCoverageCalculator
                     continue;
                 }
 
-                var expectedName = ConstraintNameNormalizer.Normalize(
-                    index.Name.Value,
+                var expectedName = IndexNameGenerator.Generate(
                     snapshot.Entity,
                     analysis.ReferencedAttributes,
-                    index.IsUnique ? ConstraintNameKind.UniqueIndex : ConstraintNameKind.NonUniqueIndex,
+                    index.IsUnique,
                     options.Format);
 
                 if (!emittedIndexNames.Contains(expectedName))

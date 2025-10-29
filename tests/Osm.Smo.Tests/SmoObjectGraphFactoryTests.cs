@@ -49,7 +49,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         Assert.False(emailColumn.Nullable);
         Assert.Equal(SqlDataType.NVarChar, emailColumn.DataType.SqlDataType);
 
-        var uniqueIndex = customerTable.Indexes["IDX_Customer_Email"];
+        var uniqueIndex = customerTable.Indexes["UIX_Customer_Email"];
         Assert.True(uniqueIndex.IsUnique);
         Assert.Equal(IndexKeyType.DriUniqueKey, uniqueIndex.IndexKeyType);
         Assert.Contains(uniqueIndex.IndexedColumns.Cast<IndexedColumn>(), column =>
@@ -78,8 +78,8 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         var tables = _factory.CreateTables(smoModel, options);
         var customerTable = Assert.Single(tables.Where(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase)));
 
-        var uniqueIndex = Assert.IsType<SmoIndex>(customerTable.Indexes["IDX_Customer_Email"]);
-        Assert.Equal("IDX_Customer_Email", uniqueIndex.Name);
+        var uniqueIndex = Assert.IsType<SmoIndex>(customerTable.Indexes["UIX_Customer_Email"]);
+        Assert.Equal("UIX_Customer_Email", uniqueIndex.Name);
         Assert.Equal(IndexKeyType.DriUniqueKey, uniqueIndex.IndexKeyType);
 
         var systemIndex = SystemIndex.Start;

@@ -24,14 +24,14 @@ public class SmoIndexBuilderTests
         Assert.True(primaryKey.IsUnique);
         Assert.All(primaryKey.Columns, column => Assert.False(column.IsIncluded));
 
-        var uniqueIndex = indexes.Single(index => index.Name.Equals("IDX_Customer_Email", StringComparison.Ordinal));
+        var uniqueIndex = indexes.Single(index => index.Name.Equals("UIX_Customer_Email", StringComparison.Ordinal));
         Assert.True(uniqueIndex.IsUnique);
         Assert.False(uniqueIndex.IsPrimaryKey);
         Assert.Equal(85, uniqueIndex.Metadata.FillFactor);
         Assert.True(uniqueIndex.Metadata.IgnoreDuplicateKey);
         Assert.Equal("[EMAIL] IS NOT NULL", uniqueIndex.Metadata.FilterDefinition);
 
-        var nonUnique = indexes.Single(index => index.Name.Equals("IDX_Customer_Name", StringComparison.Ordinal));
+        var nonUnique = indexes.Single(index => index.Name.Equals("IX_Customer_LastName_FirstName", StringComparison.Ordinal));
         Assert.False(nonUnique.IsUnique);
         Assert.True(nonUnique.Metadata.StatisticsNoRecompute);
         Assert.True(nonUnique.Metadata.AllowRowLocks);
