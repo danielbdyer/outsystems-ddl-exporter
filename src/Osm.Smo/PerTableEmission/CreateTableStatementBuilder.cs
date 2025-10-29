@@ -211,9 +211,9 @@ internal sealed class CreateTableStatementBuilder
             DataType = column.IsComputed ? null : TranslateDataType(column.DataType),
         };
 
-        if (!column.Nullable)
+        if (!column.IsComputed)
         {
-            definition.Constraints.Add(new NullableConstraintDefinition { Nullable = false });
+            definition.Constraints.Add(new NullableConstraintDefinition { Nullable = column.Nullable });
         }
 
         if (column.IsIdentity && !column.IsComputed)
