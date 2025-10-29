@@ -72,7 +72,7 @@ public sealed class SsdtMatrixTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault(),
             EvidenceCache: null,
             StaticDataProvider: staticDataProvider,
             SeedOutputDirectoryHint: null);

@@ -47,7 +47,7 @@ public class BuildSsdtPipelineTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy: TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicy: TypeMappingPolicyLoader.LoadDefault(),
             EvidenceCache: null,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
@@ -79,7 +79,7 @@ public class BuildSsdtPipelineTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy: TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicy: TypeMappingPolicyLoader.LoadDefault(),
             EvidenceCache: null,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
@@ -127,7 +127,7 @@ public class BuildSsdtPipelineTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault(),
             null,
             null,
             null);
@@ -175,7 +175,7 @@ public class BuildSsdtPipelineTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault(),
             null,
             null,
             null);
@@ -212,7 +212,7 @@ public class BuildSsdtPipelineTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault(),
             new EvidenceCachePipelineOptions(
                 cache.Path,
                 Refresh: false,
@@ -328,7 +328,7 @@ public class BuildSsdtPipelineTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault(),
             null,
             null,
             null);
