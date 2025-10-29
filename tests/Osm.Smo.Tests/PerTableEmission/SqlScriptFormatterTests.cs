@@ -159,7 +159,7 @@ CREATE TABLE [dbo].[Order](
 
         var script = GenerateCreateTableScript(formatter, column);
 
-        Assert.Contains("[Optional] NVARCHAR(50) NULL", script, StringComparison.Ordinal);
+        Assert.Contains("[Optional] NVARCHAR (50) NULL", script, StringComparison.Ordinal);
     }
 
     private static CreateTableStatement CreateMinimalCreateTableStatement(params string[] columnNames)

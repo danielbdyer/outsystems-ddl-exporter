@@ -76,7 +76,7 @@ internal static class SmoColumnBuilder
                 defaultExpression = NormalizeBitDefaultExpression(defaultExpression);
             }
             var collation = SmoNormalization.NormalizeWhitespace(onDisk.Collation);
-            var description = SmoNormalization.NormalizeWhitespace(attribute.Metadata.Description);
+            var description = MsDescriptionResolver.Resolve(attribute.Metadata);
             var defaultConstraint = CreateDefaultConstraint(attribute.OnDisk.DefaultConstraint);
 
             var checkConstraints = ImmutableArray<SmoCheckConstraintDefinition>.Empty;

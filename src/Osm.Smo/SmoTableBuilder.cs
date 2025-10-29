@@ -44,6 +44,7 @@ internal sealed class SmoTableBuilder
         var foreignKeys = SmoForeignKeyBuilder.BuildForeignKeys(context, _decisions, _entityLookup, _foreignKeyReality, _options.Format);
         var triggers = SmoTriggerBuilder.Build(context);
         var catalog = string.IsNullOrWhiteSpace(context.Entity.Catalog) ? _options.DefaultCatalogName : context.Entity.Catalog!;
+        var description = MsDescriptionResolver.Resolve(context.Entity.Metadata);
         var moduleName = _options.SanitizeModuleNames ? ModuleNameSanitizer.Sanitize(context.ModuleName) : context.ModuleName;
 
         return new SmoTableDefinition(
@@ -53,7 +54,7 @@ internal sealed class SmoTableBuilder
             context.Entity.Schema.Value,
             catalog,
             context.Entity.LogicalName.Value,
-            context.Entity.Metadata.Description,
+            description,
             columns,
             indexes,
             foreignKeys,

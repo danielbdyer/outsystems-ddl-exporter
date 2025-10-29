@@ -38,6 +38,9 @@ internal static class SmoIndexBuilder
         var primaryMetadata = domainPrimaryIndex is not null
             ? MapIndexMetadata(domainPrimaryIndex)
             : SmoIndexMetadata.Empty;
+        var primaryDescription = domainPrimaryIndex is not null
+            ? MsDescriptionResolver.Resolve(domainPrimaryIndex)
+            : null;
 
         var primaryColumns = BuildPrimaryKeyColumns(context, domainPrimaryIndex, out var primaryAttributes);
         if (!primaryColumns.IsDefaultOrEmpty)
@@ -67,6 +70,7 @@ internal static class SmoIndexBuilder
                 IsUnique: true,
                 IsPrimaryKey: true,
                 IsPlatformAuto: false,
+                primaryDescription,
                 primaryColumns,
                 primaryMetadata));
         }
@@ -133,11 +137,13 @@ internal static class SmoIndexBuilder
             }
 
             var metadata = MapIndexMetadata(index);
+            var description = MsDescriptionResolver.Resolve(index);
             builder.Add(new SmoIndexDefinition(
                 normalizedName,
                 enforceUnique,
                 IsPrimaryKey: false,
                 index.IsPlatformAuto,
+                description,
                 columns,
                 metadata));
         }

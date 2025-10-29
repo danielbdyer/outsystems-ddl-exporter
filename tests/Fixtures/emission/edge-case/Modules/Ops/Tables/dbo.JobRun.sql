@@ -2,7 +2,7 @@ CREATE TABLE [dbo].[JobRun] (
     [Id]                BIGINT   IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_JobRun_Id]
             PRIMARY KEY CLUSTERED,
-    [TriggeredByUserId] BIGINT,
+    [TriggeredByUserId] BIGINT   NULL,
     [CreatedOn]         DATETIME NOT NULL
         DEFAULT (getutcdate())
 )

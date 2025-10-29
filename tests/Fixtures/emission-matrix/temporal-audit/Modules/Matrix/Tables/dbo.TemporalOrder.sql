@@ -21,7 +21,7 @@ CREATE INDEX [IX_TemporalOrder_Status]
 
 GO
 
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Temporal order history',
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Temporal order entity',
     @level0type=N'SCHEMA',@level0name=N'dbo',
     @level1type=N'TABLE',@level1name=N'TemporalOrder';
 
@@ -34,7 +34,7 @@ EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Temporal order
 
 GO
 
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Order processing status',
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Workflow status',
     @level0type=N'SCHEMA',@level0name=N'dbo',
     @level1type=N'TABLE',@level1name=N'TemporalOrder',
     @level2type=N'COLUMN',@level2name=N'Status';

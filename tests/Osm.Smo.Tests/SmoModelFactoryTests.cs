@@ -91,7 +91,11 @@ public class SmoModelFactoryTests
         var emailIndexCoordinate = new IndexCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_CUSTOMER"), new IndexName("IDX_CUSTOMER_EMAIL"));
         Assert.True(decisions.UniqueIndexes.TryGetValue(emailIndexCoordinate, out var emailIndexDecision));
         Assert.True(emailIndexDecision.EnforceUnique);
-        var emailIndex = indexLookup[BuildIndexKey(emailIndexCoordinate)];
+        var emailIndexKey = BuildIndexKey(
+            emailIndexCoordinate.Schema.Value,
+            emailIndexCoordinate.Table.Value,
+            ResolveExpectedIndexName(model, emailIndexCoordinate, options.Format));
+        var emailIndex = indexLookup[emailIndexKey];
         Assert.True(emailIndex.IsUnique);
         Assert.Equal("[EMAIL] IS NOT NULL", emailIndex.Metadata.FilterDefinition);
         Assert.Equal(85, emailIndex.Metadata.FillFactor);
@@ -110,7 +114,11 @@ public class SmoModelFactoryTests
         var accountNumberIndexCoordinate = new IndexCoordinate(new SchemaName("billing"), new TableName("BILLING_ACCOUNT"), new IndexName("IDX_BILLINGACCOUNT_ACCTNUM"));
         Assert.True(decisions.UniqueIndexes.TryGetValue(accountNumberIndexCoordinate, out var accountNumberDecision));
         Assert.True(accountNumberDecision.EnforceUnique);
-        var accountNumberIndex = indexLookup[BuildIndexKey(accountNumberIndexCoordinate)];
+        var accountNumberIndexKey = BuildIndexKey(
+            accountNumberIndexCoordinate.Schema.Value,
+            accountNumberIndexCoordinate.Table.Value,
+            ResolveExpectedIndexName(model, accountNumberIndexCoordinate, options.Format));
+        var accountNumberIndex = indexLookup[accountNumberIndexKey];
         Assert.True(accountNumberIndex.IsUnique);
 
         var customerTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_ABC_CUSTOMER", StringComparison.OrdinalIgnoreCase));
@@ -162,7 +170,8 @@ public class SmoModelFactoryTests
 
         foreach (var pair in decisions.UniqueIndexes)
         {
-            var key = BuildIndexKey(pair.Key);
+            var expectedName = ResolveExpectedIndexName(model, pair.Key, options.Format);
+            var key = BuildIndexKey(pair.Key.Schema.Value, pair.Key.Table.Value, expectedName);
             Assert.True(indexLookup.TryGetValue(key, out var index), $"Index '{key}' missing from SMO model.");
             Assert.Equal(pair.Value.EnforceUnique, index.IsUnique);
         }
@@ -406,6 +415,32 @@ public class SmoModelFactoryTests
                 Index: index)))
             .ToDictionary(static pair => pair.Key, static pair => pair.Index);
 
+    private static string ResolveExpectedIndexName(
+        OsmModel model,
+        IndexCoordinate coordinate,
+        SmoFormatOptions format)
+    {
+        var entity = model.Modules
+            .SelectMany(module => module.Entities)
+            .Single(entity =>
+                string.Equals(entity.Schema.Value, coordinate.Schema.Value, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(entity.PhysicalName.Value, coordinate.Table.Value, StringComparison.OrdinalIgnoreCase));
+
+        var index = entity.Indexes
+            .Single(idx => string.Equals(idx.Name.Value, coordinate.Index.Value, StringComparison.OrdinalIgnoreCase));
+
+        var keyAttributes = index.Columns
+            .Where(column => !column.IsIncluded)
+            .Select(column => entity.Attributes
+                .Single(attribute => string.Equals(
+                    attribute.ColumnName.Value,
+                    column.Column.Value,
+                    StringComparison.OrdinalIgnoreCase)))
+            .ToImmutableArray();
+
+        return IndexNameGenerator.Generate(entity, keyAttributes, index.IsUnique, format);
+    }
+
     private static Dictionary<string, ImmutableArray<SmoForeignKeyDefinition>> BuildForeignKeyLookup(SmoModel smoModel)
         => smoModel.Tables
             .SelectMany(table => table.ForeignKeys.SelectMany(foreignKey => foreignKey.Columns.Select(column => (
@@ -465,10 +500,17 @@ public class SmoModelFactoryTests
         var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
 
         var jobRunTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
-        var hasPlatformIndex = jobRunTable.Indexes.Any(i => i.Name.Equals("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
+        var jobRunEntity = model.Modules
+            .SelectMany(module => module.Entities)
+            .Single(entity => entity.PhysicalName.Value.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
+        var platformIndexModel = jobRunEntity.Indexes.Single(index => index.IsPlatformAuto);
+        var platformCoordinate = new IndexCoordinate(jobRunEntity.Schema, jobRunEntity.PhysicalName, platformIndexModel.Name);
+        var platformIndexName = ResolveExpectedIndexName(model, platformCoordinate, options.Format);
+
+        var hasPlatformIndex = jobRunTable.Indexes.Any(i => i.Name.Equals(platformIndexName, StringComparison.OrdinalIgnoreCase));
         Assert.True(hasPlatformIndex);
 
-        var platformIndex = jobRunTable.Indexes.Single(i => i.Name.Equals("OSIDX_JobRun_CreatedOn", StringComparison.OrdinalIgnoreCase));
+        var platformIndex = jobRunTable.Indexes.Single(i => i.Name.Equals(platformIndexName, StringComparison.OrdinalIgnoreCase));
         Assert.False(platformIndex.Metadata.AllowRowLocks);
         var jobRunDataSpace = platformIndex.Metadata.DataSpace;
         Assert.NotNull(jobRunDataSpace);
@@ -491,8 +533,13 @@ public class SmoModelFactoryTests
 
         var smoModel = factory.Create(model, decisions, profile: snapshot, options: smoOptions);
 
+        var entity = model.Modules.Single().Entities.Single();
+        var indexModel = entity.Indexes.Single();
+        var coordinate = new IndexCoordinate(entity.Schema, entity.PhysicalName, indexModel.Name);
+        var expectedIndexName = ResolveExpectedIndexName(model, coordinate, smoOptions.Format);
+
         var userTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
-        var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
+        var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals(expectedIndexName, StringComparison.OrdinalIgnoreCase));
         Assert.False(uniqueIndex.IsUnique);
     }
 
@@ -526,7 +573,8 @@ public class SmoModelFactoryTests
         var smoModel = factory.Create(model, decisions, profile: snapshot, options: smoOptions);
 
         var userTable = smoModel.Tables.Single(t => t.Name.Equals("OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
-        var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals("UX_User_Email", StringComparison.OrdinalIgnoreCase));
+        var expectedIndexName = ResolveExpectedIndexName(model, coordinate, smoOptions.Format);
+        var uniqueIndex = userTable.Indexes.Single(i => i.Name.Equals(expectedIndexName, StringComparison.OrdinalIgnoreCase));
         Assert.True(uniqueIndex.IsUnique);
     }
 

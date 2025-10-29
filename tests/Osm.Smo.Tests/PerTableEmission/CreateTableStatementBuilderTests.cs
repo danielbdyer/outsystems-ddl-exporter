@@ -40,6 +40,7 @@ public class CreateTableStatementBuilderTests
             IsUnique: true,
             IsPrimaryKey: true,
             IsPlatformAuto: false,
+            Description: null,
             Columns: ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 0, false, false)),
             Metadata: SmoIndexMetadata.Empty);
 

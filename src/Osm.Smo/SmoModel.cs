@@ -57,6 +57,7 @@ public sealed record SmoIndexDefinition(
     bool IsUnique,
     bool IsPrimaryKey,
     bool IsPlatformAuto,
+    string? Description,
     ImmutableArray<SmoIndexColumnDefinition> Columns,
     SmoIndexMetadata Metadata);
 
