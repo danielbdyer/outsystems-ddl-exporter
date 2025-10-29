@@ -55,7 +55,7 @@ public class SsdtTableLayoutComparatorTests
             "edge-case");
         TestFileSystem.CopyDirectory(baselineRoot, workspace.Path);
 
-        var customerPath = Path.Combine(workspace.Path, "Modules", "AppCore", "Tables", "dbo.Customer.sql");
+        var customerPath = Path.Combine(workspace.Path, "Modules", "AppCore", "dbo.Customer.sql");
         File.Delete(customerPath);
 
         var result = _comparator.Compare(_model, _options, workspace.Path);
@@ -66,7 +66,7 @@ public class SsdtTableLayoutComparatorTests
             diff => string.Equals(diff.Property, "FilePresence", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Table, "Customer", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(diff.Expected, Path.Combine("Modules", "AppCore", "Tables", "dbo.Customer.sql"), StringComparison.OrdinalIgnoreCase));
+                && string.Equals(diff.Expected, Path.Combine("Modules", "AppCore", "dbo.Customer.sql"), StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -81,8 +81,8 @@ public class SsdtTableLayoutComparatorTests
             "edge-case");
         TestFileSystem.CopyDirectory(baselineRoot, workspace.Path);
 
-        var sourcePath = Path.Combine(workspace.Path, "Modules", "AppCore", "Tables", "dbo.Customer.sql");
-        var destinationDirectory = Path.Combine(workspace.Path, "Modules", "Ops", "Tables");
+        var sourcePath = Path.Combine(workspace.Path, "Modules", "AppCore", "dbo.Customer.sql");
+        var destinationDirectory = Path.Combine(workspace.Path, "Modules", "Ops");
         Directory.CreateDirectory(destinationDirectory);
         var destinationPath = Path.Combine(destinationDirectory, "dbo.Customer.sql");
         File.Move(sourcePath, destinationPath, overwrite: true);
@@ -109,7 +109,7 @@ public class SsdtTableLayoutComparatorTests
             "edge-case");
         TestFileSystem.CopyDirectory(baselineRoot, workspace.Path);
 
-        var extraPath = Path.Combine(workspace.Path, "Modules", "AppCore", "Tables", "dbo.Extra.sql");
+        var extraPath = Path.Combine(workspace.Path, "Modules", "AppCore", "dbo.Extra.sql");
         File.WriteAllText(extraPath, string.Empty);
 
         var result = _comparator.Compare(_model, _options, workspace.Path);
@@ -120,6 +120,6 @@ public class SsdtTableLayoutComparatorTests
             diff => string.Equals(diff.Property, "FilePresence", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Table, "Extra", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(diff.Actual, Path.Combine("Modules", "AppCore", "Tables", "dbo.Extra.sql"), StringComparison.OrdinalIgnoreCase));
+                && string.Equals(diff.Actual, Path.Combine("Modules", "AppCore", "dbo.Extra.sql"), StringComparison.OrdinalIgnoreCase));
     }
 }

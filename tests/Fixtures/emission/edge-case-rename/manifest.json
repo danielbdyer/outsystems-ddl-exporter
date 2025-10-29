@@ -4,7 +4,7 @@
       "Module": "AppCore",
       "Schema": "dbo",
       "Table": "CUSTOMER_PORTAL",
-      "TableFile": "Modules/AppCore/Tables/dbo.CUSTOMER_PORTAL.sql",
+      "TableFile": "Modules/AppCore/dbo.CUSTOMER_PORTAL.sql",
       "Indexes": [
         "UIX_CUSTOMER_PORTAL_Email",
         "IX_CUSTOMER_PORTAL_LastName_FirstName"
@@ -18,7 +18,7 @@
       "Module": "AppCore",
       "Schema": "dbo",
       "Table": "City",
-      "TableFile": "Modules/AppCore/Tables/dbo.City.sql",
+      "TableFile": "Modules/AppCore/dbo.City.sql",
       "Indexes": [],
       "ForeignKeys": [],
       "IncludesExtendedProperties": false
@@ -27,7 +27,7 @@
       "Module": "ExtBilling",
       "Schema": "billing",
       "Table": "BillingAccount",
-      "TableFile": "Modules/ExtBilling/Tables/billing.BillingAccount.sql",
+      "TableFile": "Modules/ExtBilling/billing.BillingAccount.sql",
       "Indexes": [
         "UIX_BillingAccount_AccountNumber"
       ],
@@ -38,7 +38,7 @@
       "Module": "Ops",
       "Schema": "dbo",
       "Table": "JobRun",
-      "TableFile": "Modules/Ops/Tables/dbo.JobRun.sql",
+      "TableFile": "Modules/Ops/dbo.JobRun.sql",
       "Indexes": [],
       "ForeignKeys": [],
       "IncludesExtendedProperties": false

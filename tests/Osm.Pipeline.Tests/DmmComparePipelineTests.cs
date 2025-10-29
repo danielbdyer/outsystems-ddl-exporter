@@ -134,7 +134,7 @@ public class DmmComparePipelineTests
             "edge-case");
         TestFileSystem.CopyDirectory(baselineSource, workspace.Path);
 
-        var customerPath = Path.Combine(workspace.Path, "Modules", "AppCore", "Tables", "dbo.Customer.sql");
+        var customerPath = Path.Combine(workspace.Path, "Modules", "AppCore", "dbo.Customer.sql");
         File.Delete(customerPath);
 
         var diffPath = Path.Combine(workspace.Path, "dmm-diff.json");

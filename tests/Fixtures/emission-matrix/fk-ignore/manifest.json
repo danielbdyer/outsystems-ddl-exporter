@@ -4,7 +4,7 @@
       "Module": "M",
       "Schema": "dbo",
       "Table": "A",
-      "TableFile": "Modules/M/Tables/dbo.A.sql",
+      "TableFile": "Modules/M/dbo.A.sql",
       "Indexes": [],
       "ForeignKeys": [],
       "IncludesExtendedProperties": false
@@ -13,7 +13,7 @@
       "Module": "M",
       "Schema": "dbo",
       "Table": "B",
-      "TableFile": "Modules/M/Tables/dbo.B.sql",
+      "TableFile": "Modules/M/dbo.B.sql",
       "Indexes": [],
       "ForeignKeys": [],
       "IncludesExtendedProperties": false
@@ -22,7 +22,7 @@
       "Module": "UserExtension_CS",
       "Schema": "dbo",
       "Table": "User",
-      "TableFile": "Modules/UserExtension_CS/Tables/dbo.User.sql",
+      "TableFile": "Modules/UserExtension_CS/dbo.User.sql",
       "Indexes": [
         "UIX_User_Email",
         "UIX_User_Username"

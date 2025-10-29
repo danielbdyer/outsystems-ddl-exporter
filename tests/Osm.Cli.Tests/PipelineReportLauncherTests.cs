@@ -95,7 +95,7 @@ public class PipelineReportLauncherTests
                     "AppCore",
                     "dbo",
                     "Customer",
-                    "Modules/AppCore/Tables/dbo.Customer.sql",
+                    "Modules/AppCore/dbo.Customer.sql",
                     new[] { "IX_Customer_Email" },
                     new[] { "FK_Customer_City_CityId" },
                     true),
@@ -103,7 +103,7 @@ public class PipelineReportLauncherTests
                     "ExtBilling",
                     "dbo",
                     "Invoice",
-                    "Modules/ExtBilling/Tables/dbo.Invoice.sql",
+                    "Modules/ExtBilling/dbo.Invoice.sql",
                     Array.Empty<string>(),
                     Array.Empty<string>(),
                     false)

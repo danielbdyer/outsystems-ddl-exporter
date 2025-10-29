@@ -109,7 +109,7 @@ public sealed class SsdtTableLayoutComparator
             var key = Key(table.Schema, effectiveName);
             var module = table.Module ?? string.Empty;
             var fileName = $"{table.Schema}.{effectiveName}.sql";
-            var relativePath = NormalizeRelativePath(Path.Combine("Modules", module, "Tables", fileName));
+            var relativePath = NormalizeRelativePath(Path.Combine("Modules", module, fileName));
             map[key] = relativePath;
         }
 
@@ -167,7 +167,7 @@ public sealed class SsdtTableLayoutComparator
         }
 
         var segments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length < 4)
+        if (segments.Length != 3)
         {
             return false;
         }
@@ -177,7 +177,7 @@ public sealed class SsdtTableLayoutComparator
             return false;
         }
 
-        return string.Equals(segments[^2], "Tables", StringComparison.OrdinalIgnoreCase);
+        return true;
     }
 
     private static string NormalizeRelativePath(string path)

@@ -35,7 +35,7 @@ public class SsdtEmitterTests
         Assert.Equal("SampleModule", table.Module);
         Assert.Equal("dbo", table.Schema);
         Assert.Equal("Sample", table.Table);
-        Assert.Equal("Modules/SampleModule/Tables/dbo.Sample.sql", table.TableFile);
+        Assert.Equal("Modules/SampleModule/dbo.Sample.sql", table.TableFile);
         Assert.Empty(table.Indexes);
         Assert.Empty(table.ForeignKeys);
 
@@ -44,7 +44,7 @@ public class SsdtEmitterTests
         var manifestJson = fileSystem.File.ReadAllText(manifestPath);
         Assert.Contains("\"Sample\"", manifestJson, StringComparison.Ordinal);
 
-        var tablePath = Combine(fileSystem, outputDirectory, "Modules", "SampleModule", "Tables", "dbo.Sample.sql");
+        var tablePath = Combine(fileSystem, outputDirectory, "Modules", "SampleModule", "dbo.Sample.sql");
         Assert.True(fileSystem.File.Exists(tablePath));
         var script = fileSystem.File.ReadAllText(tablePath);
         Assert.Contains("CREATE TABLE [dbo].[Sample]", script, StringComparison.Ordinal);

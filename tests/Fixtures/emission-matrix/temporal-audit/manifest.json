@@ -4,7 +4,7 @@
       "Module": "Matrix",
       "Schema": "dbo",
       "Table": "Audit",
-      "TableFile": "Modules/Matrix/Tables/dbo.Audit.sql",
+      "TableFile": "Modules/Matrix/dbo.Audit.sql",
       "Indexes": [],
       "ForeignKeys": [],
       "IncludesExtendedProperties": true
@@ -13,7 +13,7 @@
       "Module": "Matrix",
       "Schema": "dbo",
       "Table": "TemporalOrder",
-      "TableFile": "Modules/Matrix/Tables/dbo.TemporalOrder.sql",
+      "TableFile": "Modules/Matrix/dbo.TemporalOrder.sql",
       "Indexes": [
         "IX_TemporalOrder_Status_AuditId"
       ],
@@ -26,7 +26,7 @@
       "Module": "UserExtension_CS",
       "Schema": "dbo",
       "Table": "User",
-      "TableFile": "Modules/UserExtension_CS/Tables/dbo.User.sql",
+      "TableFile": "Modules/UserExtension_CS/dbo.User.sql",
       "Indexes": [
         "UIX_User_Email",
         "UIX_User_Username"

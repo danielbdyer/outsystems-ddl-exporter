@@ -217,8 +217,8 @@ public sealed class SsdtEmitter
 
         var result = _perTableWriter.Generate(table, options, headerItems, cancellationToken);
 
-        var tablesRoot = modulePaths.TablesRoot;
-        var tableFilePath = _fileSystem.Path.Combine(tablesRoot, $"{table.Schema}.{result.EffectiveTableName}.sql");
+        var moduleRoot = modulePaths.ModuleRoot;
+        var tableFilePath = _fileSystem.Path.Combine(moduleRoot, $"{table.Schema}.{result.EffectiveTableName}.sql");
         var indexNames = result.IndexNames.IsDefaultOrEmpty
             ? ImmutableArray<string>.Empty
             : result.IndexNames;
@@ -302,8 +302,7 @@ public sealed class SsdtEmitter
         return cache.GetOrAdd(module, key =>
         {
             var moduleRoot = _fileSystem.Path.Combine(outputDirectory, "Modules", key);
-            var tablesRoot = _fileSystem.Path.Combine(moduleRoot, "Tables");
-            return new ModuleDirectoryPaths(tablesRoot);
+            return new ModuleDirectoryPaths(moduleRoot);
         });
     }
 
@@ -332,7 +331,7 @@ public sealed class SsdtEmitter
         => _fileSystem.Path.GetRelativePath(root, path)
             .Replace(_fileSystem.Path.DirectorySeparatorChar, '/');
 
-    private sealed record ModuleDirectoryPaths(string TablesRoot);
+    private sealed record ModuleDirectoryPaths(string ModuleRoot);
 
     private sealed record TableEmissionPlan(
         TableManifestEntry ManifestEntry,

@@ -65,7 +65,7 @@ public class CliIntegrationTests
         using (var subset = emission.CreateSnapshot(
                    "manifest.json",
                    "policy-decisions.json",
-                   "Modules/AppCore/Tables/dbo.Customer.sql"))
+                   "Modules/AppCore/dbo.Customer.sql"))
         {
             DirectorySnapshot.AssertMatches(smokeSnapshotRoot, subset.Path);
         }
@@ -144,13 +144,13 @@ public class CliIntegrationTests
         var emission = EmissionOutput.Load(output.Path);
 
         var renamed = Assert.Single(emission.Manifest.Tables.Where(t => t.Table == "CUSTOMER_PORTAL"));
-        Assert.Equal("Modules/AppCore/Tables/dbo.CUSTOMER_PORTAL.sql", renamed.TableFile);
+        Assert.Equal("Modules/AppCore/dbo.CUSTOMER_PORTAL.sql", renamed.TableFile);
         Assert.DoesNotContain(emission.Manifest.Tables, t => t.Table == "Customer");
 
-        Assert.Contains("Modules/AppCore/Tables/dbo.CUSTOMER_PORTAL.sql", emission.TableScripts);
+        Assert.Contains("Modules/AppCore/dbo.CUSTOMER_PORTAL.sql", emission.TableScripts);
         Assert.DoesNotContain(
             emission.TableScripts,
-            path => path.Equals("Modules/AppCore/Tables/dbo.Customer.sql", StringComparison.OrdinalIgnoreCase));
+            path => path.Equals("Modules/AppCore/dbo.Customer.sql", StringComparison.OrdinalIgnoreCase));
 
         var script = await File.ReadAllTextAsync(emission.GetAbsolutePath(renamed.TableFile));
         Assert.Contains("CREATE TABLE [dbo].[CUSTOMER_PORTAL]", script, StringComparison.OrdinalIgnoreCase);
@@ -207,10 +207,10 @@ public class CliIntegrationTests
         var emission = EmissionOutput.Load(outputPath);
 
         var renamed = Assert.Single(emission.Manifest.Tables.Where(t => t.Table == "CUSTOMER_STATIC"));
-        Assert.Equal("Modules/AppCore/Tables/dbo.CUSTOMER_STATIC.sql", renamed.TableFile);
+        Assert.Equal("Modules/AppCore/dbo.CUSTOMER_STATIC.sql", renamed.TableFile);
         Assert.DoesNotContain(emission.Manifest.Tables, t => t.Table == "Customer");
 
-        Assert.Contains("Modules/AppCore/Tables/dbo.CUSTOMER_STATIC.sql", emission.TableScripts);
+        Assert.Contains("Modules/AppCore/dbo.CUSTOMER_STATIC.sql", emission.TableScripts);
 
         foreach (var tableScript in emission.TableScripts)
         {
