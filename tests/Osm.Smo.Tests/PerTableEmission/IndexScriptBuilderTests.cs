@@ -100,6 +100,42 @@ public class IndexScriptBuilderTests
         Assert.Equal("Order", statement.OnName.Identifiers[1].Value);
     }
 
+    [Fact]
+    public void BuildCreateIndexStatement_skips_none_data_compression_settings()
+    {
+        var table = new SmoTableDefinition(
+            Module: "Sales",
+            OriginalModule: "Sales",
+            Name: "OSUSR_SALES_ORDER",
+            Schema: "dbo",
+            Catalog: "OutSystems",
+            LogicalName: "Order",
+            Description: null,
+            Columns: ImmutableArray<SmoColumnDefinition>.Empty,
+            Indexes: ImmutableArray<SmoIndexDefinition>.Empty,
+            ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
+            Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
+
+        var metadata = SmoIndexMetadata.Empty with
+        {
+            DataCompression = ImmutableArray.Create(new SmoIndexCompressionSetting(1, "NONE")),
+        };
+
+        var index = new SmoIndexDefinition(
+            Name: "IX_OSUSR_SALES_ORDER_ID",
+            IsUnique: false,
+            IsPrimaryKey: false,
+            IsPlatformAuto: false,
+            Description: null,
+            Columns: ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 0, IsIncluded: false, IsDescending: false)),
+            Metadata: metadata);
+
+        var builder = new IndexScriptBuilder(_formatter);
+        var statement = builder.BuildCreateIndexStatement(table, index, "Order", index.Name, SmoFormatOptions.Default);
+
+        Assert.Empty(statement.IndexOptions.OfType<DataCompressionOption>());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
