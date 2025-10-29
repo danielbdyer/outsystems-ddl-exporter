@@ -83,10 +83,14 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
             modelDeserializerFacade,
             _loggerFactory.CreateLogger<SqlModelExtractionService>());
 
+        var extractionOptions = string.IsNullOrWhiteSpace(request.OutputPath)
+            ? ModelExtractionOptions.InMemory(request.SqlMetadataOutputPath, request.SqlMetadataLog)
+            : ModelExtractionOptions.ToFile(request.OutputPath!, request.SqlMetadataOutputPath, request.SqlMetadataLog);
+
         var extractionResult = await extractionService
             .ExtractAsync(
                 request.Command,
-                ModelExtractionOptions.InMemory(request.SqlMetadataOutputPath, request.SqlMetadataLog),
+                extractionOptions,
                 cancellationToken)
             .ConfigureAwait(false);
 

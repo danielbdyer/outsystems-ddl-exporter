@@ -101,6 +101,25 @@ public class ExtractModelApplicationServiceTests
         dispatcher.AssertRequestLogged();
     }
 
+    [Fact]
+    public async Task RunAsync_PropagatesOutputPathToPipelineRequest()
+    {
+        var configuration = CreateConfiguration(Array.Empty<string>(), includeSystem: null, includeInactive: null);
+        var context = new CliConfigurationContext(configuration, ConfigPath: null);
+        var dispatcher = new RecordingDispatcher();
+        var service = new ExtractModelApplicationService(dispatcher, NullLogger<ExtractModelApplicationService>.Instance);
+
+        var input = new ExtractModelApplicationInput(
+            context,
+            new ExtractModelOverrides(null, null, null, " artifacts/model.json ", null, null),
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null));
+
+        var result = await service.RunAsync(input);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("artifacts/model.json", dispatcher.Request?.OutputPath);
+    }
+
     private static CliConfiguration CreateConfiguration(
         string[] modules,
         bool? includeSystem,
