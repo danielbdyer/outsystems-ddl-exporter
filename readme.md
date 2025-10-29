@@ -978,8 +978,8 @@ dotnet run --project src/Osm.Cli dmm-compare \
       "Table": "Customer",
       "TableFile": "Modules/AppCore/Tables/dbo.Customer.sql",
       "Indexes": [
-        "IDX_Customer_Email",
-        "IDX_Customer_Name"
+        "UIX_Customer_Email",
+        "IX_Customer_LastName_FirstName"
       ],
       "ForeignKeys": [
         "FK_Customer_City_CityId"

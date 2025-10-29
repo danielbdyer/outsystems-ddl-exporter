@@ -99,7 +99,7 @@ public class EmissionPipelineTests
         Assert.Equal("dbo", customer.Schema);
         Assert.Equal("Modules/AppCore/Tables/dbo.Customer.sql", customer.TableFile);
         Assert.Contains("FK_Customer_City_CityId", customer.ForeignKeys);
-        Assert.Contains("IDX_Customer_Email", customer.Indexes);
+        Assert.Contains("UIX_Customer_Email", customer.Indexes);
 
         Assert.Equal(emission.Manifest.Tables.Count, emission.Manifest.Coverage.Tables.Emitted);
         Assert.Equal(

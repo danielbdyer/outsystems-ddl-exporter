@@ -119,11 +119,11 @@ internal static class SmoIndexBuilder
                 continue;
             }
 
-            var normalizedName = ConstraintNameNormalizer.Normalize(
-                index.Name.Value,
+            var keyAttributes = referencedAttributes.ToImmutableArray();
+            var normalizedName = IndexNameGenerator.Generate(
                 context.Entity,
-                referencedAttributes,
-                index.IsUnique ? ConstraintNameKind.UniqueIndex : ConstraintNameKind.NonUniqueIndex,
+                keyAttributes,
+                index.IsUnique,
                 format);
 
             var indexCoordinate = new IndexCoordinate(context.Entity.Schema, context.Entity.PhysicalName, index.Name);

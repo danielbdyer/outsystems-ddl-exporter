@@ -202,7 +202,7 @@
     {
       "Schema": "billing",
       "Table": "BILLING_ACCOUNT",
-      "Index": "IDX_BILLINGACCOUNT_ACCTNUM",
+      "Index": "UIX_BillingAccount_AccountNumber",
       "EnforceUnique": true,
       "RequiresRemediation": false,
       "Rationales": [
@@ -213,7 +213,7 @@
     {
       "Schema": "dbo",
       "Table": "OSUSR_ABC_CUSTOMER",
-      "Index": "IDX_CUSTOMER_EMAIL",
+      "Index": "UIX_Customer_Email",
       "EnforceUnique": true,
       "RequiresRemediation": false,
       "Rationales": [

@@ -6,8 +6,8 @@
       "Table": "Customer",
       "TableFile": "Modules/AppCore/Tables/dbo.Customer.sql",
       "Indexes": [
-        "IDX_Customer_Email",
-        "IDX_Customer_Name"
+        "UIX_Customer_Email",
+        "IX_Customer_LastName_FirstName"
       ],
       "ForeignKeys": [
         "FK_Customer_City_CityId"
@@ -29,7 +29,7 @@
       "Table": "BillingAccount",
       "TableFile": "Modules/ExtBilling/Tables/billing.BillingAccount.sql",
       "Indexes": [
-        "IDX_BillingAccount_Acctnum"
+        "UIX_BillingAccount_AccountNumber"
       ],
       "ForeignKeys": [],
       "IncludesExtendedProperties": false
