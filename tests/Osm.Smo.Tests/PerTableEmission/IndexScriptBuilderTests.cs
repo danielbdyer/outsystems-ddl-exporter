@@ -98,4 +98,42 @@ public class IndexScriptBuilderTests
         Assert.Equal(AlterIndexType.Disable, statement.AlterIndexType);
         Assert.Equal("Order", statement.OnName.Identifiers[1].Value);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildCreateIndexStatement_skips_default_index_options_and_storage_clause(bool isUnique)
+    {
+        var table = new SmoTableDefinition(
+            Module: "Sales",
+            OriginalModule: "Sales",
+            Name: "OSUSR_SALES_ORDER",
+            Schema: "dbo",
+            Catalog: "OutSystems",
+            LogicalName: "Order",
+            Description: null,
+            Columns: ImmutableArray<SmoColumnDefinition>.Empty,
+            Indexes: ImmutableArray<SmoIndexDefinition>.Empty,
+            ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
+            Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
+
+        var metadata = SmoIndexMetadata.Empty with
+        {
+            DataSpace = new SmoIndexDataSpace("PRIMARY", "ROWS_FILEGROUP"),
+        };
+
+        var index = new SmoIndexDefinition(
+            Name: isUnique ? "UIX_OSUSR_SALES_ORDER_ID" : "IX_OSUSR_SALES_ORDER_ID",
+            IsUnique: isUnique,
+            IsPrimaryKey: false,
+            IsPlatformAuto: false,
+            Columns: ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 0, IsIncluded: false, IsDescending: false)),
+            Metadata: metadata);
+
+        var builder = new IndexScriptBuilder(_formatter);
+        var statement = builder.BuildCreateIndexStatement(table, index, "Order", index.Name, SmoFormatOptions.Default);
+
+        Assert.Empty(statement.IndexOptions);
+        Assert.Null(statement.OnFileGroupOrPartitionScheme);
+    }
 }
