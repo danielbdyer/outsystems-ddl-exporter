@@ -121,7 +121,7 @@ public sealed class PipelineLogMetadataBuilder
             }
         }
 
-        if (trimmed.StartsWith('.', StringComparison.Ordinal) || trimmed.EndsWith('.', StringComparison.Ordinal))
+        if (trimmed.StartsWith(".", StringComparison.Ordinal) || trimmed.EndsWith(".", StringComparison.Ordinal))
         {
             throw new ArgumentException($"Metadata key '{key}' cannot start or end with a '.'.", nameof(key));
         }

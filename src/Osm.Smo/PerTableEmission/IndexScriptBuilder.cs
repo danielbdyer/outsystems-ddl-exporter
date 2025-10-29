@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -315,7 +316,7 @@ internal sealed class IndexScriptBuilder
 
     private FileGroupOrPartitionScheme? BuildFileGroupOrPartitionScheme(SmoIndexMetadata metadata, SmoFormatOptions format)
     {
-        if (!ShouldEmitDataSpaceClause(metadata))
+        if (!ShouldEmitDataSpaceClause(metadata, out var dataSpace))
         {
             return null;
         }
@@ -324,11 +325,11 @@ internal sealed class IndexScriptBuilder
         {
             Name = new IdentifierOrValueExpression
             {
-                Identifier = _formatter.CreateIdentifier(metadata.DataSpace.Name, format),
+                Identifier = _formatter.CreateIdentifier(dataSpace.Name, format),
             }
         };
 
-        if (string.Equals(metadata.DataSpace.Type, "PARTITION_SCHEME", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(dataSpace.Type, "PARTITION_SCHEME", StringComparison.OrdinalIgnoreCase))
         {
             foreach (var column in metadata.PartitionColumns.OrderBy(static c => c.Ordinal))
             {
@@ -339,9 +340,10 @@ internal sealed class IndexScriptBuilder
         return clause;
     }
 
-    private static bool ShouldEmitDataSpaceClause(SmoIndexMetadata metadata)
+    private static bool ShouldEmitDataSpaceClause(SmoIndexMetadata metadata, [NotNullWhen(true)] out SmoIndexDataSpace? dataSpace)
     {
-        if (metadata.DataSpace is not { } dataSpace)
+        dataSpace = metadata.DataSpace;
+        if (dataSpace is null)
         {
             return false;
         }
