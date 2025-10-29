@@ -26,8 +26,13 @@ public sealed class TighteningPolicyGoldenVectorsTests
         Assert.True(customerId.MakeNotNull);
         Assert.False(customerId.RequiresRemediation);
 
-        Assert.False(decisions.Nullability[CustomerColumn("EMAIL")].MakeNotNull);
-        Assert.False(decisions.Nullability[CustomerColumn("EXTERNALID")].MakeNotNull);
+        var email = decisions.Nullability[CustomerColumn("EMAIL")];
+        Assert.True(email.MakeNotNull);
+        Assert.False(email.RequiresRemediation);
+
+        var externalId = decisions.Nullability[CustomerColumn("EXTERNALID")];
+        Assert.False(externalId.MakeNotNull);
+
         Assert.False(decisions.Nullability[OrderColumn("CUSTOMERID")].MakeNotNull);
 
         Assert.True(decisions.ForeignKeys[OrderColumn("CUSTOMERID")].CreateConstraint);

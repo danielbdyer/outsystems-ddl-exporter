@@ -13,219 +13,370 @@ namespace Osm.Validation.Tests.Policy;
 
 public sealed class TighteningPolicyMatrixTests
 {
-    public static IEnumerable<object[]> NullabilityMatrixData()
+    private static readonly ImmutableDictionary<TighteningMode, NullabilityModeExpectation> NullabilityExpectations
+        = new Dictionary<TighteningMode, NullabilityModeExpectation>
+        {
+            [TighteningMode.Cautious] = new(
+                Code: "MODE_CAUTIOUS",
+                EvidenceEmbeddedInRoot: false,
+                Signals: new Dictionary<TighteningPolicyMatrix.NullabilitySignalKey, NullabilitySignalExpectation>
+                {
+                    [TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.Physical] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.Mandatory] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.TelemetryOnly,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.Unique] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.TelemetryOnly,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false)
+                }),
+            [TighteningMode.EvidenceGated] = new(
+                Code: "MODE_EVIDENCE_GATED",
+                EvidenceEmbeddedInRoot: true,
+                Signals: new Dictionary<TighteningPolicyMatrix.NullabilitySignalKey, NullabilitySignalExpectation>
+                {
+                    [TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.Physical] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.Mandatory] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: true,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.Unique] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: true,
+                        AddsRemediationWhenEvidenceMissing: false)
+                }),
+            [TighteningMode.Aggressive] = new(
+                Code: "MODE_AGGRESSIVE",
+                EvidenceEmbeddedInRoot: false,
+                Signals: new Dictionary<TighteningPolicyMatrix.NullabilitySignalKey, NullabilitySignalExpectation>
+                {
+                    [TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.Physical] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.Mandatory] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: false),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: true),
+                    [TighteningPolicyMatrix.NullabilitySignalKey.Unique] = new(
+                        TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten,
+                        RequiresEvidence: false,
+                        AddsRemediationWhenEvidenceMissing: true)
+                })
+        }.ToImmutableDictionary();
+
+    private static readonly ImmutableDictionary<TighteningPolicyMatrix.NullabilitySignalKey, ImmutableArray<string>> NullabilityMetadataExpectations
+        = new Dictionary<TighteningPolicyMatrix.NullabilitySignalKey, ImmutableArray<string>>
+        {
+            [TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey] = ImmutableArray.Create(TighteningRationales.PrimaryKey),
+            [TighteningPolicyMatrix.NullabilitySignalKey.Physical] = ImmutableArray.Create(TighteningRationales.PhysicalNotNull),
+            [TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey] = ImmutableArray.Create(
+                TighteningRationales.ForeignKeyEnforced,
+                TighteningRationales.DeleteRuleIgnore,
+                TighteningRationales.DataHasOrphans),
+            [TighteningPolicyMatrix.NullabilitySignalKey.Unique] = ImmutableArray.Create(
+                TighteningRationales.UniqueNoNulls,
+                TighteningRationales.CompositeUniqueNoNulls,
+                TighteningRationales.UniqueDuplicatesPresent,
+                TighteningRationales.CompositeUniqueDuplicatesPresent),
+            [TighteningPolicyMatrix.NullabilitySignalKey.Mandatory] = ImmutableArray.Create(
+                TighteningRationales.Mandatory,
+                TighteningRationales.DataHasNulls)
+        }.ToImmutableDictionary();
+
+    private static readonly ImmutableDictionary<(TighteningMode Mode, TighteningPolicyMatrix.UniquePolicyScenario Scenario), UniqueExpectation> UniqueExpectations
+        = new Dictionary<(TighteningMode, TighteningPolicyMatrix.UniquePolicyScenario), UniqueExpectation>
+        {
+            [(TighteningMode.Cautious, TighteningPolicyMatrix.UniquePolicyScenario.PolicyDisabled)] = new(
+                EnforceUnique: false,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(TighteningRationales.UniquePolicyDisabled)),
+            [(TighteningMode.Cautious, TighteningPolicyMatrix.UniquePolicyScenario.PhysicalReality)] = new(
+                EnforceUnique: true,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(TighteningRationales.PhysicalUniqueKey)),
+            [(TighteningMode.Cautious, TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithPhysicalReality)] = new(
+                EnforceUnique: true,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(
+                    TighteningRationales.PhysicalUniqueKey,
+                    TighteningRationales.UniqueDuplicatesPresent,
+                    TighteningRationales.CompositeUniqueDuplicatesPresent)),
+            [(TighteningMode.Cautious, TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithoutPhysicalReality)] = new(
+                EnforceUnique: false,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(
+                    TighteningRationales.UniqueDuplicatesPresent,
+                    TighteningRationales.CompositeUniqueDuplicatesPresent)),
+            [(TighteningMode.Cautious, TighteningPolicyMatrix.UniquePolicyScenario.CleanWithEvidence)] = new(
+                EnforceUnique: false,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(
+                    TighteningRationales.DataNoNulls,
+                    TighteningRationales.UniqueNoNulls,
+                    TighteningRationales.CompositeUniqueNoNulls)),
+            [(TighteningMode.Cautious, TighteningPolicyMatrix.UniquePolicyScenario.CleanWithoutEvidence)] = new(
+                EnforceUnique: false,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(
+                    TighteningRationales.ProfileMissing,
+                    TighteningRationales.UniqueNoNulls,
+                    TighteningRationales.CompositeUniqueNoNulls)),
+            [(TighteningMode.EvidenceGated, TighteningPolicyMatrix.UniquePolicyScenario.PolicyDisabled)] = new(
+                EnforceUnique: false,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(TighteningRationales.UniquePolicyDisabled)),
+            [(TighteningMode.EvidenceGated, TighteningPolicyMatrix.UniquePolicyScenario.PhysicalReality)] = new(
+                EnforceUnique: true,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(TighteningRationales.PhysicalUniqueKey)),
+            [(TighteningMode.EvidenceGated, TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithPhysicalReality)] = new(
+                EnforceUnique: true,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(
+                    TighteningRationales.PhysicalUniqueKey,
+                    TighteningRationales.UniqueDuplicatesPresent,
+                    TighteningRationales.CompositeUniqueDuplicatesPresent)),
+            [(TighteningMode.EvidenceGated, TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithoutPhysicalReality)] = new(
+                EnforceUnique: false,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(
+                    TighteningRationales.UniqueDuplicatesPresent,
+                    TighteningRationales.CompositeUniqueDuplicatesPresent)),
+            [(TighteningMode.EvidenceGated, TighteningPolicyMatrix.UniquePolicyScenario.CleanWithEvidence)] = new(
+                EnforceUnique: true,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(
+                    TighteningRationales.DataNoNulls,
+                    TighteningRationales.UniqueNoNulls,
+                    TighteningRationales.CompositeUniqueNoNulls)),
+            [(TighteningMode.EvidenceGated, TighteningPolicyMatrix.UniquePolicyScenario.CleanWithoutEvidence)] = new(
+                EnforceUnique: false,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(
+                    TighteningRationales.ProfileMissing,
+                    TighteningRationales.UniqueNoNulls,
+                    TighteningRationales.CompositeUniqueNoNulls)),
+            [(TighteningMode.Aggressive, TighteningPolicyMatrix.UniquePolicyScenario.PolicyDisabled)] = new(
+                EnforceUnique: false,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(TighteningRationales.UniquePolicyDisabled)),
+            [(TighteningMode.Aggressive, TighteningPolicyMatrix.UniquePolicyScenario.PhysicalReality)] = new(
+                EnforceUnique: true,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(TighteningRationales.PhysicalUniqueKey)),
+            [(TighteningMode.Aggressive, TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithPhysicalReality)] = new(
+                EnforceUnique: true,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.Always,
+                ImmutableArray.Create(
+                    TighteningRationales.PhysicalUniqueKey,
+                    TighteningRationales.UniqueDuplicatesPresent,
+                    TighteningRationales.CompositeUniqueDuplicatesPresent,
+                    TighteningRationales.RemediateBeforeTighten)),
+            [(TighteningMode.Aggressive, TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithoutPhysicalReality)] = new(
+                EnforceUnique: true,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.Always,
+                ImmutableArray.Create(
+                    TighteningRationales.UniqueDuplicatesPresent,
+                    TighteningRationales.CompositeUniqueDuplicatesPresent,
+                    TighteningRationales.ProfileMissing,
+                    TighteningRationales.RemediateBeforeTighten)),
+            [(TighteningMode.Aggressive, TighteningPolicyMatrix.UniquePolicyScenario.CleanWithEvidence)] = new(
+                EnforceUnique: true,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.None,
+                ImmutableArray.Create(
+                    TighteningRationales.DataNoNulls,
+                    TighteningRationales.UniqueNoNulls,
+                    TighteningRationales.CompositeUniqueNoNulls)),
+            [(TighteningMode.Aggressive, TighteningPolicyMatrix.UniquePolicyScenario.CleanWithoutEvidence)] = new(
+                EnforceUnique: true,
+                Remediation: TighteningPolicyMatrix.RemediationDirective.WhenEvidenceMissing,
+                ImmutableArray.Create(
+                    TighteningRationales.ProfileMissing,
+                    TighteningRationales.UniqueNoNulls,
+                    TighteningRationales.CompositeUniqueNoNulls,
+                    TighteningRationales.RemediateBeforeTighten))
+        }.ToImmutableDictionary();
+
+    private static readonly ImmutableDictionary<TighteningPolicyMatrix.ForeignKeyPolicyScenario, ForeignKeyExpectation> ForeignKeyExpectations
+        = new Dictionary<TighteningPolicyMatrix.ForeignKeyPolicyScenario, ForeignKeyExpectation>
+        {
+            [TighteningPolicyMatrix.ForeignKeyPolicyScenario.IgnoreRule] = new(
+                DeleteRuleIsIgnore: true,
+                HasOrphans: false,
+                HasExistingConstraint: false,
+                CrossSchema: false,
+                CrossCatalog: false,
+                EnableCreation: true,
+                AllowCrossSchema: true,
+                AllowCrossCatalog: true,
+                ExpectCreate: false,
+                Rationales: ImmutableArray.Create(TighteningRationales.DeleteRuleIgnore)),
+            [TighteningPolicyMatrix.ForeignKeyPolicyScenario.HasOrphan] = new(
+                DeleteRuleIsIgnore: false,
+                HasOrphans: true,
+                HasExistingConstraint: false,
+                CrossSchema: false,
+                CrossCatalog: false,
+                EnableCreation: true,
+                AllowCrossSchema: true,
+                AllowCrossCatalog: true,
+                ExpectCreate: false,
+                Rationales: ImmutableArray.Create(TighteningRationales.DataHasOrphans)),
+            [TighteningPolicyMatrix.ForeignKeyPolicyScenario.ExistingConstraint] = new(
+                DeleteRuleIsIgnore: false,
+                HasOrphans: false,
+                HasExistingConstraint: true,
+                CrossSchema: false,
+                CrossCatalog: false,
+                EnableCreation: true,
+                AllowCrossSchema: false,
+                AllowCrossCatalog: false,
+                ExpectCreate: true,
+                Rationales: ImmutableArray.Create(TighteningRationales.DatabaseConstraintPresent)),
+            [TighteningPolicyMatrix.ForeignKeyPolicyScenario.PolicyDisabled] = new(
+                DeleteRuleIsIgnore: false,
+                HasOrphans: false,
+                HasExistingConstraint: false,
+                CrossSchema: false,
+                CrossCatalog: false,
+                EnableCreation: false,
+                AllowCrossSchema: true,
+                AllowCrossCatalog: true,
+                ExpectCreate: false,
+                Rationales: ImmutableArray.Create(TighteningRationales.ForeignKeyCreationDisabled)),
+            [TighteningPolicyMatrix.ForeignKeyPolicyScenario.CrossSchemaBlocked] = new(
+                DeleteRuleIsIgnore: false,
+                HasOrphans: false,
+                HasExistingConstraint: false,
+                CrossSchema: true,
+                CrossCatalog: false,
+                EnableCreation: true,
+                AllowCrossSchema: false,
+                AllowCrossCatalog: true,
+                ExpectCreate: false,
+                Rationales: ImmutableArray.Create(TighteningRationales.CrossSchema)),
+            [TighteningPolicyMatrix.ForeignKeyPolicyScenario.CrossCatalogBlocked] = new(
+                DeleteRuleIsIgnore: false,
+                HasOrphans: false,
+                HasExistingConstraint: false,
+                CrossSchema: false,
+                CrossCatalog: true,
+                EnableCreation: true,
+                AllowCrossSchema: true,
+                AllowCrossCatalog: false,
+                ExpectCreate: false,
+                Rationales: ImmutableArray.Create(TighteningRationales.CrossCatalog)),
+            [TighteningPolicyMatrix.ForeignKeyPolicyScenario.Eligible] = new(
+                DeleteRuleIsIgnore: false,
+                HasOrphans: false,
+                HasExistingConstraint: false,
+                CrossSchema: false,
+                CrossCatalog: false,
+                EnableCreation: true,
+                AllowCrossSchema: true,
+                AllowCrossCatalog: true,
+                ExpectCreate: true,
+                Rationales: ImmutableArray.Create(TighteningRationales.PolicyEnableCreation))
+        }.ToImmutableDictionary();
+
+    [Fact]
+    public void NullabilityMatrix_DefinitionsMatchExpectations()
     {
-        yield return new object[]
-        {
-            TighteningMode.Cautious,
-            "MODE_CAUTIOUS",
-            new[]
-            {
-                TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Physical.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Mandatory.ToString()
-            },
-            Array.Empty<string>(),
-            false
-        };
+        var definitions = TighteningPolicyMatrix.Nullability.Definitions;
+        Assert.Equal(NullabilityExpectations.Count, definitions.Length);
 
-        yield return new object[]
+        foreach (var (mode, expectation) in NullabilityExpectations)
         {
-            TighteningMode.EvidenceGated,
-            "MODE_EVIDENCE_GATED",
-            new[]
-            {
-                TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Physical.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Mandatory.ToString()
-            },
-            new[]
-            {
-                TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Unique.ToString()
-            },
-            true
-        };
+            var definition = TighteningPolicyMatrix.Nullability.GetMode(mode);
 
-        yield return new object[]
-        {
-            TighteningMode.Aggressive,
-            "MODE_AGGRESSIVE",
-            new[]
+            Assert.Equal(expectation.Code, definition.Code);
+            Assert.Equal(expectation.EvidenceEmbeddedInRoot, definition.EvidenceEmbeddedInRoot);
+            Assert.Equal(expectation.Signals.Count, definition.SignalDefinitions.Length);
+
+            foreach (var (signal, signalExpectation) in expectation.Signals)
             {
-                TighteningPolicyMatrix.NullabilitySignalKey.PrimaryKey.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Physical.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Mandatory.ToString()
-            },
-            new[]
-            {
-                TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey.ToString(),
-                TighteningPolicyMatrix.NullabilitySignalKey.Unique.ToString()
-            },
-            false
-        };
-    }
+                var actual = definition.GetDefinition(signal);
+                Assert.Equal(signalExpectation.Participation, actual.Participation);
+                Assert.Equal(signalExpectation.RequiresEvidence, actual.RequiresEvidence);
+                Assert.Equal(signalExpectation.AddsRemediationWhenEvidenceMissing, actual.AddsRemediationWhenEvidenceMissing);
+            }
 
-    [Theory]
-    [MemberData(nameof(NullabilityMatrixData))]
-    public void NullabilityMatrix_DefinitionsRemainStable(
-        TighteningMode mode,
-        string expectedCode,
-        string[] expectedCore,
-        string[] expectedConditional,
-        bool evidenceEmbedded)
-    {
-        var definition = TighteningPolicyMatrix.Nullability.GetMode(mode);
+            var expectedConditional = expectation.Signals
+                .Where(pair => pair.Value.Participation == TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten
+                    && (pair.Value.RequiresEvidence || pair.Value.AddsRemediationWhenEvidenceMissing))
+                .Select(pair => pair.Key)
+                .OrderBy(static key => key)
+                .ToArray();
 
-        Assert.Equal(expectedCode, definition.Code);
-        var expectedCoreKeys = expectedCore.Select(value => Enum.Parse<TighteningPolicyMatrix.NullabilitySignalKey>(value));
-        Assert.Equal(expectedCoreKeys, definition.CoreSignals);
-        Assert.Equal(evidenceEmbedded, definition.EvidenceEmbeddedInRoot);
+            var actualConditional = definition.ConditionalSignals
+                .OrderBy(static key => key)
+                .ToArray();
 
-        if (expectedConditional.Length == 0)
-        {
-            Assert.Null(definition.ConditionalGroup);
-        }
-        else
-        {
-            Assert.NotNull(definition.ConditionalGroup);
-            var conditionalKeys = expectedConditional.Select(value => Enum.Parse<TighteningPolicyMatrix.NullabilitySignalKey>(value));
-            Assert.Equal(conditionalKeys, definition.ConditionalGroup!.Signals);
-            var requiresEvidence = mode == TighteningMode.EvidenceGated;
-            Assert.Equal(requiresEvidence, definition.ConditionalGroup.RequiresEvidence);
+            Assert.Equal(expectedConditional, actualConditional);
         }
     }
 
     [Fact]
-    public void NullabilityMatrix_ConditionalSignalsCoverStrongSignals()
+    public void NullabilityMatrix_MetadataMatchesExpectations()
     {
-        var signals = TighteningPolicyMatrix.Nullability.ConditionalSignals;
-        Assert.Contains(TighteningPolicyMatrix.NullabilitySignalKey.ForeignKey, signals);
-        Assert.Contains(TighteningPolicyMatrix.NullabilitySignalKey.Unique, signals);
-        Assert.DoesNotContain(TighteningPolicyMatrix.NullabilitySignalKey.Mandatory, signals);
+        foreach (var (signal, expectedRationales) in NullabilityMetadataExpectations)
+        {
+            var metadata = TighteningPolicyMatrix.Nullability.GetMetadata(signal);
+            Assert.Equal(expectedRationales.OrderBy(static rationale => rationale), metadata.Rationales.OrderBy(static rationale => rationale));
+        }
+    }
+
+    [Fact]
+    public void UniqueMatrix_RowCountMatchesExpectations()
+    {
+        Assert.Equal(UniqueExpectations.Count, TighteningPolicyMatrix.UniqueIndexes.Definitions.Length);
     }
 
     public static IEnumerable<object[]> UniqueMatrixData()
     {
-        foreach (var mode in new[]
-        {
-            TighteningMode.Cautious,
-            TighteningMode.EvidenceGated,
-            TighteningMode.Aggressive
-        })
+        foreach (var ((mode, scenario), expectation) in UniqueExpectations)
         {
             yield return new object[]
             {
                 mode,
-                TighteningPolicyMatrix.UniquePolicyScenario.PolicyDisabled.ToString(),
-                false,
-                TighteningPolicyMatrix.RemediationDirective.None.ToString()
-            };
-
-            yield return new object[]
-            {
-                mode,
-                TighteningPolicyMatrix.UniquePolicyScenario.PhysicalReality.ToString(),
-                true,
-                TighteningPolicyMatrix.RemediationDirective.None.ToString()
+                scenario.ToString(),
+                expectation.EnforceUnique,
+                expectation.Remediation.ToString(),
+                expectation.Rationales.ToArray()
             };
         }
-
-        yield return new object[]
-        {
-            TighteningMode.Cautious,
-            TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithPhysicalReality.ToString(),
-            true,
-            TighteningPolicyMatrix.RemediationDirective.None.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.Cautious,
-            TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithoutPhysicalReality.ToString(),
-            false,
-            TighteningPolicyMatrix.RemediationDirective.None.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.Cautious,
-            TighteningPolicyMatrix.UniquePolicyScenario.CleanWithEvidence.ToString(),
-            false,
-            TighteningPolicyMatrix.RemediationDirective.None.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.Cautious,
-            TighteningPolicyMatrix.UniquePolicyScenario.CleanWithoutEvidence.ToString(),
-            false,
-            TighteningPolicyMatrix.RemediationDirective.None.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.EvidenceGated,
-            TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithPhysicalReality.ToString(),
-            true,
-            TighteningPolicyMatrix.RemediationDirective.None.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.EvidenceGated,
-            TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithoutPhysicalReality.ToString(),
-            false,
-            TighteningPolicyMatrix.RemediationDirective.None.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.EvidenceGated,
-            TighteningPolicyMatrix.UniquePolicyScenario.CleanWithEvidence.ToString(),
-            true,
-            TighteningPolicyMatrix.RemediationDirective.None.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.EvidenceGated,
-            TighteningPolicyMatrix.UniquePolicyScenario.CleanWithoutEvidence.ToString(),
-            false,
-            TighteningPolicyMatrix.RemediationDirective.None.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.Aggressive,
-            TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithPhysicalReality.ToString(),
-            true,
-            TighteningPolicyMatrix.RemediationDirective.Always.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.Aggressive,
-            TighteningPolicyMatrix.UniquePolicyScenario.DuplicatesWithoutPhysicalReality.ToString(),
-            true,
-            TighteningPolicyMatrix.RemediationDirective.Always.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.Aggressive,
-            TighteningPolicyMatrix.UniquePolicyScenario.CleanWithEvidence.ToString(),
-            true,
-            TighteningPolicyMatrix.RemediationDirective.None.ToString()
-        };
-
-        yield return new object[]
-        {
-            TighteningMode.Aggressive,
-            TighteningPolicyMatrix.UniquePolicyScenario.CleanWithoutEvidence.ToString(),
-            true,
-            TighteningPolicyMatrix.RemediationDirective.WhenEvidenceMissing.ToString()
-        };
     }
 
     [Theory]
@@ -234,24 +385,45 @@ public sealed class TighteningPolicyMatrixTests
         TighteningMode mode,
         string scenarioName,
         bool enforce,
-        string remediationName)
+        string remediationName,
+        string[] expectedRationales)
     {
         var scenario = Enum.Parse<TighteningPolicyMatrix.UniquePolicyScenario>(scenarioName);
         var remediation = Enum.Parse<TighteningPolicyMatrix.RemediationDirective>(remediationName);
-        var outcome = TighteningPolicyMatrix.UniqueIndexes.Resolve(mode, scenario);
-        Assert.Equal(enforce, outcome.EnforceUnique);
-        Assert.Equal(remediation, outcome.Remediation);
+        var definition = TighteningPolicyMatrix.UniqueIndexes.GetDefinition(mode, scenario);
+        Assert.Equal(enforce, definition.Outcome.EnforceUnique);
+        Assert.Equal(remediation, definition.Outcome.Remediation);
+        Assert.Equal(expectedRationales.OrderBy(static rationale => rationale), definition.Rationales.OrderBy(static rationale => rationale));
+    }
+
+    [Fact]
+    public void ForeignKeyMatrix_DefinitionsMatchExpectations()
+    {
+        Assert.Equal(ForeignKeyExpectations.Count, TighteningPolicyMatrix.ForeignKeys.Definitions.Length);
+
+        foreach (var (scenario, expectation) in ForeignKeyExpectations)
+        {
+            var definition = TighteningPolicyMatrix.ForeignKeys.Resolve(scenario);
+
+            Assert.Equal(expectation.DeleteRuleIsIgnore, definition.DeleteRuleIsIgnore);
+            Assert.Equal(expectation.HasOrphans, definition.HasOrphans);
+            Assert.Equal(expectation.HasExistingConstraint, definition.HasExistingConstraint);
+            Assert.Equal(expectation.CrossSchema, definition.CrossSchema);
+            Assert.Equal(expectation.CrossCatalog, definition.CrossCatalog);
+            Assert.Equal(expectation.EnableCreation, definition.EnableCreation);
+            Assert.Equal(expectation.AllowCrossSchema, definition.AllowCrossSchema);
+            Assert.Equal(expectation.AllowCrossCatalog, definition.AllowCrossCatalog);
+            Assert.Equal(expectation.ExpectCreate, definition.ExpectCreate);
+            Assert.Equal(expectation.Rationales.OrderBy(static rationale => rationale), definition.Rationales.OrderBy(static rationale => rationale));
+        }
     }
 
     public static IEnumerable<object[]> ForeignKeyMatrixData()
     {
-        yield return new object[] { TighteningPolicyMatrix.ForeignKeyPolicyScenario.IgnoreRule.ToString(), false };
-        yield return new object[] { TighteningPolicyMatrix.ForeignKeyPolicyScenario.HasOrphan.ToString(), false };
-        yield return new object[] { TighteningPolicyMatrix.ForeignKeyPolicyScenario.ExistingConstraint.ToString(), true };
-        yield return new object[] { TighteningPolicyMatrix.ForeignKeyPolicyScenario.PolicyDisabled.ToString(), false };
-        yield return new object[] { TighteningPolicyMatrix.ForeignKeyPolicyScenario.CrossSchemaBlocked.ToString(), false };
-        yield return new object[] { TighteningPolicyMatrix.ForeignKeyPolicyScenario.CrossCatalogBlocked.ToString(), false };
-        yield return new object[] { TighteningPolicyMatrix.ForeignKeyPolicyScenario.Eligible.ToString(), true };
+        foreach (var (scenario, expectation) in ForeignKeyExpectations)
+        {
+            yield return new object[] { scenario.ToString(), expectation.ExpectCreate };
+        }
     }
 
     [Theory]
@@ -355,4 +527,30 @@ public sealed class TighteningPolicyMatrixTests
         ForeignKeyOptions Options,
         IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> RealityMap,
         ForeignKeyTargetIndex TargetIndex);
+    private sealed record NullabilitySignalExpectation(
+        TighteningPolicyMatrix.NullabilitySignalParticipation Participation,
+        bool RequiresEvidence,
+        bool AddsRemediationWhenEvidenceMissing);
+
+    private sealed record NullabilityModeExpectation(
+        string Code,
+        bool EvidenceEmbeddedInRoot,
+        IReadOnlyDictionary<TighteningPolicyMatrix.NullabilitySignalKey, NullabilitySignalExpectation> Signals);
+
+    private sealed record UniqueExpectation(
+        bool EnforceUnique,
+        TighteningPolicyMatrix.RemediationDirective Remediation,
+        ImmutableArray<string> Rationales);
+
+    private sealed record ForeignKeyExpectation(
+        bool DeleteRuleIsIgnore,
+        bool HasOrphans,
+        bool HasExistingConstraint,
+        bool CrossSchema,
+        bool CrossCatalog,
+        bool EnableCreation,
+        bool AllowCrossSchema,
+        bool AllowCrossCatalog,
+        bool ExpectCreate,
+        ImmutableArray<string> Rationales);
 }

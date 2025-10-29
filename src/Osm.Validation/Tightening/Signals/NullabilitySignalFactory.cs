@@ -30,29 +30,25 @@ internal static class NullabilitySignalFactory
         };
 
         var rootChildren = new List<NullabilitySignal>();
-        foreach (var key in definition.CoreSignals)
+        foreach (var signalDefinition in definition.SignalDefinitions)
         {
-            rootChildren.Add(registry[key]);
-        }
-
-        if (definition.ConditionalGroup is { } group)
-        {
-            var groupSignals = group.Signals.Select(signal => registry[signal]).ToImmutableArray();
-            NullabilitySignal conditional = groupSignals.Length == 1
-                ? groupSignals[0]
-                : new AnyOfSignal(group.Code, group.Description, groupSignals);
-
-            if (group.RequiresEvidence)
+            if (signalDefinition.Participation != TighteningPolicyMatrix.NullabilitySignalParticipation.Tighten)
             {
-                conditional = new RequiresEvidenceSignal(conditional, evidence);
+                continue;
             }
 
-            rootChildren.Add(conditional);
+            var child = registry[signalDefinition.Signal];
+            if (signalDefinition.RequiresEvidence)
+            {
+                child = new RequiresEvidenceSignal(child, evidence);
+            }
+
+            rootChildren.Add(child);
         }
 
         var root = new AnyOfSignal(definition.Code, definition.Description, rootChildren);
 
-        var conditionalCodes = TighteningPolicyMatrix.Nullability.ConditionalSignals
+        var conditionalCodes = definition.ConditionalSignals
             .Select(signal => registry[signal].Code)
             .ToImmutableHashSet(StringComparer.Ordinal);
 

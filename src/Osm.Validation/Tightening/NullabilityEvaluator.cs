@@ -129,6 +129,11 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
             }
         }
 
+        if (_options.Policy.Mode == TighteningMode.Aggressive && attribute.IsMandatory && !makeNotNull)
+        {
+            makeNotNull = true;
+        }
+
         var requiresRemediation = false;
 
         if (_options.Policy.Mode == TighteningMode.Aggressive && makeNotNull && conditionalTriggered && !dataTrace.Result)
