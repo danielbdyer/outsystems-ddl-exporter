@@ -140,6 +140,9 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
 
         CommandConsole.EmitNamingOverrideTemplate(context.Console, pipelineResult.DecisionReport.Diagnostics);
 
+        var toggleSnapshot = pipelineResult.DecisionReport.Toggles.ToExportDictionary();
+        CommandConsole.EmitToggleSnapshot(context.Console, toggleSnapshot);
+
         if (pipelineResult.EvidenceCache is { } cacheResult)
         {
             CommandConsole.WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");

@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.CommandLine.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using Osm.Cli;
 using Osm.Cli.Commands;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
@@ -125,6 +127,65 @@ public class CommandConsoleTests
         Assert.Equal($"    [{entries[2].TimestampUtc:O}] (no metadata)", lines[5]);
         Assert.Equal($"    [{entries[3].TimestampUtc:O}] Sample=One", lines[6]);
         Assert.Equal("    \u2026 1 additional occurrence(s) suppressed.", lines[7]);
+    }
+
+    [Fact]
+    public void EmitToggleSnapshot_WritesValuesWithSources()
+    {
+        var console = new TestConsole();
+        var snapshot = new TighteningToggleSnapshot(
+            new ToggleState<TighteningMode>(TighteningMode.Aggressive, ToggleSource.CommandLine),
+            new ToggleState<double>(0.25, ToggleSource.Environment),
+            new ToggleState<bool>(true, ToggleSource.Configuration),
+            new ToggleState<bool>(false, ToggleSource.Default),
+            new ToggleState<bool>(true, ToggleSource.Environment),
+            new ToggleState<bool>(false, ToggleSource.Configuration),
+            new ToggleState<bool>(true, ToggleSource.Default),
+            new ToggleState<bool>(false, ToggleSource.CommandLine),
+            new ToggleState<bool>(true, ToggleSource.Configuration),
+            new ToggleState<int>(123, ToggleSource.Environment));
+        var export = snapshot.ToExportDictionary();
+
+        CommandConsole.EmitToggleSnapshot(console, export);
+
+        var lines = console.Out!.ToString()!
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.True(lines.Length > 1);
+        Assert.Equal("Tightening toggles:", lines[0]);
+
+        var table = lines
+            .Skip(1)
+            .Select(line => line.Trim())
+            .Select(line =>
+            {
+                var parts = line.Split('→', 2);
+                Assert.Equal(2, parts.Length);
+                return (Key: parts[0].Trim(), Value: parts[1].Trim());
+            })
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+        var expected = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [TighteningToggleKeys.PolicyMode] = "Aggressive (command-line)",
+            [TighteningToggleKeys.PolicyNullBudget] = "0.25 (environment)",
+            [TighteningToggleKeys.ForeignKeysEnableCreation] = "true (configuration)",
+            [TighteningToggleKeys.ForeignKeysAllowCrossSchema] = "false (default)",
+            [TighteningToggleKeys.ForeignKeysAllowCrossCatalog] = "true (environment)",
+            [TighteningToggleKeys.ForeignKeysTreatMissingDeleteRuleAsIgnore] = "false (configuration)",
+            [TighteningToggleKeys.UniquenessEnforceSingleColumn] = "true (default)",
+            [TighteningToggleKeys.UniquenessEnforceMultiColumn] = "false (command-line)",
+            [TighteningToggleKeys.RemediationGeneratePreScripts] = "true (configuration)",
+            [TighteningToggleKeys.RemediationMaxRowsDefaultBackfill] = "123 (environment)",
+        };
+
+        Assert.Equal(expected.Count, table.Count);
+
+        foreach (var pair in expected)
+        {
+            Assert.True(table.TryGetValue(pair.Key, out var actual), $"Missing toggle output for {pair.Key}");
+            Assert.Equal(pair.Value, actual);
+        }
     }
 
     [Fact]

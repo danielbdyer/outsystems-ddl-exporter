@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.CommandLine;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -140,6 +141,47 @@ internal static class CommandConsole
         }
     }
 
+    public static void EmitToggleSnapshot(
+        IConsole console,
+        IReadOnlyDictionary<string, ToggleExportValue> toggles)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (toggles is null)
+        {
+            throw new ArgumentNullException(nameof(toggles));
+        }
+
+        if (toggles.Count == 0)
+        {
+            return;
+        }
+
+        var ordered = toggles
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (ordered.Length == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, "Tightening toggles:");
+
+        var longestKey = ordered.Max(static pair => pair.Key.Length);
+        foreach (var pair in ordered)
+        {
+            var key = pair.Key;
+            var value = FormatToggleValue(pair.Value.Value);
+            var source = FormatToggleSource(pair.Value.Source);
+
+            WriteLine(console, $"  {key.PadRight(longestKey)} → {value} ({source})");
+        }
+    }
+
     private static string FormatLogEntry(PipelineLogEntry entry)
     {
         var metadata = entry.Metadata.Count == 0
@@ -162,6 +204,27 @@ internal static class CommandConsole
 
     private static string FormatMetadataValue(string? value)
         => value ?? "<null>";
+
+    private static string FormatToggleValue(object? value)
+    {
+        return value switch
+        {
+            null => "<null>",
+            bool boolean => boolean ? "true" : "false",
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => value.ToString() ?? "<null>"
+        };
+    }
+
+    private static string FormatToggleSource(ToggleSource source)
+        => source switch
+        {
+            ToggleSource.Default => "default",
+            ToggleSource.Configuration => "configuration",
+            ToggleSource.Environment => "environment",
+            ToggleSource.CommandLine => "command-line",
+            _ => source.ToString()
+        };
 
     public static void EmitNamingOverrideTemplate(
         IConsole console,

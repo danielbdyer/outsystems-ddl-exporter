@@ -102,6 +102,9 @@ internal sealed class AnalyzeCommandFactory : ICommandFactory
 
         CommandConsole.EmitNamingOverrideTemplate(context.Console, report.Diagnostics);
 
+        var toggleSnapshot = report.Toggles.ToExportDictionary();
+        CommandConsole.EmitToggleSnapshot(context.Console, toggleSnapshot);
+
         CommandConsole.WriteLine(context.Console, $"Columns tightened: {report.TightenedColumnCount}/{report.ColumnCount}");
         CommandConsole.WriteLine(context.Console, $"Unique indexes enforced: {report.UniqueIndexesEnforcedCount}/{report.UniqueIndexCount}");
         CommandConsole.WriteLine(context.Console, $"Foreign keys created: {report.ForeignKeysCreatedCount}/{report.ForeignKeyCount}");

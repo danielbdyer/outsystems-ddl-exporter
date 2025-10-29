@@ -104,6 +104,11 @@ public class BuildSsdtCommandFactoryTests
         var manifestMessage = $"Manifest written to {Path.Combine("output", "manifest.json")}";
         Assert.Contains(manifestMessage, output);
         Assert.Contains("Decision log written to decision.log", output);
+        Assert.Contains("Tightening toggles:", output);
+        Assert.Contains("policy.mode", output);
+        Assert.Contains("→ EvidenceGated (default)", output);
+        Assert.Contains("remediation.maxRowsDefaultBackfill", output);
+        Assert.Contains("100000 (default)", output);
         Assert.Contains("Columns tightened: 1/2", output);
         Assert.Contains("Unique indexes enforced: 1/1", output);
         Assert.Contains("Foreign keys created: 1/1", output);
