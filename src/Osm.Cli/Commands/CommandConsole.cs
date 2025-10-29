@@ -83,6 +83,52 @@ internal static class CommandConsole
         }
     }
 
+    public static void EmitPipelineInsights(IConsole console, ImmutableArray<PipelineInsight> insights)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (insights.IsDefaultOrEmpty || insights.Length == 0)
+        {
+            return;
+        }
+
+        foreach (var insight in insights)
+        {
+            if (insight is null)
+            {
+                continue;
+            }
+
+            Action<IConsole, string> writer;
+            string badge;
+
+            switch (insight.Severity)
+            {
+                case PipelineInsightSeverity.Warning:
+                    writer = WriteErrorLine;
+                    badge = "⚠️";
+                    break;
+                case PipelineInsightSeverity.Critical:
+                    writer = WriteErrorLine;
+                    badge = "🚨";
+                    break;
+                case PipelineInsightSeverity.Advisory:
+                    writer = WriteLine;
+                    badge = "💡";
+                    break;
+                default:
+                    writer = WriteLine;
+                    badge = "ℹ️";
+                    break;
+            }
+
+            writer(console, $"{badge} {insight.Summary}");
+        }
+    }
+
     public static void EmitSqlProfilerSnapshot(IConsole console, ProfileSnapshot snapshot)
     {
         WriteLine(console, "SQL profiler snapshot:");

@@ -112,6 +112,45 @@ public class BuildSsdtCommandFactoryTests
     }
 
     [Fact]
+    public async Task Invoke_WritesPipelineInsights()
+    {
+        var configurationService = new FakeConfigurationService();
+        var application = new FakeBuildApplicationService
+        {
+            PipelineInsights = ImmutableArray.Create(
+                new PipelineInsight(
+                    "pipeline.insight.warning",
+                    "Potential drift",
+                    "Potential data drift detected for Sales module.",
+                    PipelineInsightSeverity.Warning,
+                    ImmutableArray<string>.Empty,
+                    "Investigate profiling evidence."))
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<BuildSsdtCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+        var exitCode = await parser.InvokeAsync("build-ssdt --model model.json --profile profile.json", console);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("⚠️ Potential data drift detected for Sales module.", console.Error.ToString());
+    }
+
+    [Fact]
     public async Task Invoke_WritesErrorsWhenPipelineFails()
     {
         var configurationService = new FakeConfigurationService();
@@ -213,6 +252,8 @@ public class BuildSsdtCommandFactoryTests
 
         public IReadOnlyList<ValidationError>? FailureErrors { get; init; }
 
+        public ImmutableArray<PipelineInsight> PipelineInsights { get; set; } = ImmutableArray<PipelineInsight>.Empty;
+
         public Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
         {
             LastInput = input;
@@ -225,7 +266,7 @@ public class BuildSsdtCommandFactoryTests
             return Task.FromResult(Result<BuildSsdtApplicationResult>.Success(LastResult));
         }
 
-        private static BuildSsdtApplicationResult CreateResult()
+        private BuildSsdtApplicationResult CreateResult()
         {
             var snapshot = ProfileSnapshot.Create(
                 Array.Empty<ColumnProfile>(),
@@ -297,13 +338,15 @@ public class BuildSsdtCommandFactoryTests
                 ImmutableDictionary<RiskLevel, int>.Empty,
                 DateTimeOffset.UnixEpoch);
 
+            var pipelineInsights = PipelineInsights.IsDefault ? ImmutableArray<PipelineInsight>.Empty : PipelineInsights;
+
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
                 ImmutableArray<ProfilingInsight>.Empty,
                 report,
                 opportunities,
                 manifest,
-                ImmutableArray<PipelineInsight>.Empty,
+                pipelineInsights,
                 "decision.log",
                 "opportunities.json",
                 "suggestions/safe-to-apply.sql",

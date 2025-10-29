@@ -11,6 +11,7 @@ using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
 using Tests.Support;
+using Xunit;
 
 namespace Osm.Cli.Tests.Commands;
 
@@ -56,6 +57,42 @@ public class CommandConsoleTests
         }) + Environment.NewLine;
 
         Assert.Equal(expected, console.Error!.ToString());
+    }
+
+    [Fact]
+    public void EmitPipelineInsights_WritesInfoInsightsToStandardOutput()
+    {
+        var console = new TestConsole();
+        var insight = new PipelineInsight(
+            "pipeline.insight.info",
+            "All clear",
+            "No evidence of drift detected.",
+            PipelineInsightSeverity.Info,
+            ImmutableArray<string>.Empty,
+            "None");
+
+        CommandConsole.EmitPipelineInsights(console, ImmutableArray.Create(insight));
+
+        Assert.Contains("ℹ️ No evidence of drift detected.", console.Out!.ToString());
+        Assert.True(string.IsNullOrEmpty(console.Error!.ToString()));
+    }
+
+    [Fact]
+    public void EmitPipelineInsights_WritesWarningsToStandardError()
+    {
+        var console = new TestConsole();
+        var insight = new PipelineInsight(
+            "pipeline.insight.warning",
+            "Potential drift",
+            "Potential data drift detected for Sales module.",
+            PipelineInsightSeverity.Warning,
+            ImmutableArray<string>.Empty,
+            "Investigate the profiling job.");
+
+        CommandConsole.EmitPipelineInsights(console, ImmutableArray.Create(insight));
+
+        Assert.Contains("⚠️ Potential data drift detected for Sales module.", console.Error!.ToString());
+        Assert.True(string.IsNullOrEmpty(console.Out!.ToString()));
     }
 
     [Fact]
