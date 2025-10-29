@@ -330,7 +330,7 @@ internal sealed class IndexScriptBuilder
         {
             Name = new IdentifierOrValueExpression
             {
-                Identifier = _formatter.CreateIdentifier(dataSpace.Name, format),
+                Identifier = _identifierFormatter.CreateIdentifier(dataSpace.Name, format),
             }
         };
 
@@ -338,7 +338,7 @@ internal sealed class IndexScriptBuilder
         {
             foreach (var column in metadata.PartitionColumns.OrderBy(static c => c.Ordinal))
             {
-                clause.PartitionSchemeColumns.Add(_formatter.CreateIdentifier(column.Name, format));
+                clause.PartitionSchemeColumns.Add(_identifierFormatter.CreateIdentifier(column.Name, format));
             }
         }
 
