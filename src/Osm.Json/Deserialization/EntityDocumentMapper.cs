@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
@@ -20,10 +18,10 @@ internal sealed class EntityDocumentMapper
     private readonly RelationshipDocumentMapper _relationshipMapper;
     private readonly TriggerDocumentMapper _triggerMapper;
     private readonly TemporalMetadataMapper _temporalMetadataMapper;
-    private readonly SchemaResolver _schemaResolver;
-    private readonly MetadataFactory _metadataFactory;
-    private readonly DuplicateWarningEmitter _duplicateWarningEmitter;
-    private readonly PrimaryKeyValidator _primaryKeyValidator;
+    private readonly IEntitySchemaResolver _schemaResolver;
+    private readonly IEntityMetadataFactory _metadataFactory;
+    private readonly IDuplicateWarningEmitter _duplicateWarningEmitter;
+    private readonly IPrimaryKeyValidator _primaryKeyValidator;
 
     public EntityDocumentMapper(
         DocumentMapperContext context,
@@ -32,7 +30,11 @@ internal sealed class EntityDocumentMapper
         IndexDocumentMapper indexMapper,
         RelationshipDocumentMapper relationshipMapper,
         TriggerDocumentMapper triggerMapper,
-        TemporalMetadataMapper temporalMetadataMapper)
+        TemporalMetadataMapper temporalMetadataMapper,
+        IEntitySchemaResolver schemaResolver,
+        IEntityMetadataFactory metadataFactory,
+        IDuplicateWarningEmitter duplicateWarningEmitter,
+        IPrimaryKeyValidator primaryKeyValidator)
     {
         _context = context;
         _attributeMapper = attributeMapper;
@@ -41,10 +43,10 @@ internal sealed class EntityDocumentMapper
         _relationshipMapper = relationshipMapper;
         _triggerMapper = triggerMapper;
         _temporalMetadataMapper = temporalMetadataMapper;
-        _schemaResolver = new SchemaResolver(context);
-        _metadataFactory = new MetadataFactory();
-        _duplicateWarningEmitter = new DuplicateWarningEmitter(context);
-        _primaryKeyValidator = new PrimaryKeyValidator(context);
+        _schemaResolver = schemaResolver ?? throw new ArgumentNullException(nameof(schemaResolver));
+        _metadataFactory = metadataFactory ?? throw new ArgumentNullException(nameof(metadataFactory));
+        _duplicateWarningEmitter = duplicateWarningEmitter ?? throw new ArgumentNullException(nameof(duplicateWarningEmitter));
+        _primaryKeyValidator = primaryKeyValidator ?? throw new ArgumentNullException(nameof(primaryKeyValidator));
     }
 
     public Result<EntityModel> Map(ModuleName moduleName, EntityDocument doc, DocumentPathContext path)
@@ -157,31 +159,6 @@ internal sealed class EntityDocumentMapper
         return entityResult;
     }
 
-    private static ImmutableArray<ValidationError> AppendPayloadContext(
-        ImmutableArray<ValidationError> errors,
-        string moduleName,
-        string entityName,
-        string payload)
-    {
-        if (errors.IsDefaultOrEmpty)
-        {
-            return ImmutableArray.Create(
-                ValidationError.Create(
-                    "entity.schema.invalid",
-                    $"Entity '{moduleName}::{entityName}' has an invalid schema definition. Raw payload: {payload}"));
-        }
-
-        var builder = ImmutableArray.CreateBuilder<ValidationError>(errors.Length);
-        foreach (var error in errors)
-        {
-            builder.Add(ValidationError.Create(
-                error.Code,
-                $"{error.Message} (Entity '{moduleName}::{entityName}' payload: {payload})"));
-        }
-
-        return builder.ToImmutable();
-    }
-
     internal readonly record struct MapContext(
         ModuleName ModuleName,
         EntityName LogicalName,
@@ -221,202 +198,4 @@ internal sealed class EntityDocumentMapper
     }
 
     internal readonly record struct DuplicateAllowance(bool AllowLogicalNames, bool AllowColumnNames);
-
-    internal sealed class SchemaResolver
-    {
-        private readonly DocumentMapperContext _context;
-
-        public SchemaResolver(DocumentMapperContext context)
-        {
-            _context = context;
-        }
-
-        public HelperResult<SchemaName> Resolve(MapContext mapContext)
-        {
-            var options = _context.Options;
-            var document = mapContext.Document;
-            var moduleName = mapContext.ModuleNameValue;
-            var entityName = mapContext.EntityNameValue;
-            var allowMissingSchema = options.ValidationOverrides.AllowsMissingSchema(moduleName, entityName);
-
-            if (string.IsNullOrWhiteSpace(document.Schema))
-            {
-                if (!allowMissingSchema)
-                {
-                    mapContext = mapContext.EnsureSerializedPayload(_context);
-                    return HelperResult<SchemaName>.Failure(
-                        mapContext,
-                        _context.CreateError(
-                            "entity.schema.missing",
-                            $"Entity '{moduleName}::{entityName}' is missing a schema name. Raw payload: {mapContext.SerializedPayload}",
-                            mapContext.SchemaPath));
-                }
-
-                var fallbackSchemaResult = options.MissingSchemaFallbackSchemaResult;
-                if (fallbackSchemaResult.IsFailure)
-                {
-                    mapContext = mapContext.EnsureSerializedPayload(_context);
-                    var errorsWithPath = _context.WithPath(mapContext.SchemaPath, fallbackSchemaResult.Errors);
-                    return HelperResult<SchemaName>.Failure(
-                        mapContext,
-                        AppendPayloadContext(errorsWithPath, moduleName, entityName, mapContext.SerializedPayload!));
-                }
-
-                mapContext = mapContext.EnsureSerializedPayload(_context);
-                _context.AddWarning(
-                    $"Entity '{moduleName}::{entityName}' missing schema; using '{options.MissingSchemaFallback}'. Raw payload: {mapContext.SerializedPayload} (Path: {mapContext.SchemaPath})");
-                return HelperResult<SchemaName>.Success(mapContext, fallbackSchemaResult.Value);
-            }
-
-            var schemaResult = SchemaName.Create(document.Schema);
-            if (schemaResult.IsFailure)
-            {
-                if (!allowMissingSchema)
-                {
-                    mapContext = mapContext.EnsureSerializedPayload(_context);
-                    var errorsWithPath = _context.WithPath(mapContext.SchemaPath, schemaResult.Errors);
-                    return HelperResult<SchemaName>.Failure(
-                        mapContext,
-                        AppendPayloadContext(errorsWithPath, moduleName, entityName, mapContext.SerializedPayload!));
-                }
-
-                var fallbackSchemaResult = options.MissingSchemaFallbackSchemaResult;
-                if (fallbackSchemaResult.IsFailure)
-                {
-                    mapContext = mapContext.EnsureSerializedPayload(_context);
-                    var errorsWithPath = _context.WithPath(mapContext.SchemaPath, fallbackSchemaResult.Errors);
-                    return HelperResult<SchemaName>.Failure(
-                        mapContext,
-                        AppendPayloadContext(errorsWithPath, moduleName, entityName, mapContext.SerializedPayload!));
-                }
-
-                mapContext = mapContext.EnsureSerializedPayload(_context);
-                _context.AddWarning(
-                    $"Entity '{moduleName}::{entityName}' schema '{document.Schema}' invalid; using '{options.MissingSchemaFallback}'. Raw payload: {mapContext.SerializedPayload} (Path: {mapContext.SchemaPath})");
-                return HelperResult<SchemaName>.Success(mapContext, fallbackSchemaResult.Value);
-            }
-
-            return new HelperResult<SchemaName>(schemaResult, mapContext);
-        }
-    }
-
-    internal sealed class MetadataFactory
-    {
-        public HelperResult<EntityMetadata> Create(
-            MapContext mapContext,
-            string? description,
-            ImmutableArray<ExtendedProperty> extendedProperties,
-            TemporalTableMetadata temporal)
-        {
-            var metadata = EntityMetadata.Create(description, extendedProperties, temporal);
-            return HelperResult<EntityMetadata>.Success(mapContext, metadata);
-        }
-    }
-
-    internal sealed class DuplicateWarningEmitter
-    {
-        private readonly DocumentMapperContext _context;
-
-        public DuplicateWarningEmitter(DocumentMapperContext context)
-        {
-            _context = context;
-        }
-
-        public HelperResult<DuplicateAllowance> EmitWarnings(MapContext mapContext, ImmutableArray<AttributeModel> attributes)
-        {
-            var options = _context.Options;
-            var moduleName = mapContext.ModuleNameValue;
-            var entityName = mapContext.EntityNameValue;
-
-            if (options.AllowDuplicateAttributeLogicalNames)
-            {
-                var duplicateLogicalGroups = attributes
-                    .GroupBy(static attribute => attribute.LogicalName.Value, StringComparer.Ordinal)
-                    .Where(static group => group.Count() > 1)
-                    .Select(static group => new
-                    {
-                        Key = group.Key,
-                        Columns = group.Select(static attribute => attribute.ColumnName.Value).ToArray()
-                    })
-                    .ToArray();
-
-                if (duplicateLogicalGroups.Length > 0)
-                {
-                    mapContext = mapContext.EnsureSerializedPayload(_context);
-                    foreach (var group in duplicateLogicalGroups)
-                    {
-                        var columnList = string.Join(", ", group.Columns.Select(static name => $"'{name}'"));
-                        _context.AddWarning(
-                            $"Entity '{moduleName}::{entityName}' contains duplicate attribute logical name '{group.Key}' mapped to columns {columnList}. Raw payload: {mapContext.SerializedPayload} (Path: {mapContext.AttributesPath})");
-                    }
-                }
-            }
-
-            if (options.AllowDuplicateAttributeColumnNames)
-            {
-                var duplicateColumnGroups = attributes
-                    .GroupBy(static attribute => attribute.ColumnName.Value, StringComparer.OrdinalIgnoreCase)
-                    .Where(static group => group.Count() > 1)
-                    .Select(static group => new
-                    {
-                        Key = group.Key,
-                        LogicalNames = group.Select(static attribute => attribute.LogicalName.Value).ToArray()
-                    })
-                    .ToArray();
-
-                if (duplicateColumnGroups.Length > 0)
-                {
-                    mapContext = mapContext.EnsureSerializedPayload(_context);
-                    foreach (var group in duplicateColumnGroups)
-                    {
-                        var attributeList = string.Join(", ", group.LogicalNames.Select(static name => $"'{name}'"));
-                        _context.AddWarning(
-                            $"Entity '{moduleName}::{entityName}' contains duplicate attribute column name '{group.Key}' shared by attributes {attributeList}. Raw payload: {mapContext.SerializedPayload} (Path: {mapContext.AttributesPath})");
-                    }
-                }
-            }
-
-            var allowance = new DuplicateAllowance(
-                options.AllowDuplicateAttributeLogicalNames,
-                options.AllowDuplicateAttributeColumnNames);
-            return HelperResult<DuplicateAllowance>.Success(mapContext, allowance);
-        }
-    }
-
-    internal sealed class PrimaryKeyValidator
-    {
-        private readonly DocumentMapperContext _context;
-
-        public PrimaryKeyValidator(DocumentMapperContext context)
-        {
-            _context = context;
-        }
-
-        public HelperResult<bool> Validate(MapContext mapContext, ImmutableArray<AttributeModel> attributes)
-        {
-            var moduleName = mapContext.ModuleNameValue;
-            var entityName = mapContext.EntityNameValue;
-            var allowMissingPrimaryKey = _context.Options.ValidationOverrides.AllowsMissingPrimaryKey(moduleName, entityName);
-
-            if (attributes.Any(static attribute => attribute.IsIdentifier))
-            {
-                return HelperResult<bool>.Success(mapContext, allowMissingPrimaryKey);
-            }
-
-            mapContext = mapContext.EnsureSerializedPayload(_context);
-            if (!allowMissingPrimaryKey)
-            {
-                return HelperResult<bool>.Failure(
-                    mapContext,
-                    _context.CreateError(
-                        "entity.attributes.missingPrimaryKey",
-                        $"Entity '{moduleName}::{entityName}' does not define a primary key attribute. Raw payload: {mapContext.SerializedPayload}",
-                        mapContext.AttributesPath));
-            }
-
-            _context.AddWarning(
-                $"Entity '{moduleName}::{entityName}' missing primary key; override applied. Raw payload: {mapContext.SerializedPayload} (Path: {mapContext.AttributesPath})");
-            return HelperResult<bool>.Success(mapContext, allowMissingPrimaryKey);
-        }
-    }
 }

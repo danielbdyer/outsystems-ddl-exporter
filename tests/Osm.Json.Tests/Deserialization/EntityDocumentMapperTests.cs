@@ -161,7 +161,7 @@ public class EntityDocumentMapperTests
         Assert.True(overridesResult.IsSuccess);
 
         var context = CreateContext(warnings, overridesResult.Value);
-        var resolver = new EntityDocumentMapper.SchemaResolver(context);
+        var resolver = new EntitySchemaResolver(context);
         var moduleName = ModuleName.Create("Finance").Value;
         var entityName = EntityName.Create("Invoice").Value;
         var document = new EntityDocument
@@ -186,7 +186,7 @@ public class EntityDocumentMapperTests
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings, allowDuplicateAttributeLogicalNames: true, allowDuplicateAttributeColumnNames: true);
-        var emitter = new EntityDocumentMapper.DuplicateWarningEmitter(context);
+        var emitter = new DuplicateWarningEmitter(context);
         var moduleName = ModuleName.Create("Finance").Value;
         var entityName = EntityName.Create("Invoice").Value;
         var document = new EntityDocument
@@ -236,11 +236,37 @@ public class EntityDocumentMapperTests
     }
 
     [Fact]
+    public void EntityMetadataFactory_ShouldCreateMetadata()
+    {
+        var factory = new EntityMetadataFactory();
+        var warnings = new List<string>();
+        var context = CreateContext(warnings);
+        var moduleName = ModuleName.Create("Finance").Value;
+        var entityName = EntityName.Create("Invoice").Value;
+        var document = new EntityDocument
+        {
+            Name = entityName.Value,
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            Schema = "dbo",
+            Attributes = new[] { CreateIdentifierAttribute() }
+        };
+        var path = DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0);
+        var mapContext = EntityDocumentMapper.MapContext.Create(moduleName, entityName, document, path);
+
+        var result = factory.Create(mapContext, " Description ", ExtendedProperty.EmptyArray, TemporalTableMetadata.None);
+
+        Assert.True(result.Result.IsSuccess);
+        Assert.Equal(mapContext, result.Context);
+        Assert.Equal("Description", result.Result.Value.Description);
+        Assert.Same(TemporalTableMetadata.None, result.Result.Value.Temporal);
+    }
+
+    [Fact]
     public void PrimaryKeyValidator_ShouldFail_WhenNoIdentifierAndOverrideMissing()
     {
         var warnings = new List<string>();
         var context = CreateContext(warnings);
-        var validator = new EntityDocumentMapper.PrimaryKeyValidator(context);
+        var validator = new PrimaryKeyValidator(context);
         var moduleName = ModuleName.Create("Finance").Value;
         var entityName = EntityName.Create("Invoice").Value;
         var document = new EntityDocument
@@ -285,7 +311,7 @@ public class EntityDocumentMapperTests
         Assert.True(overridesResult.IsSuccess);
 
         var context = CreateContext(warnings, overridesResult.Value);
-        var validator = new EntityDocumentMapper.PrimaryKeyValidator(context);
+        var validator = new PrimaryKeyValidator(context);
         var moduleName = ModuleName.Create("Finance").Value;
         var entityName = EntityName.Create("Invoice").Value;
         var document = new EntityDocument
@@ -360,6 +386,10 @@ public class EntityDocumentMapperTests
         var relationshipMapper = new RelationshipDocumentMapper(context);
         var triggerMapper = new TriggerDocumentMapper(context);
         var temporalMetadataMapper = new TemporalMetadataMapper(context, extendedPropertyMapper);
+        var schemaResolver = new EntitySchemaResolver(context);
+        var metadataFactory = new EntityMetadataFactory();
+        var duplicateWarningEmitter = new DuplicateWarningEmitter(context);
+        var primaryKeyValidator = new PrimaryKeyValidator(context);
         return new EntityDocumentMapper(
             context,
             attributeMapper,
@@ -367,6 +397,10 @@ public class EntityDocumentMapperTests
             indexMapper,
             relationshipMapper,
             triggerMapper,
-            temporalMetadataMapper);
+            temporalMetadataMapper,
+            schemaResolver,
+            metadataFactory,
+            duplicateWarningEmitter,
+            primaryKeyValidator);
     }
 }

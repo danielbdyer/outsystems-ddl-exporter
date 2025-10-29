@@ -22,6 +22,10 @@ internal sealed class ModelDocumentMapperFactory : IModelDocumentMapperFactory
         var relationshipMapper = new RelationshipDocumentMapper(context);
         var triggerMapper = new TriggerDocumentMapper(context);
         var temporalMetadataMapper = new TemporalMetadataMapper(context, extendedPropertyMapper);
+        var schemaResolver = new EntitySchemaResolver(context);
+        var metadataFactory = new EntityMetadataFactory();
+        var duplicateWarningEmitter = new DuplicateWarningEmitter(context);
+        var primaryKeyValidator = new PrimaryKeyValidator(context);
         var entityMapper = new EntityDocumentMapper(
             context,
             attributeMapper,
@@ -29,7 +33,11 @@ internal sealed class ModelDocumentMapperFactory : IModelDocumentMapperFactory
             indexMapper,
             relationshipMapper,
             triggerMapper,
-            temporalMetadataMapper);
+            temporalMetadataMapper,
+            schemaResolver,
+            metadataFactory,
+            duplicateWarningEmitter,
+            primaryKeyValidator);
         var moduleMapper = new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);
         var sequenceMapper = new SequenceDocumentMapper(context, extendedPropertyMapper);
 
