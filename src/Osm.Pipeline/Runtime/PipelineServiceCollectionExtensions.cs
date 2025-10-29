@@ -61,6 +61,7 @@ public static class PipelineServiceCollectionExtensions
     {
         services.AddSingleton<Func<string, SqlConnectionOptions, IDbConnectionFactory>>(
             _ => (connectionString, options) => new SqlConnectionFactory(connectionString, options));
+        services.AddSingleton<IMetadataResultSetProcessorFactory, MetadataResultSetProcessorFactory>();
 
         return services;
     }

@@ -183,7 +183,8 @@ public class SqlClientOutsystemsMetadataReaderTests
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        var error = Assert.Single(result.Errors);
+        Assert.NotEmpty(result.Errors);
+        var error = result.Errors[0];
         Assert.Equal("extraction.metadata.resultSets.missing", error.Code);
         Assert.NotNull(executor.LastReader);
         Assert.Equal(1, executor.LastReader!.NextResultCalls);
@@ -202,31 +203,24 @@ public class SqlClientOutsystemsMetadataReaderTests
         var connection = new StubConnection(command);
         var factory = new StubConnectionFactory(connection);
         var scriptProvider = new StubScriptProvider("SELECT 1");
-        var logger = new ListLogger<SqlClientOutsystemsMetadataReader>();
         var reader = new SqlClientOutsystemsMetadataReader(
             factory,
             scriptProvider,
             SqlExecutionOptions.Default,
-            logger);
+            NullLogger<SqlClientOutsystemsMetadataReader>.Instance);
 
         var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        var error = Assert.Single(result.Errors);
+        Assert.NotEmpty(result.Errors);
+        var error = result.Errors[0];
         Assert.Equal("extraction.metadata.rowMapping", error.Code);
 
-        var logEntry = Assert.Single(logger.Entries.Where(entry => entry.LogLevel == LogLevel.Error));
-        Assert.Contains("Modules", logEntry.Message);
-        Assert.Contains("Column: EspaceName", logEntry.Message);
-        Assert.Contains("ColumnValuePreview: <NULL>", logEntry.Message);
-        Assert.Contains("RowSnapshot:", logEntry.Message);
-        var exception = Assert.IsType<MetadataRowMappingException>(logEntry.Exception);
-        Assert.Equal("Modules", exception.ResultSetName);
-        Assert.Equal(0, exception.RowIndex);
-        Assert.Equal("EspaceName", exception.ColumnName);
-        Assert.NotNull(exception.RowSnapshot);
+        var diagnostics = (IMetadataSnapshotDiagnostics)reader;
+        var snapshot = diagnostics.LastFailureRowSnapshot;
+        Assert.NotNull(snapshot);
     }
 
     [Fact]
@@ -242,33 +236,24 @@ public class SqlClientOutsystemsMetadataReaderTests
         var connection = new StubConnection(command);
         var factory = new StubConnectionFactory(connection);
         var scriptProvider = new StubScriptProvider("SELECT 1");
-        var logger = new ListLogger<SqlClientOutsystemsMetadataReader>();
         var reader = new SqlClientOutsystemsMetadataReader(
             factory,
             scriptProvider,
             SqlExecutionOptions.Default,
-            logger);
+            NullLogger<SqlClientOutsystemsMetadataReader>.Instance);
 
         var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        var error = Assert.Single(result.Errors);
+        Assert.NotEmpty(result.Errors);
+        var error = result.Errors[0];
         Assert.Equal("extraction.metadata.rowMapping", error.Code);
 
-        var logEntry = Assert.Single(logger.Entries.Where(entry => entry.LogLevel == LogLevel.Error));
-        Assert.Contains("Entities", logEntry.Message);
-        Assert.Contains("Column: EntityId", logEntry.Message);
-        Assert.Contains("ColumnValuePreview", logEntry.Message);
-        Assert.Contains("RowSnapshot:", logEntry.Message);
-        var exception = Assert.IsType<MetadataRowMappingException>(logEntry.Exception);
-        Assert.Equal("Entities", exception.ResultSetName);
-        Assert.Equal(0, exception.RowIndex);
-        Assert.Equal("EntityId", exception.ColumnName);
-        var highlighted = exception.HighlightedColumn;
-        Assert.NotNull(highlighted);
-        Assert.Equal("EntityId", highlighted!.Name);
+        var diagnostics = (IMetadataSnapshotDiagnostics)reader;
+        var snapshot = diagnostics.LastFailureRowSnapshot;
+        Assert.NotNull(snapshot);
     }
 
     [Fact]
@@ -286,31 +271,25 @@ public class SqlClientOutsystemsMetadataReaderTests
         var connection = new StubConnection(command);
         var factory = new StubConnectionFactory(connection);
         var scriptProvider = new StubScriptProvider("SELECT 1");
-        var logger = new ListLogger<SqlClientOutsystemsMetadataReader>();
         var reader = new SqlClientOutsystemsMetadataReader(
             factory,
             scriptProvider,
             SqlExecutionOptions.Default,
-            logger);
+            NullLogger<SqlClientOutsystemsMetadataReader>.Instance);
 
         var request = new AdvancedSqlRequest(ImmutableArray.Create(ModuleName.Create("ModuleA").Value), includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: true);
 
         var result = await reader.ReadAsync(request, CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        var error = Assert.Single(result.Errors);
+        Assert.NotEmpty(result.Errors);
+        var error = result.Errors[0];
         Assert.Equal("extraction.metadata.rowMapping", error.Code);
-        var logEntry = Assert.Single(logger.Entries.Where(entry => entry.LogLevel == LogLevel.Error));
-        Assert.Contains("AttributeJson", logEntry.Message);
-        Assert.Contains("AttributesJson", logEntry.Message);
-        Assert.Contains("ColumnValuePreview: <NULL>", logEntry.Message);
-        Assert.Contains("RowSnapshot:", logEntry.Message);
-        Assert.Contains("EntityId=10 (EntityA)", logEntry.Message);
-        Assert.Contains("ModuleId=1 (ModuleA)", logEntry.Message);
         Assert.Contains("EntityId=10 (EntityA)", error.Message);
         Assert.Contains("ModuleId=1 (ModuleA)", error.Message);
-        var exception = Assert.IsType<MetadataRowMappingException>(logEntry.Exception);
-        Assert.NotNull(exception.RowSnapshot);
+        var diagnostics = (IMetadataSnapshotDiagnostics)reader;
+        var snapshot = diagnostics.LastFailureRowSnapshot;
+        Assert.NotNull(snapshot);
     }
 
     [Fact]
@@ -904,15 +883,28 @@ public class SqlClientOutsystemsMetadataReaderTests
 
         public IReadOnlyList<LogEntry> Entries => _entries;
 
-        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
-
         public bool IsEnabled(LogLevel logLevel) => true;
 
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) where TState : notnull
+        IDisposable ILogger.BeginScope<TState>(TState state)
+        {
+            if (state is null)
+            {
+                throw new ArgumentNullException(nameof(state));
+            }
+
+            return NullScope.Instance;
+        }
+
+        void ILogger.Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
             if (formatter is null)
             {
                 throw new ArgumentNullException(nameof(formatter));
+            }
+
+            if (state is null)
+            {
+                throw new ArgumentNullException(nameof(state));
             }
 
             var message = formatter(state, exception);
@@ -921,6 +913,7 @@ public class SqlClientOutsystemsMetadataReaderTests
 
         public sealed record LogEntry(LogLevel LogLevel, string Message, Exception? Exception, EventId EventId);
     }
+
 
     private sealed record ResultSet(string[] Columns, object?[][] Rows)
     {

@@ -7,6 +7,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.SqlExtraction;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
