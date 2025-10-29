@@ -187,6 +187,16 @@ public sealed class SmoObjectGraphFactory : IDisposable
                 smoIndex.IndexedColumns.Add(indexedColumn);
             }
 
+            if (!string.IsNullOrWhiteSpace(index.Description))
+            {
+                var description = new ExtendedProperty(smoIndex, "MS_Description")
+                {
+                    Value = index.Description
+                };
+
+                smoIndex.ExtendedProperties.Add(description);
+            }
+
             table.Indexes.Add(smoIndex);
         }
     }

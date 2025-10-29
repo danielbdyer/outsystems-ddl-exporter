@@ -158,4 +158,60 @@ public class ExtendedPropertyScriptBuilderTests
             """.Trim(),
             columnScript);
     }
+
+    [Fact]
+    public void BuildExtendedPropertyScripts_emits_index_descriptions()
+    {
+        var primaryIndex = new SmoIndexDefinition(
+            Name: "PK_OSUSR_SALES_ORDER",
+            IsUnique: true,
+            IsPrimaryKey: true,
+            IsPlatformAuto: false,
+            Description: "Primary key for orders",
+            Columns: ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 0, IsIncluded: false, IsDescending: false)),
+            Metadata: SmoIndexMetadata.Empty);
+
+        var secondaryIndex = new SmoIndexDefinition(
+            Name: "IX_OSUSR_SALES_ORDER_STATUS",
+            IsUnique: false,
+            IsPrimaryKey: false,
+            IsPlatformAuto: false,
+            Description: "Lookup by status",
+            Columns: ImmutableArray.Create(new SmoIndexColumnDefinition("Status", 0, IsIncluded: false, IsDescending: false)),
+            Metadata: SmoIndexMetadata.Empty);
+
+        var table = new SmoTableDefinition(
+            Module: "Sales",
+            OriginalModule: "Sales",
+            Name: "OSUSR_SALES_ORDER",
+            Schema: "dbo",
+            Catalog: "OutSystems",
+            LogicalName: "Order",
+            Description: null,
+            Columns: ImmutableArray<SmoColumnDefinition>.Empty,
+            Indexes: ImmutableArray.Create(primaryIndex, secondaryIndex),
+            ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
+            Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
+
+        var builder = new ExtendedPropertyScriptBuilder(_formatter);
+        var scripts = builder.BuildExtendedPropertyScripts(table, "Order", SmoFormatOptions.Default);
+
+        Assert.Equal(2, scripts.Length);
+        Assert.Equal(
+            """
+            EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Primary key for orders',
+                @level0type=N'SCHEMA',@level0name=N'dbo',
+                @level1type=N'TABLE',@level1name=N'Order',
+                @level2type=N'CONSTRAINT',@level2name=N'PK_Order';
+            """.Trim(),
+            scripts[0]);
+        Assert.Equal(
+            """
+            EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Lookup by status',
+                @level0type=N'SCHEMA',@level0name=N'dbo',
+                @level1type=N'TABLE',@level1name=N'Order',
+                @level2type=N'INDEX',@level2name=N'IX_Order_STATUS';
+            """.Trim(),
+            scripts[1]);
+    }
 }

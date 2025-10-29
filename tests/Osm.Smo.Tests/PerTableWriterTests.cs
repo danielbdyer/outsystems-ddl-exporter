@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Immutable;
 using Microsoft.SqlServer.Management.Smo;
+using Osm.Domain.Configuration;
 using Osm.Smo;
+using Osm.Validation.Tightening;
 using Xunit;
 
 namespace Osm.Smo.Tests;
@@ -50,7 +52,38 @@ public class PerTableWriterTests
         Assert.Contains("CREATE TABLE \"dbo\".\"Customer\"", result.Script);
         Assert.Contains("\"Id\"", result.Script);
         Assert.Contains("INT", result.Script);
-}
+    }
+
+    [Fact]
+    public void Generate_includes_ms_description_extended_properties()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(model, decisions, profile: snapshot, options: options);
+
+        var customerTable = Assert.Single(
+            smoModel.Tables,
+            table => table.LogicalName.Equals("Customer", StringComparison.Ordinal));
+
+        var writer = new PerTableWriter();
+        var result = writer.Generate(customerTable, options);
+
+        Assert.Contains(
+            "@name=N'MS_Description', @value=N'Stores customer records for AppCore'",
+            result.Script,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "@level2type=N'COLUMN',@level2name=N'Email'",
+            result.Script,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "@value=N'Customer first name'",
+            result.Script,
+            StringComparison.Ordinal);
+    }
 
     [Fact]
     public void Generate_includes_configured_header_when_enabled()

@@ -48,6 +48,7 @@ public class IndexScriptBuilderTests
             IsUnique: false,
             IsPrimaryKey: false,
             IsPlatformAuto: false,
+            Description: null,
             Columns: ImmutableArray.Create(
                 new SmoIndexColumnDefinition("Status", 0, IsIncluded: false, IsDescending: true),
                 new SmoIndexColumnDefinition("AuditId", 1, IsIncluded: true, IsDescending: false)),
@@ -127,6 +128,7 @@ public class IndexScriptBuilderTests
             IsUnique: isUnique,
             IsPrimaryKey: false,
             IsPlatformAuto: false,
+            Description: null,
             Columns: ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 0, IsIncluded: false, IsDescending: false)),
             Metadata: metadata);
 

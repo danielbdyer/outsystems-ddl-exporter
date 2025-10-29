@@ -3,9 +3,9 @@ CREATE TABLE [dbo].[Customer] (
         CONSTRAINT [PK_Customer_Id]
             PRIMARY KEY CLUSTERED,
     [Email]     NVARCHAR (255) NOT NULL,
-    [FirstName] NVARCHAR (100)
+    [FirstName] NVARCHAR (100) NULL
         DEFAULT (''),
-    [LastName]  NVARCHAR (100)
+    [LastName]  NVARCHAR (100) NULL
         DEFAULT (''),
     [CityId]    BIGINT         NOT NULL
         CONSTRAINT [FK_Customer_City_CityId]
@@ -15,13 +15,13 @@ CREATE TABLE [dbo].[Customer] (
 GO
 
 CREATE UNIQUE INDEX [UIX_Customer_Email]
-    ON [dbo].[Customer]([Email]) WHERE ([Email] IS NOT NULL) WITH (FILLFACTOR = 85, IGNORE_DUP_KEY = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
+    ON [dbo].[Customer]([Email]) WHERE ([Email] IS NOT NULL) WITH (FILLFACTOR = 85, IGNORE_DUP_KEY = ON)
     ON [FG_Customers]
 
 GO
 
 CREATE INDEX [IX_Customer_LastName_FirstName]
-    ON [dbo].[Customer]([LastName], [FirstName]) WITH (IGNORE_DUP_KEY = OFF, STATISTICS_NORECOMPUTE = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
+    ON [dbo].[Customer]([LastName], [FirstName]) WITH (STATISTICS_NORECOMPUTE = ON)
     ON [FG_Customers]
 
 GO
