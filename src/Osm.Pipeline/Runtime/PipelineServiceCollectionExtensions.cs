@@ -16,6 +16,7 @@ using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
+using Osm.Validation.Profiling;
 
 namespace Osm.Pipeline.Runtime;
 
@@ -70,6 +71,9 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IProfileSnapshotDeserializer, ProfileSnapshotDeserializer>();
         services.AddSingleton<IDataProfilerFactory, DataProfilerFactory>();
         services.AddSingleton<IModelIngestionService, ModelIngestionService>();
+        services.AddSingleton<ModuleFilter>();
+        services.AddSingleton<SupplementalEntityLoader>();
+        services.AddSingleton<IProfilingInsightGenerator, ProfilingInsightGenerator>();
 
         return services;
     }
@@ -112,6 +116,13 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IOutputDirectoryResolver, OutputDirectoryResolver>();
         services.AddSingleton<INamingOverridesBinder, NamingOverridesBinder>();
         services.AddSingleton<IStaticDataProviderFactory, StaticDataProviderFactory>();
+        services.AddSingleton<IPipelineBootstrapper, PipelineBootstrapper>();
+        services.AddSingleton<BuildSsdtBootstrapStep>();
+        services.AddSingleton<BuildSsdtEvidenceCacheStep>();
+        services.AddSingleton<BuildSsdtPolicyDecisionStep>();
+        services.AddSingleton<BuildSsdtEmissionStep>();
+        services.AddSingleton<BuildSsdtSqlValidationStep>();
+        services.AddSingleton<BuildSsdtStaticSeedStep>();
 
         services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
         services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();

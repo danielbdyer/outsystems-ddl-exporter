@@ -52,15 +52,15 @@ public sealed class PipelineBootstrapper : IPipelineBootstrapper
     private readonly IProfilingInsightGenerator _insightGenerator;
 
     public PipelineBootstrapper(
-        IModelIngestionService? modelIngestionService = null,
-        ModuleFilter? moduleFilter = null,
-        SupplementalEntityLoader? supplementalLoader = null,
-        IProfilingInsightGenerator? insightGenerator = null)
+        IModelIngestionService modelIngestionService,
+        ModuleFilter moduleFilter,
+        SupplementalEntityLoader supplementalLoader,
+        IProfilingInsightGenerator insightGenerator)
     {
-        _modelIngestionService = modelIngestionService ?? new ModelIngestionService(new ModelJsonDeserializer());
-        _moduleFilter = moduleFilter ?? new ModuleFilter();
-        _supplementalLoader = supplementalLoader ?? new SupplementalEntityLoader();
-        _insightGenerator = insightGenerator ?? new ProfilingInsightGenerator();
+        _modelIngestionService = modelIngestionService ?? throw new ArgumentNullException(nameof(modelIngestionService));
+        _moduleFilter = moduleFilter ?? throw new ArgumentNullException(nameof(moduleFilter));
+        _supplementalLoader = supplementalLoader ?? throw new ArgumentNullException(nameof(supplementalLoader));
+        _insightGenerator = insightGenerator ?? throw new ArgumentNullException(nameof(insightGenerator));
     }
 
     public async Task<Result<PipelineBootstrapContext>> BootstrapAsync(

@@ -6,12 +6,20 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Osm.Domain.Configuration;
+using Osm.Emission;
 using Osm.Emission.Seeds;
+using Osm.Json;
+using Osm.Pipeline.Evidence;
+using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.Sql;
 using Osm.Pipeline.StaticData;
 using Osm.Smo;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
+using Osm.Validation.Profiling;
 using Tests.Support;
 using Xunit;
 
@@ -68,7 +76,7 @@ public sealed class SsdtMatrixTests
             StaticDataProvider: staticDataProvider,
             SeedOutputDirectoryHint: null);
 
-        var pipeline = new BuildSsdtPipeline();
+        var pipeline = CreatePipeline();
         var result = await pipeline.HandleAsync(request);
         Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(error => error.Message)));
 
@@ -98,6 +106,46 @@ public sealed class SsdtMatrixTests
         {
             Assert.Contains(predicate, actualPredicates);
         }
+    }
+
+    private static BuildSsdtPipeline CreatePipeline()
+    {
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var evidenceCacheStep = new BuildSsdtEvidenceCacheStep(new EvidenceCacheCoordinator(new EvidenceCacheService()));
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
+        var emissionStep = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
+        var sqlValidationStep = new BuildSsdtSqlValidationStep(new SsdtSqlValidator());
+        var staticSeedStep = new BuildSsdtStaticSeedStep(new StaticEntitySeedScriptGenerator(), StaticEntitySeedTemplate.Load());
+
+        return new BuildSsdtPipeline(
+            TimeProvider.System,
+            bootstrapStep,
+            evidenceCacheStep,
+            policyStep,
+            emissionStep,
+            sqlValidationStep,
+            staticSeedStep);
+    }
+
+    private static PipelineBootstrapper CreatePipelineBootstrapper()
+    {
+        return new PipelineBootstrapper(
+            new ModelIngestionService(new ModelJsonDeserializer()),
+            new ModuleFilter(),
+            new SupplementalEntityLoader(new ModelJsonDeserializer()),
+            new ProfilingInsightGenerator());
+    }
+
+    private static IDataProfilerFactory CreateProfilerFactory()
+    {
+        return new DataProfilerFactory(
+            new ProfileSnapshotDeserializer(),
+            static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
     }
 
     private static readonly JsonSerializerOptions SerializerOptions = new()

@@ -11,11 +11,16 @@ using Osm.Domain.Model;
 using Osm.Emission.Seeds;
 using Osm.Emission;
 using Osm.Json;
+using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using Osm.Smo;
+using Osm.Validation.Tightening.Opportunities;
+using Osm.Validation.Profiling;
 using Tests.Support;
 using Xunit;
 
@@ -47,7 +52,7 @@ public class BuildSsdtPipelineTests
             SeedOutputDirectoryHint: null,
             SqlMetadataLog: null);
 
-        var pipeline = new BuildSsdtPipeline();
+        var pipeline = CreatePipeline();
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsFailure);
@@ -79,7 +84,7 @@ public class BuildSsdtPipelineTests
             SeedOutputDirectoryHint: null,
             SqlMetadataLog: null);
 
-        var pipeline = new BuildSsdtPipeline();
+        var pipeline = CreatePipeline();
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsFailure);
@@ -126,7 +131,7 @@ public class BuildSsdtPipelineTests
             null,
             null);
 
-        var pipeline = new BuildSsdtPipeline(bootstrapper: bootstrapper);
+        var pipeline = CreatePipeline(bootstrapper);
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsFailure);
@@ -174,7 +179,7 @@ public class BuildSsdtPipelineTests
             null,
             null);
 
-        var pipeline = new BuildSsdtPipeline(bootstrapper: bootstrapper);
+        var pipeline = CreatePipeline(bootstrapper);
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsFailure);
@@ -219,7 +224,7 @@ public class BuildSsdtPipelineTests
             new EmptyStaticEntityDataProvider(),
             Path.Combine(output.Path, "Seeds"));
 
-        var pipeline = new BuildSsdtPipeline();
+        var pipeline = CreatePipeline();
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsSuccess);
@@ -330,12 +335,57 @@ public class BuildSsdtPipelineTests
                 SsdtSqlValidationError.Create(102, 0, 16, 1, 1, "Incorrect syntax near '?'."),
             });
         var summary = SsdtSqlValidationSummary.Create(1, new[] { issue });
-        var pipeline = new BuildSsdtPipeline(sqlValidator: new FakeSqlValidator(summary));
+        var pipeline = CreatePipeline(sqlValidator: new FakeSqlValidator(summary));
 
         var result = await pipeline.HandleAsync(request);
 
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, error => error.Code == "pipeline.buildSsdt.sql.validationFailed");
+    }
+
+    private static BuildSsdtPipeline CreatePipeline(
+        IPipelineBootstrapper? bootstrapper = null,
+        ISsdtSqlValidator? sqlValidator = null)
+    {
+        var timeProvider = TimeProvider.System;
+        var bootstrapStep = new BuildSsdtBootstrapStep(
+            bootstrapper ?? CreatePipelineBootstrapper(),
+            CreateProfilerFactory());
+        var evidenceCacheStep = new BuildSsdtEvidenceCacheStep(new EvidenceCacheCoordinator(new EvidenceCacheService()));
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
+        var emissionStep = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
+        var validationStep = new BuildSsdtSqlValidationStep(sqlValidator ?? new SsdtSqlValidator());
+        var staticSeedStep = new BuildSsdtStaticSeedStep(new StaticEntitySeedScriptGenerator(), StaticEntitySeedTemplate.Load());
+
+        return new BuildSsdtPipeline(
+            timeProvider,
+            bootstrapStep,
+            evidenceCacheStep,
+            policyStep,
+            emissionStep,
+            validationStep,
+            staticSeedStep);
+    }
+
+    private static PipelineBootstrapper CreatePipelineBootstrapper()
+    {
+        return new PipelineBootstrapper(
+            new ModelIngestionService(new ModelJsonDeserializer()),
+            new ModuleFilter(),
+            new SupplementalEntityLoader(new ModelJsonDeserializer()),
+            new ProfilingInsightGenerator());
+    }
+
+    private static IDataProfilerFactory CreateProfilerFactory()
+    {
+        return new DataProfilerFactory(
+            new ProfileSnapshotDeserializer(),
+            static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
     }
 
     private sealed class FakePipelineBootstrapper : IPipelineBootstrapper
