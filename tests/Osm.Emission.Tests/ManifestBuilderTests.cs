@@ -96,6 +96,7 @@ public class ManifestBuilderTests
             foreignKeyRationales,
             diagnostics,
             moduleRollups,
+            ImmutableDictionary<string, ToggleExportValue>.Empty,
             toggles);
     }
 }

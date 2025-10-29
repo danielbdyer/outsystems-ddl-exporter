@@ -107,6 +107,10 @@ public class BuildSsdtCommandFactoryTests
         Assert.Contains("Columns tightened: 1/2", output);
         Assert.Contains("Unique indexes enforced: 1/1", output);
         Assert.Contains("Foreign keys created: 1/1", output);
+        Assert.Contains("Module rollups:", output);
+        Assert.Contains("Sales: tables=1, indexes=0, foreignKeys=1, columns=2, tightened=1, remediation=1, uniqueEnforced=1, uniqueRemediation=0, foreignKeysCreated=1", output);
+        Assert.Contains("Tightening toggles:", output);
+        Assert.Contains("policy.mode = EvidenceGated (Configuration)", output);
 
         Assert.Equal(string.Empty, console.Error.ToString());
     }
@@ -316,7 +320,23 @@ public class BuildSsdtCommandFactoryTests
                 ImmutableDictionary<string, int>.Empty,
                 ImmutableDictionary<string, int>.Empty,
                 ImmutableArray<TighteningDiagnostic>.Empty,
-                ImmutableDictionary<string, ModuleDecisionRollup>.Empty,
+                ImmutableDictionary<string, ModuleDecisionRollup>.Empty.Add(
+                    "Sales",
+                    new ModuleDecisionRollup(
+                        ColumnCount: 2,
+                        TightenedColumnCount: 1,
+                        RemediationColumnCount: 1,
+                        UniqueIndexCount: 1,
+                        UniqueIndexesEnforcedCount: 1,
+                        UniqueIndexesRequireRemediationCount: 0,
+                        ForeignKeyCount: 1,
+                        ForeignKeysCreatedCount: 1,
+                        ImmutableDictionary<string, int>.Empty,
+                        ImmutableDictionary<string, int>.Empty,
+                        ImmutableDictionary<string, int>.Empty)),
+                ImmutableDictionary<string, ToggleExportValue>.Empty.Add(
+                    TighteningToggleKeys.PolicyMode,
+                    new ToggleExportValue(TighteningMode.EvidenceGated, ToggleSource.Configuration)),
                 toggle);
 
             var manifest = new SsdtManifest(
@@ -352,6 +372,7 @@ public class BuildSsdtCommandFactoryTests
                 report,
                 opportunities,
                 manifest,
+                ImmutableDictionary<string, ModuleManifestRollup>.Empty.Add("Sales", new ModuleManifestRollup(1, 0, 1)),
                 ImmutableArray<PipelineInsight>.Empty,
                 "decision.log",
                 "opportunities.json",

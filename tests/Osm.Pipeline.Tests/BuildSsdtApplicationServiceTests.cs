@@ -100,6 +100,7 @@ public sealed class BuildSsdtApplicationServiceTests
             ImmutableDictionary<string, int>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty,
             ImmutableDictionary<string, ModuleDecisionRollup>.Empty,
+            ImmutableDictionary<string, ToggleExportValue>.Empty,
             toggles);
         var manifest = new SsdtManifest(
             Array.Empty<TableManifestEntry>(),
@@ -123,6 +124,7 @@ public sealed class BuildSsdtApplicationServiceTests
             report,
             opportunities,
             manifest,
+            ImmutableDictionary<string, ModuleManifestRollup>.Empty,
             ImmutableArray<PipelineInsight>.Empty,
             "decision.log",
             "opportunities.json",

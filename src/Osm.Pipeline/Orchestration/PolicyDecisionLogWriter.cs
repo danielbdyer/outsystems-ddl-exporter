@@ -28,7 +28,7 @@ public sealed class PolicyDecisionLogWriter
             static pair => pair.Key,
             static pair => pair.Value,
             StringComparer.OrdinalIgnoreCase);
-        var togglePrecedence = report.Toggles.ToExportDictionary();
+        var togglePrecedence = report.TogglePrecedence;
 
         var log = new PolicyDecisionLog(
             report.ColumnCount,

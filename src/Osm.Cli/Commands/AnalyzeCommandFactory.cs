@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Immutable;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
@@ -105,6 +107,9 @@ internal sealed class AnalyzeCommandFactory : ICommandFactory
         CommandConsole.WriteLine(context.Console, $"Columns tightened: {report.TightenedColumnCount}/{report.ColumnCount}");
         CommandConsole.WriteLine(context.Console, $"Unique indexes enforced: {report.UniqueIndexesEnforcedCount}/{report.UniqueIndexCount}");
         CommandConsole.WriteLine(context.Console, $"Foreign keys created: {report.ForeignKeysCreatedCount}/{report.ForeignKeyCount}");
+
+        CommandConsole.EmitModuleRollups(context.Console, ImmutableDictionary<string, ModuleManifestRollup>.Empty, report.ModuleRollups);
+        CommandConsole.EmitTogglePrecedence(context.Console, report.TogglePrecedence);
 
         foreach (var summary in pipelineResult.SummaryLines)
         {

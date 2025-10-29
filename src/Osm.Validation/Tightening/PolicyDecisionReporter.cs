@@ -47,6 +47,10 @@ public static class PolicyDecisionReporter
 
         var moduleRollups = BuildModuleRollups(columnReports, uniqueIndexReports, foreignKeyReports, decisions);
 
+        var togglePrecedence = decisions.Toggles
+            .ToExportDictionary()
+            .ToImmutableDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
         return new PolicyDecisionReport(
             columnReports,
             uniqueIndexReports,
@@ -56,6 +60,7 @@ public static class PolicyDecisionReporter
             foreignKeyRationales,
             diagnostics,
             moduleRollups,
+            togglePrecedence,
             decisions.Toggles);
     }
 
@@ -177,6 +182,7 @@ public sealed record PolicyDecisionReport(
     ImmutableDictionary<string, int> ForeignKeyRationaleCounts,
     ImmutableArray<TighteningDiagnostic> Diagnostics,
     ImmutableDictionary<string, ModuleDecisionRollup> ModuleRollups,
+    ImmutableDictionary<string, ToggleExportValue> TogglePrecedence,
     TighteningToggleSnapshot Toggles)
 {
     public int ColumnCount => Columns.Length;

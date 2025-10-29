@@ -38,6 +38,10 @@ public class PipelineReportLauncherTests
         Assert.Contains("dmm-diff.json", html);
         Assert.Contains("AppCore", html);
         Assert.Contains("ExtBilling", html);
+        Assert.Contains("Tightening toggles", html);
+        Assert.Contains("policy.mode", html);
+        Assert.Contains("EvidenceGated", html);
+        Assert.Contains("<th>Columns</th>", html);
         Assert.Contains("No pipeline insights were generated", html);
     }
 
@@ -143,6 +147,9 @@ public class PipelineReportLauncherTests
                     ImmutableDictionary<string, int>.Empty,
                     ImmutableDictionary<string, int>.Empty,
                     ImmutableDictionary<string, int>.Empty)),
+            ImmutableDictionary<string, ToggleExportValue>.Empty.Add(
+                TighteningToggleKeys.PolicyMode,
+                new ToggleExportValue(TighteningMode.EvidenceGated, ToggleSource.Configuration)),
             TighteningToggleSnapshot.Create(TighteningOptions.Default));
 
         var seedPaths = ImmutableArray.Create(
@@ -190,6 +197,9 @@ public class PipelineReportLauncherTests
             decisionReport,
             opportunities,
             manifest,
+            ImmutableDictionary<string, ModuleManifestRollup>.Empty
+                .Add("AppCore", new ModuleManifestRollup(1, 1, 1))
+                .Add("ExtBilling", new ModuleManifestRollup(1, 0, 0)),
             insights.IsDefault ? ImmutableArray<PipelineInsight>.Empty : insights,
             policyPath,
             opportunitiesPath,

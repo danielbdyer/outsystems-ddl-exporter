@@ -1,5 +1,6 @@
 using System;
 using System.CommandLine;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
@@ -33,19 +34,45 @@ internal static class PipelineReportLauncher
         var manifest = pipelineResult.Manifest ?? throw new InvalidOperationException("Manifest not available for report generation.");
         var decisionReport = pipelineResult.DecisionReport ?? throw new InvalidOperationException("Decision report not available for report generation.");
 
-        var moduleSummaries = manifest.Tables
-            .GroupBy(table => table.Module, StringComparer.OrdinalIgnoreCase)
-            .Select(group => new ModuleSummary(
-                group.Key,
-                group.Count(),
-                group.Sum(entry => entry.Indexes?.Count ?? 0),
-                group.Sum(entry => entry.ForeignKeys?.Count ?? 0)))
-            .OrderBy(summary => summary.Module, StringComparer.OrdinalIgnoreCase)
+        var manifestRollups = pipelineResult.ModuleManifestRollups;
+        var decisionRollups = decisionReport.ModuleRollups;
+
+        var moduleKeys = manifestRollups.Keys
+            .Concat(decisionRollups.Keys)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static module => module, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var moduleSummaries = moduleKeys
+            .Select(module =>
+            {
+                var manifestRollup = manifestRollups.TryGetValue(module, out var manifestValue)
+                    ? manifestValue
+                    : ModuleManifestRollup.Empty;
+
+                decisionRollups.TryGetValue(module, out var decisionValue);
+
+                return new ModuleSummary(
+                    module,
+                    manifestRollup.TableCount,
+                    manifestRollup.IndexCount,
+                    manifestRollup.ForeignKeyCount,
+                    decisionValue?.ColumnCount ?? 0,
+                    decisionValue?.TightenedColumnCount ?? 0,
+                    decisionValue?.RemediationColumnCount ?? 0,
+                    decisionValue?.UniqueIndexesEnforcedCount ?? 0,
+                    decisionValue?.UniqueIndexesRequireRemediationCount ?? 0,
+                    decisionValue?.ForeignKeysCreatedCount ?? 0);
+            })
             .ToArray();
 
         var totalTables = manifest.Tables.Count;
         var totalIndexes = manifest.Tables.Sum(entry => entry.Indexes?.Count ?? 0);
         var totalForeignKeys = manifest.Tables.Sum(entry => entry.ForeignKeys?.Count ?? 0);
+        var toggleEntries = decisionReport.TogglePrecedence
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(pair => new ToggleEntry(pair.Key, FormatToggleValue(pair.Value.Value), pair.Value.Source.ToString()))
+            .ToArray();
         var diffPath = Path.Combine(outputDirectory, "dmm-diff.json");
         var hasDiff = File.Exists(diffPath);
 
@@ -69,6 +96,7 @@ internal static class PipelineReportLauncher
             totalTables,
             totalIndexes,
             totalForeignKeys,
+            toggleEntries,
             pipelineResult.PipelineInsights,
             hasDiff,
             staticSeedPaths,
@@ -130,6 +158,7 @@ internal static class PipelineReportLauncher
         int totalTables,
         int totalIndexes,
         int totalForeignKeys,
+        ToggleEntry[] toggleEntries,
         ImmutableArray<PipelineInsight> insights,
         bool hasDiff,
         IReadOnlyList<string> staticSeedPaths,
@@ -270,6 +299,27 @@ internal static class PipelineReportLauncher
         builder.AppendLine("  </section>");
 
         builder.AppendLine("  <section>");
+        builder.AppendLine("    <h2>Tightening toggles</h2>");
+        if (toggleEntries.Length == 0)
+        {
+            builder.AppendLine("    <p>No toggle overrides were applied.</p>");
+        }
+        else
+        {
+            builder.AppendLine("    <table>");
+            builder.AppendLine("      <thead><tr><th>Toggle</th><th>Value</th><th>Source</th></tr></thead>");
+            builder.AppendLine("      <tbody>");
+            foreach (var toggle in toggleEntries)
+            {
+                builder.AppendLine($"        <tr><td>{HtmlEncode(toggle.Key)}</td><td>{HtmlEncode(toggle.Value)}</td><td>{HtmlEncode(toggle.Source)}</td></tr>");
+            }
+
+            builder.AppendLine("      </tbody>");
+            builder.AppendLine("    </table>");
+        }
+        builder.AppendLine("  </section>");
+
+        builder.AppendLine("  <section>");
         builder.AppendLine("    <h2>Module coverage</h2>");
         if (moduleSummaries.Length == 0)
         {
@@ -278,11 +328,12 @@ internal static class PipelineReportLauncher
         else
         {
             builder.AppendLine("    <table>");
-            builder.AppendLine("      <thead><tr><th>Module</th><th>Tables</th><th>Indexes</th><th>Foreign Keys</th></tr></thead>");
+            builder.AppendLine("      <thead><tr><th>Module</th><th>Tables</th><th>Indexes</th><th>Foreign Keys</th><th>Columns</th><th>Tightened</th><th>Remediation</th><th>Unique Enforced</th><th>Unique Remediation</th><th>Foreign Keys Created</th></tr></thead>");
             builder.AppendLine("      <tbody>");
             foreach (var summary in moduleSummaries)
             {
-                builder.AppendLine($"        <tr><td>{HtmlEncode(summary.Module)}</td><td>{summary.Tables:N0}</td><td>{summary.Indexes:N0}</td><td>{summary.ForeignKeys:N0}</td></tr>");
+                builder.AppendLine(
+                    $"        <tr><td>{HtmlEncode(summary.Module)}</td><td>{summary.Tables:N0}</td><td>{summary.Indexes:N0}</td><td>{summary.ForeignKeys:N0}</td><td>{summary.Columns:N0}</td><td>{summary.TightenedColumns:N0}</td><td>{summary.RemediationColumns:N0}</td><td>{summary.UniqueEnforced:N0}</td><td>{summary.UniqueRemediation:N0}</td><td>{summary.ForeignKeysCreated:N0}</td></tr>");
             }
             builder.AppendLine("      </tbody>");
             builder.AppendLine("    </table>");
@@ -387,5 +438,27 @@ internal static class PipelineReportLauncher
         console.Error.Write(message + Environment.NewLine);
     }
 
-    private sealed record ModuleSummary(string Module, int Tables, int Indexes, int ForeignKeys);
+    private sealed record ModuleSummary(
+        string Module,
+        int Tables,
+        int Indexes,
+        int ForeignKeys,
+        int Columns,
+        int TightenedColumns,
+        int RemediationColumns,
+        int UniqueEnforced,
+        int UniqueRemediation,
+        int ForeignKeysCreated);
+
+    private sealed record ToggleEntry(string Key, string Value, string Source);
+
+    private static string FormatToggleValue(object? value)
+        => value switch
+        {
+            null => "<null>",
+            bool boolean => boolean ? "true" : "false",
+            double number => number.ToString("0.###", CultureInfo.InvariantCulture),
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => value.ToString() ?? string.Empty
+        };
 }
