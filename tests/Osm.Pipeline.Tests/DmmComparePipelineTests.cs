@@ -53,7 +53,7 @@ public class DmmComparePipelineTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
-            TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault(),
             Path.Combine(workspace.Path, "dmm-diff.json"),
             null);
 
@@ -93,7 +93,7 @@ public class DmmComparePipelineTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
-            TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault(),
             diffPath,
             new EvidenceCachePipelineOptions(
                 cache.Path,
@@ -153,7 +153,7 @@ public class DmmComparePipelineTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
-            TypeMappingPolicy.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault(),
             diffPath,
             null);
 

@@ -144,7 +144,7 @@ public sealed class BuildSsdtRequestAssemblerTests
             filter,
             sqlOptions,
             configuration.Tightening,
-            TypeMappingPolicy.Default,
+            TypeMappingPolicyLoader.DefaultPolicy,
             SmoBuildOptions.FromEmission(configuration.Tightening.Emission),
             modelPath,
             outputDirectory,

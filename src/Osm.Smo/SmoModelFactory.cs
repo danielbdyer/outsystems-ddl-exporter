@@ -31,7 +31,7 @@ public sealed class SmoModelFactory
         }
 
         options ??= SmoBuildOptions.Default;
-        var resolvedTypeMapping = typeMappingPolicy ?? TypeMappingPolicy.Default;
+        var resolvedTypeMapping = typeMappingPolicy ?? TypeMappingPolicyLoader.DefaultPolicy;
 
         var profileDefaults = BuildProfileDefaults(profile);
         var foreignKeyReality = BuildForeignKeyReality(profile);

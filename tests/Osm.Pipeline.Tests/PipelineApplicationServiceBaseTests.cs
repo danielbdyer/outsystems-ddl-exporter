@@ -103,7 +103,7 @@ public sealed class PipelineApplicationServiceBaseTests
                 new SqlSamplingSettings(null, null),
                 new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContractOverrides.Strict),
-            TypeMappingPolicy.Default,
+            TypeMappingPolicyLoader.DefaultPolicy,
             new SupplementalModelOptions(true, Array.Empty<string>()),
             NamingOverrides: null,
             new CacheOptionsOverrides(null, null),

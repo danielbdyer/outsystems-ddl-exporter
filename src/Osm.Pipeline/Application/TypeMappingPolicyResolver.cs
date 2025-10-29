@@ -29,10 +29,10 @@ internal static class TypeMappingPolicyResolver
                         $"Type mapping file '{path}' was not found.");
                 }
 
-                return TypeMappingPolicy.LoadFromFile(path, configuration.Default, configuration.Overrides);
+                return TypeMappingPolicyLoader.LoadFromFile(path, configuration.Default, configuration.Overrides);
             }
 
-            return TypeMappingPolicy.LoadDefault(configuration.Default, configuration.Overrides);
+            return TypeMappingPolicyLoader.LoadDefault(configuration.Default, configuration.Overrides);
         }
         catch (Exception ex)
         {

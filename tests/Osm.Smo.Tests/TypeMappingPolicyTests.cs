@@ -286,7 +286,7 @@ public sealed class TypeMappingPolicyTests
     }
 
     private static DataType Resolve(AttributeModel attribute)
-        => TypeMappingPolicy.LoadDefault().Resolve(attribute);
+        => TypeMappingPolicyLoader.LoadDefault().Resolve(attribute);
 
     private static AttributeModel CreateAttribute(
         string dataType = "Text",
