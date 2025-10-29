@@ -271,6 +271,11 @@ internal sealed class IndexScriptBuilder
                 continue;
             }
 
+            if (level.Value == DataCompressionLevel.None)
+            {
+                continue;
+            }
+
             var option = new DataCompressionOption
             {
                 OptionKind = IndexOptionKind.DataCompression,
