@@ -13,7 +13,14 @@ namespace Osm.Smo.Tests.PerTableEmission;
 
 public class CreateTableStatementBuilderTests
 {
-    private readonly SqlScriptFormatter _formatter = new();
+    private readonly IdentifierFormatter _identifierFormatter = new();
+    private readonly ConstraintFormatter _constraintFormatter = new();
+    private readonly CreateTableStatementBuilder _builder;
+
+    public CreateTableStatementBuilderTests()
+    {
+        _builder = new CreateTableStatementBuilder(_identifierFormatter, _constraintFormatter);
+    }
 
     [Fact]
     public void BuildCreateTableStatement_inlines_single_column_primary_key()
@@ -57,8 +64,7 @@ public class CreateTableStatementBuilderTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new CreateTableStatementBuilder(_formatter);
-        var statement = builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
+        var statement = _builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
 
         Assert.NotNull(statement.Definition);
         var singleColumn = Assert.Single(statement.Definition.ColumnDefinitions);
@@ -113,9 +119,8 @@ public class CreateTableStatementBuilderTests
                 IsNoCheck: true)),
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new CreateTableStatementBuilder(_formatter);
-        var statement = builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
-        var foreignKeyNames = builder.AddForeignKeys(statement, table, "Order", SmoBuildOptions.Default, out var trustLookup);
+        var statement = _builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
+        var foreignKeyNames = _builder.AddForeignKeys(statement, table, "Order", SmoBuildOptions.Default, out var trustLookup);
 
         var resolvedName = Assert.Single(foreignKeyNames);
         Assert.Equal("FK_Order_City_CityId", resolvedName);
@@ -137,9 +142,8 @@ public class CreateTableStatementBuilderTests
         var smoModel = factory.Create(model, decisions, snapshot, options);
         var childTable = Assert.Single(smoModel.Tables.Where(t => t.LogicalName.Equals("Child", StringComparison.Ordinal)));
 
-        var builder = new CreateTableStatementBuilder(_formatter);
-        var statement = builder.BuildCreateTableStatement(childTable, childTable.Name, options);
-        var foreignKeyNames = builder.AddForeignKeys(statement, childTable, childTable.Name, options, out _);
+        var statement = _builder.BuildCreateTableStatement(childTable, childTable.Name, options);
+        var foreignKeyNames = _builder.AddForeignKeys(statement, childTable, childTable.Name, options, out _);
 
         var resolvedName = Assert.Single(foreignKeyNames);
         Assert.Equal("FK_Child_Parent_ParentId_TenantId", resolvedName);
@@ -188,8 +192,7 @@ public class CreateTableStatementBuilderTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new CreateTableStatementBuilder(_formatter);
-        var statement = builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
+        var statement = _builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
 
         var columnDefinition = Assert.Single(statement.Definition!.ColumnDefinitions);
         var dataType = Assert.IsType<SqlDataTypeReference>(columnDefinition.DataType);

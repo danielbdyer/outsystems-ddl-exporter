@@ -9,7 +9,13 @@ namespace Osm.Smo.Tests.PerTableEmission;
 
 public class IndexScriptBuilderTests
 {
-    private readonly SqlScriptFormatter _formatter = new();
+    private readonly IdentifierFormatter _identifierFormatter = new();
+    private readonly IndexScriptBuilder _builder;
+
+    public IndexScriptBuilderTests()
+    {
+        _builder = new IndexScriptBuilder(_identifierFormatter);
+    }
 
     [Fact]
     public void BuildCreateIndexStatement_includes_filter_and_compression_options()
@@ -54,8 +60,7 @@ public class IndexScriptBuilderTests
                 new SmoIndexColumnDefinition("AuditId", 1, IsIncluded: true, IsDescending: false)),
             Metadata: metadata);
 
-        var builder = new IndexScriptBuilder(_formatter);
-        var statement = builder.BuildCreateIndexStatement(table, index, "Order", "IX_Order_Status", SmoFormatOptions.Default);
+        var statement = _builder.BuildCreateIndexStatement(table, index, "Order", "IX_Order_Status", SmoFormatOptions.Default);
 
         Assert.Equal("IX_Order_Status", statement.Name.Value);
         Assert.Equal(SortOrder.Descending, statement.Columns[0].SortOrder);
@@ -92,8 +97,7 @@ public class IndexScriptBuilderTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new IndexScriptBuilder(_formatter);
-        var statement = builder.BuildDisableIndexStatement(table, "Order", "IX_Order_Status", SmoFormatOptions.Default);
+        var statement = _builder.BuildDisableIndexStatement(table, "Order", "IX_Order_Status", SmoFormatOptions.Default);
 
         Assert.Equal("IX_Order_Status", statement.Name.Value);
         Assert.Equal(AlterIndexType.Disable, statement.AlterIndexType);
@@ -132,8 +136,7 @@ public class IndexScriptBuilderTests
             Columns: ImmutableArray.Create(new SmoIndexColumnDefinition("Id", 0, IsIncluded: false, IsDescending: false)),
             Metadata: metadata);
 
-        var builder = new IndexScriptBuilder(_formatter);
-        var statement = builder.BuildCreateIndexStatement(table, index, "Order", index.Name, SmoFormatOptions.Default);
+        var statement = _builder.BuildCreateIndexStatement(table, index, "Order", index.Name, SmoFormatOptions.Default);
 
         Assert.Empty(statement.IndexOptions);
         Assert.Null(statement.OnFileGroupOrPartitionScheme);

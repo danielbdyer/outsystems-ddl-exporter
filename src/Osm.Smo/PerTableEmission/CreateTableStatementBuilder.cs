@@ -13,11 +13,15 @@ namespace Osm.Smo.PerTableEmission;
 
 internal sealed class CreateTableStatementBuilder
 {
-    private readonly SqlScriptFormatter _formatter;
+    private readonly IdentifierFormatter _identifierFormatter;
+    private readonly ConstraintFormatter _constraintFormatter;
 
-    public CreateTableStatementBuilder(SqlScriptFormatter formatter)
+    public CreateTableStatementBuilder(
+        IdentifierFormatter identifierFormatter,
+        ConstraintFormatter constraintFormatter)
     {
-        _formatter = formatter ?? throw new ArgumentNullException(nameof(formatter));
+        _identifierFormatter = identifierFormatter ?? throw new ArgumentNullException(nameof(identifierFormatter));
+        _constraintFormatter = constraintFormatter ?? throw new ArgumentNullException(nameof(constraintFormatter));
     }
 
     public CreateTableStatement BuildCreateTableStatement(
@@ -62,7 +66,7 @@ internal sealed class CreateTableStatementBuilder
         if (primaryKey is not null)
         {
             var sortedColumns = primaryKey.Columns.OrderBy(c => c.Ordinal).ToImmutableArray();
-            var constraintName = _formatter.ResolveConstraintName(primaryKey.Name, table.Name, table.LogicalName, effectiveTableName);
+            var constraintName = _constraintFormatter.ResolveConstraintName(primaryKey.Name, table.Name, table.LogicalName, effectiveTableName);
 
             if (sortedColumns.Length == 1 &&
                 columnLookup.TryGetValue(sortedColumns[0].Name, out var primaryKeyColumn))
@@ -71,7 +75,7 @@ internal sealed class CreateTableStatementBuilder
                 {
                     IsPrimaryKey = true,
                     Clustered = true,
-                    ConstraintIdentifier = _formatter.CreateIdentifier(constraintName, options.Format),
+                    ConstraintIdentifier = _identifierFormatter.CreateIdentifier(constraintName, options.Format),
                 };
 
                 primaryKeyColumn.Constraints.Add(inlineConstraint);
@@ -82,14 +86,14 @@ internal sealed class CreateTableStatementBuilder
                 {
                     IsPrimaryKey = true,
                     Clustered = true,
-                    ConstraintIdentifier = _formatter.CreateIdentifier(constraintName, options.Format),
+                    ConstraintIdentifier = _identifierFormatter.CreateIdentifier(constraintName, options.Format),
                 };
 
                 foreach (var column in sortedColumns)
                 {
                     tableConstraint.Columns.Add(new ColumnWithSortOrder
                     {
-                        Column = _formatter.BuildColumnReference(column.Name, options.Format),
+                        Column = _identifierFormatter.BuildColumnReference(column.Name, options.Format),
                         SortOrder = ScriptDomSortOrder.NotSpecified,
                     });
                 }
@@ -100,7 +104,7 @@ internal sealed class CreateTableStatementBuilder
 
         return new CreateTableStatement
         {
-            SchemaObjectName = _formatter.BuildSchemaObjectName(table.Schema, effectiveTableName, options.Format),
+            SchemaObjectName = _identifierFormatter.BuildSchemaObjectName(table.Schema, effectiveTableName, options.Format),
             Definition = definition,
         };
     }
@@ -158,15 +162,15 @@ internal sealed class CreateTableStatementBuilder
                 foreignKey.ReferencedLogicalTable,
                 foreignKey.ReferencedModule);
 
-            var foreignKeyName = _formatter.ResolveConstraintName(foreignKey.Name, table.Name, table.LogicalName, effectiveTableName);
+            var foreignKeyName = _constraintFormatter.ResolveConstraintName(foreignKey.Name, table.Name, table.LogicalName, effectiveTableName);
             builder.Add(foreignKeyName);
             trustBuilder[foreignKeyName] = foreignKey.IsNoCheck;
 
             var deleteAction = MapDeleteAction(foreignKey.DeleteAction);
             var constraint = new ForeignKeyConstraintDefinition
             {
-                ConstraintIdentifier = _formatter.CreateIdentifier(foreignKeyName, options.Format),
-                ReferenceTableName = _formatter.BuildSchemaObjectName(foreignKey.ReferencedSchema, referencedTableName, options.Format),
+                ConstraintIdentifier = _identifierFormatter.CreateIdentifier(foreignKeyName, options.Format),
+                ReferenceTableName = _identifierFormatter.BuildSchemaObjectName(foreignKey.ReferencedSchema, referencedTableName, options.Format),
             };
 
             if (deleteAction != DeleteUpdateAction.NoAction)
@@ -176,12 +180,12 @@ internal sealed class CreateTableStatementBuilder
 
             foreach (var column in foreignKey.Columns)
             {
-                constraint.Columns.Add(_formatter.CreateIdentifier(column, options.Format));
+                constraint.Columns.Add(_identifierFormatter.CreateIdentifier(column, options.Format));
             }
 
             foreach (var referencedColumn in foreignKey.ReferencedColumns)
             {
-                constraint.ReferencedTableColumns.Add(_formatter.CreateIdentifier(referencedColumn, options.Format));
+                constraint.ReferencedTableColumns.Add(_identifierFormatter.CreateIdentifier(referencedColumn, options.Format));
             }
 
             if (foreignKey.Columns.Length == 1 &&
@@ -207,7 +211,7 @@ internal sealed class CreateTableStatementBuilder
     {
         var definition = new ColumnDefinition
         {
-            ColumnIdentifier = _formatter.CreateIdentifier(column.Name, options.Format),
+            ColumnIdentifier = _identifierFormatter.CreateIdentifier(column.Name, options.Format),
             DataType = column.IsComputed ? null : TranslateDataType(column.DataType),
         };
 
@@ -228,7 +232,7 @@ internal sealed class CreateTableStatementBuilder
         if (!string.IsNullOrWhiteSpace(column.Collation) &&
             !string.Equals(column.Collation, "Latin1_General_CI_AI", StringComparison.OrdinalIgnoreCase))
         {
-            definition.Collation = _formatter.CreateIdentifier(column.Collation!, options.Format);
+            definition.Collation = _identifierFormatter.CreateIdentifier(column.Collation!, options.Format);
         }
 
         if (!options.EmitBareTableOnly)
@@ -243,7 +247,7 @@ internal sealed class CreateTableStatementBuilder
 
                 if (column.DefaultConstraint is { Name: { Length: > 0 } name })
                 {
-                    defaultConstraintDefinition.ConstraintIdentifier = _formatter.CreateIdentifier(name, options.Format);
+                    defaultConstraintDefinition.ConstraintIdentifier = _identifierFormatter.CreateIdentifier(name, options.Format);
                 }
 
                 definition.Constraints.Add(defaultConstraintDefinition);
@@ -266,7 +270,7 @@ internal sealed class CreateTableStatementBuilder
 
                     if (!string.IsNullOrWhiteSpace(checkConstraint.Name))
                     {
-                        checkDefinition.ConstraintIdentifier = _formatter.CreateIdentifier(checkConstraint.Name!, options.Format);
+                        checkDefinition.ConstraintIdentifier = _identifierFormatter.CreateIdentifier(checkConstraint.Name!, options.Format);
                     }
 
                     definition.Constraints.Add(checkDefinition);

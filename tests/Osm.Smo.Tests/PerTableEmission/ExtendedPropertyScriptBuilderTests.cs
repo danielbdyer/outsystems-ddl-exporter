@@ -8,7 +8,13 @@ namespace Osm.Smo.Tests.PerTableEmission;
 
 public class ExtendedPropertyScriptBuilderTests
 {
-    private readonly SqlScriptFormatter _formatter = new();
+    private readonly ConstraintFormatter _constraintFormatter = new();
+    private readonly ExtendedPropertyScriptBuilder _builder;
+
+    public ExtendedPropertyScriptBuilderTests()
+    {
+        _builder = new ExtendedPropertyScriptBuilder(_constraintFormatter);
+    }
 
     [Fact]
     public void BuildExtendedPropertyScripts_emits_table_and_column_descriptions()
@@ -43,8 +49,7 @@ public class ExtendedPropertyScriptBuilderTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new ExtendedPropertyScriptBuilder(_formatter);
-        var scripts = builder.BuildExtendedPropertyScripts(table, "Order", SmoFormatOptions.Default);
+        var scripts = _builder.BuildExtendedPropertyScripts(table, "Order", SmoFormatOptions.Default);
 
         Assert.Equal(2, scripts.Length);
         Assert.Equal(
@@ -95,8 +100,7 @@ public class ExtendedPropertyScriptBuilderTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new ExtendedPropertyScriptBuilder(_formatter);
-        var scripts = builder.BuildExtendedPropertyScripts(table, "Order", SmoFormatOptions.Default);
+        var scripts = _builder.BuildExtendedPropertyScripts(table, "Order", SmoFormatOptions.Default);
 
         Assert.True(scripts.IsDefaultOrEmpty);
     }
@@ -134,8 +138,7 @@ public class ExtendedPropertyScriptBuilderTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new ExtendedPropertyScriptBuilder(_formatter);
-        var scripts = builder.BuildExtendedPropertyScripts(table, "Order", SmoFormatOptions.Default);
+        var scripts = _builder.BuildExtendedPropertyScripts(table, "Order", SmoFormatOptions.Default);
 
         Assert.Equal(2, scripts.Length);
 
@@ -193,8 +196,7 @@ public class ExtendedPropertyScriptBuilderTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var builder = new ExtendedPropertyScriptBuilder(_formatter);
-        var scripts = builder.BuildExtendedPropertyScripts(table, "Order", SmoFormatOptions.Default);
+        var scripts = _builder.BuildExtendedPropertyScripts(table, "Order", SmoFormatOptions.Default);
 
         Assert.Equal(2, scripts.Length);
         Assert.Equal(

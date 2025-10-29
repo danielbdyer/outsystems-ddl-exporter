@@ -10,53 +10,37 @@ using Xunit;
 
 namespace Osm.Smo.Tests.PerTableEmission;
 
-public class SqlScriptFormatterTests
+public class StatementBatchFormatterTests
 {
-    [Fact]
-    public void FormatForeignKeyConstraints_reflows_segments_and_appends_trust_comment()
+    private readonly ConstraintFormatter _constraintFormatter = new();
+    private readonly IdentifierFormatter _identifierFormatter = new();
+    private readonly StatementBatchFormatter _formatter;
+    private readonly CreateTableStatementBuilder _createTableStatementBuilder;
+
+    public StatementBatchFormatterTests()
     {
-        var formatter = new SqlScriptFormatter();
-        var script = """
-CREATE TABLE [dbo].[Order](
-    [Id] INT NOT NULL,
-    CONSTRAINT [FK_Order_City_CityId] FOREIGN KEY ([CityId]) REFERENCES [dbo].[City]([Id]) ON DELETE CASCADE,
-    [Name] NVARCHAR(100)
-);
-""".Trim();
-
-        var lookup = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["FK_Order_City_CityId"] = true,
-        };
-
-        var formatted = formatter.FormatForeignKeyConstraints(script, lookup);
-
-        Assert.Contains("FOREIGN KEY ([CityId]) REFERENCES", formatted);
-        Assert.Contains("ON DELETE CASCADE", formatted);
-        Assert.Contains("-- Source constraint was not trusted", formatted);
-        Assert.Contains("\n        FOREIGN KEY", formatted);
+        _formatter = new StatementBatchFormatter(_constraintFormatter);
+        _createTableStatementBuilder = new CreateTableStatementBuilder(_identifierFormatter, _constraintFormatter);
     }
 
     [Fact]
     public void JoinStatements_inserts_go_batches_and_normalizes_whitespace()
     {
-        var formatter = new SqlScriptFormatter();
         var statements = new[]
         {
             "SELECT 1    ",
-            "SELECT 2"
+            "SELECT 2",
         };
 
-        var script = formatter.JoinStatements(statements, SmoFormatOptions.Default);
+        var script = _formatter.JoinStatements(statements, SmoFormatOptions.Default);
 
-        Assert.Contains("GO", script);
-        Assert.DoesNotContain("SELECT 1    ", script);
+        Assert.Contains("GO", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("SELECT 1    ", script, StringComparison.Ordinal);
     }
 
     [Fact]
     public void FormatCreateTableScript_reflows_inline_defaults_constraints_and_primary_keys()
     {
-        var formatter = new SqlScriptFormatter();
         var statement = CreateMinimalCreateTableStatement("Id", "Status", "Code", "CustomerId");
 
         var script = """
@@ -70,20 +54,19 @@ CREATE TABLE [dbo].[Order](
 );
 """.Trim();
 
-        var formatted = formatter.FormatCreateTableScript(script, statement, foreignKeyTrustLookup: null, SmoFormatOptions.Default);
+        var formatted = _formatter.FormatCreateTableScript(script, statement, foreignKeyTrustLookup: null, SmoFormatOptions.Default);
 
-        Assert.Contains("    [Id] INT NOT NULL\n        CONSTRAINT [PK_Order_Id]\n            PRIMARY KEY CLUSTERED,", formatted);
-        Assert.Contains("    [Status] INT NOT NULL\n        CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0)),", formatted);
-        Assert.Contains("    [Code] NVARCHAR(20) NULL\n        CONSTRAINT [DF_Order_Code] DEFAULT ((N'')),", formatted);
-        Assert.Contains("    CONSTRAINT [PK_Order_Id_Status]\n        PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC),", formatted);
-        Assert.Contains("    CONSTRAINT [FK_Order_Customer_CustomerId]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
-        Assert.DoesNotContain("   ,", formatted);
+        Assert.Contains("    [Id] INT NOT NULL\n        CONSTRAINT [PK_Order_Id]\n            PRIMARY KEY CLUSTERED,", formatted, StringComparison.Ordinal);
+        Assert.Contains("    [Status] INT NOT NULL\n        CONSTRAINT [CK_Order_Status] CHECK ([Status] >= (0)),", formatted, StringComparison.Ordinal);
+        Assert.Contains("    [Code] NVARCHAR(20) NULL\n        CONSTRAINT [DF_Order_Code] DEFAULT ((N'')),", formatted, StringComparison.Ordinal);
+        Assert.Contains("    CONSTRAINT [PK_Order_Id_Status]\n        PRIMARY KEY CLUSTERED ([Id] ASC, [Status] ASC),", formatted, StringComparison.Ordinal);
+        Assert.Contains("    CONSTRAINT [FK_Order_Customer_CustomerId]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted, StringComparison.Ordinal);
+        Assert.DoesNotContain("   ,", formatted, StringComparison.Ordinal);
     }
 
     [Fact]
     public void FormatCreateTableScript_preserves_trust_comment_when_lookup_marks_foreign_key_as_not_trusted()
     {
-        var formatter = new SqlScriptFormatter();
         var statement = CreateMinimalCreateTableStatement("Id", "CustomerId");
         var lookup = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
         {
@@ -98,16 +81,15 @@ CREATE TABLE [dbo].[Order](
 );
 """.Trim();
 
-        var formatted = formatter.FormatCreateTableScript(script, statement, lookup, SmoFormatOptions.Default);
+        var formatted = _formatter.FormatCreateTableScript(script, statement, lookup, SmoFormatOptions.Default);
 
-        Assert.Contains("    CONSTRAINT [FK_Order_Customer_CustomerId]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted);
-        Assert.Contains("-- Source constraint was not trusted (WITH NOCHECK)", formatted);
+        Assert.Contains("    CONSTRAINT [FK_Order_Customer_CustomerId]\n        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([Id])", formatted, StringComparison.Ordinal);
+        Assert.Contains("-- Source constraint was not trusted (WITH NOCHECK)", formatted, StringComparison.Ordinal);
     }
 
     [Fact]
     public void FormatCreateTableScript_skips_reflow_when_normalization_is_disabled()
     {
-        var formatter = new SqlScriptFormatter();
         var statement = CreateMinimalCreateTableStatement("Id", "Status", "Code", "CustomerId");
         var format = SmoFormatOptions.Default.WithWhitespaceNormalization(normalize: false);
 
@@ -122,47 +104,44 @@ CREATE TABLE [dbo].[Order](
 );
 """.Trim();
 
-        var formatted = formatter.FormatCreateTableScript(script, statement, foreignKeyTrustLookup: null, format);
+        var formatted = _formatter.FormatCreateTableScript(script, statement, foreignKeyTrustLookup: null, format);
 
-        Assert.Equal(script, formatted);
+        Assert.Equal(script, formatted, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void FormatCreateTableScript_serializes_nvarchar_max_columns_with_max_literal()
+    public void GenerateCreateTableScript_serializes_nvarchar_max_columns_with_max_literal()
     {
-        var formatter = new SqlScriptFormatter();
         var column = CreateSmoColumnDefinition("Description", DataType.NVarCharMax);
 
-        var script = GenerateCreateTableScript(formatter, column);
+        var script = GenerateCreateTableScript(column);
         var normalized = script.Replace(" ", string.Empty, StringComparison.Ordinal);
 
         Assert.Contains("NVARCHAR(MAX)", normalized, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void FormatCreateTableScript_serializes_varbinary_max_columns_with_max_literal()
+    public void GenerateCreateTableScript_serializes_varbinary_max_columns_with_max_literal()
     {
-        var formatter = new SqlScriptFormatter();
         var column = CreateSmoColumnDefinition("Payload", DataType.VarBinaryMax);
 
-        var script = GenerateCreateTableScript(formatter, column);
+        var script = GenerateCreateTableScript(column);
         var normalized = script.Replace(" ", string.Empty, StringComparison.Ordinal);
 
         Assert.Contains("VARBINARY(MAX)", normalized, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void FormatCreateTableScript_emits_null_keyword_for_nullable_columns()
+    public void GenerateCreateTableScript_emits_null_keyword_for_nullable_columns()
     {
-        var formatter = new SqlScriptFormatter();
         var column = CreateSmoColumnDefinition("Optional", DataType.NVarChar(50));
 
-        var script = GenerateCreateTableScript(formatter, column);
+        var script = GenerateCreateTableScript(column);
 
         Assert.Contains("[Optional] NVARCHAR (50) NULL", script, StringComparison.Ordinal);
     }
 
-    private static CreateTableStatement CreateMinimalCreateTableStatement(params string[] columnNames)
+    private CreateTableStatement CreateMinimalCreateTableStatement(params string[] columnNames)
     {
         var tableDefinition = new TableDefinition();
 
@@ -189,9 +168,8 @@ CREATE TABLE [dbo].[Order](
         };
     }
 
-    private static string GenerateCreateTableScript(SqlScriptFormatter formatter, params SmoColumnDefinition[] columns)
+    private string GenerateCreateTableScript(params SmoColumnDefinition[] columns)
     {
-        var builder = new CreateTableStatementBuilder(formatter);
         var options = SmoBuildOptions.Default;
 
         var table = new SmoTableDefinition(
@@ -207,7 +185,7 @@ CREATE TABLE [dbo].[Order](
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var statement = builder.BuildCreateTableStatement(table, table.LogicalName, options);
+        var statement = _createTableStatementBuilder.BuildCreateTableStatement(table, table.LogicalName, options);
 
         var generator = new Sql150ScriptGenerator(new SqlScriptGeneratorOptions
         {
@@ -219,7 +197,7 @@ CREATE TABLE [dbo].[Order](
         generator.GenerateScript(statement, out var script);
         var trimmed = script.Trim();
 
-        return formatter.FormatCreateTableScript(trimmed, statement, foreignKeyTrustLookup: null, options.Format);
+        return _formatter.FormatCreateTableScript(trimmed, statement, foreignKeyTrustLookup: null, options.Format);
     }
 
     private static SmoColumnDefinition CreateSmoColumnDefinition(string name, DataType dataType)
