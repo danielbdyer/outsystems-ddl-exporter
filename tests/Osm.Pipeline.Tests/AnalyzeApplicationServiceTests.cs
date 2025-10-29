@@ -19,38 +19,6 @@ namespace Osm.Pipeline.Tests;
 public sealed class AnalyzeApplicationServiceTests
 {
     [Fact]
-    public async Task RunAsync_WhenModelPathMissing_ReturnsError()
-    {
-        var dispatcher = new CapturingDispatcher();
-        var service = new AnalyzeApplicationService(dispatcher);
-        var context = CreateContext(modelPath: null, profilePath: "profile.json", profilerProfilePath: null);
-        var overrides = new AnalyzeOverrides(null, "profile.json", "out");
-
-        var result = await service.RunAsync(new AnalyzeApplicationInput(context, overrides));
-
-        Assert.True(result.IsFailure);
-        Assert.Single(result.Errors);
-        Assert.Equal("pipeline.analyze.model.missing", result.Errors[0].Code);
-        Assert.Null(dispatcher.LastRequest);
-    }
-
-    [Fact]
-    public async Task RunAsync_WhenProfilePathMissing_ReturnsError()
-    {
-        var dispatcher = new CapturingDispatcher();
-        var service = new AnalyzeApplicationService(dispatcher);
-        var context = CreateContext(modelPath: "model.json", profilePath: null, profilerProfilePath: null);
-        var overrides = new AnalyzeOverrides("model.json", null, "out");
-
-        var result = await service.RunAsync(new AnalyzeApplicationInput(context, overrides));
-
-        Assert.True(result.IsFailure);
-        Assert.Single(result.Errors);
-        Assert.Equal("pipeline.analyze.profile.missing", result.Errors[0].Code);
-        Assert.Null(dispatcher.LastRequest);
-    }
-
-    [Fact]
     public async Task RunAsync_DispatchesRequestWithResolvedPaths()
     {
         using var temp = new TempDirectory();

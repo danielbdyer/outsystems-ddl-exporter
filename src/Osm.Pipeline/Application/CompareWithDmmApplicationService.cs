@@ -21,7 +21,7 @@ public sealed record CompareWithDmmApplicationResult(
     DmmComparePipelineResult PipelineResult,
     string DiffOutputPath);
 
-public sealed class CompareWithDmmApplicationService : IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>
+public sealed class CompareWithDmmApplicationService : PipelineApplicationServiceBase, IApplicationService<CompareWithDmmApplicationInput, CompareWithDmmApplicationResult>
 {
     private readonly ICommandDispatcher _dispatcher;
 
@@ -32,13 +32,12 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
 
     public async Task<Result<CompareWithDmmApplicationResult>> RunAsync(CompareWithDmmApplicationInput input, CancellationToken cancellationToken = default)
     {
-        if (input is null)
-        {
-            throw new ArgumentNullException(nameof(input));
-        }
+        input = EnsureNotNull(input, nameof(input));
 
-        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
-            input.ConfigurationContext,
+        var configurationContext = EnsureNotNull(input.ConfigurationContext, nameof(input.ConfigurationContext));
+
+        var contextResult = BuildContext(new PipelineRequestContextBuilderRequest(
+            configurationContext,
             input.ModuleFilter,
             input.Sql,
             input.Cache,
@@ -56,7 +55,7 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
         var moduleFilter = context.ModuleFilter;
         var typeMappingPolicy = context.TypeMappingPolicy;
 
-        var modelPathResult = ResolveRequiredPath(
+        var modelPathResult = RequirePath(
             input.Overrides.ModelPath,
             configuration.ModelPath,
             "pipeline.dmmCompare.model.missing",
@@ -67,7 +66,7 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
             return Result<CompareWithDmmApplicationResult>.Failure(modelPathResult.Errors);
         }
 
-        var profilePathResult = ResolveRequiredPath(
+        var profilePathResult = RequirePath(
             input.Overrides.ProfilePath,
             configuration.ProfilePath ?? configuration.Profiler.ProfilePath,
             "pipeline.dmmCompare.profile.missing",
@@ -78,7 +77,7 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
             return Result<CompareWithDmmApplicationResult>.Failure(profilePathResult.Errors);
         }
 
-        var dmmPathResult = ResolveRequiredPath(
+        var dmmPathResult = RequirePath(
             input.Overrides.DmmPath,
             configuration.DmmPath,
             "pipeline.dmmCompare.dmm.missing",
@@ -99,6 +98,7 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
         {
             if (moduleParallelism <= 0)
             {
+                await FlushMetadataAsync(context, cancellationToken).ConfigureAwait(false);
                 return ValidationError.Create(
                     "cli.dmmCompare.parallelism.invalid",
                     "--max-degree-of-parallelism must be a positive integer when specified.");
@@ -107,7 +107,8 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
             smoOptions = smoOptions with { ModuleParallelism = moduleParallelism };
         }
 
-        var cacheOptions = context.CreateCacheOptions(
+        var cacheOptions = CreateCacheOptions(
+            context,
             "dmm-compare",
             modelPathResult.Value,
             profilePathResult.Value,
@@ -129,7 +130,7 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
         var pipelineResult = await _dispatcher.DispatchAsync<DmmComparePipelineRequest, DmmComparePipelineResult>(
             request,
             cancellationToken).ConfigureAwait(false);
-        await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
+        await FlushMetadataAsync(context, cancellationToken).ConfigureAwait(false);
         if (pipelineResult.IsFailure)
         {
             return Result<CompareWithDmmApplicationResult>.Failure(pipelineResult.Errors);
@@ -139,17 +140,4 @@ public sealed class CompareWithDmmApplicationService : IApplicationService<Compa
         return new CompareWithDmmApplicationResult(pipelineResult.Value, resolvedDiffPath);
     }
 
-    private static Result<string> ResolveRequiredPath(string? overridePath, string? fallbackPath, string errorCode, string errorMessage)
-    {
-        var resolved = overridePath ?? fallbackPath;
-        if (string.IsNullOrWhiteSpace(resolved))
-        {
-            return ValidationError.Create(errorCode, errorMessage);
-        }
-
-        return Result<string>.Success(resolved);
-    }
-
-    private static string ResolveOutputDirectory(string? overridePath)
-        => string.IsNullOrWhiteSpace(overridePath) ? "out" : overridePath!;
 }

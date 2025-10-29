@@ -22,7 +22,7 @@ public sealed record ExtractModelApplicationResult(
     ModelExtractionResult ExtractionResult,
     string OutputPath);
 
-public sealed class ExtractModelApplicationService : IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>
+public sealed class ExtractModelApplicationService : PipelineApplicationServiceBase, IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>
 {
     private readonly ICommandDispatcher _dispatcher;
     private readonly ILogger<ExtractModelApplicationService> _logger;
@@ -37,16 +37,9 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
 
     public async Task<Result<ExtractModelApplicationResult>> RunAsync(ExtractModelApplicationInput input, CancellationToken cancellationToken = default)
     {
-        if (input is null)
-        {
-            throw new ArgumentNullException(nameof(input));
-        }
+        input = EnsureNotNull(input, nameof(input));
 
-        var configurationContext = input.ConfigurationContext;
-        if (configurationContext is null)
-        {
-            throw new ArgumentNullException(nameof(input.ConfigurationContext));
-        }
+        var configurationContext = EnsureNotNull(input.ConfigurationContext, nameof(input.ConfigurationContext));
 
         var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
         var overrides = input.Overrides ?? new ExtractModelOverrides(null, null, null, null, null, null);
@@ -62,7 +55,7 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
             Array.Empty<string>(),
             Array.Empty<string>());
 
-        var contextResult = PipelineRequestContextBuilder.Build(new PipelineRequestContextBuilderRequest(
+        var contextResult = BuildContext(new PipelineRequestContextBuilderRequest(
             configurationContext,
             moduleFilterOverrides,
             input.Sql,
@@ -143,6 +136,7 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
             _logger.LogError(
                 "Failed to create extraction command: {Errors}.",
                 string.Join(", ", commandResult.Errors.Select(static error => error.Code)));
+            commandResult = await EnsureSuccessOrFlushAsync(commandResult, context, cancellationToken).ConfigureAwait(false);
             return Result<ExtractModelApplicationResult>.Failure(commandResult.Errors);
         }
 
@@ -166,7 +160,7 @@ public sealed class ExtractModelApplicationService : IApplicationService<Extract
             request,
             cancellationToken).ConfigureAwait(false);
 
-        await context.FlushMetadataAsync(cancellationToken).ConfigureAwait(false);
+        await FlushMetadataAsync(context, cancellationToken).ConfigureAwait(false);
 
         if (extractionResult.IsFailure)
         {

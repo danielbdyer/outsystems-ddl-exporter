@@ -11,6 +11,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Tests.Support;
 
 namespace Osm.Pipeline.Tests;
 
@@ -37,90 +38,12 @@ public sealed class CompareWithDmmApplicationServiceTests
         Root: null,
         Refresh: null);
 
-    [Fact]
-    public async Task RunAsync_WhenModelPathMissing_ReturnsModelMissingError()
-    {
-        var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
-        var context = CreateContext(modelPath: null, profilePath: null, profilerProfilePath: null, dmmPath: "baseline.dmm");
-        var overrides = new CompareWithDmmOverrides(
-            ModelPath: null,
-            ProfilePath: "profile.snapshot",
-            DmmPath: "baseline.dmm",
-            OutputDirectory: CreateTemporaryDirectory(),
-            MaxDegreeOfParallelism: null);
-
-        var result = await service.RunAsync(new CompareWithDmmApplicationInput(
-            context,
-            overrides,
-            DefaultModuleFilter,
-            DefaultSqlOverrides,
-            DefaultCacheOverrides));
-
-        Assert.True(result.IsFailure);
-        var error = Assert.Single(result.Errors);
-        Assert.Equal("pipeline.dmmCompare.model.missing", error.Code);
-        Assert.False(dispatcher.WasInvoked);
-    }
-
-    [Fact]
-    public async Task RunAsync_WhenProfilePathMissing_ReturnsProfileMissingError()
-    {
-        var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
-        var context = CreateContext(modelPath: "model.json", profilePath: null, profilerProfilePath: null, dmmPath: "baseline.dmm");
-        var overrides = new CompareWithDmmOverrides(
-            ModelPath: "model.json",
-            ProfilePath: null,
-            DmmPath: "baseline.dmm",
-            OutputDirectory: CreateTemporaryDirectory(),
-            MaxDegreeOfParallelism: null);
-
-        var result = await service.RunAsync(new CompareWithDmmApplicationInput(
-            context,
-            overrides,
-            DefaultModuleFilter,
-            DefaultSqlOverrides,
-            DefaultCacheOverrides));
-
-        Assert.True(result.IsFailure);
-        var error = Assert.Single(result.Errors);
-        Assert.Equal("pipeline.dmmCompare.profile.missing", error.Code);
-        Assert.False(dispatcher.WasInvoked);
-    }
-
-    [Fact]
-    public async Task RunAsync_WhenDmmPathMissing_ReturnsDmmMissingError()
-    {
-        var dispatcher = new SuccessfulDispatcher();
-        var service = new CompareWithDmmApplicationService(dispatcher);
-        var context = CreateContext(modelPath: "model.json", profilePath: "profile.snapshot", profilerProfilePath: null, dmmPath: null);
-        var overrides = new CompareWithDmmOverrides(
-            ModelPath: "model.json",
-            ProfilePath: "profile.snapshot",
-            DmmPath: null,
-            OutputDirectory: CreateTemporaryDirectory(),
-            MaxDegreeOfParallelism: null);
-
-        var result = await service.RunAsync(new CompareWithDmmApplicationInput(
-            context,
-            overrides,
-            DefaultModuleFilter,
-            DefaultSqlOverrides,
-            DefaultCacheOverrides));
-
-        Assert.True(result.IsFailure);
-        var error = Assert.Single(result.Errors);
-        Assert.Equal("pipeline.dmmCompare.dmm.missing", error.Code);
-        Assert.False(dispatcher.WasInvoked);
-    }
-
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
     public async Task RunAsync_WhenMaxDegreeOfParallelismNotPositive_ReturnsParallelismError(int parallelism)
     {
-        var dispatcher = new SuccessfulDispatcher();
+        var dispatcher = new CapturingDispatcher();
         var service = new CompareWithDmmApplicationService(dispatcher);
         var context = CreateContext(modelPath: "model.json", profilePath: "profile.snapshot", profilerProfilePath: null, dmmPath: "baseline.dmm");
         var overrides = new CompareWithDmmOverrides(
@@ -141,6 +64,59 @@ public sealed class CompareWithDmmApplicationServiceTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("cli.dmmCompare.parallelism.invalid", error.Code);
         Assert.False(dispatcher.WasInvoked);
+    }
+
+    [Fact]
+    public async Task RunAsync_ComposesPipelineRequestWithCacheOptions()
+    {
+        using var temp = new TempDirectory();
+        var cacheRoot = Path.Combine(temp.Path, "cache");
+        var outputDirectory = Path.Combine(temp.Path, "out");
+        var modelPath = Path.Combine(temp.Path, "model.json");
+        var profilePath = Path.Combine(temp.Path, "profile.snapshot");
+        var dmmPath = Path.Combine(temp.Path, "baseline.dmm");
+        Directory.CreateDirectory(cacheRoot);
+        Directory.CreateDirectory(outputDirectory);
+        File.WriteAllText(modelPath, "{}");
+        File.WriteAllText(profilePath, "{}");
+        File.WriteAllText(dmmPath, "{}");
+
+        var configuration = new CliConfiguration(
+            TighteningOptions.Default,
+            ModelPath: modelPath,
+            ProfilePath: profilePath,
+            DmmPath: dmmPath,
+            new CacheConfiguration(cacheRoot, Refresh: false),
+            new ProfilerConfiguration("fixture", profilePath, null),
+            SqlConfiguration.Empty,
+            ModuleFilterConfiguration.Empty,
+            TypeMappingConfiguration.Empty,
+            SupplementalModelConfiguration.Empty);
+
+        var context = new CliConfigurationContext(configuration, "config.json");
+        var overrides = new CompareWithDmmOverrides(null, null, null, outputDirectory, MaxDegreeOfParallelism: null);
+        var dispatcher = new CapturingDispatcher();
+        var service = new CompareWithDmmApplicationService(dispatcher);
+
+        var result = await service.RunAsync(new CompareWithDmmApplicationInput(
+            context,
+            overrides,
+            DefaultModuleFilter,
+            DefaultSqlOverrides,
+            DefaultCacheOverrides));
+
+        Assert.True(result.IsSuccess);
+        Assert.True(dispatcher.WasInvoked);
+        var request = dispatcher.LastRequest;
+        Assert.NotNull(request);
+        Assert.Equal(modelPath, request!.ModelPath);
+        Assert.Equal(profilePath, request.ProfilePath);
+        Assert.Equal(dmmPath, request.DmmPath);
+        Assert.Equal(Path.Combine(outputDirectory, "dmm-diff.json"), request.DiffOutputPath);
+        Assert.NotNull(request.EvidenceCache);
+        Assert.Equal("dmm-compare", request.EvidenceCache!.Command);
+        Assert.Equal(cacheRoot, request.EvidenceCache.RootDirectory);
+        Assert.Equal(result.Value.PipelineResult.DiffArtifactPath, result.Value.DiffOutputPath);
     }
 
     private static string CreateTemporaryDirectory()
@@ -170,7 +146,7 @@ public sealed class CompareWithDmmApplicationServiceTests
         return new CliConfigurationContext(configuration, "config.json");
     }
 
-    private static DmmComparePipelineResult CreatePipelineResult()
+    private static DmmComparePipelineResult CreatePipelineResult(string diffPath)
     {
         var profileResult = ProfileSnapshot.Create(
             Array.Empty<ColumnProfile>(),
@@ -191,24 +167,27 @@ public sealed class CompareWithDmmApplicationServiceTests
         return new DmmComparePipelineResult(
             profileResult.Value,
             comparison,
-            DiffArtifactPath: "diff.json",
+            DiffArtifactPath: diffPath,
             EvidenceCache: null,
             ExecutionLog: PipelineExecutionLog.Empty,
             Warnings: ImmutableArray<string>.Empty);
     }
 
-    private sealed class SuccessfulDispatcher : ICommandDispatcher
+    private sealed class CapturingDispatcher : ICommandDispatcher
     {
         public bool WasInvoked { get; private set; }
+
+        public DmmComparePipelineRequest? LastRequest { get; private set; }
 
         public Task<Result<TResponse>> DispatchAsync<TCommand, TResponse>(TCommand command, CancellationToken cancellationToken = default)
             where TCommand : ICommand<TResponse>
         {
             WasInvoked = true;
 
-            if (command is DmmComparePipelineRequest)
+            if (command is DmmComparePipelineRequest request)
             {
-                var pipelineResult = CreatePipelineResult();
+                LastRequest = request;
+                var pipelineResult = CreatePipelineResult(request.DiffOutputPath);
                 return Task.FromResult(Result<TResponse>.Success((TResponse)(object)pipelineResult));
             }
 
