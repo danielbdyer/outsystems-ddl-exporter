@@ -2,10 +2,12 @@ using System;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
@@ -168,6 +170,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         CommandConsole.WriteLine(context.Console, $"Unique indexes enforced: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount}");
         CommandConsole.WriteLine(context.Console, $"Foreign keys created: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount}");
 
+        EmitSqlValidationSummary(context, pipelineResult);
+
         CommandConsole.EmitModuleRollups(
             context.Console,
             pipelineResult.ModuleManifestRollups,
@@ -203,6 +207,42 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         catch (Exception ex)
         {
             CommandConsole.WriteErrorLine(context.Console, $"[warning] Failed to open report: {ex.Message}");
+        }
+    }
+
+    private static void EmitSqlValidationSummary(InvocationContext context, BuildSsdtPipelineResult pipelineResult)
+    {
+        var summary = pipelineResult.SqlValidation ?? SsdtSqlValidationSummary.Empty;
+        CommandConsole.WriteLine(
+            context.Console,
+            $"SQL validation: validated {summary.TotalFiles} file(s); {summary.FilesWithErrors} with errors; {summary.ErrorCount} error(s).");
+
+        if (summary.ErrorCount <= 0 || summary.Issues.IsDefaultOrEmpty || summary.Issues.Length == 0)
+        {
+            return;
+        }
+
+        const int MaxSamples = 5;
+        CommandConsole.WriteErrorLine(context.Console, "SQL validation errors (sample):");
+
+        var samples = summary.Issues
+            .Where(static issue => issue is not null)
+            .SelectMany(issue => issue.Errors.Select(error => (issue.Path, error)))
+            .Take(MaxSamples)
+            .ToArray();
+
+        foreach (var sample in samples)
+        {
+            var error = sample.error;
+            CommandConsole.WriteErrorLine(
+                context.Console,
+                $"  {sample.Path}:{error.Line}:{error.Column} (#{error.Number}, severity {error.Severity}) {error.Message}");
+        }
+
+        var remaining = summary.ErrorCount - samples.Length;
+        if (remaining > 0)
+        {
+            CommandConsole.WriteErrorLine(context.Console, $"  ... {remaining} additional error(s) omitted.");
         }
     }
 
