@@ -355,7 +355,8 @@ public class BuildSsdtPipelineTests
         var timeProvider = TimeProvider.System;
         var bootstrapStep = new BuildSsdtBootstrapStep(
             bootstrapper ?? CreatePipelineBootstrapper(),
-            CreateProfilerFactory());
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
         var evidenceCacheStep = new BuildSsdtEvidenceCacheStep(new EvidenceCacheCoordinator(new EvidenceCacheService()));
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var emissionStep = new BuildSsdtEmissionStep(

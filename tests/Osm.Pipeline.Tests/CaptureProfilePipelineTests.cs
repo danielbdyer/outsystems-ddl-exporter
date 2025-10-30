@@ -107,7 +107,12 @@ public class CaptureProfilePipelineTests
         var profilerFactory = new DataProfilerFactory(profileDeserializer, (_, _) => new FakeConnectionFactory());
         var serializer = new ProfileSnapshotSerializer();
 
-        return new CaptureProfilePipeline(timeProvider, bootstrapper, profilerFactory, serializer);
+        return new CaptureProfilePipeline(
+            timeProvider,
+            bootstrapper,
+            profilerFactory,
+            serializer,
+            new PipelineBootstrapTelemetryFactory());
     }
 
     private static CaptureProfilePipelineRequest CreateRequest(

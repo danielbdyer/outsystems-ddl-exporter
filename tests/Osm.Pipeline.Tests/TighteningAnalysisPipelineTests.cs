@@ -43,6 +43,7 @@ public class TighteningAnalysisPipelineTests
             new TighteningPolicy(),
             new PolicyDecisionLogWriter(),
             new ProfileSnapshotDeserializer(),
+            new PipelineBootstrapTelemetryFactory(),
             TimeProvider.System);
     }
 
