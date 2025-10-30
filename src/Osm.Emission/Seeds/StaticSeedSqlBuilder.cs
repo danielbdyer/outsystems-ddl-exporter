@@ -55,7 +55,7 @@ public sealed class StaticSeedSqlBuilder
 
         var targetIdentifier = SqlIdentifierFormatter.Qualify(schema, targetName);
         var columnNames = definition.Columns
-            .Select(column => QuoteColumn(column.TargetColumnName))
+            .Select(column => QuoteColumn(column.EffectiveColumnName))
             .ToArray();
         var columnList = string.Join(", ", columnNames);
         var sourceProjection = string.Join(", ", columnNames.Select(name => $"Source.{name}"));
@@ -138,10 +138,10 @@ public sealed class StaticSeedSqlBuilder
         }
 
         builder.Append("    ON ");
-        builder.AppendLine(string.Join(
-            " AND ",
-            primaryColumns.Select(column =>
-                $"Target.{QuoteColumn(column.TargetColumnName)} = Source.{QuoteColumn(column.TargetColumnName)}")));
+            builder.AppendLine(string.Join(
+                " AND ",
+                primaryColumns.Select(column =>
+                    $"Target.{QuoteColumn(column.EffectiveColumnName)} = Source.{QuoteColumn(column.EffectiveColumnName)}")));
 
         var updatableColumns = definition.Columns.Where(column => !column.IsPrimaryKey).ToArray();
         if (updatableColumns.Length > 0)
@@ -151,9 +151,9 @@ public sealed class StaticSeedSqlBuilder
             {
                 var column = updatableColumns[i];
                 builder.Append("    Target.");
-                builder.Append(QuoteColumn(column.TargetColumnName));
+                builder.Append(QuoteColumn(column.EffectiveColumnName));
                 builder.Append(" = Source.");
-                builder.Append(QuoteColumn(column.TargetColumnName));
+                builder.Append(QuoteColumn(column.EffectiveColumnName));
                 if (i < updatableColumns.Length - 1)
                 {
                     builder.Append(',');
@@ -164,7 +164,7 @@ public sealed class StaticSeedSqlBuilder
         }
 
         builder.Append("WHEN NOT MATCHED THEN INSERT (");
-        builder.Append(string.Join(", ", definition.Columns.Select(column => QuoteColumn(column.TargetColumnName))));
+        builder.Append(string.Join(", ", definition.Columns.Select(column => QuoteColumn(column.EffectiveColumnName))));
         builder.AppendLine(")");
         builder.Append("    VALUES (");
         builder.Append(string.Join(", ", columnNames.Select(name => $"Source.{name}")));

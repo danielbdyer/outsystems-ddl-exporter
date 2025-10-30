@@ -17,9 +17,9 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_TEST_STATUS",
             EffectiveName: "OSUSR_TEST_STATUS",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("Name", "NAME", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false),
-                new StaticEntitySeedColumn("IsActive", "ISACTIVE", "Boolean", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
+                new StaticEntitySeedColumn("Name", "NAME", "NAME", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false),
+                new StaticEntitySeedColumn("IsActive", "ISACTIVE", "ISACTIVE", "Boolean", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
 
         var rows = ImmutableArray.Create(
             StaticEntityRow.Create(new object?[] { 1, "Active", true }),
@@ -32,8 +32,8 @@ public class StaticEntitySeedScriptGeneratorTests
 
         Assert.Contains("MERGE INTO [dbo].[OSUSR_TEST_STATUS] AS Target", script, StringComparison.Ordinal);
         Assert.Contains("VALUES\n        (1, N'Active', 1),\n        (2, N'Inactive', 0)", script, StringComparison.Ordinal);
-        Assert.Contains("Target.[Name] = Source.[Name]", script, StringComparison.Ordinal);
-        Assert.Contains("VALUES (Source.[Id], Source.[Name], Source.[IsActive])", script, StringComparison.Ordinal);
+        Assert.Contains("Target.[NAME] = Source.[NAME]", script, StringComparison.Ordinal);
+        Assert.Contains("VALUES (Source.[ID], Source.[NAME], Source.[ISACTIVE])", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_DEF_CITY",
             EffectiveName: "City",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: true)));
+                new StaticEntitySeedColumn("Id", "ID", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: true)));
 
         var rows = ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1 }));
         var data = ImmutableArray.Create(StaticEntityTableData.Create(definition, rows));
@@ -56,7 +56,7 @@ public class StaticEntitySeedScriptGeneratorTests
 
         Assert.Contains("-- Target: dbo.City", script, StringComparison.Ordinal);
         Assert.Contains("MERGE INTO [dbo].[City] AS Target", script, StringComparison.Ordinal);
-        Assert.Contains("ON Target.[Id] = Source.[Id]", script, StringComparison.Ordinal);
+        Assert.Contains("ON Target.[ID] = Source.[ID]", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -69,8 +69,8 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_TEST_STATUS",
             EffectiveName: "OSUSR_TEST_STATUS",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("Name", "NAME", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
+                new StaticEntitySeedColumn("Name", "NAME", "NAME", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
 
         var rows = ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, "Active" }));
         var data = ImmutableArray.Create(StaticEntityTableData.Create(definition, rows));
@@ -91,8 +91,8 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_TEST_STATUS",
             EffectiveName: "OSUSR_TEST_STATUS",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("Name", "NAME", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
+                new StaticEntitySeedColumn("Name", "NAME", "NAME", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
 
         var rows = ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, "Active" }));
         var data = ImmutableArray.Create(StaticEntityTableData.Create(definition, rows));
@@ -118,7 +118,7 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_TEST_STATUS",
             EffectiveName: "OSUSR_TEST_STATUS",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false)));
 
         var data = ImmutableArray.Create(StaticEntityTableData.Create(definition, Array.Empty<StaticEntityRow>()));
         var generator = CreateGenerator();
