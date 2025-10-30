@@ -1,3 +1,5 @@
+using System;
+using System.Globalization;
 using System.Linq;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
@@ -89,5 +91,115 @@ public sealed class ProfilingInsightGeneratorTests
         Assert.Contains("Orphaned", insight.Message, System.StringComparison.OrdinalIgnoreCase);
         Assert.NotNull(insight.Coordinate);
         Assert.Equal(DefaultTable.Value, insight.Coordinate!.Table.Value);
+    }
+
+    [Theory]
+    [InlineData(ProfilingProbeOutcome.FallbackTimeout, "timed out")]
+    [InlineData(ProfilingProbeOutcome.Cancelled, "cancelled")]
+    public void Generate_emits_evidence_warning_for_null_count_probe_outcome(
+        ProfilingProbeOutcome outcome,
+        string expectedPhrase)
+    {
+        var status = CreateProbeStatus(outcome, sampleSize: 1_024);
+        var column = ColumnProfile
+            .Create(
+                DefaultSchema,
+                DefaultTable,
+                DefaultColumn,
+                isNullablePhysical: false,
+                isComputed: false,
+                isPrimaryKey: false,
+                isUniqueKey: false,
+                defaultDefinition: null,
+                rowCount: 128,
+                nullCount: 5,
+                status)
+            .Value;
+
+        var snapshot = ProfileSnapshot
+            .Create(new[] { column }, Enumerable.Empty<UniqueCandidateProfile>(), Enumerable.Empty<CompositeUniqueCandidateProfile>(), Enumerable.Empty<ForeignKeyReality>())
+            .Value;
+
+        var generator = new ProfilingInsightGenerator();
+
+        var insight = Assert.Single(generator.Generate(snapshot), i => i.Category == ProfilingInsightCategory.Evidence);
+        Assert.Equal(ProfilingInsightSeverity.Warning, insight.Severity);
+        Assert.Contains(expectedPhrase, insight.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(status.SampleSize.ToString("N0", CultureInfo.InvariantCulture), insight.Message);
+        Assert.Contains(status.CapturedAtUtc.ToString("O", CultureInfo.InvariantCulture), insight.Message);
+        Assert.NotNull(insight.Coordinate);
+        Assert.Equal(DefaultColumn.Value, insight.Coordinate!.Column!.Value.Value);
+    }
+
+    [Theory]
+    [InlineData(ProfilingProbeOutcome.FallbackTimeout)]
+    [InlineData(ProfilingProbeOutcome.Cancelled)]
+    public void Generate_emits_evidence_warning_for_unique_candidate_probe_outcome(ProfilingProbeOutcome outcome)
+    {
+        var status = CreateProbeStatus(outcome, sampleSize: 2_048);
+        var candidate = UniqueCandidateProfile
+            .Create(DefaultSchema, DefaultTable, DefaultColumn, hasDuplicate: false, status)
+            .Value;
+
+        var snapshot = ProfileSnapshot
+            .Create(Enumerable.Empty<ColumnProfile>(), new[] { candidate }, Enumerable.Empty<CompositeUniqueCandidateProfile>(), Enumerable.Empty<ForeignKeyReality>())
+            .Value;
+
+        var generator = new ProfilingInsightGenerator();
+
+        var insight = Assert.Single(generator.Generate(snapshot), i => i.Category == ProfilingInsightCategory.Evidence);
+        Assert.Equal(ProfilingInsightSeverity.Warning, insight.Severity);
+        Assert.Contains("Uniqueness probe", insight.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(status.SampleSize.ToString("N0", CultureInfo.InvariantCulture), insight.Message);
+        Assert.NotNull(insight.Coordinate);
+        Assert.Equal(DefaultColumn.Value, insight.Coordinate!.Column!.Value.Value);
+    }
+
+    [Theory]
+    [InlineData(ProfilingProbeOutcome.FallbackTimeout)]
+    [InlineData(ProfilingProbeOutcome.Cancelled)]
+    public void Generate_emits_evidence_warning_for_foreign_key_probe_outcome(ProfilingProbeOutcome outcome)
+    {
+        var status = CreateProbeStatus(outcome, sampleSize: 3_072);
+        var reference = ForeignKeyReference
+            .Create(
+                DefaultSchema,
+                DefaultTable,
+                DefaultColumn,
+                SchemaName.Create("dbo").Value,
+                TableName.Create("Parent").Value,
+                ColumnName.Create("Id").Value,
+                hasDatabaseConstraint: false)
+            .Value;
+
+        var reality = ForeignKeyReality
+            .Create(reference, hasOrphan: false, isNoCheck: false, status)
+            .Value;
+
+        var snapshot = ProfileSnapshot
+            .Create(Enumerable.Empty<ColumnProfile>(), Enumerable.Empty<UniqueCandidateProfile>(), Enumerable.Empty<CompositeUniqueCandidateProfile>(), new[] { reality })
+            .Value;
+
+        var generator = new ProfilingInsightGenerator();
+
+        var insight = Assert.Single(generator.Generate(snapshot), i => i.Category == ProfilingInsightCategory.Evidence);
+        Assert.Equal(ProfilingInsightSeverity.Warning, insight.Severity);
+        Assert.Contains("Foreign key probe", insight.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(status.SampleSize.ToString("N0", CultureInfo.InvariantCulture), insight.Message);
+        Assert.NotNull(insight.Coordinate);
+        Assert.Equal(DefaultTable.Value, insight.Coordinate!.Table.Value);
+        Assert.Equal("Parent", insight.Coordinate!.RelatedTable!.Value.Value);
+    }
+
+    private static ProfilingProbeStatus CreateProbeStatus(ProfilingProbeOutcome outcome, long sampleSize)
+    {
+        var capturedAt = new DateTimeOffset(2024, 5, 1, 12, 30, 45, TimeSpan.Zero);
+
+        return outcome switch
+        {
+            ProfilingProbeOutcome.FallbackTimeout => ProfilingProbeStatus.CreateFallbackTimeout(capturedAt, sampleSize),
+            ProfilingProbeOutcome.Cancelled => ProfilingProbeStatus.CreateCancelled(capturedAt, sampleSize),
+            _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
+        };
     }
 }

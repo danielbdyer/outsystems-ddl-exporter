@@ -39,13 +39,20 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
         {
             var coordinateResult = ProfilingInsightCoordinate.Create(column.Schema, column.Table, column.Column);
             var coordinate = coordinateResult.IsSuccess ? coordinateResult.Value : null;
+            var coordinateText = FormatCoordinate(column.Schema, column.Table, column.Column);
+
+            TryAddEvidenceInsight(
+                builder,
+                column.NullCountStatus,
+                coordinate,
+                string.Format(CultureInfo.InvariantCulture, "Null count probe for {0}", coordinateText));
 
             if (column.IsComputed)
             {
                 var computedResult = ProfilingInsight.Create(
                     ProfilingInsightSeverity.Info,
                     ProfilingInsightCategory.ComputedColumn,
-                    $"Computed column {FormatCoordinate(column.Schema, column.Table, column.Column)} is excluded from tightening heuristics.",
+                    $"Computed column {coordinateText} is excluded from tightening heuristics.",
                     coordinate);
 
                 if (computedResult.IsSuccess)
@@ -63,7 +70,7 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
                 var message = string.Format(
                     CultureInfo.InvariantCulture,
                     "Column {0} observed 0 null values across {1:N0} rows; consider tightening to NOT NULL.",
-                    FormatCoordinate(column.Schema, column.Table, column.Column),
+                    coordinateText,
                     column.RowCount);
 
                 var insightResult = ProfilingInsight.Create(
@@ -85,11 +92,24 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
         ImmutableArray<CompositeUniqueCandidateProfile> compositeCandidates,
         ImmutableArray<ProfilingInsight>.Builder builder)
     {
-        foreach (var candidate in uniqueCandidates.Where(static candidate => candidate.HasDuplicate))
+        foreach (var candidate in uniqueCandidates)
         {
             var coordinateResult = ProfilingInsightCoordinate.Create(candidate.Schema, candidate.Table, candidate.Column);
             var coordinate = coordinateResult.IsSuccess ? coordinateResult.Value : null;
-            var message = $"Unique candidate {FormatCoordinate(candidate.Schema, candidate.Table, candidate.Column)} contains duplicates in profiling data.";
+            var coordinateText = FormatCoordinate(candidate.Schema, candidate.Table, candidate.Column);
+
+            TryAddEvidenceInsight(
+                builder,
+                candidate.ProbeStatus,
+                coordinate,
+                string.Format(CultureInfo.InvariantCulture, "Uniqueness probe for {0}", coordinateText));
+
+            if (!candidate.HasDuplicate)
+            {
+                continue;
+            }
+
+            var message = $"Unique candidate {coordinateText} contains duplicates in profiling data.";
 
             var insightResult = ProfilingInsight.Create(
                 ProfilingInsightSeverity.Warning,
@@ -129,11 +149,14 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
     {
         foreach (var foreignKey in foreignKeys)
         {
-            if (!foreignKey.HasOrphan)
-            {
-                continue;
-            }
-
+            var fromCoordinate = FormatCoordinate(
+                foreignKey.Reference.FromSchema,
+                foreignKey.Reference.FromTable,
+                foreignKey.Reference.FromColumn);
+            var toCoordinate = FormatCoordinate(
+                foreignKey.Reference.ToSchema,
+                foreignKey.Reference.ToTable,
+                foreignKey.Reference.ToColumn);
             var coordinateResult = ProfilingInsightCoordinate.Create(
                 foreignKey.Reference.FromSchema,
                 foreignKey.Reference.FromTable,
@@ -142,8 +165,24 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
                 foreignKey.Reference.ToTable,
                 foreignKey.Reference.ToColumn);
             var coordinate = coordinateResult.IsSuccess ? coordinateResult.Value : null;
+
+            TryAddEvidenceInsight(
+                builder,
+                foreignKey.ProbeStatus,
+                coordinate,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Foreign key probe for {0} -> {1}",
+                    fromCoordinate,
+                    toCoordinate));
+
+            if (!foreignKey.HasOrphan)
+            {
+                continue;
+            }
+
             var message =
-                $"Orphaned rows detected for {FormatCoordinate(foreignKey.Reference.FromSchema, foreignKey.Reference.FromTable, foreignKey.Reference.FromColumn)} referencing {FormatCoordinate(foreignKey.Reference.ToSchema, foreignKey.Reference.ToTable, foreignKey.Reference.ToColumn)}; remediate before enabling enforcement.";
+                $"Orphaned rows detected for {fromCoordinate} referencing {toCoordinate}; remediate before enabling enforcement.";
 
             var insightResult = ProfilingInsight.Create(
                 ProfilingInsightSeverity.Warning,
@@ -155,6 +194,46 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
             {
                 builder.Add(insightResult.Value);
             }
+        }
+    }
+
+    private static void TryAddEvidenceInsight(
+        ImmutableArray<ProfilingInsight>.Builder builder,
+        ProfilingProbeStatus status,
+        ProfilingInsightCoordinate? coordinate,
+        string probeDescription)
+    {
+        string? message = status.Outcome switch
+        {
+            ProfilingProbeOutcome.FallbackTimeout => string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} timed out; sampled {1:N0} rows at {2:O}. Profiling evidence may be incomplete.",
+                probeDescription,
+                status.SampleSize,
+                status.CapturedAtUtc),
+            ProfilingProbeOutcome.Cancelled => string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} was cancelled; sampled {1:N0} rows at {2:O}. Profiling evidence may be incomplete.",
+                probeDescription,
+                status.SampleSize,
+                status.CapturedAtUtc),
+            _ => null
+        };
+
+        if (message is null)
+        {
+            return;
+        }
+
+        var insightResult = ProfilingInsight.Create(
+            ProfilingInsightSeverity.Warning,
+            ProfilingInsightCategory.Evidence,
+            message,
+            coordinate);
+
+        if (insightResult.IsSuccess)
+        {
+            builder.Add(insightResult.Value);
         }
     }
 
