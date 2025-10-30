@@ -5,6 +5,7 @@ using System.Text;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using Osm.Domain.Model.Emission;
 
 namespace Osm.Emission.Seeds;
 
@@ -106,8 +107,10 @@ public static class StaticEntitySeedDefinitionBuilder
 
     private static StaticEntitySeedTableDefinition CreateDefinition(string moduleName, EntityModel entity, NamingOverrideOptions namingOverrides)
     {
-        var filteredAttributes = entity.Attributes
-            .Where(static attribute => attribute.IsActive && !(attribute.OnDisk.IsComputed ?? false) && !attribute.Reality.IsPresentButInactive)
+        var snapshot = EntityEmissionSnapshot.Create(moduleName, entity);
+
+        var filteredAttributes = snapshot.EmittableAttributes
+            .Where(static attribute => !(attribute.OnDisk.IsComputed ?? false))
             .ToImmutableArray();
 
         if (filteredAttributes.IsDefaultOrEmpty)
@@ -117,7 +120,10 @@ public static class StaticEntitySeedDefinitionBuilder
 
         var primaryIndex = entity.Indexes.FirstOrDefault(static index => index.IsPrimary);
         var primaryColumns = primaryIndex is null
-            ? filteredAttributes.Where(static attribute => attribute.IsIdentifier).Select(static attribute => attribute.ColumnName.Value).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ? filteredAttributes
+                .Where(static attribute => attribute.IsIdentifier)
+                .Select(static attribute => attribute.ColumnName.Value)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
             : primaryIndex.Columns
                 .Where(static column => !column.IsIncluded)
                 .Select(static column => column.Column.Value)
@@ -125,8 +131,8 @@ public static class StaticEntitySeedDefinitionBuilder
 
         if (primaryColumns.Count == 0)
         {
-            primaryColumns = filteredAttributes
-                .Where(static attribute => attribute.IsIdentifier)
+            primaryColumns = snapshot.IdentifierAttributes
+                .Where(static attribute => !(attribute.OnDisk.IsComputed ?? false))
                 .Select(static attribute => attribute.ColumnName.Value)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
         }

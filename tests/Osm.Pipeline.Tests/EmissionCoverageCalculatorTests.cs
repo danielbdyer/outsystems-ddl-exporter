@@ -3,6 +3,8 @@ using System.Collections.Immutable;
 using System.Linq;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using Osm.Domain.Model.Emission;
+using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Pipeline.Orchestration;
 using Osm.Smo;
@@ -66,4 +68,92 @@ public class EmissionCoverageCalculatorTests
             result.Unsupported,
             message => message.Contains("IDX_CUSTOMER_NAME", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void Compute_UsesSnapshotColumnCounts()
+    {
+        var identifier = CreateAttribute("Id", "ID", isIdentifier: true);
+        var inactive = CreateAttribute("IsDeleted", "ISDELETED", isIdentifier: false, isActive: false);
+        var presentButInactive = CreateAttribute("LegacyId", "LEGACYID", isIdentifier: true, presentButInactive: true);
+        var name = CreateAttribute("Name", "NAME");
+
+        var entity = CreateEntity(
+            moduleName: "Sales",
+            logicalName: "Customer",
+            physicalName: "OSUSR_SALES_CUSTOMER",
+            schema: "sales",
+            identifier,
+            inactive,
+            presentButInactive,
+            name);
+
+        var module = CreateModule("Sales", entity);
+        var model = CreateModel(module);
+        var snapshot = EntityEmissionSnapshot.Create("Sales", entity);
+
+        var decisions = PolicyDecisionSet.Create(
+            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            ImmutableDictionary<IndexCoordinate, string>.Empty,
+            TighteningOptions.Default);
+
+        var result = EmissionCoverageCalculator.Compute(
+            model,
+            ImmutableArray<EntityModel>.Empty,
+            decisions,
+            SmoModel.Create(ImmutableArray<SmoTableDefinition>.Empty),
+            SmoBuildOptions.Default);
+
+        Assert.Equal(snapshot.EmittableAttributes.Length, result.Summary.Columns.Total);
+        Assert.Equal(snapshot.EmittableAttributes.Length, result.Summary.Columns.Emitted);
+    }
+
+    private static AttributeModel CreateAttribute(
+        string logicalName,
+        string columnName,
+        bool isIdentifier = false,
+        bool isActive = true,
+        bool presentButInactive = false)
+    {
+        var reality = new AttributeReality(null, null, null, null, presentButInactive);
+        return AttributeModel.Create(
+            new AttributeName(logicalName),
+            new ColumnName(columnName),
+            dataType: "INT",
+            isMandatory: isIdentifier,
+            isIdentifier: isIdentifier,
+            isAutoNumber: false,
+            isActive: isActive,
+            reality: reality,
+            metadata: AttributeMetadata.Empty,
+            onDisk: AttributeOnDiskMetadata.Empty).Value;
+    }
+
+    private static EntityModel CreateEntity(
+        string moduleName,
+        string logicalName,
+        string physicalName,
+        string schema,
+        params AttributeModel[] attributes)
+    {
+        return EntityModel.Create(
+            new ModuleName(moduleName),
+            new EntityName(logicalName),
+            new TableName(physicalName),
+            new SchemaName(schema),
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            attributes: attributes).Value;
+    }
+
+    private static ModuleModel CreateModule(string moduleName, params EntityModel[] entities)
+        => ModuleModel.Create(new ModuleName(moduleName), isSystemModule: false, isActive: true, entities: entities).Value;
+
+    private static OsmModel CreateModel(params ModuleModel[] modules)
+        => OsmModel.Create(DateTime.UtcNow, modules).Value;
 }
