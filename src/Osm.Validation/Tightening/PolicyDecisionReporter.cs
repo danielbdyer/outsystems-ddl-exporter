@@ -51,6 +51,16 @@ public static class PolicyDecisionReporter
             .ToExportDictionary()
             .ToImmutableDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
 
+        var columnModules = decisions.ColumnModules.ToImmutableDictionary(
+            static pair => pair.Key.ToString(),
+            static pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase);
+
+        var indexModules = decisions.IndexModules.ToImmutableDictionary(
+            static pair => pair.Key.ToString(),
+            static pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase);
+
         return new PolicyDecisionReport(
             columnReports,
             uniqueIndexReports,
@@ -61,6 +71,8 @@ public static class PolicyDecisionReporter
             diagnostics,
             moduleRollups,
             togglePrecedence,
+            columnModules,
+            indexModules,
             decisions.Toggles);
     }
 
@@ -183,6 +195,8 @@ public sealed record PolicyDecisionReport(
     ImmutableArray<TighteningDiagnostic> Diagnostics,
     ImmutableDictionary<string, ModuleDecisionRollup> ModuleRollups,
     ImmutableDictionary<string, ToggleExportValue> TogglePrecedence,
+    ImmutableDictionary<string, string> ColumnModules,
+    ImmutableDictionary<string, string> IndexModules,
     TighteningToggleSnapshot Toggles)
 {
     public int ColumnCount => Columns.Length;

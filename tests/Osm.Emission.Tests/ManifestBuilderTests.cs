@@ -86,6 +86,8 @@ public class ManifestBuilderTests
                 ForeignKeyRationales: ImmutableDictionary<string, int>.Empty));
 
         var toggles = TighteningToggleSnapshot.Create(TighteningOptions.Default);
+        var columnModules = ImmutableDictionary<string, string>.Empty.Add(columnCoordinate.ToString(), "SampleModule");
+        var indexModules = ImmutableDictionary<string, string>.Empty.Add(indexCoordinate.ToString(), "SampleModule");
 
         return new PolicyDecisionReport(
             columns,
@@ -97,6 +99,8 @@ public class ManifestBuilderTests
             diagnostics,
             moduleRollups,
             ImmutableDictionary<string, ToggleExportValue>.Empty,
+            columnModules,
+            indexModules,
             toggles);
     }
 }

@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.CommandLine;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Osm.Cli;
@@ -59,6 +60,77 @@ internal static class CommandConsole
                 ? " | " + string.Join(", ", error.Metadata.Select(pair => $"{pair.Key}={FormatMetadataValue(pair.Value)}"))
                 : string.Empty;
             WriteErrorLine(console, $"{error.Code}: {error.Message}{metadataSuffix}");
+        }
+    }
+
+    public static void WriteTable(IConsole console, IReadOnlyList<string> headers, IReadOnlyList<IReadOnlyList<string>> rows)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (headers is null)
+        {
+            throw new ArgumentNullException(nameof(headers));
+        }
+
+        if (headers.Count == 0)
+        {
+            return;
+        }
+
+        var columnCount = headers.Count;
+        var widths = new int[columnCount];
+
+        for (var i = 0; i < columnCount; i++)
+        {
+            widths[i] = headers[i]?.Length ?? 0;
+        }
+
+        if (rows is not null)
+        {
+            foreach (var row in rows)
+            {
+                if (row is null)
+                {
+                    continue;
+                }
+
+                for (var i = 0; i < columnCount && i < row.Count; i++)
+                {
+                    var valueLength = (row[i] ?? string.Empty).Length;
+                    if (valueLength > widths[i])
+                    {
+                        widths[i] = valueLength;
+                    }
+                }
+            }
+        }
+
+        WriteLine(console, BuildTableRow(headers, widths));
+        WriteLine(console, BuildSeparator(widths));
+
+        if (rows is null || rows.Count == 0)
+        {
+            WriteLine(console, "(no entries)");
+            return;
+        }
+
+        foreach (var row in rows)
+        {
+            if (row is null)
+            {
+                continue;
+            }
+
+            var values = new string[columnCount];
+            for (var i = 0; i < columnCount; i++)
+            {
+                values[i] = i < row.Count ? row[i] ?? string.Empty : string.Empty;
+            }
+
+            WriteLine(console, BuildTableRow(values, widths));
         }
     }
 
@@ -339,6 +411,42 @@ internal static class CommandConsole
         }
 
         return segment;
+    }
+
+    private static string BuildTableRow(IReadOnlyList<string> values, int[] widths)
+    {
+        var builder = new StringBuilder();
+
+        for (var i = 0; i < values.Count; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append("  ");
+            }
+
+            var value = values[i] ?? string.Empty;
+            builder.Append(value.PadRight(widths[i]));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildSeparator(int[] widths)
+    {
+        var builder = new StringBuilder();
+
+        for (var i = 0; i < widths.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append("  ");
+            }
+
+            var dashCount = Math.Max(3, widths[i]);
+            builder.Append(new string('-', dashCount));
+        }
+
+        return builder.ToString();
     }
 
     public static void EmitNamingOverrideTemplate(

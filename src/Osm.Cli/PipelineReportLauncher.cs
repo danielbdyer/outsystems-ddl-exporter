@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Osm.Pipeline.Application;
 using Osm.Emission;
 using Osm.Pipeline.Orchestration;
+using Osm.Validation.Tightening;
 
 namespace Osm.Cli;
 
@@ -377,17 +378,208 @@ internal static class PipelineReportLauncher
             builder.AppendLine("      <tbody>");
             foreach (var summary in moduleSummaries)
             {
+                var moduleAnchor = PolicyDecisionLinkBuilder.BuildModuleAnchor(summary.Module);
                 builder.AppendLine(
-                    $"        <tr><td>{HtmlEncode(summary.Module)}</td><td>{summary.Tables:N0}</td><td>{summary.Indexes:N0}</td><td>{summary.ForeignKeys:N0}</td><td>{summary.Columns:N0}</td><td>{summary.TightenedColumns:N0}</td><td>{summary.RemediationColumns:N0}</td><td>{summary.UniqueEnforced:N0}</td><td>{summary.UniqueRemediation:N0}</td><td>{summary.ForeignKeysCreated:N0}</td></tr>");
+                    $"        <tr id=\"{moduleAnchor}\"><td>{HtmlEncode(summary.Module)}</td><td>{summary.Tables:N0}</td><td>{summary.Indexes:N0}</td><td>{summary.ForeignKeys:N0}</td><td>{summary.Columns:N0}</td><td>{summary.TightenedColumns:N0}</td><td>{summary.RemediationColumns:N0}</td><td>{summary.UniqueEnforced:N0}</td><td>{summary.UniqueRemediation:N0}</td><td>{summary.ForeignKeysCreated:N0}</td></tr>");
             }
             builder.AppendLine("      </tbody>");
             builder.AppendLine("    </table>");
         }
         builder.AppendLine("  </section>");
 
+        builder.AppendLine("  <section id=\"decision-index\">");
+        builder.AppendLine("    <h2>Decision index</h2>");
+        AppendColumnDecisionTable(builder, decisionReport);
+        AppendUniqueIndexDecisionTable(builder, decisionReport);
+        AppendForeignKeyDecisionTable(builder, decisionReport);
+        AppendDiagnosticTable(builder, decisionReport.Diagnostics);
+        builder.AppendLine("  </section>");
+
         builder.AppendLine("</body>");
         builder.AppendLine("</html>");
         return builder.ToString();
+    }
+
+    private static void AppendColumnDecisionTable(StringBuilder builder, Osm.Validation.Tightening.PolicyDecisionReport report)
+    {
+        if (report is null)
+        {
+            throw new ArgumentNullException(nameof(report));
+        }
+
+        var rows = report.Columns
+            .Select(column => new DecisionRow(
+                PolicyDecisionLinkBuilder.BuildColumnAnchor(
+                    column.Column.Schema.Value,
+                    column.Column.Table.Value,
+                    column.Column.Column.Value),
+                ResolveModule(report.ColumnModules, column.Column.ToString()),
+                column.Column.Schema.Value,
+                column.Column.Table.Value,
+                column.Column.Column.Value,
+                column.MakeNotNull ? "NOT NULL" : "Nullable",
+                column.RequiresRemediation ? "Yes" : "No",
+                FormatRationales(column.Rationales)))
+            .ToArray();
+
+        AppendDecisionTable(builder, "Column decisions", rows, includeRemediationColumn: true);
+    }
+
+    private static void AppendUniqueIndexDecisionTable(StringBuilder builder, Osm.Validation.Tightening.PolicyDecisionReport report)
+    {
+        if (report is null)
+        {
+            throw new ArgumentNullException(nameof(report));
+        }
+
+        var rows = report.UniqueIndexes
+            .Select(unique => new DecisionRow(
+                PolicyDecisionLinkBuilder.BuildUniqueIndexAnchor(
+                    unique.Index.Schema.Value,
+                    unique.Index.Table.Value,
+                    unique.Index.Index.Value),
+                ResolveModule(report.IndexModules, unique.Index.ToString()),
+                unique.Index.Schema.Value,
+                unique.Index.Table.Value,
+                unique.Index.Index.Value,
+                unique.EnforceUnique ? "Enforce UNIQUE" : "Skip",
+                unique.RequiresRemediation ? "Yes" : "No",
+                FormatRationales(unique.Rationales)))
+            .ToArray();
+
+        AppendDecisionTable(builder, "Unique index decisions", rows, includeRemediationColumn: true);
+    }
+
+    private static void AppendForeignKeyDecisionTable(StringBuilder builder, Osm.Validation.Tightening.PolicyDecisionReport report)
+    {
+        if (report is null)
+        {
+            throw new ArgumentNullException(nameof(report));
+        }
+
+        var rows = report.ForeignKeys
+            .Select(foreignKey => new DecisionRow(
+                PolicyDecisionLinkBuilder.BuildForeignKeyAnchor(
+                    foreignKey.Column.Schema.Value,
+                    foreignKey.Column.Table.Value,
+                    foreignKey.Column.Column.Value),
+                ResolveModule(report.ColumnModules, foreignKey.Column.ToString()),
+                foreignKey.Column.Schema.Value,
+                foreignKey.Column.Table.Value,
+                foreignKey.Column.Column.Value,
+                foreignKey.CreateConstraint ? "Create FK" : "Skip",
+                "—",
+                FormatRationales(foreignKey.Rationales)))
+            .ToArray();
+
+        AppendDecisionTable(builder, "Foreign key decisions", rows, includeRemediationColumn: false);
+    }
+
+    private static void AppendDiagnosticTable(StringBuilder builder, ImmutableArray<TighteningDiagnostic> diagnostics)
+    {
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        if (diagnostics.IsDefaultOrEmpty || diagnostics.Length == 0)
+        {
+            builder.AppendLine("    <details>");
+            builder.AppendLine("      <summary>Diagnostics</summary>");
+            builder.AppendLine("      <p>No diagnostics were recorded.</p>");
+            builder.AppendLine("    </details>");
+            return;
+        }
+
+        builder.AppendLine("    <details open>");
+        builder.AppendLine("      <summary>Diagnostics</summary>");
+        builder.AppendLine("      <table>");
+        builder.AppendLine("        <thead><tr><th>Code</th><th>Module</th><th>Schema</th><th>Object</th><th>Severity</th><th>Message</th></tr></thead>");
+        builder.AppendLine("        <tbody>");
+        foreach (var diagnostic in diagnostics)
+        {
+            if (diagnostic is null)
+            {
+                continue;
+            }
+
+            var anchor = PolicyDecisionLinkBuilder.BuildDiagnosticAnchor(
+                diagnostic.Code,
+                diagnostic.CanonicalModule,
+                diagnostic.CanonicalSchema,
+                diagnostic.CanonicalPhysicalName);
+
+            builder.AppendLine(
+                $"          <tr id=\"{anchor}\"><td>{HtmlEncode(diagnostic.Code)}</td><td>{HtmlEncode(diagnostic.CanonicalModule)}</td><td>{HtmlEncode(diagnostic.CanonicalSchema)}</td><td>{HtmlEncode(diagnostic.CanonicalPhysicalName)}</td><td>{HtmlEncode(diagnostic.Severity.ToString())}</td><td>{HtmlEncode(diagnostic.Message)}</td></tr>");
+        }
+
+        builder.AppendLine("        </tbody>");
+        builder.AppendLine("      </table>");
+        builder.AppendLine("    </details>");
+    }
+
+    private static void AppendDecisionTable(StringBuilder builder, string title, IReadOnlyList<DecisionRow> rows, bool includeRemediationColumn)
+    {
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        if (rows.Count == 0)
+        {
+            builder.AppendLine("    <details>");
+            builder.AppendLine($"      <summary>{HtmlEncode(title)}</summary>");
+            builder.AppendLine("      <p>No entries were recorded.</p>");
+            builder.AppendLine("    </details>");
+            return;
+        }
+
+        builder.AppendLine("    <details open>");
+        builder.AppendLine($"      <summary>{HtmlEncode(title)}</summary>");
+        builder.AppendLine("      <table>");
+        builder.Append("        <thead><tr><th>Module</th><th>Schema</th><th>Table</th><th>Object</th><th>Action</th>");
+        if (includeRemediationColumn)
+        {
+            builder.Append("<th>Remediation</th>");
+        }
+
+        builder.AppendLine("<th>Rationales</th></tr></thead>");
+        builder.AppendLine("        <tbody>");
+        foreach (var row in rows)
+        {
+            builder.Append(
+                $"          <tr id=\"{row.Anchor}\"><td>{HtmlEncode(row.Module)}</td><td>{HtmlEncode(row.Schema)}</td><td>{HtmlEncode(row.Table)}</td><td>{HtmlEncode(row.Object)}</td><td>{HtmlEncode(row.Action)}</td>");
+            if (includeRemediationColumn)
+            {
+                builder.Append($"<td>{HtmlEncode(row.Remediation)}</td>");
+            }
+
+            builder.AppendLine($"<td>{HtmlEncode(row.Rationales)}</td></tr>");
+        }
+
+        builder.AppendLine("        </tbody>");
+        builder.AppendLine("      </table>");
+        builder.AppendLine("    </details>");
+    }
+
+    private static string ResolveModule(IReadOnlyDictionary<string, string> modules, string key)
+    {
+        if (modules is not null && modules.TryGetValue(key, out var module) && !string.IsNullOrWhiteSpace(module))
+        {
+            return module;
+        }
+
+        return "—";
+    }
+
+    private static string FormatRationales(ImmutableArray<string> rationales)
+    {
+        if (rationales.IsDefaultOrEmpty || rationales.Length == 0)
+        {
+            return "—";
+        }
+
+        return string.Join(", ", rationales);
     }
 
     private static string RenderCard(string label, int value)
@@ -482,6 +674,16 @@ internal static class PipelineReportLauncher
 
         console.Error.Write(message + Environment.NewLine);
     }
+
+    private sealed record DecisionRow(
+        string Anchor,
+        string Module,
+        string Schema,
+        string Table,
+        string Object,
+        string Action,
+        string Remediation,
+        string Rationales);
 
     private sealed record ModuleSummary(
         string Module,

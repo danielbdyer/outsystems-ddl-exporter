@@ -47,26 +47,29 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
             report.ForeignKeyRationaleCounts,
             moduleRollups,
             togglePrecedence,
-            report.Columns.Select(static c => new PolicyDecisionLogColumn(
+            report.Columns.Select(c => new PolicyDecisionLogColumn(
                 c.Column.Schema.Value,
                 c.Column.Table.Value,
                 c.Column.Column.Value,
                 c.MakeNotNull,
                 c.RequiresRemediation,
-                c.Rationales.ToArray())).ToArray(),
-            report.UniqueIndexes.Select(static u => new PolicyDecisionLogUniqueIndex(
+                c.Rationales.ToArray(),
+                report.ColumnModules.TryGetValue(c.Column.ToString(), out var columnModule) ? columnModule : string.Empty)).ToArray(),
+            report.UniqueIndexes.Select(u => new PolicyDecisionLogUniqueIndex(
                 u.Index.Schema.Value,
                 u.Index.Table.Value,
                 u.Index.Index.Value,
                 u.EnforceUnique,
                 u.RequiresRemediation,
-                u.Rationales.ToArray())).ToArray(),
-            report.ForeignKeys.Select(static f => new PolicyDecisionLogForeignKey(
+                u.Rationales.ToArray(),
+                report.IndexModules.TryGetValue(u.Index.ToString(), out var indexModule) ? indexModule : string.Empty)).ToArray(),
+            report.ForeignKeys.Select(f => new PolicyDecisionLogForeignKey(
                 f.Column.Schema.Value,
                 f.Column.Table.Value,
                 f.Column.Column.Value,
                 f.CreateConstraint,
-                f.Rationales.ToArray())).ToArray(),
+                f.Rationales.ToArray(),
+                report.ColumnModules.TryGetValue(f.Column.ToString(), out var foreignKeyModule) ? foreignKeyModule : string.Empty)).ToArray(),
             report.Diagnostics.Select(static d => new PolicyDecisionLogDiagnostic(
                 d.LogicalName,
                 d.CanonicalModule,
@@ -83,12 +86,16 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
             predicateCoverage ?? SsdtPredicateCoverage.Empty);
 
         var path = Path.Combine(outputDirectory, "policy-decisions.json");
+        var reportPath = Path.Combine(outputDirectory, "policy-decision-report.json");
 
         try
         {
             Directory.CreateDirectory(outputDirectory);
-            var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
+            var serializerOptions = new JsonSerializerOptions { WriteIndented = true };
+            var json = JsonSerializer.Serialize(log, serializerOptions);
             await File.WriteAllTextAsync(path, json, cancellationToken).ConfigureAwait(false);
+            var reportJson = JsonSerializer.Serialize(report, serializerOptions);
+            await File.WriteAllTextAsync(reportPath, reportJson, cancellationToken).ConfigureAwait(false);
             return Result<string>.Success(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -125,7 +132,8 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
         string Column,
         bool MakeNotNull,
         bool RequiresRemediation,
-        IReadOnlyList<string> Rationales);
+        IReadOnlyList<string> Rationales,
+        string Module);
 
     private sealed record PolicyDecisionLogUniqueIndex(
         string Schema,
@@ -133,14 +141,16 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
         string Index,
         bool EnforceUnique,
         bool RequiresRemediation,
-        IReadOnlyList<string> Rationales);
+        IReadOnlyList<string> Rationales,
+        string Module);
 
     private sealed record PolicyDecisionLogForeignKey(
         string Schema,
         string Table,
         string Column,
         bool CreateConstraint,
-        IReadOnlyList<string> Rationales);
+        IReadOnlyList<string> Rationales,
+        string Module);
 
     private sealed record PolicyDecisionLogDiagnostic(
         string LogicalName,
