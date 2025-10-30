@@ -51,7 +51,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             throw new ArgumentNullException(nameof(request));
         }
 
-        if (string.IsNullOrWhiteSpace(request.ModelPath))
+        if (string.IsNullOrWhiteSpace(request.Scope.ModelPath))
         {
             return ValidationError.Create(
                 "pipeline.buildSsdt.model.missing",

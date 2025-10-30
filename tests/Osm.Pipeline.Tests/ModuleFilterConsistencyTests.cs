@@ -85,9 +85,9 @@ public sealed class ModuleFilterConsistencyTests
 
         var buildRequest = buildDispatcher.BuildRequest;
         Assert.NotNull(buildRequest);
-        Assert.Equal(new[] { "AppCore", "Ops" }, buildRequest!.ModuleFilter.Modules.Select(static module => module.Value).ToArray());
-        Assert.False(buildRequest.ModuleFilter.IncludeSystemModules);
-        Assert.False(buildRequest.ModuleFilter.IncludeInactiveModules);
+        Assert.Equal(new[] { "AppCore", "Ops" }, buildRequest!.Scope.ModuleFilter.Modules.Select(static module => module.Value).ToArray());
+        Assert.False(buildRequest.Scope.ModuleFilter.IncludeSystemModules);
+        Assert.False(buildRequest.Scope.ModuleFilter.IncludeInactiveModules);
 
         var compareDispatcher = new RecordingDispatcher();
         var compareFileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
@@ -116,9 +116,9 @@ public sealed class ModuleFilterConsistencyTests
 
         var compareRequest = compareDispatcher.CompareRequest;
         Assert.NotNull(compareRequest);
-        Assert.Equal(new[] { "AppCore", "Ops" }, compareRequest!.ModuleFilter.Modules.Select(static module => module.Value).ToArray());
-        Assert.False(compareRequest.ModuleFilter.IncludeSystemModules);
-        Assert.False(compareRequest.ModuleFilter.IncludeInactiveModules);
+        Assert.Equal(new[] { "AppCore", "Ops" }, compareRequest!.Scope.ModuleFilter.Modules.Select(static module => module.Value).ToArray());
+        Assert.False(compareRequest.Scope.ModuleFilter.IncludeSystemModules);
+        Assert.False(compareRequest.Scope.ModuleFilter.IncludeInactiveModules);
     }
 
     [Fact]
@@ -170,9 +170,9 @@ public sealed class ModuleFilterConsistencyTests
 
         var buildRequest = buildDispatcher.BuildRequest;
         Assert.NotNull(buildRequest);
-        Assert.Equal(new[] { "ConfigA", "ConfigB" }, buildRequest!.ModuleFilter.Modules.Select(static module => module.Value).ToArray());
-        Assert.True(buildRequest.ModuleFilter.IncludeSystemModules);
-        Assert.False(buildRequest.ModuleFilter.IncludeInactiveModules);
+        Assert.Equal(new[] { "ConfigA", "ConfigB" }, buildRequest!.Scope.ModuleFilter.Modules.Select(static module => module.Value).ToArray());
+        Assert.True(buildRequest.Scope.ModuleFilter.IncludeSystemModules);
+        Assert.False(buildRequest.Scope.ModuleFilter.IncludeInactiveModules);
 
         var compareDispatcher = new RecordingDispatcher();
         var compareFileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
@@ -200,9 +200,9 @@ public sealed class ModuleFilterConsistencyTests
 
         var compareRequest = compareDispatcher.CompareRequest;
         Assert.NotNull(compareRequest);
-        Assert.Equal(new[] { "ConfigA", "ConfigB" }, compareRequest!.ModuleFilter.Modules.Select(static module => module.Value).ToArray());
-        Assert.True(compareRequest.ModuleFilter.IncludeSystemModules);
-        Assert.False(compareRequest.ModuleFilter.IncludeInactiveModules);
+        Assert.Equal(new[] { "ConfigA", "ConfigB" }, compareRequest!.Scope.ModuleFilter.Modules.Select(static module => module.Value).ToArray());
+        Assert.True(compareRequest.Scope.ModuleFilter.IncludeSystemModules);
+        Assert.False(compareRequest.Scope.ModuleFilter.IncludeInactiveModules);
     }
 
     [Fact]

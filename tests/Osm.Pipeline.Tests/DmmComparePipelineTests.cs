@@ -39,13 +39,11 @@ public class DmmComparePipelineTests
             return Result<PipelineBootstrapContext>.Failure(error);
         });
 
-        var request = new DmmComparePipelineRequest(
+        var scope = new ModelExecutionScope(
             modelPath,
             ModuleFilterOptions.IncludeAll,
-            profilePath,
-            scriptPath,
-            TighteningOptions.Default,
             SupplementalModelOptions.Default,
+            TighteningOptions.Default,
             new ResolvedSqlOptions(
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
@@ -54,6 +52,11 @@ public class DmmComparePipelineTests
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
             TypeMappingPolicyLoader.LoadDefault(),
+            profilePath);
+
+        var request = new DmmComparePipelineRequest(
+            scope,
+            scriptPath,
             Path.Combine(workspace.Path, "dmm-diff.json"),
             null);
 
@@ -79,13 +82,11 @@ public class DmmComparePipelineTests
         await File.WriteAllTextAsync(scriptPath, EdgeCaseScript);
         var diffPath = Path.Combine(workspace.Path, "dmm-diff.json");
 
-        var request = new DmmComparePipelineRequest(
+        var scope = new ModelExecutionScope(
             modelPath,
             ModuleFilterOptions.IncludeAll,
-            profilePath,
-            scriptPath,
-            TighteningOptions.Default,
             SupplementalModelOptions.Default,
+            TighteningOptions.Default,
             new ResolvedSqlOptions(
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
@@ -94,6 +95,11 @@ public class DmmComparePipelineTests
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
             TypeMappingPolicyLoader.LoadDefault(),
+            profilePath);
+
+        var request = new DmmComparePipelineRequest(
+            scope,
+            scriptPath,
             diffPath,
             new EvidenceCachePipelineOptions(
                 cache.Path,
@@ -139,13 +145,11 @@ public class DmmComparePipelineTests
 
         var diffPath = Path.Combine(workspace.Path, "dmm-diff.json");
 
-        var request = new DmmComparePipelineRequest(
+        var scope = new ModelExecutionScope(
             modelPath,
             ModuleFilterOptions.IncludeAll,
-            profilePath,
-            workspace.Path,
-            TighteningOptions.Default,
             SupplementalModelOptions.Default,
+            TighteningOptions.Default,
             new ResolvedSqlOptions(
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
@@ -154,6 +158,11 @@ public class DmmComparePipelineTests
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
             TypeMappingPolicyLoader.LoadDefault(),
+            profilePath);
+
+        var request = new DmmComparePipelineRequest(
+            scope,
+            workspace.Path,
             diffPath,
             null);
 

@@ -33,7 +33,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
 
         var model = state.Bootstrap.FilteredModel
             ?? throw new InvalidOperationException("Pipeline bootstrap step must execute before static seed generation.");
-        var seedDefinitions = StaticEntitySeedDefinitionBuilder.Build(model, state.Request.SmoOptions.NamingOverrides);
+        var seedDefinitions = StaticEntitySeedDefinitionBuilder.Build(model, state.Request.Scope.SmoOptions.NamingOverrides);
         if (seedDefinitions.IsDefaultOrEmpty)
         {
             state.Log.Record(
@@ -71,7 +71,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         }
 
         var deterministicData = StaticEntitySeedDeterminizer.Normalize(staticDataResult.Value);
-        var seedOptions = state.Request.TighteningOptions.Emission.StaticSeeds;
+        var seedOptions = state.Request.Scope.TighteningOptions.Emission.StaticSeeds;
         var seedsRoot = state.Request.SeedOutputDirectoryHint;
         if (string.IsNullOrWhiteSpace(seedsRoot))
         {
@@ -91,7 +91,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
 
             foreach (var group in grouped)
             {
-                var sanitizedModule = state.Request.SmoOptions.SanitizeModuleNames
+                var sanitizedModule = state.Request.Scope.SmoOptions.SanitizeModuleNames
                     ? ModuleNameSanitizer.Sanitize(group.Key)
                     : group.Key;
 
@@ -104,7 +104,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                         suffix++;
                     }
 
-                    if (state.Request.SmoOptions.SanitizeModuleNames)
+                    if (state.Request.Scope.SmoOptions.SanitizeModuleNames)
                     {
                         state.Log.Record(
                             "staticData.seed.moduleNameRemapped",

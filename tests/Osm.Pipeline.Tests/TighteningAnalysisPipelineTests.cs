@@ -5,10 +5,13 @@ using Osm.Domain.Configuration;
 using Osm.Json;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Sql;
+using Osm.Pipeline.SqlExtraction;
 using Osm.Validation.Tightening;
 using Tests.Support;
 using Xunit;
 using Osm.Validation.Profiling;
+using Osm.Smo;
 
 namespace Osm.Pipeline.Tests;
 
@@ -18,12 +21,23 @@ public class TighteningAnalysisPipelineTests
     public async Task HandleAsync_WritesOutputs()
     {
         using var temp = new TempDirectory();
-        var request = new TighteningAnalysisPipelineRequest(
+        var scope = new ModelExecutionScope(
             FixtureFile.GetPath("model.edge-case.json"),
             ModuleFilterOptions.IncludeAll,
-            TighteningOptions.Default,
             new SupplementalModelOptions(true, Array.Empty<string>()),
-            FixtureFile.GetPath("profiling/profile.edge-case.json"),
+            TighteningOptions.Default,
+            new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict),
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicyLoader.LoadDefault(),
+            FixtureFile.GetPath("profiling/profile.edge-case.json"));
+
+        var request = new TighteningAnalysisPipelineRequest(
+            scope,
             temp.Path);
 
         var pipeline = CreatePipeline();

@@ -207,14 +207,11 @@ public sealed class BuildSsdtEmissionStepTests
     private static BuildSsdtPipelineRequest CreateRequest(string outputDirectory)
     {
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
-        return new BuildSsdtPipelineRequest(
+        var scope = new ModelExecutionScope(
             modelPath,
             ModuleFilterOptions.IncludeAll,
-            outputDirectory,
-            TighteningOptions.Default,
             SupplementalModelOptions.Default,
-            "fixture",
-            ProfilePath: null,
+            TighteningOptions.Default,
             new ResolvedSqlOptions(
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
@@ -222,7 +219,12 @@ public sealed class BuildSsdtEmissionStepTests
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicyLoader.LoadDefault(),
+            TypeMappingPolicyLoader.LoadDefault());
+
+        return new BuildSsdtPipelineRequest(
+            scope,
+            outputDirectory,
+            "fixture",
             EvidenceCache: null,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null);

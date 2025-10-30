@@ -32,22 +32,12 @@ public class BuildSsdtPipelineTests
     [Fact]
     public async Task HandleAsync_returns_failure_when_model_path_missing()
     {
+        var scope = CreateScope(modelPath: null!);
+
         var request = new BuildSsdtPipelineRequest(
-            ModelPath: null!,
-            ModuleFilter: ModuleFilterOptions.IncludeAll,
+            scope,
             OutputDirectory: Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
-            TighteningOptions: TighteningOptions.Default,
-            SupplementalModels: SupplementalModelOptions.Default,
             ProfilerProvider: "fixture",
-            ProfilePath: null,
-            SqlOptions: new ResolvedSqlOptions(
-                ConnectionString: null,
-                CommandTimeoutSeconds: null,
-                Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
-            SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy: TypeMappingPolicyLoader.LoadDefault(),
             EvidenceCache: null,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
@@ -64,22 +54,12 @@ public class BuildSsdtPipelineTests
     [Fact]
     public async Task HandleAsync_returns_failure_when_output_directory_missing()
     {
+        var scope = CreateScope(modelPath: Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()));
+
         var request = new BuildSsdtPipelineRequest(
-            ModelPath: Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
-            ModuleFilter: ModuleFilterOptions.IncludeAll,
+            scope,
             OutputDirectory: string.Empty,
-            TighteningOptions: TighteningOptions.Default,
-            SupplementalModels: SupplementalModelOptions.Default,
             ProfilerProvider: "fixture",
-            ProfilePath: null,
-            SqlOptions: new ResolvedSqlOptions(
-                ConnectionString: null,
-                CommandTimeoutSeconds: null,
-                Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
-            SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy: TypeMappingPolicyLoader.LoadDefault(),
             EvidenceCache: null,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
@@ -112,25 +92,18 @@ public class BuildSsdtPipelineTests
             return Result<PipelineBootstrapContext>.Failure(error);
         });
 
+        var scope = CreateScope(
+            modelPath: modelPath,
+            profilePath: profilePath);
+
         var request = new BuildSsdtPipelineRequest(
-            modelPath,
-            ModuleFilterOptions.IncludeAll,
+            scope,
             outputDirectory,
-            TighteningOptions.Default,
-            SupplementalModelOptions.Default,
             "fixture",
-            profilePath,
-            new ResolvedSqlOptions(
-                ConnectionString: null,
-                CommandTimeoutSeconds: null,
-                Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
-            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicyLoader.LoadDefault(),
-            null,
-            null,
-            null);
+            EvidenceCache: null,
+            StaticDataProvider: null,
+            SeedOutputDirectoryHint: null,
+            SqlMetadataLog: null);
 
         var pipeline = CreatePipeline(bootstrapper);
         var result = await pipeline.HandleAsync(request);
@@ -160,25 +133,16 @@ public class BuildSsdtPipelineTests
             return Result<PipelineBootstrapContext>.Failure(captureResult.Errors);
         });
 
+        var scope = CreateScope(modelPath: modelPath);
+
         var request = new BuildSsdtPipelineRequest(
-            modelPath,
-            ModuleFilterOptions.IncludeAll,
+            scope,
             outputDirectory,
-            TighteningOptions.Default,
-            SupplementalModelOptions.Default,
             "sql",
-            null,
-            new ResolvedSqlOptions(
-                ConnectionString: null,
-                CommandTimeoutSeconds: null,
-                Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
-            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicyLoader.LoadDefault(),
-            null,
-            null,
-            null);
+            EvidenceCache: null,
+            StaticDataProvider: null,
+            SeedOutputDirectoryHint: null,
+            SqlMetadataLog: null);
 
         var pipeline = CreatePipeline(bootstrapper);
         var result = await pipeline.HandleAsync(request);
@@ -197,22 +161,14 @@ public class BuildSsdtPipelineTests
         using var output = new TempDirectory();
         using var cache = new TempDirectory();
 
+        var scope = CreateScope(
+            modelPath: modelPath,
+            profilePath: profilePath);
+
         var request = new BuildSsdtPipelineRequest(
-            modelPath,
-            ModuleFilterOptions.IncludeAll,
+            scope,
             output.Path,
-            TighteningOptions.Default,
-            SupplementalModelOptions.Default,
             "fixture",
-            profilePath,
-            new ResolvedSqlOptions(
-                ConnectionString: null,
-                CommandTimeoutSeconds: null,
-                Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
-            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicyLoader.LoadDefault(),
             new EvidenceCachePipelineOptions(
                 cache.Path,
                 Refresh: false,
@@ -313,25 +269,18 @@ public class BuildSsdtPipelineTests
 
         using var output = new TempDirectory();
 
+        var scope = CreateScope(
+            modelPath: modelPath,
+            profilePath: profilePath);
+
         var request = new BuildSsdtPipelineRequest(
-            modelPath,
-            ModuleFilterOptions.IncludeAll,
+            scope,
             output.Path,
-            TighteningOptions.Default,
-            SupplementalModelOptions.Default,
             "fixture",
-            profilePath,
-            new ResolvedSqlOptions(
-                ConnectionString: null,
-                CommandTimeoutSeconds: null,
-                Sampling: new SqlSamplingSettings(null, null),
-                Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
-            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicyLoader.LoadDefault(),
-            null,
-            null,
-            null);
+            EvidenceCache: null,
+            StaticDataProvider: null,
+            SeedOutputDirectoryHint: null,
+            SqlMetadataLog: null);
 
         var issue = SsdtSqlValidationIssue.Create(
             "Modules/Sample/dbo.Entity.sql",
@@ -346,6 +295,33 @@ public class BuildSsdtPipelineTests
 
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, error => error.Code == "pipeline.buildSsdt.sql.validationFailed");
+    }
+
+    private static ModelExecutionScope CreateScope(
+        string? modelPath = null,
+        ModuleFilterOptions? moduleFilter = null,
+        SupplementalModelOptions? supplemental = null,
+        TighteningOptions? tightening = null,
+        ResolvedSqlOptions? sqlOptions = null,
+        SmoBuildOptions? smoOptions = null,
+        TypeMappingPolicy? typeMappingPolicy = null,
+        string? profilePath = null)
+    {
+        var resolvedTightening = tightening ?? TighteningOptions.Default;
+        return new ModelExecutionScope(
+            modelPath ?? FixtureFile.GetPath("model.edge-case.json"),
+            moduleFilter ?? ModuleFilterOptions.IncludeAll,
+            supplemental ?? SupplementalModelOptions.Default,
+            resolvedTightening,
+            sqlOptions ?? new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict),
+            smoOptions ?? SmoBuildOptions.FromEmission(resolvedTightening.Emission),
+            typeMappingPolicy ?? TypeMappingPolicyLoader.LoadDefault(),
+            profilePath);
     }
 
     private static BuildSsdtPipeline CreatePipeline(

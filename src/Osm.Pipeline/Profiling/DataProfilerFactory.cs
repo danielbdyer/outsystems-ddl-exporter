@@ -50,37 +50,37 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
 
     private Result<IDataProfiler> CreateSqlProfiler(BuildSsdtPipelineRequest request, OsmModel model)
     {
-        if (string.IsNullOrWhiteSpace(request.SqlOptions.ConnectionString))
+        if (string.IsNullOrWhiteSpace(request.Scope.SqlOptions.ConnectionString))
         {
             return Result<IDataProfiler>.Failure(ValidationError.Create(
                 "pipeline.buildSsdt.sql.connectionString.missing",
                 "Connection string is required when using the SQL profiler."));
         }
 
-        var sampling = CreateSamplingOptions(request.SqlOptions.Sampling);
-        var connectionOptions = CreateConnectionOptions(request.SqlOptions.Authentication);
+        var sampling = CreateSamplingOptions(request.Scope.SqlOptions.Sampling);
+        var connectionOptions = CreateConnectionOptions(request.Scope.SqlOptions.Authentication);
         var profilerOptions = SqlProfilerOptions.Default with
         {
-            CommandTimeoutSeconds = request.SqlOptions.CommandTimeoutSeconds,
+            CommandTimeoutSeconds = request.Scope.SqlOptions.CommandTimeoutSeconds,
             Sampling = sampling,
-            NamingOverrides = request.SmoOptions.NamingOverrides
+            NamingOverrides = request.Scope.SmoOptions.NamingOverrides
         };
 
-        var connectionFactory = _connectionFactoryFactory(request.SqlOptions.ConnectionString!, connectionOptions);
+        var connectionFactory = _connectionFactoryFactory(request.Scope.SqlOptions.ConnectionString!, connectionOptions);
         var profiler = new SqlDataProfiler(connectionFactory, model, profilerOptions, request.SqlMetadataLog);
         return Result<IDataProfiler>.Success(profiler);
     }
 
     private Result<IDataProfiler> CreateFixtureProfiler(BuildSsdtPipelineRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.ProfilePath))
+        if (string.IsNullOrWhiteSpace(request.Scope.ProfilePath))
         {
             return Result<IDataProfiler>.Failure(ValidationError.Create(
                 "pipeline.buildSsdt.profile.path.missing",
                 "Profile path is required when using the fixture profiler."));
         }
 
-        var profiler = new FixtureDataProfiler(request.ProfilePath!, _profileSnapshotDeserializer);
+        var profiler = new FixtureDataProfiler(request.Scope.ProfilePath!, _profileSnapshotDeserializer);
         return Result<IDataProfiler>.Success(profiler);
     }
 
