@@ -14,22 +14,49 @@ public static class PolicyDecisionReporter
             throw new ArgumentNullException(nameof(decisions));
         }
 
-        var columnReports = decisions.Nullability.Values
-            .Select(ColumnDecisionReport.From)
+        var columnReports = decisions.Nullability
+            .Select(pair =>
+            {
+                var report = ColumnDecisionReport.From(pair.Value);
+                if (decisions.ColumnModules.TryGetValue(pair.Key, out var module))
+                {
+                    report = report with { Module = module };
+                }
+
+                return report;
+            })
             .OrderBy(r => r.Column.Schema.Value, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Column.Table.Value, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Column.Column.Value, StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
 
-        var foreignKeyReports = decisions.ForeignKeys.Values
-            .Select(ForeignKeyDecisionReport.From)
+        var foreignKeyReports = decisions.ForeignKeys
+            .Select(pair =>
+            {
+                var report = ForeignKeyDecisionReport.From(pair.Value);
+                if (decisions.ColumnModules.TryGetValue(pair.Key, out var module))
+                {
+                    report = report with { Module = module };
+                }
+
+                return report;
+            })
             .OrderBy(r => r.Column.Schema.Value, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Column.Table.Value, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Column.Column.Value, StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
 
-        var uniqueIndexReports = decisions.UniqueIndexes.Values
-            .Select(UniqueIndexDecisionReport.From)
+        var uniqueIndexReports = decisions.UniqueIndexes
+            .Select(pair =>
+            {
+                var report = UniqueIndexDecisionReport.From(pair.Value);
+                if (decisions.IndexModules.TryGetValue(pair.Key, out var module))
+                {
+                    report = report with { Module = module };
+                }
+
+                return report;
+            })
             .OrderBy(r => r.Index.Schema.Value, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Index.Table.Value, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Index.Index.Value, StringComparer.OrdinalIgnoreCase)
@@ -281,6 +308,8 @@ public sealed record ColumnDecisionReport(
     bool RequiresRemediation,
     ImmutableArray<string> Rationales)
 {
+    public string? Module { get; init; }
+
     public static ColumnDecisionReport From(NullabilityDecision decision)
         => new(decision.Column, decision.MakeNotNull, decision.RequiresRemediation, decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales);
 }
@@ -290,6 +319,8 @@ public sealed record ForeignKeyDecisionReport(
     bool CreateConstraint,
     ImmutableArray<string> Rationales)
 {
+    public string? Module { get; init; }
+
     public static ForeignKeyDecisionReport From(ForeignKeyDecision decision)
         => new(decision.Column, decision.CreateConstraint, decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales);
 }
@@ -300,6 +331,8 @@ public sealed record UniqueIndexDecisionReport(
     bool RequiresRemediation,
     ImmutableArray<string> Rationales)
 {
+    public string? Module { get; init; }
+
     public static UniqueIndexDecisionReport From(UniqueIndexDecision decision)
         => new(decision.Index, decision.EnforceUnique, decision.RequiresRemediation, decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales);
 }

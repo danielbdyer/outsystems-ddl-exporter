@@ -198,6 +198,7 @@ internal static class PipelineReportLauncher
         builder.AppendLine("    .insight-meta dt { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: #52606d; }");
         builder.AppendLine("    .insight-meta dd { margin: 0; color: #102a43; }");
         builder.AppendLine("    .insight-doc { align-self: flex-start; font-weight: 600; color: #0b7285; }");
+        builder.AppendLine("    .decision-anchor { display: block; height: 0; margin: 0; padding: 0; }");
         builder.AppendLine("    .insight-doc:hover { text-decoration: underline; }");
         builder.AppendLine("    .insights-empty { color: #52606d; font-style: italic; }");
         builder.AppendLine("    .severity-info { background: rgba(59, 130, 246, 0.12); color: #1d4ed8; }");
@@ -240,6 +241,7 @@ internal static class PipelineReportLauncher
             builder.AppendLine($"      <li><strong>Diagnostics:</strong> {decisionReport.Diagnostics.Length:N0} (see policy-decisions.json)</li>");
         }
         builder.AppendLine("    </ul>");
+        builder.Append(RenderDecisionAnchors(decisionReport));
         builder.AppendLine("  </section>");
 
         builder.AppendLine("  <section>");
@@ -377,8 +379,9 @@ internal static class PipelineReportLauncher
             builder.AppendLine("      <tbody>");
             foreach (var summary in moduleSummaries)
             {
+                var moduleAnchor = PolicyDecisionLinkBuilder.CreateModuleAnchor(summary.Module);
                 builder.AppendLine(
-                    $"        <tr><td>{HtmlEncode(summary.Module)}</td><td>{summary.Tables:N0}</td><td>{summary.Indexes:N0}</td><td>{summary.ForeignKeys:N0}</td><td>{summary.Columns:N0}</td><td>{summary.TightenedColumns:N0}</td><td>{summary.RemediationColumns:N0}</td><td>{summary.UniqueEnforced:N0}</td><td>{summary.UniqueRemediation:N0}</td><td>{summary.ForeignKeysCreated:N0}</td></tr>");
+                    $"        <tr id=\"{moduleAnchor}\"><td>{HtmlEncode(summary.Module)}</td><td>{summary.Tables:N0}</td><td>{summary.Indexes:N0}</td><td>{summary.ForeignKeys:N0}</td><td>{summary.Columns:N0}</td><td>{summary.TightenedColumns:N0}</td><td>{summary.RemediationColumns:N0}</td><td>{summary.UniqueEnforced:N0}</td><td>{summary.UniqueRemediation:N0}</td><td>{summary.ForeignKeysCreated:N0}</td></tr>");
             }
             builder.AppendLine("      </tbody>");
             builder.AppendLine("    </table>");
@@ -388,6 +391,58 @@ internal static class PipelineReportLauncher
         builder.AppendLine("</body>");
         builder.AppendLine("</html>");
         return builder.ToString();
+    }
+
+    private static string RenderDecisionAnchors(Osm.Validation.Tightening.PolicyDecisionReport decisionReport)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var anchorBuilder = new StringBuilder();
+
+        foreach (var column in decisionReport.Columns)
+        {
+            AppendAnchor(anchorBuilder, seen, PolicyDecisionLinkBuilder.CreateColumnAnchor(column.Column));
+        }
+
+        foreach (var foreignKey in decisionReport.ForeignKeys)
+        {
+            AppendAnchor(anchorBuilder, seen, PolicyDecisionLinkBuilder.CreateForeignKeyAnchor(foreignKey.Column));
+        }
+
+        foreach (var unique in decisionReport.UniqueIndexes)
+        {
+            AppendAnchor(anchorBuilder, seen, PolicyDecisionLinkBuilder.CreateUniqueIndexAnchor(unique.Index));
+        }
+
+        foreach (var diagnostic in decisionReport.Diagnostics)
+        {
+            AppendAnchor(anchorBuilder, seen, PolicyDecisionLinkBuilder.CreateDiagnosticAnchor(diagnostic));
+        }
+
+        if (anchorBuilder.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var container = new StringBuilder();
+        container.AppendLine("    <div class=\"decision-anchor-container\">");
+        container.Append(anchorBuilder);
+        container.AppendLine("    </div>");
+        return container.ToString();
+
+        static void AppendAnchor(StringBuilder builder, HashSet<string> seenAnchors, string anchor)
+        {
+            if (string.IsNullOrWhiteSpace(anchor))
+            {
+                return;
+            }
+
+            if (!seenAnchors.Add(anchor))
+            {
+                return;
+            }
+
+            builder.AppendLine($"      <span id=\"{anchor}\" class=\"decision-anchor\"></span>");
+        }
     }
 
     private static string RenderCard(string label, int value)
