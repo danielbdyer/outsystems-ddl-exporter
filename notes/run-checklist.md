@@ -46,6 +46,7 @@ echo "✅ .NET SDK $DOTNET_VERSION setup complete"
 1. **Validate tooling availability**
    - `dotnet --info` (ensure .NET 9 SDK—or aligned global.json version—is installed and selected).
    - `dotnet --list-sdks` (optional sanity: confirm expected SDK version is discoverable).
+   - The solution pins `<LangVersion>preview</LangVersion>` across all projects so the compiler runs with the C# 13 preview feature set. Verify the selected SDK supports the preview compiler if builds fail with language version errors.
 
 2. **Restore solution dependencies**
    - `dotnet restore OutSystemsModelToSql.sln`
