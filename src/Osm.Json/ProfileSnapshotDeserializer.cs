@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -82,19 +84,22 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         var schemaResult = SchemaName.Create(doc.Schema);
         if (schemaResult.IsFailure)
         {
-            return Result<ColumnProfile>.Failure(schemaResult.Errors);
+            return Result<ColumnProfile>.Failure(
+                DecorateCoordinateMetadata(schemaResult.Errors, doc.Schema, doc.Table, doc.Column));
         }
 
         var tableResult = TableName.Create(doc.Table);
         if (tableResult.IsFailure)
         {
-            return Result<ColumnProfile>.Failure(tableResult.Errors);
+            return Result<ColumnProfile>.Failure(
+                DecorateCoordinateMetadata(tableResult.Errors, doc.Schema, doc.Table, doc.Column));
         }
 
         var columnResult = ColumnName.Create(doc.Column);
         if (columnResult.IsFailure)
         {
-            return Result<ColumnProfile>.Failure(columnResult.Errors);
+            return Result<ColumnProfile>.Failure(
+                DecorateCoordinateMetadata(columnResult.Errors, doc.Schema, doc.Table, doc.Column));
         }
 
         var status = MapProbeStatus(doc.NullCountStatus, doc.RowCount);
@@ -118,19 +123,22 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         var schemaResult = SchemaName.Create(doc.Schema);
         if (schemaResult.IsFailure)
         {
-            return Result<UniqueCandidateProfile>.Failure(schemaResult.Errors);
+            return Result<UniqueCandidateProfile>.Failure(
+                DecorateCoordinateMetadata(schemaResult.Errors, doc.Schema, doc.Table, doc.Column));
         }
 
         var tableResult = TableName.Create(doc.Table);
         if (tableResult.IsFailure)
         {
-            return Result<UniqueCandidateProfile>.Failure(tableResult.Errors);
+            return Result<UniqueCandidateProfile>.Failure(
+                DecorateCoordinateMetadata(tableResult.Errors, doc.Schema, doc.Table, doc.Column));
         }
 
         var columnResult = ColumnName.Create(doc.Column);
         if (columnResult.IsFailure)
         {
-            return Result<UniqueCandidateProfile>.Failure(columnResult.Errors);
+            return Result<UniqueCandidateProfile>.Failure(
+                DecorateCoordinateMetadata(columnResult.Errors, doc.Schema, doc.Table, doc.Column));
         }
 
         var status = MapProbeStatus(doc.ProbeStatus, defaultSampleSize: 0);
@@ -153,37 +161,43 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         var fromSchemaResult = SchemaName.Create(doc.Reference.FromSchema);
         if (fromSchemaResult.IsFailure)
         {
-            return Result<ForeignKeyReality>.Failure(fromSchemaResult.Errors);
+            return Result<ForeignKeyReality>.Failure(
+                DecorateForeignKeyMetadata(fromSchemaResult.Errors, doc.Reference, isSource: true));
         }
 
         var fromTableResult = TableName.Create(doc.Reference.FromTable);
         if (fromTableResult.IsFailure)
         {
-            return Result<ForeignKeyReality>.Failure(fromTableResult.Errors);
+            return Result<ForeignKeyReality>.Failure(
+                DecorateForeignKeyMetadata(fromTableResult.Errors, doc.Reference, isSource: true));
         }
 
         var fromColumnResult = ColumnName.Create(doc.Reference.FromColumn);
         if (fromColumnResult.IsFailure)
         {
-            return Result<ForeignKeyReality>.Failure(fromColumnResult.Errors);
+            return Result<ForeignKeyReality>.Failure(
+                DecorateForeignKeyMetadata(fromColumnResult.Errors, doc.Reference, isSource: true));
         }
 
         var toSchemaResult = SchemaName.Create(doc.Reference.ToSchema);
         if (toSchemaResult.IsFailure)
         {
-            return Result<ForeignKeyReality>.Failure(toSchemaResult.Errors);
+            return Result<ForeignKeyReality>.Failure(
+                DecorateForeignKeyMetadata(toSchemaResult.Errors, doc.Reference, isSource: false));
         }
 
         var toTableResult = TableName.Create(doc.Reference.ToTable);
         if (toTableResult.IsFailure)
         {
-            return Result<ForeignKeyReality>.Failure(toTableResult.Errors);
+            return Result<ForeignKeyReality>.Failure(
+                DecorateForeignKeyMetadata(toTableResult.Errors, doc.Reference, isSource: false));
         }
 
         var toColumnResult = ColumnName.Create(doc.Reference.ToColumn);
         if (toColumnResult.IsFailure)
         {
-            return Result<ForeignKeyReality>.Failure(toColumnResult.Errors);
+            return Result<ForeignKeyReality>.Failure(
+                DecorateForeignKeyMetadata(toColumnResult.Errors, doc.Reference, isSource: false));
         }
 
         var referenceResult = ForeignKeyReference.Create(
@@ -210,13 +224,15 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         var schemaResult = SchemaName.Create(doc.Schema);
         if (schemaResult.IsFailure)
         {
-            return Result<CompositeUniqueCandidateProfile>.Failure(schemaResult.Errors);
+            return Result<CompositeUniqueCandidateProfile>.Failure(
+                DecorateCoordinateMetadata(schemaResult.Errors, doc.Schema, doc.Table, column: null));
         }
 
         var tableResult = TableName.Create(doc.Table);
         if (tableResult.IsFailure)
         {
-            return Result<CompositeUniqueCandidateProfile>.Failure(tableResult.Errors);
+            return Result<CompositeUniqueCandidateProfile>.Failure(
+                DecorateCoordinateMetadata(tableResult.Errors, doc.Schema, doc.Table, column: null));
         }
 
         if (doc.Columns is null)
@@ -225,13 +241,90 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
                 ValidationError.Create("profile.compositeUnique.columns.missing", "Composite unique entries must specify 'Columns'."));
         }
 
-        var columnResults = Result.Collect(doc.Columns.Select(ColumnName.Create));
+        var columnResults = MapCompositeColumns(doc.Columns, doc.Schema, doc.Table);
         if (columnResults.IsFailure)
         {
             return Result<CompositeUniqueCandidateProfile>.Failure(columnResults.Errors);
         }
 
         return CompositeUniqueCandidateProfile.Create(schemaResult.Value, tableResult.Value, columnResults.Value, doc.HasDuplicate);
+    }
+
+    private static ImmutableArray<ValidationError> DecorateCoordinateMetadata(
+        ImmutableArray<ValidationError> errors,
+        string? schema,
+        string? table,
+        string? column)
+    {
+        if (errors.IsDefaultOrEmpty)
+        {
+            return errors;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<ValidationError>(errors.Length);
+        foreach (var error in errors)
+        {
+            builder.Add(error.WithMetadata(CreateCoordinateMetadata(schema, table, column)));
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static ImmutableArray<ValidationError> DecorateForeignKeyMetadata(
+        ImmutableArray<ValidationError> errors,
+        ForeignKeyReferenceDocument reference,
+        bool isSource)
+    {
+        if (errors.IsDefaultOrEmpty)
+        {
+            return errors;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<ValidationError>(errors.Length);
+        foreach (var error in errors)
+        {
+            builder.Add(error.WithMetadata(CreateForeignKeyMetadata(reference, isSource)));
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static Result<ImmutableArray<ColumnName>> MapCompositeColumns(string[] columns, string? schema, string? table)
+    {
+        var builder = ImmutableArray.CreateBuilder<ColumnName>(columns.Length);
+        for (var i = 0; i < columns.Length; i++)
+        {
+            var value = columns[i];
+            var result = ColumnName.Create(value);
+            if (result.IsFailure)
+            {
+                return Result<ImmutableArray<ColumnName>>.Failure(
+                    DecorateCoordinateMetadata(result.Errors, schema, table, value));
+            }
+
+            builder.Add(result.Value);
+        }
+
+        return Result<ImmutableArray<ColumnName>>.Success(builder.ToImmutable());
+    }
+
+    private static IEnumerable<KeyValuePair<string, string?>> CreateCoordinateMetadata(
+        string? schema,
+        string? table,
+        string? column)
+    {
+        yield return new KeyValuePair<string, string?>("schema", schema);
+        yield return new KeyValuePair<string, string?>("table", table);
+        yield return new KeyValuePair<string, string?>("column", column);
+    }
+
+    private static IEnumerable<KeyValuePair<string, string?>> CreateForeignKeyMetadata(
+        ForeignKeyReferenceDocument reference,
+        bool isSource)
+    {
+        yield return new KeyValuePair<string, string?>(isSource ? "from.schema" : "to.schema", isSource ? reference.FromSchema : reference.ToSchema);
+        yield return new KeyValuePair<string, string?>(isSource ? "from.table" : "to.table", isSource ? reference.FromTable : reference.ToTable);
+        yield return new KeyValuePair<string, string?>(isSource ? "from.column" : "to.column", isSource ? reference.FromColumn : reference.ToColumn);
     }
 
     private static ProfilingProbeStatus MapProbeStatus(ProfilingProbeStatusDocument? document, long defaultSampleSize)

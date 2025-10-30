@@ -55,16 +55,21 @@ internal sealed class DocumentMapperContext
         var builder = ImmutableArray.CreateBuilder<ValidationError>(errors.Length);
         foreach (var error in errors)
         {
-            builder.Add(new ValidationError(error.Code, AppendPath(error.Message, path)));
+            builder.Add(AppendPath(error, path));
         }
 
         return builder.ToImmutable();
     }
 
     public ValidationError CreateError(string code, string message, DocumentPathContext path)
-        => ValidationError.Create(code, AppendPath(message, path));
+        => AppendPath(ValidationError.Create(code, message), path);
 
-    private static string AppendPath(string message, DocumentPathContext path)
+    private static ValidationError AppendPath(ValidationError error, DocumentPathContext path)
+        => error
+            .WithMessage(AppendPathMessage(error.Message, path))
+            .WithMetadata("json.path", path.ToString());
+
+    private static string AppendPathMessage(string message, DocumentPathContext path)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
