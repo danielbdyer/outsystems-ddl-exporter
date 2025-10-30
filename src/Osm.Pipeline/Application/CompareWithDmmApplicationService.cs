@@ -121,16 +121,19 @@ public sealed class CompareWithDmmApplicationService : PipelineApplicationServic
             profilePathResult.Value,
             dmmPathResult.Value);
 
-        var request = new DmmComparePipelineRequest(
+        var scope = new ModelExecutionScope(
             modelPathResult.Value,
             moduleFilter,
-            profilePathResult.Value,
-            dmmPathResult.Value,
-            tighteningOptions,
             context.SupplementalModels,
+            tighteningOptions,
             context.SqlOptions,
             smoOptions,
             typeMappingPolicy,
+            profilePathResult.Value);
+
+        var request = new DmmComparePipelineRequest(
+            scope,
+            dmmPathResult.Value,
             diffPath,
             cacheOptions);
 

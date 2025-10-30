@@ -393,14 +393,11 @@ public class BuildSsdtPipelineStepTests
     {
         var modelPath = FixtureFile.GetPath("model.edge-case.json");
         var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
-        return new BuildSsdtPipelineRequest(
+        var scope = new ModelExecutionScope(
             modelPath,
             ModuleFilterOptions.IncludeAll,
-            outputDirectory,
-            TighteningOptions.Default,
             SupplementalModelOptions.Default,
-            "fixture",
-            profilePath,
+            TighteningOptions.Default,
             new ResolvedSqlOptions(
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
@@ -409,9 +406,15 @@ public class BuildSsdtPipelineStepTests
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicyLoader.LoadDefault(),
+            profilePath);
+
+        return new BuildSsdtPipelineRequest(
+            scope,
+            outputDirectory,
+            "fixture",
             cacheOptions,
             staticDataProvider,
-            null);
+            SeedOutputDirectoryHint: null);
     }
 
     private static IDataProfilerFactory CreateProfilerFactory()

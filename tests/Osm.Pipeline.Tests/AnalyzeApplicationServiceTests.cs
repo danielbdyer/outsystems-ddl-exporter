@@ -40,8 +40,8 @@ public sealed class AnalyzeApplicationServiceTests
         Assert.True(result.IsSuccess);
         Assert.NotNull(dispatcher.LastRequest);
         var request = dispatcher.LastRequest!;
-        Assert.Equal(modelPath, request.ModelPath);
-        Assert.Equal(profilePath, request.ProfilePath);
+        Assert.Equal(modelPath, request.Scope.ModelPath);
+        Assert.Equal(profilePath, request.Scope.ProfilePath);
         Assert.Equal("/work/output", request.OutputDirectory);
         Assert.Equal("/work/output", result.Value.OutputDirectory);
         Assert.Equal(modelPath, result.Value.ModelPath);

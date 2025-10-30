@@ -82,17 +82,21 @@ public sealed class CaptureProfileApplicationService : PipelineApplicationServic
         var namingOverrides = context.NamingOverrides ?? baseSmoOptions.NamingOverrides;
         var smoOptions = baseSmoOptions.WithNamingOverrides(namingOverrides);
 
-        var request = new CaptureProfilePipelineRequest(
+        var scope = new ModelExecutionScope(
             modelPath,
             context.ModuleFilter,
             context.SupplementalModels,
-            profilerProvider,
-            fixtureProfilePath,
-            context.SqlOptions,
             context.Tightening,
-            context.TypeMappingPolicy,
+            context.SqlOptions,
             smoOptions,
+            context.TypeMappingPolicy,
+            fixtureProfilePath);
+
+        var request = new CaptureProfilePipelineRequest(
+            scope,
+            profilerProvider,
             outputDirectory,
+            fixtureProfilePath,
             context.SqlMetadataLog);
 
         var pipelineResult = await _dispatcher

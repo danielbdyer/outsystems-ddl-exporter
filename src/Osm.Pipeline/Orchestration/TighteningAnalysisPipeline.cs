@@ -14,11 +14,7 @@ using Osm.Validation.Tightening;
 namespace Osm.Pipeline.Orchestration;
 
 public sealed record TighteningAnalysisPipelineRequest(
-    string ModelPath,
-    ModuleFilterOptions ModuleFilter,
-    TighteningOptions TighteningOptions,
-    SupplementalModelOptions SupplementalModels,
-    string ProfilePath,
+    ModelExecutionScope Scope,
     string OutputDirectory) : ICommand<TighteningAnalysisPipelineResult>;
 
 public sealed record TighteningAnalysisPipelineResult(
@@ -65,14 +61,14 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (string.IsNullOrWhiteSpace(request.ModelPath))
+        if (string.IsNullOrWhiteSpace(request.Scope.ModelPath))
         {
             return ValidationError.Create(
                 "pipeline.analyze.model.missing",
                 "Model path must be provided for tightening analysis.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.ProfilePath))
+        if (string.IsNullOrWhiteSpace(request.Scope.ProfilePath))
         {
             return ValidationError.Create(
                 "pipeline.analyze.profile.missing",
@@ -89,11 +85,11 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
         var log = new PipelineExecutionLogBuilder(_timeProvider);
         var telemetry = CreateTelemetry(request);
         var bootstrapRequest = new PipelineBootstrapRequest(
-            request.ModelPath,
-            request.ModuleFilter,
-            request.SupplementalModels,
+            request.Scope.ModelPath,
+            request.Scope.ModuleFilter,
+            request.Scope.SupplementalModels,
             telemetry,
-            (_, token) => LoadProfileAsync(request.ProfilePath, token));
+            (_, token) => LoadProfileAsync(request.Scope.ProfilePath, token));
 
         var bootstrapResult = await _bootstrapper
             .BootstrapAsync(log, bootstrapRequest, cancellationToken)
@@ -105,7 +101,7 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
         }
 
         var bootstrap = bootstrapResult.Value;
-        var decisions = _tighteningPolicy.Decide(bootstrap.FilteredModel, bootstrap.Profile, request.TighteningOptions);
+        var decisions = _tighteningPolicy.Decide(bootstrap.FilteredModel, bootstrap.Profile, request.Scope.TighteningOptions);
         var report = PolicyDecisionReporter.Create(decisions);
 
         log.Record(
@@ -166,16 +162,16 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
         return new PipelineBootstrapTelemetry(
             "Received tightening analysis request.",
             new PipelineLogMetadataBuilder()
-                .WithPath("model", request.ModelPath)
-                .WithPath("profile", request.ProfilePath)
-                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
-                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
-                .WithValue("tightening.mode", request.TighteningOptions.Policy.Mode.ToString())
-                .WithMetric("tightening.nullBudget", request.TighteningOptions.Policy.NullBudget)
+                .WithPath("model", request.Scope.ModelPath)
+                .WithPath("profile", request.Scope.ProfilePath)
+                .WithFlag("moduleFilter.hasFilter", request.Scope.ModuleFilter.HasFilter)
+                .WithCount("moduleFilter.modules", request.Scope.ModuleFilter.Modules.Length)
+                .WithValue("tightening.mode", request.Scope.TighteningOptions.Policy.Mode.ToString())
+                .WithMetric("tightening.nullBudget", request.Scope.TighteningOptions.Policy.NullBudget)
                 .Build(),
             "Loading profiling snapshot from disk.",
             new PipelineLogMetadataBuilder()
-                .WithPath("profile", request.ProfilePath)
+                .WithPath("profile", request.Scope.ProfilePath)
                 .Build(),
             "Loaded profiling snapshot from disk.");
     }

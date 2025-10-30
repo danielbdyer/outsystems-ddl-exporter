@@ -57,14 +57,11 @@ public sealed class SsdtMatrixTests
             ? null
             : new FixtureStaticEntityDataProvider(staticDataPath);
 
-        var request = new BuildSsdtPipelineRequest(
+        var scope = new ModelExecutionScope(
             modelPath,
             ModuleFilterOptions.IncludeAll,
-            output.Path,
-            TighteningOptions.Default,
             SupplementalModelOptions.Default,
-            "fixture",
-            profilePath,
+            TighteningOptions.Default,
             new ResolvedSqlOptions(
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
@@ -73,6 +70,12 @@ public sealed class SsdtMatrixTests
                 MetadataContract: MetadataContractOverrides.Strict),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicyLoader.LoadDefault(),
+            profilePath);
+
+        var request = new BuildSsdtPipelineRequest(
+            scope,
+            output.Path,
+            "fixture",
             EvidenceCache: null,
             StaticDataProvider: staticDataProvider,
             SeedOutputDirectoryHint: null);

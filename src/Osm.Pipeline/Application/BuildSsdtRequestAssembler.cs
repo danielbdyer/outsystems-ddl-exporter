@@ -74,17 +74,21 @@ public sealed class BuildSsdtRequestAssembler
             cacheOptions = cacheOptions with { Metadata = metadata };
         }
 
-        var request = new BuildSsdtPipelineRequest(
+        var supplementalOptions = ResolveSupplementalOptions(context.Configuration.SupplementalModels);
+        var scope = new ModelExecutionScope(
             context.ModelPath,
             context.ModuleFilter,
-            context.OutputDirectory,
+            supplementalOptions,
             context.TighteningOptions,
-            ResolveSupplementalOptions(context.Configuration.SupplementalModels),
-            profilerProvider,
-            profilePath,
             context.SqlOptions,
             context.SmoOptions,
             context.TypeMappingPolicy,
+            profilePath);
+
+        var request = new BuildSsdtPipelineRequest(
+            scope,
+            context.OutputDirectory,
+            profilerProvider,
             cacheOptions,
             context.StaticDataProvider,
             Path.Combine(context.OutputDirectory, "Seeds"),

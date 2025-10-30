@@ -33,9 +33,9 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
         var request = state.Request;
         var telemetry = CreateTelemetry(request);
         var bootstrapRequest = new PipelineBootstrapRequest(
-            request.ModelPath,
-            request.ModuleFilter,
-            request.SupplementalModels,
+            request.Scope.ModelPath,
+            request.Scope.ModuleFilter,
+            request.Scope.SupplementalModels,
             telemetry,
             (model, token) => CaptureProfileAsync(request, model, token));
 
@@ -58,24 +58,24 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
         return new PipelineBootstrapTelemetry(
             "Received build-ssdt pipeline request.",
             new PipelineLogMetadataBuilder()
-                .WithPath("model", request.ModelPath)
+                .WithPath("model", request.Scope.ModelPath)
                 .WithPath("output", request.OutputDirectory)
                 .WithValue("profiling.provider", request.ProfilerProvider)
-                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
-                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
-                .WithFlag("supplemental.includeUsers", request.SupplementalModels.IncludeUsers)
-                .WithCount("supplemental.paths", request.SupplementalModels.Paths.Count)
-                .WithValue("tightening.mode", request.TighteningOptions.Policy.Mode.ToString())
-                .WithMetric("tightening.nullBudget", request.TighteningOptions.Policy.NullBudget)
-                .WithFlag("emission.includePlatformAutoIndexes", request.SmoOptions.IncludePlatformAutoIndexes)
-                .WithFlag("emission.emitBareTableOnly", request.SmoOptions.EmitBareTableOnly)
-                .WithFlag("emission.sanitizeModuleNames", request.SmoOptions.SanitizeModuleNames)
-                .WithCount("emission.moduleParallelism", request.SmoOptions.ModuleParallelism)
+                .WithFlag("moduleFilter.hasFilter", request.Scope.ModuleFilter.HasFilter)
+                .WithCount("moduleFilter.modules", request.Scope.ModuleFilter.Modules.Length)
+                .WithFlag("supplemental.includeUsers", request.Scope.SupplementalModels.IncludeUsers)
+                .WithCount("supplemental.paths", request.Scope.SupplementalModels.Paths.Count)
+                .WithValue("tightening.mode", request.Scope.TighteningOptions.Policy.Mode.ToString())
+                .WithMetric("tightening.nullBudget", request.Scope.TighteningOptions.Policy.NullBudget)
+                .WithFlag("emission.includePlatformAutoIndexes", request.Scope.SmoOptions.IncludePlatformAutoIndexes)
+                .WithFlag("emission.emitBareTableOnly", request.Scope.SmoOptions.EmitBareTableOnly)
+                .WithFlag("emission.sanitizeModuleNames", request.Scope.SmoOptions.SanitizeModuleNames)
+                .WithCount("emission.moduleParallelism", request.Scope.SmoOptions.ModuleParallelism)
                 .Build(),
             "Capturing profiling snapshot.",
             new PipelineLogMetadataBuilder()
                 .WithValue("profiling.provider", request.ProfilerProvider)
-                .WithPath("profile", request.ProfilePath)
+                .WithPath("profile", request.Scope.ProfilePath)
                 .Build(),
             "Captured profiling snapshot.");
     }

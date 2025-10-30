@@ -115,17 +115,20 @@ public sealed class DataProfilerFactoryTests
 
     private static BuildSsdtPipelineRequest CreateRequest(string provider, string? profilePath, ResolvedSqlOptions sqlOptions)
     {
+        var scope = new ModelExecutionScope(
+            FixtureFile.GetPath("model.edge-case.json"),
+            ModuleFilterOptions.IncludeAll,
+            SupplementalModelOptions.Default,
+            TighteningOptions.Default,
+            sqlOptions,
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicyLoader.LoadDefault(),
+            profilePath);
+
         return new BuildSsdtPipelineRequest(
-            ModelPath: FixtureFile.GetPath("model.edge-case.json"),
-            ModuleFilter: ModuleFilterOptions.IncludeAll,
+            scope,
             OutputDirectory: "out",
-            TighteningOptions: TighteningOptions.Default,
-            SupplementalModels: SupplementalModelOptions.Default,
             ProfilerProvider: provider,
-            ProfilePath: profilePath,
-            SqlOptions: sqlOptions,
-            SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
-            TypeMappingPolicy: TypeMappingPolicyLoader.LoadDefault(),
             EvidenceCache: null,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,

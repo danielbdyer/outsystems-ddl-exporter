@@ -114,8 +114,8 @@ public sealed class CompareWithDmmApplicationServiceTests
         Assert.True(dispatcher.WasInvoked);
         var request = dispatcher.LastRequest;
         Assert.NotNull(request);
-        Assert.Equal(modelPath, request!.ModelPath);
-        Assert.Equal(profilePath, request.ProfilePath);
+        Assert.Equal(modelPath, request!.Scope.ModelPath);
+        Assert.Equal(profilePath, request.Scope.ProfilePath);
         Assert.Equal(dmmPath, request.DmmPath);
         Assert.Equal(fileSystem.Path.Combine(outputDirectory, "dmm-diff.json"), request.DiffOutputPath);
         Assert.NotNull(request.EvidenceCache);

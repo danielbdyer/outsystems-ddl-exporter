@@ -19,16 +19,10 @@ using Osm.Smo;
 namespace Osm.Pipeline.Orchestration;
 
 public sealed record CaptureProfilePipelineRequest(
-    string ModelPath,
-    ModuleFilterOptions ModuleFilter,
-    SupplementalModelOptions SupplementalModels,
+    ModelExecutionScope Scope,
     string ProfilerProvider,
-    string? FixtureProfilePath,
-    ResolvedSqlOptions SqlOptions,
-    TighteningOptions TighteningOptions,
-    TypeMappingPolicy TypeMappingPolicy,
-    SmoBuildOptions SmoOptions,
     string OutputDirectory,
+    string? FixtureProfilePath,
     SqlMetadataLog? SqlMetadataLog = null) : ICommand<CaptureProfilePipelineResult>;
 
 public sealed record CaptureProfilePipelineResult(
@@ -115,7 +109,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             throw new ArgumentNullException(nameof(request));
         }
 
-        if (string.IsNullOrWhiteSpace(request.ModelPath))
+        if (string.IsNullOrWhiteSpace(request.Scope.ModelPath))
         {
             return ValidationError.Create(
                 "pipeline.captureProfile.model.missing",
@@ -134,9 +128,9 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
         var log = new PipelineExecutionLogBuilder(_timeProvider);
         var telemetry = CreateTelemetry(request);
         var bootstrapRequest = new PipelineBootstrapRequest(
-            request.ModelPath,
-            request.ModuleFilter,
-            request.SupplementalModels,
+            request.Scope.ModelPath,
+            request.Scope.ModuleFilter,
+            request.Scope.SupplementalModels,
             telemetry,
             (model, token) => CaptureProfileAsync(request, model, token));
 
@@ -232,12 +226,12 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
         return new PipelineBootstrapTelemetry(
             "Received profile capture request.",
             new PipelineLogMetadataBuilder()
-                .WithPath("model", request.ModelPath)
+                .WithPath("model", request.Scope.ModelPath)
                 .WithValue("profiling.provider", request.ProfilerProvider)
-                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
-                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
-                .WithFlag("supplemental.includeUsers", request.SupplementalModels.IncludeUsers)
-                .WithCount("supplemental.paths", request.SupplementalModels.Paths.Count)
+                .WithFlag("moduleFilter.hasFilter", request.Scope.ModuleFilter.HasFilter)
+                .WithCount("moduleFilter.modules", request.Scope.ModuleFilter.Modules.Length)
+                .WithFlag("supplemental.includeUsers", request.Scope.SupplementalModels.IncludeUsers)
+                .WithCount("supplemental.paths", request.Scope.SupplementalModels.Paths.Count)
                 .Build(),
             "Capturing profiling snapshot.",
             new PipelineLogMetadataBuilder()
@@ -253,16 +247,9 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
         CancellationToken cancellationToken)
     {
         var profilerRequest = new BuildSsdtPipelineRequest(
-            request.ModelPath,
-            request.ModuleFilter,
+            request.Scope with { ProfilePath = request.FixtureProfilePath },
             request.OutputDirectory,
-            request.TighteningOptions,
-            request.SupplementalModels,
             request.ProfilerProvider,
-            request.FixtureProfilePath,
-            request.SqlOptions,
-            request.SmoOptions,
-            request.TypeMappingPolicy,
             EvidenceCache: null,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
@@ -285,14 +272,14 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
         var capturedAt = _timeProvider.GetUtcNow();
 
         var moduleSummary = new CaptureProfileModuleSummary(
-            request.ModuleFilter.HasFilter,
-            request.ModuleFilter.Modules.Select(module => module.Value).ToArray(),
-            request.ModuleFilter.IncludeSystemModules,
-            request.ModuleFilter.IncludeInactiveModules);
+            request.Scope.ModuleFilter.HasFilter,
+            request.Scope.ModuleFilter.Modules.Select(module => module.Value).ToArray(),
+            request.Scope.ModuleFilter.IncludeSystemModules,
+            request.Scope.ModuleFilter.IncludeInactiveModules);
 
         var supplementalSummary = new CaptureProfileSupplementalSummary(
-            request.SupplementalModels.IncludeUsers,
-            request.SupplementalModels.Paths.ToArray());
+            request.Scope.SupplementalModels.IncludeUsers,
+            request.Scope.SupplementalModels.Paths.ToArray());
 
         var snapshotSummary = new CaptureProfileSnapshotSummary(
             bootstrap.Profile.Columns.Length,
@@ -318,7 +305,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             .ToArray();
 
         return new CaptureProfileManifest(
-            request.ModelPath,
+            request.Scope.ModelPath,
             profilePath,
             request.ProfilerProvider,
             moduleSummary,

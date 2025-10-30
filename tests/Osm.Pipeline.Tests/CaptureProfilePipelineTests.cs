@@ -124,22 +124,26 @@ public class CaptureProfilePipelineTests
             Directory.CreateDirectory(outputDirectory);
         }
 
-        return new CaptureProfilePipelineRequest(
+        var scope = new ModelExecutionScope(
             modelPath,
             ModuleFilterOptions.IncludeAll,
             SupplementalModelOptions.Default,
-            "fixture",
-            fixtureProfilePath,
+            TighteningOptions.Default,
             new ResolvedSqlOptions(
                 ConnectionString: null,
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict),
-            TighteningOptions.Default,
-            TypeMappingPolicyLoader.LoadDefault(),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicyLoader.LoadDefault(),
+            fixtureProfilePath);
+
+        return new CaptureProfilePipelineRequest(
+            scope,
+            "fixture",
             outputDirectory,
+            fixtureProfilePath,
             SqlMetadataLog: null);
     }
 

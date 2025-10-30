@@ -49,7 +49,7 @@ public sealed class BuildSsdtRequestAssemblerTests
         Assert.Equal("override-provider", assembly.ProfilerProvider);
         Assert.Equal("override.profile", assembly.ProfilePath);
         Assert.Equal("override-provider", assembly.Request.ProfilerProvider);
-        Assert.Equal("override.profile", assembly.Request.ProfilePath);
+        Assert.Equal("override.profile", assembly.Request.Scope.ProfilePath);
     }
 
     [Fact]

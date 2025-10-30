@@ -183,9 +183,9 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             model,
             decisions,
             profile,
-            state.Request.SmoOptions,
+            state.Request.Scope.SmoOptions,
             supplementalEntities,
-            state.Request.TypeMappingPolicy);
+            state.Request.Scope.TypeMappingPolicy);
 
         var metadata = new PipelineLogMetadataBuilder()
             .WithCount("tables", smoModel.Tables.Length)
@@ -206,7 +206,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         PolicyDecisionSet decisions,
         CancellationToken cancellationToken)
     {
-        var emissionMetadata = _fingerprintCalculator.Compute(smoModel, decisions, state.Request.SmoOptions);
+        var emissionMetadata = _fingerprintCalculator.Compute(smoModel, decisions, state.Request.Scope.SmoOptions);
         var emissionOptions = BuildEmissionOptions(state, report, emissionMetadata);
 
         var coverageResult = EmissionCoverageCalculator.Compute(
@@ -377,7 +377,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         PolicyDecisionReport report,
         SsdtEmissionMetadata metadata)
     {
-        var emissionOptions = state.Request.SmoOptions;
+        var emissionOptions = state.Request.Scope.SmoOptions;
         if (!emissionOptions.Header.Enabled)
         {
             return emissionOptions;
@@ -385,9 +385,9 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
 
         var headerOptions = emissionOptions.Header with
         {
-            Source = state.Request.ModelPath,
-            Profile = state.Request.ProfilePath ?? state.Request.ProfilerProvider,
-            Decisions = BuildDecisionSummary(state.Request.TighteningOptions, report),
+            Source = state.Request.Scope.ModelPath,
+            Profile = state.Request.Scope.ProfilePath ?? state.Request.ProfilerProvider,
+            Decisions = BuildDecisionSummary(state.Request.Scope.TighteningOptions, report),
             FingerprintAlgorithm = metadata.Algorithm,
             FingerprintHash = metadata.Hash,
             AdditionalItems = emissionOptions.Header.AdditionalItems,

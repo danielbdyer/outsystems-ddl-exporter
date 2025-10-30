@@ -8,16 +8,9 @@ using Osm.Pipeline.Sql;
 namespace Osm.Pipeline.Orchestration;
 
 public sealed record BuildSsdtPipelineRequest(
-    string ModelPath,
-    ModuleFilterOptions ModuleFilter,
+    ModelExecutionScope Scope,
     string OutputDirectory,
-    TighteningOptions TighteningOptions,
-    SupplementalModelOptions SupplementalModels,
     string ProfilerProvider,
-    string? ProfilePath,
-    ResolvedSqlOptions SqlOptions,
-    SmoBuildOptions SmoOptions,
-    TypeMappingPolicy TypeMappingPolicy,
     EvidenceCachePipelineOptions? EvidenceCache,
     IStaticEntityDataProvider? StaticDataProvider,
     string? SeedOutputDirectoryHint,

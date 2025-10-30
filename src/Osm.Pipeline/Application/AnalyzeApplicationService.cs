@@ -7,6 +7,7 @@ using Osm.Domain.Configuration;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Smo;
 
 namespace Osm.Pipeline.Application;
 
@@ -95,12 +96,18 @@ public sealed class AnalyzeApplicationService : PipelineApplicationServiceBase, 
 
         _fileSystem.Directory.CreateDirectory(outputDirectory);
 
-        var request = new TighteningAnalysisPipelineRequest(
+        var scope = new ModelExecutionScope(
             modelPath,
             moduleFilter,
-            tighteningOptions,
             context.SupplementalModels,
-            profilePath,
+            tighteningOptions,
+            context.SqlOptions,
+            SmoBuildOptions.FromEmission(tighteningOptions.Emission),
+            context.TypeMappingPolicy,
+            profilePath);
+
+        var request = new TighteningAnalysisPipelineRequest(
+            scope,
             outputDirectory);
 
         var pipelineResult = await _dispatcher

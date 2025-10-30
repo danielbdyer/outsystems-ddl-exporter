@@ -69,14 +69,14 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             throw new ArgumentNullException(nameof(request));
         }
 
-        if (string.IsNullOrWhiteSpace(request.ModelPath))
+        if (string.IsNullOrWhiteSpace(request.Scope.ModelPath))
         {
             return ValidationError.Create(
                 "pipeline.dmm.model.missing",
                 "Model path must be provided for DMM comparison.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.ProfilePath))
+        if (string.IsNullOrWhiteSpace(request.Scope.ProfilePath))
         {
             return ValidationError.Create(
                 "pipeline.dmm.profile.missing",
@@ -104,30 +104,30 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         var telemetry = new PipelineBootstrapTelemetry(
             "Received dmm-compare pipeline request.",
             new PipelineLogMetadataBuilder()
-                .WithPath("model", request.ModelPath)
-                .WithPath("profile", request.ProfilePath)
+                .WithPath("model", request.Scope.ModelPath)
+                .WithPath("profile", request.Scope.ProfilePath)
                 .WithPath("baseline", request.DmmPath)
                 .WithValue("baseline.type", isSsdtProject ? "ssdt" : "dmm")
-                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
-                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
-                .WithValue("tightening.mode", request.TighteningOptions.Policy.Mode.ToString())
-                .WithMetric("tightening.nullBudget", request.TighteningOptions.Policy.NullBudget)
-                .WithFlag("emission.includePlatformAutoIndexes", request.SmoOptions.IncludePlatformAutoIndexes)
-                .WithFlag("emission.emitBareTableOnly", request.SmoOptions.EmitBareTableOnly)
-                .WithFlag("emission.sanitizeModuleNames", request.SmoOptions.SanitizeModuleNames)
+                .WithFlag("moduleFilter.hasFilter", request.Scope.ModuleFilter.HasFilter)
+                .WithCount("moduleFilter.modules", request.Scope.ModuleFilter.Modules.Length)
+                .WithValue("tightening.mode", request.Scope.TighteningOptions.Policy.Mode.ToString())
+                .WithMetric("tightening.nullBudget", request.Scope.TighteningOptions.Policy.NullBudget)
+                .WithFlag("emission.includePlatformAutoIndexes", request.Scope.SmoOptions.IncludePlatformAutoIndexes)
+                .WithFlag("emission.emitBareTableOnly", request.Scope.SmoOptions.EmitBareTableOnly)
+                .WithFlag("emission.sanitizeModuleNames", request.Scope.SmoOptions.SanitizeModuleNames)
                 .Build(),
             "Loading profiling snapshot from fixtures.",
             new PipelineLogMetadataBuilder()
-                .WithPath("profile", request.ProfilePath)
+                .WithPath("profile", request.Scope.ProfilePath)
                 .Build(),
             "Loaded profiling snapshot.");
 
         var bootstrapRequest = new PipelineBootstrapRequest(
-            request.ModelPath,
-            request.ModuleFilter,
-            request.SupplementalModels,
+            request.Scope.ModelPath,
+            request.Scope.ModuleFilter,
+            request.Scope.SupplementalModels,
             telemetry,
-            (_, token) => new FixtureDataProfiler(request.ProfilePath, _profileSnapshotDeserializer)
+            (_, token) => new FixtureDataProfiler(request.Scope.ProfilePath, _profileSnapshotDeserializer)
                 .CaptureAsync(token));
 
         var bootstrapAndCacheResult = await _bootstrapper
@@ -150,14 +150,14 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         var profile = bootstrapContext.Profile;
         var pipelineWarnings = bootstrapContext.Warnings;
 
-        var decisions = _tighteningPolicy.Decide(filteredModel, profile, request.TighteningOptions);
+        var decisions = _tighteningPolicy.Decide(filteredModel, profile, request.Scope.TighteningOptions);
         var smoModel = _smoModelFactory.Create(
             filteredModel,
             decisions,
             profile,
-            request.SmoOptions,
+            request.Scope.SmoOptions,
             supplementalEntities,
-            request.TypeMappingPolicy);
+            request.Scope.TypeMappingPolicy);
         var smoTableCount = smoModel.Tables.Length;
         var smoColumnCount = smoModel.Tables.Sum(static table => table.Columns.Length);
         var smoIndexCount = smoModel.Tables.Sum(static table => table.Indexes.Length);
@@ -172,7 +172,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 .WithCount("foreignKeys", smoForeignKeyCount)
                 .Build());
 
-        var projectedResult = _smoLens.Project(new SmoDmmLensRequest(smoModel, request.SmoOptions));
+        var projectedResult = _smoLens.Project(new SmoDmmLensRequest(smoModel, request.Scope.SmoOptions));
         if (projectedResult.IsFailure)
         {
             return Result<DmmComparePipelineResult>.Failure(projectedResult.Errors);
@@ -207,7 +207,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                     .WithCount("tables", dmmTables.Count)
                     .Build());
 
-            layoutComparison = _ssdtLayoutComparator.Compare(smoModel, request.SmoOptions, request.DmmPath);
+            layoutComparison = _ssdtLayoutComparator.Compare(smoModel, request.Scope.SmoOptions, request.DmmPath);
             log.Record(
                 "dmm.ssdt.layout",
                 "Validated SSDT project table layout.",
@@ -273,8 +273,8 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
 
         var diffPath = await _diffLogWriter.WriteAsync(
             request.DiffOutputPath,
-            request.ModelPath,
-            request.ProfilePath,
+            request.Scope.ModelPath,
+            request.Scope.ProfilePath,
             request.DmmPath,
             comparison,
             cancellationToken).ConfigureAwait(false);
