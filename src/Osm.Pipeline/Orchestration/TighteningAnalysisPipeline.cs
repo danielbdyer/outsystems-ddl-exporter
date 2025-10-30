@@ -38,6 +38,7 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
     private readonly TighteningPolicy _tighteningPolicy;
     private readonly PolicyDecisionLogWriter _decisionLogWriter;
     private readonly IProfileSnapshotDeserializer _profileDeserializer;
+    private readonly IPipelineBootstrapTelemetryFactory _telemetryFactory;
     private readonly TimeProvider _timeProvider;
 
     public TighteningAnalysisPipeline(
@@ -45,12 +46,14 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
         TighteningPolicy tighteningPolicy,
         PolicyDecisionLogWriter decisionLogWriter,
         IProfileSnapshotDeserializer profileDeserializer,
+        IPipelineBootstrapTelemetryFactory telemetryFactory,
         TimeProvider timeProvider)
     {
         _bootstrapper = bootstrapper ?? throw new ArgumentNullException(nameof(bootstrapper));
         _tighteningPolicy = tighteningPolicy ?? throw new ArgumentNullException(nameof(tighteningPolicy));
         _decisionLogWriter = decisionLogWriter ?? throw new ArgumentNullException(nameof(decisionLogWriter));
         _profileDeserializer = profileDeserializer ?? throw new ArgumentNullException(nameof(profileDeserializer));
+        _telemetryFactory = telemetryFactory ?? throw new ArgumentNullException(nameof(telemetryFactory));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
@@ -87,7 +90,22 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
         }
 
         var log = new PipelineExecutionLogBuilder(_timeProvider);
-        var telemetry = CreateTelemetry(request);
+        var scope = ModelExecutionScope.Create(
+            request.ModelPath,
+            request.ModuleFilter,
+            request.SupplementalModels,
+            request.TighteningOptions,
+            smoOptions: null);
+        var telemetry = _telemetryFactory.Create(
+            scope,
+            new PipelineCommandDescriptor(
+                "Received tightening analysis request.",
+                "Loading profiling snapshot from disk.",
+                "Loaded profiling snapshot from disk.",
+                IncludeSupplementalDetails: true,
+                IncludeTighteningDetails: true),
+            new PipelineBootstrapTelemetryExtras(
+                ProfilePath: request.ProfilePath));
         var bootstrapRequest = new PipelineBootstrapRequest(
             request.ModelPath,
             request.ModuleFilter,
@@ -159,25 +177,6 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
             decisionLogPath,
             log.Build(),
             bootstrap.Warnings);
-    }
-
-    private PipelineBootstrapTelemetry CreateTelemetry(TighteningAnalysisPipelineRequest request)
-    {
-        return new PipelineBootstrapTelemetry(
-            "Received tightening analysis request.",
-            new PipelineLogMetadataBuilder()
-                .WithPath("model", request.ModelPath)
-                .WithPath("profile", request.ProfilePath)
-                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
-                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
-                .WithValue("tightening.mode", request.TighteningOptions.Policy.Mode.ToString())
-                .WithMetric("tightening.nullBudget", request.TighteningOptions.Policy.NullBudget)
-                .Build(),
-            "Loading profiling snapshot from disk.",
-            new PipelineLogMetadataBuilder()
-                .WithPath("profile", request.ProfilePath)
-                .Build(),
-            "Loaded profiling snapshot from disk.");
     }
 
     private async Task<Result<ProfileSnapshot>> LoadProfileAsync(string profilePath, CancellationToken cancellationToken)

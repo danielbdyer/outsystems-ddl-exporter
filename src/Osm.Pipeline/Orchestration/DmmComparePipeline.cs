@@ -29,6 +29,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
     private readonly DmmDiffLogWriter _diffLogWriter;
     private readonly EvidenceCacheCoordinator _evidenceCacheCoordinator;
     private readonly ProfileSnapshotDeserializer _profileSnapshotDeserializer;
+    private readonly IPipelineBootstrapTelemetryFactory _telemetryFactory;
     private readonly TimeProvider _timeProvider;
 
     public DmmComparePipeline(
@@ -43,6 +44,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         DmmDiffLogWriter? diffLogWriter = null,
         IEvidenceCacheService? evidenceCacheService = null,
         ProfileSnapshotDeserializer? profileSnapshotDeserializer = null,
+        IPipelineBootstrapTelemetryFactory? telemetryFactory = null,
         TimeProvider? timeProvider = null)
     {
         _bootstrapper = bootstrapper ?? throw new ArgumentNullException(nameof(bootstrapper));
@@ -57,6 +59,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         var resolvedEvidenceCacheService = evidenceCacheService ?? new EvidenceCacheService();
         _evidenceCacheCoordinator = new EvidenceCacheCoordinator(resolvedEvidenceCacheService);
         _profileSnapshotDeserializer = profileSnapshotDeserializer ?? new ProfileSnapshotDeserializer();
+        _telemetryFactory = telemetryFactory ?? new PipelineBootstrapTelemetryFactory();
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -101,26 +104,24 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
         }
 
         var log = new PipelineExecutionLogBuilder(_timeProvider);
-        var telemetry = new PipelineBootstrapTelemetry(
-            "Received dmm-compare pipeline request.",
-            new PipelineLogMetadataBuilder()
-                .WithPath("model", request.ModelPath)
-                .WithPath("profile", request.ProfilePath)
-                .WithPath("baseline", request.DmmPath)
-                .WithValue("baseline.type", isSsdtProject ? "ssdt" : "dmm")
-                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
-                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
-                .WithValue("tightening.mode", request.TighteningOptions.Policy.Mode.ToString())
-                .WithMetric("tightening.nullBudget", request.TighteningOptions.Policy.NullBudget)
-                .WithFlag("emission.includePlatformAutoIndexes", request.SmoOptions.IncludePlatformAutoIndexes)
-                .WithFlag("emission.emitBareTableOnly", request.SmoOptions.EmitBareTableOnly)
-                .WithFlag("emission.sanitizeModuleNames", request.SmoOptions.SanitizeModuleNames)
-                .Build(),
-            "Loading profiling snapshot from fixtures.",
-            new PipelineLogMetadataBuilder()
-                .WithPath("profile", request.ProfilePath)
-                .Build(),
-            "Loaded profiling snapshot.");
+        var scope = ModelExecutionScope.Create(
+            request.ModelPath,
+            request.ModuleFilter,
+            request.SupplementalModels,
+            request.TighteningOptions,
+            request.SmoOptions);
+        var telemetry = _telemetryFactory.Create(
+            scope,
+            new PipelineCommandDescriptor(
+                "Received dmm-compare pipeline request.",
+                "Loading profiling snapshot from fixtures.",
+                "Loaded profiling snapshot.",
+                IncludeSupplementalDetails: false,
+                IncludeTighteningDetails: true,
+                IncludeEmissionDetails: true),
+            new PipelineBootstrapTelemetryExtras(
+                ProfilePath: request.ProfilePath,
+                DiffTarget: PipelineDiffTarget.Create(request.DmmPath, isSsdtProject ? "ssdt" : "dmm")));
 
         var bootstrapRequest = new PipelineBootstrapRequest(
             request.ModelPath,

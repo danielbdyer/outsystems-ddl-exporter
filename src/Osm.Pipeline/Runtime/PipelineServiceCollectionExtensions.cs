@@ -128,6 +128,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<INamingOverridesBinder, NamingOverridesBinder>();
         services.AddSingleton<IStaticDataProviderFactory, StaticDataProviderFactory>();
         services.AddSingleton<IPipelineBootstrapper, PipelineBootstrapper>();
+        services.AddSingleton<IPipelineBootstrapTelemetryFactory, PipelineBootstrapTelemetryFactory>();
         services.AddSingleton<BuildSsdtBootstrapStep>();
         services.AddSingleton<BuildSsdtEvidenceCacheStep>();
         services.AddSingleton<BuildSsdtPolicyDecisionStep>();

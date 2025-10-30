@@ -111,7 +111,10 @@ public sealed class SsdtMatrixTests
 
     private static BuildSsdtPipeline CreatePipeline()
     {
-        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(
+            CreatePipelineBootstrapper(),
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
         var evidenceCacheStep = new BuildSsdtEvidenceCacheStep(new EvidenceCacheCoordinator(new EvidenceCacheService()));
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var emissionStep = new BuildSsdtEmissionStep(

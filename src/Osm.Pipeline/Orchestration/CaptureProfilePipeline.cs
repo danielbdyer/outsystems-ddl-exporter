@@ -93,17 +93,20 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
     private readonly IPipelineBootstrapper _bootstrapper;
     private readonly IDataProfilerFactory _profilerFactory;
     private readonly IProfileSnapshotSerializer _profileSerializer;
+    private readonly IPipelineBootstrapTelemetryFactory _telemetryFactory;
 
     public CaptureProfilePipeline(
         TimeProvider timeProvider,
         IPipelineBootstrapper bootstrapper,
         IDataProfilerFactory profilerFactory,
-        IProfileSnapshotSerializer profileSerializer)
+        IProfileSnapshotSerializer profileSerializer,
+        IPipelineBootstrapTelemetryFactory telemetryFactory)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _bootstrapper = bootstrapper ?? throw new ArgumentNullException(nameof(bootstrapper));
         _profilerFactory = profilerFactory ?? throw new ArgumentNullException(nameof(profilerFactory));
         _profileSerializer = profileSerializer ?? throw new ArgumentNullException(nameof(profileSerializer));
+        _telemetryFactory = telemetryFactory ?? throw new ArgumentNullException(nameof(telemetryFactory));
     }
 
     public async Task<Result<CaptureProfilePipelineResult>> HandleAsync(
@@ -132,7 +135,21 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
         cancellationToken.ThrowIfCancellationRequested();
 
         var log = new PipelineExecutionLogBuilder(_timeProvider);
-        var telemetry = CreateTelemetry(request);
+        var scope = ModelExecutionScope.Create(
+            request.ModelPath,
+            request.ModuleFilter,
+            request.SupplementalModels,
+            request.TighteningOptions,
+            request.SmoOptions);
+        var telemetry = _telemetryFactory.Create(
+            scope,
+            new PipelineCommandDescriptor(
+                "Received profile capture request.",
+                "Capturing profiling snapshot.",
+                "Captured profiling snapshot."),
+            new PipelineBootstrapTelemetryExtras(
+                ProfilerProvider: request.ProfilerProvider,
+                FixtureProfilePath: request.FixtureProfilePath));
         var bootstrapRequest = new PipelineBootstrapRequest(
             request.ModelPath,
             request.ModuleFilter,
@@ -225,26 +242,6 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             bootstrap.Insights,
             log.Build(),
             bootstrap.Warnings.ToImmutableArray());
-    }
-
-    private PipelineBootstrapTelemetry CreateTelemetry(CaptureProfilePipelineRequest request)
-    {
-        return new PipelineBootstrapTelemetry(
-            "Received profile capture request.",
-            new PipelineLogMetadataBuilder()
-                .WithPath("model", request.ModelPath)
-                .WithValue("profiling.provider", request.ProfilerProvider)
-                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
-                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
-                .WithFlag("supplemental.includeUsers", request.SupplementalModels.IncludeUsers)
-                .WithCount("supplemental.paths", request.SupplementalModels.Paths.Count)
-                .Build(),
-            "Capturing profiling snapshot.",
-            new PipelineLogMetadataBuilder()
-                .WithValue("profiling.provider", request.ProfilerProvider)
-                .WithPath("profiling.fixture", request.FixtureProfilePath)
-                .Build(),
-            "Captured profiling snapshot.");
     }
 
     private async Task<Result<ProfileSnapshot>> CaptureProfileAsync(

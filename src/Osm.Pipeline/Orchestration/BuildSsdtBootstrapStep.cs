@@ -12,13 +12,16 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
 {
     private readonly IPipelineBootstrapper _bootstrapper;
     private readonly IDataProfilerFactory _profilerFactory;
+    private readonly IPipelineBootstrapTelemetryFactory _telemetryFactory;
 
     public BuildSsdtBootstrapStep(
         IPipelineBootstrapper bootstrapper,
-        IDataProfilerFactory profilerFactory)
+        IDataProfilerFactory profilerFactory,
+        IPipelineBootstrapTelemetryFactory telemetryFactory)
     {
         _bootstrapper = bootstrapper ?? throw new ArgumentNullException(nameof(bootstrapper));
         _profilerFactory = profilerFactory ?? throw new ArgumentNullException(nameof(profilerFactory));
+        _telemetryFactory = telemetryFactory ?? throw new ArgumentNullException(nameof(telemetryFactory));
     }
 
     public async Task<Result<BootstrapCompleted>> ExecuteAsync(
@@ -31,7 +34,25 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
         }
 
         var request = state.Request;
-        var telemetry = CreateTelemetry(request);
+        var scope = ModelExecutionScope.Create(
+            request.ModelPath,
+            request.ModuleFilter,
+            request.SupplementalModels,
+            request.TighteningOptions,
+            request.SmoOptions);
+        var telemetry = _telemetryFactory.Create(
+            scope,
+            new PipelineCommandDescriptor(
+                "Received build-ssdt pipeline request.",
+                "Capturing profiling snapshot.",
+                "Captured profiling snapshot.",
+                IncludeSupplementalDetails: true,
+                IncludeTighteningDetails: true,
+                IncludeEmissionDetails: true),
+            new PipelineBootstrapTelemetryExtras(
+                ProfilerProvider: request.ProfilerProvider,
+                ProfilePath: request.ProfilePath,
+                OutputPath: request.OutputDirectory));
         var bootstrapRequest = new PipelineBootstrapRequest(
             request.ModelPath,
             request.ModuleFilter,
@@ -51,33 +72,6 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
             state.Request,
             state.Log,
             bootstrapResult.Value));
-    }
-
-    private static PipelineBootstrapTelemetry CreateTelemetry(BuildSsdtPipelineRequest request)
-    {
-        return new PipelineBootstrapTelemetry(
-            "Received build-ssdt pipeline request.",
-            new PipelineLogMetadataBuilder()
-                .WithPath("model", request.ModelPath)
-                .WithPath("output", request.OutputDirectory)
-                .WithValue("profiling.provider", request.ProfilerProvider)
-                .WithFlag("moduleFilter.hasFilter", request.ModuleFilter.HasFilter)
-                .WithCount("moduleFilter.modules", request.ModuleFilter.Modules.Length)
-                .WithFlag("supplemental.includeUsers", request.SupplementalModels.IncludeUsers)
-                .WithCount("supplemental.paths", request.SupplementalModels.Paths.Count)
-                .WithValue("tightening.mode", request.TighteningOptions.Policy.Mode.ToString())
-                .WithMetric("tightening.nullBudget", request.TighteningOptions.Policy.NullBudget)
-                .WithFlag("emission.includePlatformAutoIndexes", request.SmoOptions.IncludePlatformAutoIndexes)
-                .WithFlag("emission.emitBareTableOnly", request.SmoOptions.EmitBareTableOnly)
-                .WithFlag("emission.sanitizeModuleNames", request.SmoOptions.SanitizeModuleNames)
-                .WithCount("emission.moduleParallelism", request.SmoOptions.ModuleParallelism)
-                .Build(),
-            "Capturing profiling snapshot.",
-            new PipelineLogMetadataBuilder()
-                .WithValue("profiling.provider", request.ProfilerProvider)
-                .WithPath("profile", request.ProfilePath)
-                .Build(),
-            "Captured profiling snapshot.");
     }
 
     private async Task<Result<ProfileSnapshot>> CaptureProfileAsync(

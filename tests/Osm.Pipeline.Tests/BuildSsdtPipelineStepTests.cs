@@ -34,7 +34,10 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var step = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var step = new BuildSsdtBootstrapStep(
+            CreatePipelineBootstrapper(),
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
 
         var result = await step.ExecuteAsync(initial);
 
@@ -87,7 +90,10 @@ public class BuildSsdtPipelineStepTests
 
         var request = CreateRequest(output.Path, cacheOptions: cacheOptions);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(
+            CreatePipelineBootstrapper(),
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var coordinator = new EvidenceCacheCoordinator(cacheService);
         var step = new BuildSsdtEvidenceCacheStep(coordinator);
@@ -108,7 +114,10 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(
+            CreatePipelineBootstrapper(),
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -133,7 +142,10 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(
+            CreatePipelineBootstrapper(),
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -169,7 +181,10 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(
+            CreatePipelineBootstrapper(),
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -205,7 +220,10 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new CollidingStaticEntityDataProvider());
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(
+            CreatePipelineBootstrapper(),
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -250,7 +268,10 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(
+            CreatePipelineBootstrapper(),
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -319,7 +340,10 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(
+            CreatePipelineBootstrapper(),
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
@@ -354,7 +378,10 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
         var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
-        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapStep = new BuildSsdtBootstrapStep(
+            CreatePipelineBootstrapper(),
+            CreateProfilerFactory(),
+            new PipelineBootstrapTelemetryFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var evidenceState = new EvidencePrepared(
             bootstrapState.Request,
