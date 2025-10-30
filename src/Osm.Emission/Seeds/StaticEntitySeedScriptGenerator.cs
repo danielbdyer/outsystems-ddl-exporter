@@ -132,15 +132,22 @@ public static class StaticEntitySeedDefinitionBuilder
         }
 
         var columnDefinitions = filteredAttributes
-            .Select(attribute => new StaticEntitySeedColumn(
-                attribute.LogicalName.Value,
-                attribute.ColumnName.Value,
-                attribute.DataType,
-                attribute.Length,
-                attribute.Precision,
-                attribute.Scale,
-                primaryColumns.Contains(attribute.ColumnName.Value),
-                attribute.OnDisk.IsIdentity ?? attribute.IsAutoNumber))
+            .Select(attribute =>
+            {
+                var physicalName = attribute.ColumnName.Value;
+                var emissionName = physicalName;
+
+                return new StaticEntitySeedColumn(
+                    attribute.LogicalName.Value,
+                    physicalName,
+                    emissionName,
+                    attribute.DataType,
+                    attribute.Length,
+                    attribute.Precision,
+                    attribute.Scale,
+                    primaryColumns.Contains(physicalName),
+                    attribute.OnDisk.IsIdentity ?? attribute.IsAutoNumber);
+            })
             .ToImmutableArray();
 
         if (columnDefinitions.IsDefault)
@@ -181,6 +188,7 @@ public sealed record StaticEntitySeedTableDefinition(
 public sealed record StaticEntitySeedColumn(
     string LogicalName,
     string ColumnName,
+    string EmissionName,
     string DataType,
     int? Length,
     int? Precision,
@@ -188,9 +196,11 @@ public sealed record StaticEntitySeedColumn(
     bool IsPrimaryKey,
     bool IsIdentity)
 {
-    public string TargetColumnName => string.IsNullOrWhiteSpace(LogicalName)
+    public string EffectiveColumnName => string.IsNullOrWhiteSpace(EmissionName)
         ? ColumnName
-        : LogicalName;
+        : EmissionName;
+
+    public string TargetColumnName => EffectiveColumnName;
 }
 
 public sealed record StaticEntityRow(ImmutableArray<object?> Values)
