@@ -113,6 +113,40 @@ public sealed class SqlExtractionParityTests
         Assert.Contains("timeout", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task AdvancedSqlExecutor_ShouldPopulateSamplingParameters()
+    {
+        var connectionFactory = new SqlConnectionFactory(_fixture.DatabaseConnectionString);
+        const long expectedThreshold = 1_234_567;
+        const int expectedSampleSize = 98765;
+        var sampling = new SqlSamplingOptions(expectedThreshold, expectedSampleSize);
+        var executor = new SqlClientAdvancedSqlExecutor(
+            connectionFactory,
+            new InlineScriptProvider(
+                """
+                DECLARE @payload NVARCHAR(MAX) =
+                    N'{"threshold":' + CONVERT(NVARCHAR(30), @RowSamplingThreshold) +
+                    N',"sampleSize":' + CONVERT(NVARCHAR(30), @SampleSize) + N'}';
+                SELECT @payload;
+                """),
+            new SqlExecutionOptions(null, sampling));
+
+        await using var destination = new MemoryStream();
+        var request = new AdvancedSqlRequest(ImmutableArray<ModuleName>.Empty, includeSystemModules: false, includeInactiveModules: true, onlyActiveAttributes: false);
+        var result = await executor.ExecuteAsync(request, destination, CancellationToken.None).ConfigureAwait(false);
+
+        Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(error => $"{error.Code}: {error.Message}")));
+
+        destination.Position = 0;
+        using var reader = new StreamReader(destination, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        var payload = await reader.ReadToEndAsync().ConfigureAwait(false);
+
+        using var document = JsonDocument.Parse(payload);
+        var root = document.RootElement;
+        Assert.Equal(expectedThreshold, root.GetProperty("threshold").GetInt64());
+        Assert.Equal(expectedSampleSize, root.GetProperty("sampleSize").GetInt32());
+    }
+
     private static string Canonicalize(string json)
     {
         var node = JsonNode.Parse(json) ?? throw new InvalidOperationException("JSON payload could not be parsed.");

@@ -3,7 +3,8 @@
    GOAL #1: emit 100% of module/entity/attribute/index fields in README schema,
    GOAL #2: reconcile ossys intent with sys.* physical reality.
    Inputs:
-     @ModuleNamesCsv (Text), @IncludeSystem (Boolean), @IncludeInactive (Boolean), @OnlyActiveAttributes (Boolean)
+     @ModuleNamesCsv (Text), @IncludeSystem (Boolean), @IncludeInactive (Boolean), @OnlyActiveAttributes (Boolean),
+     @RowSamplingThreshold (BigInt), @SampleSize (Int)
    Output: JSON
    ============================================================================ */
 
@@ -25,11 +26,26 @@ DECLARE @ModuleNamesCsv NVARCHAR(MAX) = N'OutSystemsModule1_CS,OutSystemsModel2_
 DECLARE @IncludeSystem BIT = 1;
 DECLARE @IncludeInactive BIT = 0;
 DECLARE @OnlyActiveAttributes BIT = 1;
+DECLARE @RowSamplingThreshold BIGINT = 250000;
+DECLARE @SampleSize INT = 50000;
 */
 
 /* --------------------------------------------------------------------------
    Phase 1: Collect & materialize metadata
 ----------------------------------------------------------------------------*/
+
+IF @RowSamplingThreshold IS NULL
+BEGIN
+    SET @RowSamplingThreshold = 0;
+END;
+
+IF @SampleSize IS NULL
+BEGIN
+    SET @SampleSize = 0;
+END;
+
+EXEC sys.sp_set_session_context @key = N'osm.sqlSampling.rowThreshold', @value = @RowSamplingThreshold;
+EXEC sys.sp_set_session_context @key = N'osm.sqlSampling.sampleSize', @value = @SampleSize;
 
 -- 1) #ModuleNames
 IF OBJECT_ID('tempdb..#ModuleNames') IS NOT NULL DROP TABLE #ModuleNames;
