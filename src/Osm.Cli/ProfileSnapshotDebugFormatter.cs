@@ -51,16 +51,45 @@ internal static class ProfileSnapshotDebugFormatter
                 foreignKey.Reference.ToColumn.Value,
                 foreignKey.Reference.HasDatabaseConstraint,
                 foreignKey.HasOrphan,
-                foreignKey.IsNoCheck)).ToArray());
+                foreignKey.IsNoCheck)).ToArray(),
+            snapshot.CoverageAnomalies.Select(anomaly => new ProfileCoverageAnomalyDebug(
+                anomaly.Type.ToString(),
+                anomaly.Message,
+                anomaly.RemediationHint,
+                FormatCoordinate(anomaly),
+                anomaly.Columns.ToArray(),
+                anomaly.Outcome.ToString())).ToArray());
 
         return JsonSerializer.Serialize(document, JsonOptions);
+    }
+
+    private static string FormatCoordinate(ProfilingCoverageAnomaly anomaly)
+    {
+        var coordinate = anomaly.Coordinate;
+        var baseScope = string.IsNullOrWhiteSpace(coordinate.Column?.Value)
+            ? $"{coordinate.Schema.Value}.{coordinate.Table.Value}"
+            : $"{coordinate.Schema.Value}.{coordinate.Table.Value}.{coordinate.Column.Value}";
+
+        if (coordinate.RelatedTable is null)
+        {
+            return baseScope;
+        }
+
+        var relatedSchema = coordinate.RelatedSchema?.Value ?? coordinate.Schema.Value;
+        var relatedTable = coordinate.RelatedTable.Value;
+        var relatedScope = coordinate.RelatedColumn is null
+            ? $"{relatedSchema}.{relatedTable}"
+            : $"{relatedSchema}.{relatedTable}.{coordinate.RelatedColumn.Value}";
+
+        return $"{baseScope} → {relatedScope}";
     }
 
     private sealed record ProfileSnapshotDebugDocument(
         IReadOnlyList<ProfileColumnDebug> Columns,
         IReadOnlyList<ProfileUniqueCandidateDebug> UniqueCandidates,
         IReadOnlyList<ProfileCompositeUniqueCandidateDebug> CompositeUniqueCandidates,
-        IReadOnlyList<ProfileForeignKeyDebug> ForeignKeys);
+        IReadOnlyList<ProfileForeignKeyDebug> ForeignKeys,
+        IReadOnlyList<ProfileCoverageAnomalyDebug> CoverageAnomalies);
 
     private sealed record ProfileColumnDebug(
         string Schema,
@@ -96,4 +125,12 @@ internal static class ProfileSnapshotDebugFormatter
         bool HasDatabaseConstraint,
         bool HasOrphan,
         bool IsNoCheck);
+
+    private sealed record ProfileCoverageAnomalyDebug(
+        string Type,
+        string Message,
+        string Remediation,
+        string Coordinate,
+        IReadOnlyList<string> Columns,
+        string Outcome);
 }

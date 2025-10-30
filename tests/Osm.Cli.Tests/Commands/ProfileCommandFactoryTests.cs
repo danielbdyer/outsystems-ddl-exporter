@@ -201,6 +201,7 @@ public class ProfileCommandFactoryTests
                 new CaptureProfileSnapshotSummary(snapshot.Columns.Length, snapshot.UniqueCandidates.Length, snapshot.CompositeUniqueCandidates.Length, snapshot.ForeignKeys.Length, 1),
                 Array.Empty<CaptureProfileInsight>(),
                 Array.Empty<string>(),
+                Array.Empty<CaptureProfileCoverageAnomaly>(),
                 DateTimeOffset.UtcNow);
 
             var pipelineResult = new CaptureProfilePipelineResult(
@@ -209,6 +210,7 @@ public class ProfileCommandFactoryTests
                 "output/profile.json",
                 "output/manifest.json",
                 ImmutableArray<ProfilingInsight>.Empty,
+                ImmutableArray<ProfilingCoverageAnomaly>.Empty,
                 PipelineExecutionLog.Empty,
                 ImmutableArray<string>.Empty);
 

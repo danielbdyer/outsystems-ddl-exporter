@@ -41,7 +41,8 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
             Columns = snapshot.Columns.Select(MapColumn).ToArray(),
             UniqueCandidates = snapshot.UniqueCandidates.Select(MapUniqueCandidate).ToArray(),
             CompositeUniqueCandidates = snapshot.CompositeUniqueCandidates.Select(MapCompositeUniqueCandidate).ToArray(),
-            ForeignKeys = snapshot.ForeignKeys.Select(MapForeignKey).ToArray()
+            ForeignKeys = snapshot.ForeignKeys.Select(MapForeignKey).ToArray(),
+            CoverageAnomalies = snapshot.CoverageAnomalies.Select(MapCoverageAnomaly).ToArray()
         };
 
         await JsonSerializer.SerializeAsync(destination, document, SerializerOptions, cancellationToken).ConfigureAwait(false);
@@ -108,6 +109,19 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
         };
     }
 
+    private static CoverageAnomalyDocument MapCoverageAnomaly(ProfilingCoverageAnomaly anomaly)
+    {
+        return new CoverageAnomalyDocument
+        {
+            Type = anomaly.Type,
+            Message = anomaly.Message,
+            Hint = anomaly.RemediationHint,
+            Outcome = anomaly.Outcome,
+            Columns = anomaly.Columns.ToArray(),
+            Coordinate = MapCoordinate(anomaly.Coordinate)
+        };
+    }
+
     private static ProfilingProbeStatusDocument MapProbeStatus(ProfilingProbeStatus status)
     {
         return new ProfilingProbeStatusDocument
@@ -115,6 +129,19 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
             CapturedAtUtc = status.CapturedAtUtc,
             Outcome = status.Outcome,
             SampleSize = status.SampleSize
+        };
+    }
+
+    private static CoverageCoordinateDocument MapCoordinate(ProfilingInsightCoordinate coordinate)
+    {
+        return new CoverageCoordinateDocument
+        {
+            Schema = coordinate.Schema.Value,
+            Table = coordinate.Table.Value,
+            Column = coordinate.Column?.Value,
+            RelatedSchema = coordinate.RelatedSchema?.Value,
+            RelatedTable = coordinate.RelatedTable?.Value,
+            RelatedColumn = coordinate.RelatedColumn?.Value
         };
     }
 
@@ -131,6 +158,9 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
 
         [JsonPropertyName("fkReality")]
         public ForeignKeyDocument[] ForeignKeys { get; init; } = Array.Empty<ForeignKeyDocument>();
+
+        [JsonPropertyName("coverageAnomalies")]
+        public CoverageAnomalyDocument[] CoverageAnomalies { get; init; } = Array.Empty<CoverageAnomalyDocument>();
     }
 
     private sealed record ColumnDocument
@@ -215,6 +245,48 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
 
         [JsonPropertyName("ProbeStatus")]
         public ProfilingProbeStatusDocument ProbeStatus { get; init; } = new();
+    }
+
+    private sealed record CoverageAnomalyDocument
+    {
+        [JsonPropertyName("type")]
+        public ProfilingCoverageAnomalyType Type { get; init; }
+
+        [JsonPropertyName("message")]
+        public string Message { get; init; } = string.Empty;
+
+        [JsonPropertyName("hint")]
+        public string Hint { get; init; } = string.Empty;
+
+        [JsonPropertyName("coordinate")]
+        public CoverageCoordinateDocument Coordinate { get; init; } = new();
+
+        [JsonPropertyName("columns")]
+        public string[] Columns { get; init; } = Array.Empty<string>();
+
+        [JsonPropertyName("outcome")]
+        public ProfilingProbeOutcome Outcome { get; init; }
+    }
+
+    private sealed record CoverageCoordinateDocument
+    {
+        [JsonPropertyName("schema")]
+        public string Schema { get; init; } = string.Empty;
+
+        [JsonPropertyName("table")]
+        public string Table { get; init; } = string.Empty;
+
+        [JsonPropertyName("column")]
+        public string? Column { get; init; }
+
+        [JsonPropertyName("relatedSchema")]
+        public string? RelatedSchema { get; init; }
+
+        [JsonPropertyName("relatedTable")]
+        public string? RelatedTable { get; init; }
+
+        [JsonPropertyName("relatedColumn")]
+        public string? RelatedColumn { get; init; }
     }
 
     private sealed record ForeignKeyReferenceDocument
