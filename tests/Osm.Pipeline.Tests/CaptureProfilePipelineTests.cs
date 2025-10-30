@@ -1,11 +1,15 @@
 using System;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
 using Osm.Json;
+using Osm.Domain.Profiling;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
@@ -92,6 +96,58 @@ public class CaptureProfilePipelineTests
         Assert.Contains(payload.ExecutionLog.Entries, entry => entry.Step == "profiling.persisted");
     }
 
+    [Fact]
+    public async Task HandleAsync_PropagatesCoverageAnomaliesToManifest()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+        var coordinate = ProfilingInsightCoordinate.Create(
+            model.Modules[0].Entities[0].Schema,
+            model.Modules[0].Entities[0].PhysicalName,
+            model.Modules[0].Entities[0].Attributes[0].ColumnName).Value;
+        var anomaly = ProfilingCoverageAnomaly.Create(
+            ProfilingCoverageAnomalyType.NullCountProbeMissing,
+            "Null-count probe missing",
+            "Increase timeout",
+            coordinate,
+            new[] { model.Modules[0].Entities[0].Attributes[0].ColumnName.Value },
+            ProfilingProbeOutcome.Unknown);
+
+        var profile = ProfileSnapshot.Create(
+            Array.Empty<ColumnProfile>(),
+            Array.Empty<UniqueCandidateProfile>(),
+            Array.Empty<CompositeUniqueCandidateProfile>(),
+            Array.Empty<ForeignKeyReality>(),
+            new[] { anomaly }).Value;
+
+        var context = new PipelineBootstrapContext(
+            model,
+            ImmutableArray<EntityModel>.Empty,
+            profile,
+            ImmutableArray<ProfilingInsight>.Empty,
+            ImmutableArray<string>.Empty);
+
+        using var output = new TempDirectory();
+        var timeProvider = TimeProvider.System;
+        var serializer = new ProfileSnapshotSerializer();
+        var pipeline = new CaptureProfilePipeline(
+            timeProvider,
+            new StubBootstrapper(context),
+            new NoopProfilerFactory(),
+            serializer);
+
+        var request = CreateRequest(outputDirectory: output.Path);
+
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsSuccess);
+        var payload = result.Value;
+
+        Assert.Contains(payload.CoverageAnomalies, entry => entry.Type == ProfilingCoverageAnomalyType.NullCountProbeMissing);
+        Assert.Contains(payload.Manifest.Warnings, warning => warning.Contains("Coverage anomaly", StringComparison.Ordinal));
+        Assert.Single(payload.Manifest.CoverageAnomalies);
+        Assert.Equal("Coverage", payload.Manifest.Insights.Last().Category);
+    }
+
     private static CaptureProfilePipeline CreatePipeline()
     {
         var timeProvider = TimeProvider.System;
@@ -149,6 +205,32 @@ public class CaptureProfilePipelineTests
         {
             return Task.FromException<System.Data.Common.DbConnection>(
                 new InvalidOperationException("SQL profiler should not be invoked in fixture-driven tests."));
+        }
+    }
+
+    private sealed class StubBootstrapper : IPipelineBootstrapper
+    {
+        private readonly PipelineBootstrapContext _context;
+
+        public StubBootstrapper(PipelineBootstrapContext context)
+        {
+            _context = context;
+        }
+
+        public Task<Result<PipelineBootstrapContext>> BootstrapAsync(
+            PipelineExecutionLogBuilder log,
+            PipelineBootstrapRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result<PipelineBootstrapContext>.Success(_context));
+        }
+    }
+
+    private sealed class NoopProfilerFactory : IDataProfilerFactory
+    {
+        public Result<IDataProfiler> Create(BuildSsdtPipelineRequest request, OsmModel model)
+        {
+            throw new InvalidOperationException("Profiler factory should not be invoked in coverage anomaly tests.");
         }
     }
 }

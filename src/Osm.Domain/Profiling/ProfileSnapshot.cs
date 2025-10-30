@@ -8,13 +8,15 @@ public sealed record ProfileSnapshot(
     ImmutableArray<ColumnProfile> Columns,
     ImmutableArray<UniqueCandidateProfile> UniqueCandidates,
     ImmutableArray<CompositeUniqueCandidateProfile> CompositeUniqueCandidates,
-    ImmutableArray<ForeignKeyReality> ForeignKeys)
+    ImmutableArray<ForeignKeyReality> ForeignKeys,
+    ImmutableArray<ProfilingCoverageAnomaly> CoverageAnomalies)
 {
     public static Result<ProfileSnapshot> Create(
         IEnumerable<ColumnProfile> columns,
         IEnumerable<UniqueCandidateProfile> uniqueCandidates,
         IEnumerable<CompositeUniqueCandidateProfile> compositeUniqueCandidates,
-        IEnumerable<ForeignKeyReality> foreignKeys)
+        IEnumerable<ForeignKeyReality> foreignKeys,
+        IEnumerable<ProfilingCoverageAnomaly>? coverageAnomalies = null)
     {
         if (columns is null)
         {
@@ -40,7 +42,10 @@ public sealed record ProfileSnapshot(
         var uniqueArray = uniqueCandidates.ToImmutableArray();
         var compositeArray = compositeUniqueCandidates.ToImmutableArray();
         var fkArray = foreignKeys.ToImmutableArray();
+        var anomalyArray = coverageAnomalies is null
+            ? ImmutableArray<ProfilingCoverageAnomaly>.Empty
+            : coverageAnomalies.ToImmutableArray();
 
-        return Result<ProfileSnapshot>.Success(new ProfileSnapshot(columnArray, uniqueArray, compositeArray, fkArray));
+        return Result<ProfileSnapshot>.Success(new ProfileSnapshot(columnArray, uniqueArray, compositeArray, fkArray, anomalyArray));
     }
 }

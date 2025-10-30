@@ -439,7 +439,8 @@ public class SmoModelFactoryTests
             ImmutableArray<ColumnProfile>.Empty,
             ImmutableArray<UniqueCandidateProfile>.Empty,
             ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
-            ImmutableArray<ForeignKeyReality>.Empty);
+            ImmutableArray<ForeignKeyReality>.Empty,
+            ImmutableArray<ProfilingCoverageAnomaly>.Empty);
 
         var policy = new TighteningPolicy();
         var decisions = policy.Decide(updatedModel, emptySnapshot, TighteningOptions.Default);
