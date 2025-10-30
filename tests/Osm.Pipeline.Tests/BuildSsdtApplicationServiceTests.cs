@@ -12,6 +12,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
 using Opportunities = Osm.Validation.Tightening.Opportunities;
@@ -57,7 +58,7 @@ public sealed class BuildSsdtApplicationServiceTests
 
         var dispatcher = new RecordingDispatcher();
         dispatcher.SetResult(Result<BuildSsdtPipelineResult>.Success(CreatePipelineResult()));
-        var assembler = new BuildSsdtRequestAssembler();
+        var assembler = new BuildSsdtRequestAssembler(new StubSqlProfilerPreflight());
         var modelResolution = new StubModelResolutionService();
         var outputResolver = new TestOutputDirectoryResolver();
         var namingBinder = new TestNamingOverridesBinder();
@@ -226,5 +227,11 @@ public sealed class BuildSsdtApplicationServiceTests
         {
             return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success(Array.Empty<StaticEntityTableData>()));
         }
+    }
+
+    private sealed class StubSqlProfilerPreflight : ISqlProfilerPreflight
+    {
+        public Result<SqlProfilerPreflightResult> Run(SqlProfilerPreflightRequest request)
+            => Result<SqlProfilerPreflightResult>.Success(SqlProfilerPreflightResult.Empty);
     }
 }

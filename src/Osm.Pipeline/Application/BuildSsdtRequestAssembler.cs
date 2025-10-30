@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -9,6 +10,7 @@ using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -19,7 +21,8 @@ public sealed record BuildSsdtRequestAssembly(
     BuildSsdtPipelineRequest Request,
     string ProfilerProvider,
     string? ProfilePath,
-    string OutputDirectory);
+    string OutputDirectory,
+    ImmutableArray<SqlProfilerPreflightDiagnostic> ProfilerDiagnostics);
 
 public sealed record BuildSsdtRequestAssemblerContext(
     CliConfiguration Configuration,
@@ -34,10 +37,18 @@ public sealed record BuildSsdtRequestAssemblerContext(
     IStaticEntityDataProvider? StaticDataProvider,
     CacheOptionsOverrides CacheOverrides,
     string? ConfigPath,
-    SqlMetadataLog? SqlMetadataLog);
+    SqlMetadataLog? SqlMetadataLog,
+    bool SkipProfilerPreflight);
 
 public sealed class BuildSsdtRequestAssembler
 {
+    private readonly ISqlProfilerPreflight _preflight;
+
+    public BuildSsdtRequestAssembler(ISqlProfilerPreflight preflight)
+    {
+        _preflight = preflight ?? throw new ArgumentNullException(nameof(preflight));
+    }
+
     public Result<BuildSsdtRequestAssembly> Assemble(BuildSsdtRequestAssemblerContext context)
     {
         if (context is null)
@@ -74,6 +85,44 @@ public sealed class BuildSsdtRequestAssembler
             cacheOptions = cacheOptions with { Metadata = metadata };
         }
 
+        var skipPreflight = context.SkipProfilerPreflight;
+        var profilerDiagnostics = ImmutableArray<SqlProfilerPreflightDiagnostic>.Empty;
+        SqlProfilerPreflightResult? preflightResult = null;
+
+        if (string.Equals(profilerProvider, "sql", StringComparison.OrdinalIgnoreCase))
+        {
+            if (skipPreflight)
+            {
+                profilerDiagnostics = ImmutableArray.Create(
+                    new SqlProfilerPreflightDiagnostic(
+                        SqlProfilerPreflightSeverity.Information,
+                        "Profiler preflight skipped via --skip-profiler-preflight."));
+            }
+            else if (!string.IsNullOrWhiteSpace(context.SqlOptions.ConnectionString))
+            {
+                var connectionOptions = SqlProfilerOptionFactory.CreateConnectionOptions(context.SqlOptions.Authentication);
+                var profilerOptions = SqlProfilerOptionFactory.CreateProfilerOptions(context.SqlOptions, context.SmoOptions);
+                var preflight = _preflight.Run(new SqlProfilerPreflightRequest(
+                    context.SqlOptions.ConnectionString!,
+                    connectionOptions,
+                    profilerOptions));
+
+                if (preflight.IsFailure)
+                {
+                    return Result<BuildSsdtRequestAssembly>.Failure(preflight.Errors);
+                }
+
+                preflightResult = preflight.Value;
+                profilerDiagnostics = preflightResult.Diagnostics;
+            }
+            else
+            {
+                return Result<BuildSsdtRequestAssembly>.Failure(ValidationError.Create(
+                    "pipeline.buildSsdt.sql.connectionString.missing",
+                    "Connection string is required when using the SQL profiler."));
+            }
+        }
+
         var request = new BuildSsdtPipelineRequest(
             context.ModelPath,
             context.ModuleFilter,
@@ -88,9 +137,11 @@ public sealed class BuildSsdtRequestAssembler
             cacheOptions,
             context.StaticDataProvider,
             Path.Combine(context.OutputDirectory, "Seeds"),
-            context.SqlMetadataLog);
+            context.SqlMetadataLog,
+            skipPreflight,
+            preflightResult);
 
-        return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory);
+        return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory, profilerDiagnostics);
     }
 
     private static string ComputeSha256(string value)

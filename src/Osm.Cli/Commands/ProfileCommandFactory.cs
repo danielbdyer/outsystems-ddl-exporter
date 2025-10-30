@@ -21,6 +21,7 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
     private readonly Option<string?> _profilerProviderOption = new("--profiler-provider", "Profiler provider to use (fixture or sql).");
     private readonly Option<string?> _outputOption = new("--out", () => "profiles", "Directory to write profiling artifacts.");
     private readonly Option<string?> _sqlMetadataOption = new("--sql-metadata-out", "Path to write SQL metadata diagnostics (JSON).");
+    private readonly Option<bool> _skipProfilerPreflightOption = new("--skip-profiler-preflight", "Skip SQL profiler preflight checks.");
 
     public ProfileCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -44,7 +45,8 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
             _profileOption,
             _profilerProviderOption,
             _outputOption,
-            _sqlMetadataOption
+            _sqlMetadataOption,
+            _skipProfilerPreflightOption
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
@@ -69,7 +71,8 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
             parseResult.GetValueForOption(_outputOption),
             parseResult.GetValueForOption(_profilerProviderOption),
             parseResult.GetValueForOption(_profileOption),
-            parseResult.GetValueForOption(_sqlMetadataOption));
+            parseResult.GetValueForOption(_sqlMetadataOption),
+            parseResult.GetValueForOption(_skipProfilerPreflightOption));
 
         return new ProfileVerbOptions
         {
@@ -93,6 +96,8 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
         CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
         CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
         CommandConsole.EmitProfilingInsights(context.Console, pipelineResult.Insights);
+
+        CommandConsole.EmitProfilerPreflightDiagnostics(context.Console, applicationResult.ProfilerDiagnostics);
 
         if (string.Equals(applicationResult.ProfilerProvider, "sql", StringComparison.OrdinalIgnoreCase))
         {

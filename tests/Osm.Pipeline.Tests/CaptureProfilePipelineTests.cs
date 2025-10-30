@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Json;
 using Osm.Pipeline.ModelIngestion;
@@ -104,7 +105,10 @@ public class CaptureProfilePipelineTests
             new ProfilingInsightGenerator());
 
         var profileDeserializer = new ProfileSnapshotDeserializer();
-        var profilerFactory = new DataProfilerFactory(profileDeserializer, (_, _) => new FakeConnectionFactory());
+        var profilerFactory = new DataProfilerFactory(
+            profileDeserializer,
+            (_, _) => new FakeConnectionFactory(),
+            new StubSqlProfilerPreflight());
         var serializer = new ProfileSnapshotSerializer();
 
         return new CaptureProfilePipeline(timeProvider, bootstrapper, profilerFactory, serializer);
@@ -150,5 +154,11 @@ public class CaptureProfilePipelineTests
             return Task.FromException<System.Data.Common.DbConnection>(
                 new InvalidOperationException("SQL profiler should not be invoked in fixture-driven tests."));
         }
+    }
+
+    private sealed class StubSqlProfilerPreflight : ISqlProfilerPreflight
+    {
+        public Result<SqlProfilerPreflightResult> Run(SqlProfilerPreflightRequest request)
+            => Result<SqlProfilerPreflightResult>.Success(SqlProfilerPreflightResult.Empty);
     }
 }

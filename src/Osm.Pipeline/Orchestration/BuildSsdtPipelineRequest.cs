@@ -3,6 +3,7 @@ using Osm.Emission.Seeds;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Pipeline.Mediation;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Orchestration;
@@ -21,4 +22,6 @@ public sealed record BuildSsdtPipelineRequest(
     EvidenceCachePipelineOptions? EvidenceCache,
     IStaticEntityDataProvider? StaticDataProvider,
     string? SeedOutputDirectoryHint,
-    SqlMetadataLog? SqlMetadataLog = null) : ICommand<BuildSsdtPipelineResult>;
+    SqlMetadataLog? SqlMetadataLog = null,
+    bool SkipProfilerPreflight = false,
+    SqlProfilerPreflightResult? ProfilerPreflight = null) : ICommand<BuildSsdtPipelineResult>;

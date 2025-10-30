@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,6 +8,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Smo;
+using Osm.Pipeline.Profiling;
 
 namespace Osm.Pipeline.Application;
 
@@ -21,15 +23,18 @@ public sealed record CaptureProfileApplicationResult(
     string OutputDirectory,
     string ModelPath,
     string ProfilerProvider,
-    string? FixtureProfilePath);
+    string? FixtureProfilePath,
+    ImmutableArray<SqlProfilerPreflightDiagnostic> ProfilerDiagnostics);
 
 public sealed class CaptureProfileApplicationService : PipelineApplicationServiceBase, IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult>
 {
     private readonly ICommandDispatcher _dispatcher;
+    private readonly ISqlProfilerPreflight _preflight;
 
-    public CaptureProfileApplicationService(ICommandDispatcher dispatcher)
+    public CaptureProfileApplicationService(ICommandDispatcher dispatcher, ISqlProfilerPreflight preflight)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        _preflight = preflight ?? throw new ArgumentNullException(nameof(preflight));
     }
 
     public async Task<Result<CaptureProfileApplicationResult>> RunAsync(
@@ -82,6 +87,52 @@ public sealed class CaptureProfileApplicationService : PipelineApplicationServic
         var namingOverrides = context.NamingOverrides ?? baseSmoOptions.NamingOverrides;
         var smoOptions = baseSmoOptions.WithNamingOverrides(namingOverrides);
 
+        var skipPreflight = overrides.SkipProfilerPreflight;
+        var profilerDiagnostics = ImmutableArray<SqlProfilerPreflightDiagnostic>.Empty;
+        SqlProfilerPreflightResult? preflightResult = null;
+
+        if (string.Equals(profilerProvider, "sql", StringComparison.OrdinalIgnoreCase))
+        {
+            if (skipPreflight)
+            {
+                profilerDiagnostics = ImmutableArray.Create(
+                    new SqlProfilerPreflightDiagnostic(
+                        SqlProfilerPreflightSeverity.Information,
+                        "Profiler preflight skipped via --skip-profiler-preflight."));
+            }
+            else if (string.IsNullOrWhiteSpace(context.SqlOptions.ConnectionString))
+            {
+                await FlushMetadataAsync(context, cancellationToken).ConfigureAwait(false);
+                return ValidationError.Create(
+                    "pipeline.buildSsdt.sql.connectionString.missing",
+                    "Connection string is required when using the SQL profiler.");
+            }
+            else
+            {
+                var connectionOptions = SqlProfilerOptionFactory.CreateConnectionOptions(context.SqlOptions.Authentication);
+                var profilerOptions = SqlProfilerOptionFactory.CreateProfilerOptions(context.SqlOptions, smoOptions);
+                var preflight = _preflight.Run(new SqlProfilerPreflightRequest(
+                    context.SqlOptions.ConnectionString!,
+                    connectionOptions,
+                    profilerOptions));
+                preflight = await EnsureSuccessOrFlushAsync(preflight, context, cancellationToken).ConfigureAwait(false);
+                if (preflight.IsFailure)
+                {
+                    return Result<CaptureProfileApplicationResult>.Failure(preflight.Errors);
+                }
+
+                preflightResult = preflight.Value;
+                profilerDiagnostics = preflightResult.Diagnostics;
+            }
+        }
+        else if (skipPreflight)
+        {
+            profilerDiagnostics = ImmutableArray.Create(
+                new SqlProfilerPreflightDiagnostic(
+                    SqlProfilerPreflightSeverity.Information,
+                    "Profiler preflight skipped via --skip-profiler-preflight."));
+        }
+
         var request = new CaptureProfilePipelineRequest(
             modelPath,
             context.ModuleFilter,
@@ -93,7 +144,9 @@ public sealed class CaptureProfileApplicationService : PipelineApplicationServic
             context.TypeMappingPolicy,
             smoOptions,
             outputDirectory,
-            context.SqlMetadataLog);
+            context.SqlMetadataLog,
+            skipPreflight,
+            preflightResult);
 
         var pipelineResult = await _dispatcher
             .DispatchAsync<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>(request, cancellationToken)
@@ -111,7 +164,8 @@ public sealed class CaptureProfileApplicationService : PipelineApplicationServic
             outputDirectory,
             modelPath,
             profilerProvider,
-            fixtureProfilePath);
+            fixtureProfilePath,
+            profilerDiagnostics);
     }
 
     private static string ResolveProfilerProvider(CliConfiguration configuration, CaptureProfileOverrides overrides)

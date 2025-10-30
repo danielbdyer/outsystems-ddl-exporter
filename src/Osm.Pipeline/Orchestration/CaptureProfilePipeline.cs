@@ -29,7 +29,9 @@ public sealed record CaptureProfilePipelineRequest(
     TypeMappingPolicy TypeMappingPolicy,
     SmoBuildOptions SmoOptions,
     string OutputDirectory,
-    SqlMetadataLog? SqlMetadataLog = null) : ICommand<CaptureProfilePipelineResult>;
+    SqlMetadataLog? SqlMetadataLog = null,
+    bool SkipProfilerPreflight = false,
+    SqlProfilerPreflightResult? ProfilerPreflight = null) : ICommand<CaptureProfilePipelineResult>;
 
 public sealed record CaptureProfilePipelineResult(
     ProfileSnapshot Profile,
@@ -266,7 +268,9 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             EvidenceCache: null,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
-            request.SqlMetadataLog);
+            request.SqlMetadataLog,
+            request.SkipProfilerPreflight,
+            request.ProfilerPreflight);
 
         var profilerResult = _profilerFactory.Create(profilerRequest, model);
         if (profilerResult.IsFailure)

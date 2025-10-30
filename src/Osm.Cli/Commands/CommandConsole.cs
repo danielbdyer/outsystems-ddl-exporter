@@ -11,6 +11,7 @@ using Osm.Cli;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 
 namespace Osm.Cli.Commands;
@@ -196,6 +197,44 @@ internal static class CommandConsole
                 default:
                     WriteLine(console, formatted);
                     break;
+            }
+        }
+    }
+
+    public static void EmitProfilerPreflightDiagnostics(IConsole console, ImmutableArray<SqlProfilerPreflightDiagnostic> diagnostics)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (diagnostics.IsDefaultOrEmpty || diagnostics.Length == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, "Profiler preflight:");
+
+        foreach (var diagnostic in diagnostics)
+        {
+            if (diagnostic is null || string.IsNullOrWhiteSpace(diagnostic.Message))
+            {
+                continue;
+            }
+
+            var prefix = diagnostic.Severity switch
+            {
+                SqlProfilerPreflightSeverity.Warning => "[warning] ",
+                _ => "[info] "
+            };
+
+            if (diagnostic.Severity == SqlProfilerPreflightSeverity.Warning)
+            {
+                WriteErrorLine(console, prefix + diagnostic.Message);
+            }
+            else
+            {
+                WriteLine(console, prefix + diagnostic.Message);
             }
         }
     }

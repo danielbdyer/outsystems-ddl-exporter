@@ -15,6 +15,7 @@ using Osm.Domain.Profiling;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Tests.Support;
@@ -148,6 +149,70 @@ public class ProfileCommandFactoryTests
         Assert.Contains("cli.config: Missing configuration.", console.Error.ToString());
     }
 
+    [Fact]
+    public async Task Invoke_SetsSkipProfilerPreflightOverride()
+    {
+        var configurationService = new FakeConfigurationService();
+        var application = new FakeProfileApplicationService();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<ProfileCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<ProfileCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = "profile --model model.json --skip-profiler-preflight";
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(0, exitCode);
+        Assert.True(application.LastInput!.Overrides.SkipProfilerPreflight);
+    }
+
+    [Fact]
+    public async Task Invoke_EmitsProfilerPreflightDiagnostics()
+    {
+        var configurationService = new FakeConfigurationService();
+        var application = new FakeProfileApplicationService
+        {
+            ProfilerDiagnostics = ImmutableArray.Create(
+                new SqlProfilerPreflightDiagnostic(SqlProfilerPreflightSeverity.Information, "Using cached connection test."))
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<ProfileCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<ProfileCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = "profile --model model.json";
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(0, exitCode);
+        var output = console.Out.ToString() ?? string.Empty;
+        Assert.Contains("Profiler preflight:", output);
+        Assert.Contains("[info] Using cached connection test.", output);
+    }
+
     private sealed class FakeConfigurationService : ICliConfigurationService
     {
         public string? LastPath { get; private set; }
@@ -177,6 +242,8 @@ public class ProfileCommandFactoryTests
 
         public IReadOnlyList<ValidationError>? FailureErrors { get; init; }
 
+        public ImmutableArray<SqlProfilerPreflightDiagnostic> ProfilerDiagnostics { get; init; } = ImmutableArray<SqlProfilerPreflightDiagnostic>.Empty;
+
         public Task<Result<CaptureProfileApplicationResult>> RunAsync(CaptureProfileApplicationInput input, CancellationToken cancellationToken = default)
         {
             LastInput = input;
@@ -189,7 +256,7 @@ public class ProfileCommandFactoryTests
             return Task.FromResult(Result<CaptureProfileApplicationResult>.Success(LastResult));
         }
 
-        private static CaptureProfileApplicationResult CreateResult()
+        private CaptureProfileApplicationResult CreateResult()
         {
             var snapshot = ProfileFixtures.LoadSnapshot(Path.Combine("profiling", "profile.edge-case.json"));
             var manifest = new CaptureProfileManifest(
@@ -217,7 +284,8 @@ public class ProfileCommandFactoryTests
                 "output",
                 "model.json",
                 "fixture",
-                "profile.json");
+                "profile.json",
+                ProfilerDiagnostics);
         }
     }
 

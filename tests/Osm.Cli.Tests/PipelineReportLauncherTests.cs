@@ -9,6 +9,7 @@ using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
 using Opportunity = Osm.Validation.Tightening.Opportunities.Opportunity;
@@ -273,6 +274,7 @@ public class PipelineReportLauncherTests
             output.Path,
             Path.Combine(output.Path, "model.json"),
             false,
-            ImmutableArray<string>.Empty);
+            ImmutableArray<string>.Empty,
+            ImmutableArray<SqlProfilerPreflightDiagnostic>.Empty);
     }
 }

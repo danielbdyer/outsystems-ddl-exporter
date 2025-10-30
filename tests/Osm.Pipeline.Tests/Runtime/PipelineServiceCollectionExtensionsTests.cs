@@ -69,6 +69,7 @@ public class PipelineServiceCollectionExtensionsTests
         Assert.Contains(services, d => d.ServiceType == typeof(IModelJsonDeserializer) && d.ImplementationType == typeof(ModelJsonDeserializer));
         Assert.Contains(services, d => d.ServiceType == typeof(IProfileSnapshotDeserializer) && d.ImplementationType == typeof(ProfileSnapshotDeserializer));
         Assert.Contains(services, d => d.ServiceType == typeof(IProfileSnapshotSerializer) && d.ImplementationType == typeof(ProfileSnapshotSerializer));
+        Assert.Contains(services, d => d.ServiceType == typeof(ISqlProfilerPreflight) && d.ImplementationType == typeof(SqlProfilerPreflight));
         Assert.Contains(services, d => d.ServiceType == typeof(IDataProfilerFactory) && d.ImplementationType == typeof(DataProfilerFactory));
         Assert.Contains(services, d => d.ServiceType == typeof(IModelIngestionService) && d.ImplementationType == typeof(ModelIngestionService));
         Assert.Contains(services, d => d.ServiceType == typeof(ModuleFilter) && d.ImplementationType == typeof(ModuleFilter));

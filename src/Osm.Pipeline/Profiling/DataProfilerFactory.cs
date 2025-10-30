@@ -11,13 +11,16 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
 {
     private readonly IProfileSnapshotDeserializer _profileSnapshotDeserializer;
     private readonly Func<string, SqlConnectionOptions, IDbConnectionFactory> _connectionFactoryFactory;
+    private readonly ISqlProfilerPreflight _preflight;
 
     public DataProfilerFactory(
         IProfileSnapshotDeserializer profileSnapshotDeserializer,
-        Func<string, SqlConnectionOptions, IDbConnectionFactory> connectionFactoryFactory)
+        Func<string, SqlConnectionOptions, IDbConnectionFactory> connectionFactoryFactory,
+        ISqlProfilerPreflight preflight)
     {
         _profileSnapshotDeserializer = profileSnapshotDeserializer ?? throw new ArgumentNullException(nameof(profileSnapshotDeserializer));
         _connectionFactoryFactory = connectionFactoryFactory ?? throw new ArgumentNullException(nameof(connectionFactoryFactory));
+        _preflight = preflight ?? throw new ArgumentNullException(nameof(preflight));
     }
 
     public Result<IDataProfiler> Create(BuildSsdtPipelineRequest request, OsmModel model)
@@ -57,14 +60,21 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
                 "Connection string is required when using the SQL profiler."));
         }
 
-        var sampling = CreateSamplingOptions(request.SqlOptions.Sampling);
-        var connectionOptions = CreateConnectionOptions(request.SqlOptions.Authentication);
-        var profilerOptions = SqlProfilerOptions.Default with
+        var connectionOptions = SqlProfilerOptionFactory.CreateConnectionOptions(request.SqlOptions.Authentication);
+        var profilerOptions = SqlProfilerOptionFactory.CreateProfilerOptions(request.SqlOptions, request.SmoOptions);
+
+        if (!request.SkipProfilerPreflight && request.ProfilerPreflight is null)
         {
-            CommandTimeoutSeconds = request.SqlOptions.CommandTimeoutSeconds,
-            Sampling = sampling,
-            NamingOverrides = request.SmoOptions.NamingOverrides
-        };
+            var preflightRequest = new SqlProfilerPreflightRequest(
+                request.SqlOptions.ConnectionString!,
+                connectionOptions,
+                profilerOptions);
+            var preflightResult = _preflight.Run(preflightRequest);
+            if (preflightResult.IsFailure)
+            {
+                return Result<IDataProfiler>.Failure(preflightResult.Errors);
+            }
+        }
 
         var connectionFactory = _connectionFactoryFactory(request.SqlOptions.ConnectionString!, connectionOptions);
         var profiler = new SqlDataProfiler(connectionFactory, model, profilerOptions, request.SqlMetadataLog);
@@ -84,19 +94,4 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
         return Result<IDataProfiler>.Success(profiler);
     }
 
-    private static SqlSamplingOptions CreateSamplingOptions(SqlSamplingSettings configuration)
-    {
-        var threshold = configuration.RowSamplingThreshold ?? SqlSamplingOptions.Default.RowCountSamplingThreshold;
-        var sampleSize = configuration.SampleSize ?? SqlSamplingOptions.Default.SampleSize;
-        return new SqlSamplingOptions(threshold, sampleSize);
-    }
-
-    private static SqlConnectionOptions CreateConnectionOptions(SqlAuthenticationSettings configuration)
-    {
-        return new SqlConnectionOptions(
-            configuration.Method,
-            configuration.TrustServerCertificate,
-            configuration.ApplicationName,
-            configuration.AccessToken);
-    }
 }

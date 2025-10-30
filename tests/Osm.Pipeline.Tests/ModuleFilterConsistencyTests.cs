@@ -11,6 +11,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
@@ -305,7 +306,7 @@ public sealed class ModuleFilterConsistencyTests
 
     private static BuildSsdtApplicationService CreateBuildService(RecordingDispatcher dispatcher)
     {
-        var assembler = new BuildSsdtRequestAssembler();
+        var assembler = new BuildSsdtRequestAssembler(new StubSqlProfilerPreflight());
         var modelResolution = new StubModelResolutionService();
         var outputDirectoryResolver = new OutputDirectoryResolver();
         var namingOverridesBinder = new NamingOverridesBinder();
@@ -369,5 +370,11 @@ public sealed class ModuleFilterConsistencyTests
             var result = new ModelResolutionResult(path!, false, ImmutableArray<string>.Empty);
             return Task.FromResult(Result<ModelResolutionResult>.Success(result));
         }
+    }
+
+    private sealed class StubSqlProfilerPreflight : ISqlProfilerPreflight
+    {
+        public Result<SqlProfilerPreflightResult> Run(SqlProfilerPreflightRequest request)
+            => Result<SqlProfilerPreflightResult>.Success(SqlProfilerPreflightResult.Empty);
     }
 }

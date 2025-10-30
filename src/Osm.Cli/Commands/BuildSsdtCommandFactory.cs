@@ -29,6 +29,7 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
     private readonly Option<string?> _renameOption = new("--rename-table", "Rename tables using source=Override syntax.");
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
     private readonly Option<string?> _sqlMetadataOption = new("--sql-metadata-out", "Path to write SQL metadata diagnostics (JSON).");
+    private readonly Option<bool> _skipProfilerPreflightOption = new("--skip-profiler-preflight", "Skip SQL profiler preflight checks.");
 
     public BuildSsdtCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -58,7 +59,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             _renameOption,
             _openReportOption,
             _globalOptions.MaxDegreeOfParallelism,
-            _sqlMetadataOption
+            _sqlMetadataOption,
+            _skipProfilerPreflightOption
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
@@ -88,7 +90,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             parseResult.GetValueForOption(_staticDataOption),
             parseResult.GetValueForOption(_renameOption),
             parseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
-            parseResult.GetValueForOption(_sqlMetadataOption));
+            parseResult.GetValueForOption(_sqlMetadataOption),
+            parseResult.GetValueForOption(_skipProfilerPreflightOption));
 
         return new BuildSsdtVerbOptions
         {
@@ -123,6 +126,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         {
             CommandConsole.EmitPipelineWarnings(context.Console, applicationResult.ModelExtractionWarnings);
         }
+
+        CommandConsole.EmitProfilerPreflightDiagnostics(context.Console, applicationResult.ProfilerDiagnostics);
 
         if (IsSqlProfiler(applicationResult.ProfilerProvider))
         {
