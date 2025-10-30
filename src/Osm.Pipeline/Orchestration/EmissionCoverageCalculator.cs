@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Osm.Domain.Model;
+using Osm.Domain.Model.Emission;
 using Osm.Emission;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -444,25 +445,20 @@ public static class EmissionCoverageCalculator
         }
     }
 
-    private sealed record DomainEntitySnapshot(
-        string ModuleName,
-        EntityModel Entity,
-        ImmutableArray<AttributeModel> EmittableAttributes,
-        IReadOnlyDictionary<string, AttributeModel> AttributeLookup)
+    private sealed record DomainEntitySnapshot(EntityEmissionSnapshot Snapshot)
     {
+        public string ModuleName => Snapshot.ModuleName;
+
+        public EntityModel Entity => Snapshot.Entity;
+
+        public ImmutableArray<AttributeModel> EmittableAttributes => Snapshot.EmittableAttributes;
+
+        public ImmutableArray<AttributeModel> IdentifierAttributes => Snapshot.IdentifierAttributes;
+
+        public IReadOnlyDictionary<string, AttributeModel> AttributeLookup => Snapshot.AttributeLookup;
+
         public static DomainEntitySnapshot Create(string moduleName, EntityModel entity)
-        {
-            var emittable = entity.Attributes
-                .Where(static attribute => attribute is not null && attribute.IsActive && !attribute.Reality.IsPresentButInactive)
-                .ToImmutableArray();
-
-            var lookup = emittable.ToDictionary(
-                attribute => attribute.ColumnName.Value,
-                attribute => attribute,
-                StringComparer.OrdinalIgnoreCase);
-
-            return new DomainEntitySnapshot(moduleName, entity, emittable, lookup);
-        }
+            => new(EntityEmissionSnapshot.Create(moduleName, entity));
     }
 
     private sealed record IndexAnalysisResult(bool Succeeded, ImmutableArray<AttributeModel> ReferencedAttributes, string Reason)

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Osm.Domain.Model;
+using Osm.Domain.Model.Emission;
 using Osm.Domain.ValueObjects;
 using Osm.Smo;
 using Xunit;
@@ -32,13 +33,23 @@ public class EntityEmissionContextTests
             activeIdentifier,
             createdOn);
 
+        var snapshot = EntityEmissionSnapshot.Create("Sales", entity);
         var context = EntityEmissionContext.Create("Sales", entity);
         var preferred = context.GetPreferredIdentifier();
 
         Assert.NotNull(preferred);
         Assert.Equal("CustomerId", preferred!.LogicalName.Value);
-        Assert.Contains(context.IdentifierAttributes, attribute => attribute.LogicalName.Value.Equals("CustomerId", StringComparison.Ordinal));
-        Assert.DoesNotContain(context.EmittableAttributes, attribute => attribute.LogicalName.Value.Equals("LegacyId", StringComparison.Ordinal));
+        Assert.Contains(
+            context.IdentifierAttributes,
+            attribute => attribute.LogicalName.Value.Equals("CustomerId", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            context.EmittableAttributes,
+            attribute => attribute.LogicalName.Value.Equals("LegacyId", StringComparison.Ordinal));
+        Assert.True(snapshot.EmittableAttributes.SequenceEqual(context.EmittableAttributes));
+        Assert.True(snapshot.IdentifierAttributes.SequenceEqual(context.IdentifierAttributes));
+        Assert.Equal(
+            snapshot.AttributeLookup.Keys.OrderBy(key => key),
+            context.AttributeLookup.Keys.OrderBy(key => key));
     }
 
     [Fact]
@@ -59,12 +70,14 @@ public class EntityEmissionContextTests
             inactiveIdentifier,
             nameAttribute);
 
+        var snapshot = EntityEmissionSnapshot.Create("Sales", entity);
         var context = EntityEmissionContext.Create("Sales", entity);
         var preferred = context.GetPreferredIdentifier();
 
         Assert.NotNull(preferred);
         Assert.Equal("LegacyId", preferred!.LogicalName.Value);
         Assert.True(context.IdentifierAttributes.IsDefaultOrEmpty);
+        Assert.Same(snapshot.FallbackIdentifier, preferred);
     }
 }
 
