@@ -82,6 +82,7 @@
 * **OutSystems**: Platform Server O11+ (cloud) with the **System** producer available (metamodel).
 * **SQL Server**: 2017+ (recommended 2019/2022).
 * **.NET**: .NET 9 SDK (or the version pinned in `global.json` when introduced).
+* **C#**: C# 13 preview compiler (`<LangVersion>preview</LangVersion>` is enforced in every project).
 * **NuGet Packages**:
 
   * `Microsoft.SqlServer.SqlManagementObjects` (SMO)

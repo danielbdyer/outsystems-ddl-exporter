@@ -5,6 +5,7 @@ using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Tests.Support;

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Tests.Support;
@@ -22,7 +23,7 @@ public class FilesystemPermissionTests
         var outputPath = output.Path;
 
         FileAttributes? originalAttributes = null;
-        UnixFileMode? originalMode = null;
+        string? originalMode = null;
 
         try
         {
@@ -44,7 +45,7 @@ public class FilesystemPermissionTests
     private static void SetReadOnly(
         string directory,
         ref FileAttributes? attributes,
-        ref UnixFileMode? mode)
+        ref string? mode)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -54,18 +55,14 @@ public class FilesystemPermissionTests
             return;
         }
 
-        mode = Directory.GetUnixFileMode(directory);
-        Directory.SetUnixFileMode(
-            directory,
-            UnixFileMode.UserRead | UnixFileMode.UserExecute |
-            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        mode = GetUnixFileMode(directory);
+        RunProcess("chmod", "a-w", directory);
     }
 
     private static void RestorePermissions(
         string directory,
         FileAttributes? attributes,
-        UnixFileMode? mode)
+        string? mode)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -80,7 +77,52 @@ public class FilesystemPermissionTests
 
         if (mode is { } unixMode)
         {
-            Directory.SetUnixFileMode(directory, unixMode);
+            RunProcess("chmod", unixMode, directory);
         }
+    }
+
+    private static string GetUnixFileMode(string directory)
+    {
+        if (OperatingSystem.IsLinux())
+        {
+            return RunProcess("stat", "-c", "%a", directory).Trim();
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return RunProcess("stat", "-f", "%Mp%Lp", directory).Trim();
+        }
+
+        throw new PlatformNotSupportedException("Unix permissions are only supported on Linux and macOS.");
+    }
+
+    private static string RunProcess(string fileName, params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo(fileName)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"Failed to start '{fileName}'.");
+
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"Command '{fileName} {string.Join(' ', arguments)}' failed with exit code {process.ExitCode}: {error}");
+        }
+
+        return output;
     }
 }
