@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.IO.Abstractions.TestingHelpers;
+using Osm.Domain.Model.Artifacts;
 using Osm.Emission;
 
 namespace Osm.Emission.Tests;
@@ -16,17 +17,8 @@ public class TablePlanWriterTests
         var writer = new TablePlanWriter(fileSystem);
         var root = fileSystem.Directory.GetCurrentDirectory();
         var outputPath = fileSystem.Path.Combine(root, "Modules", "Sample", "dbo.Sample.sql");
-        var plan = new TableEmissionPlan(
-            new TableManifestEntry(
-                Module: "Sample",
-                Schema: "dbo",
-                Table: "Sample",
-                TableFile: "Modules/Sample/dbo.Sample.sql",
-                Indexes: Array.Empty<string>(),
-                ForeignKeys: Array.Empty<string>(),
-                IncludesExtendedProperties: false),
-            outputPath,
-            "SELECT 1");
+        var snapshot = CreateSnapshot("Sample", "dbo", "Sample", "Modules/Sample/dbo.Sample.sql");
+        var plan = new TableEmissionPlan(snapshot, outputPath, "SELECT 1");
 
         await writer.WriteAsync(new[] { plan }, moduleParallelism: 1, CancellationToken.None);
 
@@ -65,17 +57,8 @@ public class TablePlanWriterTests
         });
 
         var writer = new TablePlanWriter(fileSystem);
-        var plan = new TableEmissionPlan(
-            new TableManifestEntry(
-                Module: "Sample",
-                Schema: "dbo",
-                Table: "Sample",
-                TableFile: "Modules/Sample/dbo.Sample.sql",
-                Indexes: Array.Empty<string>(),
-                ForeignKeys: Array.Empty<string>(),
-                IncludesExtendedProperties: false),
-            existingPath,
-            "SELECT 1");
+        var snapshot = CreateSnapshot("Sample", "dbo", "Sample", "Modules/Sample/dbo.Sample.sql");
+        var plan = new TableEmissionPlan(snapshot, existingPath, "SELECT 1");
 
         await writer.WriteAsync(new[] { plan }, moduleParallelism: 1, CancellationToken.None);
 
@@ -86,22 +69,39 @@ public class TablePlanWriterTests
     private static TableEmissionPlan CreatePlan(MockFileSystem fileSystem, string root, string name)
     {
         var path = fileSystem.Path.Combine(root, "Modules", "Sample", $"dbo.{name}.sql");
-        return new TableEmissionPlan(
-            new TableManifestEntry(
-                Module: "Sample",
-                Schema: "dbo",
-                Table: name,
-                TableFile: $"Modules/Sample/dbo.{name}.sql",
-                Indexes: Array.Empty<string>(),
-                ForeignKeys: Array.Empty<string>(),
-                IncludesExtendedProperties: false),
-            path,
-            $"SELECT '{name}'");
+        var snapshot = CreateSnapshot("Sample", "dbo", name, $"Modules/Sample/dbo.{name}.sql");
+        return new TableEmissionPlan(snapshot, path, $"SELECT '{name}'");
     }
 
     private static MockFileSystem CreateFileSystem(IDictionary<string, MockFileData>? files = null)
     {
         var root = OperatingSystem.IsWindows() ? @"c:\" : "/";
         return new MockFileSystem(files ?? new Dictionary<string, MockFileData>(), root);
+    }
+
+    private static TableArtifactSnapshot CreateSnapshot(
+        string module,
+        string schema,
+        string table,
+        string tableFile)
+    {
+        var identity = TableArtifactIdentity.Create(module, module, schema, table, table, null);
+        var metadata = TableArtifactMetadata.Create(null);
+        var snapshot = TableArtifactSnapshot.Create(
+            identity,
+            Array.Empty<TableColumnSnapshot>(),
+            Array.Empty<TableIndexSnapshot>(),
+            Array.Empty<TableForeignKeySnapshot>(),
+            Array.Empty<TableTriggerSnapshot>(),
+            metadata);
+
+        var emission = TableArtifactEmissionMetadata.Create(
+            table,
+            tableFile,
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            includesExtendedProperties: false);
+
+        return snapshot.WithEmission(emission);
     }
 }

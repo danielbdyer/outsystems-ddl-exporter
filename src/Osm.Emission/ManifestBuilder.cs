@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Osm.Domain.Model.Artifacts;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
@@ -8,7 +9,7 @@ namespace Osm.Emission;
 public sealed class ManifestBuilder
 {
     public SsdtManifest Build(
-        IReadOnlyList<TableManifestEntry> tables,
+        IReadOnlyList<TableArtifactSnapshot> tables,
         SmoBuildOptions options,
         SsdtEmissionMetadata emission,
         PolicyDecisionReport? decisionReport,
@@ -52,12 +53,13 @@ public sealed class ManifestBuilder
                 decisionReport.ModuleRollups,
                 decisionReport.TogglePrecedence);
 
+        var manifestEntries = BuildManifestEntries(tables);
         var preRemediationEntries = preRemediation ?? Array.Empty<PreRemediationManifestEntry>();
         var coverageSummary = coverage ?? SsdtCoverageSummary.CreateComplete(tableCount, columnCount, constraintCount);
         var unsupportedEntries = unsupported ?? Array.Empty<string>();
 
         return new SsdtManifest(
-            tables,
+            manifestEntries,
             new SsdtManifestOptions(
                 options.IncludePlatformAutoIndexes,
                 options.EmitBareTableOnly,
@@ -69,5 +71,43 @@ public sealed class ManifestBuilder
             coverageSummary,
             predicateCoverage ?? SsdtPredicateCoverage.Empty,
             unsupportedEntries);
+    }
+
+    private static IReadOnlyList<TableManifestEntry> BuildManifestEntries(IReadOnlyList<TableArtifactSnapshot> tables)
+    {
+        if (tables.Count == 0)
+        {
+            return Array.Empty<TableManifestEntry>();
+        }
+
+        var entries = new List<TableManifestEntry>(tables.Count);
+        for (var i = 0; i < tables.Count; i++)
+        {
+            var snapshot = tables[i];
+            if (snapshot is null)
+            {
+                continue;
+            }
+
+            var emission = snapshot.Emission ?? throw new InvalidOperationException(
+                $"Emission metadata missing for table '{snapshot.Identity.Schema}.{snapshot.Identity.Name}'.");
+
+            if (string.IsNullOrWhiteSpace(emission.ManifestPath))
+            {
+                throw new InvalidOperationException(
+                    $"Manifest path missing for table '{snapshot.Identity.Schema}.{snapshot.Identity.Name}'.");
+            }
+
+            entries.Add(new TableManifestEntry(
+                snapshot.Identity.Module,
+                snapshot.Identity.Schema,
+                emission.TableName,
+                emission.ManifestPath!,
+                emission.IndexNames,
+                emission.ForeignKeyNames,
+                emission.IncludesExtendedProperties));
+        }
+
+        return entries;
     }
 }

@@ -1,21 +1,33 @@
 using System.Collections.Immutable;
 using Microsoft.SqlServer.Management.Smo;
+using Osm.Domain.Model.Artifacts;
 
 namespace Osm.Smo;
 
-public sealed record SmoModel(ImmutableArray<SmoTableDefinition> Tables)
+public sealed record SmoModel(
+    ImmutableArray<SmoTableDefinition> Tables,
+    ImmutableArray<TableArtifactSnapshot> Snapshots)
 {
-    public static SmoModel Create(ImmutableArray<SmoTableDefinition> tables)
+    public static SmoModel Create(
+        ImmutableArray<SmoTableDefinition> tables,
+        ImmutableArray<TableArtifactSnapshot> snapshots)
     {
         if (tables.IsDefault)
         {
             tables = ImmutableArray<SmoTableDefinition>.Empty;
         }
 
-        return new SmoModel(tables);
+        if (snapshots.IsDefault)
+        {
+            snapshots = ImmutableArray<TableArtifactSnapshot>.Empty;
+        }
+
+        return new SmoModel(tables, snapshots);
     }
 
     public IEnumerable<SmoTableDefinition> EnumerateTables() => Tables;
+
+    public IEnumerable<TableArtifactSnapshot> EnumerateSnapshots() => Snapshots;
 }
 
 public sealed record SmoTableDefinition(

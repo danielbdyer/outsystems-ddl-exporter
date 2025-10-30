@@ -41,9 +41,9 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
         }
 
         var options = request.Options ?? SmoBuildOptions.Default;
-        var namingMetadata = request.Model.Tables.ToDictionary(
-            table => TableKey(table.Schema, table.Name),
-            table => new TableNamingMetadata(table.OriginalModule, table.LogicalName),
+        var namingMetadata = request.Model.Snapshots.ToDictionary(
+            snapshot => TableKey(snapshot.Identity.Schema, snapshot.Identity.Name),
+            snapshot => new TableNamingMetadata(snapshot.Identity.OriginalModule, snapshot.Identity.LogicalName),
             StringComparer.OrdinalIgnoreCase);
         var physicalOverrides = CreatePhysicalNamingOverrides(request.Model);
         if (physicalOverrides.Count > 0)
@@ -192,15 +192,20 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
 
     private static IReadOnlyList<NamingOverrideRule> CreatePhysicalNamingOverrides(SmoModel model)
     {
-        if (model is null || model.Tables.Length == 0)
+        if (model is null || model.Snapshots.Length == 0)
         {
             return Array.Empty<NamingOverrideRule>();
         }
 
-        var overrides = new List<NamingOverrideRule>(model.Tables.Length);
-        foreach (var table in model.Tables)
+        var overrides = new List<NamingOverrideRule>(model.Snapshots.Length);
+        foreach (var snapshot in model.Snapshots)
         {
-            var ruleResult = NamingOverrideRule.Create(table.Schema, table.Name, module: null, logicalName: null, target: table.Name);
+            var ruleResult = NamingOverrideRule.Create(
+                snapshot.Identity.Schema,
+                snapshot.Identity.Name,
+                module: null,
+                logicalName: null,
+                target: snapshot.Identity.Name);
             if (ruleResult.IsSuccess)
             {
                 overrides.Add(ruleResult.Value);

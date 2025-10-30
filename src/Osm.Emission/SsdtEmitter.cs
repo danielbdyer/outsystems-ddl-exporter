@@ -88,14 +88,10 @@ public sealed class SsdtEmitter
             var plans = await _planner.PlanAsync(model, outputDirectory, options, cancellationToken).ConfigureAwait(false);
             await _planWriter.WriteAsync(plans, options.ModuleParallelism, cancellationToken).ConfigureAwait(false);
 
-            var manifestEntries = new List<TableManifestEntry>(plans.Count);
-            for (var i = 0; i < plans.Count; i++)
-            {
-                manifestEntries.Add(plans[i].ManifestEntry);
-            }
+            var snapshots = plans.Select(static plan => plan.Snapshot).ToList();
 
             var manifest = _manifestBuilder.Build(
-                manifestEntries,
+                snapshots,
                 options,
                 emission,
                 decisionReport,
