@@ -25,7 +25,9 @@ public sealed record PipelineBootstrapRequest(
     ModuleFilterOptions ModuleFilter,
     SupplementalModelOptions SupplementalModels,
     PipelineBootstrapTelemetry Telemetry,
-    Func<OsmModel, CancellationToken, Task<Result<ProfileSnapshot>>> ProfileCaptureAsync);
+    Func<OsmModel, CancellationToken, Task<Result<ProfileSnapshot>>> ProfileCaptureAsync,
+    OsmModel? InlineModel = null,
+    ImmutableArray<string> ModelWarnings = default);
 
 public sealed record PipelineBootstrapTelemetry(
     string RequestMessage,

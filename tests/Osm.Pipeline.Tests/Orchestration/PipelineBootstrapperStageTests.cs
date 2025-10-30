@@ -44,6 +44,24 @@ public sealed class PipelineBootstrapperStageTests
     }
 
     [Fact]
+    public async Task ModelLoader_UsesInlineModelWhenProvided()
+    {
+        var inlineModel = ModelFixtures.LoadModel("model.edge-case.json");
+        var warnings = ImmutableArray.Create("Inline warning");
+        var ingestion = new FakeModelIngestionService(Result<OsmModel>.Success(inlineModel));
+        var context = CreateContext(inlineModel: inlineModel, inlineWarnings: warnings);
+        context.RecordRequestTelemetry();
+
+        var loader = new ModelLoader(ingestion);
+        var result = await loader.LoadAsync(context, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Same(inlineModel, context.Model);
+        Assert.Equal(warnings, context.Warnings);
+        Assert.False(ingestion.LoadCalled);
+    }
+
+    [Fact]
     public async Task ModelLoader_PropagatesFailures()
     {
         var failure = ValidationError.Create("model.load.failed", "Model load failed.");
@@ -177,7 +195,9 @@ public sealed class PipelineBootstrapperStageTests
     private static BootstrapPipelineContext CreateContext(
         ModuleFilterOptions? filter = null,
         SupplementalModelOptions? supplemental = null,
-        Func<OsmModel, CancellationToken, Task<Result<ProfileSnapshot>>>? profileCapture = null)
+        Func<OsmModel, CancellationToken, Task<Result<ProfileSnapshot>>>? profileCapture = null,
+        OsmModel? inlineModel = null,
+        ImmutableArray<string> inlineWarnings = default)
     {
         var telemetry = new PipelineBootstrapTelemetry(
             "Request received",
@@ -191,7 +211,9 @@ public sealed class PipelineBootstrapperStageTests
             filter ?? ModuleFilterOptions.IncludeAll,
             supplemental ?? SupplementalModelOptions.Default,
             telemetry,
-            profileCapture ?? ((_, _) => Task.FromResult(Result<ProfileSnapshot>.Failure(ValidationError.Create("profiling.unused", "Profiling not configured for test.")))));
+            profileCapture ?? ((_, _) => Task.FromResult(Result<ProfileSnapshot>.Failure(ValidationError.Create("profiling.unused", "Profiling not configured for test.")))),
+            inlineModel,
+            inlineWarnings);
 
         return new BootstrapPipelineContext(new PipelineExecutionLogBuilder(), request);
     }
@@ -234,7 +256,9 @@ public sealed class PipelineBootstrapperIntegrationTests
             filterOptions,
             SupplementalModelOptions.Default,
             telemetry,
-            (_, _) => Task.FromResult(Result<ProfileSnapshot>.Success(profile)));
+            (_, _) => Task.FromResult(Result<ProfileSnapshot>.Success(profile)),
+            inlineModel: null,
+            inlineWarnings: default);
 
         var logBuilder = new PipelineExecutionLogBuilder();
         var result = await bootstrapper.BootstrapAsync(logBuilder, request, CancellationToken.None);
@@ -273,12 +297,15 @@ internal sealed class FakeModelIngestionService : IModelIngestionService
 
     public List<string> Warnings { get; } = new();
 
+    public bool LoadCalled { get; private set; }
+
     public Task<Result<OsmModel>> LoadFromFileAsync(
         string path,
         ICollection<string>? warnings = null,
         CancellationToken cancellationToken = default,
         ModelIngestionOptions? options = null)
     {
+        LoadCalled = true;
         if (warnings is not null)
         {
             foreach (var warning in Warnings)

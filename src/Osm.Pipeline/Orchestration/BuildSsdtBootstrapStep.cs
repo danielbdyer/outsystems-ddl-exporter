@@ -37,7 +37,9 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
             request.Scope.ModuleFilter,
             request.Scope.SupplementalModels,
             telemetry,
-            (model, token) => CaptureProfileAsync(request, model, token));
+            (model, token) => CaptureProfileAsync(request, model, token),
+            request.Scope.InlineModel,
+            request.Scope.ModelWarnings);
 
         var bootstrapResult = await _bootstrapper
             .BootstrapAsync(state.Log, bootstrapRequest, cancellationToken)

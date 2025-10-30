@@ -89,7 +89,9 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
             request.Scope.ModuleFilter,
             request.Scope.SupplementalModels,
             telemetry,
-            (_, token) => LoadProfileAsync(request.Scope.ProfilePath, token));
+            (_, token) => LoadProfileAsync(request.Scope.ProfilePath, token),
+            request.Scope.InlineModel,
+            request.Scope.ModelWarnings);
 
         var bootstrapResult = await _bootstrapper
             .BootstrapAsync(log, bootstrapRequest, cancellationToken)

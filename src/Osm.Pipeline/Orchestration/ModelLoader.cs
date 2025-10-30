@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -23,6 +24,18 @@ internal sealed class ModelLoader
         if (context is null)
         {
             throw new ArgumentNullException(nameof(context));
+        }
+
+        if (context.Request.InlineModel is { } inlineModel)
+        {
+            var warnings = context.Request.ModelWarnings;
+            if (warnings.IsDefault)
+            {
+                warnings = ImmutableArray<string>.Empty;
+            }
+
+            context.SetModel(inlineModel, warnings);
+            return Result<BootstrapPipelineContext>.Success(context);
         }
 
         var ingestionWarnings = new List<string>();

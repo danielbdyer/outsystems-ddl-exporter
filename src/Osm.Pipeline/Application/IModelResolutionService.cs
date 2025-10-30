@@ -26,4 +26,5 @@ public interface IModelResolutionService
 public sealed record ModelResolutionResult(
     string ModelPath,
     bool WasExtracted,
-    ImmutableArray<string> Warnings);
+    ImmutableArray<string> Warnings,
+    ModelExtractionResult? Extraction = null);

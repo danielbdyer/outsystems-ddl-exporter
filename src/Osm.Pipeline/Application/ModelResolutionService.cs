@@ -46,8 +46,9 @@ public sealed class ModelResolutionService : IModelResolutionService
 
         overrides ??= new BuildSsdtOverrides(null, null, null, null, null, null, null, null);
 
+        var extractionRequested = overrides.ExtractModelInline;
         var candidatePath = overrides.ModelPath ?? configuration.ModelPath;
-        if (!string.IsNullOrWhiteSpace(candidatePath))
+        if (!extractionRequested && !string.IsNullOrWhiteSpace(candidatePath))
         {
             return new ModelResolutionResult(candidatePath!, false, ImmutableArray<string>.Empty);
         }
@@ -105,6 +106,10 @@ public sealed class ModelResolutionService : IModelResolutionService
             ? ImmutableArray<string>.Empty
             : ImmutableArray.CreateRange(extraction.Warnings);
 
-        return new ModelResolutionResult(_fileSystem.Path.GetFullPath(modelPath), true, warnings);
+        return new ModelResolutionResult(
+            _fileSystem.Path.GetFullPath(modelPath),
+            true,
+            warnings,
+            extraction);
     }
 }

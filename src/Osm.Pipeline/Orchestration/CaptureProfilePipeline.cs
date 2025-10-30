@@ -132,7 +132,9 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             request.Scope.ModuleFilter,
             request.Scope.SupplementalModels,
             telemetry,
-            (model, token) => CaptureProfileAsync(request, model, token));
+            (model, token) => CaptureProfileAsync(request, model, token),
+            request.Scope.InlineModel,
+            request.Scope.ModelWarnings);
 
         var bootstrapResult = await _bootstrapper
             .BootstrapAsync(log, bootstrapRequest, cancellationToken)
