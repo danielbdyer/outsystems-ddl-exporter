@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Immutable;
 using System.IO;
 using System.Threading;
@@ -27,7 +28,8 @@ public class PipelineReportLauncherTests
         var applicationResult = await CreateApplicationResultAsync(
             output,
             ImmutableArray<PipelineInsight>.Empty,
-            includeDiff: true);
+            includeDiff: true,
+            sqlValidation: null);
 
         var reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, CancellationToken.None);
 
@@ -43,6 +45,11 @@ public class PipelineReportLauncherTests
         Assert.Contains("EvidenceGated", html);
         Assert.Contains("<th>Columns</th>", html);
         Assert.Contains("No pipeline insights were generated", html);
+        Assert.Contains("SQL validation", html);
+        Assert.Contains("<strong>Files validated:</strong> 2", html);
+        Assert.Contains("<strong>Files with errors:</strong> 0", html);
+        Assert.Contains("<strong>Total errors:</strong> 0", html);
+        Assert.Contains("No SQL validation errors were detected.", html);
     }
 
     [Fact]
@@ -69,7 +76,8 @@ public class PipelineReportLauncherTests
         var applicationResult = await CreateApplicationResultAsync(
             output,
             insights,
-            includeDiff: false);
+            includeDiff: false,
+            sqlValidation: null);
 
         var reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, CancellationToken.None);
 
@@ -83,10 +91,41 @@ public class PipelineReportLauncherTests
         Assert.DoesNotContain("No pipeline insights were generated", html);
     }
 
+    [Fact]
+    public async Task GenerateAsync_WithSqlValidationErrors_RendersSampleLinks()
+    {
+        using var output = new TempDirectory();
+        var issue = SsdtSqlValidationIssue.Create(
+            "Modules/AppCore/dbo.Customer.sql",
+            new[]
+            {
+                SsdtSqlValidationError.Create(102, 0, 16, 7, 15, "Incorrect syntax near ')'.")
+            });
+        var summary = SsdtSqlValidationSummary.Create(2, new[] { issue });
+
+        var applicationResult = await CreateApplicationResultAsync(
+            output,
+            ImmutableArray<PipelineInsight>.Empty,
+            includeDiff: false,
+            sqlValidation: summary);
+
+        var reportPath = await PipelineReportLauncher.GenerateAsync(applicationResult, CancellationToken.None);
+
+        Assert.True(File.Exists(reportPath));
+        var html = await File.ReadAllTextAsync(reportPath);
+        Assert.Contains("SQL validation", html);
+        Assert.Contains("<strong>Files validated:</strong> 2", html);
+        Assert.Contains("<strong>Files with errors:</strong> 1", html);
+        Assert.Contains("<strong>Total errors:</strong> 1", html);
+        Assert.Contains("Incorrect syntax near", html);
+        Assert.Contains("href=\"Modules/AppCore/dbo.Customer.sql\"", html);
+    }
+
     private static async Task<BuildSsdtApplicationResult> CreateApplicationResultAsync(
         TempDirectory output,
         ImmutableArray<PipelineInsight> insights,
-        bool includeDiff)
+        bool includeDiff,
+        SsdtSqlValidationSummary? sqlValidation)
     {
         var coverage = new SsdtCoverageSummary(
             CoverageBreakdown.Create(2, 2),
@@ -187,6 +226,10 @@ public class PipelineReportLauncherTests
         await File.WriteAllTextAsync(safePath, string.Empty);
         await File.WriteAllTextAsync(remediationPath, string.Empty);
 
+        var sqlSummary = sqlValidation ?? SsdtSqlValidationSummary.Create(
+            manifest.Tables.Count,
+            Array.Empty<SsdtSqlValidationIssue>());
+
         var pipelineResult = new BuildSsdtPipelineResult(
             new ProfileSnapshot(
                 ImmutableArray<ColumnProfile>.Empty,
@@ -209,7 +252,7 @@ public class PipelineReportLauncherTests
             string.Empty,
             seedPaths,
             ImmutableArray<string>.Empty,
-            SsdtSqlValidationSummary.Empty,
+            sqlSummary,
             null,
             PipelineExecutionLog.Empty,
             ImmutableArray<string>.Empty);

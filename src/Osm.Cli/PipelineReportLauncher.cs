@@ -97,6 +97,7 @@ internal static class PipelineReportLauncher
             totalIndexes,
             totalForeignKeys,
             toggleEntries,
+            pipelineResult.SqlValidation,
             pipelineResult.PipelineInsights,
             hasDiff,
             staticSeedPaths,
@@ -159,6 +160,7 @@ internal static class PipelineReportLauncher
         int totalIndexes,
         int totalForeignKeys,
         ToggleEntry[] toggleEntries,
+        SsdtSqlValidationSummary sqlValidation,
         ImmutableArray<PipelineInsight> insights,
         bool hasDiff,
         IReadOnlyList<string> staticSeedPaths,
@@ -238,6 +240,49 @@ internal static class PipelineReportLauncher
             builder.AppendLine($"      <li><strong>Diagnostics:</strong> {decisionReport.Diagnostics.Length:N0} (see policy-decisions.json)</li>");
         }
         builder.AppendLine("    </ul>");
+        builder.AppendLine("  </section>");
+
+        builder.AppendLine("  <section>");
+        builder.AppendLine("    <h2>SQL validation</h2>");
+        builder.AppendLine("    <ul class=\"decision-summary\">");
+        builder.AppendLine($"      <li><strong>Files validated:</strong> {sqlValidation.TotalFiles:N0}</li>");
+        builder.AppendLine($"      <li><strong>Files with errors:</strong> {sqlValidation.FilesWithErrors:N0}</li>");
+        builder.AppendLine($"      <li><strong>Total errors:</strong> {sqlValidation.ErrorCount:N0}</li>");
+        builder.AppendLine("    </ul>");
+        if (sqlValidation.ErrorCount == 0)
+        {
+            builder.AppendLine("    <p>No SQL validation errors were detected.</p>");
+        }
+        else
+        {
+            builder.AppendLine("    <h3>Sample errors</h3>");
+            builder.AppendLine("    <ul class=\"decision-summary\">");
+
+            const int MaxSamples = 5;
+            var samples = sqlValidation.Issues
+                .Where(static issue => issue is not null)
+                .SelectMany(issue => issue.Errors.Select(error => (issue.Path, error)))
+                .Take(MaxSamples)
+                .ToArray();
+
+            foreach (var sample in samples)
+            {
+                var error = sample.error;
+                var combinedPath = Path.Combine(outputDirectory, sample.Path.Replace('/', Path.DirectorySeparatorChar));
+                var relativePath = Relativize(outputDirectory, combinedPath).Replace('\\', '/');
+                var encodedPath = HtmlEncode(relativePath);
+                builder.AppendLine(
+                    $"      <li><a href=\"{encodedPath}\">{encodedPath}</a> – line {error.Line:N0}, column {error.Column:N0}, error {error.Number:N0}: {HtmlEncode(error.Message)}</li>");
+            }
+
+            var remaining = sqlValidation.ErrorCount - samples.Length;
+            if (remaining > 0)
+            {
+                builder.AppendLine($"      <li>… {remaining:N0} additional error(s) omitted.</li>");
+            }
+
+            builder.AppendLine("    </ul>");
+        }
         builder.AppendLine("  </section>");
 
         builder.AppendLine("  <section class=\"insights-section\">");

@@ -104,6 +104,7 @@ public class BuildSsdtCommandFactoryTests
         var manifestMessage = $"Manifest written to {Path.Combine("output", "manifest.json")}";
         Assert.Contains(manifestMessage, output);
         Assert.Contains("Decision log written to decision.log", output);
+        Assert.Contains("SQL validation: validated 1 file(s); 0 with errors; 0 error(s).", output);
         Assert.Contains("Columns tightened: 1/2", output);
         Assert.Contains("Unique indexes enforced: 1/1", output);
         Assert.Contains("Foreign keys created: 1/1", output);
@@ -160,6 +161,55 @@ public class BuildSsdtCommandFactoryTests
         var output = console.Out.ToString() ?? string.Empty;
         Assert.Contains("Profiling insights:", output);
         Assert.Contains("[info] dbo.Orders.CustomerId: Column contains 12.5% null values.", output);
+    }
+
+    [Fact]
+    public async Task Invoke_EmitsSqlValidationErrorsWhenPresent()
+    {
+        var configurationService = new FakeConfigurationService();
+        var summary = SsdtSqlValidationSummary.Create(
+            2,
+            new[]
+            {
+                SsdtSqlValidationIssue.Create(
+                    "Modules/Sales/dbo.Orders.sql",
+                    new[]
+                    {
+                        SsdtSqlValidationError.Create(102, 0, 16, 5, 12, "Incorrect syntax near ')'.")
+                    })
+            });
+        var application = new FakeBuildApplicationService
+        {
+            SqlValidationSummaryOverride = summary
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<BuildSsdtCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var exitCode = await parser.InvokeAsync("build-ssdt --model model.json --profile profile.json --out output", console);
+
+        Assert.Equal(0, exitCode);
+
+        var output = console.Out.ToString() ?? string.Empty;
+        Assert.Contains("SQL validation: validated 2 file(s); 1 with errors; 1 error(s).", output);
+
+        var errorOutput = console.Error.ToString() ?? string.Empty;
+        Assert.Contains("SQL validation errors (sample):", errorOutput);
+        Assert.Contains("Modules/Sales/dbo.Orders.sql:5:12 (#102, severity 16) Incorrect syntax near ')'.", errorOutput);
     }
 
     [Fact]
@@ -305,6 +355,8 @@ public class BuildSsdtCommandFactoryTests
 
         public ImmutableArray<ProfilingInsight> ProfilingInsights { get; init; } = ImmutableArray<ProfilingInsight>.Empty;
 
+        public SsdtSqlValidationSummary? SqlValidationSummaryOverride { get; init; }
+
         public Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
         {
             LastInput = input;
@@ -405,6 +457,10 @@ public class BuildSsdtCommandFactoryTests
                 ImmutableDictionary<RiskLevel, int>.Empty,
                 DateTimeOffset.UnixEpoch);
 
+            var sqlValidation = SqlValidationSummaryOverride ?? SsdtSqlValidationSummary.Create(
+                manifest.Tables.Count,
+                Array.Empty<SsdtSqlValidationIssue>());
+
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
                 ProfilingInsights,
@@ -421,7 +477,7 @@ public class BuildSsdtCommandFactoryTests
                 string.Empty,
                 ImmutableArray<string>.Empty,
                 ImmutableArray<string>.Empty,
-                SsdtSqlValidationSummary.Empty,
+                sqlValidation,
                 null,
                 PipelineExecutionLog.Empty,
                 ImmutableArray<string>.Empty);
