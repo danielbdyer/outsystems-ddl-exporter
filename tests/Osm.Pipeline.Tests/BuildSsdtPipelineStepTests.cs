@@ -200,6 +200,72 @@ public class BuildSsdtPipelineStepTests
     }
 
     [Fact]
+    public async Task StaticSeedStep_emits_master_seed_when_enabled()
+    {
+        using var output = new TempDirectory();
+        var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
+
+        var defaults = request.Scope.TighteningOptions;
+        var staticSeedOptions = StaticSeedOptions.Create(
+            groupByModule: true,
+            emitMasterFile: true,
+            defaults.Emission.StaticSeeds.SynchronizationMode).Value;
+        var emission = EmissionOptions.Create(
+            defaults.Emission.PerTableFiles,
+            defaults.Emission.IncludePlatformAutoIndexes,
+            defaults.Emission.SanitizeModuleNames,
+            defaults.Emission.EmitBareTableOnly,
+            defaults.Emission.EmitTableHeaders,
+            defaults.Emission.ModuleParallelism,
+            defaults.Emission.NamingOverrides,
+            staticSeedOptions).Value;
+        var tightening = TighteningOptions.Create(
+            defaults.Policy,
+            defaults.ForeignKeys,
+            defaults.Uniqueness,
+            defaults.Remediation,
+            emission,
+            defaults.Mocking).Value;
+
+        request = request with
+        {
+            Scope = request.Scope with
+            {
+                TighteningOptions = tightening,
+                SmoOptions = SmoBuildOptions.FromEmission(emission)
+            }
+        };
+
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
+        var evidenceState = new EvidencePrepared(
+            bootstrapState.Request,
+            bootstrapState.Log,
+            bootstrapState.Bootstrap,
+            EvidenceCache: null);
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
+        var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
+        var emissionStep = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
+        var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var validationStep = new BuildSsdtSqlValidationStep();
+        var validatedState = (await validationStep.ExecuteAsync(emissionState)).Value;
+        var step = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
+
+        var result = await step.ExecuteAsync(validatedState);
+
+        Assert.True(result.IsSuccess);
+        var state = result.Value;
+        Assert.Contains(Path.Combine(output.Path, "Seeds", "StaticEntities.seed.sql"), state.StaticSeedScriptPaths);
+        Assert.True(state.StaticSeedScriptPaths.Length >= 2);
+    }
+
+    [Fact]
     public async Task StaticSeedStep_disambiguates_colliding_sanitized_module_names()
     {
         using var output = new TempDirectory();

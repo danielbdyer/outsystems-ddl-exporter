@@ -30,7 +30,10 @@ public sealed class StaticDataProviderFactoryTests
             RenameOverrides: null,
             MaxDegreeOfParallelism: null,
             SqlMetadataOutputPath: null);
-        var seeds = StaticSeedOptions.Create(groupByModule: true, StaticSeedSynchronizationMode.Authoritative).Value;
+        var seeds = StaticSeedOptions.Create(
+            groupByModule: true,
+            emitMasterFile: false,
+            StaticSeedSynchronizationMode.Authoritative).Value;
         var emission = EmissionOptions.Create(
             TighteningOptions.Default.Emission.PerTableFiles,
             TighteningOptions.Default.Emission.IncludePlatformAutoIndexes,

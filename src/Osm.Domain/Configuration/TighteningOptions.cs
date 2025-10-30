@@ -329,19 +329,31 @@ public enum StaticSeedSynchronizationMode
 
 public sealed record StaticSeedOptions
 {
-    private StaticSeedOptions(bool groupByModule, StaticSeedSynchronizationMode synchronizationMode)
+    private StaticSeedOptions(
+        bool groupByModule,
+        bool emitMasterFile,
+        StaticSeedSynchronizationMode synchronizationMode)
     {
         GroupByModule = groupByModule;
+        EmitMasterFile = emitMasterFile;
         SynchronizationMode = synchronizationMode;
     }
 
     public bool GroupByModule { get; }
 
+    public bool EmitMasterFile { get; }
+
     public StaticSeedSynchronizationMode SynchronizationMode { get; }
 
-    public static StaticSeedOptions Default { get; } = Create(groupByModule: true, StaticSeedSynchronizationMode.NonDestructive).Value;
+    public static StaticSeedOptions Default { get; } = Create(
+        groupByModule: true,
+        emitMasterFile: false,
+        StaticSeedSynchronizationMode.NonDestructive).Value;
 
-    public static Result<StaticSeedOptions> Create(bool groupByModule, StaticSeedSynchronizationMode synchronizationMode)
+    public static Result<StaticSeedOptions> Create(
+        bool groupByModule,
+        bool emitMasterFile,
+        StaticSeedSynchronizationMode synchronizationMode)
     {
         if (!Enum.IsDefined(typeof(StaticSeedSynchronizationMode), synchronizationMode))
         {
@@ -350,7 +362,7 @@ public sealed record StaticSeedOptions
                 $"Unrecognized static seed synchronization mode '{synchronizationMode}'.");
         }
 
-        return new StaticSeedOptions(groupByModule, synchronizationMode);
+        return new StaticSeedOptions(groupByModule, emitMasterFile, synchronizationMode);
     }
 }
 

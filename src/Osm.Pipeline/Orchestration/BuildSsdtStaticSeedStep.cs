@@ -131,6 +131,15 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                     .ConfigureAwait(false);
                 seedPathBuilder.Add(modulePath);
             }
+
+            if (seedOptions.EmitMasterFile)
+            {
+                var masterPath = Path.Combine(seedsRoot!, "StaticEntities.seed.sql");
+                await _seedGenerator
+                    .WriteAsync(masterPath, deterministicData, seedOptions.SynchronizationMode, cancellationToken)
+                    .ConfigureAwait(false);
+                seedPathBuilder.Add(masterPath);
+            }
         }
         else
         {

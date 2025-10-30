@@ -9,11 +9,17 @@ namespace Tests.Support;
 
 public sealed class EmissionOutput
 {
-    private EmissionOutput(string root, EmissionManifest manifest, IReadOnlyList<StaticSeedModule> staticSeedModules, IReadOnlyList<string> tableScripts)
+    private EmissionOutput(
+        string root,
+        EmissionManifest manifest,
+        IReadOnlyList<StaticSeedModule> staticSeedModules,
+        IReadOnlyList<string> staticSeedMasterScripts,
+        IReadOnlyList<string> tableScripts)
     {
         Root = root;
         Manifest = manifest;
         StaticSeedModules = staticSeedModules;
+        StaticSeedMasterScripts = staticSeedMasterScripts;
         TableScripts = tableScripts;
     }
 
@@ -22,6 +28,8 @@ public sealed class EmissionOutput
     public EmissionManifest Manifest { get; }
 
     public IReadOnlyList<StaticSeedModule> StaticSeedModules { get; }
+
+    public IReadOnlyList<string> StaticSeedMasterScripts { get; }
 
     public IReadOnlyList<string> TableScripts { get; }
 
@@ -46,9 +54,10 @@ public sealed class EmissionOutput
         }
 
         var staticSeedModules = ReadStaticSeedModules(root);
+        var staticSeedMasterScripts = ReadStaticSeedMasterScripts(root);
         var tableScripts = ReadTableScripts(root);
 
-        return new EmissionOutput(root, manifest, staticSeedModules, tableScripts);
+        return new EmissionOutput(root, manifest, staticSeedModules, staticSeedMasterScripts, tableScripts);
     }
 
     public EmissionSnapshotWorkspace CreateSnapshot(params string[] relativePaths)
@@ -134,6 +143,20 @@ public sealed class EmissionOutput
 
         modules.Sort((left, right) => string.Compare(left.Module, right.Module, StringComparison.OrdinalIgnoreCase));
         return modules.ToImmutableArray();
+    }
+
+    private static IReadOnlyList<string> ReadStaticSeedMasterScripts(string root)
+    {
+        var seedsRoot = Path.Combine(root, "Seeds");
+        if (!Directory.Exists(seedsRoot))
+        {
+            return Array.Empty<string>();
+        }
+
+        return Directory.EnumerateFiles(seedsRoot, "*.sql", SearchOption.TopDirectoryOnly)
+            .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/'))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
     }
 
     private static IReadOnlyList<string> ReadTableScripts(string root)

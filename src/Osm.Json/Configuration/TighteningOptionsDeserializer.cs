@@ -196,7 +196,10 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
                     $"Unrecognized static seed synchronization mode '{modeText}'.");
             }
 
-            var staticSeedResult = StaticSeedOptions.Create(staticSeedDocument.GroupByModule, modeValue);
+            var staticSeedResult = StaticSeedOptions.Create(
+                staticSeedDocument.GroupByModule,
+                staticSeedDocument.EmitMasterFile,
+                modeValue);
             if (staticSeedResult.IsFailure)
             {
                 return Result<TighteningOptions>.Failure(staticSeedResult.Errors);
@@ -352,6 +355,9 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
     {
         [JsonPropertyName("groupByModule")]
         public bool GroupByModule { get; init; } = true;
+
+        [JsonPropertyName("emitMasterFile")]
+        public bool EmitMasterFile { get; init; }
 
         [JsonPropertyName("mode")]
         public string? Mode { get; init; }
