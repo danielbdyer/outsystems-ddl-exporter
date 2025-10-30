@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -116,7 +117,10 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
         }
         catch (JsonException ex)
         {
-            return Result<OsmModel>.Failure(ValidationError.Create("json.parse.failed", $"Invalid JSON payload: {ex.Message}"));
+            var error = ValidationError
+                .Create("json.parse.failed", $"Invalid JSON payload: {ex.Message}")
+                .WithMetadata("json.path", string.IsNullOrWhiteSpace(ex.Path) ? "$" : ex.Path);
+            return Result<OsmModel>.Failure(error);
         }
 
         using (document)
@@ -138,9 +142,11 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
                 var details = innerMessage is null ? ex.Message : $"{ex.Message} ({innerMessage})";
 
                 return Result<OsmModel>.Failure(
-                    ValidationError.Create(
-                        "json.deserialize.failed",
-                        $"Unable to materialize CIR document at {path}{location}: {details}"));
+                    ValidationError
+                        .Create(
+                            "json.deserialize.failed",
+                            $"Unable to materialize CIR document at {path}{location}: {details}")
+                        .WithMetadata("json.path", path));
             }
 
             if (model is null)
@@ -156,7 +162,7 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
 
             if (pipelineResult.IsFailure)
             {
-                return Result<OsmModel>.Failure(pipelineResult.Errors);
+                return Result<OsmModel>.Failure(AttachJsonPathMetadata(pipelineResult.Errors));
             }
 
             var value = pipelineResult.Value;
@@ -166,5 +172,56 @@ public sealed partial class ModelJsonDeserializer : IModelJsonDeserializer
                 value.Sequences,
                 value.ExtendedProperties);
         }
+    }
+
+    private static ImmutableArray<ValidationError> AttachJsonPathMetadata(ImmutableArray<ValidationError> errors)
+    {
+        if (errors.IsDefaultOrEmpty)
+        {
+            return errors;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<ValidationError>(errors.Length);
+        foreach (var error in errors)
+        {
+            if (error.Metadata.ContainsKey("json.path"))
+            {
+                builder.Add(error);
+                continue;
+            }
+
+            if (TryExtractPath(error.Message, out var path))
+            {
+                builder.Add(error.WithMetadata("json.path", path));
+            }
+            else
+            {
+                builder.Add(error);
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static bool TryExtractPath(string message, out string path)
+    {
+        const string token = "(Path: ";
+        var start = message.IndexOf(token, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            path = string.Empty;
+            return false;
+        }
+
+        start += token.Length;
+        var end = message.IndexOf(')', start);
+        if (end < 0)
+        {
+            path = string.Empty;
+            return false;
+        }
+
+        path = message[start..end];
+        return true;
     }
 }

@@ -1575,6 +1575,73 @@ public class ModelJsonDeserializerTests
     }
 
     [Fact]
+    public void Deserialize_ShouldExposeJsonPathMetadata_OnDuplicateEntityPhysicalNames()
+    {
+        const string json = """
+        {
+          "exportedAtUtc": "2025-01-01T00:00:00Z",
+          "modules": [
+            {
+              "name": "Finance",
+              "isActive": true,
+              "entities": [
+                {
+                  "name": "Invoice",
+                  "physicalName": "OSUSR_FIN_INVOICE",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ]
+                },
+                {
+                  "name": "InvoiceShadow",
+                  "physicalName": "osusr_fin_invoice",
+                  "isStatic": false,
+                  "isExternal": false,
+                  "isActive": true,
+                  "db_schema": "dbo",
+                  "attributes": [
+                    {
+                      "name": "Id",
+                      "physicalName": "ID",
+                      "dataType": "Identifier",
+                      "isMandatory": true,
+                      "isIdentifier": true,
+                      "isAutoNumber": true,
+                      "isActive": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var deserializer = new ModelJsonDeserializer();
+        using var stream = ToStream(json);
+
+        var result = deserializer.Deserialize(stream);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors, e => e.Code == "module.entities.duplicatePhysical");
+        Assert.Contains("Path: $['modules'][0]['entities']", error.Message, StringComparison.Ordinal);
+        Assert.True(error.Metadata.TryGetValue("json.path", out var path));
+        Assert.Equal("$['modules'][0]['entities']", path);
+    }
+
+    [Fact]
     public void Deserialize_ShouldHandleNormalizedMetaArrays()
     {
         const string json = """

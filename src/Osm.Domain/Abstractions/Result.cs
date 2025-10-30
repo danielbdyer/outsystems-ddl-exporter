@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 
@@ -110,9 +112,14 @@ public static class Result
     }
 }
 
-public readonly record struct ValidationError(string Code, string Message)
+public readonly record struct ValidationError
 {
-    public static ValidationError Create(string code, string message)
+    public ValidationError(string code, string message)
+        : this(code, message, ImmutableDictionary<string, string?>.Empty)
+    {
+    }
+
+    public ValidationError(string code, string message, ImmutableDictionary<string, string?> metadata)
     {
         if (string.IsNullOrWhiteSpace(code))
         {
@@ -124,6 +131,71 @@ public readonly record struct ValidationError(string Code, string Message)
             throw new ArgumentException("Validation message must be provided.", nameof(message));
         }
 
-        return new ValidationError(code, message);
+        Code = code;
+        Message = message;
+        Metadata = metadata ?? ImmutableDictionary<string, string?>.Empty;
+    }
+
+    public string Code { get; }
+
+    public string Message { get; }
+
+    public ImmutableDictionary<string, string?> Metadata { get; }
+
+    public bool HasMetadata => !Metadata.IsEmpty;
+
+    public ValidationError WithMessage(string message)
+        => new(Code, message, Metadata);
+
+    public ValidationError WithMetadata(string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return this;
+        }
+
+        var builder = Metadata.IsEmpty
+            ? ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.Ordinal)
+            : Metadata.ToBuilder();
+        builder[key] = value;
+        return new ValidationError(Code, Message, builder.ToImmutable());
+    }
+
+    public ValidationError WithMetadata(IEnumerable<KeyValuePair<string, string?>> metadata)
+    {
+        if (metadata is null)
+        {
+            return this;
+        }
+
+        var builder = Metadata.IsEmpty
+            ? ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.Ordinal)
+            : Metadata.ToBuilder();
+
+        foreach (var (key, value) in metadata)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            builder[key] = value;
+        }
+
+        return new ValidationError(Code, Message, builder.ToImmutable());
+    }
+
+    public static ValidationError Create(string code, string message)
+        => new(code, message);
+
+    public static ValidationError Create(
+        string code,
+        string message,
+        IEnumerable<KeyValuePair<string, string?>> metadata)
+    {
+        var dictionary = metadata is null
+            ? ImmutableDictionary<string, string?>.Empty
+            : ImmutableDictionary.CreateRange(StringComparer.Ordinal, metadata);
+        return new ValidationError(code, message, dictionary);
     }
 }

@@ -55,7 +55,10 @@ internal static class CommandConsole
 
         foreach (var error in errors)
         {
-            WriteErrorLine(console, $"{error.Code}: {error.Message}");
+            var metadataSuffix = error.HasMetadata
+                ? " | " + string.Join(", ", error.Metadata.Select(pair => $"{pair.Key}={FormatMetadataValue(pair.Value)}"))
+                : string.Empty;
+            WriteErrorLine(console, $"{error.Code}: {error.Message}{metadataSuffix}");
         }
     }
 

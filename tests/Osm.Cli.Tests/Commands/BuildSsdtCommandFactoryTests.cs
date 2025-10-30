@@ -200,6 +200,45 @@ public class BuildSsdtCommandFactoryTests
     }
 
     [Fact]
+    public async Task Invoke_WritesErrorMetadataWhenPresent()
+    {
+        var configurationService = new FakeConfigurationService();
+        var application = new FakeBuildApplicationService
+        {
+            ShouldFail = true,
+            FailureErrors = new[]
+            {
+                ValidationError
+                    .Create("cli.build", "Pipeline execution failed.")
+                    .WithMetadata("json.path", "$['modules'][0]")
+            }
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<BuildSsdtCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+        var exitCode = await parser.InvokeAsync("build-ssdt --model model.json --profile profile.json", console);
+
+        Assert.Equal(1, exitCode);
+        var errorOutput = console.Error.ToString() ?? string.Empty;
+        Assert.Contains("cli.build: Pipeline execution failed. | json.path=$['modules'][0]", errorOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Invoke_WritesErrorsWhenConfigurationFails()
     {
         var configurationService = new FakeConfigurationService

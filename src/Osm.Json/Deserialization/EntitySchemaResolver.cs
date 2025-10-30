@@ -99,9 +99,7 @@ internal sealed class EntitySchemaResolver : IEntitySchemaResolver
         var builder = ImmutableArray.CreateBuilder<ValidationError>(errors.Length);
         foreach (var error in errors)
         {
-            builder.Add(ValidationError.Create(
-                error.Code,
-                $"{error.Message} (Entity '{moduleName}::{entityName}' payload: {payload})"));
+            builder.Add(error.WithMessage($"{error.Message} (Entity '{moduleName}::{entityName}' payload: {payload})"));
         }
 
         return builder.ToImmutable();
