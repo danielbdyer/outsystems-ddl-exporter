@@ -1,6 +1,8 @@
+using Osm.Domain.Model.Artifacts;
+
 namespace Osm.Emission;
 
 public sealed record TableEmissionPlan(
-    TableManifestEntry ManifestEntry,
+    TableArtifactSnapshot Snapshot,
     string Path,
     string Script);

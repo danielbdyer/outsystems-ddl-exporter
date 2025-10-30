@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Linq;
 using Osm.Domain.Configuration;
 using Osm.Smo;
 using Xunit;
@@ -23,7 +24,9 @@ public class SmoRenameLensTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        var model = SmoModel.Create(ImmutableArray.Create(table));
+        var tables = ImmutableArray.Create(table);
+        var snapshots = tables.Select(static t => t.ToSnapshot()).ToImmutableArray();
+        var model = SmoModel.Create(tables, snapshots);
         var overrideRule = NamingOverrideRule.Create("dbo", "OSUSR_ABC_CUSTOMER", null, null, "CUSTOMER_PORTAL").Value;
         var overrides = NamingOverrideOptions.Create(new[] { overrideRule }).Value;
 

@@ -210,7 +210,9 @@ public class SsdtEmitterTests
             ForeignKeys: ImmutableArray<SmoForeignKeyDefinition>.Empty,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        return new SmoModel(ImmutableArray.Create(table));
+        var tables = ImmutableArray.Create(table);
+        var snapshots = tables.Select(static t => t.ToSnapshot()).ToImmutableArray();
+        return SmoModel.Create(tables, snapshots);
     }
 
     private static string Combine(IFileSystem fileSystem, string root, params string[] segments)

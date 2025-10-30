@@ -5,6 +5,7 @@ using System.IO.Abstractions;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.Model.Artifacts;
 using Osm.Smo;
 
 namespace Osm.Emission;
@@ -46,6 +47,11 @@ public sealed class TableEmissionPlanner
             throw new ArgumentNullException(nameof(options));
         }
 
+        if (model.Snapshots.Length != model.Tables.Length)
+        {
+            throw new InvalidOperationException("SMO tables and snapshots must align.");
+        }
+
         var tableCount = model.Tables.Length;
         if (tableCount == 0)
         {
@@ -62,6 +68,7 @@ public sealed class TableEmissionPlanner
                 cancellationToken.ThrowIfCancellationRequested();
                 plans[i] = PlanTable(
                     model.Tables[i],
+                    model.Snapshots[i],
                     outputDirectory,
                     options,
                     renameLookup,
@@ -83,6 +90,7 @@ public sealed class TableEmissionPlanner
                 {
                     plans[index] = PlanTable(
                         model.Tables[index],
+                        model.Snapshots[index],
                         outputDirectory,
                         options,
                         renameLookup,
@@ -121,6 +129,7 @@ public sealed class TableEmissionPlanner
 
     private TableEmissionPlan PlanTable(
         SmoTableDefinition table,
+        TableArtifactSnapshot snapshot,
         string outputDirectory,
         SmoBuildOptions options,
         ImmutableDictionary<string, SmoRenameMapping> renameLookup,
@@ -131,8 +140,8 @@ public sealed class TableEmissionPlanner
         var headerItems = _headerFactory.Create(table, options, renameLookup);
         var result = _perTableWriter.Generate(table, options, headerItems, cancellationToken);
 
-        var moduleRoot = _fileSystem.Path.Combine(outputDirectory, "Modules", table.Module);
-        var tableFilePath = _fileSystem.Path.Combine(moduleRoot, $"{table.Schema}.{result.EffectiveTableName}.sql");
+        var moduleRoot = _fileSystem.Path.Combine(outputDirectory, "Modules", snapshot.Identity.Module);
+        var tableFilePath = _fileSystem.Path.Combine(moduleRoot, $"{snapshot.Identity.Schema}.{result.EffectiveTableName}.sql");
 
         var indexNames = result.IndexNames.IsDefaultOrEmpty
             ? ImmutableArray<string>.Empty
@@ -142,16 +151,16 @@ public sealed class TableEmissionPlanner
             ? ImmutableArray<string>.Empty
             : result.ForeignKeyNames;
 
-        var manifestEntry = new TableManifestEntry(
-            table.Module,
-            table.Schema,
+        var emissionMetadata = TableArtifactEmissionMetadata.Create(
             result.EffectiveTableName,
             Relativize(tableFilePath, outputDirectory),
             indexNames,
             foreignKeyNames,
             result.IncludesExtendedProperties);
 
-        return new TableEmissionPlan(manifestEntry, tableFilePath, result.Script);
+        var enrichedSnapshot = snapshot.WithEmission(emissionMetadata);
+
+        return new TableEmissionPlan(enrichedSnapshot, tableFilePath, result.Script);
     }
 
     private string Relativize(string path, string root)

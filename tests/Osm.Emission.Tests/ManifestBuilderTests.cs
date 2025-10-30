@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model.Artifacts;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Smo;
@@ -14,16 +16,14 @@ public class ManifestBuilderTests
     public void Build_populates_summary_and_defaults_when_report_is_provided()
     {
         var builder = new ManifestBuilder();
-        var tables = new List<TableManifestEntry>
+        var tables = new List<TableArtifactSnapshot>
         {
-            new(
-                Module: "SampleModule",
-                Schema: "dbo",
-                Table: "Sample",
-                TableFile: "Modules/SampleModule/dbo.Sample.sql",
-                Indexes: ImmutableArray<string>.Empty,
-                ForeignKeys: ImmutableArray<string>.Empty,
-                IncludesExtendedProperties: false),
+            CreateSnapshot(
+                module: "SampleModule",
+                schema: "dbo",
+                table: "Sample",
+                logicalName: "Sample",
+                manifestPath: "Modules/SampleModule/dbo.Sample.sql"),
         };
 
         var options = SmoBuildOptions.Default with
@@ -98,5 +98,32 @@ public class ManifestBuilderTests
             moduleRollups,
             ImmutableDictionary<string, ToggleExportValue>.Empty,
             toggles);
+    }
+
+    private static TableArtifactSnapshot CreateSnapshot(
+        string module,
+        string schema,
+        string table,
+        string logicalName,
+        string manifestPath)
+    {
+        var identity = TableArtifactIdentity.Create(module, module, schema, table, logicalName, null);
+        var metadata = TableArtifactMetadata.Create(null);
+        var snapshot = TableArtifactSnapshot.Create(
+            identity,
+            Array.Empty<TableColumnSnapshot>(),
+            Array.Empty<TableIndexSnapshot>(),
+            Array.Empty<TableForeignKeySnapshot>(),
+            Array.Empty<TableTriggerSnapshot>(),
+            metadata);
+
+        var emission = TableArtifactEmissionMetadata.Create(
+            table,
+            manifestPath,
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            includesExtendedProperties: false);
+
+        return snapshot.WithEmission(emission);
     }
 }

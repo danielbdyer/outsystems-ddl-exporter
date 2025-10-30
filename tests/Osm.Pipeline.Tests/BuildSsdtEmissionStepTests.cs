@@ -359,7 +359,9 @@ public sealed class BuildSsdtEmissionStepTests
             ForeignKeys: foreignKeys,
             Triggers: ImmutableArray<SmoTriggerDefinition>.Empty);
 
-        return SmoModel.Create(ImmutableArray.Create(table));
+        var tables = ImmutableArray.Create(table);
+        var snapshots = tables.Select(static t => t.ToSnapshot()).ToImmutableArray();
+        return SmoModel.Create(tables, snapshots);
     }
 
     private static SsdtManifest CreateManifest()

@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Model;
+using Osm.Domain.Model.Artifacts;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
@@ -81,7 +82,11 @@ public sealed class SmoModelFactory
             tables = tables.Sort(SmoTableBuilder.DefinitionComparer);
         }
 
-        return SmoModel.Create(tables);
+        var snapshots = tables.IsDefaultOrEmpty
+            ? ImmutableArray<TableArtifactSnapshot>.Empty
+            : tables.Select(static table => table.ToSnapshot()).ToImmutableArray();
+
+        return SmoModel.Create(tables, snapshots);
     }
 
     public ImmutableArray<Table> CreateSmoTables(
