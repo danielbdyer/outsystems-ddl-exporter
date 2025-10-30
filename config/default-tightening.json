@@ -34,6 +34,7 @@
     },
     "staticSeeds": {
       "groupByModule": true,
+      "emitMasterFile": false,
       "mode": "NonDestructive"
     }
   },
