@@ -428,6 +428,8 @@ public class BuildSsdtCommandFactoryTests
                 ImmutableDictionary<string, ToggleExportValue>.Empty.Add(
                     TighteningToggleKeys.PolicyMode,
                     new ToggleExportValue(TighteningMode.EvidenceGated, ToggleSource.Configuration)),
+                columns.ToImmutableDictionary(static c => c.Column.ToString(), _ => "Sales"),
+                uniqueIndexes.ToImmutableDictionary(static u => u.Index.ToString(), _ => "Sales"),
                 toggle);
 
             var manifest = new SsdtManifest(

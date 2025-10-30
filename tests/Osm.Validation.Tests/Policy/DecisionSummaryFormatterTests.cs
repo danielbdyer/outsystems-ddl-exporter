@@ -94,6 +94,8 @@ public class DecisionSummaryFormatterTests
             ImmutableArray<TighteningDiagnostic>.Empty,
             ImmutableDictionary<string, ModuleDecisionRollup>.Empty,
             ImmutableDictionary<string, ToggleExportValue>.Empty,
+            ImmutableDictionary<string, string>.Empty,
+            ImmutableDictionary<string, string>.Empty,
             TighteningToggleSnapshot.Create(TighteningOptions.Default));
 
     private static ColumnDecisionReport CreateColumn(

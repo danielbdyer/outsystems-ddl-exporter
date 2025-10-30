@@ -101,6 +101,8 @@ public sealed class BuildSsdtApplicationServiceTests
             ImmutableArray<TighteningDiagnostic>.Empty,
             ImmutableDictionary<string, ModuleDecisionRollup>.Empty,
             ImmutableDictionary<string, ToggleExportValue>.Empty,
+            ImmutableDictionary<string, string>.Empty,
+            ImmutableDictionary<string, string>.Empty,
             toggles);
         var manifest = new SsdtManifest(
             Array.Empty<TableManifestEntry>(),

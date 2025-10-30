@@ -268,6 +268,8 @@ public sealed class BuildSsdtEmissionStepTests
             ImmutableArray<TighteningDiagnostic>.Empty,
             ImmutableDictionary<string, ModuleDecisionRollup>.Empty,
             ImmutableDictionary<string, ToggleExportValue>.Empty,
+            ImmutableDictionary<string, string>.Empty,
+            ImmutableDictionary<string, string>.Empty,
             TighteningToggleSnapshot.Create(TighteningOptions.Default));
 
         var opportunities = new OpportunitiesReport(

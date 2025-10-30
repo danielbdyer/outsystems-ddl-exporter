@@ -50,6 +50,10 @@ public class PipelineReportLauncherTests
         Assert.Contains("<strong>Files with errors:</strong> 0", html);
         Assert.Contains("<strong>Total errors:</strong> 0", html);
         Assert.Contains("No SQL validation errors were detected.", html);
+        Assert.Contains("decision-index", html);
+        Assert.Contains("Column decisions", html);
+        Assert.Contains("id=\"module-appcore\"", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("id=\"column-dbo-customer-email\"", html, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -159,10 +163,11 @@ public class PipelineReportLauncherTests
             SsdtPredicateCoverage.Empty,
             Array.Empty<string>());
 
+        var columnCoordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("Customer"), new ColumnName("Email"));
         var decisionReport = new PolicyDecisionReport(
             ImmutableArray.Create(
                 new ColumnDecisionReport(
-                    new ColumnCoordinate(new SchemaName("dbo"), new TableName("Customer"), new ColumnName("Email")),
+                    columnCoordinate,
                     true,
                     false,
                     ImmutableArray<string>.Empty)),
@@ -189,6 +194,10 @@ public class PipelineReportLauncherTests
             ImmutableDictionary<string, ToggleExportValue>.Empty.Add(
                 TighteningToggleKeys.PolicyMode,
                 new ToggleExportValue(TighteningMode.EvidenceGated, ToggleSource.Configuration)),
+            ImmutableDictionary<string, string>.Empty.Add(
+                columnCoordinate.ToString(),
+                "AppCore"),
+            ImmutableDictionary<string, string>.Empty,
             TighteningToggleSnapshot.Create(TighteningOptions.Default));
 
         var seedPaths = ImmutableArray.Create(

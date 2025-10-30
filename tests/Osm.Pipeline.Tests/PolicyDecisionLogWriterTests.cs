@@ -59,6 +59,7 @@ public sealed class PolicyDecisionLogWriterTests
         var result = await writer.WriteAsync(output.Path, report, CancellationToken.None);
         Assert.True(result.IsSuccess);
         var path = result.Value;
+        var reportPath = Path.Combine(output.Path, "policy-decision-report.json");
 
         var json = await File.ReadAllTextAsync(path);
         using var document = JsonDocument.Parse(json);
@@ -85,5 +86,18 @@ public sealed class PolicyDecisionLogWriterTests
             : modeValue.GetRawText();
         Assert.Equal(TighteningMode.EvidenceGated.ToString(), actualMode);
         Assert.Equal((int)ToggleSource.Default, mode.GetProperty("Source").GetInt32());
+
+        var columns = root.GetProperty("Columns");
+        Assert.Equal("Accounting", columns[0].GetProperty("Module").GetString());
+        var uniqueIndexes = root.GetProperty("UniqueIndexes");
+        Assert.Equal("Accounting", uniqueIndexes[0].GetProperty("Module").GetString());
+        var foreignKeys = root.GetProperty("ForeignKeys");
+        Assert.Equal("Accounting", foreignKeys[0].GetProperty("Module").GetString());
+
+        Assert.True(File.Exists(reportPath));
+        var rawReportJson = await File.ReadAllTextAsync(reportPath);
+        using var rawReportDocument = JsonDocument.Parse(rawReportJson);
+        var columnModules = rawReportDocument.RootElement.GetProperty("ColumnModules");
+        Assert.True(columnModules.TryGetProperty("dbo.Customer.Email", out _));
     }
 }
