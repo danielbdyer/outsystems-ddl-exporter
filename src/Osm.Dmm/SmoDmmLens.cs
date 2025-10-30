@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Domain.ValueObjects;
 using Osm.Smo;
 
 namespace Osm.Dmm;
@@ -42,9 +43,9 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
 
         var options = request.Options ?? SmoBuildOptions.Default;
         var namingMetadata = request.Model.Tables.ToDictionary(
-            table => TableKey(table.Schema, table.Name),
+            table => table.ToCoordinate(),
             table => new TableNamingMetadata(table.OriginalModule, table.LogicalName),
-            StringComparer.OrdinalIgnoreCase);
+            TableCoordinate.OrdinalIgnoreCaseComparer);
         var physicalOverrides = CreatePhysicalNamingOverrides(request.Model);
         if (physicalOverrides.Count > 0)
         {
@@ -66,8 +67,12 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
                         out _))
                     .Where(rule =>
                     {
-                        var key = TableKey(rule.Schema!.Value.Value, rule.PhysicalName!.Value.Value);
-                        if (!namingMetadata.TryGetValue(key, out var metadata))
+                        var coordinateResult = TableCoordinate.Create(
+                            rule.Schema!.Value.Value,
+                            rule.PhysicalName!.Value.Value);
+
+                        if (coordinateResult.IsFailure ||
+                            !namingMetadata.TryGetValue(coordinateResult.Value, out var metadata))
                         {
                             return true;
                         }
@@ -217,10 +222,12 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
             return tables;
         }
 
-        var metadata = new Dictionary<string, TableMetadata>(model.Tables.Length, StringComparer.OrdinalIgnoreCase);
+        var metadata = new Dictionary<TableCoordinate, TableMetadata>(
+            model.Tables.Length,
+            TableCoordinate.OrdinalIgnoreCaseComparer);
         foreach (var table in model.Tables)
         {
-            var key = TableKey(table.Schema, table.Name);
+            var key = table.ToCoordinate();
             if (metadata.ContainsKey(key))
             {
                 continue;
@@ -252,18 +259,19 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
                 table.Name,
                 table.LogicalName,
                 table.OriginalModule);
-            var effectiveKey = TableKey(table.Schema, effectiveName);
-            if (!metadata.ContainsKey(effectiveKey))
+            var effectiveCoordinateResult = TableCoordinate.Create(table.Schema, effectiveName);
+            if (effectiveCoordinateResult.IsSuccess && !metadata.ContainsKey(effectiveCoordinateResult.Value))
             {
-                metadata[effectiveKey] = tableMetadata;
+                metadata[effectiveCoordinateResult.Value] = tableMetadata;
             }
         }
 
         var adjusted = new List<DmmTable>(tables.Count);
         foreach (var table in tables)
         {
-            var key = TableKey(table.Schema, table.Name);
-            if (!metadata.TryGetValue(key, out var tableMetadata))
+            var coordinateResult = TableCoordinate.Create(table.Schema, table.Name);
+            if (coordinateResult.IsFailure ||
+                !metadata.TryGetValue(coordinateResult.Value, out var tableMetadata))
             {
                 adjusted.Add(table);
                 continue;
@@ -294,8 +302,6 @@ public sealed class SmoDmmLens : IDmmLens<SmoDmmLensRequest>
 
         return adjusted;
     }
-
-    private static string TableKey(string schema, string name) => $"{schema}.{name}";
 
     private sealed record TableMetadata(
         IReadOnlyDictionary<string, int> ColumnOrder,

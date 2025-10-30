@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
+using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Tests.Support;
@@ -27,14 +28,15 @@ public sealed class SqlDataProfilerOrchestrationTests
             [("dbo", "OSUSR_U_USER", "ID")] = new ColumnMetadata(false, false, true, null),
             [("dbo", "OSUSR_U_USER", "EMAIL")] = new ColumnMetadata(true, false, false, null)
         };
-        var rowCounts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance)
+        var userCoordinate = TableCoordinate.Create("dbo", "OSUSR_U_USER").Value;
+
+        var rowCounts = new Dictionary<TableCoordinate, long>(TableCoordinate.OrdinalIgnoreCaseComparer)
         {
-            [("dbo", "OSUSR_U_USER")] = 100
+            [userCoordinate] = 100
         };
 
         var plan = new TableProfilingPlan(
-            "dbo",
-            "OSUSR_U_USER",
+            userCoordinate,
             100,
             ImmutableArray.Create("EMAIL", "ID"),
             ImmutableArray.Create(new UniqueCandidatePlan("email", ImmutableArray.Create("EMAIL"))),
@@ -107,16 +109,18 @@ public sealed class SqlDataProfilerOrchestrationTests
             [("dbo", "OSUSR_C_CHILD", "PARENTID")] = new ColumnMetadata(true, false, false, null)
         };
 
-        var rowCounts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance)
+        var parentCoordinate = TableCoordinate.Create("dbo", "OSUSR_P_PARENT").Value;
+        var childCoordinate = TableCoordinate.Create("dbo", "OSUSR_C_CHILD").Value;
+
+        var rowCounts = new Dictionary<TableCoordinate, long>(TableCoordinate.OrdinalIgnoreCaseComparer)
         {
-            [("dbo", "OSUSR_P_PARENT")] = 5,
-            [("dbo", "OSUSR_C_CHILD")] = 10
+            [parentCoordinate] = 5,
+            [childCoordinate] = 10
         };
 
         var foreignKeyKey = ProfilingPlanBuilder.BuildForeignKeyKey("PARENTID", "dbo", "OSUSR_P_PARENT", "ID");
         var plan = new TableProfilingPlan(
-            "dbo",
-            "OSUSR_C_CHILD",
+            childCoordinate,
             10,
             ImmutableArray.Create("ID", "PARENTID"),
             ImmutableArray<UniqueCandidatePlan>.Empty,
@@ -154,9 +158,9 @@ public sealed class SqlDataProfilerOrchestrationTests
             });
 
         var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
-        var planBuilder = new StubPlanBuilder(new Dictionary<(string Schema, string Table), TableProfilingPlan>(TableKeyComparer.Instance)
+        var planBuilder = new StubPlanBuilder(new Dictionary<TableCoordinate, TableProfilingPlan>(TableCoordinate.OrdinalIgnoreCaseComparer)
         {
-            [("dbo", "OSUSR_C_CHILD")] = plan
+            [childCoordinate] = plan
         });
         var queryExecutor = new StubQueryExecutor(results);
         var profiler = new SqlDataProfiler(new NullConnectionFactory(), model, SqlProfilerOptions.Default, metadataLoader, planBuilder, queryExecutor);
@@ -173,49 +177,49 @@ public sealed class SqlDataProfilerOrchestrationTests
     private sealed class StubMetadataLoader : ITableMetadataLoader
     {
         private readonly Dictionary<(string Schema, string Table, string Column), ColumnMetadata> _metadata;
-        private readonly Dictionary<(string Schema, string Table), long> _rowCounts;
+        private readonly Dictionary<TableCoordinate, long> _rowCounts;
 
         public StubMetadataLoader(
             Dictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
-            Dictionary<(string Schema, string Table), long> rowCounts)
+            Dictionary<TableCoordinate, long> rowCounts)
         {
             _metadata = metadata;
             _rowCounts = rowCounts;
         }
 
-        public Task<Dictionary<(string Schema, string Table, string Column), ColumnMetadata>> LoadColumnMetadataAsync(DbConnection connection, IReadOnlyCollection<(string Schema, string Table)> tables, CancellationToken cancellationToken)
+        public Task<Dictionary<(string Schema, string Table, string Column), ColumnMetadata>> LoadColumnMetadataAsync(DbConnection connection, IReadOnlyCollection<TableCoordinate> tables, CancellationToken cancellationToken)
         {
             return Task.FromResult(new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(_metadata, ColumnKeyComparer.Instance));
         }
 
-        public Task<Dictionary<(string Schema, string Table), long>> LoadRowCountsAsync(DbConnection connection, IReadOnlyCollection<(string Schema, string Table)> tables, CancellationToken cancellationToken)
+        public Task<Dictionary<TableCoordinate, long>> LoadRowCountsAsync(DbConnection connection, IReadOnlyCollection<TableCoordinate> tables, CancellationToken cancellationToken)
         {
-            return Task.FromResult(new Dictionary<(string Schema, string Table), long>(_rowCounts, TableKeyComparer.Instance));
+            return Task.FromResult(new Dictionary<TableCoordinate, long>(_rowCounts, TableCoordinate.OrdinalIgnoreCaseComparer));
         }
     }
 
     private sealed class StubPlanBuilder : IProfilingPlanBuilder
     {
-        private readonly Dictionary<(string Schema, string Table), TableProfilingPlan> _plans;
+        private readonly Dictionary<TableCoordinate, TableProfilingPlan> _plans;
 
         public StubPlanBuilder(TableProfilingPlan plan)
         {
-            _plans = new Dictionary<(string Schema, string Table), TableProfilingPlan>(TableKeyComparer.Instance)
+            _plans = new Dictionary<TableCoordinate, TableProfilingPlan>(TableCoordinate.OrdinalIgnoreCaseComparer)
             {
-                [(plan.Schema, plan.Table)] = plan
+                [plan.Coordinate] = plan
             };
         }
 
-        public StubPlanBuilder(Dictionary<(string Schema, string Table), TableProfilingPlan> plans)
+        public StubPlanBuilder(Dictionary<TableCoordinate, TableProfilingPlan> plans)
         {
-            _plans = new Dictionary<(string Schema, string Table), TableProfilingPlan>(plans, TableKeyComparer.Instance);
+            _plans = new Dictionary<TableCoordinate, TableProfilingPlan>(plans, TableCoordinate.OrdinalIgnoreCaseComparer);
         }
 
-        public Dictionary<(string Schema, string Table), TableProfilingPlan> BuildPlans(
+        public Dictionary<TableCoordinate, TableProfilingPlan> BuildPlans(
             IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
-            IReadOnlyDictionary<(string Schema, string Table), long> rowCounts)
+            IReadOnlyDictionary<TableCoordinate, long> rowCounts)
         {
-            return new Dictionary<(string Schema, string Table), TableProfilingPlan>(_plans, TableKeyComparer.Instance);
+            return new Dictionary<TableCoordinate, TableProfilingPlan>(_plans, TableCoordinate.OrdinalIgnoreCaseComparer);
         }
     }
 

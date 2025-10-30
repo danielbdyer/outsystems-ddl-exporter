@@ -29,9 +29,9 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
         _entityLookup = entityLookup ?? throw new ArgumentNullException(nameof(entityLookup));
     }
 
-    public Dictionary<(string Schema, string Table), TableProfilingPlan> BuildPlans(
+    public Dictionary<TableCoordinate, TableProfilingPlan> BuildPlans(
         IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
-        IReadOnlyDictionary<(string Schema, string Table), long> rowCounts)
+        IReadOnlyDictionary<TableCoordinate, long> rowCounts)
     {
         if (metadata is null)
         {
@@ -43,18 +43,18 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             throw new ArgumentNullException(nameof(rowCounts));
         }
 
-        var builders = new Dictionary<(string Schema, string Table), TableProfilingPlanAccumulator>(TableKeyComparer.Instance);
+        var builders = new Dictionary<TableCoordinate, TableProfilingPlanAccumulator>(TableCoordinate.OrdinalIgnoreCaseComparer);
 
         foreach (var entity in _model.Modules.SelectMany(static module => module.Entities))
         {
             var schema = entity.Schema.Value;
             var table = entity.PhysicalName.Value;
-            var key = (schema, table);
+            var coordinate = TableCoordinate.From(entity);
 
-            if (!builders.TryGetValue(key, out var accumulator))
+            if (!builders.TryGetValue(coordinate, out var accumulator))
             {
-                accumulator = new TableProfilingPlanAccumulator(schema, table);
-                builders[key] = accumulator;
+                accumulator = new TableProfilingPlanAccumulator(coordinate);
+                builders[coordinate] = accumulator;
             }
 
             foreach (var attribute in entity.Attributes)
@@ -97,7 +97,7 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             }
         }
 
-        var plans = new Dictionary<(string Schema, string Table), TableProfilingPlan>(builders.Count, TableKeyComparer.Instance);
+        var plans = new Dictionary<TableCoordinate, TableProfilingPlan>(builders.Count, TableCoordinate.OrdinalIgnoreCaseComparer);
         foreach (var kvp in builders)
         {
             var key = kvp.Key;
@@ -126,11 +126,14 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
         private readonly HashSet<string> _foreignKeyKeys = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<ForeignKeyPlan> _foreignKeys = new();
 
-        public TableProfilingPlanAccumulator(string schema, string table)
+        public TableProfilingPlanAccumulator(TableCoordinate coordinate)
         {
-            Schema = schema;
-            Table = table;
+            Coordinate = coordinate;
+            Schema = coordinate.Schema.Value;
+            Table = coordinate.Table.Value;
         }
+
+        public TableCoordinate Coordinate { get; }
 
         public string Schema { get; }
 
@@ -183,7 +186,7 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
                 .ToImmutableArray();
             var uniqueCandidates = _uniqueCandidates.ToImmutableArray();
             var foreignKeys = _foreignKeys.ToImmutableArray();
-            return new TableProfilingPlan(Schema, Table, rowCount, columns, uniqueCandidates, foreignKeys);
+            return new TableProfilingPlan(Coordinate, rowCount, columns, uniqueCandidates, foreignKeys);
         }
     }
 }

@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.Tests.Profiling;
@@ -70,11 +71,11 @@ public sealed class SqlDataProfilerPerformanceTests
     private sealed class SyntheticMetadataLoader : ITableMetadataLoader
     {
         private readonly IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> _metadata;
-        private readonly IReadOnlyDictionary<(string Schema, string Table), long> _rowCounts;
+        private readonly IReadOnlyDictionary<TableCoordinate, long> _rowCounts;
 
         public SyntheticMetadataLoader(
             IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
-            IReadOnlyDictionary<(string Schema, string Table), long> rowCounts)
+            IReadOnlyDictionary<TableCoordinate, long> rowCounts)
         {
             _metadata = metadata;
             _rowCounts = rowCounts;
@@ -82,7 +83,7 @@ public sealed class SqlDataProfilerPerformanceTests
 
         public Task<Dictionary<(string Schema, string Table, string Column), ColumnMetadata>> LoadColumnMetadataAsync(
             System.Data.Common.DbConnection connection,
-            IReadOnlyCollection<(string Schema, string Table)> tables,
+            IReadOnlyCollection<TableCoordinate> tables,
             CancellationToken cancellationToken)
         {
             var builder = new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(ColumnKeyComparer.Instance);
@@ -90,7 +91,8 @@ public sealed class SqlDataProfilerPerformanceTests
             {
                 foreach (var (key, value) in _metadata)
                 {
-                    if (TableKeyComparer.Instance.Equals((key.Schema, key.Table), table))
+                    var candidate = TableCoordinate.Create(key.Schema, key.Table).Value;
+                    if (TableCoordinate.OrdinalIgnoreCaseComparer.Equals(candidate, table))
                     {
                         builder[key] = value;
                     }
@@ -100,12 +102,12 @@ public sealed class SqlDataProfilerPerformanceTests
             return Task.FromResult(builder);
         }
 
-        public Task<Dictionary<(string Schema, string Table), long>> LoadRowCountsAsync(
+        public Task<Dictionary<TableCoordinate, long>> LoadRowCountsAsync(
             System.Data.Common.DbConnection connection,
-            IReadOnlyCollection<(string Schema, string Table)> tables,
+            IReadOnlyCollection<TableCoordinate> tables,
             CancellationToken cancellationToken)
         {
-            var builder = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance);
+            var builder = new Dictionary<TableCoordinate, long>(TableCoordinate.OrdinalIgnoreCaseComparer);
             foreach (var table in tables)
             {
                 if (_rowCounts.TryGetValue(table, out var value))

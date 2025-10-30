@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Microsoft.Data.SqlClient;
+using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Profiling;
 using Xunit;
 
@@ -12,10 +13,10 @@ public sealed class SqlDataProfilerCommandBuilderTests
     public void BuildTableFilterClause_AddsParametersForEachTable()
     {
         using var command = new SqlCommand();
-        var tables = new (string Schema, string Table)[]
+        var tables = new[]
         {
-            ("dbo", "OSUSR_A_ENTITY"),
-            ("sales", "ORDERS")
+            TableCoordinate.Create("dbo", "OSUSR_A_ENTITY").Value,
+            TableCoordinate.Create("sales", "ORDERS").Value
         };
 
         var clause = SqlDataProfiler.BuildTableFilterClause(command, tables, "s.name", "t.name");
@@ -52,7 +53,7 @@ public sealed class SqlDataProfilerCommandBuilderTests
     {
         using var command = new SqlCommand();
 
-        var clause = SqlDataProfiler.BuildTableFilterClause(command, Array.Empty<(string Schema, string Table)>(), "s.name", "t.name");
+        var clause = SqlDataProfiler.BuildTableFilterClause(command, Array.Empty<TableCoordinate>(), "s.name", "t.name");
 
         Assert.Equal("1 = 0", clause);
         Assert.Empty(command.Parameters);

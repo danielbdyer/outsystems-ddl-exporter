@@ -3,23 +3,24 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 
 namespace Osm.Smo;
 
 internal sealed class EntityEmissionIndex
 {
-    private readonly IReadOnlyDictionary<string, EntityEmissionContext> _primaryBySchemaAndTable;
+    private readonly IReadOnlyDictionary<TableCoordinate, EntityEmissionContext> _primaryBySchemaAndTable;
     private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _primaryByPhysicalName;
     private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _primaryByLogicalName;
-    private readonly IReadOnlyDictionary<string, EntityEmissionContext> _supplementalBySchemaAndTable;
+    private readonly IReadOnlyDictionary<TableCoordinate, EntityEmissionContext> _supplementalBySchemaAndTable;
     private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _supplementalByPhysicalName;
     private readonly IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> _supplementalByLogicalName;
 
     public EntityEmissionIndex(
-        IReadOnlyDictionary<string, EntityEmissionContext> primaryBySchemaAndTable,
+        IReadOnlyDictionary<TableCoordinate, EntityEmissionContext> primaryBySchemaAndTable,
         IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> primaryByPhysicalName,
         IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> primaryByLogicalName,
-        IReadOnlyDictionary<string, EntityEmissionContext> supplementalBySchemaAndTable,
+        IReadOnlyDictionary<TableCoordinate, EntityEmissionContext> supplementalBySchemaAndTable,
         IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> supplementalByPhysicalName,
         IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> supplementalByLogicalName)
     {
@@ -59,8 +60,8 @@ internal sealed class EntityEmissionIndex
             throw new ArgumentNullException(nameof(entity));
         }
 
-        var key = SchemaTableKey(entity.Schema.Value, entity.PhysicalName.Value);
-        if (_primaryBySchemaAndTable.TryGetValue(key, out var context))
+        var coordinate = TableCoordinate.From(entity);
+        if (_primaryBySchemaAndTable.TryGetValue(coordinate, out var context))
         {
             return context;
         }
@@ -128,7 +129,7 @@ internal sealed class EntityEmissionIndex
         string tableName,
         string preferredSchema,
         IReadOnlyDictionary<string, ImmutableArray<EntityEmissionContext>> lookup,
-        IReadOnlyDictionary<string, EntityEmissionContext> schemaLookup,
+        IReadOnlyDictionary<TableCoordinate, EntityEmissionContext> schemaLookup,
         out EntityEmissionContext context)
     {
         if (lookup.TryGetValue(tableName, out var contexts) && !contexts.IsDefaultOrEmpty)
@@ -151,8 +152,10 @@ internal sealed class EntityEmissionIndex
             return true;
         }
 
-        var schemaKey = SchemaTableKey(preferredSchema, tableName);
-        if (schemaLookup.TryGetValue(schemaKey, out var candidate) && candidate is not null)
+        var coordinateResult = TableCoordinate.Create(preferredSchema, tableName);
+        if (coordinateResult.IsSuccess &&
+            schemaLookup.TryGetValue(coordinateResult.Value, out var candidate) &&
+            candidate is not null)
         {
             context = candidate;
             return true;
@@ -200,7 +203,4 @@ internal sealed class EntityEmissionIndex
         context = default!;
         return false;
     }
-
-    private static string SchemaTableKey(string schema, string table)
-        => $"{schema}.{table}";
 }

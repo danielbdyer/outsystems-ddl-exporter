@@ -72,7 +72,7 @@ public sealed class SqlDataProfiler : IDataProfiler
             var metadata = await _metadataLoader.LoadColumnMetadataAsync(connection, tables, cancellationToken).ConfigureAwait(false);
             var rowCounts = await _metadataLoader.LoadRowCountsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
             var plans = _planBuilder.BuildPlans(metadata, rowCounts);
-            var resultsLookup = new ConcurrentDictionary<(string Schema, string Table), TableProfilingResults>(TableKeyComparer.Instance);
+            var resultsLookup = new ConcurrentDictionary<TableCoordinate, TableProfilingResults>(TableCoordinate.OrdinalIgnoreCaseComparer);
 
             var maxConcurrency = Math.Max(1, _options.MaxConcurrentTableProfiles);
             if (maxConcurrency == 1 || plans.Count <= 1)
@@ -81,7 +81,7 @@ public sealed class SqlDataProfiler : IDataProfiler
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var results = await _queryExecutor.ExecuteAsync(plan, cancellationToken).ConfigureAwait(false);
-                    resultsLookup[(plan.Schema, plan.Table)] = results;
+                    resultsLookup[plan.Coordinate] = results;
                 }
             }
             else
@@ -98,7 +98,7 @@ public sealed class SqlDataProfiler : IDataProfiler
                         async (plan, ct) =>
                         {
                             var results = await _queryExecutor.ExecuteAsync(plan, ct).ConfigureAwait(false);
-                            resultsLookup[(plan.Schema, plan.Table)] = results;
+                            resultsLookup[plan.Coordinate] = results;
                         })
                     .ConfigureAwait(false);
             }
@@ -112,9 +112,9 @@ public sealed class SqlDataProfiler : IDataProfiler
             {
                 var schema = entity.Schema.Value;
                 var table = entity.PhysicalName.Value;
-                var tableKey = (schema, table);
-                rowCounts.TryGetValue(tableKey, out var tableRowCount);
-                var tableResults = resultsLookup.TryGetValue(tableKey, out var computed)
+                var coordinate = TableCoordinate.From(entity);
+                rowCounts.TryGetValue(coordinate, out var tableRowCount);
+                var tableResults = resultsLookup.TryGetValue(coordinate, out var computed)
                     ? computed
                     : TableProfilingResults.Empty;
 
@@ -267,12 +267,12 @@ public sealed class SqlDataProfiler : IDataProfiler
         }
     }
 
-    private IReadOnlyCollection<(string Schema, string Table)> CollectTables()
+    private IReadOnlyCollection<TableCoordinate> CollectTables()
     {
-        var tables = new HashSet<(string Schema, string Table)>(TableKeyComparer.Instance);
+        var tables = new HashSet<TableCoordinate>(TableCoordinate.OrdinalIgnoreCaseComparer);
         foreach (var entity in _model.Modules.SelectMany(static module => module.Entities))
         {
-            tables.Add((entity.Schema.Value, entity.PhysicalName.Value));
+            tables.Add(TableCoordinate.From(entity));
         }
 
         return tables;
@@ -298,7 +298,7 @@ public sealed class SqlDataProfiler : IDataProfiler
 
     internal static string BuildTableFilterClause(
         DbCommand command,
-        IReadOnlyCollection<(string Schema, string Table)> tables,
+        IReadOnlyCollection<TableCoordinate> tables,
         string schemaColumn,
         string tableColumn)
     {

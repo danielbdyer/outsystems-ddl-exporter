@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Xunit;
@@ -20,10 +21,10 @@ public sealed class TableMetadataLoaderTests
             new object?[] { "dbo", "OSUSR_U_USER", "EMAIL", true, false, 0, null }
         }));
 
-        var tables = new List<(string Schema, string Table)>
+        var tables = new List<TableCoordinate>
         {
-            ("dbo", "OSUSR_U_USER"),
-            ("sales", "ORDERS")
+            TableCoordinate.Create("dbo", "OSUSR_U_USER").Value,
+            TableCoordinate.Create("sales", "ORDERS").Value
         };
 
         var metadata = await loader.LoadColumnMetadataAsync(connection, tables, CancellationToken.None);
@@ -70,9 +71,9 @@ public sealed class TableMetadataLoaderTests
             new object?[] { "dbo", "OSUSR_U_USER", 100L }
         }));
 
-        var tables = new List<(string Schema, string Table)>
+        var tables = new List<TableCoordinate>
         {
-            ("dbo", "OSUSR_U_USER")
+            TableCoordinate.Create("dbo", "OSUSR_U_USER").Value
         };
 
         var counts = await loader.LoadRowCountsAsync(connection, tables, CancellationToken.None);
@@ -91,6 +92,6 @@ public sealed class TableMetadataLoaderTests
 
         Assert.Equal(expectedSql, connection.LastCommand!.CommandText);
         Assert.Single(connection.LastCommand.ParametersCollection.Items.Where(parameter => parameter.ParameterName.StartsWith("@schema", System.StringComparison.Ordinal)));
-        Assert.Equal(100L, counts[("dbo", "OSUSR_U_USER")]);
+        Assert.Equal(100L, counts[TableCoordinate.Create("dbo", "OSUSR_U_USER").Value]);
     }
 }

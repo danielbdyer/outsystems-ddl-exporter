@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Profiling;
 using Tests.Support;
 using Xunit;
@@ -16,15 +17,16 @@ public sealed class ProfilingPlanBuilderTests
             [("dbo", "OSUSR_U_USER", "ID")] = new ColumnMetadata(false, false, true, null),
             [("dbo", "OSUSR_U_USER", "EMAIL")] = new ColumnMetadata(true, false, false, null)
         };
-        var rowCounts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance)
+        var coordinate = TableCoordinate.Create("dbo", "OSUSR_U_USER").Value;
+        var rowCounts = new Dictionary<TableCoordinate, long>(TableCoordinate.OrdinalIgnoreCaseComparer)
         {
-            [("dbo", "OSUSR_U_USER")] = 100
+            [coordinate] = 100
         };
 
         var builder = new ProfilingPlanBuilder(model);
         var plans = builder.BuildPlans(metadata, rowCounts);
 
-        Assert.True(plans.TryGetValue(("dbo", "OSUSR_U_USER"), out var plan));
+        Assert.True(plans.TryGetValue(coordinate, out var plan));
         Assert.Equal(100, plan.RowCount);
         Assert.Equal(new[] { "EMAIL", "ID" }, plan.Columns);
         Assert.Single(plan.UniqueCandidates);

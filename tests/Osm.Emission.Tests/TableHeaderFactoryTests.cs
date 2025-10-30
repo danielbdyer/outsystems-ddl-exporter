@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Smo;
 
@@ -12,7 +13,7 @@ public class TableHeaderFactoryTests
         var factory = new TableHeaderFactory();
         var table = CreateTable();
         var options = SmoBuildOptions.Default;
-        var renameLookup = ImmutableDictionary<string, SmoRenameMapping>.Empty;
+        var renameLookup = ImmutableDictionary<TableCoordinate, SmoRenameMapping>.Empty;
 
         var result = factory.Create(table, options, renameLookup);
 
@@ -25,8 +26,9 @@ public class TableHeaderFactoryTests
         var factory = new TableHeaderFactory();
         var table = CreateTable();
         var options = SmoBuildOptions.Default with { Header = PerTableHeaderOptions.EnabledTemplate };
-        var rename = ImmutableDictionary<string, SmoRenameMapping>.Empty.Add(
-            "dbo.Sample",
+        var coordinate = TableCoordinate.Create("dbo", "Sample").Value;
+        var rename = ImmutableDictionary<TableCoordinate, SmoRenameMapping>.Empty.Add(
+            coordinate,
             new SmoRenameMapping(
                 Module: "SampleModule",
                 OriginalModule: "LegacyModule",

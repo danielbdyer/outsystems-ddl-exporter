@@ -1,6 +1,7 @@
 using System;
-using System.Collections.Immutable;
 using System.Collections.Generic;
+using System.Collections.Immutable;
+using Osm.Domain.ValueObjects;
 using Osm.Smo;
 
 namespace Osm.Emission;
@@ -10,7 +11,7 @@ public sealed class TableHeaderFactory
     public IReadOnlyList<PerTableHeaderItem>? Create(
         SmoTableDefinition table,
         SmoBuildOptions options,
-        ImmutableDictionary<string, SmoRenameMapping> renameLookup)
+        ImmutableDictionary<TableCoordinate, SmoRenameMapping> renameLookup)
     {
         if (table is null)
         {
@@ -32,7 +33,7 @@ public sealed class TableHeaderFactory
         builder.Add(PerTableHeaderItem.Create("Module", table.Module));
 
         if (!renameLookup.IsEmpty &&
-            renameLookup.TryGetValue(SchemaTableKey(table.Schema, table.Name), out var mapping))
+            renameLookup.TryGetValue(table.ToCoordinate(), out var mapping))
         {
             if (!string.Equals(mapping.EffectiveName, table.Name, StringComparison.OrdinalIgnoreCase))
             {
@@ -48,7 +49,4 @@ public sealed class TableHeaderFactory
 
         return builder.ToImmutable();
     }
-
-    private static string SchemaTableKey(string schema, string table)
-        => $"{schema}.{table}";
 }

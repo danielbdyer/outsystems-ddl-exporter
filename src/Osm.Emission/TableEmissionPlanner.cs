@@ -5,6 +5,7 @@ using System.IO.Abstractions;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.ValueObjects;
 using Osm.Smo;
 
 namespace Osm.Emission;
@@ -95,11 +96,11 @@ public sealed class TableEmissionPlanner
         return plans;
     }
 
-    private ImmutableDictionary<string, SmoRenameMapping> BuildRenameLookup(SmoModel model, SmoBuildOptions options)
+    private ImmutableDictionary<TableCoordinate, SmoRenameMapping> BuildRenameLookup(SmoModel model, SmoBuildOptions options)
     {
         if (!options.Header.Enabled)
         {
-            return ImmutableDictionary<string, SmoRenameMapping>.Empty;
+            return ImmutableDictionary<TableCoordinate, SmoRenameMapping>.Empty;
         }
 
         var lens = new SmoRenameLens();
@@ -107,13 +108,17 @@ public sealed class TableEmissionPlanner
         var entries = lens.Project(request);
         if (entries.IsDefaultOrEmpty)
         {
-            return ImmutableDictionary<string, SmoRenameMapping>.Empty;
+            return ImmutableDictionary<TableCoordinate, SmoRenameMapping>.Empty;
         }
 
-        var builder = ImmutableDictionary.CreateBuilder<string, SmoRenameMapping>(StringComparer.OrdinalIgnoreCase);
+        var builder = ImmutableDictionary.CreateBuilder<TableCoordinate, SmoRenameMapping>(TableCoordinate.OrdinalIgnoreCaseComparer);
         foreach (var entry in entries)
         {
-            builder[SchemaTableKey(entry.Schema, entry.PhysicalName)] = entry;
+            var coordinateResult = TableCoordinate.Create(entry.Schema, entry.PhysicalName);
+            if (coordinateResult.IsSuccess)
+            {
+                builder[coordinateResult.Value] = entry;
+            }
         }
 
         return builder.ToImmutable();
@@ -123,7 +128,7 @@ public sealed class TableEmissionPlanner
         SmoTableDefinition table,
         string outputDirectory,
         SmoBuildOptions options,
-        ImmutableDictionary<string, SmoRenameMapping> renameLookup,
+        ImmutableDictionary<TableCoordinate, SmoRenameMapping> renameLookup,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -157,7 +162,4 @@ public sealed class TableEmissionPlanner
     private string Relativize(string path, string root)
         => _fileSystem.Path.GetRelativePath(root, path)
             .Replace(_fileSystem.Path.DirectorySeparatorChar, '/');
-
-    private static string SchemaTableKey(string schema, string table)
-        => $"{schema}.{table}";
 }

@@ -103,7 +103,7 @@ public sealed class SmoModelFactory
         OsmModel model,
         IEnumerable<EntityModel>? supplementalEntities)
     {
-        var primaryBySchemaAndTable = new Dictionary<string, EntityEmissionContext>(StringComparer.OrdinalIgnoreCase);
+        var primaryByCoordinate = new Dictionary<TableCoordinate, EntityEmissionContext>(TableCoordinate.OrdinalIgnoreCaseComparer);
         var primaryByPhysicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
         var primaryByLogicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
 
@@ -112,15 +112,15 @@ public sealed class SmoModelFactory
             foreach (var entity in module.Entities)
             {
                 var context = EntityEmissionContext.Create(module.Name.Value, entity);
-                var schemaKey = SchemaTableKey(entity.Schema.Value, entity.PhysicalName.Value);
-                primaryBySchemaAndTable[schemaKey] = context;
+                var coordinate = TableCoordinate.From(entity);
+                primaryByCoordinate[coordinate] = context;
 
                 AddContext(primaryByPhysicalName, entity.PhysicalName.Value, context);
                 AddContext(primaryByLogicalName, entity.LogicalName.Value, context);
             }
         }
 
-        var supplementalBySchemaAndTable = new Dictionary<string, EntityEmissionContext>(StringComparer.OrdinalIgnoreCase);
+        var supplementalByCoordinate = new Dictionary<TableCoordinate, EntityEmissionContext>(TableCoordinate.OrdinalIgnoreCaseComparer);
         var supplementalByPhysicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
         var supplementalByLogicalName = new Dictionary<string, List<EntityEmissionContext>>(StringComparer.OrdinalIgnoreCase);
 
@@ -133,24 +133,24 @@ public sealed class SmoModelFactory
                     continue;
                 }
 
-                var schemaKey = SchemaTableKey(entity.Schema.Value, entity.PhysicalName.Value);
-                if (primaryBySchemaAndTable.ContainsKey(schemaKey) || supplementalBySchemaAndTable.ContainsKey(schemaKey))
+                var coordinate = TableCoordinate.From(entity);
+                if (primaryByCoordinate.ContainsKey(coordinate) || supplementalByCoordinate.ContainsKey(coordinate))
                 {
                     continue;
                 }
 
                 var context = EntityEmissionContext.Create(entity.Module.Value, entity);
-                supplementalBySchemaAndTable[schemaKey] = context;
+                supplementalByCoordinate[coordinate] = context;
                 AddContext(supplementalByPhysicalName, entity.PhysicalName.Value, context);
                 AddContext(supplementalByLogicalName, entity.LogicalName.Value, context);
             }
         }
 
         return new EntityEmissionIndex(
-            primaryBySchemaAndTable,
+            primaryByCoordinate,
             ToImmutable(primaryByPhysicalName),
             ToImmutable(primaryByLogicalName),
-            supplementalBySchemaAndTable,
+            supplementalByCoordinate,
             ToImmutable(supplementalByPhysicalName),
             ToImmutable(supplementalByLogicalName));
     }
@@ -218,7 +218,4 @@ public sealed class SmoModelFactory
 
         return builder;
     }
-
-    private static string SchemaTableKey(string schema, string table)
-        => $"{schema}.{table}";
 }

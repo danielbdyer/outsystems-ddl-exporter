@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Profiling;
+using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Xunit;
@@ -20,8 +21,7 @@ public sealed class ProfilingInfrastructureTests
         using var command = (RecordingDbCommand)connection.CreateCommand();
 
         var plan = new TableProfilingPlan(
-            "dbo",
-            "OSUSR_U_USER",
+            TableCoordinate.Create("dbo", "OSUSR_U_USER").Value,
             100,
             ImmutableArray.Create("ID", "EMAIL"),
             ImmutableArray<UniqueCandidatePlan>.Empty,
@@ -65,8 +65,7 @@ public sealed class ProfilingInfrastructureTests
         using var command = (RecordingDbCommand)connection.CreateCommand();
 
         var plan = new TableProfilingPlan(
-            "dbo",
-            "OSUSR_U_USER",
+            TableCoordinate.Create("dbo", "OSUSR_U_USER").Value,
             100,
             ImmutableArray.Create("ID", "EMAIL"),
             ImmutableArray.Create(new UniqueCandidatePlan("email", ImmutableArray.Create("ID", "EMAIL"))),
@@ -112,8 +111,7 @@ public sealed class ProfilingInfrastructureTests
         using var command = (RecordingDbCommand)connection.CreateCommand();
 
         var plan = new TableProfilingPlan(
-            "dbo",
-            "ORDERS",
+            TableCoordinate.Create("dbo", "ORDERS").Value,
             100,
             ImmutableArray.Create("CUSTOMER_ID"),
             ImmutableArray<UniqueCandidatePlan>.Empty,

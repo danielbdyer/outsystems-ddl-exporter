@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -50,9 +51,9 @@ public static class EmissionCoverageCalculator
         var emittedConstraints = emittedPrimaryKeys + emittedNonPrimaryIndexes + emittedForeignKeys;
 
         var tableLookup = smoModel.Tables.ToDictionary(
-            table => SchemaTableKey(table.Schema, table.Name),
+            table => table.ToCoordinate(),
             table => table,
-            StringComparer.OrdinalIgnoreCase);
+            TableCoordinate.OrdinalIgnoreCaseComparer);
 
         var expectedPrimaryKeys = 0;
         var expectedNonPrimaryIndexes = 0;
@@ -63,7 +64,7 @@ public static class EmissionCoverageCalculator
         var predicateSnapshots = new List<PredicateSnapshot>(entityMap.Count);
         var predicateCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var (key, snapshot) in entityMap)
+        foreach (var (coordinate, snapshot) in entityMap)
         {
             var predicates = EvaluatePredicates(snapshot);
             predicateSnapshots.Add(new PredicateSnapshot(
@@ -77,18 +78,18 @@ public static class EmissionCoverageCalculator
 
             if (!snapshot.EmittableAttributes.Any(attribute => attribute.IsIdentifier))
             {
-                AddUnsupported(unsupported, unsupportedSeen, $"Primary key skipped for {key}: no emittable identifier columns.");
+                AddUnsupported(unsupported, unsupportedSeen, $"Primary key skipped for {coordinate}: no emittable identifier columns.");
             }
 
-            if (!tableLookup.TryGetValue(key, out var smoTable))
+            if (!tableLookup.TryGetValue(coordinate, out var smoTable))
             {
-                AddUnsupported(unsupported, unsupportedSeen, $"Table {key} missing from emission output.");
+                AddUnsupported(unsupported, unsupportedSeen, $"Table {coordinate} missing from emission output.");
                 continue;
             }
 
             if (!smoTable.Indexes.Any(index => index.IsPrimaryKey))
             {
-                AddUnsupported(unsupported, unsupportedSeen, $"Primary key missing for table {key}.");
+                AddUnsupported(unsupported, unsupportedSeen, $"Primary key missing for table {coordinate}.");
             }
 
             var expectedColumnCount = snapshot.EmittableAttributes.Length;
@@ -97,7 +98,7 @@ public static class EmissionCoverageCalculator
                 AddUnsupported(
                     unsupported,
                     unsupportedSeen,
-                    $"Table {key} emitted {smoTable.Columns.Length} of {expectedColumnCount} expected columns.");
+                    $"Table {coordinate} emitted {smoTable.Columns.Length} of {expectedColumnCount} expected columns.");
             }
 
             var emittedIndexNames = new HashSet<string>(
@@ -124,7 +125,7 @@ public static class EmissionCoverageCalculator
                     AddUnsupported(
                         unsupported,
                         unsupportedSeen,
-                        $"Index {index.Name.Value} on {key} skipped: {analysis.Reason}.");
+                        $"Index {index.Name.Value} on {coordinate} skipped: {analysis.Reason}.");
                     continue;
                 }
 
@@ -139,7 +140,7 @@ public static class EmissionCoverageCalculator
                     AddUnsupported(
                         unsupported,
                         unsupportedSeen,
-                        $"Index {expectedName} on {key} missing from emission output.");
+                        $"Index {expectedName} on {coordinate} missing from emission output.");
                 }
             }
 
@@ -150,8 +151,8 @@ public static class EmissionCoverageCalculator
                     continue;
                 }
 
-                var coordinate = new ColumnCoordinate(snapshot.Entity.Schema, snapshot.Entity.PhysicalName, attribute.ColumnName);
-                if (!decisions.ForeignKeys.TryGetValue(coordinate, out var decision) || !decision.CreateConstraint)
+                var columnCoordinate = new ColumnCoordinate(snapshot.Entity.Schema, snapshot.Entity.PhysicalName, attribute.ColumnName);
+                if (!decisions.ForeignKeys.TryGetValue(columnCoordinate, out var decision) || !decision.CreateConstraint)
                 {
                     continue;
                 }
@@ -171,7 +172,7 @@ public static class EmissionCoverageCalculator
                     AddUnsupported(
                         unsupported,
                         unsupportedSeen,
-                        $"Foreign key on {key}.{attribute.LogicalName.Value} missing from emission output.");
+                        $"Foreign key on {coordinate}.{attribute.LogicalName.Value} missing from emission output.");
                 }
             }
         }
@@ -209,24 +210,24 @@ public static class EmissionCoverageCalculator
         return new EmissionCoverageResult(coverage, unsupported.ToImmutableArray(), predicateCoverage);
     }
 
-    private static Dictionary<string, DomainEntitySnapshot> BuildEntityMap(
+    private static Dictionary<TableCoordinate, DomainEntitySnapshot> BuildEntityMap(
         OsmModel model,
         ImmutableArray<EntityModel> supplementalEntities)
     {
-        var map = new Dictionary<string, DomainEntitySnapshot>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<TableCoordinate, DomainEntitySnapshot>(TableCoordinate.OrdinalIgnoreCaseComparer);
 
         foreach (var module in model.Modules)
         {
             foreach (var entity in module.Entities)
             {
-                var key = SchemaTableKey(entity.Schema.Value, entity.PhysicalName.Value);
-                map[key] = DomainEntitySnapshot.Create(module.Name.Value, entity);
+                var coordinate = TableCoordinate.From(entity);
+                map[coordinate] = DomainEntitySnapshot.Create(module.Name.Value, entity);
             }
         }
 
         if (!supplementalEntities.IsDefaultOrEmpty)
         {
-            var supplementalKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var supplementalKeys = new HashSet<TableCoordinate>(TableCoordinate.OrdinalIgnoreCaseComparer);
             foreach (var entity in supplementalEntities)
             {
                 if (entity is null)
@@ -234,13 +235,13 @@ public static class EmissionCoverageCalculator
                     continue;
                 }
 
-                var key = SchemaTableKey(entity.Schema.Value, entity.PhysicalName.Value);
-                if (map.ContainsKey(key) || !supplementalKeys.Add(key))
+                var coordinate = TableCoordinate.From(entity);
+                if (map.ContainsKey(coordinate) || !supplementalKeys.Add(coordinate))
                 {
                     continue;
                 }
 
-                map[key] = DomainEntitySnapshot.Create(entity.Module.Value, entity);
+                map[coordinate] = DomainEntitySnapshot.Create(entity.Module.Value, entity);
             }
         }
 
@@ -282,9 +283,6 @@ public static class EmissionCoverageCalculator
 
         return IndexAnalysisResult.Success(referencedBuilder.ToImmutable());
     }
-
-    private static string SchemaTableKey(string schema, string table)
-        => $"{schema}.{table}";
 
     private static void AddUnsupported(List<string> messages, HashSet<string> seen, string message)
     {

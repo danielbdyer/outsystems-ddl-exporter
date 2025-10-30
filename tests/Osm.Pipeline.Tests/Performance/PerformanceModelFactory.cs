@@ -84,13 +84,14 @@ internal static class PerformanceModelFactory
         var model = OsmModel.Create(new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), new[] { module }).Value;
 
         var metadata = new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(ColumnKeyComparer.Instance);
-        var rowCounts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance);
+        var rowCounts = new Dictionary<TableCoordinate, long>(TableCoordinate.OrdinalIgnoreCaseComparer);
 
         foreach (var entity in entityArray)
         {
             var schema = entity.Schema.Value;
             var table = entity.PhysicalName.Value;
-            rowCounts[(schema, table)] = rowCountSelector(entity);
+            var coordinate = TableCoordinate.Create(schema, table).Value;
+            rowCounts[coordinate] = rowCountSelector(entity);
 
             foreach (var attribute in entity.Attributes)
             {
@@ -172,4 +173,4 @@ internal static class PerformanceModelFactory
 internal sealed record PerformanceModelDefinition(
     OsmModel Model,
     IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> Metadata,
-    IReadOnlyDictionary<(string Schema, string Table), long> RowCounts);
+    IReadOnlyDictionary<TableCoordinate, long> RowCounts);

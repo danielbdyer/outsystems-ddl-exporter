@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Profiling;
@@ -22,7 +23,7 @@ internal sealed class TableMetadataLoader : ITableMetadataLoader
 
     public async Task<Dictionary<(string Schema, string Table, string Column), ColumnMetadata>> LoadColumnMetadataAsync(
         DbConnection connection,
-        IReadOnlyCollection<(string Schema, string Table)> tables,
+        IReadOnlyCollection<TableCoordinate> tables,
         CancellationToken cancellationToken)
     {
         if (connection is null)
@@ -41,8 +42,10 @@ internal sealed class TableMetadataLoader : ITableMetadataLoader
             return metadata;
         }
 
+        var tableSet = new HashSet<TableCoordinate>(tables, TableCoordinate.OrdinalIgnoreCaseComparer);
+
         await using var command = connection.CreateCommand();
-        var filterClause = BuildTableFilterClause(command, tables, "s.name", "t.name");
+        var filterClause = BuildTableFilterClause(command, tableSet, "s.name", "t.name");
         command.CommandText = @$"SELECT
     s.name AS SchemaName,
     t.name AS TableName,
@@ -70,7 +73,8 @@ WHERE t.is_ms_shipped = 0 AND {filterClause};";
         {
             var schema = reader.GetString(0);
             var table = reader.GetString(1);
-            if (!tables.Contains((schema, table)))
+            var coordinateResult = TableCoordinate.Create(schema, table);
+            if (coordinateResult.IsFailure || !tableSet.Contains(coordinateResult.Value))
             {
                 continue;
             }
@@ -105,9 +109,9 @@ WHERE t.is_ms_shipped = 0 AND {filterClause};";
         return metadata;
     }
 
-    public async Task<Dictionary<(string Schema, string Table), long>> LoadRowCountsAsync(
+    public async Task<Dictionary<TableCoordinate, long>> LoadRowCountsAsync(
         DbConnection connection,
-        IReadOnlyCollection<(string Schema, string Table)> tables,
+        IReadOnlyCollection<TableCoordinate> tables,
         CancellationToken cancellationToken)
     {
         if (connection is null)
@@ -120,14 +124,16 @@ WHERE t.is_ms_shipped = 0 AND {filterClause};";
             throw new ArgumentNullException(nameof(tables));
         }
 
-        var counts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance);
+        var counts = new Dictionary<TableCoordinate, long>(TableCoordinate.OrdinalIgnoreCaseComparer);
         if (tables.Count == 0)
         {
             return counts;
         }
 
+        var tableSet = new HashSet<TableCoordinate>(tables, TableCoordinate.OrdinalIgnoreCaseComparer);
+
         await using var command = connection.CreateCommand();
-        var filterClause = BuildTableFilterClause(command, tables, "s.name", "t.name");
+        var filterClause = BuildTableFilterClause(command, tableSet, "s.name", "t.name");
         command.CommandText = @$"SELECT
     s.name AS SchemaName,
     t.name AS TableName,
@@ -145,24 +151,25 @@ GROUP BY s.name, t.name;";
         {
             var schema = reader.GetString(0);
             var table = reader.GetString(1);
-            if (!tables.Contains((schema, table)))
+            var coordinateResult = TableCoordinate.Create(schema, table);
+            if (coordinateResult.IsFailure || !tableSet.Contains(coordinateResult.Value))
             {
                 continue;
             }
 
             var count = reader.GetInt64(2);
-            counts[(schema, table)] = count;
+            counts[coordinateResult.Value] = count;
         }
 
         _metadataLog?.RecordRequest(
             "sql.tableRowCounts",
             counts
-                .OrderBy(static entry => entry.Key.Schema, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(static entry => entry.Key.Table, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(static entry => entry.Key.Schema.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static entry => entry.Key.Table.Value, StringComparer.OrdinalIgnoreCase)
                 .Select(entry => new
                 {
-                    schema = entry.Key.Schema,
-                    table = entry.Key.Table,
+                    schema = entry.Key.Schema.Value,
+                    table = entry.Key.Table.Value,
                     rowCount = entry.Value
                 })
                 .ToArray());
@@ -172,7 +179,7 @@ GROUP BY s.name, t.name;";
 
     internal static string BuildTableFilterClause(
         DbCommand command,
-        IReadOnlyCollection<(string Schema, string Table)> tables,
+        IReadOnlyCollection<TableCoordinate> tables,
         string schemaColumn,
         string tableColumn)
     {
@@ -195,7 +202,7 @@ GROUP BY s.name, t.name;";
         builder.Append("EXISTS (SELECT 1 FROM (VALUES ");
 
         var index = 0;
-        foreach (var (schema, table) in tables)
+        foreach (var table in tables)
         {
             if (index > 0)
             {
@@ -205,13 +212,13 @@ GROUP BY s.name, t.name;";
             var schemaParameter = command.CreateParameter();
             schemaParameter.ParameterName = $"@schema{index}";
             schemaParameter.DbType = DbType.String;
-            schemaParameter.Value = schema;
+            schemaParameter.Value = table.Schema.Value;
             command.Parameters.Add(schemaParameter);
 
             var tableParameter = command.CreateParameter();
             tableParameter.ParameterName = $"@table{index}";
             tableParameter.DbType = DbType.String;
-            tableParameter.Value = table;
+            tableParameter.Value = table.Table.Value;
             command.Parameters.Add(tableParameter);
 
             builder.Append($"({schemaParameter.ParameterName}, {tableParameter.ParameterName})");

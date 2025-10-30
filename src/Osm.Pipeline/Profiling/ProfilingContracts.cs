@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.ValueObjects;
 
 namespace Osm.Pipeline.Profiling;
 
@@ -9,20 +10,20 @@ internal interface ITableMetadataLoader
 {
     Task<Dictionary<(string Schema, string Table, string Column), ColumnMetadata>> LoadColumnMetadataAsync(
         DbConnection connection,
-        IReadOnlyCollection<(string Schema, string Table)> tables,
+        IReadOnlyCollection<TableCoordinate> tables,
         CancellationToken cancellationToken);
 
-    Task<Dictionary<(string Schema, string Table), long>> LoadRowCountsAsync(
+    Task<Dictionary<TableCoordinate, long>> LoadRowCountsAsync(
         DbConnection connection,
-        IReadOnlyCollection<(string Schema, string Table)> tables,
+        IReadOnlyCollection<TableCoordinate> tables,
         CancellationToken cancellationToken);
 }
 
 internal interface IProfilingPlanBuilder
 {
-    Dictionary<(string Schema, string Table), TableProfilingPlan> BuildPlans(
+    Dictionary<TableCoordinate, TableProfilingPlan> BuildPlans(
         IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
-        IReadOnlyDictionary<(string Schema, string Table), long> rowCounts);
+        IReadOnlyDictionary<TableCoordinate, long> rowCounts);
 }
 
 internal interface IProfilingQueryExecutor

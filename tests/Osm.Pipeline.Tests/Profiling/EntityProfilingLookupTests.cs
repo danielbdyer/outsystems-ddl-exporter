@@ -62,15 +62,16 @@ public sealed class EntityProfilingLookupTests
             [(orderEntity.Schema.Value, orderEntity.PhysicalName.Value, "CUSTOMERID")] = new ColumnMetadata(true, false, false, null)
         };
 
-        var rowCounts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance)
+        var orderCoordinate = TableCoordinate.Create(orderEntity.Schema.Value, orderEntity.PhysicalName.Value).Value;
+        var rowCounts = new Dictionary<TableCoordinate, long>(TableCoordinate.OrdinalIgnoreCaseComparer)
         {
-            [(orderEntity.Schema.Value, orderEntity.PhysicalName.Value)] = 0
+            [orderCoordinate] = 0
         };
 
         var builder = new ProfilingPlanBuilder(model, overrides);
         var plans = builder.BuildPlans(metadata, rowCounts);
 
-        Assert.True(plans.TryGetValue((orderEntity.Schema.Value, orderEntity.PhysicalName.Value), out var plan));
+        Assert.True(plans.TryGetValue(orderCoordinate, out var plan));
         var foreignKey = Assert.Single(plan.ForeignKeys);
 
         Assert.Equal(supportEntity.Schema.Value, foreignKey.TargetSchema);

@@ -11,11 +11,11 @@ public sealed record NamingOverrideOptions
 {
     private static readonly StringComparer Comparer = StringComparer.OrdinalIgnoreCase;
 
-    private readonly IReadOnlyDictionary<string, TableName> _tableOverrides;
+    private readonly IReadOnlyDictionary<TableCoordinate, TableName> _tableOverrides;
     private readonly IReadOnlyDictionary<string, TableName> _entityOverrides;
 
     private NamingOverrideOptions(
-        IReadOnlyDictionary<string, TableName> tableOverrides,
+        IReadOnlyDictionary<TableCoordinate, TableName> tableOverrides,
         IReadOnlyDictionary<string, TableName> entityOverrides)
     {
         _tableOverrides = tableOverrides;
@@ -23,12 +23,12 @@ public sealed record NamingOverrideOptions
     }
 
     public static NamingOverrideOptions Empty { get; } = new(
-        new Dictionary<string, TableName>(Comparer),
+        new Dictionary<TableCoordinate, TableName>(TableCoordinate.OrdinalIgnoreCaseComparer),
         new Dictionary<string, TableName>(Comparer));
 
     public bool IsEmpty => _tableOverrides.Count == 0 && _entityOverrides.Count == 0;
 
-    public IReadOnlyDictionary<string, TableName> TableOverrides => _tableOverrides;
+    public IReadOnlyDictionary<TableCoordinate, TableName> TableOverrides => _tableOverrides;
 
     public static Result<NamingOverrideOptions> Create(IEnumerable<NamingOverrideRule>? overrides)
     {
@@ -37,7 +37,7 @@ public sealed record NamingOverrideOptions
             return Empty;
         }
 
-        var tableDictionary = new Dictionary<string, TableName>(Comparer);
+        var tableDictionary = new Dictionary<TableCoordinate, TableName>(TableCoordinate.OrdinalIgnoreCaseComparer);
         var entityDictionary = new Dictionary<string, TableName>(Comparer);
 
         foreach (var rule in overrides)
@@ -49,16 +49,16 @@ public sealed record NamingOverrideOptions
 
             if (rule.PhysicalName is not null)
             {
-                var tableKey = TableKey(rule.Schema!.Value.Value, rule.PhysicalName.Value.Value);
-                if (tableDictionary.TryGetValue(tableKey, out var existing) &&
+                var coordinate = new TableCoordinate(rule.Schema!.Value, rule.PhysicalName.Value);
+                if (tableDictionary.TryGetValue(coordinate, out var existing) &&
                     !Comparer.Equals(existing.Value, rule.Target.Value))
                 {
                     return ValidationError.Create(
                         "namingOverride.duplicate",
-                        $"Multiple overrides provided for {tableKey}.");
+                        $"Multiple overrides provided for {coordinate}.");
                 }
 
-                tableDictionary[tableKey] = rule.Target;
+                tableDictionary[coordinate] = rule.Target;
             }
 
             if (rule.LogicalName is not null)
@@ -91,7 +91,7 @@ public sealed record NamingOverrideOptions
             return this;
         }
 
-        var mergedTables = new Dictionary<string, TableName>(_tableOverrides, Comparer);
+        var mergedTables = new Dictionary<TableCoordinate, TableName>(_tableOverrides, TableCoordinate.OrdinalIgnoreCaseComparer);
         var mergedEntities = new Dictionary<string, TableName>(_entityOverrides, Comparer);
 
         foreach (var rule in overrides)
@@ -103,8 +103,8 @@ public sealed record NamingOverrideOptions
 
             if (rule.PhysicalName is not null)
             {
-                var tableKey = TableKey(rule.Schema!.Value.Value, rule.PhysicalName.Value.Value);
-                mergedTables[tableKey] = rule.Target;
+                var coordinate = new TableCoordinate(rule.Schema!.Value, rule.PhysicalName.Value);
+                mergedTables[coordinate] = rule.Target;
             }
 
             if (rule.LogicalName is not null)
@@ -129,8 +129,9 @@ public sealed record NamingOverrideOptions
             throw new ArgumentNullException(nameof(table));
         }
 
-        var key = TableKey(schema, table);
-        if (_tableOverrides.TryGetValue(key, out var value))
+        var coordinateResult = TableCoordinate.Create(schema, table);
+        if (coordinateResult.IsSuccess &&
+            _tableOverrides.TryGetValue(coordinateResult.Value, out var value))
         {
             overrideName = value.Value;
             return true;
@@ -210,8 +211,6 @@ public sealed record NamingOverrideOptions
 
         return table;
     }
-
-    private static string TableKey(string schema, string table) => $"{schema}.{table}";
 
     private static string EntityKey(string? module, string logicalName)
     {

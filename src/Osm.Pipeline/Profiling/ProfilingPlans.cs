@@ -1,16 +1,21 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using Osm.Domain.Profiling;
+using Osm.Domain.ValueObjects;
 
 namespace Osm.Pipeline.Profiling;
 
 internal sealed record TableProfilingPlan(
-    string Schema,
-    string Table,
+    TableCoordinate Coordinate,
     long RowCount,
     ImmutableArray<string> Columns,
     ImmutableArray<UniqueCandidatePlan> UniqueCandidates,
-    ImmutableArray<ForeignKeyPlan> ForeignKeys);
+    ImmutableArray<ForeignKeyPlan> ForeignKeys)
+{
+    public string Schema => Coordinate.Schema.Value;
+
+    public string Table => Coordinate.Table.Value;
+}
 
 internal sealed record UniqueCandidatePlan(string Key, ImmutableArray<string> Columns);
 

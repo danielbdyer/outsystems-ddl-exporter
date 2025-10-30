@@ -3,25 +3,6 @@ using System.Collections.Generic;
 
 namespace Osm.Pipeline.Profiling;
 
-internal sealed class TableKeyComparer : IEqualityComparer<(string Schema, string Table)>
-{
-    public static TableKeyComparer Instance { get; } = new();
-
-    public bool Equals((string Schema, string Table) x, (string Schema, string Table) y)
-    {
-        return string.Equals(x.Schema, y.Schema, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(x.Table, y.Table, StringComparison.OrdinalIgnoreCase);
-    }
-
-    public int GetHashCode((string Schema, string Table) obj)
-    {
-        var hash = new HashCode();
-        hash.Add(obj.Schema, StringComparer.OrdinalIgnoreCase);
-        hash.Add(obj.Table, StringComparer.OrdinalIgnoreCase);
-        return hash.ToHashCode();
-    }
-}
-
 internal sealed class ColumnKeyComparer : IEqualityComparer<(string Schema, string Table, string Column)>
 {
     public static ColumnKeyComparer Instance { get; } = new();
