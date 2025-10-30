@@ -77,6 +77,18 @@ public sealed class PolicyDecisionLogWriterTests
         var moduleUniqueRationales = accounting.GetProperty("UniqueIndexRationales");
         Assert.Equal(JsonValueKind.Object, moduleUniqueRationales.ValueKind);
 
+        var columns = root.GetProperty("Columns");
+        var column = columns[0];
+        Assert.Equal("Accounting", column.GetProperty("Module").GetString());
+
+        var uniques = root.GetProperty("UniqueIndexes");
+        var unique = uniques[0];
+        Assert.Equal("Accounting", unique.GetProperty("Module").GetString());
+
+        var foreignKeys = root.GetProperty("ForeignKeys");
+        var foreignKey = foreignKeys[0];
+        Assert.Equal("Accounting", foreignKey.GetProperty("Module").GetString());
+
         var toggles = root.GetProperty("TogglePrecedence");
         var mode = toggles.GetProperty(TighteningToggleKeys.PolicyMode);
         var modeValue = mode.GetProperty("Value");
@@ -85,5 +97,14 @@ public sealed class PolicyDecisionLogWriterTests
             : modeValue.GetRawText();
         Assert.Equal(TighteningMode.EvidenceGated.ToString(), actualMode);
         Assert.Equal((int)ToggleSource.Default, mode.GetProperty("Source").GetInt32());
+
+        var reportSnapshotPath = Path.Combine(output.Path, "policy-decisions.report.json");
+        Assert.True(File.Exists(reportSnapshotPath));
+        using var reportStream = File.OpenRead(reportSnapshotPath);
+        var roundTripped = await JsonSerializer.DeserializeAsync<PolicyDecisionReport>(
+            reportStream,
+            PolicyDecisionReportJson.GetSerializerOptions());
+        Assert.NotNull(roundTripped);
+        Assert.Equal("Accounting", Assert.Single(roundTripped!.Columns).Module);
     }
 }

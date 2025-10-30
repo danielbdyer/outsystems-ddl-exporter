@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.CommandLine;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Osm.Cli;
@@ -427,10 +428,97 @@ internal static class CommandConsole
         return true;
     }
 
+    public static void EmitTable(
+        IConsole console,
+        IReadOnlyList<string> headers,
+        IReadOnlyList<IReadOnlyList<string>> rows)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (headers is null)
+        {
+            throw new ArgumentNullException(nameof(headers));
+        }
+
+        if (rows is null)
+        {
+            throw new ArgumentNullException(nameof(rows));
+        }
+
+        if (rows.Count == 0)
+        {
+            WriteLine(console, "  (no entries)");
+            return;
+        }
+
+        var widths = new int[headers.Count];
+        for (var i = 0; i < headers.Count; i++)
+        {
+            widths[i] = headers[i]?.Length ?? 0;
+        }
+
+        foreach (var row in rows)
+        {
+            for (var i = 0; i < widths.Length && i < row.Count; i++)
+            {
+                var value = row[i] ?? string.Empty;
+                if (value.Length > widths[i])
+                {
+                    widths[i] = value.Length;
+                }
+            }
+        }
+
+        WriteLine(console, BuildTableRow(headers, widths));
+        WriteLine(console, BuildSeparator(widths));
+
+        foreach (var row in rows)
+        {
+            WriteLine(console, BuildTableRow(row, widths));
+        }
+    }
+
     private sealed record NamingOverrideTemplateRule(
         [property: JsonPropertyName("schema"), JsonPropertyOrder(0)] string Schema,
         [property: JsonPropertyName("table"), JsonPropertyOrder(1)] string Table,
         [property: JsonPropertyName("module"), JsonPropertyOrder(2)] string Module,
         [property: JsonPropertyName("entity"), JsonPropertyOrder(3)] string Entity,
         [property: JsonPropertyName("override"), JsonPropertyOrder(4)] string Override);
+
+    private static string BuildTableRow(IReadOnlyList<string> values, int[] widths)
+    {
+        var builder = new StringBuilder();
+        for (var i = 0; i < widths.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append("  ");
+            }
+
+            var value = i < values.Count ? values[i] ?? string.Empty : string.Empty;
+            builder.Append(value.PadRight(widths[i]));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildSeparator(int[] widths)
+    {
+        var builder = new StringBuilder();
+        for (var i = 0; i < widths.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append("  ");
+            }
+
+            var width = Math.Max(3, widths[i]);
+            builder.Append(new string('-', Math.Min(width, 80)));
+        }
+
+        return builder.ToString();
+    }
 }

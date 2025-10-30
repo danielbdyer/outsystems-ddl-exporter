@@ -48,6 +48,7 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
             moduleRollups,
             togglePrecedence,
             report.Columns.Select(static c => new PolicyDecisionLogColumn(
+                c.Module,
                 c.Column.Schema.Value,
                 c.Column.Table.Value,
                 c.Column.Column.Value,
@@ -55,6 +56,7 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
                 c.RequiresRemediation,
                 c.Rationales.ToArray())).ToArray(),
             report.UniqueIndexes.Select(static u => new PolicyDecisionLogUniqueIndex(
+                u.Module,
                 u.Index.Schema.Value,
                 u.Index.Table.Value,
                 u.Index.Index.Value,
@@ -62,6 +64,7 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
                 u.RequiresRemediation,
                 u.Rationales.ToArray())).ToArray(),
             report.ForeignKeys.Select(static f => new PolicyDecisionLogForeignKey(
+                f.Module,
                 f.Column.Schema.Value,
                 f.Column.Table.Value,
                 f.Column.Column.Value,
@@ -82,20 +85,25 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
                     c.PhysicalName)).ToArray())).ToArray(),
             predicateCoverage ?? SsdtPredicateCoverage.Empty);
 
-        var path = Path.Combine(outputDirectory, "policy-decisions.json");
+        var logPath = Path.Combine(outputDirectory, "policy-decisions.json");
+        var reportPath = Path.Combine(outputDirectory, "policy-decisions.report.json");
 
         try
         {
             Directory.CreateDirectory(outputDirectory);
-            var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(path, json, cancellationToken).ConfigureAwait(false);
-            return Result<string>.Success(path);
+            var logJson = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(logPath, logJson, cancellationToken).ConfigureAwait(false);
+
+            var reportJson = JsonSerializer.Serialize(report, PolicyDecisionReportJson.GetSerializerOptions());
+            await File.WriteAllTextAsync(reportPath, reportJson, cancellationToken).ConfigureAwait(false);
+
+            return Result<string>.Success(logPath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return Result<string>.Failure(ValidationError.Create(
                 "pipeline.buildSsdt.output.permissionDenied",
-                $"Failed to write policy decision log to '{outputDirectory}': {ex.Message}"));
+                $"Failed to write policy decision artifacts to '{outputDirectory}': {ex.Message}"));
         }
     }
 
@@ -120,6 +128,7 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
         SsdtPredicateCoverage PredicateCoverage);
 
     private sealed record PolicyDecisionLogColumn(
+        string? Module,
         string Schema,
         string Table,
         string Column,
@@ -128,6 +137,7 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
         IReadOnlyList<string> Rationales);
 
     private sealed record PolicyDecisionLogUniqueIndex(
+        string? Module,
         string Schema,
         string Table,
         string Index,
@@ -136,6 +146,7 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
         IReadOnlyList<string> Rationales);
 
     private sealed record PolicyDecisionLogForeignKey(
+        string? Module,
         string Schema,
         string Table,
         string Column,
