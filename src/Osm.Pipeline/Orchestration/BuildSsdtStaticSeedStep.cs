@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
@@ -86,13 +87,37 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                 .GroupBy(table => table.Definition.Module, StringComparer.OrdinalIgnoreCase)
                 .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
 
+            var usedModuleNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var group in grouped)
             {
                 var sanitizedModule = state.Request.SmoOptions.SanitizeModuleNames
                     ? ModuleNameSanitizer.Sanitize(group.Key)
                     : group.Key;
 
-                var moduleDirectory = Path.Combine(seedsRoot!, sanitizedModule);
+                var moduleDirectoryName = sanitizedModule;
+                if (!usedModuleNames.Add(moduleDirectoryName))
+                {
+                    var suffix = 2;
+                    while (!usedModuleNames.Add(moduleDirectoryName = $"{sanitizedModule}_{suffix}"))
+                    {
+                        suffix++;
+                    }
+
+                    if (state.Request.SmoOptions.SanitizeModuleNames)
+                    {
+                        state.Log.Record(
+                            "staticData.seed.moduleNameRemapped",
+                            $"Sanitized module name '{sanitizedModule}' for module '{group.Key}' collided with another module. Remapped to '{moduleDirectoryName}'.",
+                            new PipelineLogMetadataBuilder()
+                                .WithValue("module.originalName", group.Key)
+                                .WithValue("module.sanitizedName", sanitizedModule)
+                                .WithValue("module.disambiguatedName", moduleDirectoryName)
+                                .Build());
+                    }
+                }
+
+                var moduleDirectory = Path.Combine(seedsRoot!, moduleDirectoryName);
                 Directory.CreateDirectory(moduleDirectory);
 
                 var moduleTables = group

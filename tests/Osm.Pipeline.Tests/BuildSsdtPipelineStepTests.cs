@@ -200,6 +200,51 @@ public class BuildSsdtPipelineStepTests
     }
 
     [Fact]
+    public async Task StaticSeedStep_disambiguates_colliding_sanitized_module_names()
+    {
+        using var output = new TempDirectory();
+        var request = CreateRequest(output.Path, staticDataProvider: new CollidingStaticEntityDataProvider());
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
+        var evidenceState = new EvidencePrepared(
+            bootstrapState.Request,
+            bootstrapState.Log,
+            bootstrapState.Bootstrap,
+            EvidenceCache: null);
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
+        var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
+        var emissionStep = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
+        var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var validationStep = new BuildSsdtSqlValidationStep();
+        var validatedState = (await validationStep.ExecuteAsync(emissionState)).Value;
+        var step = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
+
+        var result = await step.ExecuteAsync(validatedState);
+
+        Assert.True(result.IsSuccess);
+        var state = result.Value;
+        Assert.Equal(2, state.StaticSeedScriptPaths.Length);
+        var moduleFolders = state.StaticSeedScriptPaths
+            .Select(path => Path.GetFileName(Path.GetDirectoryName(path)!))
+            .ToArray();
+        Assert.False(string.Equals(moduleFolders[0], moduleFolders[1], StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(moduleFolders, folder => string.Equals(folder, "Module_Alpha", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(moduleFolders, folder => string.Equals(folder, "Module_Alpha_2", StringComparison.OrdinalIgnoreCase));
+
+        var log = state.Log.Build();
+        var remapEntry = Assert.Single(log.Entries.Where(entry => entry.Step == "staticData.seed.moduleNameRemapped"));
+        Assert.Equal("Module#Alpha", remapEntry.Metadata["module.originalName"]);
+        Assert.Equal("Module_Alpha", remapEntry.Metadata["module.sanitizedName"]);
+        Assert.Equal("Module_Alpha_2", remapEntry.Metadata["module.disambiguatedName"]);
+    }
+
+    [Fact]
     public async Task TelemetryPackagingStep_creates_archive_with_expected_artifacts()
     {
         using var output = new TempDirectory();
@@ -423,6 +468,60 @@ public class BuildSsdtPipelineStepTests
                 .ToList();
 
             return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success(tables));
+        }
+
+        private static object?[] GenerateValues(StaticEntitySeedTableDefinition definition)
+        {
+            var values = new object?[definition.Columns.Length];
+            for (var i = 0; i < definition.Columns.Length; i++)
+            {
+                values[i] = i == 0 ? 1 : $"Sample{i}";
+            }
+
+            return values;
+        }
+    }
+
+    private sealed class CollidingStaticEntityDataProvider : IStaticEntityDataProvider
+    {
+        public Task<Result<IReadOnlyList<StaticEntityTableData>>> GetDataAsync(
+            IReadOnlyList<StaticEntitySeedTableDefinition> definitions,
+            CancellationToken cancellationToken = default)
+        {
+            if (definitions.Count == 0)
+            {
+                throw new InvalidOperationException("Fixture model must contain at least one static entity definition.");
+            }
+
+            var template = definitions[0];
+            var tables = new[]
+            {
+                CreateTable(template, "Module Alpha", "Alpha"),
+                CreateTable(template, "Module#Alpha", "Hash"),
+            };
+
+            return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success(tables));
+        }
+
+        private static StaticEntityTableData CreateTable(
+            StaticEntitySeedTableDefinition template,
+            string moduleName,
+            string suffix)
+        {
+            var definition = template with
+            {
+                Module = moduleName,
+                LogicalName = $"{template.LogicalName}_{suffix}",
+                PhysicalName = $"{template.PhysicalName}_{suffix}",
+                EffectiveName = $"{template.EffectiveName}_{suffix}"
+            };
+
+            return StaticEntityTableData.Create(
+                definition,
+                new[]
+                {
+                    StaticEntityRow.Create(GenerateValues(definition))
+                });
         }
 
         private static object?[] GenerateValues(StaticEntitySeedTableDefinition definition)
