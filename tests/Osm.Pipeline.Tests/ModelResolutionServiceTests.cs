@@ -59,6 +59,7 @@ public sealed class ModelResolutionServiceTests
         Assert.False(result.Value.WasExtracted);
         Assert.Empty(result.Value.Warnings);
         Assert.Null(dispatcher.ExtractRequest);
+        Assert.Null(result.Value.Extraction);
     }
 
     [Fact]
@@ -114,6 +115,45 @@ public sealed class ModelResolutionServiceTests
         Assert.Equal(fileSystem.Path.Combine(outputDirectory, "model.extracted.json"), result.Value.ModelPath);
         var content = fileSystem.File.ReadAllText(result.Value.ModelPath);
         Assert.Equal("{\"model\":true}", content);
+        Assert.NotNull(result.Value.Extraction);
+        Assert.Equal("{\"model\":true}", await result.Value.Extraction!.JsonPayload.ReadAsStringAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ResolveModelAsync_RespectsExtractModelInlineOverride()
+    {
+        var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
+        fileSystem.AddDirectory("/working");
+        fileSystem.Directory.SetCurrentDirectory("/working");
+        var dispatcher = new RecordingDispatcher();
+        dispatcher.SetExtractionResult(Result<ModelExtractionResult>.Success(CreateExtractionResult()));
+        var service = new ModelResolutionService(dispatcher, fileSystem);
+        var configuration = CreateConfiguration() with { ModelPath = "configured.json" };
+        var overrides = new BuildSsdtOverrides(
+            ModelPath: "override.json",
+            ProfilePath: null,
+            OutputDirectory: null,
+            ProfilerProvider: null,
+            StaticDataPath: null,
+            RenameOverrides: null,
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null,
+            ExtractModelInline: true);
+        var sqlOptions = DefaultSqlOptions with { ConnectionString = "Server=.;Database=Osm;" };
+
+        var result = await service.ResolveModelAsync(
+            configuration,
+            overrides,
+            ModuleFilterOptions.IncludeAll,
+            sqlOptions,
+            outputDirectory: "/working/out",
+            sqlMetadataLog: null,
+            cancellationToken: CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.WasExtracted);
+        Assert.NotNull(dispatcher.ExtractRequest);
+        Assert.NotEqual("override.json", result.Value.ModelPath);
     }
 
     private static CliConfiguration CreateConfiguration()

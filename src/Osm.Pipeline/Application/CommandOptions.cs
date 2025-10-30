@@ -32,7 +32,8 @@ public sealed record BuildSsdtOverrides(
     string? StaticDataPath,
     string? RenameOverrides,
     int? MaxDegreeOfParallelism,
-    string? SqlMetadataOutputPath);
+    string? SqlMetadataOutputPath,
+    bool ExtractModelInline = false);
 
 public sealed record CaptureProfileOverrides(
     string? ModelPath,

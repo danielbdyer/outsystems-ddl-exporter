@@ -126,7 +126,9 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             staticDataProviderResult.Value,
             context.CacheOverrides,
             context.ConfigPath,
-            context.SqlMetadataLog));
+            context.SqlMetadataLog,
+            modelResolution.Extraction?.Model,
+            modelResolution.Warnings));
         assemblyResult = await EnsureSuccessOrFlushAsync(assemblyResult, context, cancellationToken).ConfigureAwait(false);
         if (assemblyResult.IsFailure)
         {

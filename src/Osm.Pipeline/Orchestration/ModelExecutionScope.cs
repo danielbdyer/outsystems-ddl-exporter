@@ -1,4 +1,6 @@
+using System.Collections.Immutable;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
 using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -14,4 +16,6 @@ public sealed record ModelExecutionScope(
     SmoBuildOptions SmoOptions,
     TypeMappingPolicy TypeMappingPolicy,
     string? ProfilePath = null,
-    string? BaselineProfilePath = null);
+    string? BaselineProfilePath = null,
+    OsmModel? InlineModel = null,
+    ImmutableArray<string> ModelWarnings = default);

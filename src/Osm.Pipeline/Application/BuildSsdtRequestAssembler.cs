@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
@@ -34,7 +36,9 @@ public sealed record BuildSsdtRequestAssemblerContext(
     IStaticEntityDataProvider? StaticDataProvider,
     CacheOptionsOverrides CacheOverrides,
     string? ConfigPath,
-    SqlMetadataLog? SqlMetadataLog);
+    SqlMetadataLog? SqlMetadataLog,
+    OsmModel? InlineModel = null,
+    ImmutableArray<string> ModelWarnings = default);
 
 public sealed class BuildSsdtRequestAssembler
 {
@@ -83,7 +87,9 @@ public sealed class BuildSsdtRequestAssembler
             context.SqlOptions,
             context.SmoOptions,
             context.TypeMappingPolicy,
-            profilePath);
+            profilePath,
+            InlineModel: context.InlineModel,
+            ModelWarnings: context.ModelWarnings);
 
         var request = new BuildSsdtPipelineRequest(
             scope,

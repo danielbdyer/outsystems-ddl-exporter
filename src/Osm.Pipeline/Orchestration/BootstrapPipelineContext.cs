@@ -87,7 +87,7 @@ internal sealed class BootstrapPipelineContext
 
         Log.Record(
             "model.ingested",
-            "Loaded OutSystems model from disk.",
+            "Loaded OutSystems model.",
             new PipelineLogMetadataBuilder()
                 .WithCount("modules", moduleCount)
                 .WithCount("entities", entityCount)
