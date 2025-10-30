@@ -337,11 +337,9 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         UniqueCandidateProfile? uniqueProfile,
         ForeignKeyReality? fkReality)
     {
+        var identity = ColumnIdentity.From(entry);
         return new OpportunityColumn(
-            entry.Coordinate,
-            entry.Entity.Module.Value,
-            entry.Entity.LogicalName.Value,
-            entry.Attribute.LogicalName.Value,
+            identity,
             entry.Attribute.DataType,
             entry.Attribute.OnDisk.SqlType,
             entry.Attribute.OnDisk.IsNullable,
@@ -364,11 +362,9 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         ProfilingProbeStatus? uniqueProbe)
     {
         var attribute = entity.Attributes.First(a => string.Equals(a.ColumnName.Value, coordinate.Column.Value, StringComparison.OrdinalIgnoreCase));
+        var identity = ColumnIdentity.From(entity, attribute);
         return new OpportunityColumn(
-            coordinate,
-            entity.Module.Value,
-            entity.LogicalName.Value,
-            attribute.LogicalName.Value,
+            identity,
             attribute.DataType,
             attribute.OnDisk.SqlType,
             attribute.OnDisk.IsNullable,

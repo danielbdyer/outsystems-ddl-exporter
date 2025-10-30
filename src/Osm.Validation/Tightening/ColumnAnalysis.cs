@@ -7,14 +7,16 @@ using Osm.Validation.Tightening.Opportunities;
 namespace Osm.Validation.Tightening;
 
 public sealed record ColumnAnalysis(
-    ColumnCoordinate Column,
+    ColumnIdentity Identity,
     NullabilityDecision Nullability,
     ForeignKeyDecision? ForeignKey,
     ImmutableArray<UniqueIndexDecision> UniqueIndexes,
     ImmutableArray<Opportunity> Opportunities)
 {
+    public ColumnCoordinate Column => Identity.Coordinate;
+
     public static ColumnAnalysis Create(
-        ColumnCoordinate column,
+        ColumnIdentity identity,
         NullabilityDecision nullability,
         ForeignKeyDecision? foreignKey,
         IEnumerable<UniqueIndexDecision> uniqueIndexes,
@@ -35,6 +37,6 @@ public sealed record ColumnAnalysis(
         var opportunityArray = (opportunities ?? Array.Empty<Opportunity>())
             .ToImmutableArray();
 
-        return new ColumnAnalysis(column, nullability, foreignKey, uniqueArray, opportunityArray);
+        return new ColumnAnalysis(identity, nullability, foreignKey, uniqueArray, opportunityArray);
     }
 }

@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
+using Osm.Domain.ValueObjects;
 
 namespace Osm.Validation.Tightening;
 
@@ -14,13 +15,15 @@ public sealed class UniqueIndexEvidenceAggregator
         ISet<ColumnCoordinate> singleColumnDuplicates,
         ISet<ColumnCoordinate> compositeClean,
         ISet<ColumnCoordinate> compositeDuplicates,
-        IReadOnlyDictionary<string, CompositeUniqueCandidateProfile> compositeProfiles)
+        IReadOnlyDictionary<string, CompositeUniqueCandidateProfile> compositeProfiles,
+        IReadOnlyDictionary<ColumnCoordinate, ColumnIdentity> columnIdentities)
     {
         SingleColumnClean = singleColumnClean;
         SingleColumnDuplicates = singleColumnDuplicates;
         CompositeClean = compositeClean;
         CompositeDuplicates = compositeDuplicates;
         CompositeProfiles = compositeProfiles;
+        ColumnIdentities = columnIdentities;
     }
 
     public ISet<ColumnCoordinate> SingleColumnClean { get; }
@@ -32,6 +35,8 @@ public sealed class UniqueIndexEvidenceAggregator
     public ISet<ColumnCoordinate> CompositeDuplicates { get; }
 
     public IReadOnlyDictionary<string, CompositeUniqueCandidateProfile> CompositeProfiles { get; }
+
+    public IReadOnlyDictionary<ColumnCoordinate, ColumnIdentity> ColumnIdentities { get; }
 
     public static UniqueIndexEvidenceAggregator Create(
         OsmModel model,
@@ -50,22 +55,26 @@ public sealed class UniqueIndexEvidenceAggregator
             throw new ArgumentNullException(nameof(uniqueProfiles));
         }
 
-        var singleColumnClean = BuildSingleColumnClean(model, uniqueProfiles, enforceSingleColumnUnique);
-        var singleColumnDuplicates = BuildSingleColumnDuplicates(model, uniqueProfiles);
-        var compositeSignals = BuildCompositeSignals(model, compositeProfiles, enforceCompositeUnique);
+        var identityBuilder = new Dictionary<ColumnCoordinate, ColumnIdentity>();
+
+        var singleColumnClean = BuildSingleColumnClean(model, uniqueProfiles, enforceSingleColumnUnique, identityBuilder);
+        var singleColumnDuplicates = BuildSingleColumnDuplicates(model, uniqueProfiles, identityBuilder);
+        var compositeSignals = BuildCompositeSignals(model, compositeProfiles, enforceCompositeUnique, identityBuilder);
 
         return new UniqueIndexEvidenceAggregator(
             singleColumnClean,
             singleColumnDuplicates,
             compositeSignals.Clean,
             compositeSignals.Duplicates,
-            compositeSignals.Lookup);
+            compositeSignals.Lookup,
+            identityBuilder.ToImmutableDictionary());
     }
 
     private static ISet<ColumnCoordinate> BuildSingleColumnClean(
         OsmModel model,
         IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> uniqueProfiles,
-        bool enforceSingleColumnUnique)
+        bool enforceSingleColumnUnique,
+        IDictionary<ColumnCoordinate, ColumnIdentity> identities)
     {
         var result = new HashSet<ColumnCoordinate>();
 
@@ -89,6 +98,7 @@ public sealed class UniqueIndexEvidenceAggregator
 
                 var keyColumn = keyColumns[0];
                 var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, keyColumn.Column);
+                CaptureIdentity(entity, keyColumn.Column, coordinate, identities);
                 if (uniqueProfiles.TryGetValue(coordinate, out var profile) && !profile.HasDuplicate)
                 {
                     result.Add(coordinate);
@@ -101,7 +111,8 @@ public sealed class UniqueIndexEvidenceAggregator
 
     private static ISet<ColumnCoordinate> BuildSingleColumnDuplicates(
         OsmModel model,
-        IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> uniqueProfiles)
+        IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> uniqueProfiles,
+        IDictionary<ColumnCoordinate, ColumnIdentity> identities)
     {
         var result = new HashSet<ColumnCoordinate>();
 
@@ -120,6 +131,7 @@ public sealed class UniqueIndexEvidenceAggregator
 
                 var keyColumn = keyColumns[0];
                 var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, keyColumn.Column);
+                CaptureIdentity(entity, keyColumn.Column, coordinate, identities);
                 if (uniqueProfiles.TryGetValue(coordinate, out var profile) && profile.HasDuplicate)
                 {
                     result.Add(coordinate);
@@ -133,7 +145,8 @@ public sealed class UniqueIndexEvidenceAggregator
     private static CompositeSignalSet BuildCompositeSignals(
         OsmModel model,
         ImmutableArray<CompositeUniqueCandidateProfile> compositeProfiles,
-        bool enforceCompositeUnique)
+        bool enforceCompositeUnique,
+        IDictionary<ColumnCoordinate, ColumnIdentity> identities)
     {
         var clean = new HashSet<ColumnCoordinate>();
         var duplicates = new HashSet<ColumnCoordinate>();
@@ -174,6 +187,7 @@ public sealed class UniqueIndexEvidenceAggregator
                 foreach (var column in keyColumns)
                 {
                     var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, column.Column);
+                    CaptureIdentity(entity, column.Column, coordinate, identities);
                     if (profile.HasDuplicate)
                     {
                         duplicates.Add(coordinate);
@@ -193,6 +207,22 @@ public sealed class UniqueIndexEvidenceAggregator
         ISet<ColumnCoordinate> Clean,
         ISet<ColumnCoordinate> Duplicates,
         IReadOnlyDictionary<string, CompositeUniqueCandidateProfile> Lookup);
+
+    private static void CaptureIdentity(
+        EntityModel entity,
+        ColumnName columnName,
+        ColumnCoordinate coordinate,
+        IDictionary<ColumnCoordinate, ColumnIdentity> identities)
+    {
+        if (identities.ContainsKey(coordinate))
+        {
+            return;
+        }
+
+        var attribute = entity.Attributes.First(
+            a => string.Equals(a.ColumnName.Value, columnName.Value, StringComparison.OrdinalIgnoreCase));
+        identities[coordinate] = ColumnIdentity.From(entity, attribute);
+    }
 }
 
 internal static class UniqueIndexEvidenceKey

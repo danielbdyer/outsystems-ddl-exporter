@@ -6,7 +6,7 @@ namespace Osm.Validation.Tightening;
 public sealed record EntityContext(
     EntityModel Entity,
     AttributeModel Attribute,
-    ColumnCoordinate Column,
+    ColumnIdentity Identity,
     ColumnProfile? ColumnProfile,
     UniqueCandidateProfile? UniqueProfile,
     ForeignKeyReality? ForeignKeyReality,
@@ -14,4 +14,7 @@ public sealed record EntityContext(
     bool SingleColumnUniqueClean,
     bool SingleColumnUniqueHasDuplicates,
     bool CompositeUniqueClean,
-    bool CompositeUniqueHasDuplicates);
+    bool CompositeUniqueHasDuplicates)
+{
+    public ColumnCoordinate Column => Identity.Coordinate;
+}

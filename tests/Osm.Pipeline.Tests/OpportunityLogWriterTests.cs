@@ -84,10 +84,12 @@ public sealed class OpportunityLogWriterTests
             evidenceSummary: new Opportunities.OpportunityEvidenceSummary(false, true, true, false, false),
             columns: ImmutableArray.Create(
                 new Opportunities.OpportunityColumn(
-                    new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_CUSTOMER"), new ColumnName("EMAIL")),
-                    "Customers",
-                    "Customer",
-                    "Email",
+                    new ColumnIdentity(
+                        new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_CUSTOMER"), new ColumnName("EMAIL")),
+                        new ModuleName("Customers"),
+                        new EntityName("Customer"),
+                        new TableName("OSUSR_ABC_CUSTOMER"),
+                        new AttributeName("Email")),
                     "Text",
                     "NVARCHAR(255)",
                     false,
@@ -119,10 +121,12 @@ public sealed class OpportunityLogWriterTests
             evidenceSummary: new Opportunities.OpportunityEvidenceSummary(true, true, false, true, null),
             columns: ImmutableArray.Create(
                 new Opportunities.OpportunityColumn(
-                    new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new ColumnName("ORDERNUMBER")),
-                    "Orders",
-                    "Order",
-                    "OrderNumber",
+                    new ColumnIdentity(
+                        new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new ColumnName("ORDERNUMBER")),
+                        new ModuleName("Orders"),
+                        new EntityName("Order"),
+                        new TableName("OSUSR_ABC_ORDER"),
+                        new AttributeName("OrderNumber")),
                     "Text",
                     "NVARCHAR(50)",
                     false,

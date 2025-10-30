@@ -69,7 +69,17 @@ internal sealed class SmoEntityEmitter
             throw new ArgumentNullException(nameof(attribute));
         }
 
-        return new ColumnCoordinate(Context.Entity.Schema, Context.Entity.PhysicalName, attribute.ColumnName);
+        return CreateIdentity(attribute).Coordinate;
+    }
+
+    public ColumnIdentity CreateIdentity(AttributeModel attribute)
+    {
+        if (attribute is null)
+        {
+            throw new ArgumentNullException(nameof(attribute));
+        }
+
+        return ColumnIdentity.From(Context.Entity, attribute);
     }
 
     public bool ShouldEnforceNotNull(AttributeModel attribute)

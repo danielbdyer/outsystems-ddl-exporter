@@ -44,20 +44,35 @@
       },
       "Columns": [
         {
-          "Coordinate": {
-            "Schema": {
-              "Value": "dbo"
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_ABC_CUSTOMER"
+              },
+              "Column": {
+                "Value": "EMAIL"
+              }
             },
-            "Table": {
+            "Module": {
+              "Value": "Customers"
+            },
+            "EntityLogicalName": {
+              "Value": "Customer"
+            },
+            "EntityPhysicalName": {
               "Value": "OSUSR_ABC_CUSTOMER"
             },
-            "Column": {
-              "Value": "EMAIL"
-            }
+            "AttributeLogicalName": {
+              "Value": "Email"
+            },
+            "ModuleName": "Customers",
+            "EntityName": "Customer",
+            "TableName": "OSUSR_ABC_CUSTOMER",
+            "AttributeName": "Email"
           },
-          "Module": "Customers",
-          "Entity": "Customer",
-          "Attribute": "Email",
           "DataType": "Text",
           "SqlType": "NVARCHAR(255)",
           "PhysicalNullable": false,
@@ -73,7 +88,21 @@
           "UniqueProbeStatus": null,
           "HasOrphans": false,
           "HasDatabaseConstraint": true,
-          "DeleteRule": null
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_CUSTOMER"
+            },
+            "Column": {
+              "Value": "EMAIL"
+            }
+          },
+          "Module": "Customers",
+          "Entity": "Customer",
+          "Attribute": "Email"
         }
       ],
       "HasStatements": true
@@ -121,20 +150,35 @@
       },
       "Columns": [
         {
-          "Coordinate": {
-            "Schema": {
-              "Value": "dbo"
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_ABC_ORDER"
+              },
+              "Column": {
+                "Value": "ORDERNUMBER"
+              }
             },
-            "Table": {
+            "Module": {
+              "Value": "Orders"
+            },
+            "EntityLogicalName": {
+              "Value": "Order"
+            },
+            "EntityPhysicalName": {
               "Value": "OSUSR_ABC_ORDER"
             },
-            "Column": {
-              "Value": "ORDERNUMBER"
-            }
+            "AttributeLogicalName": {
+              "Value": "OrderNumber"
+            },
+            "ModuleName": "Orders",
+            "EntityName": "Order",
+            "TableName": "OSUSR_ABC_ORDER",
+            "AttributeName": "OrderNumber"
           },
-          "Module": "Orders",
-          "Entity": "Order",
-          "Attribute": "OrderNumber",
           "DataType": "Text",
           "SqlType": "NVARCHAR(50)",
           "PhysicalNullable": false,
@@ -154,7 +198,21 @@
           },
           "HasOrphans": null,
           "HasDatabaseConstraint": false,
-          "DeleteRule": null
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_ORDER"
+            },
+            "Column": {
+              "Value": "ORDERNUMBER"
+            }
+          },
+          "Module": "Orders",
+          "Entity": "Order",
+          "Attribute": "OrderNumber"
         }
       ],
       "HasStatements": true
