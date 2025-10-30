@@ -11,6 +11,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
 using Xunit;
@@ -271,7 +272,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
 
     private static BuildSsdtApplicationService CreateBuildService(RecordingDispatcher dispatcher)
     {
-        var assembler = new BuildSsdtRequestAssembler();
+        var assembler = new BuildSsdtRequestAssembler(new StubSqlProfilerPreflight());
         var modelResolution = new StubModelResolutionService();
         var outputDirectoryResolver = new OutputDirectoryResolver();
         var namingOverridesBinder = new NamingOverridesBinder();
@@ -308,6 +309,12 @@ public sealed class ApplicationEvidenceCacheOptionsTests
 
             return Task.FromResult(Result<TResponse>.Failure(ValidationError.Create("test.dispatch", "stub failure")));
         }
+    }
+
+    private sealed class StubSqlProfilerPreflight : ISqlProfilerPreflight
+    {
+        public Result<SqlProfilerPreflightResult> Run(SqlProfilerPreflightRequest request)
+            => Result<SqlProfilerPreflightResult>.Success(SqlProfilerPreflightResult.Empty);
     }
 
     private sealed class StubModelResolutionService : IModelResolutionService

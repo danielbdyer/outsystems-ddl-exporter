@@ -32,14 +32,16 @@ public sealed record BuildSsdtOverrides(
     string? StaticDataPath,
     string? RenameOverrides,
     int? MaxDegreeOfParallelism,
-    string? SqlMetadataOutputPath);
+    string? SqlMetadataOutputPath,
+    bool SkipProfilerPreflight = false);
 
 public sealed record CaptureProfileOverrides(
     string? ModelPath,
     string? OutputDirectory,
     string? ProfilerProvider,
     string? ProfilePath,
-    string? SqlMetadataOutputPath);
+    string? SqlMetadataOutputPath,
+    bool SkipProfilerPreflight = false);
 
 public sealed record CompareWithDmmOverrides(
     string? ModelPath,

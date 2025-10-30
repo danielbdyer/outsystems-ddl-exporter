@@ -7,6 +7,7 @@ using Osm.Domain.Configuration;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
@@ -26,7 +27,8 @@ public sealed record BuildSsdtApplicationResult(
     string OutputDirectory,
     string ModelPath,
     bool ModelWasExtracted,
-    ImmutableArray<string> ModelExtractionWarnings);
+    ImmutableArray<string> ModelExtractionWarnings,
+    ImmutableArray<SqlProfilerPreflightDiagnostic> ProfilerDiagnostics);
 
 public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase, IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>
 {
@@ -126,7 +128,8 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             staticDataProviderResult.Value,
             context.CacheOverrides,
             context.ConfigPath,
-            context.SqlMetadataLog));
+            context.SqlMetadataLog,
+            input.Overrides.SkipProfilerPreflight));
         assemblyResult = await EnsureSuccessOrFlushAsync(assemblyResult, context, cancellationToken).ConfigureAwait(false);
         if (assemblyResult.IsFailure)
         {
@@ -153,6 +156,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             assembly.OutputDirectory,
             modelResolution.ModelPath,
             modelResolution.WasExtracted,
-            modelResolution.Warnings);
+            modelResolution.Warnings,
+            assembly.ProfilerDiagnostics);
     }
 }

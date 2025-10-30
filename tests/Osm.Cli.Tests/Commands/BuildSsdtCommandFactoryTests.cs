@@ -21,6 +21,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
@@ -161,6 +162,72 @@ public class BuildSsdtCommandFactoryTests
         var output = console.Out.ToString() ?? string.Empty;
         Assert.Contains("Profiling insights:", output);
         Assert.Contains("[info] dbo.Orders.CustomerId: Column contains 12.5% null values.", output);
+    }
+
+    [Fact]
+    public async Task Invoke_SetsSkipProfilerPreflightOverride()
+    {
+        var configurationService = new FakeConfigurationService();
+        var application = new FakeBuildApplicationService();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<BuildSsdtCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = "build-ssdt --model model.json --profile profile.json --out out --skip-profiler-preflight";
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(0, exitCode);
+        Assert.True(application.LastInput!.Overrides.SkipProfilerPreflight);
+    }
+
+    [Fact]
+    public async Task Invoke_EmitsProfilerPreflightDiagnostics()
+    {
+        var configurationService = new FakeConfigurationService();
+        var application = new FakeBuildApplicationService
+        {
+            ProfilerDiagnostics = ImmutableArray.Create(
+                new SqlProfilerPreflightDiagnostic(SqlProfilerPreflightSeverity.Warning, "Increase sampling threshold."))
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<BuildSsdtCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = "build-ssdt --model model.json --profile profile.json --out out";
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(0, exitCode);
+        var output = console.Out.ToString() ?? string.Empty;
+        Assert.Contains("Profiler preflight:", output);
+        Assert.Contains("[warning] Increase sampling threshold.", output);
     }
 
     [Fact]
@@ -357,6 +424,8 @@ public class BuildSsdtCommandFactoryTests
 
         public SsdtSqlValidationSummary? SqlValidationSummaryOverride { get; init; }
 
+        public ImmutableArray<SqlProfilerPreflightDiagnostic> ProfilerDiagnostics { get; init; } = ImmutableArray<SqlProfilerPreflightDiagnostic>.Empty;
+
         public Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
         {
             LastInput = input;
@@ -489,7 +558,8 @@ public class BuildSsdtCommandFactoryTests
                 "output",
                 "model.json",
                 false,
-                ImmutableArray<string>.Empty);
+                ImmutableArray<string>.Empty,
+                ProfilerDiagnostics);
         }
     }
 

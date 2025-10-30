@@ -392,7 +392,8 @@ public class BuildSsdtPipelineTests
     {
         return new DataProfilerFactory(
             new ProfileSnapshotDeserializer(),
-            static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
+            static (connectionString, options) => new SqlConnectionFactory(connectionString, options),
+            new StubSqlProfilerPreflight());
     }
 
     private static StaticEntitySeedScriptGenerator CreateSeedGenerator()
@@ -464,5 +465,11 @@ public class BuildSsdtPipelineTests
         var result = deserializer.Deserialize(stream, warnings);
         Assert.True(result.IsSuccess);
         return result.Value;
+    }
+
+    private sealed class StubSqlProfilerPreflight : ISqlProfilerPreflight
+    {
+        public Result<SqlProfilerPreflightResult> Run(SqlProfilerPreflightRequest request)
+            => Result<SqlProfilerPreflightResult>.Success(SqlProfilerPreflightResult.Empty);
     }
 }

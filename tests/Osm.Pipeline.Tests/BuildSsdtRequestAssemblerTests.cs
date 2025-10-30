@@ -9,6 +9,7 @@ using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -25,10 +26,13 @@ public sealed class BuildSsdtRequestAssemblerTests
         Authentication: new SqlAuthenticationSettings(null, null, null, null),
         MetadataContract: MetadataContractOverrides.Strict);
 
+    private static BuildSsdtRequestAssembler CreateAssembler(ISqlProfilerPreflight? preflight = null)
+        => new(preflight ?? new StubSqlProfilerPreflight());
+
     [Fact]
     public void Assemble_PrefersOverrideProfilerProvider()
     {
-        var assembler = new BuildSsdtRequestAssembler();
+        var assembler = CreateAssembler();
         var configuration = CreateConfiguration(
             profiler: new ProfilerConfiguration("config-provider", "config.profile", null));
         var overrides = new BuildSsdtOverrides(
@@ -53,9 +57,43 @@ public sealed class BuildSsdtRequestAssemblerTests
     }
 
     [Fact]
+    public void Assemble_SqlProviderRunsPreflight()
+    {
+        var preflight = new StubSqlProfilerPreflight();
+        var diagnostics = ImmutableArray.Create(
+            new SqlProfilerPreflightDiagnostic(SqlProfilerPreflightSeverity.Warning, "threshold warning"));
+        preflight.Handler = _ => Result<SqlProfilerPreflightResult>.Success(new SqlProfilerPreflightResult(diagnostics));
+        var assembler = CreateAssembler(preflight);
+        var configuration = CreateConfiguration(
+            profiler: new ProfilerConfiguration("sql", null, null));
+        var overrides = new BuildSsdtOverrides(
+            ModelPath: null,
+            ProfilePath: null,
+            OutputDirectory: "out",
+            ProfilerProvider: "sql",
+            StaticDataPath: null,
+            RenameOverrides: null,
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
+        var sqlOptions = DefaultSqlOptions with { ConnectionString = "Server=.;Database=Osm;" };
+
+        var context = CreateContext(configuration, overrides, sqlOptions);
+        var result = assembler.Assemble(context);
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(preflight.Requests);
+        Assert.Equal("Server=.;Database=Osm;", preflight.Requests[0].ConnectionString);
+        var assembly = result.Value;
+        Assert.Equal(diagnostics, assembly.ProfilerDiagnostics);
+        Assert.NotNull(assembly.Request.ProfilerPreflight);
+        Assert.Equal(diagnostics, assembly.Request.ProfilerPreflight!.Diagnostics);
+        Assert.False(assembly.Request.SkipProfilerPreflight);
+    }
+
+    [Fact]
     public void Assemble_ComposesCacheMetadata()
     {
-        var assembler = new BuildSsdtRequestAssembler();
+        var assembler = CreateAssembler();
         var configuration = CreateConfiguration(
             cache: new CacheConfiguration("  cache-root  ", true),
             profiler: new ProfilerConfiguration("fixture", "config.profile", null));
@@ -101,7 +139,7 @@ public sealed class BuildSsdtRequestAssemblerTests
     [Fact]
     public void Assemble_UsesProvidedStaticDataProvider()
     {
-        var assembler = new BuildSsdtRequestAssembler();
+        var assembler = CreateAssembler();
         var configuration = CreateConfiguration();
         var overrides = new BuildSsdtOverrides(
             ModelPath: null,
@@ -135,7 +173,8 @@ public sealed class BuildSsdtRequestAssemblerTests
         ModuleFilterOptions? moduleFilter = null,
         string modelPath = "model.json",
         string outputDirectory = "out",
-        IStaticEntityDataProvider? staticDataProvider = null)
+        IStaticEntityDataProvider? staticDataProvider = null,
+        bool skipProfilerPreflight = false)
     {
         var filter = moduleFilter ?? ModuleFilterOptions.IncludeAll;
         return new BuildSsdtRequestAssemblerContext(
@@ -151,7 +190,8 @@ public sealed class BuildSsdtRequestAssemblerTests
             staticDataProvider,
             new CacheOptionsOverrides(null, null),
             "config.json",
-            null);
+            null,
+            skipProfilerPreflight);
     }
 
     private static CliConfiguration CreateConfiguration(
@@ -178,6 +218,24 @@ public sealed class BuildSsdtRequestAssemblerTests
             CancellationToken cancellationToken = default)
         {
             return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success(Array.Empty<StaticEntityTableData>()));
+        }
+    }
+
+    private sealed class StubSqlProfilerPreflight : ISqlProfilerPreflight
+    {
+        public List<SqlProfilerPreflightRequest> Requests { get; } = new();
+
+        public Func<SqlProfilerPreflightRequest, Result<SqlProfilerPreflightResult>>? Handler { get; set; }
+
+        public Result<SqlProfilerPreflightResult> Run(SqlProfilerPreflightRequest request)
+        {
+            Requests.Add(request);
+            if (Handler is not null)
+            {
+                return Handler(request);
+            }
+
+            return Result<SqlProfilerPreflightResult>.Success(SqlProfilerPreflightResult.Empty);
         }
     }
 }

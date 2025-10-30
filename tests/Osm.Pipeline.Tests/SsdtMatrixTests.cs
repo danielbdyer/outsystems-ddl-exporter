@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Emission;
 using Osm.Emission.Formatting;
@@ -148,7 +149,8 @@ public sealed class SsdtMatrixTests
     {
         return new DataProfilerFactory(
             new ProfileSnapshotDeserializer(),
-            static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
+            static (connectionString, options) => new SqlConnectionFactory(connectionString, options),
+            new StubSqlProfilerPreflight());
     }
 
     private static StaticEntitySeedScriptGenerator CreateSeedGenerator()
@@ -157,6 +159,12 @@ public sealed class SsdtMatrixTests
         var sqlBuilder = new StaticSeedSqlBuilder(literalFormatter);
         var templateService = new StaticEntitySeedTemplateService();
         return new StaticEntitySeedScriptGenerator(templateService, sqlBuilder);
+    }
+
+    private sealed class StubSqlProfilerPreflight : ISqlProfilerPreflight
+    {
+        public Result<SqlProfilerPreflightResult> Run(SqlProfilerPreflightRequest request)
+            => Result<SqlProfilerPreflightResult>.Success(SqlProfilerPreflightResult.Empty);
     }
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
