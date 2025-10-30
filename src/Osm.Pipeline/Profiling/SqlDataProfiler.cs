@@ -24,6 +24,7 @@ public sealed class SqlDataProfiler : IDataProfiler
     private readonly IProfilingPlanBuilder _planBuilder;
     private readonly IProfilingQueryExecutor _queryExecutor;
     private readonly SqlMetadataLog? _metadataLog;
+    private readonly ProfilingTelemetryCollector _telemetryCollector;
 
     public SqlDataProfiler(
         IDbConnectionFactory connectionFactory,
@@ -54,10 +55,15 @@ public sealed class SqlDataProfiler : IDataProfiler
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _metadataLog = metadataLog;
+        _telemetryCollector = new ProfilingTelemetryCollector();
         _entityLookup = EntityProfilingLookup.Create(_model, _options.NamingOverrides);
         _metadataLoader = metadataLoader ?? new TableMetadataLoader(_options, _metadataLog);
         _planBuilder = planBuilder ?? new ProfilingPlanBuilder(_model, _entityLookup);
-        _queryExecutor = queryExecutor ?? new ProfilingQueryExecutor(_connectionFactory, _options, _metadataLog);
+        _queryExecutor = queryExecutor ?? new ProfilingQueryExecutor(
+            _connectionFactory,
+            _options,
+            _metadataLog,
+            telemetryCollector: _telemetryCollector);
     }
 
     public async Task<Result<ProfileSnapshot>> CaptureAsync(CancellationToken cancellationToken = default)
@@ -265,6 +271,11 @@ public sealed class SqlDataProfiler : IDataProfiler
                 "profile.sql.executionFailed",
                 $"Failed to capture profiling snapshot: {ex.Message}"));
         }
+    }
+
+    public ImmutableArray<TableProfilingTelemetry> GetTelemetrySnapshot()
+    {
+        return _telemetryCollector.ToImmutableArray();
     }
 
     private IReadOnlyCollection<(string Schema, string Table)> CollectTables()

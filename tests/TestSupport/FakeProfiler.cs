@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -19,5 +20,10 @@ public sealed class FakeProfiler : IDataProfiler
     {
         var snapshot = ProfileFixtures.LoadSnapshot(_fixtureName);
         return Task.FromResult(Result<ProfileSnapshot>.Success(snapshot));
+    }
+
+    public ImmutableArray<TableProfilingTelemetry> GetTelemetrySnapshot()
+    {
+        return ImmutableArray<TableProfilingTelemetry>.Empty;
     }
 }

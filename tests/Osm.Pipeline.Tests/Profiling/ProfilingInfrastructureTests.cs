@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
@@ -257,6 +258,142 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;
         Assert.Same(fallback, result.Value);
         Assert.Equal(ProfilingProbeOutcome.Cancelled, result.Status.Outcome);
         Assert.Equal(10, result.Status.SampleSize);
+    }
+
+    [Fact]
+    public async Task ProfilingQueryExecutor_RecordsTelemetryForSampledTable()
+    {
+        var uniqueKey = ProfilingPlanBuilder.BuildUniqueKey(new[] { "ID" });
+        var foreignKeyKey = ProfilingPlanBuilder.BuildForeignKeyKey("CUSTOMER_ID", "dbo", "CUSTOMER", "ID");
+
+        var connection = RecordingDbConnection.WithResultSets(
+            new FakeCommandDefinition(new[]
+            {
+                new object?[] { "ID", 0L },
+                new object?[] { "CUSTOMER_ID", 1L }
+            }),
+            new FakeCommandDefinition(new[]
+            {
+                new object?[] { uniqueKey, false }
+            }),
+            new FakeCommandDefinition(new[]
+            {
+                new object?[] { foreignKeyKey, false }
+            }),
+            new FakeCommandDefinition(new[]
+            {
+                new object?[] { "CUSTOMER_ID", "dbo", "CUSTOMER", "ID", false, false }
+            }));
+
+        var options = new SqlProfilerOptions(
+            commandTimeoutSeconds: null,
+            sampling: SqlSamplingOptions.Create(10, 4),
+            maxConcurrentTableProfiles: 1,
+            limits: new SqlProfilerLimits(null, null),
+            namingOverrides: NamingOverrideOptions.Empty);
+
+        var collector = new ProfilingTelemetryCollector();
+        var executor = new ProfilingQueryExecutor(
+            new StubConnectionFactory(connection),
+            options,
+            metadataLog: null,
+            telemetryCollector: collector);
+
+        var plan = new TableProfilingPlan(
+            "dbo",
+            "ORDERS",
+            100,
+            ImmutableArray.Create("ID", "CUSTOMER_ID"),
+            ImmutableArray.Create(new UniqueCandidatePlan(uniqueKey, ImmutableArray.Create("ID"))),
+            ImmutableArray.Create(new ForeignKeyPlan(foreignKeyKey, "CUSTOMER_ID", "dbo", "CUSTOMER", "ID")));
+
+        await executor.ExecuteAsync(plan, CancellationToken.None);
+
+        var telemetry = collector.ToImmutableArray();
+        Assert.Single(telemetry);
+        var entry = telemetry[0];
+
+        Assert.True(entry.Sampled);
+        Assert.Equal(4, entry.SampleSize);
+        Assert.Equal(plan.RowCount, entry.RowCount);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, entry.NullCountStatus.Outcome);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, entry.UniqueCandidateStatus.Outcome);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, entry.ForeignKeyStatus.Outcome);
+    }
+
+    [Fact]
+    public async Task ProfilingQueryExecutor_RecordsTelemetryForFullScanTable()
+    {
+        var uniqueKey = ProfilingPlanBuilder.BuildUniqueKey(new[] { "ID" });
+        var foreignKeyKey = ProfilingPlanBuilder.BuildForeignKeyKey("CUSTOMER_ID", "dbo", "CUSTOMER", "ID");
+
+        var connection = RecordingDbConnection.WithResultSets(
+            new FakeCommandDefinition(new[]
+            {
+                new object?[] { "ID", 0L },
+                new object?[] { "CUSTOMER_ID", 0L }
+            }),
+            new FakeCommandDefinition(new[]
+            {
+                new object?[] { uniqueKey, false }
+            }),
+            new FakeCommandDefinition(new[]
+            {
+                new object?[] { foreignKeyKey, false }
+            }),
+            new FakeCommandDefinition(new[]
+            {
+                new object?[] { "CUSTOMER_ID", "dbo", "CUSTOMER", "ID", false, false }
+            }));
+
+        var options = new SqlProfilerOptions(
+            commandTimeoutSeconds: null,
+            sampling: SqlSamplingOptions.Create(10, 4),
+            maxConcurrentTableProfiles: 1,
+            limits: new SqlProfilerLimits(null, null),
+            namingOverrides: NamingOverrideOptions.Empty);
+
+        var collector = new ProfilingTelemetryCollector();
+        var executor = new ProfilingQueryExecutor(
+            new StubConnectionFactory(connection),
+            options,
+            metadataLog: null,
+            telemetryCollector: collector);
+
+        var plan = new TableProfilingPlan(
+            "dbo",
+            "ORDERS",
+            5,
+            ImmutableArray.Create("ID", "CUSTOMER_ID"),
+            ImmutableArray.Create(new UniqueCandidatePlan(uniqueKey, ImmutableArray.Create("ID"))),
+            ImmutableArray.Create(new ForeignKeyPlan(foreignKeyKey, "CUSTOMER_ID", "dbo", "CUSTOMER", "ID")));
+
+        await executor.ExecuteAsync(plan, CancellationToken.None);
+
+        var telemetry = collector.ToImmutableArray();
+        Assert.Single(telemetry);
+        var entry = telemetry[0];
+
+        Assert.False(entry.Sampled);
+        Assert.Equal(plan.RowCount, entry.SampleSize);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, entry.NullCountStatus.Outcome);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, entry.UniqueCandidateStatus.Outcome);
+        Assert.Equal(ProfilingProbeOutcome.Succeeded, entry.ForeignKeyStatus.Outcome);
+    }
+
+    private sealed class StubConnectionFactory : IDbConnectionFactory
+    {
+        private readonly DbConnection _connection;
+
+        public StubConnectionFactory(DbConnection connection)
+        {
+            _connection = connection ?? throw new ArgumentNullException(nameof(connection));
+        }
+
+        public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_connection);
+        }
     }
 
     private sealed class StaticTimeProvider : TimeProvider

@@ -11,6 +11,7 @@ using Osm.Cli;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 
 namespace Osm.Cli.Commands;
@@ -196,6 +197,61 @@ internal static class CommandConsole
                 default:
                     WriteLine(console, formatted);
                     break;
+            }
+        }
+    }
+
+    public static void EmitProfilingTelemetry(IConsole console, ProfilingRunTelemetrySummary summary)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (summary is null || summary.TableCount == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, "Profiling telemetry:");
+        WriteLine(
+            console,
+            $"Tables profiled: {summary.TableCount} (sampled: {summary.SampledTableCount}, full scan: {summary.FullScanTableCount})");
+        WriteLine(console, $"Total duration: {summary.TotalDurationMilliseconds:0.###} ms");
+
+        if (!summary.TopSlowTables.IsDefaultOrEmpty && summary.TopSlowTables.Length > 0)
+        {
+            WriteLine(console, "Top slow tables:");
+            foreach (var table in summary.TopSlowTables)
+            {
+                var modeText = table.Sampled
+                    ? $"sampled ({table.SampleSize} rows)"
+                    : $"full scan ({table.RowCount} rows)";
+                WriteLine(
+                    console,
+                    $" - {table.Schema}.{table.Table}: {table.TotalDurationMilliseconds:0.###} ms [{modeText}]");
+            }
+        }
+
+        if (!summary.ProbeOutcomes.IsDefaultOrEmpty && summary.ProbeOutcomes.Length > 0)
+        {
+            WriteLine(console, "Probe outcomes:");
+            foreach (var probe in summary.ProbeOutcomes)
+            {
+                if (probe is null)
+                {
+                    continue;
+                }
+
+                var parts = probe.Outcomes.Count == 0
+                    ? Array.Empty<string>()
+                    : probe.Outcomes
+                        .OrderByDescending(static kv => kv.Value)
+                        .Select(static kv => $"{kv.Key}:{kv.Value}")
+                        .ToArray();
+
+                var formatted = parts.Length == 0 ? "none" : string.Join(", ", parts);
+                WriteLine(console, $" - {probe.Probe}: {formatted}");
             }
         }
     }
