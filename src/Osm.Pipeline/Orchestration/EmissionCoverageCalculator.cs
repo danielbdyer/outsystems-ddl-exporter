@@ -145,12 +145,13 @@ public static class EmissionCoverageCalculator
 
             foreach (var attribute in snapshot.EmittableAttributes)
             {
+                var identity = ColumnIdentity.From(snapshot.Entity, attribute);
                 if (!attribute.Reference.IsReference)
                 {
                     continue;
                 }
 
-                var coordinate = new ColumnCoordinate(snapshot.Entity.Schema, snapshot.Entity.PhysicalName, attribute.ColumnName);
+                var coordinate = identity.Coordinate;
                 if (!decisions.ForeignKeys.TryGetValue(coordinate, out var decision) || !decision.CreateConstraint)
                 {
                     continue;
@@ -168,10 +169,13 @@ public static class EmissionCoverageCalculator
 
                 if (!hasForeignKey)
                 {
+                    var decisionIdentity = decisions.ColumnIdentities.TryGetValue(coordinate, out var trackedIdentity)
+                        ? trackedIdentity
+                        : identity;
                     AddUnsupported(
                         unsupported,
                         unsupportedSeen,
-                        $"Foreign key on {key}.{attribute.LogicalName.Value} missing from emission output.");
+                        $"Foreign key on {decisionIdentity.ModuleName}.{decisionIdentity.EntityName}.{decisionIdentity.AttributeName} missing from emission output.");
                 }
             }
         }

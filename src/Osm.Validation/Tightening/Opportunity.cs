@@ -29,10 +29,7 @@ public sealed record OpportunityEvidenceSummary(
     bool? HasOrphans);
 
 public sealed record OpportunityColumn(
-    ColumnCoordinate Coordinate,
-    string Module,
-    string Entity,
-    string Attribute,
+    ColumnIdentity Identity,
     string DataType,
     string? SqlType,
     bool? PhysicalNullable,
@@ -44,7 +41,16 @@ public sealed record OpportunityColumn(
     ProfilingProbeStatus? UniqueProbeStatus,
     bool? HasOrphans,
     bool? HasDatabaseConstraint,
-    string? DeleteRule);
+    string? DeleteRule)
+{
+    public ColumnCoordinate Coordinate => Identity.Coordinate;
+
+    public string Module => Identity.ModuleName;
+
+    public string Entity => Identity.EntityName;
+
+    public string Attribute => Identity.AttributeName;
+}
 
 public sealed record Opportunity(
     OpportunityType Type,

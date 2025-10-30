@@ -9,7 +9,7 @@ public sealed record PolicyDecisionSet(
     ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision> ForeignKeys,
     ImmutableDictionary<IndexCoordinate, UniqueIndexDecision> UniqueIndexes,
     ImmutableArray<TighteningDiagnostic> Diagnostics,
-    ImmutableDictionary<ColumnCoordinate, string> ColumnModules,
+    ImmutableDictionary<ColumnCoordinate, ColumnIdentity> ColumnIdentities,
     ImmutableDictionary<IndexCoordinate, string> IndexModules,
     TighteningToggleSnapshot Toggles)
 {
@@ -18,7 +18,7 @@ public sealed record PolicyDecisionSet(
         ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision> foreignKeys,
         ImmutableDictionary<IndexCoordinate, UniqueIndexDecision> uniqueIndexes,
         ImmutableArray<TighteningDiagnostic> diagnostics,
-        ImmutableDictionary<ColumnCoordinate, string> columnModules,
+        ImmutableDictionary<ColumnCoordinate, ColumnIdentity> columnIdentities,
         ImmutableDictionary<IndexCoordinate, string> indexModules,
         TighteningOptions options,
         Func<string, ToggleSource?>? sourceResolver = null)
@@ -28,7 +28,7 @@ public sealed record PolicyDecisionSet(
             throw new ArgumentNullException(nameof(options));
         }
 
-        columnModules ??= ImmutableDictionary<ColumnCoordinate, string>.Empty;
+        columnIdentities ??= ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty;
         indexModules ??= ImmutableDictionary<IndexCoordinate, string>.Empty;
 
         var toggles = TighteningToggleSnapshot.Create(options, sourceResolver);
@@ -37,7 +37,7 @@ public sealed record PolicyDecisionSet(
             foreignKeys,
             uniqueIndexes,
             diagnostics,
-            columnModules,
+            columnIdentities,
             indexModules,
             toggles);
     }

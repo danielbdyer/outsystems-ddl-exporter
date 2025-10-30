@@ -103,7 +103,7 @@ public sealed class TighteningPolicy
             columnAggregation.ForeignKeys,
             uniqueAggregation.Decisions,
             lookupResolution.Diagnostics,
-            columnAggregation.ColumnModules,
+            columnAggregation.ColumnIdentities,
             uniqueAggregation.IndexModules,
             options);
 

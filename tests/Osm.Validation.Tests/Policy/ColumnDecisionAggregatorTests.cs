@@ -67,7 +67,7 @@ public sealed class ColumnDecisionAggregatorTests
         var builder = aggregation.ColumnAnalyses[parentId];
         Assert.Equal(nullability, builder.Nullability);
         Assert.Equal(foreignKey, builder.ForeignKey);
-        Assert.Equal(child.Module.Value, aggregation.ColumnModules[parentId]);
+        Assert.Equal(child.Module.Value, aggregation.ColumnIdentities[parentId].ModuleName);
     }
 
     [Fact]

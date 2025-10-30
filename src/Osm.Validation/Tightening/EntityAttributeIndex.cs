@@ -10,15 +10,18 @@ internal sealed class EntityAttributeIndex
 {
     private readonly IReadOnlyDictionary<EntityModel, ImmutableArray<AttributeModel>> _attributesByEntity;
     private readonly IReadOnlyDictionary<ColumnCoordinate, AttributeModel> _attributesByCoordinate;
+    private readonly IReadOnlyDictionary<ColumnCoordinate, EntityAttributeIndexEntry> _entriesByCoordinate;
     private readonly ImmutableArray<EntityAttributeIndexEntry> _entries;
 
     private EntityAttributeIndex(
         IReadOnlyDictionary<EntityModel, ImmutableArray<AttributeModel>> attributesByEntity,
         IReadOnlyDictionary<ColumnCoordinate, AttributeModel> attributesByCoordinate,
+        IReadOnlyDictionary<ColumnCoordinate, EntityAttributeIndexEntry> entriesByCoordinate,
         ImmutableArray<EntityAttributeIndexEntry> entries)
     {
         _attributesByEntity = attributesByEntity ?? throw new ArgumentNullException(nameof(attributesByEntity));
         _attributesByCoordinate = attributesByCoordinate ?? throw new ArgumentNullException(nameof(attributesByCoordinate));
+        _entriesByCoordinate = entriesByCoordinate ?? throw new ArgumentNullException(nameof(entriesByCoordinate));
         _entries = entries;
     }
 
@@ -32,6 +35,7 @@ internal sealed class EntityAttributeIndex
         var attributesByEntity = new Dictionary<EntityModel, ImmutableArray<AttributeModel>>();
         var attributesByCoordinate = new Dictionary<ColumnCoordinate, AttributeModel>();
         var entries = ImmutableArray.CreateBuilder<EntityAttributeIndexEntry>();
+        var entriesByCoordinate = new Dictionary<ColumnCoordinate, EntityAttributeIndexEntry>();
 
         foreach (var entity in model.Modules.SelectMany(static module => module.Entities))
         {
@@ -41,11 +45,13 @@ internal sealed class EntityAttributeIndex
             {
                 var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
                 attributesByCoordinate[coordinate] = attribute;
-                entries.Add(new EntityAttributeIndexEntry(entity, attribute, coordinate));
+                var entry = new EntityAttributeIndexEntry(entity, attribute, coordinate);
+                entries.Add(entry);
+                entriesByCoordinate[coordinate] = entry;
             }
         }
 
-        return new EntityAttributeIndex(attributesByEntity, attributesByCoordinate, entries.ToImmutable());
+        return new EntityAttributeIndex(attributesByEntity, attributesByCoordinate, entriesByCoordinate, entries.ToImmutable());
     }
 
     public ImmutableArray<AttributeModel> GetAttributes(EntityModel entity)
@@ -72,6 +78,18 @@ internal sealed class EntityAttributeIndex
         }
 
         attribute = default!;
+        return false;
+    }
+
+    public bool TryGetEntry(ColumnCoordinate coordinate, out EntityAttributeIndexEntry entry)
+    {
+        if (_entriesByCoordinate.TryGetValue(coordinate, out var value))
+        {
+            entry = value;
+            return true;
+        }
+
+        entry = default;
         return false;
     }
 

@@ -93,12 +93,12 @@ public static class PolicyDecisionReporter
 
         foreach (var column in columns)
         {
-            if (!decisions.ColumnModules.TryGetValue(column.Column, out var module))
+            if (!decisions.ColumnIdentities.TryGetValue(column.Column, out var identity))
             {
                 continue;
             }
 
-            var rollup = GetOrAdd(accumulator, module);
+            var rollup = GetOrAdd(accumulator, identity.ModuleName);
             rollup.ColumnCount++;
             if (column.MakeNotNull)
             {
@@ -137,12 +137,12 @@ public static class PolicyDecisionReporter
 
         foreach (var foreignKey in foreignKeys)
         {
-            if (!decisions.ColumnModules.TryGetValue(foreignKey.Column, out var module))
+            if (!decisions.ColumnIdentities.TryGetValue(foreignKey.Column, out var identity))
             {
                 continue;
             }
 
-            var rollup = GetOrAdd(accumulator, module);
+            var rollup = GetOrAdd(accumulator, identity.ModuleName);
             rollup.ForeignKeyCount++;
             if (foreignKey.CreateConstraint)
             {

@@ -61,16 +61,18 @@ internal sealed class ColumnDecisionAggregator
 
         var nullabilityBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, NullabilityDecision>();
         var foreignKeyBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ForeignKeyDecision>();
-        var columnModuleBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, string>();
+        var identityBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ColumnIdentity>();
         var analysisBuilders = new Dictionary<ColumnCoordinate, ColumnAnalysisBuilder>();
 
         foreach (var entity in model.Modules.SelectMany(static module => module.Entities))
         {
             foreach (var attribute in attributeIndex.GetAttributes(entity))
             {
-                var coordinate = new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
-                var builder = new ColumnAnalysisBuilder(coordinate);
+                var identity = ColumnIdentity.From(entity, attribute);
+                var coordinate = identity.Coordinate;
+                var builder = new ColumnAnalysisBuilder(identity);
                 analysisBuilders[coordinate] = builder;
+                identityBuilder[coordinate] = identity;
 
                 var columnProfile = columnProfiles.TryGetValue(coordinate, out var profile) ? profile : null;
                 var uniqueProfile = uniqueProfiles.TryGetValue(coordinate, out var uniqueCandidate) ? uniqueCandidate : null;
@@ -79,7 +81,7 @@ internal sealed class ColumnDecisionAggregator
                 var context = new EntityContext(
                     entity,
                     attribute,
-                    coordinate,
+                    identity,
                     columnProfile,
                     uniqueProfile,
                     foreignKey,
@@ -95,7 +97,6 @@ internal sealed class ColumnDecisionAggregator
                 }
 
                 nullabilityBuilder[coordinate] = builder.Nullability;
-                columnModuleBuilder[coordinate] = entity.Module.Value;
 
                 if (builder.ForeignKey is not null)
                 {
@@ -107,7 +108,7 @@ internal sealed class ColumnDecisionAggregator
         return new ColumnDecisionAggregation(
             nullabilityBuilder.ToImmutable(),
             foreignKeyBuilder.ToImmutable(),
-            columnModuleBuilder.ToImmutable(),
+            identityBuilder.ToImmutable(),
             analysisBuilders);
     }
 }
@@ -115,6 +116,6 @@ internal sealed class ColumnDecisionAggregator
 internal sealed record ColumnDecisionAggregation(
     ImmutableDictionary<ColumnCoordinate, NullabilityDecision> Nullability,
     ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision> ForeignKeys,
-    ImmutableDictionary<ColumnCoordinate, string> ColumnModules,
+    ImmutableDictionary<ColumnCoordinate, ColumnIdentity> ColumnIdentities,
     IReadOnlyDictionary<ColumnCoordinate, ColumnAnalysisBuilder> ColumnAnalyses);
 
