@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -8,4 +9,6 @@ namespace Osm.Pipeline.Profiling;
 public interface IDataProfiler
 {
     Task<Result<ProfileSnapshot>> CaptureAsync(CancellationToken cancellationToken = default);
+
+    ImmutableArray<TableProfilingTelemetry> GetTelemetrySnapshot();
 }

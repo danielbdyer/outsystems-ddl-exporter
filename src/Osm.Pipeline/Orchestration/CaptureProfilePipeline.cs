@@ -36,6 +36,7 @@ public sealed record CaptureProfilePipelineResult(
     CaptureProfileManifest Manifest,
     string ProfilePath,
     string ManifestPath,
+    ProfilingRunTelemetry Telemetry,
     ImmutableArray<ProfilingInsight> Insights,
     PipelineExecutionLog ExecutionLog,
     ImmutableArray<string> Warnings);
@@ -49,6 +50,7 @@ public sealed record CaptureProfileManifest(
     CaptureProfileSnapshotSummary Snapshot,
     IReadOnlyList<CaptureProfileInsight> Insights,
     IReadOnlyList<string> Warnings,
+    ProfilingRunTelemetrySummary Telemetry,
     DateTimeOffset CapturedAtUtc);
 
 public sealed record CaptureProfileModuleSummary(
@@ -133,12 +135,13 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
 
         var log = new PipelineExecutionLogBuilder(_timeProvider);
         var telemetry = CreateTelemetry(request);
+        var tableTelemetry = ImmutableArray<TableProfilingTelemetry>.Empty;
         var bootstrapRequest = new PipelineBootstrapRequest(
             request.ModelPath,
             request.ModuleFilter,
             request.SupplementalModels,
             telemetry,
-            (model, token) => CaptureProfileAsync(request, model, token));
+            (model, token) => CaptureProfileAsync(request, model, snapshot => tableTelemetry = snapshot, token));
 
         var bootstrapResult = await _bootstrapper
             .BootstrapAsync(log, bootstrapRequest, cancellationToken)
@@ -185,7 +188,9 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
                 $"Failed to write profiling snapshot to '{profilePath}': {ex.Message}");
         }
 
-        var manifest = BuildManifest(request, bootstrap, profilePath);
+        var profilingTelemetry = ProfilingRunTelemetry.Create(tableTelemetry);
+
+        var manifest = BuildManifest(request, bootstrap, profilePath, profilingTelemetry.Summary);
         var manifestPath = Path.Combine(request.OutputDirectory, "manifest.json");
 
         try
@@ -222,6 +227,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             manifest,
             profilePath,
             manifestPath,
+            profilingTelemetry,
             bootstrap.Insights,
             log.Build(),
             bootstrap.Warnings.ToImmutableArray());
@@ -250,6 +256,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
     private async Task<Result<ProfileSnapshot>> CaptureProfileAsync(
         CaptureProfilePipelineRequest request,
         OsmModel model,
+        Action<ImmutableArray<TableProfilingTelemetry>> telemetryRecorder,
         CancellationToken cancellationToken)
     {
         var profilerRequest = new BuildSsdtPipelineRequest(
@@ -274,13 +281,16 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             return Result<ProfileSnapshot>.Failure(profilerResult.Errors);
         }
 
-        return await profilerResult.Value.CaptureAsync(cancellationToken).ConfigureAwait(false);
+        var captureResult = await profilerResult.Value.CaptureAsync(cancellationToken).ConfigureAwait(false);
+        telemetryRecorder(profilerResult.Value.GetTelemetrySnapshot());
+        return captureResult;
     }
 
     private CaptureProfileManifest BuildManifest(
         CaptureProfilePipelineRequest request,
         PipelineBootstrapContext bootstrap,
-        string profilePath)
+        string profilePath,
+        ProfilingRunTelemetrySummary telemetrySummary)
     {
         var capturedAt = _timeProvider.GetUtcNow();
 
@@ -326,6 +336,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             snapshotSummary,
             insights,
             bootstrap.Warnings.ToArray(),
+            telemetrySummary,
             capturedAt);
     }
 }

@@ -86,7 +86,12 @@ public class CaptureProfilePipelineTests
             var snapshot = root.GetProperty("snapshot");
             Assert.Equal(payload.Profile.Columns.Length, snapshot.GetProperty("columnCount").GetInt32());
             Assert.Equal(payload.Profile.ForeignKeys.Length, snapshot.GetProperty("foreignKeyCount").GetInt32());
+
+            var telemetryElement = root.GetProperty("telemetry");
+            Assert.Equal(0, telemetryElement.GetProperty("tableCount").GetInt32());
         }
+
+        Assert.Equal(0, payload.Telemetry.Summary.TableCount);
 
         Assert.NotEmpty(payload.ExecutionLog.Entries);
         Assert.Contains(payload.ExecutionLog.Entries, entry => entry.Step == "profiling.persisted");

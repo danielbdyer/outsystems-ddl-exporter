@@ -93,6 +93,7 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
         CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
         CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
         CommandConsole.EmitProfilingInsights(context.Console, pipelineResult.Insights);
+        CommandConsole.EmitProfilingTelemetry(context.Console, pipelineResult.Telemetry.Summary);
 
         if (string.Equals(applicationResult.ProfilerProvider, "sql", StringComparison.OrdinalIgnoreCase))
         {

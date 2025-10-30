@@ -17,6 +17,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
+using Osm.Pipeline.Profiling;
 using Tests.Support;
 using Xunit;
 
@@ -72,6 +73,15 @@ public class ProfileCommandFactoryTests
         Assert.Equal("profile.json", result.FixtureProfilePath);
 
         var outputText = console.Out.ToString() ?? string.Empty;
+        Assert.Contains("Profiling telemetry:", outputText);
+        Assert.Contains("Tables profiled: 2 (sampled: 1, full scan: 1)", outputText);
+        Assert.Contains("Top slow tables:", outputText);
+        Assert.Contains(" - dbo.Orders: 48.5 ms [full scan (5000 rows)]", outputText);
+        Assert.Contains(" - dbo.Users: 28.5 ms [sampled (250 rows)]", outputText);
+        Assert.Contains("Probe outcomes:", outputText);
+        Assert.Contains(" - nullCounts: Succeeded:2", outputText);
+        Assert.Contains(" - uniqueCandidates: Succeeded:2", outputText);
+        Assert.Contains(" - foreignKeys: Succeeded:2", outputText);
         Assert.Contains("Profile written to", outputText);
         Assert.Contains("Manifest written to", outputText);
         Assert.Equal(string.Empty, console.Error.ToString());
@@ -192,6 +202,46 @@ public class ProfileCommandFactoryTests
         private static CaptureProfileApplicationResult CreateResult()
         {
             var snapshot = ProfileFixtures.LoadSnapshot(Path.Combine("profiling", "profile.edge-case.json"));
+            var capturedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            var telemetryEntries = ImmutableArray.Create(
+                new TableProfilingTelemetry(
+                    "dbo",
+                    "Users",
+                    RowCount: 1_000,
+                    Sampled: true,
+                    SampleSize: 250,
+                    SamplingParameter: 250,
+                    ColumnCount: 12,
+                    UniqueCandidateCount: 1,
+                    ForeignKeyCount: 2,
+                    NullCountDurationMilliseconds: 10.5,
+                    UniqueCandidateDurationMilliseconds: 5.25,
+                    ForeignKeyDurationMilliseconds: 7.75,
+                    ForeignKeyMetadataDurationMilliseconds: 3.0,
+                    TotalDurationMilliseconds: 28.5,
+                    NullCountStatus: ProfilingProbeStatus.CreateSucceeded(capturedAt, 250),
+                    UniqueCandidateStatus: ProfilingProbeStatus.CreateSucceeded(capturedAt, 250),
+                    ForeignKeyStatus: ProfilingProbeStatus.CreateSucceeded(capturedAt, 250)),
+                new TableProfilingTelemetry(
+                    "dbo",
+                    "Orders",
+                    RowCount: 5_000,
+                    Sampled: false,
+                    SampleSize: 5_000,
+                    SamplingParameter: 0,
+                    ColumnCount: 18,
+                    UniqueCandidateCount: 2,
+                    ForeignKeyCount: 3,
+                    NullCountDurationMilliseconds: 12.0,
+                    UniqueCandidateDurationMilliseconds: 9.0,
+                    ForeignKeyDurationMilliseconds: 15.0,
+                    ForeignKeyMetadataDurationMilliseconds: 4.5,
+                    TotalDurationMilliseconds: 48.5,
+                    NullCountStatus: ProfilingProbeStatus.CreateSucceeded(capturedAt, 5_000),
+                    UniqueCandidateStatus: ProfilingProbeStatus.CreateSucceeded(capturedAt, 5_000),
+                    ForeignKeyStatus: ProfilingProbeStatus.CreateSucceeded(capturedAt, 5_000)));
+            var telemetry = ProfilingRunTelemetry.Create(telemetryEntries);
+
             var manifest = new CaptureProfileManifest(
                 "model.json",
                 "output/profile.json",
@@ -201,6 +251,7 @@ public class ProfileCommandFactoryTests
                 new CaptureProfileSnapshotSummary(snapshot.Columns.Length, snapshot.UniqueCandidates.Length, snapshot.CompositeUniqueCandidates.Length, snapshot.ForeignKeys.Length, 1),
                 Array.Empty<CaptureProfileInsight>(),
                 Array.Empty<string>(),
+                telemetry.Summary,
                 DateTimeOffset.UtcNow);
 
             var pipelineResult = new CaptureProfilePipelineResult(
@@ -208,6 +259,7 @@ public class ProfileCommandFactoryTests
                 manifest,
                 "output/profile.json",
                 "output/manifest.json",
+                telemetry,
                 ImmutableArray<ProfilingInsight>.Empty,
                 PipelineExecutionLog.Empty,
                 ImmutableArray<string>.Empty);

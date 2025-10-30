@@ -16,6 +16,8 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly SqlProfilerOptions _options;
     private readonly SqlMetadataLog? _metadataLog;
+    private readonly TimeProvider _timeProvider;
+    private readonly ProfilingTelemetryCollector? _telemetryCollector;
 
     private readonly NullCountQueryBuilder _nullCountQueryBuilder;
     private readonly UniqueCandidateQueryBuilder _uniqueCandidateQueryBuilder;
@@ -30,16 +32,18 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         UniqueCandidateQueryBuilder? uniqueCandidateQueryBuilder = null,
         ForeignKeyProbeQueryBuilder? foreignKeyProbeQueryBuilder = null,
         IProfilingProbePolicy? probePolicy = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ProfilingTelemetryCollector? telemetryCollector = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _metadataLog = metadataLog;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _telemetryCollector = telemetryCollector;
         _nullCountQueryBuilder = nullCountQueryBuilder ?? new NullCountQueryBuilder();
         _uniqueCandidateQueryBuilder = uniqueCandidateQueryBuilder ?? new UniqueCandidateQueryBuilder();
         _foreignKeyProbeQueryBuilder = foreignKeyProbeQueryBuilder ?? new ForeignKeyProbeQueryBuilder();
-        var provider = timeProvider ?? TimeProvider.System;
-        _probePolicy = probePolicy ?? new ProfilingProbePolicy(provider);
+        _probePolicy = probePolicy ?? new ProfilingProbePolicy(_timeProvider);
     }
 
     public async Task<TableProfilingResults> ExecuteAsync(TableProfilingPlan plan, CancellationToken cancellationToken)
@@ -56,37 +60,65 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         var samplingParameter = shouldSample ? TableSamplingPolicy.GetSampleSize(plan.RowCount, _options) : 0;
         var sampleSize = shouldSample ? (long)samplingParameter : Math.Max(0L, plan.RowCount);
 
+        var tableStart = _timeProvider.GetTimestamp();
+
+        var nullStart = _timeProvider.GetTimestamp();
         var nullCounts = await _probePolicy.ExecuteAsync(
             ct => ComputeNullCountsAsync(connection, plan, shouldSample, samplingParameter, ct),
             BuildConservativeNullCounts(plan),
             sampleSize,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
+        var nullDuration = _timeProvider.GetElapsedTime(nullStart);
 
         var nullCountStatuses = BuildStatusDictionary(nullCounts.Value.Keys, nullCounts.Status);
 
+        var uniqueStart = _timeProvider.GetTimestamp();
         var duplicateFlags = await _probePolicy.ExecuteAsync(
             ct => ComputeDuplicateCandidatesAsync(connection, plan, shouldSample, samplingParameter, ct),
             BuildConservativeUniqueResults(plan),
             sampleSize,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
+        var uniqueDuration = _timeProvider.GetElapsedTime(uniqueStart);
 
         var duplicateStatuses = BuildStatusDictionary(duplicateFlags.Value.Keys, duplicateFlags.Status);
 
         var foreignKeyFallback = (
             Orphans: BuildConservativeForeignKeyResults(plan),
-            IsNoCheck: BuildConservativeForeignKeyNoCheckResults(plan));
+            IsNoCheck: BuildConservativeForeignKeyNoCheckResults(plan),
+            MetadataDuration: TimeSpan.Zero);
 
+        var foreignKeyStart = _timeProvider.GetTimestamp();
         var foreignKeyReality = await _probePolicy.ExecuteAsync(
             ct => ComputeForeignKeyRealityAsync(connection, plan, shouldSample, samplingParameter, ct),
             foreignKeyFallback,
             sampleSize,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
+        var foreignKeyDuration = _timeProvider.GetElapsedTime(foreignKeyStart);
 
         var foreignKeyStatuses = BuildStatusDictionary(foreignKeyReality.Value.Orphans.Keys, foreignKeyReality.Status);
         var foreignKeyNoCheckStatuses = BuildStatusDictionary(foreignKeyReality.Value.IsNoCheck.Keys, foreignKeyReality.Status);
+
+        var foreignKeyMetadata = foreignKeyReality.Value.IsNoCheck;
+        var metadataDuration = foreignKeyReality.Value.MetadataDuration;
+
+        var totalDuration = _timeProvider.GetElapsedTime(tableStart);
+
+        RecordTelemetry(
+            plan,
+            shouldSample,
+            samplingParameter,
+            sampleSize,
+            nullCounts.Status,
+            duplicateFlags.Status,
+            foreignKeyReality.Status,
+            nullDuration,
+            uniqueDuration,
+            foreignKeyDuration,
+            metadataDuration,
+            totalDuration);
 
         return new TableProfilingResults(
             nullCounts.Value,
@@ -95,7 +127,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             duplicateStatuses,
             foreignKeyReality.Value.Orphans,
             foreignKeyStatuses,
-            foreignKeyReality.Value.IsNoCheck,
+            foreignKeyMetadata,
             foreignKeyNoCheckStatuses);
     }
 
@@ -215,7 +247,10 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         return dictionary;
     }
 
-    private async Task<(IReadOnlyDictionary<string, bool> Orphans, IReadOnlyDictionary<string, bool> IsNoCheck)> ComputeForeignKeyRealityAsync(
+    private async Task<(
+        IReadOnlyDictionary<string, bool> Orphans,
+        IReadOnlyDictionary<string, bool> IsNoCheck,
+        TimeSpan MetadataDuration)> ComputeForeignKeyRealityAsync(
         DbConnection connection,
         TableProfilingPlan plan,
         bool useSampling,
@@ -224,7 +259,10 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
     {
         if (plan.ForeignKeys.IsDefaultOrEmpty)
         {
-            return (ImmutableDictionary<string, bool>.Empty, ImmutableDictionary<string, bool>.Empty);
+            return (
+                ImmutableDictionary<string, bool>.Empty,
+                ImmutableDictionary<string, bool>.Empty,
+                TimeSpan.Zero);
         }
 
         await using var command = connection.CreateCommand();
@@ -251,7 +289,9 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         }
 
         var dictionary = results.ToImmutable();
+        var metadataStart = _timeProvider.GetTimestamp();
         var metadata = await LoadForeignKeyMetadataAsync(connection, plan, cancellationToken).ConfigureAwait(false);
+        var metadataDuration = _timeProvider.GetElapsedTime(metadataStart);
 
         _metadataLog?.RecordRequest(
             "sql.foreignKeyReality",
@@ -267,7 +307,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
                     .ToArray()
             });
 
-        return (dictionary, metadata);
+        return (dictionary, metadata, metadataDuration);
     }
 
     private async Task<IReadOnlyDictionary<string, bool>> LoadForeignKeyMetadataAsync(
@@ -416,4 +456,78 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         return builder.ToImmutable();
     }
 
+    private void RecordTelemetry(
+        TableProfilingPlan plan,
+        bool shouldSample,
+        int samplingParameter,
+        long sampleSize,
+        ProfilingProbeStatus nullCountStatus,
+        ProfilingProbeStatus uniqueStatus,
+        ProfilingProbeStatus foreignKeyStatus,
+        TimeSpan nullDuration,
+        TimeSpan uniqueDuration,
+        TimeSpan foreignKeyDuration,
+        TimeSpan metadataDuration,
+        TimeSpan totalDuration)
+    {
+        var telemetry = new TableProfilingTelemetry(
+            plan.Schema,
+            plan.Table,
+            plan.RowCount,
+            shouldSample,
+            sampleSize,
+            shouldSample ? samplingParameter : 0,
+            plan.Columns.IsDefault ? 0 : plan.Columns.Length,
+            plan.UniqueCandidates.IsDefault ? 0 : plan.UniqueCandidates.Length,
+            plan.ForeignKeys.IsDefault ? 0 : plan.ForeignKeys.Length,
+            nullDuration.TotalMilliseconds,
+            uniqueDuration.TotalMilliseconds,
+            foreignKeyDuration.TotalMilliseconds,
+            metadataDuration.TotalMilliseconds,
+            totalDuration.TotalMilliseconds,
+            nullCountStatus,
+            uniqueStatus,
+            foreignKeyStatus);
+
+        _telemetryCollector?.Record(telemetry);
+
+        _metadataLog?.RecordRequest(
+            "sql.profiling.table",
+            new
+            {
+                telemetry.Schema,
+                telemetry.Table,
+                telemetry.RowCount,
+                telemetry.Sampled,
+                telemetry.SampleSize,
+                telemetry.SamplingParameter,
+                telemetry.ColumnCount,
+                telemetry.UniqueCandidateCount,
+                telemetry.ForeignKeyCount,
+                durations = new
+                {
+                    totalMilliseconds = telemetry.TotalDurationMilliseconds,
+                    nullCountsMilliseconds = telemetry.NullCountDurationMilliseconds,
+                    uniqueCandidatesMilliseconds = telemetry.UniqueCandidateDurationMilliseconds,
+                    foreignKeysMilliseconds = telemetry.ForeignKeyDurationMilliseconds,
+                    foreignKeyMetadataMilliseconds = telemetry.ForeignKeyMetadataDurationMilliseconds
+                },
+                probes = new
+                {
+                    nullCounts = FormatProbeStatus(nullCountStatus),
+                    uniqueCandidates = FormatProbeStatus(uniqueStatus),
+                    foreignKeys = FormatProbeStatus(foreignKeyStatus)
+                }
+            });
+    }
+
+    private static object FormatProbeStatus(ProfilingProbeStatus status)
+    {
+        return new
+        {
+            capturedAtUtc = status.CapturedAtUtc,
+            sampleSize = status.SampleSize,
+            outcome = status.Outcome.ToString()
+        };
+    }
 }

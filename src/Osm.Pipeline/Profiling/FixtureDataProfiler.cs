@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.IO;
 using System.IO.Abstractions;
 using System.Threading;
@@ -42,5 +43,10 @@ public sealed class FixtureDataProfiler : IDataProfiler
 
         await using var stream = _fileSystem.File.Open(_fixturePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         return _deserializer.Deserialize(stream);
+    }
+
+    public ImmutableArray<TableProfilingTelemetry> GetTelemetrySnapshot()
+    {
+        return ImmutableArray<TableProfilingTelemetry>.Empty;
     }
 }
