@@ -96,7 +96,7 @@ public class EmissionCoverageCalculatorTests
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty,
-            ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty,
             ImmutableDictionary<IndexCoordinate, string>.Empty,
             TighteningOptions.Default);
 
@@ -104,7 +104,9 @@ public class EmissionCoverageCalculatorTests
             model,
             ImmutableArray<EntityModel>.Empty,
             decisions,
-            SmoModel.Create(ImmutableArray<SmoTableDefinition>.Empty),
+            SmoModel.Create(
+                ImmutableArray<SmoTableDefinition>.Empty,
+                ImmutableArray<Osm.Domain.Model.Artifacts.TableArtifactSnapshot>.Empty),
             SmoBuildOptions.Default);
 
         Assert.Equal(snapshot.EmittableAttributes.Length, result.Summary.Columns.Total);

@@ -36,10 +36,10 @@ public sealed record ColumnIdentity(
         return new ColumnIdentity(coordinate, entity.Module, entity.LogicalName, entity.PhysicalName, attribute.LogicalName);
     }
 
-    public static ColumnIdentity From(EntityAttributeIndex.EntityAttributeIndexEntry entry)
+    internal static ColumnIdentity From(EntityAttributeIndex.EntityAttributeIndexEntry entry)
         => From(entry.Entity, entry.Attribute);
 
-    public static ColumnIdentity From(ColumnProfile profile, EntityAttributeIndex index)
+    internal static ColumnIdentity From(ColumnProfile profile, EntityAttributeIndex index)
     {
         if (profile is null)
         {
@@ -54,7 +54,7 @@ public sealed record ColumnIdentity(
         return ResolveFromIndex(ColumnCoordinate.From(profile), index);
     }
 
-    public static ColumnIdentity From(UniqueCandidateProfile profile, EntityAttributeIndex index)
+    internal static ColumnIdentity From(UniqueCandidateProfile profile, EntityAttributeIndex index)
     {
         if (profile is null)
         {
@@ -69,7 +69,7 @@ public sealed record ColumnIdentity(
         return ResolveFromIndex(ColumnCoordinate.From(profile), index);
     }
 
-    public static ColumnIdentity From(ForeignKeyReference reference, EntityAttributeIndex index)
+    internal static ColumnIdentity From(ForeignKeyReference reference, EntityAttributeIndex index)
     {
         if (reference is null)
         {
@@ -84,7 +84,7 @@ public sealed record ColumnIdentity(
         return ResolveFromIndex(ColumnCoordinate.From(reference), index);
     }
 
-    public static ColumnIdentity From(ForeignKeyReality reality, EntityAttributeIndex index)
+    internal static ColumnIdentity From(ForeignKeyReality reality, EntityAttributeIndex index)
     {
         if (reality is null)
         {

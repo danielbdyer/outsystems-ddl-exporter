@@ -742,13 +742,16 @@ public class SmoModelFactoryTests
             productEntity.PhysicalName,
             ColumnName.Create("CATEGORYID").Value);
         var foreignKeyDecision = ForeignKeyDecision.Create(fkCoordinate, createConstraint: true, ImmutableArray<string>.Empty);
+        var foreignKeyIdentity = ColumnIdentity.From(
+            productEntity,
+            productEntity.Attributes.Single(a => a.ColumnName.Value.Equals("CATEGORYID", StringComparison.OrdinalIgnoreCase)));
 
         var decisions = PolicyDecisionSet.Create(
             ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(fkCoordinate, foreignKeyDecision),
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty,
-            ImmutableDictionary<ColumnCoordinate, string>.Empty.Add(fkCoordinate, productEntity.Module.Value),
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty.Add(fkCoordinate, foreignKeyIdentity),
             ImmutableDictionary<IndexCoordinate, string>.Empty,
             TighteningOptions.Default);
 
@@ -820,13 +823,14 @@ public class SmoModelFactoryTests
 
         var columnCoordinate = new ColumnCoordinate(schema, table, userIdAttribute.ColumnName);
         var fkDecision = ForeignKeyDecision.Create(columnCoordinate, createConstraint: true, ImmutableArray<string>.Empty);
+        var columnIdentity = ColumnIdentity.From(auditEntity, userIdAttribute);
 
         var decisions = PolicyDecisionSet.Create(
             ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(columnCoordinate, fkDecision),
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty,
-            ImmutableDictionary<ColumnCoordinate, string>.Empty.Add(columnCoordinate, auditEntity.Module.Value),
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty.Add(columnCoordinate, columnIdentity),
             ImmutableDictionary<IndexCoordinate, string>.Empty,
             TighteningOptions.Default);
 

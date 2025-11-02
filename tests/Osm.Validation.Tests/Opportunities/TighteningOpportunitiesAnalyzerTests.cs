@@ -24,6 +24,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         var coordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_CUS_CUSTOMER"), new ColumnName("ID"));
         var profile = TighteningEvaluatorTestHelper.CreateColumnProfile(coordinate, isNullablePhysical: false, rowCount: 100, nullCount: 0);
         var snapshot = ProfileSnapshot.Create(new[] { profile }, Array.Empty<UniqueCandidateProfile>(), Array.Empty<CompositeUniqueCandidateProfile>(), Array.Empty<ForeignKeyReality>()).Value;
+        var identity = ColumnIdentity.From(entity, attribute);
 
         var decision = NullabilityDecision.Create(coordinate, true, false, ImmutableArray<string>.Empty);
         var decisions = PolicyDecisionSet.Create(
@@ -31,7 +32,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty,
-            ImmutableDictionary<ColumnCoordinate, string>.Empty.Add(coordinate, entity.Module.Value),
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty.Add(coordinate, identity),
             ImmutableDictionary<IndexCoordinate, string>.Empty,
             TighteningOptions.Default);
 
@@ -73,6 +74,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
             new[] { uniqueProfile },
             Array.Empty<CompositeUniqueCandidateProfile>(),
             Array.Empty<ForeignKeyReality>()).Value;
+        var identity = ColumnIdentity.From(entity, attribute);
 
         var indexCoordinate = new IndexCoordinate(new SchemaName("dbo"), new TableName("OSUSR_PRO_PRODUCT"), new IndexName("IX_PRODUCT_CODE"));
         var decision = UniqueIndexDecision.Create(indexCoordinate, true, true, ImmutableArray<string>.Empty);
@@ -81,7 +83,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty.Add(indexCoordinate, decision),
             ImmutableArray<TighteningDiagnostic>.Empty,
-            ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty.Add(coordinate, identity),
             ImmutableDictionary<IndexCoordinate, string>.Empty.Add(indexCoordinate, entity.Module.Value),
             TighteningOptions.Default);
 
@@ -151,7 +153,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty.Add(indexCoordinate, decision),
             ImmutableArray<TighteningDiagnostic>.Empty,
-            ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty,
             ImmutableDictionary<IndexCoordinate, string>.Empty.Add(indexCoordinate, entity.Module.Value),
             TighteningOptions.Default);
 
@@ -186,6 +188,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         var targetCoordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_CUS_CUSTOMER"), new ColumnName("ID"));
         var fkReality = TighteningEvaluatorTestHelper.CreateForeignKeyReality(coordinate, targetCoordinate, hasConstraint: false, hasOrphan: false);
         var snapshot = ProfileSnapshot.Create(new[] { profile }, Array.Empty<UniqueCandidateProfile>(), Array.Empty<CompositeUniqueCandidateProfile>(), new[] { fkReality }).Value;
+        var identity = ColumnIdentity.From(sourceEntity, sourceAttribute);
 
         var decision = ForeignKeyDecision.Create(coordinate, true, ImmutableArray<string>.Empty);
         var decisions = PolicyDecisionSet.Create(
@@ -193,7 +196,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(coordinate, decision),
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty,
-            ImmutableDictionary<ColumnCoordinate, string>.Empty.Add(coordinate, sourceEntity.Module.Value),
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty.Add(coordinate, identity),
             ImmutableDictionary<IndexCoordinate, string>.Empty,
             TighteningOptions.Default);
 
@@ -230,7 +233,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty,
-            ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty,
             ImmutableDictionary<IndexCoordinate, string>.Empty,
             TighteningOptions.Default);
 

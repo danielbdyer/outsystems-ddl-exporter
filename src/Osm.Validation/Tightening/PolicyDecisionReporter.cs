@@ -51,9 +51,9 @@ public static class PolicyDecisionReporter
             .ToExportDictionary()
             .ToImmutableDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
 
-        var columnModules = decisions.ColumnModules.ToImmutableDictionary(
+        var columnModules = decisions.ColumnIdentities.ToImmutableDictionary(
             static pair => pair.Key.ToString(),
-            static pair => pair.Value,
+            static pair => pair.Value.ModuleName,
             StringComparer.OrdinalIgnoreCase);
 
         var indexModules = decisions.IndexModules.ToImmutableDictionary(

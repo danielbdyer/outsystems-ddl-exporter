@@ -257,8 +257,8 @@ public sealed class PipelineBootstrapperIntegrationTests
             SupplementalModelOptions.Default,
             telemetry,
             (_, _) => Task.FromResult(Result<ProfileSnapshot>.Success(profile)),
-            inlineModel: null,
-            inlineWarnings: default);
+            InlineModel: null,
+            ModelWarnings: default);
 
         var logBuilder = new PipelineExecutionLogBuilder();
         var result = await bootstrapper.BootstrapAsync(logBuilder, request, CancellationToken.None);

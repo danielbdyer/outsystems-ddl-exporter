@@ -118,7 +118,7 @@ public class SmoIndexBuilderTests
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
             ImmutableArray<TighteningDiagnostic>.Empty,
-            ImmutableDictionary<ColumnCoordinate, string>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty,
             ImmutableDictionary<IndexCoordinate, string>.Empty,
             TighteningOptions.Default);
 
