@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.SqlServer.Management.Smo;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Xunit;
@@ -238,5 +241,89 @@ public class PerTableWriterTests
 
         var nextColumnIndex = script.IndexOf("[Name]", foreignKeyIndex, StringComparison.Ordinal);
         Assert.True(nextColumnIndex > foreignKeyIndex);
+    }
+
+    [Fact]
+    public void Generate_preserves_column_order_from_model()
+    {
+        var moduleName = ModuleName.Create("Inventory").Value;
+        var tableName = TableName.Create("OSUSR_INV_ITEM").Value;
+        var schema = SchemaName.Create("inv").Value;
+
+        var gammaAttribute = AttributeModel.Create(
+            AttributeName.Create("Gamma").Value,
+            ColumnName.Create("GAMMA").Value,
+            dataType: "Identifier",
+            isMandatory: true,
+            isIdentifier: true,
+            isAutoNumber: true,
+            isActive: true,
+            metadata: AttributeMetadata.Empty,
+            onDisk: AttributeOnDiskMetadata.Empty).Value;
+
+        var alphaAttribute = AttributeModel.Create(
+            AttributeName.Create("Alpha").Value,
+            ColumnName.Create("ALPHA").Value,
+            dataType: "Integer",
+            isMandatory: false,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            metadata: AttributeMetadata.Empty,
+            onDisk: AttributeOnDiskMetadata.Empty).Value;
+
+        var betaAttribute = AttributeModel.Create(
+            AttributeName.Create("Beta").Value,
+            ColumnName.Create("BETA").Value,
+            dataType: "Long Integer",
+            isMandatory: false,
+            isIdentifier: false,
+            isAutoNumber: false,
+            isActive: true,
+            metadata: AttributeMetadata.Empty,
+            onDisk: AttributeOnDiskMetadata.Empty).Value;
+
+        var entity = EntityModel.Create(
+            moduleName,
+            EntityName.Create("Item").Value,
+            tableName,
+            schema,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { gammaAttribute, alphaAttribute, betaAttribute },
+            metadata: EntityMetadata.Empty).Value;
+
+        var module = ModuleModel.Create(moduleName, isSystemModule: false, isActive: true, new[] { entity }).Value;
+        var osmModel = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var decisions = PolicyDecisionSet.Create(
+            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty,
+            ImmutableDictionary<IndexCoordinate, string>.Empty,
+            TighteningOptions.Default);
+
+        var factory = new SmoModelFactory();
+        var smoModel = factory.Create(osmModel, decisions);
+        var table = Assert.Single(smoModel.Tables);
+
+        Assert.Equal(new[] { "Gamma", "Alpha", "Beta" }, table.Columns.Select(column => column.Name));
+
+        var writer = new PerTableWriter();
+        var result = writer.Generate(table, SmoBuildOptions.Default);
+
+        var gammaIndex = result.Script.IndexOf("[Gamma]", StringComparison.Ordinal);
+        var alphaIndex = result.Script.IndexOf("[Alpha]", StringComparison.Ordinal);
+        var betaIndex = result.Script.IndexOf("[Beta]", StringComparison.Ordinal);
+
+        Assert.True(gammaIndex >= 0, "Gamma column not found in script.");
+        Assert.True(alphaIndex >= 0, "Alpha column not found in script.");
+        Assert.True(betaIndex >= 0, "Beta column not found in script.");
+        Assert.True(gammaIndex < alphaIndex, "Gamma column should appear before Alpha column.");
+        Assert.True(alphaIndex < betaIndex, "Alpha column should appear before Beta column.");
     }
 }
