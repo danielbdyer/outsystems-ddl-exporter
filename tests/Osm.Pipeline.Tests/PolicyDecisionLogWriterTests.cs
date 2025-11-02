@@ -42,13 +42,19 @@ public sealed class PolicyDecisionLogWriterTests
             enforceUnique: true,
             requiresRemediation: false,
             ImmutableArray<string>.Empty);
+        var columnIdentity = new ColumnIdentity(
+            columnCoordinate,
+            new ModuleName("Accounting"),
+            new EntityName("Customer"),
+            new TableName("Customer"),
+            new AttributeName("Email"));
 
         var decisions = PolicyDecisionSet.Create(
             ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty.Add(columnCoordinate, nullabilityDecision),
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(columnCoordinate, foreignKeyDecision),
             ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty.Add(indexCoordinate, uniqueDecision),
             ImmutableArray<TighteningDiagnostic>.Empty,
-            ImmutableDictionary<ColumnCoordinate, string>.Empty.Add(columnCoordinate, "Accounting"),
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty.Add(columnCoordinate, columnIdentity),
             ImmutableDictionary<IndexCoordinate, string>.Empty.Add(indexCoordinate, "Accounting"),
             TighteningOptions.Default);
 

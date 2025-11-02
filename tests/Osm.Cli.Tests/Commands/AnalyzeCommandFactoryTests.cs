@@ -86,7 +86,7 @@ public sealed class AnalyzeCommandFactoryTests
                 System.Collections.Immutable.ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
                 System.Collections.Immutable.ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
                 System.Collections.Immutable.ImmutableArray<TighteningDiagnostic>.Empty,
-                System.Collections.Immutable.ImmutableDictionary<ColumnCoordinate, string>.Empty,
+                System.Collections.Immutable.ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty,
                 System.Collections.Immutable.ImmutableDictionary<IndexCoordinate, string>.Empty,
                 TighteningOptions.Default);
             var report = PolicyDecisionReporter.Create(decisions);
