@@ -79,6 +79,7 @@ public sealed class OpportunityLogWriterTests
                 "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"),
             column: new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_CUSTOMER"), new ColumnName("EMAIL")),
             disposition: Opportunities.OpportunityDisposition.ReadyToApply,
+            category: Opportunities.OpportunityCategory.Recommendation,
             statements: ImmutableArray.Create("ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]\n    ALTER COLUMN [Email] NVARCHAR(255) NOT NULL;"),
             rationales: ImmutableArray.Create("Null probe succeeded."),
             evidenceSummary: new Opportunities.OpportunityEvidenceSummary(false, true, true, false, false),
@@ -115,6 +116,7 @@ public sealed class OpportunityLogWriterTests
                 "Unique duplicates=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"),
             index: new IndexCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new IndexName("IX_OSUSR_ABC_ORDER_OrderNumber")),
             disposition: Opportunities.OpportunityDisposition.NeedsRemediation,
+            category: Opportunities.OpportunityCategory.Contradiction,
             statements: ImmutableArray.Create(
                 "CREATE UNIQUE INDEX [IX_OSUSR_ABC_ORDER_OrderNumber] ON [dbo].[OSUSR_ABC_ORDER] ([OrderNumber]);"),
             rationales: ImmutableArray.Create("Duplicate values detected."),
@@ -147,6 +149,10 @@ public sealed class OpportunityLogWriterTests
         dispositionCounts[Opportunities.OpportunityDisposition.ReadyToApply] = 1;
         dispositionCounts[Opportunities.OpportunityDisposition.NeedsRemediation] = 1;
 
+        var categoryCounts = ImmutableDictionary.CreateBuilder<Opportunities.OpportunityCategory, int>();
+        categoryCounts[Opportunities.OpportunityCategory.Recommendation] = 1;
+        categoryCounts[Opportunities.OpportunityCategory.Contradiction] = 1;
+
         var typeCounts = ImmutableDictionary.CreateBuilder<Opportunities.OpportunityType, int>();
         typeCounts[Opportunities.OpportunityType.Nullability] = 1;
         typeCounts[Opportunities.OpportunityType.UniqueIndex] = 1;
@@ -158,6 +164,7 @@ public sealed class OpportunityLogWriterTests
         return new OpportunitiesReport(
             ImmutableArray.Create(notNullOpportunity, uniqueOpportunity),
             dispositionCounts.ToImmutable(),
+            categoryCounts.ToImmutable(),
             typeCounts.ToImmutable(),
             riskCounts.ToImmutable(),
             capture);

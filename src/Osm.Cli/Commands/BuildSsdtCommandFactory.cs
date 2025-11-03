@@ -187,10 +187,21 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             CommandConsole.WriteLine(context.Console, summary);
         }
 
-        CommandConsole.WriteLine(context.Console, $"Decision log written to {pipelineResult.DecisionLogPath}");
-        CommandConsole.WriteLine(context.Console, $"Opportunities written to {pipelineResult.OpportunitiesPath}");
-        CommandConsole.WriteLine(context.Console, $"Safe suggestions: {pipelineResult.SafeScriptPath}");
-        CommandConsole.WriteLine(context.Console, $"Needs-remediation suggestions: {pipelineResult.RemediationScriptPath}");
+        CommandConsole.WriteLine(context.Console, string.Empty);
+        CommandConsole.WriteLine(context.Console, "Tightening Artifacts:");
+        CommandConsole.WriteLine(context.Console, $"  Decision log: {pipelineResult.DecisionLogPath}");
+        CommandConsole.WriteLine(context.Console, $"  Opportunities report: {pipelineResult.OpportunitiesPath}");
+
+        if (pipelineResult.Opportunities.ContradictionCount > 0)
+        {
+            CommandConsole.WriteLine(context.Console, $"  ⚠️  Needs remediation ({pipelineResult.Opportunities.ContradictionCount} contradictions): {pipelineResult.RemediationScriptPath}");
+        }
+        else
+        {
+            CommandConsole.WriteLine(context.Console, $"  Needs remediation: {pipelineResult.RemediationScriptPath}");
+        }
+
+        CommandConsole.WriteLine(context.Console, $"  Safe to apply ({pipelineResult.Opportunities.RecommendationCount + pipelineResult.Opportunities.ValidationCount} opportunities): {pipelineResult.SafeScriptPath}");
 
         if (!context.ParseResult.GetValueForOption(_openReportOption))
         {

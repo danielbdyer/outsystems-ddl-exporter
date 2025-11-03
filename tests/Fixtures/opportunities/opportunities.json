@@ -10,6 +10,7 @@
         "Description": "Column qualifies for NOT NULL enforcement."
       },
       "Disposition": "ReadyToApply",
+      "Category": "Recommendation",
       "Evidence": [
         "Rows=100",
         "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"
@@ -117,6 +118,7 @@
         "Description": "Remediate duplicates before enforcing unique index."
       },
       "Disposition": "NeedsRemediation",
+      "Category": "Contradiction",
       "Evidence": [
         "Unique duplicates=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"
       ],
@@ -221,6 +223,10 @@
   "DispositionCounts": {
     "ReadyToApply": 1,
     "NeedsRemediation": 1
+  },
+  "CategoryCounts": {
+    "Recommendation": 1,
+    "Contradiction": 1
   },
   "TypeCounts": {
     "Nullability": 1,
