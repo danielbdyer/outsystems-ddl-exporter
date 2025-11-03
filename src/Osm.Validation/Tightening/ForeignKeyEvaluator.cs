@@ -170,20 +170,20 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
     {
         if (evaluation.HasOrphan)
         {
-            return "Resolve orphaned rows before enforcing the foreign key.";
+            return "Foreign key constraint was not created. Resolve orphaned rows before enforcement can proceed.";
         }
 
         if (evaluation.IgnoreRule)
         {
-            return "Delete rule 'Ignore' prevents creating the foreign key.";
+            return "Foreign key constraint was not created. Delete rule 'Ignore' prevents constraint enforcement.";
         }
 
         if (evaluation.CrossSchemaBlocked || evaluation.CrossCatalogBlocked)
         {
-            return "Allow cross-database enforcement or adjust the schema before creating the foreign key.";
+            return "Foreign key constraint was not created. Cross-database references are blocked by policy. Allow cross-database enforcement or adjust the schema.";
         }
 
-        return "Enable policy or gather evidence before creating the foreign key.";
+        return "Foreign key constraint was not created. Enable policy or gather evidence before constraint creation can proceed.";
     }
 
     private bool IsIgnoreRule(string? deleteRule)

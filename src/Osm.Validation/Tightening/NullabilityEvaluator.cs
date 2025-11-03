@@ -198,24 +198,24 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
     {
         if (decision.RequiresRemediation)
         {
-            return "Remediate data before enforcing NOT NULL.";
+            return "NOT NULL was not applied. Remediate data before enforcement can proceed.";
         }
 
         if (decision.Rationales.Contains(TighteningRationales.ProfileMissing))
         {
-            return "Collect profiling evidence before enforcing NOT NULL.";
+            return "NOT NULL was not applied. Collect profiling evidence before enforcement can proceed.";
         }
 
         if (decision.Rationales.Contains(TighteningRationales.NullBudgetEpsilon))
         {
-            return "Column exceeds the configured null budget.";
+            return "NOT NULL was not applied. Column exceeds the configured null budget threshold.";
         }
 
         if (decision.Rationales.Contains(TighteningRationales.DataHasNulls))
         {
-            return "Profiling detected NULL values that contradict the logical mandatory flag.";
+            return "NOT NULL was not applied. Profiling detected NULL values that contradict the logical mandatory flag.";
         }
 
-        return "Review policy blockers before enforcing NOT NULL.";
+        return "NOT NULL was not applied. Review policy blockers before enforcement can proceed.";
     }
 }

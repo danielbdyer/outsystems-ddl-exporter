@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
+using Osm.Domain.Configuration;
 
 namespace Osm.Validation.Tightening;
 
@@ -15,6 +16,7 @@ public static class PolicyDecisionSummaryFormatter
             throw new ArgumentNullException(nameof(report));
         }
 
+        var mode = report.Toggles.Mode.Value;
         var entries = new List<SummaryEntry>();
 
         var bucketedColumns = report.Columns
@@ -29,10 +31,10 @@ public static class PolicyDecisionSummaryFormatter
         AddIfPresent(entries, BuildContradictionAlert(report.Columns));
 
         // Informational summaries about what was tightened
-        AddIfPresent(entries, BuildMandatorySummary(GetColumns(bucketedColumns, ColumnSummaryBucket.Mandatory)));
-        AddIfPresent(entries, BuildForeignKeySummary(GetColumns(bucketedColumns, ColumnSummaryBucket.ForeignKey)));
+        AddIfPresent(entries, BuildMandatorySummary(GetColumns(bucketedColumns, ColumnSummaryBucket.Mandatory), mode));
+        AddIfPresent(entries, BuildForeignKeySummary(GetColumns(bucketedColumns, ColumnSummaryBucket.ForeignKey), mode));
         AddIfPresent(entries, BuildPrimaryKeySummary(GetColumns(bucketedColumns, ColumnSummaryBucket.PrimaryKey)));
-        AddIfPresent(entries, BuildUniqueSummary(GetColumns(bucketedColumns, ColumnSummaryBucket.Unique)));
+        AddIfPresent(entries, BuildUniqueSummary(GetColumns(bucketedColumns, ColumnSummaryBucket.Unique), mode));
         AddIfPresent(entries, BuildPhysicalSummary(GetColumns(bucketedColumns, ColumnSummaryBucket.Physical)));
 
         // Unique indexes and FK creation
@@ -100,7 +102,7 @@ public static class PolicyDecisionSummaryFormatter
         ColumnSummaryBucket bucket)
         => source.TryGetValue(bucket, out var values) ? values : Array.Empty<ColumnDecisionReport>();
 
-    private static SummaryEntry? BuildMandatorySummary(IReadOnlyList<ColumnDecisionReport> columns)
+    private static SummaryEntry? BuildMandatorySummary(IReadOnlyList<ColumnDecisionReport> columns, TighteningMode mode)
     {
         if (columns.Count == 0)
         {
@@ -113,10 +115,19 @@ public static class PolicyDecisionSummaryFormatter
 
         var builder = new StringBuilder();
         builder.Append(
-            $"{FormatAttributeCount(columns.Count)} across {FormatEntityCount(entityCount)} were tightened to NOT NULL based on logical mandatory metadata");
-        if (dataAllClean)
+            $"{FormatAttributeCount(columns.Count)} across {FormatEntityCount(entityCount)} ");
+
+        if (mode == TighteningMode.Aggressive && !dataAllClean)
         {
-            builder.Append(" after confirming the profiler reported no null rows");
+            builder.Append("were tightened to NOT NULL based on logical mandatory metadata (Aggressive mode may require data remediation)");
+        }
+        else
+        {
+            builder.Append("were tightened to NOT NULL based on logical mandatory metadata");
+            if (dataAllClean)
+            {
+                builder.Append(" after confirming the profiler reported no null rows");
+            }
         }
 
         builder.Append('.');
@@ -130,7 +141,7 @@ public static class PolicyDecisionSummaryFormatter
         return new SummaryEntry(columns.Count, 10, builder.ToString());
     }
 
-    private static SummaryEntry? BuildForeignKeySummary(IReadOnlyList<ColumnDecisionReport> columns)
+    private static SummaryEntry? BuildForeignKeySummary(IReadOnlyList<ColumnDecisionReport> columns, TighteningMode mode)
     {
         if (columns.Count == 0)
         {
@@ -140,7 +151,18 @@ public static class PolicyDecisionSummaryFormatter
         var entityCount = CountEntities(columns);
         var builder = new StringBuilder();
         builder.Append(
-            $"{FormatAttributeCount(columns.Count)} across {FormatEntityCount(entityCount)} were tightened to NOT NULL because referential integrity evidence supports enforcement");
+            $"{FormatAttributeCount(columns.Count)} across {FormatEntityCount(entityCount)} were tightened to NOT NULL ");
+
+        if (mode == TighteningMode.Cautious)
+        {
+            // In Cautious mode, FK signals are TelemetryOnly - these columns also have MANDATORY
+            builder.Append("based on mandatory metadata (with enforced foreign key relationships providing additional confidence)");
+        }
+        else
+        {
+            // In EvidenceGated and Aggressive modes, FK evidence can trigger tightening
+            builder.Append("because referential integrity evidence supports enforcement");
+        }
 
         if (columns.All(column => HasRationale(column, TighteningRationales.DataNoNulls)))
         {
@@ -174,7 +196,7 @@ public static class PolicyDecisionSummaryFormatter
         return new SummaryEntry(columns.Count, 30, builder.ToString());
     }
 
-    private static SummaryEntry? BuildUniqueSummary(IReadOnlyList<ColumnDecisionReport> columns)
+    private static SummaryEntry? BuildUniqueSummary(IReadOnlyList<ColumnDecisionReport> columns, TighteningMode mode)
     {
         if (columns.Count == 0)
         {
@@ -184,11 +206,22 @@ public static class PolicyDecisionSummaryFormatter
         var entityCount = CountEntities(columns);
         var builder = new StringBuilder();
         builder.Append(
-            $"{FormatAttributeCount(columns.Count)} across {FormatEntityCount(entityCount)} gained NOT NULL enforcement based on clean unique index evidence");
+            $"{FormatAttributeCount(columns.Count)} across {FormatEntityCount(entityCount)} ");
+
+        if (mode == TighteningMode.Cautious)
+        {
+            // In Cautious mode, unique signals are TelemetryOnly - these columns have other reasons (mandatory, physical, PK)
+            builder.Append("were tightened to NOT NULL with clean unique index evidence providing additional validation");
+        }
+        else
+        {
+            // In EvidenceGated and Aggressive modes, unique evidence can trigger tightening
+            builder.Append("gained NOT NULL enforcement based on clean unique index evidence");
+        }
 
         if (columns.All(column => HasRationale(column, TighteningRationales.DataNoNulls)))
         {
-            builder.Append(" with zero nulls observed during profiling");
+            builder.Append(" and zero nulls observed during profiling");
         }
 
         builder.Append('.');
