@@ -118,7 +118,7 @@ internal sealed class ColumnDecisionAggregator
                             coordinate.Table.Value,
                             coordinate.Column.Value,
                             attribute.LogicalName.Value,
-                            entity.Module.Name.Value,
+                            entity.Module.Value,
                             sample.PrimaryKeyColumns,
                             sampleRows,
                             sample.TotalNullRows,
