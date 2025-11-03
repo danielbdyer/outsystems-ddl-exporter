@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -134,7 +135,8 @@ public class CaptureProfilePipelineTests
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
+                MetadataContract: MetadataContractOverrides.Strict,
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicyLoader.LoadDefault(),
             fixtureProfilePath);

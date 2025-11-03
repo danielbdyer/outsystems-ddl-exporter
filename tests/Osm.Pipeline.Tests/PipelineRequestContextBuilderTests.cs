@@ -30,7 +30,8 @@ public sealed class PipelineRequestContextBuilderTests
                 CommandTimeoutSeconds: 45,
                 SqlSamplingConfiguration.Empty,
                 SqlAuthenticationConfiguration.Empty,
-                MetadataContractConfiguration.Empty),
+                MetadataContractConfiguration.Empty,
+                Array.Empty<string>()),
             new ModuleFilterConfiguration(
                 new[] { "CRM" },
                 IncludeSystemModules: true,
@@ -55,7 +56,8 @@ public sealed class PipelineRequestContextBuilderTests
             AuthenticationMethod: null,
             TrustServerCertificate: null,
             ApplicationName: null,
-            AccessToken: null);
+            AccessToken: null,
+            ProfilingConnectionStrings: null);
         var cacheOverrides = new CacheOptionsOverrides("cache-root", Refresh: false);
         var overrides = new BuildSsdtOverrides(null, null, null, null, null, null, null, null);
         var binder = new RecordingNamingBinder();

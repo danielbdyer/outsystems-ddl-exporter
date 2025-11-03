@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -102,7 +103,8 @@ public sealed class PipelineApplicationServiceBaseTests
                 CommandTimeoutSeconds: null,
                 new SqlSamplingSettings(null, null),
                 new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContractOverrides.Strict),
+                MetadataContractOverrides.Strict,
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
             TypeMappingPolicy.Default,
             new SupplementalModelOptions(true, Array.Empty<string>()),
             NamingOverrides: null,

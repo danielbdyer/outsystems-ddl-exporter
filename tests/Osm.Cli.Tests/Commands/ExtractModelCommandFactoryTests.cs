@@ -50,6 +50,7 @@ public class ExtractModelCommandFactoryTests
         Assert.Contains(moduleBinder.ModulesOption, command.Options);
         var sqlBinder = provider.GetRequiredService<SqlOptionBinder>();
         Assert.Contains(sqlBinder.ConnectionStringOption, command.Options);
+        Assert.Contains(sqlBinder.ProfilingConnectionStringsOption, command.Options);
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
@@ -67,6 +68,7 @@ public class ExtractModelCommandFactoryTests
         Assert.Equal("manifest.json", input.Overrides.MockAdvancedSqlManifest);
         Assert.Equal(metadataPath, input.Overrides.SqlMetadataOutputPath);
         Assert.Equal("DataSource", input.Sql.ConnectionString);
+        Assert.Null(input.Sql.ProfilingConnectionStrings);
     }
 
     private sealed class FakeConfigurationService : ICliConfigurationService

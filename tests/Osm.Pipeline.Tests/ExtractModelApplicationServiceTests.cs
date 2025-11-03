@@ -34,7 +34,7 @@ public class ExtractModelApplicationServiceTests
         var input = new ExtractModelApplicationInput(
             context,
             new ExtractModelOverrides(null, null, null, null, null, null),
-            new SqlOptionsOverrides(null, null, null, null, null, null, null, null));
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null));
 
         var result = await service.RunAsync(input);
 
@@ -64,7 +64,7 @@ public class ExtractModelApplicationServiceTests
         var input = new ExtractModelApplicationInput(
             context,
             new ExtractModelOverrides(new[] { "Ops" }, IncludeSystemModules: false, OnlyActiveAttributes: true, OutputPath: null, MockAdvancedSqlManifest: null, SqlMetadataOutputPath: null),
-            new SqlOptionsOverrides(null, null, null, null, null, null, null, null));
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null));
 
         var result = await service.RunAsync(input);
 
@@ -92,7 +92,7 @@ public class ExtractModelApplicationServiceTests
         var input = new ExtractModelApplicationInput(
             context,
             new ExtractModelOverrides(null, null, null, null, null, metadataPath),
-            new SqlOptionsOverrides(null, null, null, null, null, null, null, null));
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null));
 
         var result = await service.RunAsync(input);
 
@@ -112,7 +112,7 @@ public class ExtractModelApplicationServiceTests
         var input = new ExtractModelApplicationInput(
             context,
             new ExtractModelOverrides(null, null, null, " artifacts/model.json ", null, null),
-            new SqlOptionsOverrides(null, null, null, null, null, null, null, null));
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null));
 
         var result = await service.RunAsync(input);
 

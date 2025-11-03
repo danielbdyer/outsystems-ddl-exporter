@@ -27,6 +27,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
         null,
         null,
         null,
+        null,
         null);
 
     [Fact]

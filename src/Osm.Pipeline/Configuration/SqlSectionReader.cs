@@ -34,8 +34,9 @@ internal sealed class SqlSectionReader
         var sampling = ReadSampling(element);
         var authentication = ReadAuthentication(element);
         var metadataContract = ReadMetadataContract(element);
+        var profilingConnections = ReadProfilingConnections(element);
 
-        configuration = new SqlConfiguration(connectionString, commandTimeout, sampling, authentication, metadataContract);
+        configuration = new SqlConfiguration(connectionString, commandTimeout, sampling, authentication, metadataContract, profilingConnections);
         return true;
     }
 
@@ -152,5 +153,39 @@ internal sealed class SqlSectionReader
         return optionalColumns.Count > 0
             ? new MetadataContractConfiguration(optionalColumns)
             : MetadataContractConfiguration.Empty;
+    }
+
+    private static IReadOnlyList<string> ReadProfilingConnections(JsonElement element)
+    {
+        if (!element.TryGetProperty("profilingConnectionStrings", out var connectionsElement)
+            || connectionsElement.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var connections = new List<string>();
+        foreach (var item in connectionsElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            var raw = item.GetString();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            var trimmed = raw.Trim();
+            if (trimmed.Length > 0)
+            {
+                connections.Add(trimmed);
+            }
+        }
+
+        return connections.Count == 0
+            ? Array.Empty<string>()
+            : connections;
     }
 }

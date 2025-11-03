@@ -14,7 +14,7 @@ public sealed record ExtractModelVerbOptions
 {
     public string? ConfigurationPath { get; init; }
     public ExtractModelOverrides Overrides { get; init; } = new(null, null, null, null, null, null);
-    public SqlOptionsOverrides Sql { get; init; } = new(null, null, null, null, null, null, null, null);
+    public SqlOptionsOverrides Sql { get; init; } = new(null, null, null, null, null, null, null, null, null);
     public string? SqlMetadataOutputPath { get; init; }
 }
 

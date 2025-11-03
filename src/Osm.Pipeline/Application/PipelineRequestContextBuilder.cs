@@ -46,7 +46,7 @@ internal static class PipelineRequestContextBuilder
         }
 
         var sqlOverrides = request.SqlOptionsOverrides
-            ?? new SqlOptionsOverrides(null, null, null, null, null, null, null, null);
+            ?? new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null);
 
         var sqlOptionsResult = SqlOptionsResolver.Resolve(configuration, sqlOverrides);
         if (sqlOptionsResult.IsFailure)

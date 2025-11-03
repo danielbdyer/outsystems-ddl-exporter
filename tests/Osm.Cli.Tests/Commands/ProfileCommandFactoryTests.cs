@@ -49,6 +49,7 @@ public class ProfileCommandFactoryTests
 
         var sqlBinder = provider.GetRequiredService<SqlOptionBinder>();
         Assert.Contains(sqlBinder.ConnectionStringOption, command.Options);
+        Assert.Contains(sqlBinder.ProfilingConnectionStringsOption, command.Options);
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
@@ -65,6 +66,7 @@ public class ProfileCommandFactoryTests
         Assert.Equal("fixture", input.Overrides.ProfilerProvider);
         Assert.Equal(new[] { "ModuleA" }, input.ModuleFilter.Modules);
         Assert.Equal("DataSource", input.Sql.ConnectionString);
+        Assert.Null(input.Sql.ProfilingConnectionStrings);
 
         var result = application.LastResult!;
         Assert.Equal("output", result.OutputDirectory);
