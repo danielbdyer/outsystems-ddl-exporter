@@ -165,7 +165,10 @@ internal static class CommandConsole
         WriteLine(console, ProfileSnapshotDebugFormatter.ToJson(snapshot));
     }
 
-    public static void EmitProfilingInsights(IConsole console, ImmutableArray<ProfilingInsight> insights)
+    public static void EmitProfilingInsights(
+        IConsole console,
+        ImmutableArray<ProfilingInsight> insights,
+        ImmutableArray<ProfilingCoverageAnomaly> coverageAnomalies = default)
     {
         if (console is null)
         {
@@ -197,6 +200,37 @@ internal static class CommandConsole
                     WriteLine(console, formatted);
                     break;
             }
+        }
+
+        EmitCoverageAnomalies(console, coverageAnomalies);
+    }
+
+    public static void EmitCoverageAnomalies(IConsole console, ImmutableArray<ProfilingCoverageAnomaly> anomalies)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (anomalies.IsDefaultOrEmpty || anomalies.Length == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, "Profiling coverage anomalies:");
+
+        foreach (var anomaly in anomalies)
+        {
+            if (anomaly is null)
+            {
+                continue;
+            }
+
+            var coordinate = FormatCoverageCoordinate(anomaly);
+            var remediation = string.IsNullOrWhiteSpace(anomaly.RemediationHint)
+                ? string.Empty
+                : $" Remediation: {anomaly.RemediationHint}";
+            WriteErrorLine(console, $"[warning] {anomaly.Message} [{coordinate}]{remediation}");
         }
     }
 
@@ -326,6 +360,34 @@ internal static class CommandConsole
                 WriteLine(console, $"    … {entries.Count - sampleCount} additional occurrence(s) suppressed.");
             }
         }
+    }
+
+    private static string FormatCoverageCoordinate(ProfilingCoverageAnomaly anomaly)
+    {
+        var coordinate = anomaly.Coordinate;
+        var baseSchema = coordinate.Schema.Value;
+        var baseTable = coordinate.Table.Value;
+        var baseScope = string.IsNullOrWhiteSpace(coordinate.Column?.Value)
+            ? $"{baseSchema}.{baseTable}"
+            : $"{baseSchema}.{baseTable}.{coordinate.Column.Value}";
+
+        var relatedTableName = coordinate.RelatedTable?.Value;
+
+        if (string.IsNullOrWhiteSpace(relatedTableName))
+        {
+            return baseScope;
+        }
+
+        var relatedSchemaName = coordinate.RelatedSchema?.Value;
+        var resolvedRelatedSchema = string.IsNullOrWhiteSpace(relatedSchemaName)
+            ? baseSchema
+            : relatedSchemaName;
+        var relatedColumnName = coordinate.RelatedColumn?.Value;
+        var relatedScope = string.IsNullOrWhiteSpace(relatedColumnName)
+            ? $"{resolvedRelatedSchema}.{relatedTableName}"
+            : $"{resolvedRelatedSchema}.{relatedTableName}.{relatedColumnName}";
+
+        return $"{baseScope} → {relatedScope}";
     }
 
     private static string FormatLogEntry(PipelineLogEntry entry)

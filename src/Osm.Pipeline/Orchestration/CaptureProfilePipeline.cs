@@ -31,6 +31,7 @@ public sealed record CaptureProfilePipelineResult(
     string ProfilePath,
     string ManifestPath,
     ImmutableArray<ProfilingInsight> Insights,
+    ImmutableArray<ProfilingCoverageAnomaly> CoverageAnomalies,
     PipelineExecutionLog ExecutionLog,
     ImmutableArray<string> Warnings);
 
@@ -43,6 +44,7 @@ public sealed record CaptureProfileManifest(
     CaptureProfileSnapshotSummary Snapshot,
     IReadOnlyList<CaptureProfileInsight> Insights,
     IReadOnlyList<string> Warnings,
+    IReadOnlyList<CaptureProfileCoverageAnomaly> CoverageAnomalies,
     DateTimeOffset CapturedAtUtc);
 
 public sealed record CaptureProfileModuleSummary(
@@ -75,6 +77,14 @@ public sealed record CaptureProfileInsightCoordinate(
     string? RelatedSchema,
     string? RelatedTable,
     string? RelatedColumn);
+
+public sealed record CaptureProfileCoverageAnomaly(
+    string Type,
+    string Message,
+    string Remediation,
+    CaptureProfileInsightCoordinate Coordinate,
+    IReadOnlyList<string> Columns,
+    string Outcome);
 
 public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>
 {
@@ -219,6 +229,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             profilePath,
             manifestPath,
             bootstrap.Insights,
+            bootstrap.Profile.CoverageAnomalies,
             log.Build(),
             bootstrap.Warnings.ToImmutableArray());
     }
@@ -290,7 +301,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             bootstrap.Profile.ForeignKeys.Length,
             bootstrap.FilteredModel.Modules.Length);
 
-        var insights = bootstrap.Insights
+        var manifestInsights = bootstrap.Insights
             .Select(insight => new CaptureProfileInsight(
                 insight.Severity.ToString(),
                 insight.Category.ToString(),
@@ -304,7 +315,37 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
                         insight.Coordinate.RelatedSchema?.Value,
                         insight.Coordinate.RelatedTable?.Value,
                         insight.Coordinate.RelatedColumn?.Value)))
-            .ToArray();
+            .ToList();
+
+        var manifestWarnings = new List<string>(bootstrap.Warnings);
+        var coverageEntries = new List<CaptureProfileCoverageAnomaly>();
+
+        foreach (var anomaly in bootstrap.Profile.CoverageAnomalies)
+        {
+            var coordinate = new CaptureProfileInsightCoordinate(
+                anomaly.Coordinate.Schema.Value,
+                anomaly.Coordinate.Table.Value,
+                anomaly.Coordinate.Column?.Value,
+                anomaly.Coordinate.RelatedSchema?.Value,
+                anomaly.Coordinate.RelatedTable?.Value,
+                anomaly.Coordinate.RelatedColumn?.Value);
+
+            coverageEntries.Add(new CaptureProfileCoverageAnomaly(
+                anomaly.Type.ToString(),
+                anomaly.Message,
+                anomaly.RemediationHint,
+                coordinate,
+                anomaly.Columns,
+                anomaly.Outcome.ToString()));
+
+            manifestWarnings.Add($"Coverage anomaly: {anomaly.Message} Remediation: {anomaly.RemediationHint}");
+
+            manifestInsights.Add(new CaptureProfileInsight(
+                ProfilingInsightSeverity.Warning.ToString(),
+                "Coverage",
+                $"{anomaly.Message} Remediation: {anomaly.RemediationHint}",
+                coordinate));
+        }
 
         return new CaptureProfileManifest(
             request.Scope.ModelPath,
@@ -313,8 +354,9 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             moduleSummary,
             supplementalSummary,
             snapshotSummary,
-            insights,
-            bootstrap.Warnings.ToArray(),
+            manifestInsights,
+            manifestWarnings,
+            coverageEntries,
             capturedAt);
     }
 }

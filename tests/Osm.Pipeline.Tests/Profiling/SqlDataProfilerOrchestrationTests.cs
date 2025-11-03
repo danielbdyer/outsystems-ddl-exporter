@@ -170,6 +170,118 @@ public sealed class SqlDataProfilerOrchestrationTests
         Assert.Equal(ProfilingProbeOutcome.Succeeded, foreignKey.ProbeStatus.Outcome);
     }
 
+    [Fact]
+    public async Task CaptureAsync_RecordsCoverageAnomaly_WhenColumnMetadataMissing()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+
+        var metadata = new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(ColumnKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_U_USER", "ID")] = new ColumnMetadata(false, false, true, null)
+        };
+
+        var rowCounts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_U_USER")] = 5
+        };
+
+        var plan = new TableProfilingPlan(
+            "dbo",
+            "OSUSR_U_USER",
+            5,
+            ImmutableArray.Create("EMAIL", "ID"),
+            ImmutableArray<UniqueCandidatePlan>.Empty,
+            ImmutableArray<ForeignKeyPlan>.Empty);
+
+        var probeStatus = ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 5);
+        var results = new TableProfilingResults(
+            new Dictionary<string, long>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                ["ID"] = 0,
+                ["EMAIL"] = 0
+            },
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                ["ID"] = probeStatus
+            },
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase));
+
+        var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
+        var planBuilder = new StubPlanBuilder(plan);
+        var queryExecutor = new StubQueryExecutor(results);
+        var profiler = new SqlDataProfiler(new NullConnectionFactory(), model, SqlProfilerOptions.Default, metadataLoader, planBuilder, queryExecutor);
+
+        var snapshotResult = await profiler.CaptureAsync(CancellationToken.None);
+
+        Assert.True(snapshotResult.IsSuccess);
+        Assert.Contains(
+            snapshotResult.Value.CoverageAnomalies,
+            anomaly => anomaly.Type == ProfilingCoverageAnomalyType.ColumnMetadataMissing &&
+                       anomaly.Columns.Contains("EMAIL"));
+    }
+
+    [Fact]
+    public async Task CaptureAsync_RecordsCoverageAnomaly_WhenNullProbeMissing()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+
+        var metadata = new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(ColumnKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_U_USER", "ID")] = new ColumnMetadata(false, false, true, null),
+            [("dbo", "OSUSR_U_USER", "EMAIL")] = new ColumnMetadata(true, false, false, null)
+        };
+
+        var rowCounts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_U_USER")] = 10
+        };
+
+        var plan = new TableProfilingPlan(
+            "dbo",
+            "OSUSR_U_USER",
+            10,
+            ImmutableArray.Create("EMAIL", "ID"),
+            ImmutableArray<UniqueCandidatePlan>.Empty,
+            ImmutableArray<ForeignKeyPlan>.Empty);
+
+        var probeStatus = ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 10);
+        var results = new TableProfilingResults(
+            new Dictionary<string, long>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                ["ID"] = 0,
+                ["EMAIL"] = 0
+            },
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                ["ID"] = probeStatus
+            },
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase));
+
+        var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
+        var planBuilder = new StubPlanBuilder(plan);
+        var queryExecutor = new StubQueryExecutor(results);
+        var profiler = new SqlDataProfiler(new NullConnectionFactory(), model, SqlProfilerOptions.Default, metadataLoader, planBuilder, queryExecutor);
+
+        var snapshotResult = await profiler.CaptureAsync(CancellationToken.None);
+
+        Assert.True(snapshotResult.IsSuccess);
+        Assert.Contains(
+            snapshotResult.Value.CoverageAnomalies,
+            anomaly => anomaly.Type == ProfilingCoverageAnomalyType.NullCountProbeMissing &&
+                       anomaly.Columns.Contains("EMAIL") &&
+                       anomaly.Outcome == ProfilingProbeOutcome.Unknown);
+    }
+
     private sealed class StubMetadataLoader : ITableMetadataLoader
     {
         private readonly Dictionary<(string Schema, string Table, string Column), ColumnMetadata> _metadata;

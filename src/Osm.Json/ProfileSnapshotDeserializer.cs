@@ -76,7 +76,18 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
             return Result<ProfileSnapshot>.Failure(foreignKeyResults.Errors);
         }
 
-        return ProfileSnapshot.Create(columnResults.Value, uniqueResults.Value, compositeResults.Value, foreignKeyResults.Value);
+        var coverageResults = Result.Collect((document.CoverageAnomalies ?? Array.Empty<CoverageAnomalyDocument>()).Select(MapCoverageAnomaly));
+        if (coverageResults.IsFailure)
+        {
+            return Result<ProfileSnapshot>.Failure(coverageResults.Errors);
+        }
+
+        return ProfileSnapshot.Create(
+            columnResults.Value,
+            uniqueResults.Value,
+            compositeResults.Value,
+            foreignKeyResults.Value,
+            coverageResults.Value);
     }
 
     private static Result<ColumnProfile> MapColumn(ColumnDocument doc)
@@ -250,6 +261,113 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         return CompositeUniqueCandidateProfile.Create(schemaResult.Value, tableResult.Value, columnResults.Value, doc.HasDuplicate);
     }
 
+    private static Result<ProfilingCoverageAnomaly> MapCoverageAnomaly(CoverageAnomalyDocument doc)
+    {
+        if (doc.Coordinate is null)
+        {
+            return Result<ProfilingCoverageAnomaly>.Failure(
+                ValidationError.Create("profile.coverage.coordinate.missing", "Coverage anomalies must specify coordinates."));
+        }
+
+        var schemaResult = SchemaName.Create(doc.Coordinate.Schema);
+        if (schemaResult.IsFailure)
+        {
+            return Result<ProfilingCoverageAnomaly>.Failure(
+                DecorateCoordinateMetadata(schemaResult.Errors, doc.Coordinate.Schema, doc.Coordinate.Table, doc.Coordinate.Column));
+        }
+
+        var tableResult = TableName.Create(doc.Coordinate.Table);
+        if (tableResult.IsFailure)
+        {
+            return Result<ProfilingCoverageAnomaly>.Failure(
+                DecorateCoordinateMetadata(tableResult.Errors, doc.Coordinate.Schema, doc.Coordinate.Table, doc.Coordinate.Column));
+        }
+
+        ColumnName? column = null;
+        if (!string.IsNullOrWhiteSpace(doc.Coordinate.Column))
+        {
+            var columnResult = ColumnName.Create(doc.Coordinate.Column);
+            if (columnResult.IsFailure)
+            {
+                return Result<ProfilingCoverageAnomaly>.Failure(
+                    DecorateCoordinateMetadata(columnResult.Errors, doc.Coordinate.Schema, doc.Coordinate.Table, doc.Coordinate.Column));
+            }
+
+            column = columnResult.Value;
+        }
+
+        SchemaName? relatedSchema = null;
+        if (!string.IsNullOrWhiteSpace(doc.Coordinate.RelatedSchema))
+        {
+            var relatedSchemaResult = SchemaName.Create(doc.Coordinate.RelatedSchema);
+            if (relatedSchemaResult.IsFailure)
+            {
+                return Result<ProfilingCoverageAnomaly>.Failure(
+                    DecorateCoverageRelatedMetadata(relatedSchemaResult.Errors, doc.Coordinate, "related.schema"));
+            }
+
+            relatedSchema = relatedSchemaResult.Value;
+        }
+
+        TableName? relatedTable = null;
+        if (!string.IsNullOrWhiteSpace(doc.Coordinate.RelatedTable))
+        {
+            var relatedTableResult = TableName.Create(doc.Coordinate.RelatedTable);
+            if (relatedTableResult.IsFailure)
+            {
+                return Result<ProfilingCoverageAnomaly>.Failure(
+                    DecorateCoverageRelatedMetadata(relatedTableResult.Errors, doc.Coordinate, "related.table"));
+            }
+
+            relatedTable = relatedTableResult.Value;
+        }
+
+        ColumnName? relatedColumn = null;
+        if (!string.IsNullOrWhiteSpace(doc.Coordinate.RelatedColumn))
+        {
+            var relatedColumnResult = ColumnName.Create(doc.Coordinate.RelatedColumn);
+            if (relatedColumnResult.IsFailure)
+            {
+                return Result<ProfilingCoverageAnomaly>.Failure(
+                    DecorateCoverageRelatedMetadata(relatedColumnResult.Errors, doc.Coordinate, "related.column"));
+            }
+
+            relatedColumn = relatedColumnResult.Value;
+        }
+
+        var coordinateResult = ProfilingInsightCoordinate.Create(
+            schemaResult.Value,
+            tableResult.Value,
+            column,
+            relatedSchema,
+            relatedTable,
+            relatedColumn);
+
+        if (coordinateResult.IsFailure)
+        {
+            return Result<ProfilingCoverageAnomaly>.Failure(coordinateResult.Errors);
+        }
+
+        try
+        {
+            var anomaly = ProfilingCoverageAnomaly.Create(
+                doc.Type,
+                doc.Message ?? string.Empty,
+                doc.Hint ?? string.Empty,
+                coordinateResult.Value,
+                doc.Columns ?? Array.Empty<string>(),
+                doc.Outcome);
+
+            return Result<ProfilingCoverageAnomaly>.Success(anomaly);
+        }
+        catch (ArgumentException ex)
+        {
+            return Result<ProfilingCoverageAnomaly>.Failure(
+                ValidationError.Create("profile.coverage.invalid", ex.Message)
+                    .WithMetadata(CreateCoverageMetadata(doc.Coordinate)));
+        }
+    }
+
     private static ImmutableArray<ValidationError> DecorateCoordinateMetadata(
         ImmutableArray<ValidationError> errors,
         string? schema,
@@ -308,6 +426,36 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         return Result<ImmutableArray<ColumnName>>.Success(builder.ToImmutable());
     }
 
+    private static ImmutableArray<ValidationError> DecorateCoverageRelatedMetadata(
+        ImmutableArray<ValidationError> errors,
+        CoverageCoordinateDocument coordinate,
+        string key)
+    {
+        if (errors.IsDefaultOrEmpty)
+        {
+            return errors;
+        }
+
+        var value = key switch
+        {
+            "related.schema" => coordinate.RelatedSchema,
+            "related.table" => coordinate.RelatedTable,
+            "related.column" => coordinate.RelatedColumn,
+            _ => null
+        };
+
+        var builder = ImmutableArray.CreateBuilder<ValidationError>(errors.Length);
+        foreach (var error in errors)
+        {
+            builder.Add(error.WithMetadata(new[]
+            {
+                new KeyValuePair<string, string?>(key, value)
+            }));
+        }
+
+        return builder.ToImmutable();
+    }
+
     private static IEnumerable<KeyValuePair<string, string?>> CreateCoordinateMetadata(
         string? schema,
         string? table,
@@ -325,6 +473,16 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         yield return new KeyValuePair<string, string?>(isSource ? "from.schema" : "to.schema", isSource ? reference.FromSchema : reference.ToSchema);
         yield return new KeyValuePair<string, string?>(isSource ? "from.table" : "to.table", isSource ? reference.FromTable : reference.ToTable);
         yield return new KeyValuePair<string, string?>(isSource ? "from.column" : "to.column", isSource ? reference.FromColumn : reference.ToColumn);
+    }
+
+    private static IEnumerable<KeyValuePair<string, string?>> CreateCoverageMetadata(CoverageCoordinateDocument coordinate)
+    {
+        yield return new KeyValuePair<string, string?>("schema", coordinate.Schema);
+        yield return new KeyValuePair<string, string?>("table", coordinate.Table);
+        yield return new KeyValuePair<string, string?>("column", coordinate.Column);
+        yield return new KeyValuePair<string, string?>("related.schema", coordinate.RelatedSchema);
+        yield return new KeyValuePair<string, string?>("related.table", coordinate.RelatedTable);
+        yield return new KeyValuePair<string, string?>("related.column", coordinate.RelatedColumn);
     }
 
     private static ProfilingProbeStatus MapProbeStatus(ProfilingProbeStatusDocument? document, long defaultSampleSize)
@@ -354,6 +512,9 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
         [JsonPropertyName("fkReality")]
         public ForeignKeyDocument[]? ForeignKeys { get; init; }
+
+        [JsonPropertyName("coverageAnomalies")]
+        public CoverageAnomalyDocument[]? CoverageAnomalies { get; init; }
     }
 
     private sealed record ColumnDocument
@@ -438,6 +599,48 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
         [JsonPropertyName("ProbeStatus")]
         public ProfilingProbeStatusDocument? ProbeStatus { get; init; }
+    }
+
+    private sealed record CoverageAnomalyDocument
+    {
+        [JsonPropertyName("type")]
+        public ProfilingCoverageAnomalyType Type { get; init; }
+
+        [JsonPropertyName("message")]
+        public string? Message { get; init; }
+
+        [JsonPropertyName("hint")]
+        public string? Hint { get; init; }
+
+        [JsonPropertyName("coordinate")]
+        public CoverageCoordinateDocument? Coordinate { get; init; }
+
+        [JsonPropertyName("columns")]
+        public string[]? Columns { get; init; }
+
+        [JsonPropertyName("outcome")]
+        public ProfilingProbeOutcome Outcome { get; init; }
+    }
+
+    private sealed record CoverageCoordinateDocument
+    {
+        [JsonPropertyName("schema")]
+        public string? Schema { get; init; }
+
+        [JsonPropertyName("table")]
+        public string? Table { get; init; }
+
+        [JsonPropertyName("column")]
+        public string? Column { get; init; }
+
+        [JsonPropertyName("relatedSchema")]
+        public string? RelatedSchema { get; init; }
+
+        [JsonPropertyName("relatedTable")]
+        public string? RelatedTable { get; init; }
+
+        [JsonPropertyName("relatedColumn")]
+        public string? RelatedColumn { get; init; }
     }
 
     private sealed record ForeignKeyReferenceDocument
