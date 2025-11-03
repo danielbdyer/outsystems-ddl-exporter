@@ -241,8 +241,10 @@ public sealed class TighteningPolicyMatrixTests
                 EnableCreation: true,
                 AllowCrossSchema: true,
                 AllowCrossCatalog: true,
-                ExpectCreate: false,
-                Rationales: ImmutableArray.Create(TighteningRationales.DeleteRuleIgnore)),
+                ExpectCreate: true,
+                Rationales: ImmutableArray.Create(
+                    TighteningRationales.DeleteRuleIgnore,
+                    TighteningRationales.PolicyEnableCreation)),
             [TighteningPolicyMatrix.ForeignKeyPolicyScenario.HasOrphan] = new(
                 DeleteRuleIsIgnore: false,
                 HasOrphans: true,

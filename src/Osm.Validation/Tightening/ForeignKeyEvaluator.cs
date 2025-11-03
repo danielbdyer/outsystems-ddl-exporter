@@ -130,14 +130,14 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
         var crossSchemaBlocked = crossSchema && !_options.AllowCrossSchema && !hasConstraint;
         var crossCatalogBlocked = crossCatalog && !_options.AllowCrossCatalog && !hasConstraint;
 
-        if (!hasConstraint && !ignoreRule && !hasOrphan && !crossSchemaBlocked && !crossCatalogBlocked && _options.EnableCreation)
+        if (!hasConstraint && !hasOrphan && !crossSchemaBlocked && !crossCatalogBlocked && _options.EnableCreation)
         {
             createConstraint = true;
             rationales.Add(TighteningRationales.PolicyEnableCreation);
         }
         else
         {
-            if (!_options.EnableCreation && !hasConstraint && !ignoreRule && !hasOrphan)
+            if (!_options.EnableCreation && !hasConstraint && !hasOrphan)
             {
                 rationales.Add(TighteningRationales.ForeignKeyCreationDisabled);
             }
