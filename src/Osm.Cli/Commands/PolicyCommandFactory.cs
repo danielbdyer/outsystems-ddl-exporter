@@ -166,7 +166,7 @@ internal sealed class PolicyCommandFactory : ICommandFactory
 
         if (moduleRows.Count > 0)
         {
-            CommandConsole.WriteLine(console, "\nModule rollups:");
+            CommandConsole.WriteLine(console, "\nModule summary:");
             CommandConsole.WriteTable(
                 console,
                 new[] { "Module", "Columns", "Tightened", "Remediation", "Unique Enforced", "Unique Remediation", "FK Created" },
@@ -174,7 +174,7 @@ internal sealed class PolicyCommandFactory : ICommandFactory
         }
         else
         {
-            CommandConsole.WriteLine(console, "\nModule rollups: (no matching modules)");
+            CommandConsole.WriteLine(console, "\nModule summary: (no matching modules)");
         }
 
         if (decisionRows.Count > 0)

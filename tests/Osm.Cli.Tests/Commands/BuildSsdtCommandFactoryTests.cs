@@ -105,13 +105,16 @@ public class BuildSsdtCommandFactoryTests
         Assert.Contains("Emitted 1 tables to output", output);
         var manifestMessage = $"Manifest written to {Path.Combine("output", "manifest.json")}";
         Assert.Contains(manifestMessage, output);
-        Assert.Contains("Decision log written to decision.log", output);
+        Assert.Contains("Tightening Artifacts:", output);
+        Assert.Contains("Decision log: decision.log", output);
         Assert.Contains("SQL validation: validated 1 file(s); 0 with errors; 0 error(s).", output);
         Assert.Contains("Columns tightened: 1/2", output);
         Assert.Contains("Unique indexes enforced: 1/1", output);
         Assert.Contains("Foreign keys created: 1/1", output);
-        Assert.Contains("Module rollups:", output);
-        Assert.Contains("Sales: tables=1, indexes=0, foreignKeys=1, columns=2, tightened=1, remediation=1, uniqueEnforced=1, uniqueRemediation=0, foreignKeysCreated=1", output);
+        Assert.Contains("Module summary:", output);
+        Assert.Contains("Sales:", output);
+        Assert.Contains("Tables: 1, Indexes: 0, Foreign Keys: 1", output);
+        Assert.Contains("Columns: 2 total, 1 tightened, 1 need remediation", output);
         Assert.Contains("Tightening toggles:", output);
         Assert.Contains("policy.mode = EvidenceGated (Configuration)", output);
 

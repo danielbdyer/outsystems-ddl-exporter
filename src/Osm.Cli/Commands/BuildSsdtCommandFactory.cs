@@ -187,6 +187,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             CommandConsole.WriteLine(context.Console, summary);
         }
 
+        CommandConsole.EmitContradictionDetails(context.Console, pipelineResult.Opportunities);
+
         CommandConsole.WriteLine(context.Console, string.Empty);
         CommandConsole.WriteLine(context.Console, "Tightening Artifacts:");
         CommandConsole.WriteLine(context.Console, $"  Decision log: {pipelineResult.DecisionLogPath}");
