@@ -177,25 +177,54 @@ internal static class CommandConsole
             return;
         }
 
-        WriteLine(console, "Profiling insights:");
+        var errors = insights.Where(i => i?.Severity == ProfilingInsightSeverity.Error).ToArray();
+        var warnings = insights.Where(i => i?.Severity == ProfilingInsightSeverity.Warning).ToArray();
+        var others = insights.Where(i => i?.Severity != ProfilingInsightSeverity.Error && i?.Severity != ProfilingInsightSeverity.Warning).ToArray();
 
-        foreach (var insight in insights)
+        WriteLine(console, $"Profiling insights: {insights.Length} total ({errors.Length} errors, {warnings.Length} warnings, {others.Length} informational)");
+
+        if (errors.Length > 0)
         {
-            if (insight is null)
+            WriteLine(console, string.Empty);
+            WriteLine(console, "⚠️  ERRORS - Require immediate attention:");
+            foreach (var insight in errors)
             {
-                continue;
-            }
+                if (insight is null)
+                {
+                    continue;
+                }
 
-            var formatted = FormatProfilingInsight(insight);
-            switch (insight.Severity)
+                WriteErrorLine(console, "  " + FormatProfilingInsight(insight));
+            }
+        }
+
+        if (warnings.Length > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "Warnings:");
+            foreach (var insight in warnings)
             {
-                case ProfilingInsightSeverity.Warning:
-                case ProfilingInsightSeverity.Error:
-                    WriteErrorLine(console, formatted);
-                    break;
-                default:
-                    WriteLine(console, formatted);
-                    break;
+                if (insight is null)
+                {
+                    continue;
+                }
+
+                WriteErrorLine(console, "  " + FormatProfilingInsight(insight));
+            }
+        }
+
+        if (others.Length > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "Informational:");
+            foreach (var insight in others)
+            {
+                if (insight is null)
+                {
+                    continue;
+                }
+
+                WriteLine(console, "  " + FormatProfilingInsight(insight));
             }
         }
     }
@@ -227,7 +256,7 @@ internal static class CommandConsole
             return;
         }
 
-        WriteLine(console, "Module rollups:");
+        WriteLine(console, "Module summary:");
         foreach (var module in modules)
         {
             if (!manifestRollups.TryGetValue(module, out var manifest))
@@ -237,20 +266,33 @@ internal static class CommandConsole
 
             decisionRollups.TryGetValue(module, out var decision);
 
-            var parts = new[]
-            {
-                $"tables={manifest.TableCount:N0}",
-                $"indexes={manifest.IndexCount:N0}",
-                $"foreignKeys={manifest.ForeignKeyCount:N0}",
-                $"columns={decision?.ColumnCount ?? 0:N0}",
-                $"tightened={decision?.TightenedColumnCount ?? 0:N0}",
-                $"remediation={decision?.RemediationColumnCount ?? 0:N0}",
-                $"uniqueEnforced={decision?.UniqueIndexesEnforcedCount ?? 0:N0}",
-                $"uniqueRemediation={decision?.UniqueIndexesRequireRemediationCount ?? 0:N0}",
-                $"foreignKeysCreated={decision?.ForeignKeysCreatedCount ?? 0:N0}"
-            };
+            WriteLine(console, $"  {module}:");
+            WriteLine(console, $"    Tables: {manifest.TableCount:N0}, Indexes: {manifest.IndexCount:N0}, Foreign Keys: {manifest.ForeignKeyCount:N0}");
 
-            WriteLine(console, $"  {module}: {string.Join(", ", parts)}");
+            if (decision is not null)
+            {
+                var tighteningInfo = new List<string>
+                {
+                    $"Columns: {decision.ColumnCount:N0} total, {decision.TightenedColumnCount:N0} tightened"
+                };
+
+                if (decision.RemediationColumnCount > 0)
+                {
+                    tighteningInfo.Add($"{decision.RemediationColumnCount:N0} need remediation");
+                }
+
+                WriteLine(console, $"    {string.Join(", ", tighteningInfo)}");
+
+                if (decision.UniqueIndexesEnforcedCount > 0 || decision.UniqueIndexesRequireRemediationCount > 0)
+                {
+                    WriteLine(console, $"    Unique Indexes: {decision.UniqueIndexesEnforcedCount:N0} enforced, {decision.UniqueIndexesRequireRemediationCount:N0} need remediation");
+                }
+
+                if (decision.ForeignKeysCreatedCount > 0)
+                {
+                    WriteLine(console, $"    Foreign Keys: {decision.ForeignKeysCreatedCount:N0} created");
+                }
+            }
         }
     }
 
@@ -364,14 +406,15 @@ internal static class CommandConsole
     private static string FormatProfilingInsight(ProfilingInsight insight)
     {
         var severityText = insight.Severity.ToString().ToLowerInvariant();
+        var categoryText = insight.Category.ToString();
         var coordinateText = FormatProfilingInsightCoordinate(insight.Coordinate);
 
         if (string.IsNullOrWhiteSpace(coordinateText))
         {
-            return $"[{severityText}] {insight.Message}";
+            return $"[{severityText}] [{categoryText}] {insight.Message}";
         }
 
-        return $"[{severityText}] {coordinateText}: {insight.Message}";
+        return $"[{severityText}] [{categoryText}] {coordinateText}: {insight.Message}";
     }
 
     private static string FormatProfilingInsightCoordinate(ProfilingInsightCoordinate? coordinate)
