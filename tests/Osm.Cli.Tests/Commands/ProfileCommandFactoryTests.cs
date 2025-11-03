@@ -17,6 +17,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
+using Osm.Pipeline.Profiling;
 using Tests.Support;
 using Xunit;
 
@@ -212,7 +213,8 @@ public class ProfileCommandFactoryTests
                 "output/manifest.json",
                 ImmutableArray<ProfilingInsight>.Empty,
                 PipelineExecutionLog.Empty,
-                ImmutableArray<string>.Empty);
+                ImmutableArray<string>.Empty,
+                MultiEnvironmentProfileReport.Empty);
 
             return new CaptureProfileApplicationResult(
                 pipelineResult,

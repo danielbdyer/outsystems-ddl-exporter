@@ -37,16 +37,17 @@ internal sealed class ProfilerRunner
 
         context.LogProfilingStarted();
 
-        var profileResult = await context.Request.ProfileCaptureAsync(context.FilteredModel, cancellationToken)
+        var captureResult = await context.Request.ProfileCaptureAsync(context.FilteredModel, cancellationToken)
             .ConfigureAwait(false);
 
-        if (profileResult.IsFailure)
+        if (captureResult.IsFailure)
         {
-            return Result<BootstrapPipelineContext>.Failure(profileResult.Errors);
+            return Result<BootstrapPipelineContext>.Failure(captureResult.Errors);
         }
 
-        var profile = profileResult.Value;
+        var profile = captureResult.Value.Snapshot;
         context.SetProfile(profile);
+        context.SetMultiEnvironmentReport(captureResult.Value.MultiEnvironmentReport);
         context.SetInsights(_insightGenerator.Generate(profile));
 
         return Result<BootstrapPipelineContext>.Success(context);

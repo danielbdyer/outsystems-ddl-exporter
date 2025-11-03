@@ -11,6 +11,7 @@ using Osm.Cli;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
 
@@ -164,6 +165,105 @@ internal static class CommandConsole
     {
         WriteLine(console, "SQL profiler snapshot:");
         WriteLine(console, ProfileSnapshotDebugFormatter.ToJson(snapshot));
+    }
+
+    public static void EmitMultiEnvironmentReport(IConsole console, MultiEnvironmentProfileReport? report)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (report is null || report.Environments.IsDefaultOrEmpty || report.Environments.Length == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "Multi-environment profiling summary:");
+
+        var headers = ImmutableArray.Create(
+            "Environment",
+            "Role",
+            "Label Source",
+            "Columns",
+            "Null cols",
+            "Null probes",
+            "Unique dupes",
+            "FK orphans",
+            "FK probes",
+            "No-check",
+            "Duration");
+
+        var rows = report.Environments
+            .Select(summary => (summary, Row: ImmutableArray.Create(
+                summary.IsPrimary ? $"⭐ {summary.Name}" : summary.Name,
+                summary.IsPrimary ? "Primary" : "Secondary",
+                DescribeLabelOrigin(summary.LabelOrigin, summary.LabelWasAdjusted),
+                summary.ColumnCount.ToString(CultureInfo.InvariantCulture),
+                summary.ColumnsWithNulls.ToString(CultureInfo.InvariantCulture),
+                summary.ColumnsWithUnknownNullStatus.ToString(CultureInfo.InvariantCulture),
+                summary.UniqueViolations.ToString(CultureInfo.InvariantCulture),
+                summary.ForeignKeyOrphans.ToString(CultureInfo.InvariantCulture),
+                summary.ForeignKeyProbeUnknown.ToString(CultureInfo.InvariantCulture),
+                summary.ForeignKeyNoCheck.ToString(CultureInfo.InvariantCulture),
+                FormatDuration(summary.Duration))))
+            .Select(tuple => (IReadOnlyList<string>)tuple.Row)
+            .ToImmutableArray();
+
+        WriteTable(console, headers, rows);
+
+        if (!report.Findings.IsDefaultOrEmpty && report.Findings.Length > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "Environment findings:");
+            foreach (var finding in report.Findings)
+            {
+                if (finding is null)
+                {
+                    continue;
+                }
+
+                var icon = GetFindingIcon(finding.Severity);
+                WriteLine(console, $"  {icon} [{finding.Severity}] {finding.Title}");
+                WriteLine(console, $"      Summary: {finding.Summary}");
+                if (!string.IsNullOrWhiteSpace(finding.SuggestedAction))
+                {
+                    WriteLine(console, $"      Action: {finding.SuggestedAction}");
+                }
+                if (!finding.AffectedObjects.IsDefaultOrEmpty && finding.AffectedObjects.Length > 0)
+                {
+                    foreach (var affected in finding.AffectedObjects)
+                    {
+                        if (!string.IsNullOrWhiteSpace(affected))
+                        {
+                            WriteLine(console, $"        - {affected}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static string DescribeLabelOrigin(
+        MultiTargetSqlDataProfiler.EnvironmentLabelOrigin origin,
+        bool labelWasAdjusted)
+    {
+        var description = origin switch
+        {
+            MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided => "Provided",
+            MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.DerivedFromDatabase => "Derived (database)",
+            MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.DerivedFromApplicationName => "Derived (application)",
+            MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.DerivedFromDataSource => "Derived (data source)",
+            _ => "Fallback"
+        };
+
+        if (labelWasAdjusted)
+        {
+            description += " +dedup";
+        }
+
+        return description;
     }
 
     public static void EmitProfilingInsights(IConsole console, ImmutableArray<ProfilingInsight> insights)
@@ -525,6 +625,61 @@ internal static class CommandConsole
             double number => number.ToString("0.###", CultureInfo.InvariantCulture),
             IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
             _ => value.ToString() ?? string.Empty
+        };
+
+    private static string FormatTableRow(IReadOnlyList<string> values, int[] widths, bool[] numericColumns)
+    {
+        var builder = new StringBuilder();
+
+        for (var i = 0; i < values.Count; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(" | ");
+            }
+
+            var value = values[i] ?? string.Empty;
+            var width = i < widths.Length ? widths[i] : value.Length;
+            var rightAlign = i < numericColumns.Length && numericColumns[i];
+            builder.Append(rightAlign ? value.PadLeft(width) : value.PadRight(width));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string FormatTableSeparator(int[] widths)
+    {
+        var segments = widths.Select(width => new string('-', Math.Max(width, 1)));
+        return string.Join("-+-", segments);
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        if (duration < TimeSpan.Zero)
+        {
+            duration = TimeSpan.Zero;
+        }
+
+        if (duration.TotalHours >= 1)
+        {
+            return duration.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+        }
+
+        if (duration.TotalMinutes >= 1)
+        {
+            return duration.ToString(@"mm\:ss", CultureInfo.InvariantCulture);
+        }
+
+        return duration.ToString(@"ss\.fff\ s", CultureInfo.InvariantCulture);
+    }
+
+    private static string GetFindingIcon(MultiEnvironmentFindingSeverity severity)
+        => severity switch
+        {
+            MultiEnvironmentFindingSeverity.Critical => "🚨",
+            MultiEnvironmentFindingSeverity.Warning => "⚠️ ",
+            MultiEnvironmentFindingSeverity.Advisory => "💡 ",
+            _ => "ℹ️ "
         };
 
     private static string FormatProfilingInsight(ProfilingInsight insight)

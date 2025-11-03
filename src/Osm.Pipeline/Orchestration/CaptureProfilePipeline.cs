@@ -32,7 +32,8 @@ public sealed record CaptureProfilePipelineResult(
     string ManifestPath,
     ImmutableArray<ProfilingInsight> Insights,
     PipelineExecutionLog ExecutionLog,
-    ImmutableArray<string> Warnings);
+    ImmutableArray<string> Warnings,
+    MultiEnvironmentProfileReport? MultiEnvironmentReport);
 
 public sealed record CaptureProfileManifest(
     string ModelPath,
@@ -220,7 +221,8 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             manifestPath,
             bootstrap.Insights,
             log.Build(),
-            bootstrap.Warnings.ToImmutableArray());
+            bootstrap.Warnings.ToImmutableArray(),
+            bootstrap.MultiEnvironmentReport);
     }
 
     private PipelineBootstrapTelemetry CreateTelemetry(CaptureProfilePipelineRequest request)
@@ -243,7 +245,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             "Captured profiling snapshot.");
     }
 
-    private async Task<Result<ProfileSnapshot>> CaptureProfileAsync(
+    private async Task<Result<ProfileCaptureResult>> CaptureProfileAsync(
         CaptureProfilePipelineRequest request,
         OsmModel model,
         CancellationToken cancellationToken)
@@ -260,10 +262,23 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
         var profilerResult = _profilerFactory.Create(profilerRequest, model);
         if (profilerResult.IsFailure)
         {
-            return Result<ProfileSnapshot>.Failure(profilerResult.Errors);
+            return Result<ProfileCaptureResult>.Failure(profilerResult.Errors);
         }
 
-        return await profilerResult.Value.CaptureAsync(cancellationToken).ConfigureAwait(false);
+        var profiler = profilerResult.Value;
+        var snapshotResult = await profiler.CaptureAsync(cancellationToken).ConfigureAwait(false);
+        if (snapshotResult.IsFailure)
+        {
+            return Result<ProfileCaptureResult>.Failure(snapshotResult.Errors);
+        }
+
+        MultiEnvironmentProfileReport? report = null;
+        if (profiler is IMultiEnvironmentProfiler multiEnvironmentProfiler)
+        {
+            report = multiEnvironmentProfiler.Report;
+        }
+
+        return Result<ProfileCaptureResult>.Success(new ProfileCaptureResult(snapshotResult.Value, report));
     }
 
     private CaptureProfileManifest BuildManifest(

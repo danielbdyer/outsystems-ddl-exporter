@@ -4,12 +4,14 @@ using System.Collections.Immutable;
 using System.Linq;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
+using Osm.Pipeline.Profiling;
 
 namespace Osm.Pipeline.Orchestration;
 
 internal sealed class BootstrapPipelineContext
 {
     private readonly List<string> _warnings = new();
+    private MultiEnvironmentProfileReport? _multiEnvironmentReport;
 
     public BootstrapPipelineContext(PipelineExecutionLogBuilder log, PipelineBootstrapRequest request)
     {
@@ -32,6 +34,8 @@ internal sealed class BootstrapPipelineContext
     public ImmutableArray<ProfilingInsight> Insights { get; private set; } = ImmutableArray<ProfilingInsight>.Empty;
 
     public IReadOnlyList<string> Warnings => _warnings;
+
+    public MultiEnvironmentProfileReport? MultiEnvironmentReport => _multiEnvironmentReport;
 
     public void RecordRequestTelemetry()
     {
@@ -152,6 +156,11 @@ internal sealed class BootstrapPipelineContext
                 .Build());
     }
 
+    public void SetMultiEnvironmentReport(MultiEnvironmentProfileReport? report)
+    {
+        _multiEnvironmentReport = report;
+    }
+
     public void SetInsights(ImmutableArray<ProfilingInsight> insights)
     {
         Insights = insights;
@@ -174,6 +183,7 @@ internal sealed class BootstrapPipelineContext
             SupplementalEntities,
             Profile,
             Insights,
-            _warnings.ToImmutableArray());
+            _warnings.ToImmutableArray(),
+            _multiEnvironmentReport);
     }
 }

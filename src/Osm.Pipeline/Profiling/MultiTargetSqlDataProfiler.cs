@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,55 +10,157 @@ using Osm.Domain.Profiling;
 
 namespace Osm.Pipeline.Profiling;
 
-public sealed class MultiTargetSqlDataProfiler : IDataProfiler
+public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmentProfiler
 {
-    private readonly IDataProfiler _primary;
-    private readonly ImmutableArray<IDataProfiler> _secondaries;
+    private readonly ImmutableArray<ProfilerEnvironment> _targets;
+    private readonly int _maxDegreeOfParallelism;
 
-    public MultiTargetSqlDataProfiler(IDataProfiler primary, IEnumerable<IDataProfiler> secondaries)
+    public MultiEnvironmentProfileReport? Report { get; private set; }
+
+    public MultiTargetSqlDataProfiler(
+        ProfilerEnvironment primary,
+        IEnumerable<ProfilerEnvironment> secondaries,
+        int? maxDegreeOfParallelism = null)
     {
-        _primary = primary ?? throw new ArgumentNullException(nameof(primary));
+        if (primary is null)
+        {
+            throw new ArgumentNullException(nameof(primary));
+        }
+
         if (secondaries is null)
         {
             throw new ArgumentNullException(nameof(secondaries));
         }
 
-        _secondaries = secondaries
-            .Where(static profiler => profiler is not null)
-            .Cast<IDataProfiler>()
-            .ToImmutableArray();
+        var builder = ImmutableArray.CreateBuilder<ProfilerEnvironment>();
+        builder.Add(primary);
+
+        foreach (var environment in secondaries)
+        {
+            if (environment is null)
+            {
+                continue;
+            }
+
+            builder.Add(environment);
+        }
+
+        _targets = builder.ToImmutable();
+        if (_targets.IsDefaultOrEmpty || _targets.Length == 0)
+        {
+            throw new ArgumentException("At least one profiler must be provided.", nameof(primary));
+        }
+
+        var requestedParallelism = maxDegreeOfParallelism ?? Environment.ProcessorCount;
+        if (requestedParallelism <= 0)
+        {
+            requestedParallelism = Environment.ProcessorCount;
+        }
+
+        _maxDegreeOfParallelism = Math.Clamp(requestedParallelism, 1, _targets.Length);
     }
 
     public async Task<Result<ProfileSnapshot>> CaptureAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var snapshots = new List<ProfileSnapshot>(_secondaries.Length + 1);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var semaphore = new SemaphoreSlim(_maxDegreeOfParallelism);
 
-        var primaryResult = await _primary.CaptureAsync(cancellationToken).ConfigureAwait(false);
-        if (primaryResult.IsFailure)
+        var captureTasks = new Task<(ProfilerEnvironment Environment, Result<EnvironmentCapture> Result)>[_targets.Length];
+
+        for (var i = 0; i < _targets.Length; i++)
         {
-            return Result<ProfileSnapshot>.Failure(primaryResult.Errors);
+            var target = _targets[i];
+            captureTasks[i] = CaptureEnvironmentWithThrottlingAsync(target, semaphore, linkedCts, cancellationToken);
         }
 
-        snapshots.Add(primaryResult.Value);
+        var captureResults = await Task.WhenAll(captureTasks).ConfigureAwait(false);
+        var captures = new List<EnvironmentCapture>(_targets.Length);
 
-        foreach (var profiler in _secondaries)
+        foreach (var (environment, result) in captureResults)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var result = await profiler.CaptureAsync(cancellationToken).ConfigureAwait(false);
             if (result.IsFailure)
             {
+                Report = MultiEnvironmentProfileReport.Empty;
+                linkedCts.Cancel();
                 return Result<ProfileSnapshot>.Failure(result.Errors);
             }
 
-            snapshots.Add(result.Value);
+            captures.Add(result.Value);
         }
 
-        return snapshots.Count == 1
-            ? primaryResult
-            : MergeSnapshots(snapshots);
+        Report = MultiEnvironmentProfileReport.Create(
+            captures.Select(capture => new ProfilingEnvironmentSnapshot(
+                capture.Environment.Name,
+                capture.Environment.IsPrimary,
+                capture.Environment.LabelOrigin,
+                capture.Environment.LabelWasAdjusted,
+                capture.Snapshot,
+                capture.Duration)));
+
+        if (captures.Count == 1)
+        {
+            return Result<ProfileSnapshot>.Success(captures[0].Snapshot);
+        }
+
+        return MergeSnapshots(captures.Select(capture => capture.Snapshot).ToArray());
+    }
+
+    private async Task<(ProfilerEnvironment Environment, Result<EnvironmentCapture> Result)> CaptureEnvironmentWithThrottlingAsync(
+        ProfilerEnvironment environment,
+        SemaphoreSlim semaphore,
+        CancellationTokenSource linkedCts,
+        CancellationToken originalToken)
+    {
+        await semaphore.WaitAsync(linkedCts.Token).ConfigureAwait(false);
+
+        try
+        {
+            if (linkedCts.IsCancellationRequested && !originalToken.IsCancellationRequested)
+            {
+                return (environment, Result<EnvironmentCapture>.Failure(
+                    ValidationError.Create(
+                        "pipeline.profiling.cancelled",
+                        $"Profiling for '{environment.Name}' was cancelled after a failure in another environment.")));
+            }
+
+            var result = await CaptureEnvironmentAsync(environment, linkedCts.Token).ConfigureAwait(false);
+            if (result.Result.IsFailure && !linkedCts.IsCancellationRequested)
+            {
+                linkedCts.Cancel();
+            }
+
+            return result;
+        }
+        catch (OperationCanceledException) when (linkedCts.IsCancellationRequested && !originalToken.IsCancellationRequested)
+        {
+            return (environment, Result<EnvironmentCapture>.Failure(
+                ValidationError.Create(
+                    "pipeline.profiling.cancelled",
+                    $"Profiling for '{environment.Name}' was cancelled after a failure in another environment.")));
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+    }
+
+    private static async Task<(ProfilerEnvironment Environment, Result<EnvironmentCapture> Result)> CaptureEnvironmentAsync(
+        ProfilerEnvironment environment,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var snapshotResult = await environment.Profiler.CaptureAsync(cancellationToken).ConfigureAwait(false);
+        stopwatch.Stop();
+
+        if (snapshotResult.IsFailure)
+        {
+            return (environment, Result<EnvironmentCapture>.Failure(snapshotResult.Errors));
+        }
+
+        var capture = new EnvironmentCapture(environment, snapshotResult.Value, stopwatch.Elapsed);
+        return (environment, Result<EnvironmentCapture>.Success(capture));
     }
 
     private static Result<ProfileSnapshot> MergeSnapshots(IReadOnlyList<ProfileSnapshot> snapshots)
@@ -188,5 +291,53 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler
             hash.Add(obj.ToColumn, StringComparer.OrdinalIgnoreCase);
             return hash.ToHashCode();
         }
+    }
+
+    private sealed record EnvironmentCapture(ProfilerEnvironment Environment, ProfileSnapshot Snapshot, TimeSpan Duration);
+
+    public sealed class ProfilerEnvironment
+    {
+        public ProfilerEnvironment(
+            string name,
+            IDataProfiler profiler,
+            bool isPrimary,
+            EnvironmentLabelOrigin labelOrigin = EnvironmentLabelOrigin.Provided,
+            bool labelWasAdjusted = false)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new ArgumentException("Environment name must be provided.", nameof(name));
+            }
+
+            Profiler = profiler ?? throw new ArgumentNullException(nameof(profiler));
+            Name = name.Trim();
+            if (Name.Length == 0)
+            {
+                throw new ArgumentException("Environment name must be provided.", nameof(name));
+            }
+
+            IsPrimary = isPrimary;
+            LabelOrigin = labelOrigin;
+            LabelWasAdjusted = labelWasAdjusted;
+        }
+
+        public string Name { get; }
+
+        public IDataProfiler Profiler { get; }
+
+        public bool IsPrimary { get; }
+
+        public EnvironmentLabelOrigin LabelOrigin { get; }
+
+        public bool LabelWasAdjusted { get; }
+    }
+
+    public enum EnvironmentLabelOrigin
+    {
+        Provided,
+        DerivedFromDatabase,
+        DerivedFromApplicationName,
+        DerivedFromDataSource,
+        Fallback
     }
 }

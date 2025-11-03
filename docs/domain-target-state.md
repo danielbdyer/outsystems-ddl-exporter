@@ -488,7 +488,7 @@ The following catalog enumerates every `record`-based data object in the solutio
 * `public sealed record ModuleManifestRollup(int TableCount, int IndexCount, int ForeignKeyCount) {`
 * `public sealed record OpportunityArtifacts( string ReportPath, string SafeScriptPath, string SafeScript, string RemediationScriptPath, string RemediationScript);`
 * `public sealed record PipelineBootstrapContext( OsmModel FilteredModel, ImmutableArray<EntityModel> SupplementalEntities, ProfileSnapshot Profile, ImmutableArray<ProfilingInsight> Insights, ImmutableArray<string> Warnings);`
-* `public sealed record PipelineBootstrapRequest( string ModelPath, ModuleFilterOptions ModuleFilter, SupplementalModelOptions SupplementalModels, PipelineBootstrapTelemetry Telemetry, Func<OsmModel, CancellationToken, Task<Result<ProfileSnapshot>>> ProfileCaptureAsync);`
+* `public sealed record PipelineBootstrapRequest( string ModelPath, ModuleFilterOptions ModuleFilter, SupplementalModelOptions SupplementalModels, PipelineBootstrapTelemetry Telemetry, Func<OsmModel, CancellationToken, Task<Result<ProfileCaptureResult>>> ProfileCaptureAsync);`
 * `public sealed record PipelineBootstrapTelemetry( string RequestMessage, IReadOnlyDictionary<string, string?> RequestMetadata, string ProfilingStartMessage, IReadOnlyDictionary<string, string?> ProfilingStartMetadata, string ProfilingCompletedMessage);`
 * `public sealed record PipelineInsight {`
 * `public sealed record PipelineLogEntry( DateTimeOffset TimestampUtc, string Step, string Message, IReadOnlyDictionary<string, string?> Metadata);`

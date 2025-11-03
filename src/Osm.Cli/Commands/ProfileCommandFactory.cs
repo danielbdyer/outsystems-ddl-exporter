@@ -97,6 +97,7 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
         if (string.Equals(applicationResult.ProfilerProvider, "sql", StringComparison.OrdinalIgnoreCase))
         {
             CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
+            CommandConsole.EmitMultiEnvironmentReport(context.Console, pipelineResult.MultiEnvironmentReport);
         }
 
         CommandConsole.WriteLine(context.Console, $"Profile written to {pipelineResult.ProfilePath}");

@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Json;
@@ -68,25 +70,50 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
             NamingOverrides = request.Scope.SmoOptions.NamingOverrides
         };
 
-        var primaryConnectionFactory = _connectionFactoryFactory(request.Scope.SqlOptions.ConnectionString!, connectionOptions);
+        var allocator = new EnvironmentLabelAllocator();
+
+        var primaryEntry = ParseEnvironmentEntry(
+            request.Scope.SqlOptions.ConnectionString!,
+            defaultLabel: "Primary");
+
+        var primaryLabel = allocator.Allocate(primaryEntry.Label, out var primaryAdjusted);
+
+        var primaryConnectionFactory = _connectionFactoryFactory(primaryEntry.ConnectionString, connectionOptions);
         var primaryProfiler = new SqlDataProfiler(primaryConnectionFactory, model, profilerOptions, request.SqlMetadataLog);
+        var primaryEnvironment = new MultiTargetSqlDataProfiler.ProfilerEnvironment(
+            primaryLabel,
+            primaryProfiler,
+            isPrimary: true,
+            primaryEntry.LabelOrigin,
+            primaryAdjusted);
 
-        var additionalProfilers = request.Scope.SqlOptions.ProfilingConnectionStrings
-            .Where(static connection => !string.IsNullOrWhiteSpace(connection))
-            .Select(connection =>
-            {
-                var factory = _connectionFactoryFactory(connection, connectionOptions);
-                return (IDataProfiler)new SqlDataProfiler(factory, model, profilerOptions, request.SqlMetadataLog);
-            })
-            .ToImmutableArray();
+        var secondaryEnvironments = ImmutableArray.CreateBuilder<MultiTargetSqlDataProfiler.ProfilerEnvironment>();
+        var index = 1;
 
-        if (additionalProfilers.IsDefaultOrEmpty)
+        foreach (var entry in request.Scope.SqlOptions.ProfilingConnectionStrings
+                     .Where(static value => !string.IsNullOrWhiteSpace(value)))
+        {
+            var defaultLabel = $"Secondary #{index}";
+            var parsed = ParseEnvironmentEntry(entry!, defaultLabel);
+            var label = allocator.Allocate(parsed.Label, out var adjusted);
+            var factory = _connectionFactoryFactory(parsed.ConnectionString, connectionOptions);
+            var environmentProfiler = new SqlDataProfiler(factory, model, profilerOptions, request.SqlMetadataLog);
+            secondaryEnvironments.Add(new MultiTargetSqlDataProfiler.ProfilerEnvironment(
+                label,
+                environmentProfiler,
+                isPrimary: false,
+                parsed.LabelOrigin,
+                adjusted));
+            index++;
+        }
+
+        if (secondaryEnvironments.Count == 0)
         {
             return Result<IDataProfiler>.Success(primaryProfiler);
         }
 
-        var profiler = new MultiTargetSqlDataProfiler(primaryProfiler, additionalProfilers);
-        return Result<IDataProfiler>.Success(profiler);
+        var multiEnvironmentProfiler = new MultiTargetSqlDataProfiler(primaryEnvironment, secondaryEnvironments.ToImmutable());
+        return Result<IDataProfiler>.Success(multiEnvironmentProfiler);
     }
 
     private Result<IDataProfiler> CreateFixtureProfiler(BuildSsdtPipelineRequest request)
@@ -116,5 +143,115 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
             configuration.TrustServerCertificate,
             configuration.ApplicationName,
             configuration.AccessToken);
+    }
+
+    private static ParsedEnvironmentEntry ParseEnvironmentEntry(string value, string defaultLabel)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Connection string must be provided.", nameof(value));
+        }
+
+        const string Separator = "::";
+        var trimmed = value.Trim();
+        var separatorIndex = trimmed.IndexOf(Separator, StringComparison.Ordinal);
+
+        string? label = null;
+        string connection = trimmed;
+
+        if (separatorIndex >= 0)
+        {
+            label = trimmed[..separatorIndex].Trim();
+            connection = trimmed[(separatorIndex + Separator.Length)..].Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(connection))
+        {
+            throw new ArgumentException("Connection string must be provided.", nameof(value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            return new ParsedEnvironmentEntry(
+                label.Trim(),
+                connection,
+                MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided);
+        }
+
+        var (generatedLabel, origin) = BuildDefaultLabel(connection, defaultLabel);
+        return new ParsedEnvironmentEntry(generatedLabel, connection, origin);
+    }
+
+    private static (string Label, MultiTargetSqlDataProfiler.EnvironmentLabelOrigin Origin) BuildDefaultLabel(
+        string connectionString,
+        string baseLabel)
+    {
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(connectionString);
+            if (!string.IsNullOrWhiteSpace(builder.InitialCatalog))
+            {
+                return ($"{baseLabel} ({builder.InitialCatalog})", MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.DerivedFromDatabase);
+            }
+
+            if (!string.IsNullOrWhiteSpace(builder.ApplicationName))
+            {
+                return ($"{baseLabel} ({builder.ApplicationName})", MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.DerivedFromApplicationName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(builder.DataSource))
+            {
+                return ($"{baseLabel} ({builder.DataSource})", MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.DerivedFromDataSource);
+            }
+        }
+        catch (ArgumentException)
+        {
+            // Ignore malformed connection strings and fall back to the base label.
+        }
+
+        return (baseLabel, MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Fallback);
+    }
+
+    private readonly record struct ParsedEnvironmentEntry(
+        string Label,
+        string ConnectionString,
+        MultiTargetSqlDataProfiler.EnvironmentLabelOrigin LabelOrigin);
+
+    private sealed class EnvironmentLabelAllocator
+    {
+        private readonly Dictionary<string, int> _labelCounts = new(StringComparer.OrdinalIgnoreCase);
+
+        public string Allocate(string label, out bool adjusted)
+        {
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                adjusted = false;
+                return label;
+            }
+
+            var trimmed = label.Trim();
+
+            if (!_labelCounts.TryGetValue(trimmed, out var count))
+            {
+                _labelCounts[trimmed] = 1;
+                adjusted = false;
+                return trimmed;
+            }
+
+            adjusted = true;
+            count++;
+            string candidate;
+
+            do
+            {
+                candidate = $"{trimmed} #{count}";
+                count++;
+            }
+            while (_labelCounts.ContainsKey(candidate));
+
+            _labelCounts[trimmed] = count;
+            _labelCounts[candidate] = 1;
+            return candidate;
+        }
     }
 }

@@ -9,6 +9,7 @@ using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
 using Opportunity = Osm.Validation.Tightening.Opportunities.Opportunity;
@@ -266,7 +267,8 @@ public class PipelineReportLauncherTests
             sqlSummary,
             null,
             PipelineExecutionLog.Empty,
-            ImmutableArray<string>.Empty);
+            ImmutableArray<string>.Empty,
+            MultiEnvironmentProfileReport.Empty);
 
         return new BuildSsdtApplicationResult(
             pipelineResult,
