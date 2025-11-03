@@ -22,7 +22,8 @@ internal interface IProfilingPlanBuilder
 {
     Dictionary<(string Schema, string Table), TableProfilingPlan> BuildPlans(
         IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
-        IReadOnlyDictionary<(string Schema, string Table), long> rowCounts);
+        IReadOnlyDictionary<(string Schema, string Table), long> rowCounts,
+        bool allowMissingTables = false);
 }
 
 internal interface IProfilingQueryExecutor

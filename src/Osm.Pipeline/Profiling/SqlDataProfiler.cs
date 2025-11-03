@@ -71,7 +71,26 @@ public sealed class SqlDataProfiler : IDataProfiler
 
             var metadata = await _metadataLoader.LoadColumnMetadataAsync(connection, tables, cancellationToken).ConfigureAwait(false);
             var rowCounts = await _metadataLoader.LoadRowCountsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
-            var plans = _planBuilder.BuildPlans(metadata, rowCounts);
+            var plans = _planBuilder.BuildPlans(metadata, rowCounts, _options.AllowMissingTables);
+
+            // Log skipped tables when in lenient mode
+            if (_options.AllowMissingTables && _metadataLog is not null)
+            {
+                var modelTables = tables.ToHashSet(TableKeyComparer.Instance);
+                var profiledTables = plans.Keys.ToHashSet(TableKeyComparer.Instance);
+                var skippedTables = modelTables.Except(profiledTables).ToList();
+
+                if (skippedTables.Count > 0)
+                {
+                    foreach (var (schema, table) in skippedTables.OrderBy(t => t.Schema).ThenBy(t => t.Table))
+                    {
+                        _metadataLog.RecordRequest(
+                            "profiling.table.skipped",
+                            new { Schema = schema, Table = table, Reason = "Table does not exist in target environment" });
+                    }
+                }
+            }
+
             var resultsLookup = new ConcurrentDictionary<(string Schema, string Table), TableProfilingResults>(TableKeyComparer.Instance);
 
             var maxConcurrency = Math.Max(1, _options.MaxConcurrentTableProfiles);
