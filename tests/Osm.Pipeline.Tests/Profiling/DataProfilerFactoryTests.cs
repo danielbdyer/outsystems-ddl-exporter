@@ -16,7 +16,7 @@ public sealed class DataProfilerFactoryTests
 {
     private static readonly OsmModel Model = ModelFixtures.LoadModel("model.edge-case.json");
     private static readonly ResolvedSqlOptions DefaultSqlOptions = new(
-        ConnectionString: "Server=(local);Database=Sample;Trusted_Connection=True;",
+        ConnectionString: "Server=(local);Database=Sample;Trusted_Connection=True;MultipleActiveResultSets=True;",
         CommandTimeoutSeconds: null,
         Sampling: new SqlSamplingSettings(null, null),
         Authentication: new SqlAuthenticationSettings(null, null, null, null),

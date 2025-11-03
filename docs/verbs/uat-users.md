@@ -45,7 +45,7 @@ uat-users
    ```bash
    dotnet run --project src/Osm.Cli -- uat-users \
      --model ./_artifacts/model.json \
-     --uat-conn "Server=uat;Database=UAT;Trusted_Connection=True" \
+     --uat-conn "Server=uat;Database=UAT;Trusted_Connection=True;MultipleActiveResultSets=True" \
      --user-ddl ./extracts/dbo.User.sql \
      --out ./_artifacts
    ```

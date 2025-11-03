@@ -66,9 +66,9 @@ internal sealed class NullCountQueryBuilder
             var column = SqlIdentifierFormatter.Quote(columns[i]);
             builder.Append("    SELECT '");
             builder.Append(columns[i]);
-            builder.Append("' AS ColumnName, SUM(CASE WHEN ");
+            builder.Append("' AS ColumnName, SUM(CONVERT(bigint, CASE WHEN ");
             builder.Append(column);
-            builder.Append(" IS NULL THEN 1 ELSE 0 END) AS NullCount");
+            builder.Append(" IS NULL THEN 1 ELSE 0 END)) AS NullCount");
             builder.AppendLine();
             builder.Append("    FROM Source");
             builder.AppendLine();
