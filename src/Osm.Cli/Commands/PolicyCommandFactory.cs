@@ -169,7 +169,7 @@ internal sealed class PolicyCommandFactory : ICommandFactory
             CommandConsole.WriteLine(console, "\nModule summary:");
             CommandConsole.WriteTable(
                 console,
-                new[] { "Module", "Columns", "Tightened", "Remediation", "Unique Enforced", "Unique Remediation", "FK Created" },
+                new[] { "Module", "Columns", "NOT NULL Confirmed", "Remediation", "UNIQUE Confirmed", "Unique Remediation", "FK Safe to Create" },
                 moduleRows);
         }
         else

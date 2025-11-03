@@ -497,7 +497,7 @@ internal static class CommandConsole
             {
                 var tighteningInfo = new List<string>
                 {
-                    $"Columns: {decision.ColumnCount:N0} total, {decision.TightenedColumnCount:N0} tightened"
+                    $"Columns: {decision.ColumnCount:N0} total, {decision.TightenedColumnCount:N0} confirmed NOT NULL"
                 };
 
                 if (decision.RemediationColumnCount > 0)
@@ -509,12 +509,12 @@ internal static class CommandConsole
 
                 if (decision.UniqueIndexesEnforcedCount > 0 || decision.UniqueIndexesRequireRemediationCount > 0)
                 {
-                    WriteLine(console, $"    Unique Indexes: {decision.UniqueIndexesEnforcedCount:N0} enforced, {decision.UniqueIndexesRequireRemediationCount:N0} need remediation");
+                    WriteLine(console, $"    Unique Indexes: {decision.UniqueIndexesEnforcedCount:N0} confirmed UNIQUE, {decision.UniqueIndexesRequireRemediationCount:N0} need remediation");
                 }
 
                 if (decision.ForeignKeysCreatedCount > 0)
                 {
-                    WriteLine(console, $"    Foreign Keys: {decision.ForeignKeysCreatedCount:N0} created");
+                    WriteLine(console, $"    Foreign Keys: {decision.ForeignKeysCreatedCount:N0} safe to create");
                 }
             }
         }
@@ -771,6 +771,140 @@ internal static class CommandConsole
         return builder.ToString();
     }
 
+    public static void EmitTighteningStatisticsDetails(
+        IConsole console,
+        PolicyDecisionReport report)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (report is null)
+        {
+            throw new ArgumentNullException(nameof(report));
+        }
+
+        const int MaxSamples = 3;
+
+        // Columns NOT confirmed as NOT NULL
+        var columnsNotTightened = report.Columns.Where(c => !c.MakeNotNull).ToArray();
+        if (columnsNotTightened.Length > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, $"Columns not confirmed as NOT NULL: {columnsNotTightened.Length}");
+
+            var reasonGroups = columnsNotTightened
+                .SelectMany(c => c.Rationales.Select(r => (Rationale: r, Column: c)))
+                .GroupBy(x => x.Rationale)
+                .OrderByDescending(g => g.Count())
+                .ToArray();
+
+            foreach (var group in reasonGroups)
+            {
+                var rationale = FormatRationale(group.Key);
+                var samples = group.Take(MaxSamples)
+                    .Select(x => $"{x.Column.Column.Schema}.{x.Column.Column.Table}.{x.Column.Column.Column}")
+                    .ToArray();
+
+                WriteLine(console, $"  {rationale}: {group.Count()}");
+                foreach (var sample in samples)
+                {
+                    WriteLine(console, $"    - {sample}");
+                }
+                if (group.Count() > MaxSamples)
+                {
+                    WriteLine(console, $"    ... and {group.Count() - MaxSamples} more");
+                }
+            }
+        }
+
+        // Unique indexes NOT confirmed as UNIQUE
+        var uniqueNotEnforced = report.UniqueIndexes.Where(u => !u.EnforceUnique).ToArray();
+        if (uniqueNotEnforced.Length > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, $"Unique indexes not confirmed as UNIQUE: {uniqueNotEnforced.Length}");
+
+            var reasonGroups = uniqueNotEnforced
+                .SelectMany(u => u.Rationales.Select(r => (Rationale: r, Index: u)))
+                .GroupBy(x => x.Rationale)
+                .OrderByDescending(g => g.Count())
+                .ToArray();
+
+            foreach (var group in reasonGroups)
+            {
+                var rationale = FormatRationale(group.Key);
+                var samples = group.Take(MaxSamples)
+                    .Select(x => $"{x.Index.Index.Schema}.{x.Index.Index.Table}.{x.Index.Index.Index}")
+                    .ToArray();
+
+                WriteLine(console, $"  {rationale}: {group.Count()}");
+                foreach (var sample in samples)
+                {
+                    WriteLine(console, $"    - {sample}");
+                }
+                if (group.Count() > MaxSamples)
+                {
+                    WriteLine(console, $"    ... and {group.Count() - MaxSamples} more");
+                }
+            }
+        }
+
+        // Foreign keys NOT safe to create
+        var fkNotCreated = report.ForeignKeys.Where(fk => !fk.CreateConstraint).ToArray();
+        if (fkNotCreated.Length > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, $"Foreign key constraints not safe to create: {fkNotCreated.Length}");
+
+            var reasonGroups = fkNotCreated
+                .SelectMany(fk => fk.Rationales.Select(r => (Rationale: r, ForeignKey: fk)))
+                .GroupBy(x => x.Rationale)
+                .OrderByDescending(g => g.Count())
+                .ToArray();
+
+            foreach (var group in reasonGroups)
+            {
+                var rationale = FormatRationale(group.Key);
+                var samples = group.Take(MaxSamples)
+                    .Select(x => $"{x.ForeignKey.Column.Schema}.{x.ForeignKey.Column.Table}.{x.ForeignKey.Column.Column}")
+                    .ToArray();
+
+                WriteLine(console, $"  {rationale}: {group.Count()}");
+                foreach (var sample in samples)
+                {
+                    WriteLine(console, $"    - {sample}");
+                }
+                if (group.Count() > MaxSamples)
+                {
+                    WriteLine(console, $"    ... and {group.Count() - MaxSamples} more");
+                }
+            }
+        }
+    }
+
+    private static string FormatRationale(string rationale)
+    {
+        // Convert constant names to readable messages
+        return rationale switch
+        {
+            TighteningRationales.DataHasNulls => "Data contains NULL values",
+            TighteningRationales.NullBudgetEpsilon => "NULL values within acceptable budget",
+            TighteningRationales.RemediateBeforeTighten => "Requires remediation before tightening",
+            TighteningRationales.ProfileMissing => "No profiling data available",
+            TighteningRationales.UniqueDuplicatesPresent => "Duplicate values found",
+            TighteningRationales.CompositeUniqueDuplicatesPresent => "Composite duplicate values found",
+            TighteningRationales.UniquePolicyDisabled => "Unique constraint policy disabled",
+            TighteningRationales.DataHasOrphans => "Orphaned references found in data",
+            TighteningRationales.DeleteRuleIgnore => "Delete rule set to IGNORE",
+            TighteningRationales.CrossSchema => "Cross-schema reference not supported",
+            TighteningRationales.CrossCatalog => "Cross-catalog reference not supported",
+            TighteningRationales.ForeignKeyCreationDisabled => "Foreign key creation disabled by policy",
+            _ => rationale
+        };
+    }
+
     public static void EmitNamingOverrideTemplate(
         IConsole console,
         IEnumerable<TighteningDiagnostic> diagnostics)
@@ -808,7 +942,10 @@ internal static class CommandConsole
                 continue;
             }
 
-            if (!diagnostic.Code.StartsWith("tightening.entity.duplicate", StringComparison.Ordinal))
+            // Only emit template for unresolved or conflicting duplicates
+            // Resolved duplicates are already handled via namingOverrides.rules
+            if (!diagnostic.Code.StartsWith("tightening.entity.duplicate", StringComparison.Ordinal) ||
+                diagnostic.Code.Equals("tightening.entity.duplicate.resolved", StringComparison.Ordinal))
             {
                 continue;
             }

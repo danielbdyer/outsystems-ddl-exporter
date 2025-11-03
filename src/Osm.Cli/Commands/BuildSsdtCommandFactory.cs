@@ -266,9 +266,11 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         // Tightening statistics
         CommandConsole.WriteLine(context.Console, string.Empty);
         CommandConsole.WriteLine(context.Console, "Tightening Statistics:");
-        CommandConsole.WriteLine(context.Console, $"  Columns: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount} tightened");
-        CommandConsole.WriteLine(context.Console, $"  Unique indexes: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount} enforced");
-        CommandConsole.WriteLine(context.Console, $"  Foreign keys: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount} created");
+        CommandConsole.WriteLine(context.Console, $"  Columns: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount} confirmed NOT NULL");
+        CommandConsole.WriteLine(context.Console, $"  Unique indexes: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount} confirmed UNIQUE");
+        CommandConsole.WriteLine(context.Console, $"  Foreign keys: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount} safe to create");
+
+        CommandConsole.EmitTighteningStatisticsDetails(context.Console, pipelineResult.DecisionReport);
     }
 
     private static void EmitSqlValidationSummary(InvocationContext context, BuildSsdtPipelineResult pipelineResult)
