@@ -10,7 +10,8 @@ internal sealed record TableProfilingPlan(
     long RowCount,
     ImmutableArray<string> Columns,
     ImmutableArray<UniqueCandidatePlan> UniqueCandidates,
-    ImmutableArray<ForeignKeyPlan> ForeignKeys);
+    ImmutableArray<ForeignKeyPlan> ForeignKeys,
+    ImmutableArray<string> PrimaryKeyColumns);
 
 internal sealed record UniqueCandidatePlan(string Key, ImmutableArray<string> Columns);
 
@@ -24,7 +25,8 @@ internal sealed record TableProfilingResults(
     IReadOnlyDictionary<string, bool> ForeignKeys,
     IReadOnlyDictionary<string, ProfilingProbeStatus> ForeignKeyStatuses,
     IReadOnlyDictionary<string, bool> ForeignKeyIsNoCheck,
-    IReadOnlyDictionary<string, ProfilingProbeStatus> ForeignKeyNoCheckStatuses)
+    IReadOnlyDictionary<string, ProfilingProbeStatus> ForeignKeyNoCheckStatuses,
+    IReadOnlyDictionary<string, NullRowSample> NullRowSamples)
 {
     public static TableProfilingResults Empty { get; } = new(
         ImmutableDictionary<string, long>.Empty,
@@ -34,5 +36,6 @@ internal sealed record TableProfilingResults(
         ImmutableDictionary<string, bool>.Empty,
         ImmutableDictionary<string, ProfilingProbeStatus>.Empty,
         ImmutableDictionary<string, bool>.Empty,
-        ImmutableDictionary<string, ProfilingProbeStatus>.Empty);
+        ImmutableDictionary<string, ProfilingProbeStatus>.Empty,
+        ImmutableDictionary<string, NullRowSample>.Empty);
 }

@@ -131,6 +131,9 @@ public sealed class SqlDataProfiler : IDataProfiler
                     var nullStatus = tableResults.NullCountStatuses.TryGetValue(columnName, out var status)
                         ? status
                         : ProfilingProbeStatus.Unknown;
+                    var nullRowSample = tableResults.NullRowSamples.TryGetValue(columnName, out var sample)
+                        ? sample
+                        : null;
 
                     var columnProfileResult = ColumnProfile.Create(
                         SchemaName.Create(schema).Value,
@@ -143,7 +146,8 @@ public sealed class SqlDataProfiler : IDataProfiler
                         meta.DefaultDefinition,
                         tableRowCount,
                         nullCount,
-                        nullStatus);
+                        nullStatus,
+                        nullRowSample);
 
                     if (columnProfileResult.IsSuccess)
                     {

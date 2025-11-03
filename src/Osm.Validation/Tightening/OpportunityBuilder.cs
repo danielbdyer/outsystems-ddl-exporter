@@ -38,25 +38,25 @@ internal sealed class OpportunityBuilder
     {
         if (analysis.Decision.RequiresRemediation)
         {
-            return "Remediate data before enforcing the unique index.";
+            return "Unique index was not enforced. Remediate data before enforcement can proceed.";
         }
 
         if (analysis.HasDuplicates)
         {
-            return "Resolve duplicate values before enforcing the unique index.";
+            return "Unique index was not enforced. Resolve duplicate values before enforcement can proceed.";
         }
 
         if (analysis.PolicyDisabled)
         {
-            return "Enable policy support before enforcing the unique index.";
+            return "Unique index was not enforced. Enable policy support before enforcement can proceed.";
         }
 
         if (!analysis.HasEvidence)
         {
-            return "Collect profiling evidence before enforcing the unique index.";
+            return "Unique index was not enforced. Collect profiling evidence before enforcement can proceed.";
         }
 
-        return "Review unique index enforcement before applying.";
+        return "Unique index was not enforced. Review policy requirements before enforcement can proceed.";
     }
 }
 

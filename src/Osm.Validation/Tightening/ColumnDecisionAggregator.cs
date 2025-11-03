@@ -63,6 +63,7 @@ internal sealed class ColumnDecisionAggregator
         var foreignKeyBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ForeignKeyDecision>();
         var identityBuilder = ImmutableDictionary.CreateBuilder<ColumnCoordinate, ColumnIdentity>();
         var analysisBuilders = new Dictionary<ColumnCoordinate, ColumnAnalysisBuilder>();
+        var diagnosticsBuilder = ImmutableArray.CreateBuilder<TighteningDiagnostic>();
 
         foreach (var entity in model.Modules.SelectMany(static module => module.Entities))
         {
@@ -96,6 +97,37 @@ internal sealed class ColumnDecisionAggregator
                     analyzer.Analyze(context, builder);
                 }
 
+                // Check for mandatory null conflicts and emit diagnostics
+                if (attribute.IsMandatory && builder.Nullability.Rationales.Contains(TighteningRationales.DataHasNulls))
+                {
+                    if (columnProfile?.NullRowSample is { } sample && sample.TotalNullRows > 0)
+                    {
+                        var sampleRows = sample.SampleRows
+                            .Select(row => row.ToString())
+                            .ToImmutableArray();
+
+                        var remediationQuery = RemediationQueryBuilder.BuildUpdateNullsQuery(
+                            coordinate.Schema.Value,
+                            coordinate.Table.Value,
+                            coordinate.Column.Value,
+                            sample.PrimaryKeyColumns,
+                            attribute.DefaultValue);
+
+                        var diagnostic = TighteningDiagnostic.CreateMandatoryNullConflict(
+                            coordinate.Schema.Value,
+                            coordinate.Table.Value,
+                            coordinate.Column.Value,
+                            attribute.LogicalName.Value,
+                            entity.Module.Name.Value,
+                            sample.PrimaryKeyColumns,
+                            sampleRows,
+                            sample.TotalNullRows,
+                            remediationQuery);
+
+                        diagnosticsBuilder.Add(diagnostic);
+                    }
+                }
+
                 nullabilityBuilder[coordinate] = builder.Nullability;
 
                 if (builder.ForeignKey is not null)
@@ -109,7 +141,8 @@ internal sealed class ColumnDecisionAggregator
             nullabilityBuilder.ToImmutable(),
             foreignKeyBuilder.ToImmutable(),
             identityBuilder.ToImmutable(),
-            analysisBuilders);
+            analysisBuilders,
+            diagnosticsBuilder.ToImmutable());
     }
 }
 
@@ -117,5 +150,6 @@ internal sealed record ColumnDecisionAggregation(
     ImmutableDictionary<ColumnCoordinate, NullabilityDecision> Nullability,
     ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision> ForeignKeys,
     ImmutableDictionary<ColumnCoordinate, ColumnIdentity> ColumnIdentities,
-    IReadOnlyDictionary<ColumnCoordinate, ColumnAnalysisBuilder> ColumnAnalyses);
+    IReadOnlyDictionary<ColumnCoordinate, ColumnAnalysisBuilder> ColumnAnalyses,
+    ImmutableArray<TighteningDiagnostic> Diagnostics);
 

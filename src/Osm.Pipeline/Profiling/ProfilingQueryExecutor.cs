@@ -18,6 +18,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
     private readonly SqlMetadataLog? _metadataLog;
 
     private readonly NullCountQueryBuilder _nullCountQueryBuilder;
+    private readonly NullRowSampleQueryBuilder _nullRowSampleQueryBuilder;
     private readonly UniqueCandidateQueryBuilder _uniqueCandidateQueryBuilder;
     private readonly ForeignKeyProbeQueryBuilder _foreignKeyProbeQueryBuilder;
     private readonly IProfilingProbePolicy _probePolicy;
@@ -36,6 +37,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _metadataLog = metadataLog;
         _nullCountQueryBuilder = nullCountQueryBuilder ?? new NullCountQueryBuilder();
+        _nullRowSampleQueryBuilder = new NullRowSampleQueryBuilder();
         _uniqueCandidateQueryBuilder = uniqueCandidateQueryBuilder ?? new UniqueCandidateQueryBuilder();
         _foreignKeyProbeQueryBuilder = foreignKeyProbeQueryBuilder ?? new ForeignKeyProbeQueryBuilder();
         var provider = timeProvider ?? TimeProvider.System;
@@ -64,6 +66,9 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             cancellationToken).ConfigureAwait(false);
 
         var nullCountStatuses = BuildStatusDictionary(nullCounts.Value.Keys, nullCounts.Status);
+
+        // Capture NULL row samples for columns with nulls
+        var nullRowSamples = await ComputeNullRowSamplesAsync(connection, plan, nullCounts.Value, cancellationToken).ConfigureAwait(false);
 
         var duplicateFlags = await _probePolicy.ExecuteAsync(
             ct => ComputeDuplicateCandidatesAsync(connection, plan, shouldSample, samplingParameter, ct),
@@ -96,7 +101,8 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             foreignKeyReality.Value.Orphans,
             foreignKeyStatuses,
             foreignKeyReality.Value.IsNoCheck,
-            foreignKeyNoCheckStatuses);
+            foreignKeyNoCheckStatuses,
+            nullRowSamples);
     }
 
     private async Task<IReadOnlyDictionary<string, long>> ComputeNullCountsAsync(
@@ -414,6 +420,62 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         }
 
         return builder.ToImmutable();
+    }
+
+    private async Task<IReadOnlyDictionary<string, NullRowSample>> ComputeNullRowSamplesAsync(
+        DbConnection connection,
+        TableProfilingPlan plan,
+        IReadOnlyDictionary<string, long> nullCounts,
+        CancellationToken cancellationToken)
+    {
+        var results = ImmutableDictionary.CreateBuilder<string, NullRowSample>(StringComparer.OrdinalIgnoreCase);
+
+        // Only capture samples for columns with nulls
+        foreach (var column in plan.Columns)
+        {
+            if (!nullCounts.TryGetValue(column, out var nullCount) || nullCount == 0)
+            {
+                continue;
+            }
+
+            // Skip if no primary key columns available
+            if (plan.PrimaryKeyColumns.IsDefaultOrEmpty)
+            {
+                results[column] = NullRowSample.Empty;
+                continue;
+            }
+
+            try
+            {
+                await using var command = connection.CreateCommand();
+                _nullRowSampleQueryBuilder.Configure(command, plan.Schema, plan.Table, column, plan.PrimaryKeyColumns);
+                ApplyCommandTimeout(command);
+
+                var sampleRows = ImmutableArray.CreateBuilder<NullRowIdentifier>();
+
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    var pkValues = ImmutableArray.CreateBuilder<object?>();
+                    for (var i = 0; i < plan.PrimaryKeyColumns.Length; i++)
+                    {
+                        var value = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        pkValues.Add(value);
+                    }
+
+                    sampleRows.Add(new NullRowIdentifier(pkValues.ToImmutable()));
+                }
+
+                results[column] = NullRowSample.Create(plan.PrimaryKeyColumns, sampleRows.ToImmutable(), nullCount);
+            }
+            catch (DbException)
+            {
+                // If we fail to capture NULL row samples, just use empty sample
+                results[column] = NullRowSample.Empty;
+            }
+        }
+
+        return results.ToImmutable();
     }
 
 }
