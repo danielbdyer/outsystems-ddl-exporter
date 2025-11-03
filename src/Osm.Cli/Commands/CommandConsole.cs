@@ -230,7 +230,7 @@ internal static class CommandConsole
         }
     }
 
-    public static void EmitContradictionDetails(IConsole console, OpportunitiesReport opportunities)
+    public static void EmitContradictionDetails(IConsole console, Osm.Validation.Tightening.Opportunities.OpportunitiesReport opportunities)
     {
         if (console is null)
         {

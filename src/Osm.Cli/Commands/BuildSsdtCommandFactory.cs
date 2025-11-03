@@ -132,47 +132,26 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
         }
 
+        // Execution log and warnings
         CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
         CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
+
+        // Profiling insights
         CommandConsole.EmitProfilingInsights(context.Console, pipelineResult.ProfilingInsights);
 
-        foreach (var diagnostic in pipelineResult.DecisionReport.Diagnostics)
-        {
-            if (diagnostic.Severity == TighteningDiagnosticSeverity.Warning)
-            {
-                CommandConsole.WriteErrorLine(context.Console, $"[warning] {diagnostic.Message}");
-            }
-        }
+        // Tightening diagnostics
+        EmitTighteningDiagnostics(context, pipelineResult.DecisionReport.Diagnostics);
 
-        CommandConsole.EmitNamingOverrideTemplate(context.Console, pipelineResult.DecisionReport.Diagnostics);
-
+        // Evidence cache notification
         if (pipelineResult.EvidenceCache is { } cacheResult)
         {
             CommandConsole.WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");
         }
 
-        if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty && pipelineResult.StaticSeedScriptPaths.Length > 0)
-        {
-            foreach (var seedPath in pipelineResult.StaticSeedScriptPaths)
-            {
-                CommandConsole.WriteLine(context.Console, $"Static entity seed script written to {seedPath}");
-            }
-        }
+        // SSDT emission summary
+        EmitSsdtEmissionSummary(context, applicationResult, pipelineResult);
 
-        if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty && pipelineResult.TelemetryPackagePaths.Length > 0)
-        {
-            foreach (var packagePath in pipelineResult.TelemetryPackagePaths)
-            {
-                CommandConsole.WriteLine(context.Console, $"Telemetry package written to {packagePath}");
-            }
-        }
-
-        CommandConsole.WriteLine(context.Console, $"Emitted {pipelineResult.Manifest.Tables.Count} tables to {applicationResult.OutputDirectory}.");
-        CommandConsole.WriteLine(context.Console, $"Manifest written to {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
-        CommandConsole.WriteLine(context.Console, $"Columns tightened: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount}");
-        CommandConsole.WriteLine(context.Console, $"Unique indexes enforced: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount}");
-        CommandConsole.WriteLine(context.Console, $"Foreign keys created: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount}");
-
+        // SQL validation
         EmitSqlValidationSummary(context, pipelineResult);
 
         CommandConsole.EmitModuleRollups(
@@ -226,12 +205,78 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         }
     }
 
+    private static void EmitTighteningDiagnostics(InvocationContext context, ImmutableArray<TighteningDiagnostic> diagnostics)
+    {
+        if (diagnostics.IsDefaultOrEmpty || diagnostics.Length == 0)
+        {
+            return;
+        }
+
+        var warnings = diagnostics.Where(d => d.Severity == TighteningDiagnosticSeverity.Warning).ToArray();
+
+        if (warnings.Length > 0)
+        {
+            CommandConsole.WriteLine(context.Console, string.Empty);
+            CommandConsole.WriteLine(context.Console, $"Tightening diagnostics: {warnings.Length} warning(s)");
+            foreach (var diagnostic in warnings)
+            {
+                CommandConsole.WriteErrorLine(context.Console, $"  [warning] {diagnostic.Message}");
+            }
+        }
+
+        CommandConsole.EmitNamingOverrideTemplate(context.Console, diagnostics);
+    }
+
+    private static void EmitSsdtEmissionSummary(InvocationContext context, BuildSsdtApplicationResult applicationResult, BuildSsdtPipelineResult pipelineResult)
+    {
+        CommandConsole.WriteLine(context.Console, string.Empty);
+        CommandConsole.WriteLine(context.Console, "SSDT Emission Summary:");
+        CommandConsole.WriteLine(context.Console, $"  Tables: {pipelineResult.Manifest.Tables.Count} emitted to {applicationResult.OutputDirectory}");
+        CommandConsole.WriteLine(context.Console, $"  Manifest: {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
+
+        // Optional artifacts
+        if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty && pipelineResult.StaticSeedScriptPaths.Length > 0)
+        {
+            CommandConsole.WriteLine(context.Console, $"  Static seed scripts: {pipelineResult.StaticSeedScriptPaths.Length} file(s)");
+            foreach (var seedPath in pipelineResult.StaticSeedScriptPaths.Take(3))
+            {
+                CommandConsole.WriteLine(context.Console, $"    - {seedPath}");
+            }
+            if (pipelineResult.StaticSeedScriptPaths.Length > 3)
+            {
+                CommandConsole.WriteLine(context.Console, $"    ... {pipelineResult.StaticSeedScriptPaths.Length - 3} more");
+            }
+        }
+
+        if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty && pipelineResult.TelemetryPackagePaths.Length > 0)
+        {
+            CommandConsole.WriteLine(context.Console, $"  Telemetry packages: {pipelineResult.TelemetryPackagePaths.Length} file(s)");
+            foreach (var packagePath in pipelineResult.TelemetryPackagePaths.Take(3))
+            {
+                CommandConsole.WriteLine(context.Console, $"    - {packagePath}");
+            }
+            if (pipelineResult.TelemetryPackagePaths.Length > 3)
+            {
+                CommandConsole.WriteLine(context.Console, $"    ... {pipelineResult.TelemetryPackagePaths.Length - 3} more");
+            }
+        }
+
+        // Tightening statistics
+        CommandConsole.WriteLine(context.Console, string.Empty);
+        CommandConsole.WriteLine(context.Console, "Tightening Statistics:");
+        CommandConsole.WriteLine(context.Console, $"  Columns: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount} tightened");
+        CommandConsole.WriteLine(context.Console, $"  Unique indexes: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount} enforced");
+        CommandConsole.WriteLine(context.Console, $"  Foreign keys: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount} created");
+    }
+
     private static void EmitSqlValidationSummary(InvocationContext context, BuildSsdtPipelineResult pipelineResult)
     {
         var summary = pipelineResult.SqlValidation ?? SsdtSqlValidationSummary.Empty;
-        CommandConsole.WriteLine(
-            context.Console,
-            $"SQL validation: validated {summary.TotalFiles} file(s); {summary.FilesWithErrors} with errors; {summary.ErrorCount} error(s).");
+
+        CommandConsole.WriteLine(context.Console, string.Empty);
+        CommandConsole.WriteLine(context.Console, "SQL Validation:");
+        CommandConsole.WriteLine(context.Console, $"  Files: {summary.TotalFiles} validated, {summary.FilesWithErrors} with errors");
+        CommandConsole.WriteLine(context.Console, $"  Errors: {summary.ErrorCount} total");
 
         if (summary.ErrorCount <= 0 || summary.Issues.IsDefaultOrEmpty || summary.Issues.Length == 0)
         {
@@ -239,7 +284,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         }
 
         const int MaxSamples = 5;
-        CommandConsole.WriteErrorLine(context.Console, "SQL validation errors (sample):");
+        CommandConsole.WriteLine(context.Console, string.Empty);
+        CommandConsole.WriteErrorLine(context.Console, "  Error samples:");
 
         var samples = summary.Issues
             .Where(static issue => issue is not null)
@@ -252,13 +298,13 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             var error = sample.error;
             CommandConsole.WriteErrorLine(
                 context.Console,
-                $"  {sample.Path}:{error.Line}:{error.Column} (#{error.Number}, severity {error.Severity}) {error.Message}");
+                $"    {sample.Path}:{error.Line}:{error.Column} [#{error.Number}] {error.Message}");
         }
 
         var remaining = summary.ErrorCount - samples.Length;
         if (remaining > 0)
         {
-            CommandConsole.WriteErrorLine(context.Console, $"  ... {remaining} additional error(s) omitted.");
+            CommandConsole.WriteErrorLine(context.Console, $"    ... {remaining} additional error(s) omitted");
         }
     }
 
