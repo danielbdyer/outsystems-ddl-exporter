@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Binding;
 using System.CommandLine.Parsing;
+using System.Linq;
 using Microsoft.Data.SqlClient;
 using Osm.Pipeline.Application;
 
@@ -38,6 +39,11 @@ internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, IComman
         };
         ApplicationNameOption = new Option<string?>("--sql-application-name", "Application name for SQL connections.");
         AccessTokenOption = new Option<string?>("--sql-access-token", "Access token for SQL authentication.");
+        ProfilingConnectionStringsOption = new Option<string[]>("--profiling-connection-string", "Additional SQL connection strings for profiling secondary environments.")
+        {
+            Arity = ArgumentArity.ZeroOrMore,
+            AllowMultipleArgumentsPerToken = true
+        };
     }
 
     public Option<string?> ConnectionStringOption { get; }
@@ -56,6 +62,8 @@ internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, IComman
 
     public Option<string?> AccessTokenOption { get; }
 
+    public Option<string[]> ProfilingConnectionStringsOption { get; }
+
     public IEnumerable<Option> Options
     {
         get
@@ -68,6 +76,7 @@ internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, IComman
             yield return TrustServerCertificateOption;
             yield return ApplicationNameOption;
             yield return AccessTokenOption;
+            yield return ProfilingConnectionStringsOption;
         }
     }
 
@@ -81,6 +90,15 @@ internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, IComman
             throw new ArgumentNullException(nameof(parseResult));
         }
 
+        var profilingConnections = parseResult.GetValueForOption(ProfilingConnectionStringsOption);
+        var normalizedProfilingConnections = profilingConnections is null
+            ? Array.Empty<string>()
+            : profilingConnections
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Select(static value => value.Trim())
+                .Where(static value => value.Length > 0)
+                .ToArray();
+
         return new SqlOptionsOverrides(
             parseResult.GetValueForOption(ConnectionStringOption),
             parseResult.GetValueForOption(CommandTimeoutOption),
@@ -89,6 +107,7 @@ internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, IComman
             parseResult.GetValueForOption(AuthenticationMethodOption),
             parseResult.GetValueForOption(TrustServerCertificateOption),
             parseResult.GetValueForOption(ApplicationNameOption),
-            parseResult.GetValueForOption(AccessTokenOption));
+            parseResult.GetValueForOption(AccessTokenOption),
+            normalizedProfilingConnections.Length == 0 ? null : normalizedProfilingConnections);
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
@@ -31,6 +32,7 @@ public sealed class CliConfigurationService : ICliConfigurationService
     private const string EnvSqlAccessToken = "OSM_CLI_SQL_ACCESS_TOKEN";
     private const string EnvSqlTrustServerCertificate = "OSM_CLI_SQL_TRUST_SERVER_CERTIFICATE";
     private const string EnvSqlApplicationName = "OSM_CLI_SQL_APPLICATION_NAME";
+    private const string EnvSqlProfilingConnectionStrings = "OSM_CLI_PROFILING_CONNECTION_STRINGS";
 
     public CliConfigurationService()
         : this(new CliConfigurationLoader())
@@ -203,6 +205,18 @@ public sealed class CliConfigurationService : ICliConfigurationService
         if (!string.IsNullOrWhiteSpace(connectionString))
         {
             sql = sql with { ConnectionString = connectionString.Trim() };
+        }
+
+        var profilingConnectionsRaw = Environment.GetEnvironmentVariable(EnvSqlProfilingConnectionStrings);
+        if (!string.IsNullOrWhiteSpace(profilingConnectionsRaw))
+        {
+            var connections = profilingConnectionsRaw
+                .Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(static value => value.Trim())
+                .Where(static value => value.Length > 0)
+                .ToArray();
+
+            sql = sql with { ProfilingConnectionStrings = connections.Length == 0 ? Array.Empty<string>() : connections };
         }
 
         if (TryParseInt(Environment.GetEnvironmentVariable(EnvSqlCommandTimeout), out var timeout))

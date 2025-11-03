@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Immutable;
+using System.Linq;
 using Osm.Domain.Abstractions;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
@@ -15,7 +17,7 @@ internal static class SqlOptionsResolver
             throw new ArgumentNullException(nameof(configuration));
         }
 
-        overrides ??= new SqlOptionsOverrides(null, null, null, null, null, null, null, null);
+        overrides ??= new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null);
 
         var connection = overrides.ConnectionString ?? configuration.Sql.ConnectionString;
         var timeout = overrides.CommandTimeoutSeconds ?? configuration.Sql.CommandTimeoutSeconds;
@@ -75,11 +77,32 @@ internal static class SqlOptionsResolver
             contractOverrides = contractOverrides.WithOptionalColumns(pair.Key, pair.Value);
         }
 
+        ImmutableArray<string> profilingConnections;
+        if (overrides.ProfilingConnectionStrings is { } overrideProfiling)
+        {
+            profilingConnections = overrideProfiling
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Select(static value => value.Trim())
+                .Where(static value => value.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToImmutableArray();
+        }
+        else
+        {
+            profilingConnections = configuration.Sql.ProfilingConnectionStrings
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Select(static value => value.Trim())
+                .Where(static value => value.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToImmutableArray();
+        }
+
         return new ResolvedSqlOptions(
             connection?.Trim(),
             timeout,
             new SqlSamplingSettings(sampling.RowSamplingThreshold, sampling.SampleSize),
             new SqlAuthenticationSettings(authentication.Method, authentication.TrustServerCertificate, authentication.ApplicationName, authentication.AccessToken),
-            contractOverrides);
+            contractOverrides,
+            profilingConnections);
     }
 }

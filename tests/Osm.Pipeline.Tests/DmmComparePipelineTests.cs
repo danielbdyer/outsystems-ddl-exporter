@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -49,7 +50,8 @@ public class DmmComparePipelineTests
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
+                MetadataContract: MetadataContractOverrides.Strict,
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
             TypeMappingPolicyLoader.LoadDefault(),
             profilePath);
@@ -92,7 +94,8 @@ public class DmmComparePipelineTests
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
+                MetadataContract: MetadataContractOverrides.Strict,
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
             TypeMappingPolicyLoader.LoadDefault(),
             profilePath);
@@ -155,7 +158,8 @@ public class DmmComparePipelineTests
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
+                MetadataContract: MetadataContractOverrides.Strict,
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
             TypeMappingPolicyLoader.LoadDefault(),
             profilePath);

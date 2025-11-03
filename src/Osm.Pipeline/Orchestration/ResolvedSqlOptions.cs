@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.Data.SqlClient;
 using Osm.Pipeline.SqlExtraction;
 
@@ -8,7 +9,8 @@ public sealed record ResolvedSqlOptions(
     int? CommandTimeoutSeconds,
     SqlSamplingSettings Sampling,
     SqlAuthenticationSettings Authentication,
-    MetadataContractOverrides MetadataContract);
+    MetadataContractOverrides MetadataContract,
+    ImmutableArray<string> ProfilingConnectionStrings);
 
 public sealed record SqlSamplingSettings(long? RowSamplingThreshold, int? SampleSize);
 

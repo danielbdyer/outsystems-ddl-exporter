@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Osm.Domain.Configuration;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
@@ -16,7 +17,8 @@ public sealed class StaticDataProviderFactoryTests
         CommandTimeoutSeconds: null,
         Sampling: new SqlSamplingSettings(null, null),
         Authentication: new SqlAuthenticationSettings(null, null, null, null),
-        MetadataContract: MetadataContractOverrides.Strict);
+        MetadataContract: MetadataContractOverrides.Strict,
+        ProfilingConnectionStrings: ImmutableArray<string>.Empty);
 
     [Fact]
     public void Create_FailsWhenStaticDataRequiredButUnavailable()

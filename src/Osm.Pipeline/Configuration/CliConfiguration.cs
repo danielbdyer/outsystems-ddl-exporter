@@ -51,14 +51,16 @@ public sealed record SqlConfiguration(
     int? CommandTimeoutSeconds,
     SqlSamplingConfiguration Sampling,
     SqlAuthenticationConfiguration Authentication,
-    MetadataContractConfiguration MetadataContract)
+    MetadataContractConfiguration MetadataContract,
+    IReadOnlyList<string> ProfilingConnectionStrings)
 {
     public static SqlConfiguration Empty { get; } = new(
         null,
         null,
         SqlSamplingConfiguration.Empty,
         SqlAuthenticationConfiguration.Empty,
-        MetadataContractConfiguration.Empty);
+        MetadataContractConfiguration.Empty,
+        Array.Empty<string>());
 }
 
 public sealed record SqlSamplingConfiguration(long? RowSamplingThreshold, int? SampleSize)

@@ -87,7 +87,7 @@ public sealed class CliConfigurationLoaderTests
             profile = new { path = "profile.json" },
             cache = new { root = "cache" },
             profiler = new { provider = "Fixture", profilePath = "profile.json", mockFolder = "mocks" },
-            sql = new { connectionString = "Server=.;Database=Test;" }
+            sql = new { connectionString = "Server=.;Database=Test;", profilingConnectionStrings = new[] { " Server=.;Database=Secondary; " } }
         };
 
         await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
@@ -101,6 +101,7 @@ public sealed class CliConfigurationLoaderTests
         Assert.Equal(Path.Combine(directory.Path, "cache"), result.Value.Cache.Root);
         Assert.Equal("Fixture", result.Value.Profiler.Provider);
         Assert.Equal("Server=.;Database=Test;", result.Value.Sql.ConnectionString);
+        Assert.Equal(new[] { "Server=.;Database=Secondary;" }, result.Value.Sql.ProfilingConnectionStrings);
         Assert.Equal(new[] { "AppCore", "Ops" }, result.Value.ModuleFilter.Modules);
         Assert.Equal(false, result.Value.ModuleFilter.IncludeSystemModules);
         Assert.Equal(false, result.Value.ModuleFilter.IncludeInactiveModules);

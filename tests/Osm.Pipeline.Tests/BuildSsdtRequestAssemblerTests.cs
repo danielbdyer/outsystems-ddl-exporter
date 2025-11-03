@@ -23,7 +23,8 @@ public sealed class BuildSsdtRequestAssemblerTests
         CommandTimeoutSeconds: null,
         Sampling: new SqlSamplingSettings(null, null),
         Authentication: new SqlAuthenticationSettings(null, null, null, null),
-        MetadataContract: MetadataContractOverrides.Strict);
+        MetadataContract: MetadataContractOverrides.Strict,
+        ProfilingConnectionStrings: ImmutableArray<string>.Empty);
 
     [Fact]
     public void Assemble_PrefersOverrideProfilerProvider()

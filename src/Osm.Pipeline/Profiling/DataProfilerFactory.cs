@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Immutable;
+using System.Linq;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Json;
@@ -66,8 +68,24 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
             NamingOverrides = request.Scope.SmoOptions.NamingOverrides
         };
 
-        var connectionFactory = _connectionFactoryFactory(request.Scope.SqlOptions.ConnectionString!, connectionOptions);
-        var profiler = new SqlDataProfiler(connectionFactory, model, profilerOptions, request.SqlMetadataLog);
+        var primaryConnectionFactory = _connectionFactoryFactory(request.Scope.SqlOptions.ConnectionString!, connectionOptions);
+        var primaryProfiler = new SqlDataProfiler(primaryConnectionFactory, model, profilerOptions, request.SqlMetadataLog);
+
+        var additionalProfilers = request.Scope.SqlOptions.ProfilingConnectionStrings
+            .Where(static connection => !string.IsNullOrWhiteSpace(connection))
+            .Select(connection =>
+            {
+                var factory = _connectionFactoryFactory(connection, connectionOptions);
+                return (IDataProfiler)new SqlDataProfiler(factory, model, profilerOptions, request.SqlMetadataLog);
+            })
+            .ToImmutableArray();
+
+        if (additionalProfilers.IsDefaultOrEmpty)
+        {
+            return Result<IDataProfiler>.Success(primaryProfiler);
+        }
+
+        var profiler = new MultiTargetSqlDataProfiler(primaryProfiler, additionalProfilers);
         return Result<IDataProfiler>.Success(profiler);
     }
 

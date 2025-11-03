@@ -217,7 +217,8 @@ public sealed class BuildSsdtEmissionStepTests
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
+                MetadataContract: MetadataContractOverrides.Strict,
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicyLoader.LoadDefault());
 

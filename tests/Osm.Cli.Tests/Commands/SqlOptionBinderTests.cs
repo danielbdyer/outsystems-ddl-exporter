@@ -17,7 +17,7 @@ public class SqlOptionBinderTests
             command.AddOption(option);
         }
 
-        var parseResult = command.Parse("--connection-string DataSource --command-timeout 120 --sampling-threshold 500 --sampling-size 25 --sql-authentication ActiveDirectoryIntegrated --sql-trust-server-certificate false --sql-application-name osm --sql-access-token token");
+        var parseResult = command.Parse("--connection-string DataSource --command-timeout 120 --sampling-threshold 500 --sampling-size 25 --sql-authentication ActiveDirectoryIntegrated --sql-trust-server-certificate false --sql-application-name osm --sql-access-token token --profiling-connection-string Secondary --profiling-connection-string Another");
 
         var overrides = binder.Bind(parseResult);
 
@@ -29,6 +29,7 @@ public class SqlOptionBinderTests
         Assert.False(overrides.TrustServerCertificate);
         Assert.Equal("osm", overrides.ApplicationName);
         Assert.Equal("token", overrides.AccessToken);
+        Assert.Equal(new[] { "Secondary", "Another" }, overrides.ProfilingConnectionStrings);
     }
 
     [Fact]

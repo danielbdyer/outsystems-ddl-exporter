@@ -32,7 +32,8 @@ public sealed class CompareWithDmmApplicationServiceTests
         AuthenticationMethod: null,
         TrustServerCertificate: null,
         ApplicationName: null,
-        AccessToken: null);
+        AccessToken: null,
+        ProfilingConnectionStrings: null);
 
     private static readonly CacheOptionsOverrides DefaultCacheOverrides = new(
         Root: null,

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
@@ -20,7 +21,8 @@ public sealed class DataProfilerFactoryTests
         CommandTimeoutSeconds: null,
         Sampling: new SqlSamplingSettings(null, null),
         Authentication: new SqlAuthenticationSettings(null, null, null, null),
-        MetadataContract: MetadataContractOverrides.Strict);
+        MetadataContract: MetadataContractOverrides.Strict,
+        ProfilingConnectionStrings: ImmutableArray<string>.Empty);
 
     [Fact]
     public void Create_sql_provider_returns_sql_profiler()
@@ -36,7 +38,8 @@ public sealed class DataProfilerFactoryTests
                 TrustServerCertificate: true,
                 ApplicationName: "Profiler",
                 AccessToken: "token"),
-            MetadataContract: MetadataContractOverrides.Strict);
+            MetadataContract: MetadataContractOverrides.Strict,
+            ProfilingConnectionStrings: ImmutableArray<string>.Empty);
         var request = CreateRequest("sql", profilePath: null, sqlOptions);
 
         var result = factory.Create(request, Model);
@@ -49,6 +52,23 @@ public sealed class DataProfilerFactoryTests
         Assert.Equal(sqlOptions.Authentication.TrustServerCertificate, connectionBuilder.LastOptions.TrustServerCertificate);
         Assert.Equal(sqlOptions.Authentication.ApplicationName, connectionBuilder.LastOptions.ApplicationName);
         Assert.Equal(sqlOptions.Authentication.AccessToken, connectionBuilder.LastOptions.AccessToken);
+    }
+
+    [Fact]
+    public void Create_sql_profiler_with_secondary_connections_returns_multi_target_profiler()
+    {
+        var connectionBuilder = new RecordingConnectionFactoryBuilder();
+        var factory = new DataProfilerFactory(new ProfileSnapshotDeserializer(), connectionBuilder.Create);
+        var sqlOptions = DefaultSqlOptions with
+        {
+            ProfilingConnectionStrings = ImmutableArray.Create("Server=.;Database=Secondary;")
+        };
+        var request = CreateRequest("sql", profilePath: null, sqlOptions);
+
+        var result = factory.Create(request, Model);
+
+        Assert.True(result.IsSuccess);
+        Assert.IsType<MultiTargetSqlDataProfiler>(result.Value);
     }
 
     [Fact]
@@ -72,7 +92,8 @@ public sealed class DataProfilerFactoryTests
             CommandTimeoutSeconds: null,
             Sampling: new SqlSamplingSettings(null, null),
             Authentication: new SqlAuthenticationSettings(null, null, null, null),
-            MetadataContract: MetadataContractOverrides.Strict);
+            MetadataContract: MetadataContractOverrides.Strict,
+            ProfilingConnectionStrings: ImmutableArray<string>.Empty);
         var request = CreateRequest("sql", profilePath: null, sqlOptions);
 
         var result = factory.Create(request, Model);

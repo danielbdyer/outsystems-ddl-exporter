@@ -1,6 +1,7 @@
 using System;
-using System.Threading.Tasks;
+using System.Collections.Immutable;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Osm.Json;
 using Osm.Pipeline.Orchestration;
@@ -23,7 +24,8 @@ public class ExtractModelPipelineTests
             CommandTimeoutSeconds: null,
             Sampling: new SqlSamplingSettings(null, null),
             Authentication: new SqlAuthenticationSettings(null, null, null, null),
-            MetadataContract: MetadataContractOverrides.Strict);
+            MetadataContract: MetadataContractOverrides.Strict,
+            ProfilingConnectionStrings: ImmutableArray<string>.Empty);
         var manifestPath = FixtureFile.GetPath(Path.Combine("extraction", "advanced-sql.manifest.json"));
         var request = new ExtractModelPipelineRequest(command, sqlOptions, manifestPath, OutputPath: null, SqlMetadataOutputPath: null, SqlMetadataLog: null);
 
@@ -44,7 +46,8 @@ public class ExtractModelPipelineTests
             CommandTimeoutSeconds: 30,
             Sampling: new SqlSamplingSettings(null, null),
             Authentication: new SqlAuthenticationSettings(null, null, null, null),
-            MetadataContract: MetadataContractOverrides.Strict);
+            MetadataContract: MetadataContractOverrides.Strict,
+            ProfilingConnectionStrings: ImmutableArray<string>.Empty);
         var request = new ExtractModelPipelineRequest(command, sqlOptions, AdvancedSqlFixtureManifestPath: null, OutputPath: null, SqlMetadataOutputPath: null, SqlMetadataLog: null);
 
         var result = await pipeline.HandleAsync(request);

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -469,7 +470,8 @@ public class BuildSsdtPipelineStepTests
                 CommandTimeoutSeconds: null,
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
-                MetadataContract: MetadataContractOverrides.Strict),
+                MetadataContract: MetadataContractOverrides.Strict,
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicyLoader.LoadDefault(),
             profilePath);
