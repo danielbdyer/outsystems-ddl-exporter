@@ -96,9 +96,10 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
 
                         // In lenient mode, only add FK if target table exists in metadata
                         // In strict mode, always add FK (including to system tables like ossys_User)
-                        var targetTableKey = (targetEntity.Schema.Value, targetEntity.PhysicalName.Value);
+                        var targetSchema = targetEntity.Schema.Value;
+                        var targetTable = targetEntity.PhysicalName.Value;
                         var targetHasColumns = !allowMissingTables ||
-                            metadata.Keys.Any(k => k.Schema == targetTableKey.Schema && k.Table == targetTableKey.Table);
+                            metadata.Keys.Any(k => k.Schema == targetSchema && k.Table == targetTable);
 
                         if (targetHasColumns)
                         {
