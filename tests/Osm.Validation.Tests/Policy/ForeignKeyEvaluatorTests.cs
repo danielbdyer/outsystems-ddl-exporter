@@ -135,7 +135,7 @@ public sealed class ForeignKeyEvaluatorTests
     }
 
     [Fact]
-    public void TreatMissingDeleteRuleAsIgnore_DisablesCreation()
+    public void TreatMissingDeleteRuleAsIgnore_AllowsCreation()
     {
         var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.Cautious);
         var coordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_SRC"), new ColumnName("TARGET_ID"));
@@ -195,7 +195,8 @@ public sealed class ForeignKeyEvaluatorTests
 
         var decision = evaluator.Evaluate(sourceEntity, referenceAttribute, coordinate);
 
-        Assert.False(decision.CreateConstraint);
+        Assert.True(decision.CreateConstraint);
         Assert.Contains(TighteningRationales.DeleteRuleIgnore, decision.Rationales);
+        Assert.Contains(TighteningRationales.PolicyEnableCreation, decision.Rationales);
     }
 }

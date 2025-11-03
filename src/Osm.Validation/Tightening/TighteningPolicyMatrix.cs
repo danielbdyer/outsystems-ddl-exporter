@@ -455,8 +455,10 @@ internal static class TighteningPolicyMatrix
                     EnableCreation: true,
                     AllowCrossSchema: true,
                     AllowCrossCatalog: true,
-                    ExpectCreate: false,
-                    Rationales: ImmutableArray.Create(TighteningRationales.DeleteRuleIgnore)),
+                    ExpectCreate: true,
+                    Rationales: ImmutableArray.Create(
+                        TighteningRationales.DeleteRuleIgnore,
+                        TighteningRationales.PolicyEnableCreation)),
                 new ForeignKeyPolicyDefinition(
                     Scenario: ForeignKeyPolicyScenario.HasOrphan,
                     Description: "Profiling detected orphan rows",
