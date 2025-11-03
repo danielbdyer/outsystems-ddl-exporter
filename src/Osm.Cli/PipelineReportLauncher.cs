@@ -233,9 +233,9 @@ internal static class PipelineReportLauncher
         builder.AppendLine("  <section>");
         builder.AppendLine("    <h2>Policy decisions</h2>");
         builder.AppendLine("    <ul class=\"decision-summary\">");
-        builder.AppendLine($"      <li><strong>Columns tightened:</strong> {decisionReport.TightenedColumnCount:N0} of {decisionReport.ColumnCount:N0}</li>");
-        builder.AppendLine($"      <li><strong>Unique indexes enforced:</strong> {decisionReport.UniqueIndexesEnforcedCount:N0} of {decisionReport.UniqueIndexCount:N0}</li>");
-        builder.AppendLine($"      <li><strong>Foreign keys created:</strong> {decisionReport.ForeignKeysCreatedCount:N0} of {decisionReport.ForeignKeyCount:N0}</li>");
+        builder.AppendLine($"      <li><strong>Columns confirmed NOT NULL:</strong> {decisionReport.TightenedColumnCount:N0} of {decisionReport.ColumnCount:N0}</li>");
+        builder.AppendLine($"      <li><strong>Unique indexes confirmed UNIQUE:</strong> {decisionReport.UniqueIndexesEnforcedCount:N0} of {decisionReport.UniqueIndexCount:N0}</li>");
+        builder.AppendLine($"      <li><strong>Foreign keys safe to create:</strong> {decisionReport.ForeignKeysCreatedCount:N0} of {decisionReport.ForeignKeyCount:N0}</li>");
         if (decisionReport.Diagnostics.Length > 0)
         {
             builder.AppendLine($"      <li><strong>Diagnostics:</strong> {decisionReport.Diagnostics.Length:N0} (see policy-decisions.json)</li>");
@@ -374,7 +374,7 @@ internal static class PipelineReportLauncher
         else
         {
             builder.AppendLine("    <table>");
-            builder.AppendLine("      <thead><tr><th>Module</th><th>Tables</th><th>Indexes</th><th>Foreign Keys</th><th>Columns</th><th>Tightened</th><th>Remediation</th><th>Unique Enforced</th><th>Unique Remediation</th><th>Foreign Keys Created</th></tr></thead>");
+            builder.AppendLine("      <thead><tr><th>Module</th><th>Tables</th><th>Indexes</th><th>Foreign Keys</th><th>Columns</th><th>NOT NULL Confirmed</th><th>Remediation</th><th>UNIQUE Confirmed</th><th>Unique Remediation</th><th>FK Safe to Create</th></tr></thead>");
             builder.AppendLine("      <tbody>");
             foreach (var summary in moduleSummaries)
             {
