@@ -25,18 +25,23 @@ public static class PolicyDecisionSummaryFormatter
                 group => group.Key,
                 group => (IReadOnlyList<ColumnDecisionReport>)group.Select(tuple => tuple.column).ToList());
 
+        // PROMINENT CONTRADICTION ALERT - Always at the top if contradictions exist
+        AddIfPresent(entries, BuildContradictionAlert(report.Columns));
+
+        // Informational summaries about what was tightened
         AddIfPresent(entries, BuildMandatorySummary(GetColumns(bucketedColumns, ColumnSummaryBucket.Mandatory)));
         AddIfPresent(entries, BuildForeignKeySummary(GetColumns(bucketedColumns, ColumnSummaryBucket.ForeignKey)));
         AddIfPresent(entries, BuildPrimaryKeySummary(GetColumns(bucketedColumns, ColumnSummaryBucket.PrimaryKey)));
         AddIfPresent(entries, BuildUniqueSummary(GetColumns(bucketedColumns, ColumnSummaryBucket.Unique)));
         AddIfPresent(entries, BuildPhysicalSummary(GetColumns(bucketedColumns, ColumnSummaryBucket.Physical)));
-        AddIfPresent(entries, BuildRemediationSummary(GetColumns(bucketedColumns, ColumnSummaryBucket.Remediation)));
 
+        // Unique indexes and FK creation
         AddIfPresent(entries, BuildUniqueIndexSummary(report.UniqueIndexes));
         AddIfPresent(entries, BuildForeignKeyCreationSummary(report.ForeignKeys));
+
+        // Issues that blocked tightening
+        AddIfPresent(entries, BuildRemediationSummary(GetColumns(bucketedColumns, ColumnSummaryBucket.Remediation)));
         AddIfPresent(entries, BuildProfileMissingSummary(report.Columns));
-        AddIfPresent(entries, BuildNullContradictionSummary(report.Columns));
-        AddIfPresent(entries, BuildOrphanSummary(report.Columns));
 
         if (entries.Count == 0)
         {
@@ -240,6 +245,46 @@ public static class PolicyDecisionSummaryFormatter
         var message =
             $"{FormatCount(created.Length, "foreign key constraint", "foreign key constraints")} were scripted because database or policy conditions allowed enforcement.";
         return new SummaryEntry(created.Length, 80, message);
+    }
+
+    private static SummaryEntry? BuildContradictionAlert(ImmutableArray<ColumnDecisionReport> columns)
+    {
+        var nullContradictions = columns
+            .Where(column => !column.MakeNotNull && HasRationale(column, TighteningRationales.DataHasNulls))
+            .ToArray();
+
+        var orphanContradictions = columns
+            .Where(column => !column.MakeNotNull && HasRationale(column, TighteningRationales.DataHasOrphans))
+            .ToArray();
+
+        var totalContradictions = nullContradictions.Length + orphanContradictions.Length;
+
+        if (totalContradictions == 0)
+        {
+            return null;
+        }
+
+        var builder = new StringBuilder();
+        builder.Append("⚠️  ATTENTION: ");
+
+        var parts = new List<string>();
+        if (nullContradictions.Length > 0)
+        {
+            var entityCount = CountEntities(nullContradictions);
+            parts.Add($"{FormatAttributeCount(nullContradictions.Length)} across {FormatEntityCount(entityCount)} have NULL values that contradict mandatory constraints");
+        }
+
+        if (orphanContradictions.Length > 0)
+        {
+            var entityCount = CountEntities(orphanContradictions);
+            parts.Add($"{FormatAttributeCount(orphanContradictions.Length)} across {FormatEntityCount(entityCount)} have orphaned rows that violate referential integrity");
+        }
+
+        builder.Append(string.Join(" and ", parts));
+        builder.Append(". Manual data remediation is required before tightening can proceed. Review the opportunities report for details.");
+
+        // Priority 1 ensures this appears first
+        return new SummaryEntry(totalContradictions, 1, builder.ToString());
     }
 
     private static SummaryEntry? BuildProfileMissingSummary(ImmutableArray<ColumnDecisionReport> columns)
