@@ -14,6 +14,7 @@ using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.Opportunitie
 using Opportunity = Osm.Validation.Tightening.Opportunities.Opportunity;
 using OpportunityType = Osm.Validation.Tightening.Opportunities.OpportunityType;
 using OpportunityDisposition = Osm.Validation.Tightening.Opportunities.OpportunityDisposition;
+using OpportunityCategory = Osm.Validation.Tightening.Opportunities.OpportunityCategory;
 using Tests.Support;
 using Xunit;
 
@@ -221,6 +222,7 @@ public class PipelineReportLauncherTests
         var opportunities = new OpportunitiesReport(
             ImmutableArray<Opportunity>.Empty,
             ImmutableDictionary<OpportunityDisposition, int>.Empty,
+            ImmutableDictionary<OpportunityCategory, int>.Empty,
             ImmutableDictionary<OpportunityType, int>.Empty,
             ImmutableDictionary<RiskLevel, int>.Empty,
             DateTimeOffset.UnixEpoch);

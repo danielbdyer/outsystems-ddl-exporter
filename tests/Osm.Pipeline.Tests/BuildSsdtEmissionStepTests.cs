@@ -277,6 +277,7 @@ public sealed class BuildSsdtEmissionStepTests
         var opportunities = new OpportunitiesReport(
             ImmutableArray<Opportunity>.Empty,
             ImmutableDictionary<OpportunityDisposition, int>.Empty,
+            ImmutableDictionary<OpportunityCategory, int>.Empty,
             ImmutableDictionary<OpportunityType, int>.Empty,
             ImmutableDictionary<RiskLevel, int>.Empty,
             DateTimeOffset.UtcNow);
