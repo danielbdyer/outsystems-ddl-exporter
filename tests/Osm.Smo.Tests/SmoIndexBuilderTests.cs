@@ -146,4 +146,46 @@ public class SmoIndexBuilderTests
         var includedIndexes = SmoIndexBuilder.BuildIndexes(includeEmitter);
         Assert.Contains(includedIndexes, index => index.IsPlatformAuto);
     }
+
+    [Fact]
+    public void BuildIndexes_orders_unique_indexes_before_non_unique()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var contexts = SmoModelFactory.BuildEntityContexts(model, supplementalEntities: null);
+        var customerEntity = model.Modules
+            .SelectMany(module => module.Entities)
+            .First(entity => entity.LogicalName.Value.Equals("Customer", StringComparison.Ordinal));
+        var customerContext = contexts.GetContext(customerEntity);
+        var profileDefaults = SmoTestHelper.BuildProfileDefaults(snapshot);
+        var foreignKeyReality = SmoTestHelper.BuildForeignKeyReality(snapshot);
+        var emitter = new SmoEntityEmitter(
+            customerContext,
+            decisions,
+            contexts,
+            profileDefaults,
+            foreignKeyReality,
+            TypeMappingPolicy.Default,
+            SmoFormatOptions.Default,
+            includePlatformAutoIndexes: false);
+
+        var indexes = SmoIndexBuilder.BuildIndexes(emitter);
+
+        var uniquePositions = indexes
+            .Select((index, position) => (index, position))
+            .Where(tuple => tuple.index.IsUnique && !tuple.index.IsPrimaryKey)
+            .ToImmutableArray();
+
+        var nonUniquePositions = indexes
+            .Select((index, position) => (index, position))
+            .Where(tuple => !tuple.index.IsUnique && !tuple.index.IsPrimaryKey)
+            .ToImmutableArray();
+
+        Assert.NotEmpty(uniquePositions);
+        Assert.NotEmpty(nonUniquePositions);
+
+        var lastUniquePosition = uniquePositions.Max(tuple => tuple.position);
+        var firstNonUniquePosition = nonUniquePositions.Min(tuple => tuple.position);
+
+        Assert.True(lastUniquePosition < firstNonUniquePosition);
+    }
 }

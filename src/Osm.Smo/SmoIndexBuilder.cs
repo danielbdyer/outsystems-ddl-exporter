@@ -137,7 +137,28 @@ internal static class SmoIndexBuilder
                 metadata));
         }
 
-        return builder.ToImmutable();
+        var indexes = builder.ToImmutable();
+
+        if (indexes.IsDefaultOrEmpty)
+        {
+            return indexes;
+        }
+
+        return indexes
+            .Select((definition, insertionOrder) => new
+            {
+                Definition = definition,
+                insertionOrder,
+                Group = definition.IsPrimaryKey
+                    ? 0
+                    : definition.IsUnique
+                        ? 1
+                        : 2,
+            })
+            .OrderBy(static item => item.Group)
+            .ThenBy(static item => item.insertionOrder)
+            .Select(static item => item.Definition)
+            .ToImmutableArray();
     }
 
     private static ImmutableArray<SmoIndexColumnDefinition> BuildPrimaryKeyColumns(
