@@ -12,6 +12,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Cli.Commands;
 
@@ -227,6 +228,129 @@ internal static class CommandConsole
                 WriteLine(console, "  " + FormatProfilingInsight(insight));
             }
         }
+    }
+
+    public static void EmitContradictionDetails(IConsole console, OpportunitiesReport opportunities)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (opportunities is null || opportunities.ContradictionCount == 0)
+        {
+            return;
+        }
+
+        var contradictions = opportunities.Opportunities
+            .Where(o => o.Category == OpportunityCategory.Contradiction)
+            .ToArray();
+
+        if (contradictions.Length == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, string.Empty);
+        WriteErrorLine(console, "═══════════════════════════════════════════════════════════════════════════════");
+        WriteErrorLine(console, "⚠️  DATA CONTRADICTIONS DETECTED - MANUAL REMEDIATION REQUIRED");
+        WriteErrorLine(console, "═══════════════════════════════════════════════════════════════════════════════");
+        WriteLine(console, string.Empty);
+
+        // Group by severity (based on row count)
+        var bySeverity = contradictions
+            .Select(c => (
+                Opportunity: c,
+                RowCount: c.Columns.FirstOrDefault()?.RowCount ?? 0,
+                NullCount: c.Columns.FirstOrDefault()?.NullCount ?? 0
+            ))
+            .OrderByDescending(x => x.RowCount)
+            .ThenByDescending(x => x.NullCount)
+            .ToArray();
+
+        foreach (var item in bySeverity)
+        {
+            var opp = item.Opportunity;
+            var column = opp.Columns.FirstOrDefault();
+
+            if (column is null)
+            {
+                continue;
+            }
+
+            var severity = GetSeverityLabel(item.RowCount, item.NullCount);
+            WriteErrorLine(console, $"[{severity}] {opp.Type}: {column.Module}.{column.Entity}.{column.Attribute}");
+
+            if (item.RowCount > 0)
+            {
+                WriteErrorLine(console, $"  Total Rows: {item.RowCount:N0}");
+            }
+
+            if (opp.Type == OpportunityType.Nullability && item.NullCount > 0)
+            {
+                var percentage = item.RowCount > 0 ? (item.NullCount * 100.0 / item.RowCount) : 0;
+                WriteErrorLine(console, $"  NULL Values: {item.NullCount:N0} ({percentage:F2}% of total)");
+            }
+
+            if (column.HasDuplicates == true)
+            {
+                WriteErrorLine(console, "  Issue: Duplicate values detected in unique index");
+            }
+
+            if (column.HasOrphans == true)
+            {
+                WriteErrorLine(console, "  Issue: Orphaned rows violate referential integrity");
+            }
+
+            WriteErrorLine(console, $"  Location: {column.Coordinate.Schema.Value}.{column.Coordinate.Table.Value}.{column.Coordinate.Column.Value}");
+            WriteErrorLine(console, $"  Summary: {opp.Summary}");
+
+            if (!opp.Evidence.IsDefaultOrEmpty)
+            {
+                WriteErrorLine(console, "  Evidence:");
+                foreach (var evidence in opp.Evidence.Take(3))
+                {
+                    WriteErrorLine(console, $"    - {evidence}");
+                }
+
+                if (opp.Evidence.Length > 3)
+                {
+                    WriteErrorLine(console, $"    ... {opp.Evidence.Length - 3} more evidence item(s)");
+                }
+            }
+
+            WriteLine(console, string.Empty);
+        }
+
+        WriteLine(console, $"Review the remediation script for details: {opportunities.TotalCount} total opportunities");
+        WriteLine(console, string.Empty);
+    }
+
+    private static string GetSeverityLabel(long rowCount, long nullCount)
+    {
+        if (rowCount == 0)
+        {
+            return "UNKNOWN";
+        }
+
+        var percentage = nullCount * 100.0 / rowCount;
+
+        if (percentage >= 50 || nullCount >= 10000)
+        {
+            return "CRITICAL";
+        }
+
+        if (percentage >= 10 || nullCount >= 1000)
+        {
+            return "HIGH";
+        }
+
+        if (percentage >= 1 || nullCount >= 100)
+        {
+            return "MODERATE";
+        }
+
+        return "LOW";
     }
 
     public static void EmitModuleRollups(
