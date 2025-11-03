@@ -70,10 +70,12 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
             var json = JsonSerializer.Serialize(report, JsonOptions);
             await _fileSystem.File.WriteAllTextAsync(reportPath, json, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
-            var safeScript = BuildSql(report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.ReadyToApply));
+            var safeOpportunities = report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.ReadyToApply).ToList();
+            var safeScript = BuildSql(safeOpportunities, report, "Safe to Apply");
             await _fileSystem.File.WriteAllTextAsync(safePath, safeScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
-            var remediationScript = BuildSql(report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.NeedsRemediation));
+            var remediationOpportunities = report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.NeedsRemediation).ToList();
+            var remediationScript = BuildSql(remediationOpportunities, report, "Needs Remediation");
             await _fileSystem.File.WriteAllTextAsync(remediationPath, remediationScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
             return Result<OpportunityArtifacts>.Success(new OpportunityArtifacts(reportPath, safePath, safeScript, remediationPath, remediationScript));
@@ -86,62 +88,116 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
         }
     }
 
-    private static string BuildSql(IEnumerable<Opportunity> opportunities)
+    private static string BuildSql(IReadOnlyList<Opportunity> opportunities, OpportunitiesReport report, string scriptCategory)
     {
         var builder = new StringBuilder();
-        var any = false;
 
-        foreach (var opportunity in opportunities)
+        // Header with categorization summary
+        builder.AppendLine("-- ============================================================================");
+        builder.AppendLine($"-- OutSystems DDL Exporter - {scriptCategory} Opportunities");
+        builder.AppendLine("-- ============================================================================");
+        builder.AppendLine($"-- Generated: {report.GeneratedAtUtc:yyyy-MM-dd HH:mm:ss} UTC");
+        builder.AppendLine("--");
+        builder.AppendLine("-- SUMMARY:");
+        builder.AppendLine($"--   Total Opportunities: {report.TotalCount}");
+
+        if (report.ContradictionCount > 0)
         {
-            any = true;
-            builder.Append("-- ");
-            builder.Append(opportunity.Type);
-            builder.Append(' ');
-            builder.Append(opportunity.Schema);
-            builder.Append('.');
-            builder.Append(opportunity.Table);
-            builder.Append(" (");
-            builder.Append(opportunity.ConstraintName);
-            builder.Append(") Risk=");
-            builder.AppendLine(opportunity.Risk.Label);
-
-            if (!opportunity.Rationales.IsDefaultOrEmpty)
-            {
-                foreach (var rationale in opportunity.Rationales)
-                {
-                    builder.Append("-- Rationale: ");
-                    builder.AppendLine(rationale);
-                }
-            }
-
-            if (!opportunity.Evidence.IsDefaultOrEmpty)
-            {
-                foreach (var evidence in opportunity.Evidence)
-                {
-                    builder.Append("-- Evidence: ");
-                    builder.AppendLine(evidence);
-                }
-            }
-
-            if (opportunity.HasStatements)
-            {
-                foreach (var statement in opportunity.Statements)
-                {
-                    builder.AppendLine(statement);
-                }
-            }
-            else
-            {
-                builder.AppendLine("-- No automated statement available.");
-            }
-
-            builder.AppendLine("GO");
-            builder.AppendLine();
+            builder.AppendLine($"--   ⚠️  Contradictions: {report.ContradictionCount} (Data violates model expectations - REQUIRES MANUAL REMEDIATION)");
         }
 
-        if (!any)
+        if (report.RecommendationCount > 0)
+        {
+            builder.AppendLine($"--   Recommendations: {report.RecommendationCount} (New constraints that could be safely applied)");
+        }
+
+        if (report.ValidationCount > 0)
+        {
+            builder.AppendLine($"--   Validations: {report.ValidationCount} (Existing constraints confirmed by profiling)");
+        }
+
+        builder.AppendLine("--");
+        builder.AppendLine($"-- This script contains {opportunities.Count} {scriptCategory.ToLowerInvariant()} opportunities.");
+        builder.AppendLine("--");
+
+        var contradictions = opportunities.Where(o => o.IsContradiction).ToList();
+        if (contradictions.Count > 0)
+        {
+            builder.AppendLine("-- ⚠️  WARNING: This script contains DATA CONTRADICTIONS that require manual remediation.");
+            builder.AppendLine("--              Do NOT execute these statements until the underlying data issues are resolved.");
+            builder.AppendLine("--");
+        }
+
+        builder.AppendLine("-- IMPORTANT: Never modify OutSystems model JSON files directly.");
+        builder.AppendLine("--            These scripts are suggestions only and will not auto-execute.");
+        builder.AppendLine("-- ============================================================================");
+        builder.AppendLine();
+
+        if (opportunities.Count == 0)
         {
             builder.AppendLine("-- No opportunities in this category.");
+            return builder.ToString();
+        }
+
+        // Group by category for better organization
+        var byCategory = opportunities.GroupBy(o => o.Category).OrderBy(g => g.Key);
+
+        foreach (var categoryGroup in byCategory)
+        {
+            builder.AppendLine($"-- ========== {categoryGroup.Key} ==========");
+            builder.AppendLine();
+
+            foreach (var opportunity in categoryGroup)
+            {
+                builder.Append("-- ");
+                builder.Append(opportunity.Type);
+                builder.Append(' ');
+                builder.Append(opportunity.Schema);
+                builder.Append('.');
+                builder.Append(opportunity.Table);
+                builder.Append(" (");
+                builder.Append(opportunity.ConstraintName);
+                builder.Append(") Category=");
+                builder.Append(opportunity.Category);
+                builder.Append(" Risk=");
+                builder.AppendLine(opportunity.Risk.Label);
+
+                builder.Append("-- Summary: ");
+                builder.AppendLine(opportunity.Summary);
+
+                if (!opportunity.Rationales.IsDefaultOrEmpty)
+                {
+                    foreach (var rationale in opportunity.Rationales)
+                    {
+                        builder.Append("-- Rationale: ");
+                        builder.AppendLine(rationale);
+                    }
+                }
+
+                if (!opportunity.Evidence.IsDefaultOrEmpty)
+                {
+                    foreach (var evidence in opportunity.Evidence)
+                    {
+                        builder.Append("-- Evidence: ");
+                        builder.AppendLine(evidence);
+                    }
+                }
+
+                if (opportunity.HasStatements)
+                {
+                    foreach (var statement in opportunity.Statements)
+                    {
+                        builder.AppendLine(statement);
+                    }
+                }
+                else
+                {
+                    builder.AppendLine("-- No automated statement available.");
+                }
+
+                builder.AppendLine("GO");
+                builder.AppendLine();
+            }
         }
 
         return builder.ToString();

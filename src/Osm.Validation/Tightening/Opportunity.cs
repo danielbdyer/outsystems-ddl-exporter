@@ -21,6 +21,35 @@ public enum OpportunityDisposition
     NeedsRemediation = 2
 }
 
+/// <summary>
+/// Classifies opportunities to help operators understand the nature of the finding.
+/// </summary>
+public enum OpportunityCategory
+{
+    /// <summary>
+    /// Unknown or unclassified.
+    /// </summary>
+    Unknown = 0,
+
+    /// <summary>
+    /// Data contradicts model expectations and requires manual review/remediation.
+    /// Examples: NULL values in mandatory columns, duplicates in unique indexes, orphaned FK rows.
+    /// </summary>
+    Contradiction = 1,
+
+    /// <summary>
+    /// New constraint opportunity that could be safely applied.
+    /// Examples: Add NOT NULL where data is clean, add unique index where data supports it.
+    /// </summary>
+    Recommendation = 2,
+
+    /// <summary>
+    /// Existing constraint that profiling has validated/confirmed.
+    /// Examples: Already NOT NULL column confirmed clean by profiling.
+    /// </summary>
+    Validation = 3
+}
+
 public sealed record OpportunityEvidenceSummary(
     bool RequiresRemediation,
     bool EvidenceAvailable,
@@ -58,6 +87,7 @@ public sealed record Opportunity(
     string Summary,
     ChangeRisk Risk,
     OpportunityDisposition Disposition,
+    OpportunityCategory Category,
     ImmutableArray<string> Evidence,
     ColumnCoordinate? Column,
     IndexCoordinate? Index,
@@ -71,6 +101,8 @@ public sealed record Opportunity(
 {
     public bool HasStatements => !Statements.IsDefaultOrEmpty && Statements.Length > 0;
 
+    public bool IsContradiction => Category == OpportunityCategory.Contradiction;
+
     public static Opportunity Create(
         OpportunityType type,
         string title,
@@ -80,6 +112,7 @@ public sealed record Opportunity(
         ColumnCoordinate? column = null,
         IndexCoordinate? index = null,
         OpportunityDisposition disposition = OpportunityDisposition.Unknown,
+        OpportunityCategory category = OpportunityCategory.Unknown,
         IEnumerable<string>? statements = null,
         IEnumerable<string>? rationales = null,
         OpportunityEvidenceSummary? evidenceSummary = null,
@@ -116,6 +149,7 @@ public sealed record Opportunity(
             summary,
             risk,
             disposition,
+            category,
             evidenceArray,
             column,
             index,

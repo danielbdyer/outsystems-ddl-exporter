@@ -148,6 +148,106 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         }
     }
 
+    private static OpportunityCategory ClassifyNullabilityOpportunity(
+        NullabilityDecision decision,
+        ImmutableArray<string> rationales,
+        bool isPhysicallyNotNull)
+    {
+        // Contradiction: Data violates model expectations
+        if (decision.RequiresRemediation &&
+            ContainsAny(rationales, TighteningRationales.DataHasNulls, TighteningRationales.DataHasOrphans))
+        {
+            return OpportunityCategory.Contradiction;
+        }
+
+        // Validation: Already physically enforced and profiling confirms it's clean
+        if (isPhysicallyNotNull && decision.MakeNotNull)
+        {
+            return OpportunityCategory.Validation;
+        }
+
+        // Recommendation: New constraint we could safely apply
+        if (decision.MakeNotNull && !decision.RequiresRemediation)
+        {
+            return OpportunityCategory.Recommendation;
+        }
+
+        return OpportunityCategory.Unknown;
+    }
+
+    private static OpportunityCategory ClassifyUniqueOpportunity(
+        UniqueIndexDecision decision,
+        ImmutableArray<string> rationales,
+        bool hasPhysicalUniqueConstraint)
+    {
+        // Contradiction: Duplicates found in unique candidate
+        if (decision.RequiresRemediation &&
+            ContainsAny(rationales,
+                TighteningRationales.UniqueDuplicatesPresent,
+                TighteningRationales.CompositeUniqueDuplicatesPresent))
+        {
+            return OpportunityCategory.Contradiction;
+        }
+
+        // Validation: Already has unique constraint that profiling confirms
+        if (hasPhysicalUniqueConstraint && decision.EnforceUnique)
+        {
+            return OpportunityCategory.Validation;
+        }
+
+        // Recommendation: New unique index we could safely apply
+        if (decision.EnforceUnique && !decision.RequiresRemediation)
+        {
+            return OpportunityCategory.Recommendation;
+        }
+
+        return OpportunityCategory.Unknown;
+    }
+
+    private static OpportunityCategory ClassifyForeignKeyOpportunity(
+        ForeignKeyDecision decision,
+        ImmutableArray<string> rationales,
+        bool hasPhysicalConstraint)
+    {
+        // Contradiction: Orphaned rows detected
+        if (ContainsAny(rationales, TighteningRationales.DataHasOrphans))
+        {
+            return OpportunityCategory.Contradiction;
+        }
+
+        // Validation: Already has FK constraint that profiling confirms
+        if (hasPhysicalConstraint && decision.CreateConstraint)
+        {
+            return OpportunityCategory.Validation;
+        }
+
+        // Recommendation: New FK constraint we could safely apply
+        if (decision.CreateConstraint)
+        {
+            return OpportunityCategory.Recommendation;
+        }
+
+        return OpportunityCategory.Unknown;
+    }
+
+    private static bool ContainsAny(ImmutableArray<string> rationales, params string[] targets)
+    {
+        if (rationales.IsDefault || rationales.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var target in targets)
+        {
+            if (rationales.Contains(target, StringComparer.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static Opportunity CreateNotNullOpportunity(
         NullabilityDecision decision,
         EntityAttributeIndex.EntityAttributeIndexEntry entry,
@@ -169,9 +269,23 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             fkReality?.HasOrphan);
         var columns = ImmutableArray.Create(BuildColumnInsight(entry, columnProfile, uniqueProfile, fkReality));
         var rationales = decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales;
-        var summary = disposition == OpportunityDisposition.NeedsRemediation
-            ? "Remediate data before enforcing NOT NULL."
-            : "Enforce NOT NULL constraint.";
+        var category = ClassifyNullabilityOpportunity(
+            decision,
+            rationales,
+            entry.Attribute.OnDisk.IsNullable == false);
+
+        var summary = category switch
+        {
+            OpportunityCategory.Contradiction =>
+                "DATA CONTRADICTION: Profiling found NULL values that violate the model's mandatory constraint. Manual remediation required.",
+            OpportunityCategory.Validation =>
+                "Validated: Column is already NOT NULL and profiling confirms data integrity.",
+            OpportunityCategory.Recommendation when disposition == OpportunityDisposition.ReadyToApply =>
+                "Recommendation: Column qualifies for NOT NULL enforcement based on profiling evidence.",
+            _ => disposition == OpportunityDisposition.NeedsRemediation
+                ? "Remediate data before enforcing NOT NULL."
+                : "Enforce NOT NULL constraint."
+        };
 
         return Opportunity.Create(
             OpportunityType.Nullability,
@@ -181,6 +295,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             evidence,
             column: entry.Coordinate,
             disposition: disposition,
+            category: category,
             statements: statements,
             rationales: rationales,
             evidenceSummary: evidenceSummary,
@@ -310,9 +425,23 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             hasDuplicates,
             null);
 
-        var summary = disposition == OpportunityDisposition.NeedsRemediation
-            ? "Remediate data before enforcing the unique index."
-            : "Enforce the unique index automatically.";
+        var category = ClassifyUniqueOpportunity(
+            decision,
+            rationales,
+            entry.Index.IsUnique);
+
+        var summary = category switch
+        {
+            OpportunityCategory.Contradiction =>
+                "DATA CONTRADICTION: Profiling found duplicate values in a unique index. Manual remediation required.",
+            OpportunityCategory.Validation =>
+                "Validated: Index is already UNIQUE and profiling confirms data integrity.",
+            OpportunityCategory.Recommendation when disposition == OpportunityDisposition.ReadyToApply =>
+                "Recommendation: Index qualifies for UNIQUE enforcement based on profiling evidence.",
+            _ => disposition == OpportunityDisposition.NeedsRemediation
+                ? "Remediate data before enforcing the unique index."
+                : "Enforce the unique index automatically."
+        };
 
         return Opportunity.Create(
             OpportunityType.UniqueIndex,
@@ -322,6 +451,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             evidence,
             index: new IndexCoordinate(entry.Entity.Schema, entry.Entity.PhysicalName, entry.Index.Name),
             disposition: disposition,
+            category: category,
             statements: statements,
             rationales: rationales,
             evidenceSummary: evidenceSummary,
@@ -387,8 +517,15 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
     {
         var statements = BuildForeignKeyStatements(entry.Entity, entry.Attribute, targetEntity);
         var evidence = BuildForeignKeyEvidence(fkReality);
+        var hasPhysicalConstraint = fkReality?.Reference.HasDatabaseConstraint ?? entry.Attribute.Reference.HasDatabaseConstraint;
+        var hasOrphans = fkReality?.HasOrphan ?? false;
+
+        var disposition = hasOrphans
+            ? OpportunityDisposition.NeedsRemediation
+            : OpportunityDisposition.ReadyToApply;
+
         var evidenceSummary = new OpportunityEvidenceSummary(
-            RequiresRemediation: false,
+            RequiresRemediation: hasOrphans,
             EvidenceAvailable: fkReality is not null,
             DataClean: fkReality is null ? null : !fkReality.HasOrphan,
             HasDuplicates: null,
@@ -396,14 +533,32 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         var columns = ImmutableArray.Create(BuildColumnInsight(entry, null, null, fkReality));
         var rationales = decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales;
 
+        var category = ClassifyForeignKeyOpportunity(decision, rationales, hasPhysicalConstraint);
+
+        var summary = category switch
+        {
+            OpportunityCategory.Contradiction =>
+                "DATA CONTRADICTION: Profiling found orphaned rows that violate referential integrity. Manual remediation required.",
+            OpportunityCategory.Validation =>
+                "Validated: Foreign key constraint already exists and profiling confirms referential integrity.",
+            OpportunityCategory.Recommendation when disposition == OpportunityDisposition.ReadyToApply =>
+                "Recommendation: Foreign key constraint can be safely created based on profiling evidence.",
+            _ => "Create foreign key constraint."
+        };
+
+        var risk = category == OpportunityCategory.Contradiction
+            ? ChangeRisk.High("Orphaned rows detected - remediation required before constraint creation.")
+            : ChangeRisk.Low("Foreign key creation is safe to apply.");
+
         return Opportunity.Create(
             OpportunityType.ForeignKey,
             "FOREIGN KEY",
-            "Create foreign key constraint.",
-            ChangeRisk.Low("Foreign key creation is safe to apply."),
+            summary,
+            risk,
             evidence,
             column: entry.Coordinate,
-            disposition: OpportunityDisposition.ReadyToApply,
+            disposition: disposition,
+            category: category,
             statements: statements,
             rationales: rationales,
             evidenceSummary: evidenceSummary,
@@ -500,6 +655,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
     {
         private readonly ImmutableArray<Opportunity>.Builder _opportunities = ImmutableArray.CreateBuilder<Opportunity>();
         private readonly Dictionary<OpportunityDisposition, int> _dispositionCounts = new();
+        private readonly Dictionary<OpportunityCategory, int> _categoryCounts = new();
         private readonly Dictionary<OpportunityType, int> _typeCounts = new();
         private readonly Dictionary<RiskLevel, int> _riskCounts = new();
 
@@ -507,6 +663,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         {
             _opportunities.Add(opportunity);
             Increment(_dispositionCounts, opportunity.Disposition);
+            Increment(_categoryCounts, opportunity.Category);
             Increment(_typeCounts, opportunity.Type);
             Increment(_riskCounts, opportunity.Risk.Level);
         }
@@ -516,6 +673,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             return new OpportunitiesReport(
                 _opportunities.ToImmutable(),
                 _dispositionCounts.ToImmutableDictionary(),
+                _categoryCounts.ToImmutableDictionary(),
                 _typeCounts.ToImmutableDictionary(),
                 _riskCounts.ToImmutableDictionary(),
                 DateTimeOffset.UtcNow);
