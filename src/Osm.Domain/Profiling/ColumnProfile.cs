@@ -14,7 +14,8 @@ public sealed record ColumnProfile(
     string? DefaultDefinition,
     long RowCount,
     long NullCount,
-    ProfilingProbeStatus NullCountStatus)
+    ProfilingProbeStatus NullCountStatus,
+    NullRowSample? NullRowSample)
 {
     public static Result<ColumnProfile> Create(
         SchemaName schema,
@@ -27,7 +28,8 @@ public sealed record ColumnProfile(
         string? defaultDefinition,
         long rowCount,
         long nullCount,
-        ProfilingProbeStatus nullCountStatus)
+        ProfilingProbeStatus nullCountStatus,
+        NullRowSample? nullRowSample = null)
     {
         if (nullCountStatus is null)
         {
@@ -62,6 +64,7 @@ public sealed record ColumnProfile(
             trimmedDefault,
             rowCount,
             nullCount,
-            nullCountStatus));
+            nullCountStatus,
+            nullRowSample));
     }
 }

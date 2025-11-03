@@ -98,11 +98,14 @@ public sealed class TighteningPolicy
         var uniqueOrchestrator = new UniqueIndexDecisionOrchestrator(new OpportunityBuilder());
         var uniqueAggregation = uniqueOrchestrator.Evaluate(model, uniqueStrategy, columnAggregation.ColumnAnalyses);
 
+        // Merge diagnostics from entity lookup resolution and column analysis
+        var allDiagnostics = lookupResolution.Diagnostics.AddRange(columnAggregation.Diagnostics);
+
         var decisions = PolicyDecisionSet.Create(
             columnAggregation.Nullability,
             columnAggregation.ForeignKeys,
             uniqueAggregation.Decisions,
-            lookupResolution.Diagnostics,
+            allDiagnostics,
             columnAggregation.ColumnIdentities,
             uniqueAggregation.IndexModules,
             options);

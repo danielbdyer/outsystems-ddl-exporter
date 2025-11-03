@@ -60,9 +60,16 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             foreach (var attribute in entity.Attributes)
             {
                 var columnName = attribute.ColumnName.Value;
-                if (metadata.ContainsKey((schema, table, columnName)))
+                var metadataKey = (schema, table, columnName);
+                if (metadata.ContainsKey(metadataKey))
                 {
                     accumulator.AddColumn(columnName);
+
+                    // Track primary key columns from metadata
+                    if (metadata.TryGetValue(metadataKey, out var columnMetadata) && columnMetadata.IsPrimaryKey)
+                    {
+                        accumulator.AddPrimaryKeyColumn(columnName);
+                    }
                 }
 
                 if (attribute.Reference.IsReference && attribute.Reference.TargetEntity is not null)
@@ -121,6 +128,7 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
     private sealed class TableProfilingPlanAccumulator
     {
         private readonly HashSet<string> _columns = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _primaryKeyColumns = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _uniqueKeys = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<UniqueCandidatePlan> _uniqueCandidates = new();
         private readonly HashSet<string> _foreignKeyKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -141,6 +149,14 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             if (!string.IsNullOrWhiteSpace(column))
             {
                 _columns.Add(column);
+            }
+        }
+
+        public void AddPrimaryKeyColumn(string column)
+        {
+            if (!string.IsNullOrWhiteSpace(column))
+            {
+                _primaryKeyColumns.Add(column);
             }
         }
 
@@ -181,9 +197,12 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             var columns = _columns
                 .OrderBy(static value => value, StringComparer.OrdinalIgnoreCase)
                 .ToImmutableArray();
+            var primaryKeyColumns = _primaryKeyColumns
+                .OrderBy(static value => value, StringComparer.OrdinalIgnoreCase)
+                .ToImmutableArray();
             var uniqueCandidates = _uniqueCandidates.ToImmutableArray();
             var foreignKeys = _foreignKeys.ToImmutableArray();
-            return new TableProfilingPlan(Schema, Table, rowCount, columns, uniqueCandidates, foreignKeys);
+            return new TableProfilingPlan(Schema, Table, rowCount, columns, uniqueCandidates, foreignKeys, primaryKeyColumns);
         }
     }
 }
