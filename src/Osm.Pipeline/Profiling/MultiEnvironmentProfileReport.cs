@@ -168,7 +168,7 @@ public sealed record MultiEnvironmentProfileReport(
             }
         }
 
-        return builder.MoveToImmutable();
+        return builder.ToImmutable();
     }
 
     private static ImmutableArray<string> IdentifyNullDrift(
