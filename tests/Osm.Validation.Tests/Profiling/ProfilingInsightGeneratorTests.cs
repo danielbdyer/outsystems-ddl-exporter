@@ -45,6 +45,53 @@ public sealed class ProfilingInsightGeneratorTests
     }
 
     [Fact]
+    public void Generate_rolls_up_nullability_recommendations_by_table()
+    {
+        var firstColumn = ColumnProfile
+            .Create(
+                DefaultSchema,
+                DefaultTable,
+                ColumnName.Create("FirstName").Value,
+                isNullablePhysical: true,
+                isComputed: false,
+                isPrimaryKey: false,
+                isUniqueKey: false,
+                defaultDefinition: null,
+                rowCount: 256,
+                nullCount: 0,
+                ProfilingProbeStatus.Unknown)
+            .Value;
+
+        var secondColumn = ColumnProfile
+            .Create(
+                DefaultSchema,
+                DefaultTable,
+                ColumnName.Create("LastName").Value,
+                isNullablePhysical: true,
+                isComputed: false,
+                isPrimaryKey: false,
+                isUniqueKey: false,
+                defaultDefinition: null,
+                rowCount: 256,
+                nullCount: 0,
+                ProfilingProbeStatus.Unknown)
+            .Value;
+
+        var snapshot = ProfileSnapshot
+            .Create(new[] { firstColumn, secondColumn }, Enumerable.Empty<UniqueCandidateProfile>(), Enumerable.Empty<CompositeUniqueCandidateProfile>(), Enumerable.Empty<ForeignKeyReality>())
+            .Value;
+
+        var generator = new ProfilingInsightGenerator();
+
+        var insight = Assert.Single(generator.Generate(snapshot), i => i.Category == ProfilingInsightCategory.Nullability);
+        Assert.Equal(ProfilingInsightSeverity.Recommendation, insight.Severity);
+        Assert.Null(insight.Coordinate!.Column);
+        Assert.Contains("2 columns", insight.Message);
+        Assert.Contains(firstColumn.Column.Value, insight.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(secondColumn.Column.Value, insight.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Generate_emits_duplicate_warning_for_unique_candidate_with_duplicates()
     {
         var candidate = UniqueCandidateProfile

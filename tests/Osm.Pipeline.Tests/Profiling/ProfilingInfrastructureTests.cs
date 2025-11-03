@@ -39,10 +39,10 @@ public sealed class ProfilingInfrastructureTests
             ")",
             "SELECT ColumnName, NullCount",
             "FROM (",
-            "    SELECT 'ID' AS ColumnName, SUM(CASE WHEN [ID] IS NULL THEN 1 ELSE 0 END) AS NullCount",
+            "    SELECT 'ID' AS ColumnName, SUM(CONVERT(bigint, CASE WHEN [ID] IS NULL THEN 1 ELSE 0 END)) AS NullCount",
             "    FROM Source",
             "    UNION ALL",
-            "    SELECT 'EMAIL' AS ColumnName, SUM(CASE WHEN [EMAIL] IS NULL THEN 1 ELSE 0 END) AS NullCount",
+            "    SELECT 'EMAIL' AS ColumnName, SUM(CONVERT(bigint, CASE WHEN [EMAIL] IS NULL THEN 1 ELSE 0 END)) AS NullCount",
             "    FROM Source",
             ") AS results;"
         }) + Environment.NewLine;

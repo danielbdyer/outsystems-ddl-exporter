@@ -131,7 +131,7 @@ WHERE t.is_ms_shipped = 0 AND {filterClause};";
         command.CommandText = @$"SELECT
     s.name AS SchemaName,
     t.name AS TableName,
-    SUM(p.rows) AS [RowCount]
+    SUM(p.row_count) AS [RowCount]
 FROM sys.tables AS t
 JOIN sys.schemas AS s ON t.schema_id = s.schema_id
 JOIN sys.dm_db_partition_stats AS p ON t.object_id = p.object_id

@@ -26,7 +26,7 @@ reader treats the column as nullable instead of aborting the extraction.
 ```jsonc
 {
   "sql": {
-    "connectionString": "Server=localhost;Database=OutSystems;Trusted_Connection=True;",
+    "connectionString": "Server=localhost;Database=OutSystems;Trusted_Connection=True;MultipleActiveResultSets=True;",
     "metadataContract": {
       "optionalColumns": {
         "AttributeJson": ["AttributesJson"]

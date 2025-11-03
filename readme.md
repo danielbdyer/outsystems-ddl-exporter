@@ -710,7 +710,7 @@ Copy `config/appsettings.example.json` to an environment-specific location (e.g.
   "profile": { "path": "tests/Fixtures/profiling/profile.edge-case.json" },
   "cache": { "root": ".artifacts/cache", "refresh": false },
   "profiler": { "provider": "Fixture", "profilePath": "tests/Fixtures/profiling/profile.edge-case.json" },
-  "sql": { "connectionString": "Server=localhost;Database=OutSystems;Trusted_Connection=True;", "commandTimeoutSeconds": 120 }
+  "sql": { "connectionString": "Server=localhost;Database=OutSystems;Trusted_Connection=True;MultipleActiveResultSets=True;", "commandTimeoutSeconds": 120 }
 }
 ```
 
@@ -939,7 +939,7 @@ private static string TypeToString(DataTypeReference dtr)
 ```bash
 dotnet run --project src/Osm.Cli build-ssdt \
   --in ./model.json \
-  --profile-conn "Server=.;Database=ProdClone;Trusted_Connection=True" \
+  --profile-conn "Server=.;Database=ProdClone;Trusted_Connection=True;MultipleActiveResultSets=True" \
   --mode EvidenceGated \
   --out ./out
 ```
@@ -949,7 +949,7 @@ dotnet run --project src/Osm.Cli build-ssdt \
 ```bash
 dotnet run --project src/Osm.Cli build-ssdt \
   --in ./model.json \
-  --profile-conn "Server=.;Database=ProdClone;Trusted_Connection=True" \
+  --profile-conn "Server=.;Database=ProdClone;Trusted_Connection=True;MultipleActiveResultSets=True" \
   --mode Aggressive \
   --out ./out
 # Inspect out/Modules/*/PreRemediation/*.pre.sql before running

@@ -35,6 +35,8 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
         ImmutableArray<ColumnProfile> columns,
         ImmutableArray<ProfilingInsight>.Builder builder)
     {
+        var recommendationGroups = new Dictionary<(SchemaName Schema, TableName Table), List<NullabilityRecommendationCandidate>>();
+
         foreach (var column in columns)
         {
             var coordinateResult = ProfilingInsightCoordinate.Create(column.Schema, column.Table, column.Column);
@@ -67,22 +69,75 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
                 && column.RowCount > 0
                 && column.NullCount == 0)
             {
+                if (!recommendationGroups.TryGetValue((column.Schema, column.Table), out var candidates))
+                {
+                    candidates = new List<NullabilityRecommendationCandidate>();
+                    recommendationGroups[(column.Schema, column.Table)] = candidates;
+                }
+
                 var message = string.Format(
                     CultureInfo.InvariantCulture,
                     "Column {0} observed 0 null values across {1:N0} rows; consider tightening to NOT NULL.",
                     coordinateText,
                     column.RowCount);
 
+                candidates.Add(new NullabilityRecommendationCandidate(column, coordinate, message));
+            }
+        }
+
+        foreach (var group in recommendationGroups)
+        {
+            var candidates = group.Value;
+            if (candidates.Count == 0)
+            {
+                continue;
+            }
+
+            if (candidates.Count == 1)
+            {
+                var candidate = candidates[0];
                 var insightResult = ProfilingInsight.Create(
                     ProfilingInsightSeverity.Recommendation,
                     ProfilingInsightCategory.Nullability,
-                    message,
-                    coordinate);
+                    candidate.Message,
+                    candidate.Coordinate);
 
                 if (insightResult.IsSuccess)
                 {
                     builder.Add(insightResult.Value);
                 }
+
+                continue;
+            }
+
+            var schema = group.Key.Schema;
+            var table = group.Key.Table;
+            var tableCoordinateResult = ProfilingInsightCoordinate.Create(schema, table);
+            var tableCoordinate = tableCoordinateResult.IsSuccess ? tableCoordinateResult.Value : null;
+            var tableCoordinateText = FormatCoordinate(schema, table, null);
+            var rowCount = candidates.Max(static candidate => candidate.Column.RowCount);
+            var columnNames = candidates
+                .Select(static candidate => candidate.Column.Column.Value)
+                .OrderBy(static name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            var message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} columns in {1} observed 0 null values across {2:N0} rows: {3}. Consider tightening to NOT NULL.",
+                columnNames.Length,
+                tableCoordinateText,
+                rowCount,
+                string.Join(", ", columnNames));
+
+            var aggregatedResult = ProfilingInsight.Create(
+                ProfilingInsightSeverity.Recommendation,
+                ProfilingInsightCategory.Nullability,
+                message,
+                tableCoordinate);
+
+            if (aggregatedResult.IsSuccess)
+            {
+                builder.Add(aggregatedResult.Value);
             }
         }
     }
@@ -252,4 +307,9 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
 
         return string.Join('.', parts);
     }
+
+    private sealed record NullabilityRecommendationCandidate(
+        ColumnProfile Column,
+        ProfilingInsightCoordinate? Coordinate,
+        string Message);
 }
