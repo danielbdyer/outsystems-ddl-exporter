@@ -63,11 +63,25 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
 
         var sampling = CreateSamplingOptions(request.Scope.SqlOptions.Sampling);
         var connectionOptions = CreateConnectionOptions(request.Scope.SqlOptions.Authentication);
-        var profilerOptions = SqlProfilerOptions.Default with
+
+        // Primary profiler uses strict mode (AllowMissingTables=false)
+        // Fails fast if any table doesn't exist in the database
+        var primaryProfilerOptions = SqlProfilerOptions.Default with
         {
             CommandTimeoutSeconds = request.Scope.SqlOptions.CommandTimeoutSeconds,
             Sampling = sampling,
-            NamingOverrides = request.Scope.SmoOptions.NamingOverrides
+            NamingOverrides = request.Scope.SmoOptions.NamingOverrides,
+            AllowMissingTables = false
+        };
+
+        // Secondary profilers use lenient mode (AllowMissingTables=true)
+        // Gracefully skips missing tables to handle environment drift
+        var secondaryProfilerOptions = SqlProfilerOptions.Default with
+        {
+            CommandTimeoutSeconds = request.Scope.SqlOptions.CommandTimeoutSeconds,
+            Sampling = sampling,
+            NamingOverrides = request.Scope.SmoOptions.NamingOverrides,
+            AllowMissingTables = true
         };
 
         var allocator = new EnvironmentLabelAllocator();
@@ -79,7 +93,7 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
         var primaryLabel = allocator.Allocate(primaryEntry.Label, out var primaryAdjusted);
 
         var primaryConnectionFactory = _connectionFactoryFactory(primaryEntry.ConnectionString, connectionOptions);
-        var primaryProfiler = new SqlDataProfiler(primaryConnectionFactory, model, profilerOptions, request.SqlMetadataLog);
+        var primaryProfiler = new SqlDataProfiler(primaryConnectionFactory, model, primaryProfilerOptions, request.SqlMetadataLog);
         var primaryEnvironment = new MultiTargetSqlDataProfiler.ProfilerEnvironment(
             primaryLabel,
             primaryProfiler,
@@ -97,7 +111,7 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
             var parsed = ParseEnvironmentEntry(entry!, defaultLabel);
             var label = allocator.Allocate(parsed.Label, out var adjusted);
             var factory = _connectionFactoryFactory(parsed.ConnectionString, connectionOptions);
-            var environmentProfiler = new SqlDataProfiler(factory, model, profilerOptions, request.SqlMetadataLog);
+            var environmentProfiler = new SqlDataProfiler(factory, model, secondaryProfilerOptions, request.SqlMetadataLog);
             secondaryEnvironments.Add(new MultiTargetSqlDataProfiler.ProfilerEnvironment(
                 label,
                 environmentProfiler,

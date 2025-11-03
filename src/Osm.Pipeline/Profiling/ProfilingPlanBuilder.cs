@@ -31,7 +31,8 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
 
     public Dictionary<(string Schema, string Table), TableProfilingPlan> BuildPlans(
         IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
-        IReadOnlyDictionary<(string Schema, string Table), long> rowCounts)
+        IReadOnlyDictionary<(string Schema, string Table), long> rowCounts,
+        bool allowMissingTables = false)
     {
         if (metadata is null)
         {
@@ -50,6 +51,19 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             var schema = entity.Schema.Value;
             var table = entity.PhysicalName.Value;
             var key = (schema, table);
+
+            // In lenient mode, check if the table has any columns in metadata before processing
+            if (allowMissingTables)
+            {
+                var hasAnyColumn = entity.Attributes.Any(attr =>
+                    metadata.ContainsKey((schema, table, attr.ColumnName.Value)));
+
+                if (!hasAnyColumn)
+                {
+                    // Skip this table entirely - it doesn't exist in this environment
+                    continue;
+                }
+            }
 
             if (!builders.TryGetValue(key, out var accumulator))
             {
@@ -79,11 +93,21 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
                         targetEntry.PreferredIdentifier is { } targetIdentifier)
                     {
                         var targetEntity = targetEntry.Entity;
-                        accumulator.AddForeignKey(
-                            columnName,
-                            targetEntity.Schema.Value,
-                            targetEntity.PhysicalName.Value,
-                            targetIdentifier.ColumnName.Value);
+
+                        // In lenient mode, only add FK if target table exists in metadata
+                        // In strict mode, always add FK (including to system tables like ossys_User)
+                        var targetTableKey = (targetEntity.Schema.Value, targetEntity.PhysicalName.Value);
+                        var targetHasColumns = !allowMissingTables ||
+                            metadata.Keys.Any(k => k.Schema == targetTableKey.Schema && k.Table == targetTableKey.Table);
+
+                        if (targetHasColumns)
+                        {
+                            accumulator.AddForeignKey(
+                                columnName,
+                                targetEntity.Schema.Value,
+                                targetEntity.PhysicalName.Value,
+                                targetIdentifier.ColumnName.Value);
+                        }
                     }
                 }
             }
@@ -98,6 +122,18 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
                 if (orderedColumns.Length == 0)
                 {
                     continue;
+                }
+
+                // In lenient mode, only add unique constraint if all columns exist in metadata
+                if (allowMissingTables)
+                {
+                    var allColumnsExist = orderedColumns.All(col =>
+                        metadata.ContainsKey((schema, table, col)));
+
+                    if (!allColumnsExist)
+                    {
+                        continue;
+                    }
                 }
 
                 accumulator.AddUniqueCandidate(orderedColumns);

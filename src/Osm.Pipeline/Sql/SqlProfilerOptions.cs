@@ -10,7 +10,8 @@ public sealed record SqlProfilerOptions
         SqlSamplingOptions sampling,
         int maxConcurrentTableProfiles,
         SqlProfilerLimits limits,
-        NamingOverrideOptions namingOverrides)
+        NamingOverrideOptions namingOverrides,
+        bool allowMissingTables = false)
     {
         Sampling = sampling ?? throw new ArgumentNullException(nameof(sampling));
         Limits = limits ?? throw new ArgumentNullException(nameof(limits));
@@ -23,6 +24,7 @@ public sealed record SqlProfilerOptions
 
         CommandTimeoutSeconds = commandTimeoutSeconds;
         MaxConcurrentTableProfiles = maxConcurrentTableProfiles;
+        AllowMissingTables = allowMissingTables;
     }
 
     public int? CommandTimeoutSeconds { get; init; }
@@ -35,10 +37,18 @@ public sealed record SqlProfilerOptions
 
     public NamingOverrideOptions NamingOverrides { get; init; }
 
+    /// <summary>
+    /// When true, profiling gracefully skips missing tables to handle environment drift.
+    /// When false (default), profiling fails fast if a table doesn't exist in the database.
+    /// Primary environments should use false (strict mode), secondary environments should use true (lenient mode).
+    /// </summary>
+    public bool AllowMissingTables { get; init; }
+
     public static SqlProfilerOptions Default { get; } = new(
         null,
         SqlSamplingOptions.Default,
         4,
         SqlProfilerLimits.Default,
-        NamingOverrideOptions.Empty);
+        NamingOverrideOptions.Empty,
+        allowMissingTables: false);
 }
