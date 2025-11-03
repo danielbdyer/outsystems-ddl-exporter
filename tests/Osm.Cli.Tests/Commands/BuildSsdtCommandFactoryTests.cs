@@ -102,21 +102,24 @@ public class BuildSsdtCommandFactoryTests
         Assert.Equal("dbo.Orders.sql", table.TableFile);
 
         var output = console.Out.ToString() ?? string.Empty;
-        Assert.Contains("Emitted 1 tables to output", output);
-        var manifestMessage = $"Manifest written to {Path.Combine("output", "manifest.json")}";
-        Assert.Contains(manifestMessage, output);
-        Assert.Contains("Tightening Artifacts:", output);
-        Assert.Contains("Decision log: decision.log", output);
-        Assert.Contains("SQL validation: validated 1 file(s); 0 with errors; 0 error(s).", output);
-        Assert.Contains("Columns tightened: 1/2", output);
-        Assert.Contains("Unique indexes enforced: 1/1", output);
-        Assert.Contains("Foreign keys created: 1/1", output);
+        Assert.Contains("SSDT Emission Summary:", output);
+        Assert.Contains("Tables: 1 emitted to output", output);
+        Assert.Contains("Manifest: ", output);
+        Assert.Contains("manifest.json", output);
+        Assert.Contains("Tightening Statistics:", output);
+        Assert.Contains("Columns: 1/2 tightened", output);
+        Assert.Contains("Unique indexes: 1/1 enforced", output);
+        Assert.Contains("Foreign keys: 1/1 created", output);
+        Assert.Contains("SQL Validation:", output);
+        Assert.Contains("Files: 1 validated, 0 with errors", output);
         Assert.Contains("Module summary:", output);
         Assert.Contains("Sales:", output);
         Assert.Contains("Tables: 1, Indexes: 0, Foreign Keys: 1", output);
         Assert.Contains("Columns: 2 total, 1 tightened, 1 need remediation", output);
         Assert.Contains("Tightening toggles:", output);
         Assert.Contains("policy.mode = EvidenceGated (Configuration)", output);
+        Assert.Contains("Tightening Artifacts:", output);
+        Assert.Contains("Decision log: decision.log", output);
 
         Assert.Equal(string.Empty, console.Error.ToString());
     }
