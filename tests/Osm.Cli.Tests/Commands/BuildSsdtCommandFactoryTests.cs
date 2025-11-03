@@ -21,6 +21,7 @@ using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
@@ -169,8 +170,8 @@ public class BuildSsdtCommandFactoryTests
         Assert.Equal(0, exitCode);
 
         var output = console.Out.ToString() ?? string.Empty;
-        Assert.Contains("Profiling insights:", output);
-        Assert.Contains("[info] dbo.Orders.CustomerId: Column contains 12.5% null values.", output);
+        Assert.Contains("Profiling insights: 1 total (0 errors, 0 warnings, 1 informational)", output);
+        Assert.Contains("[info] [Nullability] dbo.Orders.CustomerId: Column contains 12.5% null values.", output);
     }
 
     [Fact]
@@ -215,11 +216,13 @@ public class BuildSsdtCommandFactoryTests
         Assert.Equal(0, exitCode);
 
         var output = console.Out.ToString() ?? string.Empty;
-        Assert.Contains("SQL validation: validated 2 file(s); 1 with errors; 1 error(s).", output);
+        Assert.Contains("SQL Validation:", output);
+        Assert.Contains("Files: 2 validated, 1 with errors", output);
+        Assert.Contains("Errors: 1 total", output);
 
         var errorOutput = console.Error.ToString() ?? string.Empty;
-        Assert.Contains("SQL validation errors (sample):", errorOutput);
-        Assert.Contains("Modules/Sales/dbo.Orders.sql:5:12 (#102, severity 16) Incorrect syntax near ')'.", errorOutput);
+        Assert.Contains("Error samples:", errorOutput);
+        Assert.Contains("Modules/Sales/dbo.Orders.sql:5:12 [#102] Incorrect syntax near ')'.", errorOutput);
     }
 
     [Fact]
@@ -493,7 +496,8 @@ public class BuildSsdtCommandFactoryTests
                 sqlValidation,
                 null,
                 PipelineExecutionLog.Empty,
-                ImmutableArray<string>.Empty);
+                ImmutableArray<string>.Empty,
+                MultiEnvironmentProfileReport.Empty);
 
             return new BuildSsdtApplicationResult(
                 pipelineResult,

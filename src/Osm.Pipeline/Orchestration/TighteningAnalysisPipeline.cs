@@ -9,6 +9,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Json;
 using Osm.Pipeline.Mediation;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
@@ -178,7 +179,7 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
             "Loaded profiling snapshot from disk.");
     }
 
-    private async Task<Result<ProfileSnapshot>> LoadProfileAsync(string profilePath, CancellationToken cancellationToken)
+    private async Task<Result<ProfileCaptureResult>> LoadProfileAsync(string profilePath, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(profilePath))
         {
@@ -198,7 +199,14 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
 
             cancellationToken.ThrowIfCancellationRequested();
-            return _profileDeserializer.Deserialize(stream);
+            var snapshotResult = _profileDeserializer.Deserialize(stream);
+            if (snapshotResult.IsFailure)
+            {
+                return Result<ProfileCaptureResult>.Failure(snapshotResult.Errors);
+            }
+
+            return Result<ProfileCaptureResult>.Success(
+                new ProfileCaptureResult(snapshotResult.Value, MultiEnvironmentProfileReport.Empty));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

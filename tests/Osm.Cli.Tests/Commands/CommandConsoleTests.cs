@@ -9,6 +9,7 @@ using Osm.Cli.Commands;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using Tests.Support;
 
@@ -143,6 +144,69 @@ public class CommandConsoleTests
         }) + Environment.NewLine;
 
         Assert.Equal(expected, console.Out!.ToString());
+    }
+
+    [Fact]
+    public void EmitMultiEnvironmentReport_WritesTableAndFindings()
+    {
+        var console = new TestConsole();
+        var report = new MultiEnvironmentProfileReport(
+            ImmutableArray.Create(
+                new ProfilingEnvironmentSummary(
+                    "Primary (Sample)",
+                    true,
+                    MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided,
+                    false,
+                    ColumnCount: 10,
+                    ColumnsWithNulls: 1,
+                    ColumnsWithUnknownNullStatus: 0,
+                    UniqueCandidateCount: 2,
+                    UniqueViolations: 0,
+                    UniqueProbeUnknown: 0,
+                    CompositeUniqueCount: 1,
+                    CompositeUniqueViolations: 0,
+                    ForeignKeyCount: 3,
+                    ForeignKeyOrphans: 0,
+                    ForeignKeyProbeUnknown: 0,
+                    ForeignKeyNoCheck: 0,
+                    Duration: TimeSpan.FromSeconds(12)),
+                new ProfilingEnvironmentSummary(
+                    "QA",
+                    false,
+                    MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided,
+                    false,
+                    ColumnCount: 10,
+                    ColumnsWithNulls: 3,
+                    ColumnsWithUnknownNullStatus: 1,
+                    UniqueCandidateCount: 2,
+                    UniqueViolations: 1,
+                    UniqueProbeUnknown: 0,
+                    CompositeUniqueCount: 1,
+                    CompositeUniqueViolations: 0,
+                    ForeignKeyCount: 3,
+                    ForeignKeyOrphans: 2,
+                    ForeignKeyProbeUnknown: 1,
+                    ForeignKeyNoCheck: 0,
+                    Duration: TimeSpan.FromSeconds(45))),
+            ImmutableArray.Create(
+                new MultiEnvironmentFinding(
+                    "profiling.multiEnvironment.foreignKey",
+                    "QA: orphaned foreign keys",
+                    "2 orphaned foreign key reference(s) detected while Primary (Sample) reports 0.",
+                    MultiEnvironmentFindingSeverity.Critical,
+                    "Review QA data quality before enforcing FKs.",
+                    ImmutableArray<string>.Empty)));
+
+        CommandConsole.EmitMultiEnvironmentReport(console, report);
+
+        var output = console.Out!.ToString()!;
+        Assert.Contains("Multi-environment profiling summary:", output);
+        Assert.Contains("Environment | Role | Label Source", output);
+        Assert.Contains("⭐ Primary (Sample) | Primary | Provided", output);
+        Assert.Contains("QA | Secondary | Provided", output);
+        Assert.Contains("Environment findings:", output);
+        Assert.Contains("QA: orphaned foreign keys", output);
+        Assert.Contains("Review QA data quality", output);
     }
 
     [Fact]

@@ -12,6 +12,7 @@ using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Emission;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -245,7 +246,8 @@ public sealed class BuildSsdtEmissionStepTests
             ImmutableArray<EntityModel>.Empty,
             profile,
             ImmutableArray<ProfilingInsight>.Empty,
-            ImmutableArray<string>.Empty);
+            ImmutableArray<string>.Empty,
+            MultiEnvironmentProfileReport.Empty);
     }
 
     private static DecisionsSynthesized CreateDecisionState(

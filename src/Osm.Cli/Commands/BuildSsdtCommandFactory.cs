@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.IO;
@@ -130,6 +131,7 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         if (IsSqlProfiler(applicationResult.ProfilerProvider))
         {
             CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
+            CommandConsole.EmitMultiEnvironmentReport(context.Console, pipelineResult.MultiEnvironmentReport);
         }
 
         // Execution log and warnings

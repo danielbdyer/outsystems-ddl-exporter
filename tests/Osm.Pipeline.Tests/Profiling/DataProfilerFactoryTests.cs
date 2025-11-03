@@ -1,4 +1,8 @@
+using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
+using System.Reflection;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
@@ -69,6 +73,86 @@ public sealed class DataProfilerFactoryTests
 
         Assert.True(result.IsSuccess);
         Assert.IsType<MultiTargetSqlDataProfiler>(result.Value);
+    }
+
+    [Fact]
+    public void Create_sql_profiler_allows_named_connection_strings()
+    {
+        var connectionBuilder = new RecordingConnectionFactoryBuilder();
+        var factory = new DataProfilerFactory(new ProfileSnapshotDeserializer(), connectionBuilder.Create);
+        var sqlOptions = new ResolvedSqlOptions(
+            ConnectionString: "Primary Env::Server=.;Database=Sample;",
+            CommandTimeoutSeconds: null,
+            Sampling: new SqlSamplingSettings(null, null),
+            Authentication: new SqlAuthenticationSettings(null, null, null, null),
+            MetadataContract: MetadataContractOverrides.Strict,
+            ProfilingConnectionStrings: ImmutableArray.Create("QA::Server=.;Database=Secondary;"));
+        var request = CreateRequest("sql", profilePath: null, sqlOptions);
+
+        var result = factory.Create(request, Model);
+
+        Assert.True(result.IsSuccess);
+        Assert.IsType<MultiTargetSqlDataProfiler>(result.Value);
+        Assert.Equal(2, connectionBuilder.Connections.Count);
+        Assert.Equal("Server=.;Database=Sample;", connectionBuilder.Connections[0]);
+        Assert.Equal("Server=.;Database=Secondary;", connectionBuilder.Connections[1]);
+    }
+
+    [Fact]
+    public void Create_sql_profiler_preserves_label_metadata_and_deduplicates_conflicts()
+    {
+        var connectionBuilder = new RecordingConnectionFactoryBuilder();
+        var factory = new DataProfilerFactory(new ProfileSnapshotDeserializer(), connectionBuilder.Create);
+        var sqlOptions = new ResolvedSqlOptions(
+            ConnectionString: "Server=.;Database=PrimaryDb;", 
+            CommandTimeoutSeconds: null,
+            Sampling: new SqlSamplingSettings(null, null),
+            Authentication: new SqlAuthenticationSettings(null, null, null, null),
+            MetadataContract: MetadataContractOverrides.Strict,
+            ProfilingConnectionStrings: ImmutableArray.Create(
+                "QA::Server=.;Database=SecondaryOne;",
+                "QA::Server=.;Database=SecondaryTwo;",
+                "Server=.;Application Name=Reporting;"));
+
+        var request = CreateRequest("sql", profilePath: null, sqlOptions);
+
+        var result = factory.Create(request, Model);
+
+        Assert.True(result.IsSuccess);
+        var profiler = Assert.IsType<MultiTargetSqlDataProfiler>(result.Value);
+
+        var targets = GetTargets(profiler);
+        Assert.Equal(4, targets.Length);
+
+        Assert.Collection(targets,
+            target =>
+            {
+                Assert.Equal("Primary (PrimaryDb)", target.Name);
+                Assert.True(target.IsPrimary);
+                Assert.Equal(MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.DerivedFromDatabase, target.LabelOrigin);
+                Assert.False(target.LabelWasAdjusted);
+            },
+            target =>
+            {
+                Assert.Equal("QA", target.Name);
+                Assert.False(target.IsPrimary);
+                Assert.Equal(MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided, target.LabelOrigin);
+                Assert.False(target.LabelWasAdjusted);
+            },
+            target =>
+            {
+                Assert.Equal("QA #2", target.Name);
+                Assert.False(target.IsPrimary);
+                Assert.Equal(MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided, target.LabelOrigin);
+                Assert.True(target.LabelWasAdjusted);
+            },
+            target =>
+            {
+                Assert.Equal("Secondary #3 (Reporting)", target.Name);
+                Assert.False(target.IsPrimary);
+                Assert.Equal(MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.DerivedFromApplicationName, target.LabelOrigin);
+                Assert.False(target.LabelWasAdjusted);
+            });
     }
 
     [Fact]
@@ -156,15 +240,30 @@ public sealed class DataProfilerFactoryTests
             SqlMetadataLog: null);
     }
 
+    private static ImmutableArray<MultiTargetSqlDataProfiler.ProfilerEnvironment> GetTargets(MultiTargetSqlDataProfiler profiler)
+    {
+        var field = typeof(MultiTargetSqlDataProfiler)
+            .GetField("_targets", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        if (field is null)
+        {
+            throw new InvalidOperationException("Expected targets field not found.");
+        }
+
+        return (ImmutableArray<MultiTargetSqlDataProfiler.ProfilerEnvironment>)field.GetValue(profiler)!;
+    }
+
     private sealed class RecordingConnectionFactoryBuilder
     {
         public string? LastConnectionString { get; private set; }
         public SqlConnectionOptions? LastOptions { get; private set; }
+        public List<string> Connections { get; } = new();
 
         public IDbConnectionFactory Create(string connectionString, SqlConnectionOptions options)
         {
             LastConnectionString = connectionString;
             LastOptions = options;
+            Connections.Add(connectionString);
             return new StubConnectionFactory();
         }
 

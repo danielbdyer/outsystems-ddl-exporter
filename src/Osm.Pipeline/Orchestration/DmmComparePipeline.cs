@@ -127,8 +127,18 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
             request.Scope.ModuleFilter,
             request.Scope.SupplementalModels,
             telemetry,
-            (_, token) => new FixtureDataProfiler(request.Scope.ProfilePath, _profileSnapshotDeserializer)
-                .CaptureAsync(token),
+            async (_, token) =>
+            {
+                var profiler = new FixtureDataProfiler(request.Scope.ProfilePath, _profileSnapshotDeserializer);
+                var snapshotResult = await profiler.CaptureAsync(token).ConfigureAwait(false);
+                if (snapshotResult.IsFailure)
+                {
+                    return Result<ProfileCaptureResult>.Failure(snapshotResult.Errors);
+                }
+
+                return Result<ProfileCaptureResult>.Success(
+                    new ProfileCaptureResult(snapshotResult.Value, MultiEnvironmentProfileReport.Empty));
+            },
             request.Scope.InlineModel,
             request.Scope.ModelWarnings);
 

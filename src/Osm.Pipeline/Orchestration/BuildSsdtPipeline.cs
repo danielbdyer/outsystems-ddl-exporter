@@ -126,7 +126,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.SqlValidation,
             finalState.EvidenceCache,
             finalState.Log.Build(),
-            finalState.Bootstrap.Warnings);
+            finalState.Bootstrap.Warnings,
+            finalState.Bootstrap.MultiEnvironmentReport);
     }
 
     private static ImmutableDictionary<string, ModuleManifestRollup> BuildModuleManifestRollups(SsdtManifest manifest)

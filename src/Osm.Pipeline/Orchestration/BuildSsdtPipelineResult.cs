@@ -3,6 +3,7 @@ using Osm.Domain.Profiling;
 using Osm.Emission;
 using Osm.Pipeline.Evidence;
 using Osm.Validation.Tightening;
+using Osm.Pipeline.Profiling;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
 
 namespace Osm.Pipeline.Orchestration;
@@ -26,7 +27,8 @@ public sealed record BuildSsdtPipelineResult(
     SsdtSqlValidationSummary SqlValidation,
     EvidenceCacheResult? EvidenceCache,
     PipelineExecutionLog ExecutionLog,
-    ImmutableArray<string> Warnings);
+    ImmutableArray<string> Warnings,
+    MultiEnvironmentProfileReport? MultiEnvironmentReport);
 
 public sealed record ModuleManifestRollup(int TableCount, int IndexCount, int ForeignKeyCount)
 {

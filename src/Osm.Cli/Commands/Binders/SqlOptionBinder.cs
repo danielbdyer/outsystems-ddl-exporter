@@ -39,7 +39,7 @@ internal sealed class SqlOptionBinder : BinderBase<SqlOptionsOverrides>, IComman
         };
         ApplicationNameOption = new Option<string?>("--sql-application-name", "Application name for SQL connections.");
         AccessTokenOption = new Option<string?>("--sql-access-token", "Access token for SQL authentication.");
-        ProfilingConnectionStringsOption = new Option<string[]>("--profiling-connection-string", "Additional SQL connection strings for profiling secondary environments.")
+        ProfilingConnectionStringsOption = new Option<string[]>("--profiling-connection-string", "Additional SQL connection strings for profiling secondary environments (prefix with 'Name::' to label each environment).")
         {
             Arity = ArgumentArity.ZeroOrMore,
             AllowMultipleArgumentsPerToken = true

@@ -8,6 +8,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Profiling;
 
 namespace Osm.Pipeline.Orchestration;
@@ -25,7 +26,7 @@ public sealed record PipelineBootstrapRequest(
     ModuleFilterOptions ModuleFilter,
     SupplementalModelOptions SupplementalModels,
     PipelineBootstrapTelemetry Telemetry,
-    Func<OsmModel, CancellationToken, Task<Result<ProfileSnapshot>>> ProfileCaptureAsync,
+    Func<OsmModel, CancellationToken, Task<Result<ProfileCaptureResult>>> ProfileCaptureAsync,
     OsmModel? InlineModel = null,
     ImmutableArray<string> ModelWarnings = default);
 
@@ -41,7 +42,8 @@ public sealed record PipelineBootstrapContext(
     ImmutableArray<EntityModel> SupplementalEntities,
     ProfileSnapshot Profile,
     ImmutableArray<ProfilingInsight> Insights,
-    ImmutableArray<string> Warnings);
+    ImmutableArray<string> Warnings,
+    MultiEnvironmentProfileReport? MultiEnvironmentReport);
 
 public sealed class PipelineBootstrapper : IPipelineBootstrapper
 {

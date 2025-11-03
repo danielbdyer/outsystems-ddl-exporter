@@ -13,6 +13,7 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
+using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using Opportunities = Osm.Validation.Tightening.Opportunities;
 using Xunit;
@@ -139,7 +140,8 @@ public sealed class BuildSsdtApplicationServiceTests
             SsdtSqlValidationSummary.Empty,
             null,
             PipelineExecutionLog.Empty,
-            ImmutableArray<string>.Empty);
+            ImmutableArray<string>.Empty,
+            MultiEnvironmentProfileReport.Empty);
     }
 
     private sealed class RecordingDispatcher : ICommandDispatcher
