@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
+using System.Linq;
 using System.Text;
-using Osm.Emission.Formatting;
 
 namespace Osm.Validation.Tightening;
 
@@ -14,8 +14,8 @@ internal static class RemediationQueryBuilder
         string? suggestedDefaultValue = null)
     {
         var builder = new StringBuilder();
-        var quotedTable = SqlIdentifierFormatter.Qualify(schema, table);
-        var quotedColumn = SqlIdentifierFormatter.Quote(column);
+        var quotedTable = QualifyIdentifier(schema, table);
+        var quotedColumn = QuoteIdentifier(column);
 
         builder.AppendLine("-- Option 1: Set NULL values to a default");
         builder.Append("UPDATE ").AppendLine(quotedTable);
@@ -42,15 +42,32 @@ internal static class RemediationQueryBuilder
             builder.AppendLine();
             builder.AppendLine("-- Option 3: Review specific rows and decide on a case-by-case basis");
             builder.Append("SELECT ");
-            builder.Append(string.Join(", ", primaryKeyColumns.Select(SqlIdentifierFormatter.Quote)));
+            builder.Append(string.Join(", ", primaryKeyColumns.Select(QuoteIdentifier)));
             builder.AppendLine(", *");
             builder.Append("FROM ").AppendLine(quotedTable);
             builder.Append("WHERE ").Append(quotedColumn).AppendLine(" IS NULL");
             builder.Append("ORDER BY ");
-            builder.Append(string.Join(", ", primaryKeyColumns.Select(SqlIdentifierFormatter.Quote)));
+            builder.Append(string.Join(", ", primaryKeyColumns.Select(QuoteIdentifier)));
             builder.AppendLine(";");
         }
 
         return builder.ToString();
+    }
+
+    private static string QuoteIdentifier(string identifier)
+    {
+        if (string.IsNullOrEmpty(identifier))
+        {
+            return "[]";
+        }
+
+        // Escape any existing brackets and wrap in brackets
+        var escaped = identifier.Replace("]", "]]");
+        return $"[{escaped}]";
+    }
+
+    private static string QualifyIdentifier(string schema, string objectName)
+    {
+        return $"{QuoteIdentifier(schema)}.{QuoteIdentifier(objectName)}";
     }
 }
