@@ -269,7 +269,12 @@ SELECT
         eById.PhysicalTableName,
         eByKey.PhysicalTableName,
         fallbackById.PhysicalTableName,
-        fallbackByKey.PhysicalTableName)                  AS RefPhysicalName
+        fallbackByKey.PhysicalTableName)                  AS RefPhysicalName,
+    COALESCE(
+        eById.EntityIsActive,
+        eByKey.EntityIsActive,
+        fallbackById.EntityIsActive,
+        fallbackByKey.EntityIsActive)                     AS RefEntityIsActive
 INTO #RefResolved
 FROM #Attr a
 LEFT JOIN #Ent eById ON eById.EntityId = a.RefEntityId
@@ -283,7 +288,8 @@ OUTER APPLY (
     SELECT TOP (1)
         en.[Id] AS EntityId,
         en.[Name] AS EntityName,
-        en.[Physical_Table_Name] AS PhysicalTableName
+        en.[Physical_Table_Name] AS PhysicalTableName,
+        CAST(ISNULL(en.[Is_Active], 1) AS bit) AS EntityIsActive
     FROM dbo.ossys_Entity en
     WHERE a.RefEntityId IS NOT NULL
       AND en.[Id] = a.RefEntityId
@@ -292,7 +298,8 @@ OUTER APPLY (
     SELECT TOP (1)
         en.[Id] AS EntityId,
         en.[Name] AS EntityName,
-        en.[Physical_Table_Name] AS PhysicalTableName
+        en.[Physical_Table_Name] AS PhysicalTableName,
+        CAST(ISNULL(en.[Is_Active], 1) AS bit) AS EntityIsActive
     FROM dbo.ossys_Entity en
     JOIN dbo.ossys_Espace ee ON ee.[Id] = en.[Espace_Id]
     WHERE pr.RefEntitySSKey IS NOT NULL
@@ -728,6 +735,7 @@ SELECT
       COALESCE(a.RefEntityId, r.RefEntityId) AS [refEntityId],
       r.RefEntityName AS [refEntity_name],
       r.RefPhysicalName AS [refEntity_physicalName],
+      CAST(r.RefEntityIsActive AS int) AS [refEntity_isActive],
       a.DeleteRule AS [reference_deleteRuleCode],
       CAST(ISNULL(h.HasFK, 0) AS int) AS [hasDbConstraint],
       a.ExternalColumnType AS [external_dbType],
@@ -974,7 +982,8 @@ SELECT
   rr.AttrId,
   rr.RefEntityId,
   rr.RefEntityName,
-  rr.RefPhysicalName
+  rr.RefPhysicalName,
+  rr.RefEntityIsActive
 FROM #RefResolved AS rr
 ORDER BY rr.AttrId;
 
