@@ -26,7 +26,7 @@ public sealed record ResolvedSqlOptions(
         null => 1.0,  // Default: require 100% consensus
         < 0.0 => 0.0,
         > 1.0 => 1.0,
-        var value => value
+        double value => value
     };
 }
 
