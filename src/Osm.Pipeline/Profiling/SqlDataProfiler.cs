@@ -71,7 +71,28 @@ public sealed class SqlDataProfiler : IDataProfiler
 
             var metadata = await _metadataLoader.LoadColumnMetadataAsync(connection, tables, cancellationToken).ConfigureAwait(false);
             var rowCounts = await _metadataLoader.LoadRowCountsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
-            var plans = _planBuilder.BuildPlans(metadata, rowCounts, _options.AllowMissingTables);
+            var plans = _planBuilder.BuildPlans(
+                metadata,
+                rowCounts,
+                _options.AllowMissingTables,
+                _options.TableNameMappings.IsDefaultOrEmpty ? null : _options.TableNameMappings.ToArray());
+
+            // Log table name mappings when used
+            if (_options.AllowMissingTables && !_options.TableNameMappings.IsDefaultOrEmpty && _metadataLog is not null)
+            {
+                foreach (var mapping in _options.TableNameMappings)
+                {
+                    _metadataLog.RecordRequest(
+                        "profiling.table.mapped",
+                        new
+                        {
+                            SourceSchema = mapping.SourceSchema,
+                            SourceTable = mapping.SourceTable,
+                            TargetSchema = mapping.TargetSchema,
+                            TargetTable = mapping.TargetTable
+                        });
+                }
+            }
 
             // Log skipped tables when in lenient mode
             if (_options.AllowMissingTables && _metadataLog is not null)

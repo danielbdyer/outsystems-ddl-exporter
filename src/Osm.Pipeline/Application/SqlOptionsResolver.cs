@@ -97,12 +97,21 @@ internal static class SqlOptionsResolver
                 .ToImmutableArray();
         }
 
+        var tableNameMappings = configuration.Sql.TableNameMappings
+            .Where(static mapping =>
+                !string.IsNullOrWhiteSpace(mapping.SourceSchema) &&
+                !string.IsNullOrWhiteSpace(mapping.SourceTable) &&
+                !string.IsNullOrWhiteSpace(mapping.TargetSchema) &&
+                !string.IsNullOrWhiteSpace(mapping.TargetTable))
+            .ToImmutableArray();
+
         return new ResolvedSqlOptions(
             connection?.Trim(),
             timeout,
             new SqlSamplingSettings(sampling.RowSamplingThreshold, sampling.SampleSize),
             new SqlAuthenticationSettings(authentication.Method, authentication.TrustServerCertificate, authentication.ApplicationName, authentication.AccessToken),
             contractOverrides,
-            profilingConnections);
+            profilingConnections,
+            tableNameMappings);
     }
 }

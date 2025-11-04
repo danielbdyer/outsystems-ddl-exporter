@@ -76,12 +76,21 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
 
         // Secondary profilers use lenient mode (AllowMissingTables=true)
         // Gracefully skips missing tables to handle environment drift
+        var tableNameMappings = request.Scope.SqlOptions.TableNameMappings
+            .Select(static config => new Sql.TableNameMapping(
+                config.SourceSchema,
+                config.SourceTable,
+                config.TargetSchema,
+                config.TargetTable))
+            .ToImmutableArray();
+
         var secondaryProfilerOptions = SqlProfilerOptions.Default with
         {
             CommandTimeoutSeconds = request.Scope.SqlOptions.CommandTimeoutSeconds,
             Sampling = sampling,
             NamingOverrides = request.Scope.SmoOptions.NamingOverrides,
-            AllowMissingTables = true
+            AllowMissingTables = true,
+            TableNameMappings = tableNameMappings
         };
 
         var allocator = new EnvironmentLabelAllocator();
