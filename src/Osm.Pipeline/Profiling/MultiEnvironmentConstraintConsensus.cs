@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using Osm.Domain.Profiling;
 
 namespace Osm.Pipeline.Profiling;
@@ -82,6 +83,59 @@ public sealed class MultiEnvironmentConstraintConsensus
         ImmutableArray<ConstraintConsensusResult>.Empty,
         ImmutableArray<ConstraintConsensusResult>.Empty,
         new ConsensusStatistics(0, 0, 0, 0, 0, 0, 0));
+
+    /// <summary>
+    /// Formats the consensus analysis as a human-readable report.
+    /// </summary>
+    public string FormatReport(bool includeDetails = true)
+    {
+        var report = new StringBuilder();
+        report.AppendLine("=== Multi-Environment Constraint Consensus Analysis ===");
+        report.AppendLine();
+        report.AppendLine(Statistics.FormatSummary());
+        report.AppendLine();
+
+        if (!includeDetails)
+        {
+            return report.ToString();
+        }
+
+        // Report unsafe constraints requiring remediation
+        var unsafeConstraints = NullabilityConsensus
+            .Concat(UniqueConstraintConsensus)
+            .Concat(ForeignKeyConsensus)
+            .Where(c => !c.IsSafeToApply)
+            .OrderBy(c => c.ConstraintType)
+            .ThenBy(c => c.ConstraintDescriptor)
+            .ToList();
+
+        if (unsafeConstraints.Any())
+        {
+            report.AppendLine("Unsafe Constraints Requiring Remediation:");
+            report.AppendLine();
+
+            foreach (var constraint in unsafeConstraints.Take(20)) // Limit to top 20
+            {
+                report.AppendLine($"  [{constraint.ConstraintType}] {constraint.ConstraintDescriptor}");
+                report.AppendLine($"    Consensus: {constraint.SafeEnvironmentCount}/{constraint.TotalEnvironmentCount} ({constraint.ConsensusRatio:P1})");
+                report.AppendLine($"    Action: {constraint.Recommendation}");
+                report.AppendLine();
+            }
+
+            if (unsafeConstraints.Count > 20)
+            {
+                report.AppendLine($"  ... and {unsafeConstraints.Count - 20} more unsafe constraints");
+                report.AppendLine();
+            }
+        }
+        else
+        {
+            report.AppendLine("✓ All constraints are safe to apply across all environments!");
+            report.AppendLine();
+        }
+
+        return report.ToString();
+    }
 
     private static IEnumerable<ConstraintConsensusResult> AnalyzeNullabilityConsensus(
         ImmutableArray<ProfilingEnvironmentSnapshot> snapshots,
@@ -174,6 +228,8 @@ public sealed class MultiEnvironmentConstraintConsensus
         }
 
         // Analyze composite unique constraints
+        // NOTE: CompositeUniqueCandidateProfile does not have ProbeStatus field (unlike UniqueCandidateProfile)
+        // So we can only check HasDuplicate, not probe success
         var compositeByKey = snapshots
             .SelectMany(env => env.Snapshot.CompositeUniqueCandidates.Select(c => new { Environment = env.Name, Composite = c }))
             .GroupBy(item => (
@@ -188,9 +244,8 @@ public sealed class MultiEnvironmentConstraintConsensus
             var composites = group.Items;
             var environmentsPresent = composites.Count;
 
-            var safeEnvironments = composites.Count(item =>
-                !item.Composite.HasDuplicate &&
-                item.Composite.ProbeStatus.Outcome == ProfilingProbeOutcome.Succeeded);
+            // Safe if no duplicates (cannot check probe status as field doesn't exist)
+            var safeEnvironments = composites.Count(item => !item.Composite.HasDuplicate);
 
             var consensusRatio = environmentsPresent > 0 ? (double)safeEnvironments / environmentsPresent : 0.0;
             var isSafe = consensusRatio >= threshold;

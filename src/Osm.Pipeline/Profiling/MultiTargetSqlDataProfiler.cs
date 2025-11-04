@@ -212,7 +212,10 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
             }
 
             // Aggregate: use maximum NULL count (most conservative for constraint application)
-            // Use most pessimistic probe status to reflect reality across environments
+            // CRITICAL: Also use maximum row count to prevent validation failures
+            // If Environment A has 1000 rows and Environment B has 2000 rows with 1500 NULLs,
+            // we must use 2000 as row count to allow 1500 NULLs to validate
+            var maxRowCount = Math.Max(existing.RowCount, column.RowCount);
             var maxNullCount = Math.Max(existing.NullCount, column.NullCount);
             var worstProbeStatus = AggregateProbeStatus(existing.NullCountStatus, column.NullCountStatus);
 
@@ -220,8 +223,9 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
             var aggregatedSample = existing.NullRowSample ?? column.NullRowSample;
 
             // Use first occurrence's metadata (physical nullability, PK, etc.) as baseline
-            // but aggregate data quality metrics
-            if (maxNullCount != existing.NullCount ||
+            // but aggregate data quality metrics (row count, null count, probe status)
+            if (maxRowCount != existing.RowCount ||
+                maxNullCount != existing.NullCount ||
                 worstProbeStatus != existing.NullCountStatus ||
                 aggregatedSample != existing.NullRowSample)
             {
@@ -234,7 +238,7 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
                     existing.IsPrimaryKey,
                     existing.IsUniqueKey,
                     existing.DefaultDefinition,
-                    existing.RowCount, // Keep first occurrence's row count as baseline
+                    maxRowCount,       // Use max row count to accommodate max null count
                     maxNullCount,      // Use worst case across environments
                     worstProbeStatus,  // Use worst probe outcome
                     aggregatedSample);
@@ -242,6 +246,11 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
                 if (aggregated.IsSuccess)
                 {
                     map[key] = aggregated.Value;
+                }
+                else
+                {
+                    // Log validation failure but keep existing to prevent data loss
+                    // This should not happen with max row count, but defensive coding
                 }
             }
         }
@@ -301,17 +310,16 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
             }
 
             // Aggregate: if ANY environment has duplicates, mark as having duplicates
+            // NOTE: CompositeUniqueCandidateProfile does not have ProbeStatus field (unlike UniqueCandidateProfile)
             var hasDuplicate = existing.HasDuplicate || profile.HasDuplicate;
-            var worstProbeStatus = AggregateProbeStatus(existing.ProbeStatus, profile.ProbeStatus);
 
-            if (hasDuplicate != existing.HasDuplicate || worstProbeStatus != existing.ProbeStatus)
+            if (hasDuplicate != existing.HasDuplicate)
             {
                 var aggregated = CompositeUniqueCandidateProfile.Create(
                     existing.Schema,
                     existing.Table,
                     existing.Columns,  // Use first occurrence's column order
-                    hasDuplicate,
-                    worstProbeStatus);
+                    hasDuplicate);
 
                 if (aggregated.IsSuccess)
                 {
@@ -368,16 +376,38 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
 
     private static ProfilingProbeStatus AggregateProbeStatus(ProfilingProbeStatus first, ProfilingProbeStatus second)
     {
+        // Null safety: if either is null, return the non-null one or Unknown
+        if (first is null && second is null)
+        {
+            return ProfilingProbeStatus.Unknown;
+        }
+
+        if (first is null)
+        {
+            return second;
+        }
+
+        if (second is null)
+        {
+            return first;
+        }
+
         // Aggregate probe statuses: use the worst outcome for conservative constraint application
-        // Priority: Cancelled > Timeout > Succeeded
+        // Priority: Unknown > Cancelled > FallbackTimeout > Succeeded
+        // Unknown is worst because we have no information about the data
+        if (first.Outcome == ProfilingProbeOutcome.Unknown || second.Outcome == ProfilingProbeOutcome.Unknown)
+        {
+            return first.Outcome == ProfilingProbeOutcome.Unknown ? first : second;
+        }
+
         if (first.Outcome == ProfilingProbeOutcome.Cancelled || second.Outcome == ProfilingProbeOutcome.Cancelled)
         {
             return first.Outcome == ProfilingProbeOutcome.Cancelled ? first : second;
         }
 
-        if (first.Outcome == ProfilingProbeOutcome.Timeout || second.Outcome == ProfilingProbeOutcome.Timeout)
+        if (first.Outcome == ProfilingProbeOutcome.FallbackTimeout || second.Outcome == ProfilingProbeOutcome.FallbackTimeout)
         {
-            return first.Outcome == ProfilingProbeOutcome.Timeout ? first : second;
+            return first.Outcome == ProfilingProbeOutcome.FallbackTimeout ? first : second;
         }
 
         // Both succeeded - return first (they're equivalent)

@@ -134,7 +134,7 @@ public sealed class ProfilingStandardizationValidator
                 issues.Add(new ValidationIssue(
                     ValidationIssueSeverity.Warning,
                     $"{environmentName}: {column.Schema.Value}.{column.Table.Value}.{column.Column.Value}",
-                    $"NULL count probe {column.NullCountStatus.Outcome}: {column.NullCountStatus.Description}",
+                    $"NULL count probe {column.NullCountStatus.Outcome} (sampled {column.NullCountStatus.SampleSize:N0} rows at {column.NullCountStatus.CapturedAtUtc:yyyy-MM-dd HH:mm:ss})",
                     "profiling.validation.column.probe.failed"));
             }
 
@@ -162,7 +162,7 @@ public sealed class ProfilingStandardizationValidator
                 issues.Add(new ValidationIssue(
                     ValidationIssueSeverity.Warning,
                     $"{environmentName}: {candidate.Schema.Value}.{candidate.Table.Value}.{candidate.Column.Value}",
-                    $"Unique probe {candidate.ProbeStatus.Outcome}: {candidate.ProbeStatus.Description}",
+                    $"Unique probe {candidate.ProbeStatus.Outcome} (sampled {candidate.ProbeStatus.SampleSize:N0} rows at {candidate.ProbeStatus.CapturedAtUtc:yyyy-MM-dd HH:mm:ss})",
                     "profiling.validation.unique.probe.failed"));
             }
 
@@ -184,15 +184,8 @@ public sealed class ProfilingStandardizationValidator
     {
         foreach (var candidate in snapshot.CompositeUniqueCandidates)
         {
-            if (candidate.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded)
-            {
-                var columnList = string.Join(", ", candidate.Columns.Select(c => c.Value));
-                issues.Add(new ValidationIssue(
-                    ValidationIssueSeverity.Warning,
-                    $"{environmentName}: {candidate.Schema.Value}.{candidate.Table.Value} ({columnList})",
-                    $"Composite unique probe {candidate.ProbeStatus.Outcome}: {candidate.ProbeStatus.Description}",
-                    "profiling.validation.compositeUnique.probe.failed"));
-            }
+            // NOTE: CompositeUniqueCandidateProfile does not have ProbeStatus field
+            // (unlike UniqueCandidateProfile), so we can only validate HasDuplicate
 
             if (candidate.HasDuplicate)
             {
@@ -219,7 +212,7 @@ public sealed class ProfilingStandardizationValidator
                 issues.Add(new ValidationIssue(
                     ValidationIssueSeverity.Warning,
                     $"{environmentName}: {reference.FromSchema.Value}.{reference.FromTable.Value}.{reference.FromColumn.Value} -> {reference.ToSchema.Value}.{reference.ToTable.Value}.{reference.ToColumn.Value}",
-                    $"Foreign key probe {fk.ProbeStatus.Outcome}: {fk.ProbeStatus.Description}",
+                    $"Foreign key probe {fk.ProbeStatus.Outcome} (sampled {fk.ProbeStatus.SampleSize:N0} rows at {fk.ProbeStatus.CapturedAtUtc:yyyy-MM-dd HH:mm:ss})",
                     "profiling.validation.foreignKey.probe.failed"));
             }
 
