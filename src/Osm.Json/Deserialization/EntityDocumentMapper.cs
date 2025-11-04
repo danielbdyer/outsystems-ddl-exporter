@@ -20,6 +20,7 @@ internal sealed class EntityDocumentMapper
     private readonly TemporalMetadataMapper _temporalMetadataMapper;
     private readonly IEntitySchemaResolver _schemaResolver;
     private readonly IEntityMetadataFactory _metadataFactory;
+    private readonly IAttributeDeduplicator _attributeDeduplicator;
     private readonly IDuplicateWarningEmitter _duplicateWarningEmitter;
     private readonly IPrimaryKeyValidator _primaryKeyValidator;
 
@@ -33,6 +34,7 @@ internal sealed class EntityDocumentMapper
         TemporalMetadataMapper temporalMetadataMapper,
         IEntitySchemaResolver schemaResolver,
         IEntityMetadataFactory metadataFactory,
+        IAttributeDeduplicator attributeDeduplicator,
         IDuplicateWarningEmitter duplicateWarningEmitter,
         IPrimaryKeyValidator primaryKeyValidator)
     {
@@ -45,6 +47,7 @@ internal sealed class EntityDocumentMapper
         _temporalMetadataMapper = temporalMetadataMapper;
         _schemaResolver = schemaResolver ?? throw new ArgumentNullException(nameof(schemaResolver));
         _metadataFactory = metadataFactory ?? throw new ArgumentNullException(nameof(metadataFactory));
+        _attributeDeduplicator = attributeDeduplicator ?? throw new ArgumentNullException(nameof(attributeDeduplicator));
         _duplicateWarningEmitter = duplicateWarningEmitter ?? throw new ArgumentNullException(nameof(duplicateWarningEmitter));
         _primaryKeyValidator = primaryKeyValidator ?? throw new ArgumentNullException(nameof(primaryKeyValidator));
     }
@@ -77,7 +80,8 @@ internal sealed class EntityDocumentMapper
                 _context.WithPath(path.Property("physicalName"), tableResult.Errors));
         }
 
-        var attributesResult = _attributeMapper.Map(doc.Attributes, path.Property("attributes"));
+        var attributesPath = path.Property("attributes");
+        var attributesResult = _attributeMapper.Map(doc.Attributes, attributesPath);
         if (attributesResult.IsFailure)
         {
             return Result<EntityModel>.Failure(attributesResult.Errors);
@@ -120,6 +124,18 @@ internal sealed class EntityDocumentMapper
         var metadata = metadataResult.Result.Value;
 
         var attributes = attributesResult.Value;
+        if (doc.Attributes is { } attributeDocuments)
+        {
+            var dedupeResult = _attributeDeduplicator.Deduplicate(mapContext, attributesPath, attributes, attributeDocuments);
+            if (dedupeResult.Result.IsFailure)
+            {
+                return Result<EntityModel>.Failure(dedupeResult.Result.Errors);
+            }
+
+            mapContext = dedupeResult.Context;
+            attributes = dedupeResult.Result.Value;
+        }
+
         var duplicateResult = _duplicateWarningEmitter.EmitWarnings(mapContext, attributes);
         mapContext = duplicateResult.Context;
 

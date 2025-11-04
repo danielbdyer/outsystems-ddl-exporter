@@ -147,6 +147,149 @@ public class EntityDocumentMapperTests
     }
 
     [Fact]
+    public void Map_ShouldDeduplicateInactiveReferenceAttributes_ByLogicalName()
+    {
+        var warnings = new List<string>();
+        var context = CreateContext(warnings);
+        var mapper = CreateEntityMapper(context);
+
+        var activeReference = new AttributeDocument
+        {
+            Name = "CityId",
+            PhysicalName = "CITY_ID",
+            DataType = "LongInteger",
+            IsMandatory = false,
+            IsIdentifier = false,
+            IsAutoNumber = false,
+            IsActive = true,
+            IsReference = 1,
+            ReferenceEntityId = 2001,
+            ReferenceEntityName = "City",
+            ReferenceEntityPhysicalName = "OSUSR_DEF_CITY",
+            ReferenceEntityIsActiveRaw = 1,
+            ExtendedProperties = Array.Empty<ModelJsonDeserializer.ExtendedPropertyDocument>()
+        };
+
+        var inactiveReference = activeReference with
+        {
+            PhysicalName = "CITY_ID_INACTIVE",
+            ReferenceEntityId = 2002,
+            ReferenceEntityIsActiveRaw = 0
+        };
+
+        var document = new EntityDocument
+        {
+            Name = "Invoice",
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            Schema = "dbo",
+            Attributes = new[] { CreateIdentifierAttribute(), activeReference, inactiveReference }
+        };
+
+        var path = DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0);
+        var result = mapper.Map(ModuleName.Create("Finance").Value, document, path);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value.Attributes.Length);
+        var cityAttribute = Assert.Single(result.Value.Attributes.Where(a => a.LogicalName.Value == "CityId"));
+        Assert.Equal("CITY_ID", cityAttribute.ColumnName.Value);
+
+        var warning = Assert.Single(warnings, w => w.Contains("deduplicated attribute logical name 'CityId'", StringComparison.Ordinal));
+        Assert.Contains("refEntity.IsActive=False", warning);
+    }
+
+    [Fact]
+    public void Map_ShouldDeduplicateInactiveReferenceAttributes_ByColumnName()
+    {
+        var warnings = new List<string>();
+        var context = CreateContext(warnings);
+        var mapper = CreateEntityMapper(context);
+
+        var activeReference = new AttributeDocument
+        {
+            Name = "CityId",
+            PhysicalName = "CITY_ID",
+            DataType = "LongInteger",
+            IsMandatory = false,
+            IsIdentifier = false,
+            IsAutoNumber = false,
+            IsActive = true,
+            IsReference = 1,
+            ReferenceEntityId = 2001,
+            ReferenceEntityName = "City",
+            ReferenceEntityPhysicalName = "OSUSR_DEF_CITY",
+            ReferenceEntityIsActiveRaw = 1,
+            ExtendedProperties = Array.Empty<ModelJsonDeserializer.ExtendedPropertyDocument>()
+        };
+
+        var inactiveReference = activeReference with
+        {
+            Name = "LegacyCityId",
+            ReferenceEntityId = 2002,
+            ReferenceEntityIsActiveRaw = 0
+        };
+
+        var document = new EntityDocument
+        {
+            Name = "Invoice",
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            Schema = "dbo",
+            Attributes = new[] { CreateIdentifierAttribute(), activeReference, inactiveReference }
+        };
+
+        var path = DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0);
+        var result = mapper.Map(ModuleName.Create("Finance").Value, document, path);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value.Attributes.Length);
+        var cityAttribute = Assert.Single(result.Value.Attributes.Where(a => a.ColumnName.Value == "CITY_ID" && a.LogicalName.Value == "CityId"));
+        Assert.Contains("deduplicated attribute column name 'CITY_ID'", warnings.Single());
+    }
+
+    [Fact]
+    public void Map_ShouldFail_WhenDuplicateReferenceAttributesAmbiguous()
+    {
+        var warnings = new List<string>();
+        var context = CreateContext(warnings);
+        var mapper = CreateEntityMapper(context);
+
+        var activeReference = new AttributeDocument
+        {
+            Name = "CityId",
+            PhysicalName = "CITY_ID",
+            DataType = "LongInteger",
+            IsMandatory = false,
+            IsIdentifier = false,
+            IsAutoNumber = false,
+            IsActive = true,
+            IsReference = 1,
+            ReferenceEntityId = 2001,
+            ReferenceEntityName = "City",
+            ReferenceEntityPhysicalName = "OSUSR_DEF_CITY",
+            ReferenceEntityIsActiveRaw = 1,
+            ExtendedProperties = Array.Empty<ModelJsonDeserializer.ExtendedPropertyDocument>()
+        };
+
+        var secondActiveReference = activeReference with { ReferenceEntityId = 2002 };
+
+        var document = new EntityDocument
+        {
+            Name = "Invoice",
+            PhysicalName = "OSUSR_FIN_INVOICE",
+            Schema = "dbo",
+            Attributes = new[] { CreateIdentifierAttribute(), activeReference, secondActiveReference }
+        };
+
+        var path = DocumentPathContext.Root.Property("modules").Index(0).Property("entities").Index(0);
+        var result = mapper.Map(ModuleName.Create("Finance").Value, document, path);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("entity.attributes.duplicateAmbiguous", error.Code);
+        Assert.Contains("multiple referenced entities are active", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
     public void SchemaResolver_ShouldApplyFallback_WhenOverrideAllowsMissingSchema()
     {
         var warnings = new List<string>();
@@ -388,6 +531,7 @@ public class EntityDocumentMapperTests
         var temporalMetadataMapper = new TemporalMetadataMapper(context, extendedPropertyMapper);
         var schemaResolver = new EntitySchemaResolver(context);
         var metadataFactory = new EntityMetadataFactory();
+        var attributeDeduplicator = new AttributeDeduplicator(context);
         var duplicateWarningEmitter = new DuplicateWarningEmitter(context);
         var primaryKeyValidator = new PrimaryKeyValidator(context);
         return new EntityDocumentMapper(
@@ -400,6 +544,7 @@ public class EntityDocumentMapperTests
             temporalMetadataMapper,
             schemaResolver,
             metadataFactory,
+            attributeDeduplicator,
             duplicateWarningEmitter,
             primaryKeyValidator);
     }
