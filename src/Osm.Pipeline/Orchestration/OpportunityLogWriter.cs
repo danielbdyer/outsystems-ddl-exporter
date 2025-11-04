@@ -139,67 +139,211 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
             return builder.ToString();
         }
 
-        // Group by category for better organization
-        var byCategory = opportunities.GroupBy(o => o.Category).OrderBy(g => g.Key);
+        // Group by category (Contradiction first, then Recommendation, then Validation)
+        // and then by type within each category
+        var byCategory = opportunities
+            .GroupBy(o => o.Category)
+            .OrderBy(g => GetCategoryPriority(g.Key));
 
         foreach (var categoryGroup in byCategory)
         {
-            builder.AppendLine($"-- ========== {categoryGroup.Key} ==========");
+            builder.AppendLine($"-- ========== {categoryGroup.Key.ToUpperInvariant()} ==========");
             builder.AppendLine();
 
-            foreach (var opportunity in categoryGroup)
+            AppendCategoryDescription(builder, categoryGroup.Key);
+            builder.AppendLine();
+
+            // Group by type within each category
+            var byType = categoryGroup.GroupBy(o => o.Type).OrderBy(g => g.Key);
+
+            foreach (var typeGroup in byType)
             {
-                builder.Append("-- ");
-                builder.Append(opportunity.Type);
-                builder.Append(' ');
-                builder.Append(opportunity.Schema);
-                builder.Append('.');
-                builder.Append(opportunity.Table);
-                builder.Append(" (");
-                builder.Append(opportunity.ConstraintName);
-                builder.Append(") Category=");
-                builder.Append(opportunity.Category);
-                builder.Append(" Risk=");
-                builder.AppendLine(opportunity.Risk.Label);
-
-                builder.Append("-- Summary: ");
-                builder.AppendLine(opportunity.Summary);
-
-                if (!opportunity.Rationales.IsDefaultOrEmpty)
-                {
-                    foreach (var rationale in opportunity.Rationales)
-                    {
-                        builder.Append("-- Rationale: ");
-                        builder.AppendLine(rationale);
-                    }
-                }
-
-                if (!opportunity.Evidence.IsDefaultOrEmpty)
-                {
-                    foreach (var evidence in opportunity.Evidence)
-                    {
-                        builder.Append("-- Evidence: ");
-                        builder.AppendLine(evidence);
-                    }
-                }
-
-                if (opportunity.HasStatements)
-                {
-                    foreach (var statement in opportunity.Statements)
-                    {
-                        builder.AppendLine(statement);
-                    }
-                }
-                else
-                {
-                    builder.AppendLine("-- No automated statement available.");
-                }
-
-                builder.AppendLine("GO");
+                builder.AppendLine($"-- ---------- {typeGroup.Key} ----------");
                 builder.AppendLine();
+
+                AppendTypeDescription(builder, typeGroup.Key, categoryGroup.Key);
+                builder.AppendLine();
+
+                foreach (var opportunity in typeGroup)
+                {
+                    builder.Append("-- ");
+                    builder.Append(opportunity.Type);
+                    builder.Append(' ');
+                    builder.Append(opportunity.Schema);
+                    builder.Append('.');
+                    builder.Append(opportunity.Table);
+                    builder.Append(" (");
+                    builder.Append(opportunity.ConstraintName);
+                    builder.Append(") Category=");
+                    builder.Append(opportunity.Category);
+                    builder.Append(" Risk=");
+                    builder.AppendLine(opportunity.Risk.Label);
+
+                    builder.Append("-- Summary: ");
+                    builder.AppendLine(opportunity.Summary);
+
+                    if (!opportunity.Rationales.IsDefaultOrEmpty)
+                    {
+                        foreach (var rationale in opportunity.Rationales)
+                        {
+                            builder.Append("-- Rationale: ");
+                            builder.AppendLine(rationale);
+                        }
+                    }
+
+                    if (!opportunity.Evidence.IsDefaultOrEmpty)
+                    {
+                        foreach (var evidence in opportunity.Evidence)
+                        {
+                            builder.Append("-- Evidence: ");
+                            builder.AppendLine(evidence);
+                        }
+                    }
+
+                    if (opportunity.HasStatements)
+                    {
+                        foreach (var statement in opportunity.Statements)
+                        {
+                            builder.AppendLine(statement);
+                        }
+                    }
+                    else
+                    {
+                        builder.AppendLine("-- No automated statement available.");
+                    }
+
+                    builder.AppendLine("GO");
+                    builder.AppendLine();
+                }
             }
         }
 
         return builder.ToString();
+    }
+
+    private static int GetCategoryPriority(OpportunityCategory category)
+    {
+        return category switch
+        {
+            OpportunityCategory.Contradiction => 1,  // Highest priority - requires manual remediation
+            OpportunityCategory.Recommendation => 2, // Medium priority - safe to apply
+            OpportunityCategory.Validation => 3,     // Lowest priority - informational
+            _ => 99                                  // Unknown goes last
+        };
+    }
+
+    private static void AppendCategoryDescription(StringBuilder builder, OpportunityCategory category)
+    {
+        var description = category switch
+        {
+            OpportunityCategory.Contradiction =>
+                "-- ⚠️  CONTRADICTIONS - MANUAL DATA REMEDIATION REQUIRED\n" +
+                "--\n" +
+                "-- These opportunities represent the MOST SEVERE issues where actual data in the database\n" +
+                "-- contradicts what the OutSystems model expects. Examples include:\n" +
+                "--   • NULL values in columns marked as Mandatory in the model\n" +
+                "--   • Duplicate values in columns that should be unique\n" +
+                "--   • Orphaned foreign key references (child records pointing to non-existent parents)\n" +
+                "--\n" +
+                "-- ACTION REQUIRED: You must manually clean the data BEFORE applying these constraints.\n" +
+                "-- Attempting to add these constraints without fixing the data will result in SQL errors.\n" +
+                "-- Review the evidence and remediation suggestions for each opportunity below.",
+
+            OpportunityCategory.Recommendation =>
+                "-- RECOMMENDATIONS - SAFE TO APPLY\n" +
+                "--\n" +
+                "-- These opportunities represent NEW constraints that could be safely added to your database.\n" +
+                "-- Profiling has confirmed that the existing data already satisfies these constraints.\n" +
+                "-- Examples include:\n" +
+                "--   • Adding NOT NULL to columns that have no null values\n" +
+                "--   • Adding UNIQUE constraints where data has no duplicates\n" +
+                "--   • Adding FOREIGN KEY constraints where referential integrity is already maintained\n" +
+                "--\n" +
+                "-- ACTION: Review and apply these constraints to better align your database with the model.\n" +
+                "-- These changes will improve data integrity and help prevent future data quality issues.",
+
+            OpportunityCategory.Validation =>
+                "-- VALIDATIONS - INFORMATIONAL\n" +
+                "--\n" +
+                "-- These opportunities represent EXISTING constraints that profiling has validated.\n" +
+                "-- The database already has these constraints in place, and the data conforms to them.\n" +
+                "-- Examples include:\n" +
+                "--   • Columns already marked as NOT NULL that have no null values\n" +
+                "--   • Existing unique indexes with no duplicate values\n" +
+                "--   • Foreign key constraints with no orphaned references\n" +
+                "--\n" +
+                "-- ACTION: No action needed. This is confirmation that your database and model are aligned.",
+
+            _ =>
+                "-- UNKNOWN CATEGORY\n" +
+                "--\n" +
+                "-- These opportunities could not be properly categorized."
+        };
+
+        builder.Append(description);
+    }
+
+    private static void AppendTypeDescription(StringBuilder builder, OpportunityType type, OpportunityCategory category)
+    {
+        var description = (type, category) switch
+        {
+            (OpportunityType.Nullability, OpportunityCategory.Contradiction) =>
+                "-- NULLABILITY CONTRADICTIONS\n" +
+                "-- Why this matters: Your OutSystems model marks these columns as Mandatory (NOT NULL),\n" +
+                "-- but the actual database contains NULL values in these columns.\n" +
+                "-- What to do: Update the NULL values to appropriate defaults, then add NOT NULL constraints.",
+
+            (OpportunityType.Nullability, OpportunityCategory.Recommendation) =>
+                "-- NULLABILITY RECOMMENDATIONS\n" +
+                "-- Why this matters: These columns could be made NOT NULL to improve data integrity.\n" +
+                "-- Profiling confirms no NULL values exist in the data.\n" +
+                "-- What to do: Consider adding NOT NULL constraints to prevent future NULL insertions.",
+
+            (OpportunityType.Nullability, OpportunityCategory.Validation) =>
+                "-- NULLABILITY VALIDATIONS\n" +
+                "-- Why this matters: Confirms that existing NOT NULL constraints are working correctly.\n" +
+                "-- What to do: No action needed - this is validation that your constraints are effective.",
+
+            (OpportunityType.UniqueIndex, OpportunityCategory.Contradiction) =>
+                "-- UNIQUE INDEX CONTRADICTIONS\n" +
+                "-- Why this matters: Your OutSystems model expects unique values, but duplicates exist.\n" +
+                "-- What to do: Identify and resolve duplicate records before adding unique constraints.\n" +
+                "-- This may require merging records or updating values to ensure uniqueness.",
+
+            (OpportunityType.UniqueIndex, OpportunityCategory.Recommendation) =>
+                "-- UNIQUE INDEX RECOMMENDATIONS\n" +
+                "-- Why this matters: These columns have naturally unique values and could benefit from\n" +
+                "-- a unique constraint to enforce this pattern and improve query performance.\n" +
+                "-- What to do: Consider adding unique indexes to formalize this uniqueness guarantee.",
+
+            (OpportunityType.UniqueIndex, OpportunityCategory.Validation) =>
+                "-- UNIQUE INDEX VALIDATIONS\n" +
+                "-- Why this matters: Confirms that existing unique constraints are working correctly.\n" +
+                "-- What to do: No action needed - this validates your unique constraints are effective.",
+
+            (OpportunityType.ForeignKey, OpportunityCategory.Contradiction) =>
+                "-- FOREIGN KEY CONTRADICTIONS\n" +
+                "-- Why this matters: Orphaned rows exist - child records reference parent records that\n" +
+                "-- don't exist. This violates referential integrity and can cause application errors.\n" +
+                "-- What to do: Delete orphaned records or update them to reference valid parent records,\n" +
+                "-- then add foreign key constraints to prevent this from happening again.",
+
+            (OpportunityType.ForeignKey, OpportunityCategory.Recommendation) =>
+                "-- FOREIGN KEY RECOMMENDATIONS\n" +
+                "-- Why this matters: Referential integrity is currently maintained by application logic,\n" +
+                "-- but adding database-level foreign keys provides stronger guarantees and better performance.\n" +
+                "-- What to do: Consider adding foreign key constraints to enforce referential integrity at\n" +
+                "-- the database level and improve query optimization.",
+
+            (OpportunityType.ForeignKey, OpportunityCategory.Validation) =>
+                "-- FOREIGN KEY VALIDATIONS\n" +
+                "-- Why this matters: Confirms that existing foreign key constraints are working correctly.\n" +
+                "-- What to do: No action needed - this validates your referential integrity is maintained.",
+
+            _ =>
+                $"-- {type} opportunities in {category} category."
+        };
+
+        builder.Append(description);
     }
 }
