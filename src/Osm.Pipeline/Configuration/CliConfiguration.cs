@@ -52,7 +52,8 @@ public sealed record SqlConfiguration(
     SqlSamplingConfiguration Sampling,
     SqlAuthenticationConfiguration Authentication,
     MetadataContractConfiguration MetadataContract,
-    IReadOnlyList<string> ProfilingConnectionStrings)
+    IReadOnlyList<string> ProfilingConnectionStrings,
+    IReadOnlyList<TableNameMappingConfiguration> TableNameMappings)
 {
     public static SqlConfiguration Empty { get; } = new(
         null,
@@ -60,7 +61,17 @@ public sealed record SqlConfiguration(
         SqlSamplingConfiguration.Empty,
         SqlAuthenticationConfiguration.Empty,
         MetadataContractConfiguration.Empty,
-        Array.Empty<string>());
+        Array.Empty<string>(),
+        Array.Empty<TableNameMappingConfiguration>());
+}
+
+public sealed record TableNameMappingConfiguration(
+    string SourceSchema,
+    string SourceTable,
+    string TargetSchema,
+    string TargetTable)
+{
+    public static TableNameMappingConfiguration Empty { get; } = new(string.Empty, string.Empty, string.Empty, string.Empty);
 }
 
 public sealed record SqlSamplingConfiguration(long? RowSamplingThreshold, int? SampleSize)

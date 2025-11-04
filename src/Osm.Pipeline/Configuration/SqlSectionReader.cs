@@ -35,8 +35,9 @@ internal sealed class SqlSectionReader
         var authentication = ReadAuthentication(element);
         var metadataContract = ReadMetadataContract(element);
         var profilingConnections = ReadProfilingConnections(element);
+        var tableNameMappings = ReadTableNameMappings(element);
 
-        configuration = new SqlConfiguration(connectionString, commandTimeout, sampling, authentication, metadataContract, profilingConnections);
+        configuration = new SqlConfiguration(connectionString, commandTimeout, sampling, authentication, metadataContract, profilingConnections, tableNameMappings);
         return true;
     }
 
@@ -187,5 +188,69 @@ internal sealed class SqlSectionReader
         return connections.Count == 0
             ? Array.Empty<string>()
             : connections;
+    }
+
+    private static IReadOnlyList<TableNameMappingConfiguration> ReadTableNameMappings(JsonElement element)
+    {
+        if (!element.TryGetProperty("tableNameMappings", out var mappingsElement)
+            || mappingsElement.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<TableNameMappingConfiguration>();
+        }
+
+        var mappings = new List<TableNameMappingConfiguration>();
+        foreach (var item in mappingsElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            string? sourceSchema = null;
+            if (item.TryGetProperty("sourceSchema", out var sourceSchemaElement)
+                && sourceSchemaElement.ValueKind == JsonValueKind.String)
+            {
+                sourceSchema = sourceSchemaElement.GetString();
+            }
+
+            string? sourceTable = null;
+            if (item.TryGetProperty("sourceTable", out var sourceTableElement)
+                && sourceTableElement.ValueKind == JsonValueKind.String)
+            {
+                sourceTable = sourceTableElement.GetString();
+            }
+
+            string? targetSchema = null;
+            if (item.TryGetProperty("targetSchema", out var targetSchemaElement)
+                && targetSchemaElement.ValueKind == JsonValueKind.String)
+            {
+                targetSchema = targetSchemaElement.GetString();
+            }
+
+            string? targetTable = null;
+            if (item.TryGetProperty("targetTable", out var targetTableElement)
+                && targetTableElement.ValueKind == JsonValueKind.String)
+            {
+                targetTable = targetTableElement.GetString();
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceSchema) ||
+                string.IsNullOrWhiteSpace(sourceTable) ||
+                string.IsNullOrWhiteSpace(targetSchema) ||
+                string.IsNullOrWhiteSpace(targetTable))
+            {
+                continue;
+            }
+
+            mappings.Add(new TableNameMappingConfiguration(
+                sourceSchema!.Trim(),
+                sourceTable!.Trim(),
+                targetSchema!.Trim(),
+                targetTable!.Trim()));
+        }
+
+        return mappings.Count == 0
+            ? Array.Empty<TableNameMappingConfiguration>()
+            : mappings;
     }
 }
