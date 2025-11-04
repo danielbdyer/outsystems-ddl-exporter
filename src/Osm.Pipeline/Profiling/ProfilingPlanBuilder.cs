@@ -159,12 +159,12 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
 
     internal static string BuildUniqueKey(IEnumerable<string> columns)
     {
-        return string.Join("|", columns.Select(static column => column.ToLowerInvariant()));
+        return string.Join("|", columns.Select(static column => column.ToLower(System.Globalization.CultureInfo.InvariantCulture)));
     }
 
     internal static string BuildForeignKeyKey(string column, string targetSchema, string targetTable, string targetColumn)
     {
-        return string.Join("|", new[] { column, targetSchema, targetTable, targetColumn }.Select(static value => value.ToLowerInvariant()));
+        return string.Join("|", new[] { column, targetSchema, targetTable, targetColumn }.Select(static value => value.ToLower(System.Globalization.CultureInfo.InvariantCulture)));
     }
 
     private static Dictionary<(string Schema, string Table), (string Schema, string Table)> BuildMappingLookup(
