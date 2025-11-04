@@ -25,7 +25,8 @@ public sealed class ProfilingInfrastructureTests
             100,
             ImmutableArray.Create("ID", "EMAIL"),
             ImmutableArray<UniqueCandidatePlan>.Empty,
-            ImmutableArray<ForeignKeyPlan>.Empty);
+            ImmutableArray<ForeignKeyPlan>.Empty,
+            ImmutableArray<string>.Empty);
 
         var builder = new NullCountQueryBuilder();
         builder.Configure(command, plan, useSampling: true, sampleSize: 25);
@@ -70,7 +71,8 @@ public sealed class ProfilingInfrastructureTests
             100,
             ImmutableArray.Create("ID", "EMAIL"),
             ImmutableArray.Create(new UniqueCandidatePlan("email", ImmutableArray.Create("ID", "EMAIL"))),
-            ImmutableArray<ForeignKeyPlan>.Empty);
+            ImmutableArray<ForeignKeyPlan>.Empty,
+            ImmutableArray<string>.Empty);
 
         var builder = new UniqueCandidateQueryBuilder();
         builder.Configure(command, plan, useSampling: true, sampleSize: 10);
@@ -117,7 +119,8 @@ public sealed class ProfilingInfrastructureTests
             100,
             ImmutableArray.Create("CUSTOMER_ID"),
             ImmutableArray<UniqueCandidatePlan>.Empty,
-            ImmutableArray.Create(new ForeignKeyPlan("fk", "CUSTOMER_ID", "dbo", "CUSTOMER", "ID")));
+            ImmutableArray.Create(new ForeignKeyPlan("fk", "CUSTOMER_ID", "dbo", "CUSTOMER", "ID")),
+            ImmutableArray<string>.Empty);
 
         var builder = new ForeignKeyProbeQueryBuilder();
         builder.ConfigureRealityCommand(command, plan, useSampling: false, sampleSize: 0);

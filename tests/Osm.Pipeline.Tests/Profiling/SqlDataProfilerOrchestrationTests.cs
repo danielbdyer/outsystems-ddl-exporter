@@ -38,7 +38,8 @@ public sealed class SqlDataProfilerOrchestrationTests
             100,
             ImmutableArray.Create("EMAIL", "ID"),
             ImmutableArray.Create(new UniqueCandidatePlan("email", ImmutableArray.Create("EMAIL"))),
-            ImmutableArray<ForeignKeyPlan>.Empty);
+            ImmutableArray<ForeignKeyPlan>.Empty,
+            ImmutableArray<string>.Empty);
 
         var probeStatus = ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 100);
         var results = new TableProfilingResults(
@@ -63,7 +64,8 @@ public sealed class SqlDataProfilerOrchestrationTests
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
-            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase));
+            new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, NullRowSample>(System.StringComparer.OrdinalIgnoreCase));
 
         var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
         var planBuilder = new StubPlanBuilder(plan);
@@ -120,7 +122,8 @@ public sealed class SqlDataProfilerOrchestrationTests
             10,
             ImmutableArray.Create("ID", "PARENTID"),
             ImmutableArray<UniqueCandidatePlan>.Empty,
-            ImmutableArray.Create(new ForeignKeyPlan(foreignKeyKey, "PARENTID", "dbo", "OSUSR_P_PARENT", "ID")));
+            ImmutableArray.Create(new ForeignKeyPlan(foreignKeyKey, "PARENTID", "dbo", "OSUSR_P_PARENT", "ID")),
+            ImmutableArray<string>.Empty);
 
         var probeStatus = ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 10);
         var results = new TableProfilingResults(
@@ -151,7 +154,8 @@ public sealed class SqlDataProfilerOrchestrationTests
             new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase)
             {
                 [foreignKeyKey] = probeStatus
-            });
+            },
+            new Dictionary<string, NullRowSample>(System.StringComparer.OrdinalIgnoreCase));
 
         var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
         var planBuilder = new StubPlanBuilder(new Dictionary<(string Schema, string Table), TableProfilingPlan>(TableKeyComparer.Instance)
@@ -170,10 +174,73 @@ public sealed class SqlDataProfilerOrchestrationTests
         Assert.Equal(ProfilingProbeOutcome.Succeeded, foreignKey.ProbeStatus.Outcome);
     }
 
+    [Fact]
+    public async Task CaptureAsync_CollectsMappedTableMetadataWhenMappingsConfigured()
+    {
+        var model = ModelFixtures.LoadModel("model.micro-unique.json");
+
+        var metadata = new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(ColumnKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_U_USER_ARCHIVE", "ID")] = new ColumnMetadata(false, false, true, null)
+        };
+
+        var rowCounts = new Dictionary<(string Schema, string Table), long>(TableKeyComparer.Instance)
+        {
+            [("dbo", "OSUSR_U_USER_ARCHIVE")] = 10
+        };
+
+        var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
+
+        var plan = new TableProfilingPlan(
+            "dbo",
+            "OSUSR_U_USER",
+            10,
+            ImmutableArray.Create("ID"),
+            ImmutableArray<UniqueCandidatePlan>.Empty,
+            ImmutableArray<ForeignKeyPlan>.Empty,
+            ImmutableArray<string>.Empty,
+            "dbo",
+            "OSUSR_U_USER_ARCHIVE");
+
+        var planBuilder = new StubPlanBuilder(plan);
+        var queryExecutor = new StubQueryExecutor(TableProfilingResults.Empty);
+
+        var options = SqlProfilerOptions.Default with
+        {
+            AllowMissingTables = true,
+            TableNameMappings = ImmutableArray.Create(new TableNameMapping(
+                "dbo",
+                "OSUSR_U_USER",
+                "dbo",
+                "OSUSR_U_USER_ARCHIVE"))
+        };
+
+        var profiler = new SqlDataProfiler(
+            new NullConnectionFactory(),
+            model,
+            options,
+            metadataLoader,
+            planBuilder,
+            queryExecutor);
+
+        var snapshot = await profiler.CaptureAsync(CancellationToken.None);
+
+        Assert.True(snapshot.IsSuccess, string.Join(", ", snapshot.Errors.Select(e => e.Code)));
+
+        Assert.Contains(metadataLoader.RequestedTables, t => string.Equals(t.Table, "OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(metadataLoader.RequestedTables, t => string.Equals(t.Table, "OSUSR_U_USER_ARCHIVE", StringComparison.OrdinalIgnoreCase));
+
+        var generatedPlan = planBuilder.Plans[(plan.Schema, plan.Table)];
+        Assert.Equal("dbo", generatedPlan.ResolvedSchema);
+        Assert.Equal("OSUSR_U_USER_ARCHIVE", generatedPlan.ResolvedTable);
+    }
+
     private sealed class StubMetadataLoader : ITableMetadataLoader
     {
         private readonly Dictionary<(string Schema, string Table, string Column), ColumnMetadata> _metadata;
         private readonly Dictionary<(string Schema, string Table), long> _rowCounts;
+
+        public IReadOnlyCollection<(string Schema, string Table)> RequestedTables { get; private set; } = Array.Empty<(string Schema, string Table)>();
 
         public StubMetadataLoader(
             Dictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
@@ -185,11 +252,13 @@ public sealed class SqlDataProfilerOrchestrationTests
 
         public Task<Dictionary<(string Schema, string Table, string Column), ColumnMetadata>> LoadColumnMetadataAsync(DbConnection connection, IReadOnlyCollection<(string Schema, string Table)> tables, CancellationToken cancellationToken)
         {
+            RequestedTables = tables;
             return Task.FromResult(new Dictionary<(string Schema, string Table, string Column), ColumnMetadata>(_metadata, ColumnKeyComparer.Instance));
         }
 
         public Task<Dictionary<(string Schema, string Table), long>> LoadRowCountsAsync(DbConnection connection, IReadOnlyCollection<(string Schema, string Table)> tables, CancellationToken cancellationToken)
         {
+            RequestedTables = tables;
             return Task.FromResult(new Dictionary<(string Schema, string Table), long>(_rowCounts, TableKeyComparer.Instance));
         }
     }
@@ -211,9 +280,13 @@ public sealed class SqlDataProfilerOrchestrationTests
             _plans = new Dictionary<(string Schema, string Table), TableProfilingPlan>(plans, TableKeyComparer.Instance);
         }
 
+        public IReadOnlyDictionary<(string Schema, string Table), TableProfilingPlan> Plans => _plans;
+
         public Dictionary<(string Schema, string Table), TableProfilingPlan> BuildPlans(
             IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
-            IReadOnlyDictionary<(string Schema, string Table), long> rowCounts)
+            IReadOnlyDictionary<(string Schema, string Table), long> rowCounts,
+            bool allowMissingTables = false,
+            IReadOnlyList<TableNameMapping>? tableNameMappings = null)
         {
             return new Dictionary<(string Schema, string Table), TableProfilingPlan>(_plans, TableKeyComparer.Instance);
         }

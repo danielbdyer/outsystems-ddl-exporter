@@ -24,6 +24,7 @@ using Osm.Validation.Tightening.Opportunities;
 using Osm.Validation.Profiling;
 using Tests.Support;
 using Xunit;
+using Osm.Pipeline.Configuration;
 
 namespace Osm.Pipeline.Tests;
 
@@ -69,7 +70,8 @@ public sealed class SsdtMatrixTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict,
-                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+                TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicyLoader.LoadDefault(),
             profilePath);

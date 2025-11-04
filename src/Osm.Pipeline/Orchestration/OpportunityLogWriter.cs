@@ -147,7 +147,7 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
 
         foreach (var categoryGroup in byCategory)
         {
-            builder.AppendLine($"-- ========== {categoryGroup.Key.ToUpperInvariant()} ==========");
+            builder.AppendLine($"-- ========== {categoryGroup.Key.ToString().ToUpperInvariant()} ==========");
             builder.AppendLine();
 
             AppendCategoryDescription(builder, categoryGroup.Key);

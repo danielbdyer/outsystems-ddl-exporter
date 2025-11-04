@@ -29,7 +29,7 @@ internal sealed class ForeignKeyProbeQueryBuilder
             .ToArray();
 
         command.Parameters.Clear();
-        command.CommandText = BuildRealityCommandText(plan.Schema, plan.Table, sourceColumns, plan.ForeignKeys, useSampling, command);
+        command.CommandText = BuildRealityCommandText(plan.TargetSchema, plan.TargetTable, sourceColumns, plan.ForeignKeys, useSampling, command);
 
         if (useSampling)
         {

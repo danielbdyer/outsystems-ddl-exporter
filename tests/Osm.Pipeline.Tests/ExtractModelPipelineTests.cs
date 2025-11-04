@@ -9,6 +9,7 @@ using Osm.Pipeline.SqlExtraction;
 using Osm.Pipeline.Sql;
 using Tests.Support;
 using Xunit;
+using Osm.Pipeline.Configuration;
 
 namespace Osm.Pipeline.Tests;
 
@@ -25,7 +26,8 @@ public class ExtractModelPipelineTests
             Sampling: new SqlSamplingSettings(null, null),
             Authentication: new SqlAuthenticationSettings(null, null, null, null),
             MetadataContract: MetadataContractOverrides.Strict,
-            ProfilingConnectionStrings: ImmutableArray<string>.Empty);
+            ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+            TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty);
         var manifestPath = FixtureFile.GetPath(Path.Combine("extraction", "advanced-sql.manifest.json"));
         var request = new ExtractModelPipelineRequest(command, sqlOptions, manifestPath, OutputPath: null, SqlMetadataOutputPath: null, SqlMetadataLog: null);
 
@@ -47,7 +49,8 @@ public class ExtractModelPipelineTests
             Sampling: new SqlSamplingSettings(null, null),
             Authentication: new SqlAuthenticationSettings(null, null, null, null),
             MetadataContract: MetadataContractOverrides.Strict,
-            ProfilingConnectionStrings: ImmutableArray<string>.Empty);
+            ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+            TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty);
         var request = new ExtractModelPipelineRequest(command, sqlOptions, AdvancedSqlFixtureManifestPath: null, OutputPath: null, SqlMetadataOutputPath: null, SqlMetadataLog: null);
 
         var result = await pipeline.HandleAsync(request);

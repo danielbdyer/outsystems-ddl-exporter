@@ -1,3 +1,4 @@
+using System;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
 using Osm.Smo;
@@ -104,10 +105,10 @@ public class ConstraintNameNormalizerTests
     private static EntityModel CreateEntity(string logicalName, string physicalName)
     {
         var result = EntityModel.Create(
-            module: ModuleName.From("TestModule").Value,
-            logicalName: EntityName.From(logicalName).Value,
-            physicalName: TableName.From(physicalName).Value,
-            schema: SchemaName.From("dbo").Value,
+            module: ModuleName.Create("TestModule").Value,
+            logicalName: EntityName.Create(logicalName).Value,
+            physicalName: TableName.Create(physicalName).Value,
+            schema: SchemaName.Create("dbo").Value,
             catalog: null,
             isStatic: false,
             isExternal: false,
@@ -116,6 +117,10 @@ public class ConstraintNameNormalizerTests
             {
                 CreateAttribute("Id", "Id", isIdentifier: true)
             },
+            indexes: Array.Empty<IndexModel>(),
+            relationships: Array.Empty<RelationshipModel>(),
+            triggers: Array.Empty<TriggerModel>(),
+            metadata: EntityMetadata.Empty,
             allowMissingPrimaryKey: false);
 
         return result.Value;
@@ -124,16 +129,14 @@ public class ConstraintNameNormalizerTests
     private static AttributeModel CreateAttribute(string logicalName, string columnName, bool isIdentifier = false)
     {
         var result = AttributeModel.Create(
-            logicalName: AttributeName.From(logicalName).Value,
-            columnName: ColumnName.From(columnName).Value,
-            isIdentifier: isIdentifier,
+            logicalName: AttributeName.Create(logicalName).Value,
+            columnName: ColumnName.Create(columnName).Value,
+            dataType: "Text",
             isMandatory: false,
-            dataType: DataType.Text,
-            length: 50,
-            decimals: 0,
+            isIdentifier: isIdentifier,
             isAutoNumber: false,
-            deleteRule: DeleteRule.Ignore,
-            attributeMetadata: null);
+            isActive: true,
+            length: 50);
 
         return result.Value;
     }

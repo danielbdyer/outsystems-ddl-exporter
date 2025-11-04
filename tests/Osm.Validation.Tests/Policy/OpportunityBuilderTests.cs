@@ -30,11 +30,11 @@ public sealed class OpportunityBuilderTests
     }
 
     [Theory]
-    [InlineData(true, true, false, false, true, false, "Remediate data before enforcing the unique index.", RiskLevel.Moderate)]
-    [InlineData(false, false, true, false, true, false, "Resolve duplicate values before enforcing the unique index.", RiskLevel.High)]
-    [InlineData(false, false, false, true, true, false, "Enable policy support before enforcing the unique index.", RiskLevel.Moderate)]
-    [InlineData(false, false, false, false, false, false, "Collect profiling evidence before enforcing the unique index.", RiskLevel.Moderate)]
-    [InlineData(false, false, false, false, true, false, "Review unique index enforcement before applying.", RiskLevel.Moderate)]
+    [InlineData(true, true, false, false, true, false, "Unique index was not enforced. Remediate data before enforcement can proceed.", RiskLevel.Moderate)]
+    [InlineData(false, false, true, false, true, false, "Unique index was not enforced. Resolve duplicate values before enforcement can proceed.", RiskLevel.High)]
+    [InlineData(false, false, false, true, true, false, "Unique index was not enforced. Enable policy support before enforcement can proceed.", RiskLevel.Moderate)]
+    [InlineData(false, false, false, false, false, false, "Unique index was not enforced. Collect profiling evidence before enforcement can proceed.", RiskLevel.Moderate)]
+    [InlineData(false, false, false, false, true, false, "Unique index was not enforced. Review policy requirements before enforcement can proceed.", RiskLevel.Moderate)]
     public void TryCreate_BuildsOpportunityWithExpectedSummary(
         bool enforceUnique,
         bool requiresRemediation,

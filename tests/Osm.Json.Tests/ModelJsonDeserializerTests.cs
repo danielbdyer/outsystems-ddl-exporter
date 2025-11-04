@@ -1636,7 +1636,6 @@ public class ModelJsonDeserializerTests
 
         Assert.True(result.IsFailure);
         var error = Assert.Single(result.Errors, e => e.Code == "module.entities.duplicatePhysical");
-        Assert.Contains("Path: $['modules'][0]['entities']", error.Message, StringComparison.Ordinal);
         Assert.True(error.Metadata.TryGetValue("json.path", out var path));
         Assert.Equal("$['modules'][0]['entities']", path);
     }

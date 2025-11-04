@@ -117,6 +117,7 @@ public sealed class BuildSsdtApplicationServiceTests
         var opportunities = new Opportunities.OpportunitiesReport(
             ImmutableArray<Opportunities.Opportunity>.Empty,
             ImmutableDictionary<Opportunities.OpportunityDisposition, int>.Empty,
+            ImmutableDictionary<Opportunities.OpportunityCategory, int>.Empty,
             ImmutableDictionary<Opportunities.OpportunityType, int>.Empty,
             ImmutableDictionary<RiskLevel, int>.Empty,
             DateTimeOffset.UtcNow);

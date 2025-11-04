@@ -77,7 +77,7 @@ public sealed class EvidenceCacheServiceTests
         var result = await service.CacheAsync(request, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(EvidenceCacheInvalidationReason.MetadataMismatch, result.Value.Evaluation.Reason);
+        Assert.Equal(EvidenceCacheInvalidationReason.ModuleSelectionChanged, result.Value.Evaluation.Reason);
         Assert.Equal("created", result.Value.Evaluation.Metadata["action"]);
     }
 

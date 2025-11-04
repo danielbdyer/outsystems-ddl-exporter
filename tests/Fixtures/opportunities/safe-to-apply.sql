@@ -1,8 +1,40 @@
--- Nullability dbo.OSUSR_ABC_CUSTOMER (Email) Risk=Low
+-- =============================================================================
+-- OutSystems DDL Exporter - Safe to Apply Opportunities
+-- =============================================================================
+-- Generated: 2024-01-01 00:00:00 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 2
+--   ⚠️  Contradictions: 1 (Data violates model expectations - REQUIRES MANUAL REMEDIATION)
+--   Recommendations: 1 (New constraints that could be safely applied)
+--
+-- This script contains 1 safe to apply opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- =============================================================================
+-- ========== RECOMMENDATION ==========
+-- RECOMMENDATIONS - SAFE TO APPLY
+--
+-- These opportunities represent NEW constraints that could be safely added to your database.
+-- Profiling has confirmed that the existing data already satisfies these constraints.
+-- Examples include:
+--   • Adding NOT NULL to columns that have no null values
+--   • Adding UNIQUE constraints where data has no duplicates
+--   • Adding FOREIGN KEY constraints where referential integrity is already maintained
+--
+-- ACTION: Review and apply these constraints to better align your database with the model.
+-- These changes will improve data integrity and help prevent future data quality issues.
+-- ---------- Nullability ----------
+-- NULLABILITY RECOMMENDATIONS
+-- Why this matters: These columns could be made NOT NULL to improve data integrity.
+-- Profiling confirms no NULL values exist in the data.
+-- What to do: Consider adding NOT NULL constraints to prevent future NULL insertions.
+-- Nullability dbo.OSUSR_ABC_CUSTOMER (Email) Category=Recommendation Risk=Low
+-- Summary: Enforce NOT NULL constraint.
 -- Rationale: Null probe succeeded.
--- Evidence: Rows=100
 -- Evidence: Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)
+-- Evidence: Rows=100
 ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
     ALTER COLUMN [Email] NVARCHAR(255) NOT NULL;
 GO
-

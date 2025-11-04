@@ -28,7 +28,7 @@ internal sealed class UniqueCandidateQueryBuilder
             .ToArray();
 
         command.Parameters.Clear();
-        command.CommandText = BuildCommandText(plan.Schema, plan.Table, columnSet, plan.UniqueCandidates, useSampling, command);
+        command.CommandText = BuildCommandText(plan.TargetSchema, plan.TargetTable, columnSet, plan.UniqueCandidates, useSampling, command);
 
         if (useSampling)
         {
