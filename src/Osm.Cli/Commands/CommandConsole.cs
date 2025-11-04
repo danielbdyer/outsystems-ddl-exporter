@@ -24,6 +24,19 @@ internal static class CommandConsole
         WriteIndented = true
     };
 
+    private const int DefaultTableLimit = 20;
+
+    private enum IssueSeverity
+    {
+        Info = 0,
+        Warning = 1,
+        Critical = 2
+    }
+
+    private sealed record UniqueIssue(IssueSeverity Severity, string Scope, string Target, string Details, string Probe);
+
+    private sealed record ForeignKeyIssue(IssueSeverity Severity, string Reference, string Details, string Probe);
+
     public static void WriteLine(IConsole console, string message)
     {
         if (console is null)
@@ -163,9 +176,405 @@ internal static class CommandConsole
 
     public static void EmitSqlProfilerSnapshot(IConsole console, ProfileSnapshot snapshot)
     {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
         WriteLine(console, "SQL profiler snapshot:");
-        WriteLine(console, ProfileSnapshotDebugFormatter.ToJson(snapshot));
+
+        var totalColumns = snapshot.Columns.Length;
+        var totalUniqueCandidates = snapshot.UniqueCandidates.Length + snapshot.CompositeUniqueCandidates.Length;
+        var totalForeignKeys = snapshot.ForeignKeys.Length;
+
+        var columnsWithNulls = snapshot.Columns.Count(static column => column.NullCount > 0);
+        var notNullViolations = snapshot.Columns.Count(static column => !column.IsNullablePhysical && column.NullCount > 0);
+        var columnProbeIssues = snapshot.Columns
+            .Where(static column => column.NullCountStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+            .ToList();
+
+        var uniqueIssues = BuildUniqueIssues(snapshot);
+        var foreignKeyIssues = BuildForeignKeyIssues(snapshot);
+
+        WriteLine(
+            console,
+            $"  Columns: {totalColumns:N0} profiled, {columnsWithNulls:N0} with NULLs, {notNullViolations:N0} violating NOT NULL");
+        WriteLine(
+            console,
+            $"  Unique checks: {totalUniqueCandidates:N0} candidates, {uniqueIssues.Count:N0} issue(s)");
+        WriteLine(
+            console,
+            $"  Foreign keys: {totalForeignKeys:N0} relationships, {foreignKeyIssues.Count:N0} anomaly/anomalies");
+
+        if (columnProbeIssues.Count > 0)
+        {
+            WriteLine(console, $"  NULL probe coverage warnings: {columnProbeIssues.Count:N0}");
+        }
+
+        if (notNullViolations > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "🔴 Nulls in NOT NULL columns:");
+
+            var rows = snapshot.Columns
+                .Where(static column => !column.IsNullablePhysical && column.NullCount > 0)
+                .OrderByDescending(static column => column.NullCount)
+                .ThenBy(static column => column.Schema.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static column => column.Table.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static column => column.Column.Value, StringComparer.OrdinalIgnoreCase)
+                .Take(DefaultTableLimit)
+                .Select(column => (IReadOnlyList<string>)ImmutableArray.Create(
+                    FormatColumnCoordinate(column),
+                    column.NullCount.ToString("N0", CultureInfo.InvariantCulture),
+                    FormatPercentage(column.NullCount, column.RowCount),
+                    column.RowCount.ToString("N0", CultureInfo.InvariantCulture),
+                    GetSeverityLabel(column.RowCount, column.NullCount),
+                    FormatColumnFlags(column),
+                    FormatProbeStatus(column.NullCountStatus)))
+                .ToImmutableArray();
+
+            var headers = ImmutableArray.Create(
+                "Column",
+                "Nulls",
+                "Null %",
+                "Rows",
+                "Severity",
+                "Flags",
+                "Probe");
+
+            WriteTable(console, headers, rows);
+            EmitTableOverflow(console, notNullViolations, rows.Length);
+        }
+
+        if (columnProbeIssues.Count > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "⚠️  NULL counting coverage issues:");
+
+            var rows = columnProbeIssues
+                .OrderByDescending(static column => column.NullCountStatus.SampleSize)
+                .ThenBy(static column => column.Schema.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static column => column.Table.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static column => column.Column.Value, StringComparer.OrdinalIgnoreCase)
+                .Take(DefaultTableLimit)
+                .Select(column => (IReadOnlyList<string>)ImmutableArray.Create(
+                    FormatColumnCoordinate(column),
+                    column.RowCount.ToString("N0", CultureInfo.InvariantCulture),
+                    FormatProbeStatus(column.NullCountStatus),
+                    GetProbeIssueDetail(column.NullCountStatus)))
+                .ToImmutableArray();
+
+            var headers = ImmutableArray.Create(
+                "Column",
+                "Rows",
+                "Probe",
+                "Details");
+
+            WriteTable(console, headers, rows);
+            EmitTableOverflow(console, columnProbeIssues.Count, rows.Length);
+        }
+
+        if (uniqueIssues.Count > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "⚠️  Unique constraint risks:");
+
+            var rows = uniqueIssues
+                .OrderByDescending(static issue => issue.Severity)
+                .ThenBy(static issue => issue.Scope, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static issue => issue.Target, StringComparer.OrdinalIgnoreCase)
+                .Take(DefaultTableLimit)
+                .Select(issue => (IReadOnlyList<string>)ImmutableArray.Create(
+                    FormatIssueSeverity(issue.Severity),
+                    issue.Scope,
+                    issue.Target,
+                    issue.Details,
+                    issue.Probe))
+                .ToImmutableArray();
+
+            var headers = ImmutableArray.Create(
+                "Severity",
+                "Scope",
+                "Target",
+                "Details",
+                "Probe");
+
+            WriteTable(console, headers, rows);
+            EmitTableOverflow(console, uniqueIssues.Count, rows.Length);
+        }
+
+        if (foreignKeyIssues.Count > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "⚠️  Foreign key anomalies:");
+
+            var rows = foreignKeyIssues
+                .OrderByDescending(static issue => issue.Severity)
+                .ThenBy(static issue => issue.Reference, StringComparer.OrdinalIgnoreCase)
+                .Take(DefaultTableLimit)
+                .Select(issue => (IReadOnlyList<string>)ImmutableArray.Create(
+                    FormatIssueSeverity(issue.Severity),
+                    issue.Reference,
+                    issue.Details,
+                    issue.Probe))
+                .ToImmutableArray();
+
+            var headers = ImmutableArray.Create(
+                "Severity",
+                "Reference",
+                "Details",
+                "Probe");
+
+            WriteTable(console, headers, rows);
+            EmitTableOverflow(console, foreignKeyIssues.Count, rows.Length);
+        }
+
+        if (notNullViolations == 0
+            && columnProbeIssues.Count == 0
+            && uniqueIssues.Count == 0
+            && foreignKeyIssues.Count == 0)
+        {
+            WriteLine(console, "  No anomalous findings detected in profiler snapshot.");
+        }
     }
+
+    private static IReadOnlyList<UniqueIssue> BuildUniqueIssues(ProfileSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        var issues = new List<UniqueIssue>();
+
+        foreach (var candidate in snapshot.UniqueCandidates)
+        {
+            if (candidate is null)
+            {
+                continue;
+            }
+
+            var severity = IssueSeverity.Info;
+            var details = new List<string>();
+
+            if (candidate.HasDuplicate)
+            {
+                severity = IssueSeverity.Critical;
+                details.Add("Duplicate values detected");
+            }
+
+            if (candidate.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+            {
+                var probeSeverity = MapProbeSeverity(candidate.ProbeStatus);
+                severity = MaxSeverity(severity, probeSeverity);
+                details.Add(GetProbeIssueDetail(candidate.ProbeStatus));
+            }
+
+            if (details.Count == 0)
+            {
+                continue;
+            }
+
+            issues.Add(new UniqueIssue(
+                severity,
+                "Single",
+                FormatUniqueTarget(candidate.Schema.Value, candidate.Table.Value, candidate.Column.Value),
+                string.Join("; ", details),
+                FormatProbeStatus(candidate.ProbeStatus)));
+        }
+
+        foreach (var composite in snapshot.CompositeUniqueCandidates)
+        {
+            if (composite is null || !composite.HasDuplicate)
+            {
+                continue;
+            }
+
+            var columns = string.Join(", ", composite.Columns.Select(static column => column.Value));
+            issues.Add(new UniqueIssue(
+                IssueSeverity.Critical,
+                "Composite",
+                $"{composite.Schema.Value}.{composite.Table.Value} ({columns})",
+                "Duplicate composite key values detected",
+                "--"));
+        }
+
+        return issues;
+    }
+
+    private static IReadOnlyList<ForeignKeyIssue> BuildForeignKeyIssues(ProfileSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        var issues = new List<ForeignKeyIssue>();
+
+        foreach (var fk in snapshot.ForeignKeys)
+        {
+            if (fk is null)
+            {
+                continue;
+            }
+
+            var details = new List<(IssueSeverity Severity, string Detail)>();
+
+            if (fk.HasOrphan)
+            {
+                details.Add((IssueSeverity.Critical, "Orphaned rows detected"));
+            }
+
+            if (fk.IsNoCheck)
+            {
+                details.Add((IssueSeverity.Warning, "Constraint defined as NO CHECK"));
+            }
+
+            if (fk.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+            {
+                var probeSeverity = MapProbeSeverity(fk.ProbeStatus);
+                details.Add((probeSeverity, GetProbeIssueDetail(fk.ProbeStatus)));
+            }
+
+            if (details.Count == 0)
+            {
+                continue;
+            }
+
+            var severity = details.Select(static tuple => tuple.Severity).Aggregate(IssueSeverity.Info, MaxSeverity);
+            var detailText = string.Join("; ", details.Select(static tuple => tuple.Detail));
+            issues.Add(new ForeignKeyIssue(
+                severity,
+                FormatForeignKeyReference(fk.Reference),
+                detailText,
+                FormatProbeStatus(fk.ProbeStatus)));
+        }
+
+        return issues;
+    }
+
+    private static IssueSeverity MapProbeSeverity(ProfilingProbeStatus status)
+        => status.Outcome switch
+        {
+            ProfilingProbeOutcome.FallbackTimeout => IssueSeverity.Warning,
+            ProfilingProbeOutcome.Cancelled => IssueSeverity.Warning,
+            ProfilingProbeOutcome.Unknown => IssueSeverity.Info,
+            _ => IssueSeverity.Info
+        };
+
+    private static IssueSeverity MaxSeverity(IssueSeverity current, IssueSeverity candidate)
+        => (IssueSeverity)Math.Max((int)current, (int)candidate);
+
+    private static string FormatUniqueTarget(string schema, string table, string column)
+        => $"{schema}.{table}.{column}";
+
+    private static string FormatForeignKeyReference(ForeignKeyReference reference)
+    {
+        if (reference is null)
+        {
+            return string.Empty;
+        }
+
+        var from = $"{reference.FromSchema.Value}.{reference.FromTable.Value}.{reference.FromColumn.Value}";
+        var to = $"{reference.ToSchema.Value}.{reference.ToTable.Value}.{reference.ToColumn.Value}";
+        return $"{from} -> {to}";
+    }
+
+    private static string FormatColumnCoordinate(ColumnProfile column)
+        => column is null
+            ? string.Empty
+            : $"{column.Schema.Value}.{column.Table.Value}.{column.Column.Value}";
+
+    private static string FormatPercentage(long count, long total)
+    {
+        if (total <= 0)
+        {
+            return "0.00%";
+        }
+
+        var ratio = (double)count / total;
+        return (ratio * 100).ToString("0.00", CultureInfo.InvariantCulture) + "%";
+    }
+
+    private static string FormatColumnFlags(ColumnProfile column)
+    {
+        if (column is null)
+        {
+            return string.Empty;
+        }
+
+        var flags = new List<string>();
+
+        if (column.IsPrimaryKey)
+        {
+            flags.Add("PK");
+        }
+
+        if (column.IsUniqueKey)
+        {
+            flags.Add("Unique");
+        }
+
+        if (column.IsComputed)
+        {
+            flags.Add("Computed");
+        }
+
+        if (!string.IsNullOrWhiteSpace(column.DefaultDefinition))
+        {
+            flags.Add("Default");
+        }
+
+        return flags.Count == 0 ? "--" : string.Join(", ", flags);
+    }
+
+    private static string FormatProbeStatus(ProfilingProbeStatus status)
+    {
+        var sample = status.SampleSize.ToString("N0", CultureInfo.InvariantCulture);
+
+        return status.Outcome switch
+        {
+            ProfilingProbeOutcome.Succeeded => $"OK (sample {sample})",
+            ProfilingProbeOutcome.FallbackTimeout => $"Timeout (sample {sample})",
+            ProfilingProbeOutcome.Cancelled => $"Cancelled (sample {sample})",
+            _ => $"Unknown (sample {sample})"
+        };
+    }
+
+    private static string GetProbeIssueDetail(ProfilingProbeStatus status)
+        => status.Outcome switch
+        {
+            ProfilingProbeOutcome.FallbackTimeout => "Sampling timed out before completion",
+            ProfilingProbeOutcome.Cancelled => "Sampling cancelled before completion",
+            ProfilingProbeOutcome.Unknown => "Sampling outcome unknown",
+            _ => "Probe completed successfully"
+        };
+
+    private static void EmitTableOverflow(IConsole console, int totalCount, int displayedCount)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (totalCount > displayedCount)
+        {
+            WriteLine(console, $"  … {totalCount - displayedCount} additional item(s) truncated.");
+        }
+    }
+
+    private static string FormatIssueSeverity(IssueSeverity severity)
+        => severity switch
+        {
+            IssueSeverity.Critical => "CRITICAL",
+            IssueSeverity.Warning => "WARNING",
+            _ => "INFO"
+        };
 
     public static void EmitMultiEnvironmentReport(IConsole console, MultiEnvironmentProfileReport? report)
     {
@@ -243,6 +652,153 @@ internal static class CommandConsole
                 }
             }
         }
+
+        EmitConstraintConsensus(console, report.ConstraintConsensus);
+    }
+
+    private static void EmitConstraintConsensus(IConsole console, MultiEnvironmentConstraintConsensus? consensus)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (consensus is null)
+        {
+            return;
+        }
+
+        var results = EnumerateConsensusResults(consensus)
+            .ToList();
+
+        if (results.Count == 0)
+        {
+            return;
+        }
+
+        var statistics = consensus.Statistics;
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "Constraint consensus across environments:");
+        WriteLine(console, $"  {statistics.FormatSummary()}");
+        WriteLine(
+            console,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "  NOT NULL: {0} safe / {1} risky | UNIQUE: {2} safe / {3} risky | FOREIGN KEY: {4} safe / {5} risky",
+                statistics.SafeNotNullConstraints,
+                statistics.UnsafeNotNullConstraints,
+                statistics.SafeUniqueConstraints,
+                statistics.UnsafeUniqueConstraints,
+                statistics.SafeForeignKeyConstraints,
+                statistics.UnsafeForeignKeyConstraints));
+
+        var safeResults = results
+            .Where(static result => result.IsSafeToApply)
+            .OrderByDescending(static result => result.ConsensusRatio)
+            .ThenBy(static result => DescribeConstraintType(result.ConstraintType), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static result => result.ConstraintDescriptor, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (safeResults.Count > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "Constraints safe across all environments:");
+
+            var rows = BuildConsensusRows(safeResults, includeGuidance: true);
+            var headers = ImmutableArray.Create("Type", "Constraint", "Consensus", "Guidance");
+
+            WriteTable(console, headers, rows);
+            EmitTableOverflow(console, safeResults.Count, rows.Length);
+        }
+
+        var unsafeResults = results
+            .Where(static result => !result.IsSafeToApply)
+            .OrderBy(static result => result.ConsensusRatio)
+            .ThenBy(static result => DescribeConstraintType(result.ConstraintType), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static result => result.ConstraintDescriptor, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (unsafeResults.Count > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "Constraints requiring remediation before DDL enforcement:");
+
+            var rows = BuildConsensusRows(unsafeResults, includeGuidance: true);
+            var headers = ImmutableArray.Create("Type", "Constraint", "Consensus", "Guidance");
+
+            WriteTable(console, headers, rows);
+            EmitTableOverflow(console, unsafeResults.Count, rows.Length);
+        }
+        else if (safeResults.Count > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "All analyzed constraints are ready for multi-environment DDL application.");
+        }
+    }
+
+    private static ImmutableArray<IReadOnlyList<string>> BuildConsensusRows(
+        IReadOnlyList<ConstraintConsensusResult> results,
+        bool includeGuidance)
+    {
+        var rows = results
+            .Take(DefaultTableLimit)
+            .Select(result => (IReadOnlyList<string>)ImmutableArray.Create(
+                DescribeConstraintType(result.ConstraintType),
+                result.ConstraintDescriptor,
+                FormatConsensus(result),
+                includeGuidance ? result.Recommendation : string.Empty))
+            .ToImmutableArray();
+
+        return rows;
+    }
+
+    private static IEnumerable<ConstraintConsensusResult> EnumerateConsensusResults(
+        MultiEnvironmentConstraintConsensus consensus)
+    {
+        foreach (var result in consensus.NullabilityConsensus)
+        {
+            if (result is not null)
+            {
+                yield return result;
+            }
+        }
+
+        foreach (var result in consensus.UniqueConstraintConsensus)
+        {
+            if (result is not null)
+            {
+                yield return result;
+            }
+        }
+
+        foreach (var result in consensus.ForeignKeyConsensus)
+        {
+            if (result is not null)
+            {
+                yield return result;
+            }
+        }
+    }
+
+    private static string DescribeConstraintType(ConstraintType constraintType)
+        => constraintType switch
+        {
+            ConstraintType.NotNull => "NOT NULL",
+            ConstraintType.Unique => "UNIQUE",
+            ConstraintType.CompositeUnique => "UNIQUE (composite)",
+            ConstraintType.ForeignKey => "FOREIGN KEY",
+            _ => constraintType.ToString().ToUpperInvariant()
+        };
+
+    private static string FormatConsensus(ConstraintConsensusResult result)
+    {
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "{0}/{1} ({2:P0})",
+            result.SafeEnvironmentCount,
+            result.TotalEnvironmentCount,
+            result.ConsensusRatio);
     }
 
     private static string DescribeLabelOrigin(
@@ -278,55 +834,87 @@ internal static class CommandConsole
             return;
         }
 
-        var errors = insights.Where(i => i?.Severity == ProfilingInsightSeverity.Error).ToArray();
-        var warnings = insights.Where(i => i?.Severity == ProfilingInsightSeverity.Warning).ToArray();
-        var others = insights.Where(i => i?.Severity != ProfilingInsightSeverity.Error && i?.Severity != ProfilingInsightSeverity.Warning).ToArray();
+        var errors = insights.Count(static i => i?.Severity == ProfilingInsightSeverity.Error);
+        var warnings = insights.Count(static i => i?.Severity == ProfilingInsightSeverity.Warning);
+        var informational = insights.Length - errors - warnings;
 
-        WriteLine(console, $"Profiling insights: {insights.Length} total ({errors.Length} errors, {warnings.Length} warnings, {others.Length} informational)");
+        WriteLine(
+            console,
+            $"Profiling insights: {insights.Length} total ({errors} errors, {warnings} warnings, {informational} informational)");
 
-        if (errors.Length > 0)
+        var highSeverity = insights
+            .Where(static i => i is { Severity: ProfilingInsightSeverity.Error or ProfilingInsightSeverity.Warning })
+            .OrderByDescending(static i => i!.Severity)
+            .ThenBy(static i => i!.Category)
+            .ThenBy(static i => FormatProfilingInsightCoordinate(i!.Coordinate), StringComparer.OrdinalIgnoreCase)
+            .OfType<ProfilingInsight>()
+            .ToList();
+
+        if (highSeverity.Count > 0)
         {
             WriteLine(console, string.Empty);
-            WriteLine(console, "⚠️  ERRORS - Require immediate attention:");
-            foreach (var insight in errors)
-            {
-                if (insight is null)
-                {
-                    continue;
-                }
+            WriteLine(console, "High severity insights:");
 
-                WriteErrorLine(console, "  " + FormatProfilingInsight(insight));
-            }
+            var rows = highSeverity
+                .Take(DefaultTableLimit)
+                .Select(insight => (IReadOnlyList<string>)ImmutableArray.Create(
+                    insight.Severity.ToString(),
+                    insight.Category.ToString(),
+                    FormatProfilingInsightCoordinate(insight.Coordinate),
+                    insight.Message))
+                .ToImmutableArray();
+
+            var headers = ImmutableArray.Create("Severity", "Category", "Location", "Message");
+            WriteTable(console, headers, rows);
+            EmitTableOverflow(console, highSeverity.Count, rows.Length);
         }
 
-        if (warnings.Length > 0)
+        var recommendations = insights
+            .Where(static i => i is { Severity: ProfilingInsightSeverity.Recommendation })
+            .OfType<ProfilingInsight>()
+            .OrderBy(static i => FormatProfilingInsightCoordinate(i.Coordinate), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (recommendations.Count > 0)
         {
             WriteLine(console, string.Empty);
-            WriteLine(console, "Warnings:");
-            foreach (var insight in warnings)
-            {
-                if (insight is null)
-                {
-                    continue;
-                }
+            WriteLine(console, "Recommendations:");
 
-                WriteErrorLine(console, "  " + FormatProfilingInsight(insight));
-            }
+            var rows = recommendations
+                .Take(DefaultTableLimit)
+                .Select(insight => (IReadOnlyList<string>)ImmutableArray.Create(
+                    insight.Category.ToString(),
+                    FormatProfilingInsightCoordinate(insight.Coordinate),
+                    insight.Message))
+                .ToImmutableArray();
+
+            var headers = ImmutableArray.Create("Category", "Location", "Message");
+            WriteTable(console, headers, rows);
+            EmitTableOverflow(console, recommendations.Count, rows.Length);
         }
 
-        if (others.Length > 0)
+        var infoInsights = insights
+            .Where(static i => i is { Severity: ProfilingInsightSeverity.Info })
+            .OfType<ProfilingInsight>()
+            .OrderBy(static i => FormatProfilingInsightCoordinate(i.Coordinate), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (infoInsights.Count > 0)
         {
             WriteLine(console, string.Empty);
-            WriteLine(console, "Informational:");
-            foreach (var insight in others)
-            {
-                if (insight is null)
-                {
-                    continue;
-                }
+            WriteLine(console, "Informational insights:");
 
-                WriteLine(console, "  " + FormatProfilingInsight(insight));
-            }
+            var rows = infoInsights
+                .Take(DefaultTableLimit)
+                .Select(insight => (IReadOnlyList<string>)ImmutableArray.Create(
+                    insight.Category.ToString(),
+                    FormatProfilingInsightCoordinate(insight.Coordinate),
+                    insight.Message))
+                .ToImmutableArray();
+
+            var headers = ImmutableArray.Create("Category", "Location", "Message");
+            WriteTable(console, headers, rows);
+            EmitTableOverflow(console, infoInsights.Count, rows.Length);
         }
     }
 
@@ -681,20 +1269,6 @@ internal static class CommandConsole
             MultiEnvironmentFindingSeverity.Advisory => "💡 ",
             _ => "ℹ️ "
         };
-
-    private static string FormatProfilingInsight(ProfilingInsight insight)
-    {
-        var severityText = insight.Severity.ToString().ToLowerInvariant();
-        var categoryText = insight.Category.ToString();
-        var coordinateText = FormatProfilingInsightCoordinate(insight.Coordinate);
-
-        if (string.IsNullOrWhiteSpace(coordinateText))
-        {
-            return $"[{severityText}] [{categoryText}] {insight.Message}";
-        }
-
-        return $"[{severityText}] [{categoryText}] {coordinateText}: {insight.Message}";
-    }
 
     private static string FormatProfilingInsightCoordinate(ProfilingInsightCoordinate? coordinate)
     {
