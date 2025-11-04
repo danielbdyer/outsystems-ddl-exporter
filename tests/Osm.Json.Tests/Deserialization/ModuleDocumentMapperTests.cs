@@ -138,6 +138,7 @@ public class ModuleDocumentMapperTests
         var temporalMetadataMapper = new TemporalMetadataMapper(context, extendedPropertyMapper);
         var schemaResolver = new EntitySchemaResolver(context);
         var metadataFactory = new EntityMetadataFactory();
+        var attributeDeduplicator = new AttributeDeduplicator(context);
         var duplicateWarningEmitter = new DuplicateWarningEmitter(context);
         var primaryKeyValidator = new PrimaryKeyValidator(context);
         var entityMapper = new EntityDocumentMapper(
@@ -150,6 +151,7 @@ public class ModuleDocumentMapperTests
             temporalMetadataMapper,
             schemaResolver,
             metadataFactory,
+            attributeDeduplicator,
             duplicateWarningEmitter,
             primaryKeyValidator);
         return new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);

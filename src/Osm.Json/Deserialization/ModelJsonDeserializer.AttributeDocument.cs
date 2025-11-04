@@ -57,6 +57,18 @@ public sealed partial class ModelJsonDeserializer
         [JsonPropertyName("refEntity_physicalName")]
         public string? ReferenceEntityPhysicalName { get; init; }
 
+        [JsonPropertyName("refEntity_isActive")]
+        [JsonConverter(typeof(BooleanAsZeroOneConverter))]
+        public int? ReferenceEntityIsActiveRaw { get; init; }
+
+        [JsonIgnore]
+        public bool? ReferenceEntityIsActive => ReferenceEntityIsActiveRaw switch
+        {
+            1 => true,
+            0 => false,
+            _ => null
+        };
+
         [JsonPropertyName("reference_deleteRuleCode")]
         public string? ReferenceDeleteRuleCode { get; init; }
 

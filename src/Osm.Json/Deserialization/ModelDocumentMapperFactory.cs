@@ -24,6 +24,7 @@ internal sealed class ModelDocumentMapperFactory : IModelDocumentMapperFactory
         var temporalMetadataMapper = new TemporalMetadataMapper(context, extendedPropertyMapper);
         var schemaResolver = new EntitySchemaResolver(context);
         var metadataFactory = new EntityMetadataFactory();
+        var attributeDeduplicator = new AttributeDeduplicator(context);
         var duplicateWarningEmitter = new DuplicateWarningEmitter(context);
         var primaryKeyValidator = new PrimaryKeyValidator(context);
         var entityMapper = new EntityDocumentMapper(
@@ -36,6 +37,7 @@ internal sealed class ModelDocumentMapperFactory : IModelDocumentMapperFactory
             temporalMetadataMapper,
             schemaResolver,
             metadataFactory,
+            attributeDeduplicator,
             duplicateWarningEmitter,
             primaryKeyValidator);
         var moduleMapper = new ModuleDocumentMapper(context, entityMapper, extendedPropertyMapper);
