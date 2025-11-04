@@ -9,14 +9,17 @@ namespace Osm.Pipeline.Profiling;
 
 public sealed record MultiEnvironmentProfileReport(
     ImmutableArray<ProfilingEnvironmentSummary> Environments,
-    ImmutableArray<MultiEnvironmentFinding> Findings)
+    ImmutableArray<MultiEnvironmentFinding> Findings,
+    MultiEnvironmentConstraintConsensus ConstraintConsensus)
 {
     public static MultiEnvironmentProfileReport Empty { get; } = new(
         ImmutableArray<ProfilingEnvironmentSummary>.Empty,
-        ImmutableArray<MultiEnvironmentFinding>.Empty);
+        ImmutableArray<MultiEnvironmentFinding>.Empty,
+        MultiEnvironmentConstraintConsensus.Empty);
 
     public static MultiEnvironmentProfileReport Create(
-        IEnumerable<ProfilingEnvironmentSnapshot> captures)
+        IEnumerable<ProfilingEnvironmentSnapshot> captures,
+        double minimumConsensusThreshold = 1.0)
     {
         if (captures is null)
         {
@@ -37,7 +40,11 @@ public sealed record MultiEnvironmentProfileReport(
             .ToImmutableArray();
 
         var findings = BuildFindings(summaries, snapshots);
-        return new MultiEnvironmentProfileReport(summaries, findings);
+
+        // Analyze constraint consensus across all environments
+        var consensus = MultiEnvironmentConstraintConsensus.Analyze(snapshots, minimumConsensusThreshold);
+
+        return new MultiEnvironmentProfileReport(summaries, findings, consensus);
     }
 
     private static ImmutableArray<MultiEnvironmentFinding> BuildFindings(
@@ -511,7 +518,7 @@ internal sealed class EnvironmentCompositeUniqueKeyComparer : IEqualityComparer<
     {
         return string.Equals(x.Schema, y.Schema, StringComparison.OrdinalIgnoreCase)
             && string.Equals(x.Table, y.Table, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(x.Columns, y.Columns, StringComparison.Ordinal);
+            && string.Equals(x.Columns, y.Columns, StringComparison.OrdinalIgnoreCase);
     }
 
     public int GetHashCode((string Schema, string Table, string Columns) obj)
@@ -519,7 +526,7 @@ internal sealed class EnvironmentCompositeUniqueKeyComparer : IEqualityComparer<
         var hash = new HashCode();
         hash.Add(obj.Schema, StringComparer.OrdinalIgnoreCase);
         hash.Add(obj.Table, StringComparer.OrdinalIgnoreCase);
-        hash.Add(obj.Columns, StringComparer.Ordinal);
+        hash.Add(obj.Columns, StringComparer.OrdinalIgnoreCase);
         return hash.ToHashCode();
     }
 }

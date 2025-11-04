@@ -135,7 +135,12 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
             return Result<IDataProfiler>.Success(primaryProfiler);
         }
 
-        var multiEnvironmentProfiler = new MultiTargetSqlDataProfiler(primaryEnvironment, secondaryEnvironments.ToImmutable());
+        var consensusThreshold = request.Scope.SqlOptions.EffectiveConsensusThreshold;
+        var multiEnvironmentProfiler = new MultiTargetSqlDataProfiler(
+            primaryEnvironment,
+            secondaryEnvironments.ToImmutable(),
+            maxDegreeOfParallelism: null,
+            minimumConsensusThreshold: consensusThreshold);
         return Result<IDataProfiler>.Success(multiEnvironmentProfiler);
     }
 
@@ -242,7 +247,9 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
 
     private sealed class EnvironmentLabelAllocator
     {
+        // Track both counts and the canonical (first-seen) casing of each label
         private readonly Dictionary<string, int> _labelCounts = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _canonicalLabels = new(StringComparer.OrdinalIgnoreCase);
 
         public string Allocate(string label, out bool adjusted)
         {
@@ -256,24 +263,29 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
 
             if (!_labelCounts.TryGetValue(trimmed, out var count))
             {
+                // First occurrence - establish canonical casing
                 _labelCounts[trimmed] = 1;
+                _canonicalLabels[trimmed] = trimmed;
                 adjusted = false;
                 return trimmed;
             }
 
+            // Use canonical (first-seen) casing for consistency
+            var canonical = _canonicalLabels[trimmed];
             adjusted = true;
             count++;
             string candidate;
 
             do
             {
-                candidate = $"{trimmed} #{count}";
+                candidate = $"{canonical} #{count}";
                 count++;
             }
             while (_labelCounts.ContainsKey(candidate));
 
             _labelCounts[trimmed] = count;
             _labelCounts[candidate] = 1;
+            _canonicalLabels[candidate] = candidate;
             return candidate;
         }
     }

@@ -14,13 +14,15 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
 {
     private readonly ImmutableArray<ProfilerEnvironment> _targets;
     private readonly int _maxDegreeOfParallelism;
+    private readonly double _minimumConsensusThreshold;
 
     public MultiEnvironmentProfileReport? Report { get; private set; }
 
     public MultiTargetSqlDataProfiler(
         ProfilerEnvironment primary,
         IEnumerable<ProfilerEnvironment> secondaries,
-        int? maxDegreeOfParallelism = null)
+        int? maxDegreeOfParallelism = null,
+        double minimumConsensusThreshold = 1.0)
     {
         if (primary is null)
         {
@@ -30,6 +32,11 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
         if (secondaries is null)
         {
             throw new ArgumentNullException(nameof(secondaries));
+        }
+
+        if (minimumConsensusThreshold < 0.0 || minimumConsensusThreshold > 1.0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minimumConsensusThreshold), "Consensus threshold must be between 0.0 and 1.0");
         }
 
         var builder = ImmutableArray.CreateBuilder<ProfilerEnvironment>();
@@ -58,6 +65,7 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
         }
 
         _maxDegreeOfParallelism = Math.Clamp(requestedParallelism, 1, _targets.Length);
+        _minimumConsensusThreshold = minimumConsensusThreshold;
     }
 
     public async Task<Result<ProfileSnapshot>> CaptureAsync(CancellationToken cancellationToken = default)
@@ -97,7 +105,8 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
                 capture.Environment.LabelOrigin,
                 capture.Environment.LabelWasAdjusted,
                 capture.Snapshot,
-                capture.Duration)));
+                capture.Duration)),
+            _minimumConsensusThreshold);
 
         if (captures.Count == 1)
         {
@@ -165,6 +174,8 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
 
     private static Result<ProfileSnapshot> MergeSnapshots(IReadOnlyList<ProfileSnapshot> snapshots)
     {
+        // Use worst-case aggregation strategy for multi-environment constraint safety
+        // This ensures constraints are only applied if they're safe across ALL environments
         var columnMap = new Dictionary<(string Schema, string Table, string Column), ColumnProfile>(ColumnKeyComparer.Instance);
         var uniqueMap = new Dictionary<(string Schema, string Table, string Column), UniqueCandidateProfile>(ColumnKeyComparer.Instance);
         var compositeMap = new Dictionary<(string Schema, string Table, string Key), CompositeUniqueCandidateProfile>(CompositeUniqueKeyComparer.Instance);
@@ -172,10 +183,10 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
 
         foreach (var snapshot in snapshots)
         {
-            MergeColumns(snapshot, columnMap);
-            MergeUniqueCandidates(snapshot, uniqueMap);
-            MergeCompositeCandidates(snapshot, compositeMap);
-            MergeForeignKeys(snapshot, foreignKeyMap);
+            MergeColumnsWithAggregation(snapshot, columnMap);
+            MergeUniqueCandidatesWithAggregation(snapshot, uniqueMap);
+            MergeCompositeCandidatesWithAggregation(snapshot, compositeMap);
+            MergeForeignKeysWithAggregation(snapshot, foreignKeyMap);
         }
 
         return ProfileSnapshot.Create(
@@ -185,31 +196,96 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
             foreignKeyMap.Values);
     }
 
-    private static void MergeColumns(ProfileSnapshot snapshot, IDictionary<(string Schema, string Table, string Column), ColumnProfile> map)
+    private static void MergeColumnsWithAggregation(
+        ProfileSnapshot snapshot,
+        IDictionary<(string Schema, string Table, string Column), ColumnProfile> map)
     {
         foreach (var column in snapshot.Columns)
         {
             var key = (column.Schema.Value, column.Table.Value, column.Column.Value);
-            if (!map.ContainsKey(key))
+
+            if (!map.TryGetValue(key, out var existing))
             {
+                // First occurrence - add as-is
                 map[key] = column;
+                continue;
+            }
+
+            // Aggregate: use maximum NULL count (most conservative for constraint application)
+            // Use most pessimistic probe status to reflect reality across environments
+            var maxNullCount = Math.Max(existing.NullCount, column.NullCount);
+            var worstProbeStatus = AggregateProbeStatus(existing.NullCountStatus, column.NullCountStatus);
+
+            // Aggregate null row samples if present in either environment
+            var aggregatedSample = existing.NullRowSample ?? column.NullRowSample;
+
+            // Use first occurrence's metadata (physical nullability, PK, etc.) as baseline
+            // but aggregate data quality metrics
+            if (maxNullCount != existing.NullCount ||
+                worstProbeStatus != existing.NullCountStatus ||
+                aggregatedSample != existing.NullRowSample)
+            {
+                var aggregated = ColumnProfile.Create(
+                    existing.Schema,
+                    existing.Table,
+                    existing.Column,
+                    existing.IsNullablePhysical,
+                    existing.IsComputed,
+                    existing.IsPrimaryKey,
+                    existing.IsUniqueKey,
+                    existing.DefaultDefinition,
+                    existing.RowCount, // Keep first occurrence's row count as baseline
+                    maxNullCount,      // Use worst case across environments
+                    worstProbeStatus,  // Use worst probe outcome
+                    aggregatedSample);
+
+                if (aggregated.IsSuccess)
+                {
+                    map[key] = aggregated.Value;
+                }
             }
         }
     }
 
-    private static void MergeUniqueCandidates(ProfileSnapshot snapshot, IDictionary<(string Schema, string Table, string Column), UniqueCandidateProfile> map)
+    private static void MergeUniqueCandidatesWithAggregation(
+        ProfileSnapshot snapshot,
+        IDictionary<(string Schema, string Table, string Column), UniqueCandidateProfile> map)
     {
         foreach (var profile in snapshot.UniqueCandidates)
         {
             var key = (profile.Schema.Value, profile.Table.Value, profile.Column.Value);
-            if (!map.ContainsKey(key))
+
+            if (!map.TryGetValue(key, out var existing))
             {
                 map[key] = profile;
+                continue;
+            }
+
+            // Aggregate: if ANY environment has duplicates, mark as having duplicates
+            // This is conservative for constraint application
+            var hasDuplicate = existing.HasDuplicate || profile.HasDuplicate;
+            var worstProbeStatus = AggregateProbeStatus(existing.ProbeStatus, profile.ProbeStatus);
+
+            if (hasDuplicate != existing.HasDuplicate || worstProbeStatus != existing.ProbeStatus)
+            {
+                var aggregated = UniqueCandidateProfile.Create(
+                    existing.Schema,
+                    existing.Table,
+                    existing.Column,
+                    hasDuplicate,
+                    worstProbeStatus);
+
+                if (aggregated.IsSuccess)
+                {
+                    map[key] = aggregated.Value;
+                }
             }
         }
     }
 
-    private static void MergeCompositeCandidates(ProfileSnapshot snapshot, IDictionary<(string Schema, string Table, string Key), CompositeUniqueCandidateProfile> map)
+    private static void MergeCompositeCandidatesWithAggregation(
+        ProfileSnapshot snapshot,
+        IDictionary<(string Schema, string Table, string Key), CompositeUniqueCandidateProfile> map)
     {
         foreach (var profile in snapshot.CompositeUniqueCandidates)
         {
@@ -218,14 +294,36 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
                 profile.Table.Value,
                 ProfilingPlanBuilder.BuildUniqueKey(profile.Columns.Select(static column => column.Value)));
 
-            if (!map.ContainsKey(key))
+            if (!map.TryGetValue(key, out var existing))
             {
                 map[key] = profile;
+                continue;
+            }
+
+            // Aggregate: if ANY environment has duplicates, mark as having duplicates
+            var hasDuplicate = existing.HasDuplicate || profile.HasDuplicate;
+            var worstProbeStatus = AggregateProbeStatus(existing.ProbeStatus, profile.ProbeStatus);
+
+            if (hasDuplicate != existing.HasDuplicate || worstProbeStatus != existing.ProbeStatus)
+            {
+                var aggregated = CompositeUniqueCandidateProfile.Create(
+                    existing.Schema,
+                    existing.Table,
+                    existing.Columns,  // Use first occurrence's column order
+                    hasDuplicate,
+                    worstProbeStatus);
+
+                if (aggregated.IsSuccess)
+                {
+                    map[key] = aggregated.Value;
+                }
             }
         }
     }
 
-    private static void MergeForeignKeys(ProfileSnapshot snapshot, IDictionary<(string FromSchema, string FromTable, string FromColumn, string ToSchema, string ToTable, string ToColumn), ForeignKeyReality> map)
+    private static void MergeForeignKeysWithAggregation(
+        ProfileSnapshot snapshot,
+        IDictionary<(string FromSchema, string FromTable, string FromColumn, string ToSchema, string ToTable, string ToColumn), ForeignKeyReality> map)
     {
         foreach (var reality in snapshot.ForeignKeys)
         {
@@ -238,11 +336,52 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
                 reference.ToTable.Value,
                 reference.ToColumn.Value);
 
-            if (!map.ContainsKey(key))
+            if (!map.TryGetValue(key, out var existing))
             {
                 map[key] = reality;
+                continue;
+            }
+
+            // Aggregate: if ANY environment has orphans, mark as having orphans
+            // Aggregate NOCHECK status (if any environment has NOCHECK)
+            var hasOrphan = existing.HasOrphan || reality.HasOrphan;
+            var isNoCheck = existing.IsNoCheck || reality.IsNoCheck;
+            var worstProbeStatus = AggregateProbeStatus(existing.ProbeStatus, reality.ProbeStatus);
+
+            if (hasOrphan != existing.HasOrphan ||
+                isNoCheck != existing.IsNoCheck ||
+                worstProbeStatus != existing.ProbeStatus)
+            {
+                var aggregated = ForeignKeyReality.Create(
+                    existing.Reference,  // Use first occurrence's reference
+                    hasOrphan,
+                    isNoCheck,
+                    worstProbeStatus);
+
+                if (aggregated.IsSuccess)
+                {
+                    map[key] = aggregated.Value;
+                }
             }
         }
+    }
+
+    private static ProfilingProbeStatus AggregateProbeStatus(ProfilingProbeStatus first, ProfilingProbeStatus second)
+    {
+        // Aggregate probe statuses: use the worst outcome for conservative constraint application
+        // Priority: Cancelled > Timeout > Succeeded
+        if (first.Outcome == ProfilingProbeOutcome.Cancelled || second.Outcome == ProfilingProbeOutcome.Cancelled)
+        {
+            return first.Outcome == ProfilingProbeOutcome.Cancelled ? first : second;
+        }
+
+        if (first.Outcome == ProfilingProbeOutcome.Timeout || second.Outcome == ProfilingProbeOutcome.Timeout)
+        {
+            return first.Outcome == ProfilingProbeOutcome.Timeout ? first : second;
+        }
+
+        // Both succeeded - return first (they're equivalent)
+        return first;
     }
 
     private sealed class CompositeUniqueKeyComparer : IEqualityComparer<(string Schema, string Table, string Key)>
@@ -253,7 +392,7 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
         {
             return string.Equals(x.Schema, y.Schema, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(x.Table, y.Table, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(x.Key, y.Key, StringComparison.Ordinal);
+                && string.Equals(x.Key, y.Key, StringComparison.OrdinalIgnoreCase);
         }
 
         public int GetHashCode((string Schema, string Table, string Key) obj)
@@ -261,7 +400,7 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
             var hash = new HashCode();
             hash.Add(obj.Schema, StringComparer.OrdinalIgnoreCase);
             hash.Add(obj.Table, StringComparer.OrdinalIgnoreCase);
-            hash.Add(obj.Key, StringComparer.Ordinal);
+            hash.Add(obj.Key, StringComparer.OrdinalIgnoreCase);
             return hash.ToHashCode();
         }
     }
