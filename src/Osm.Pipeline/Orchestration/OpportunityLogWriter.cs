@@ -117,7 +117,7 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
         }
 
         builder.AppendLine("--");
-        builder.AppendLine($"-- This script contains {opportunities.Count} {scriptCategory.ToLowerInvariant()} opportunities.");
+        builder.AppendLine($"-- This script contains {opportunities.Count} {scriptCategory.ToLower(System.Globalization.CultureInfo.InvariantCulture)} opportunities.");
         builder.AppendLine("--");
 
         var contradictions = opportunities.Where(o => o.IsContradiction).ToList();
