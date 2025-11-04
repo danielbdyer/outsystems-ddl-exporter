@@ -32,7 +32,8 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
     public Dictionary<(string Schema, string Table), TableProfilingPlan> BuildPlans(
         IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
         IReadOnlyDictionary<(string Schema, string Table), long> rowCounts,
-        bool allowMissingTables = false)
+        bool allowMissingTables = false,
+        IReadOnlyList<Sql.TableNameMapping>? tableNameMappings = null)
     {
         if (metadata is null)
         {
@@ -45,6 +46,7 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
         }
 
         var builders = new Dictionary<(string Schema, string Table), TableProfilingPlanAccumulator>(TableKeyComparer.Instance);
+        var mappingLookup = BuildMappingLookup(tableNameMappings);
 
         foreach (var entity in _model.Modules.SelectMany(static module => module.Entities))
         {
@@ -52,11 +54,14 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             var table = entity.PhysicalName.Value;
             var key = (schema, table);
 
+            // Resolve table name using mappings if available
+            var (resolvedSchema, resolvedTable) = ResolveTableName(schema, table, metadata, mappingLookup);
+
             // In lenient mode, check if the table has any columns in metadata before processing
             if (allowMissingTables)
             {
                 var hasAnyColumn = entity.Attributes.Any(attr =>
-                    metadata.ContainsKey((schema, table, attr.ColumnName.Value)));
+                    metadata.ContainsKey((resolvedSchema, resolvedTable, attr.ColumnName.Value)));
 
                 if (!hasAnyColumn)
                 {
@@ -74,7 +79,7 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             foreach (var attribute in entity.Attributes)
             {
                 var columnName = attribute.ColumnName.Value;
-                var metadataKey = (schema, table, columnName);
+                var metadataKey = (resolvedSchema, resolvedTable, columnName);
                 if (metadata.ContainsKey(metadataKey))
                 {
                     accumulator.AddColumn(columnName);
@@ -160,6 +165,61 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
     internal static string BuildForeignKeyKey(string column, string targetSchema, string targetTable, string targetColumn)
     {
         return string.Join("|", new[] { column, targetSchema, targetTable, targetColumn }.Select(static value => value.ToLowerInvariant()));
+    }
+
+    private static Dictionary<(string Schema, string Table), (string Schema, string Table)> BuildMappingLookup(
+        IReadOnlyList<Sql.TableNameMapping>? mappings)
+    {
+        var lookup = new Dictionary<(string Schema, string Table), (string Schema, string Table)>(TableKeyComparer.Instance);
+
+        if (mappings is null || mappings.Count == 0)
+        {
+            return lookup;
+        }
+
+        foreach (var mapping in mappings)
+        {
+            var sourceKey = (mapping.SourceSchema, mapping.SourceTable);
+            var targetValue = (mapping.TargetSchema, mapping.TargetTable);
+            lookup[sourceKey] = targetValue;
+        }
+
+        return lookup;
+    }
+
+    private static (string Schema, string Table) ResolveTableName(
+        string schema,
+        string table,
+        IReadOnlyDictionary<(string Schema, string Table, string Column), ColumnMetadata> metadata,
+        Dictionary<(string Schema, string Table), (string Schema, string Table)> mappingLookup)
+    {
+        // First, check if the original table exists in metadata
+        var hasOriginalTable = metadata.Keys.Any(k =>
+            string.Equals(k.Schema, schema, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(k.Table, table, StringComparison.OrdinalIgnoreCase));
+
+        if (hasOriginalTable)
+        {
+            return (schema, table);
+        }
+
+        // If not found, try to find a mapping
+        var key = (schema, table);
+        if (mappingLookup.TryGetValue(key, out var mappedTable))
+        {
+            // Verify the mapped table exists in metadata
+            var hasMappedTable = metadata.Keys.Any(k =>
+                string.Equals(k.Schema, mappedTable.Schema, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(k.Table, mappedTable.Table, StringComparison.OrdinalIgnoreCase));
+
+            if (hasMappedTable)
+            {
+                return mappedTable;
+            }
+        }
+
+        // Return original if no mapping found or mapping doesn't exist in metadata
+        return (schema, table);
     }
 
     private sealed class TableProfilingPlanAccumulator
