@@ -31,7 +31,8 @@ public sealed class PipelineRequestContextBuilderTests
                 SqlSamplingConfiguration.Empty,
                 SqlAuthenticationConfiguration.Empty,
                 MetadataContractConfiguration.Empty,
-                Array.Empty<string>()),
+                Array.Empty<string>(),
+                Array.Empty<TableNameMappingConfiguration>()),
             new ModuleFilterConfiguration(
                 new[] { "CRM" },
                 IncludeSystemModules: true,

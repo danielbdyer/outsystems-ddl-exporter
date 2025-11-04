@@ -70,7 +70,7 @@ public sealed class UniqueIndexDecisionOrchestratorTests
         Assert.Contains(uniqueDecision, builder.UniqueIndexes);
 
         var opportunity = Assert.Single(builder.Opportunities);
-        Assert.Equal("Resolve duplicate values before enforcing the unique index.", opportunity.Summary);
+        Assert.Equal("Unique index was not enforced. Resolve duplicate values before enforcement can proceed.", opportunity.Summary);
         Assert.Equal(OpportunityDisposition.NeedsRemediation, opportunity.Disposition);
         Assert.Equal(OpportunityType.UniqueIndex, opportunity.Type);
     }

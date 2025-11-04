@@ -103,8 +103,20 @@ internal sealed class ModuleDocumentMapper
         var moduleResult = ModuleModel.Create(moduleName, doc.IsSystem, doc.IsActive, entityResults, propertiesResult.Value);
         if (moduleResult.IsFailure)
         {
+            var targetPath = path;
+            if (!moduleResult.Errors.IsDefaultOrEmpty)
+            {
+                var first = moduleResult.Errors[0];
+                if (first.Code is "module.entities.empty"
+                    or "module.entities.duplicateLogical"
+                    or "module.entities.duplicatePhysical")
+                {
+                    targetPath = path.Property("entities");
+                }
+            }
+
             return Result<ModuleModel?>.Failure(
-                _context.WithPath(path, moduleResult.Errors));
+                _context.WithPath(targetPath, moduleResult.Errors));
         }
 
         return Result<ModuleModel?>.Success(moduleResult.Value);

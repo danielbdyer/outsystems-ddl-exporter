@@ -11,7 +11,14 @@ internal sealed record TableProfilingPlan(
     ImmutableArray<string> Columns,
     ImmutableArray<UniqueCandidatePlan> UniqueCandidates,
     ImmutableArray<ForeignKeyPlan> ForeignKeys,
-    ImmutableArray<string> PrimaryKeyColumns);
+    ImmutableArray<string> PrimaryKeyColumns,
+    string? ResolvedSchema = null,
+    string? ResolvedTable = null)
+{
+    public string TargetSchema => ResolvedSchema ?? Schema;
+
+    public string TargetTable => ResolvedTable ?? Table;
+}
 
 internal sealed record UniqueCandidatePlan(string Key, ImmutableArray<string> Columns);
 

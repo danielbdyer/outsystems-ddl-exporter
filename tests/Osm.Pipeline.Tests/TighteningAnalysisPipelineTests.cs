@@ -12,6 +12,7 @@ using Osm.Validation.Tightening;
 using Tests.Support;
 using Xunit;
 using Osm.Validation.Profiling;
+using Osm.Pipeline.Configuration;
 using Osm.Smo;
 
 namespace Osm.Pipeline.Tests;
@@ -33,7 +34,8 @@ public class TighteningAnalysisPipelineTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict,
-                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+                TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicyLoader.LoadDefault(),
             FixtureFile.GetPath("profiling/profile.edge-case.json"));

@@ -319,6 +319,14 @@ public sealed class SqlDataProfiler : IDataProfiler
             tables.Add((entity.Schema.Value, entity.PhysicalName.Value));
         }
 
+        if (_options.AllowMissingTables && !_options.TableNameMappings.IsDefaultOrEmpty)
+        {
+            foreach (var mapping in _options.TableNameMappings)
+            {
+                tables.Add((mapping.TargetSchema, mapping.TargetTable));
+            }
+        }
+
         return tables;
     }
 

@@ -16,6 +16,7 @@ using Osm.Smo;
 using Tests.Support;
 using Xunit;
 using Osm.Validation.Profiling;
+using Osm.Pipeline.Configuration;
 
 namespace Osm.Pipeline.Tests;
 
@@ -51,7 +52,8 @@ public class DmmComparePipelineTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict,
-                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+                TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
             TypeMappingPolicyLoader.LoadDefault(),
             profilePath);
@@ -95,7 +97,8 @@ public class DmmComparePipelineTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict,
-                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+                TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
             TypeMappingPolicyLoader.LoadDefault(),
             profilePath);
@@ -159,7 +162,8 @@ public class DmmComparePipelineTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict,
-                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+                TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission, applyNamingOverrides: false),
             TypeMappingPolicyLoader.LoadDefault(),
             profilePath);

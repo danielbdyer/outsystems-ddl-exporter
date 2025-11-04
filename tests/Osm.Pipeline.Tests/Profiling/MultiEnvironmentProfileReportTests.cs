@@ -28,7 +28,8 @@ public sealed class MultiEnvironmentProfileReportTests
                 null,
                 10_000,
                 0,
-                nullProbe)),
+                nullProbe,
+                null)),
             ImmutableArray.Create(new UniqueCandidateProfile(
                 new SchemaName("dbo"),
                 new TableName("Customer"),
@@ -61,7 +62,8 @@ public sealed class MultiEnvironmentProfileReportTests
                 null,
                 9_500,
                 250,
-                nullProbe)),
+                nullProbe,
+                null)),
             ImmutableArray.Create(new UniqueCandidateProfile(
                 new SchemaName("dbo"),
                 new TableName("Customer"),

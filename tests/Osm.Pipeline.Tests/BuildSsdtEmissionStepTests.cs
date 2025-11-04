@@ -13,6 +13,7 @@ using Osm.Domain.Profiling;
 using Osm.Emission;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Configuration;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -219,7 +220,8 @@ public sealed class BuildSsdtEmissionStepTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict,
-                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+                TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicyLoader.LoadDefault());
 

@@ -158,6 +158,8 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             {
                 schema = plan.Schema,
                 table = plan.Table,
+                targetSchema = plan.TargetSchema,
+                targetTable = plan.TargetTable,
                 rowCount = plan.RowCount,
                 results = dictionary
                     .OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
@@ -210,6 +212,8 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             {
                 schema = plan.Schema,
                 table = plan.Table,
+                targetSchema = plan.TargetSchema,
+                targetTable = plan.TargetTable,
                 rowCount = plan.RowCount,
                 useSampling,
                 results = dictionary
@@ -265,6 +269,8 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             {
                 schema = plan.Schema,
                 table = plan.Table,
+                targetSchema = plan.TargetSchema,
+                targetTable = plan.TargetTable,
                 rowCount = plan.RowCount,
                 useSampling,
                 orphans = dictionary
@@ -282,7 +288,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        _foreignKeyProbeQueryBuilder.ConfigureMetadataCommand(command, plan.Schema, plan.Table);
+        _foreignKeyProbeQueryBuilder.ConfigureMetadataCommand(command, plan.TargetSchema, plan.TargetTable);
 
         ApplyCommandTimeout(command);
 
@@ -448,7 +454,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             try
             {
                 await using var command = connection.CreateCommand();
-                _nullRowSampleQueryBuilder.Configure(command, plan.Schema, plan.Table, column, plan.PrimaryKeyColumns);
+                _nullRowSampleQueryBuilder.Configure(command, plan.TargetSchema, plan.TargetTable, column, plan.PrimaryKeyColumns);
                 ApplyCommandTimeout(command);
 
                 var sampleRows = ImmutableArray.CreateBuilder<NullRowIdentifier>();

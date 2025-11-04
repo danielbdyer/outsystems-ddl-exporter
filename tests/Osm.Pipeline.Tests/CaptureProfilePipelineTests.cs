@@ -15,6 +15,7 @@ using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Validation.Profiling;
+using Osm.Pipeline.Configuration;
 using Tests.Support;
 using Xunit;
 
@@ -80,13 +81,13 @@ public class CaptureProfilePipelineTests
             using var document = JsonDocument.Parse(manifestStream);
             var root = document.RootElement;
 
-            Assert.Equal(modelPath, root.GetProperty("modelPath").GetString());
-            Assert.Equal(payload.ProfilePath, root.GetProperty("profilePath").GetString());
-            Assert.Equal("fixture", root.GetProperty("profilerProvider").GetString());
+            Assert.Equal(modelPath, root.GetProperty("ModelPath").GetString());
+            Assert.Equal(payload.ProfilePath, root.GetProperty("ProfilePath").GetString());
+            Assert.Equal("fixture", root.GetProperty("ProfilerProvider").GetString());
 
-            var snapshot = root.GetProperty("snapshot");
-            Assert.Equal(payload.Profile.Columns.Length, snapshot.GetProperty("columnCount").GetInt32());
-            Assert.Equal(payload.Profile.ForeignKeys.Length, snapshot.GetProperty("foreignKeyCount").GetInt32());
+            var snapshot = root.GetProperty("Snapshot");
+            Assert.Equal(payload.Profile.Columns.Length, snapshot.GetProperty("ColumnCount").GetInt32());
+            Assert.Equal(payload.Profile.ForeignKeys.Length, snapshot.GetProperty("ForeignKeyCount").GetInt32());
         }
 
         Assert.NotEmpty(payload.ExecutionLog.Entries);
@@ -136,7 +137,8 @@ public class CaptureProfilePipelineTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict,
-                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+                TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty),
             SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
             TypeMappingPolicyLoader.LoadDefault(),
             fixtureProfilePath);

@@ -107,8 +107,10 @@ public sealed class CacheEntryEvaluatorTests
 
         var result = await evaluator.DetermineMissingCacheReasonAsync(missingContext, ManifestFileName, CancellationToken.None);
 
-        Assert.Equal(EvidenceCacheInvalidationReason.MetadataMismatch, result.Reason);
-        Assert.Equal(context.Key, result.Metadata["manifest.cacheKey"]);
+        Assert.Equal(EvidenceCacheInvalidationReason.ModuleSelectionChanged, result.Reason);
+        var expectedCount = missingContext.ModuleSelection.ModuleCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(expectedCount, result.Metadata["expected.selection.count"]);
+        Assert.NotEqual(expectedCount, result.Metadata["actual.selection.count"]);
     }
 
     private static async Task<(CacheRequestContext Context, CacheMetadataBuilder Builder)> CreateCacheEntryAsync(MockFileSystem fileSystem)

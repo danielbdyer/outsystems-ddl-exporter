@@ -19,6 +19,7 @@ using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Configuration;
 using Osm.Validation.Tightening;
 using Osm.Smo;
 using Osm.Validation.Tightening.Opportunities;
@@ -230,10 +231,11 @@ public class BuildSsdtPipelineTests
 
         var expectedWarnings = new[]
         {
-            "Schema validation encountered 3 issue(s). Proceeding with best-effort import.",
-            "  Example 1: /modules/0/entities/0/indexes/0/fill_factor: All values fail against the false schema",
-            "  Example 2: /modules/0/entities/0/indexes/1/fill_factor: All values fail against the false schema",
-            "  Example 3: /modules/2/entities/0/indexes/0/fill_factor: All values fail against the false schema"
+            "Schema validation encountered 9 issue(s). Proceeding with best-effort import.",
+            "  Example 1: /modules/0/entities/0/meta: Value is \"string\" but should be \"object\"",
+            "  Example 2: /modules/0/entities/0/indexes/0/fill_factor: All values fail against the false schema",
+            "  Example 3: /modules/0/entities/0/indexes/1/fill_factor: All values fail against the false schema",
+            "  … 6 additional issue(s) suppressed."
         };
 
         Assert.Equal(expectedWarnings, value.Warnings.ToArray());
@@ -320,7 +322,8 @@ public class BuildSsdtPipelineTests
                 Sampling: new SqlSamplingSettings(null, null),
                 Authentication: new SqlAuthenticationSettings(null, null, null, null),
                 MetadataContract: MetadataContractOverrides.Strict,
-                ProfilingConnectionStrings: ImmutableArray<string>.Empty),
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+                TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty),
             smoOptions ?? SmoBuildOptions.FromEmission(resolvedTightening.Emission),
             typeMappingPolicy ?? TypeMappingPolicyLoader.LoadDefault(),
             profilePath);

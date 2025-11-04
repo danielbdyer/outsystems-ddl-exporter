@@ -57,6 +57,14 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             // Resolve table name using mappings if available
             var (resolvedSchema, resolvedTable) = ResolveTableName(schema, table, metadata, mappingLookup);
 
+            if (!builders.TryGetValue(key, out var accumulator))
+            {
+                accumulator = new TableProfilingPlanAccumulator(schema, table);
+                builders[key] = accumulator;
+            }
+
+            accumulator.SetResolvedTable(resolvedSchema, resolvedTable);
+
             // In lenient mode, check if the table has any columns in metadata before processing
             if (allowMissingTables)
             {
@@ -68,12 +76,6 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
                     // Skip this table entirely - it doesn't exist in this environment
                     continue;
                 }
-            }
-
-            if (!builders.TryGetValue(key, out var accumulator))
-            {
-                accumulator = new TableProfilingPlanAccumulator(schema, table);
-                builders[key] = accumulator;
             }
 
             foreach (var attribute in entity.Attributes)
@@ -150,8 +152,15 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
         foreach (var kvp in builders)
         {
             var key = kvp.Key;
-            rowCounts.TryGetValue(key, out var rowCount);
-            plans[key] = kvp.Value.Build(rowCount);
+            var accumulator = kvp.Value;
+
+            var resolvedKey = (accumulator.ResolvedSchema, accumulator.ResolvedTable);
+            if (!rowCounts.TryGetValue(resolvedKey, out var rowCount))
+            {
+                rowCounts.TryGetValue(key, out rowCount);
+            }
+
+            plans[key] = accumulator.Build(rowCount);
         }
 
         return plans;
@@ -235,11 +244,28 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
         {
             Schema = schema;
             Table = table;
+            ResolvedSchema = schema;
+            ResolvedTable = table;
         }
 
         public string Schema { get; }
 
         public string Table { get; }
+
+        public string ResolvedSchema { get; private set; }
+
+        public string ResolvedTable { get; private set; }
+
+        public void SetResolvedTable(string schema, string table)
+        {
+            if (string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(table))
+            {
+                return;
+            }
+
+            ResolvedSchema = schema;
+            ResolvedTable = table;
+        }
 
         public void AddColumn(string column)
         {
@@ -299,7 +325,16 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
                 .ToImmutableArray();
             var uniqueCandidates = _uniqueCandidates.ToImmutableArray();
             var foreignKeys = _foreignKeys.ToImmutableArray();
-            return new TableProfilingPlan(Schema, Table, rowCount, columns, uniqueCandidates, foreignKeys, primaryKeyColumns);
+            return new TableProfilingPlan(
+                Schema,
+                Table,
+                rowCount,
+                columns,
+                uniqueCandidates,
+                foreignKeys,
+                primaryKeyColumns,
+                ResolvedSchema,
+                ResolvedTable);
         }
     }
 }

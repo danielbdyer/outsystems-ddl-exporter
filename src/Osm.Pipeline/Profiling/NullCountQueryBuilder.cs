@@ -22,7 +22,7 @@ internal sealed class NullCountQueryBuilder
         }
 
         command.Parameters.Clear();
-        command.CommandText = BuildCommandText(plan.Schema, plan.Table, plan.Columns, useSampling);
+        command.CommandText = BuildCommandText(plan.TargetSchema, plan.TargetTable, plan.Columns, useSampling);
 
         if (useSampling)
         {

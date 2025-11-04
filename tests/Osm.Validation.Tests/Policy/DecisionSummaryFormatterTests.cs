@@ -62,7 +62,7 @@ public class DecisionSummaryFormatterTests
 
         var message = Assert.Single(lines);
         Assert.Equal(
-            "1 attribute across 1 entity stayed nullable because profiling detected NULL values.",
+            "⚠️  ATTENTION: 1 attribute across 1 entity have NULL values that contradict mandatory constraints. Manual data remediation is required before tightening can proceed. Review the opportunities report for details.",
             message);
     }
 

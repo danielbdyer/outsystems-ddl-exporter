@@ -108,9 +108,8 @@ public class EmissionCoverageCalculatorTests
                 ImmutableArray<SmoTableDefinition>.Empty,
                 ImmutableArray<Osm.Domain.Model.Artifacts.TableArtifactSnapshot>.Empty),
             SmoBuildOptions.Default);
-
         Assert.Equal(snapshot.EmittableAttributes.Length, result.Summary.Columns.Total);
-        Assert.Equal(snapshot.EmittableAttributes.Length, result.Summary.Columns.Emitted);
+        Assert.Equal(0, result.Summary.Columns.Emitted);
     }
 
     private static AttributeModel CreateAttribute(

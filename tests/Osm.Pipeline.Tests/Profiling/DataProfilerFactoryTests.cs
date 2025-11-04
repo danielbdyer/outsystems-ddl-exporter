@@ -14,6 +14,8 @@ using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Json;
 using Tests.Support;
+using Osm.Pipeline.Configuration;
+using Xunit;
 
 namespace Osm.Pipeline.Tests.Profiling;
 
@@ -26,7 +28,8 @@ public sealed class DataProfilerFactoryTests
         Sampling: new SqlSamplingSettings(null, null),
         Authentication: new SqlAuthenticationSettings(null, null, null, null),
         MetadataContract: MetadataContractOverrides.Strict,
-        ProfilingConnectionStrings: ImmutableArray<string>.Empty);
+        ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+        TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty);
 
     [Fact]
     public void Create_sql_provider_returns_sql_profiler()
@@ -43,7 +46,8 @@ public sealed class DataProfilerFactoryTests
                 ApplicationName: "Profiler",
                 AccessToken: "token"),
             MetadataContract: MetadataContractOverrides.Strict,
-            ProfilingConnectionStrings: ImmutableArray<string>.Empty);
+            ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+            TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty);
         var request = CreateRequest("sql", profilePath: null, sqlOptions);
 
         var result = factory.Create(request, Model);
@@ -86,7 +90,8 @@ public sealed class DataProfilerFactoryTests
             Sampling: new SqlSamplingSettings(null, null),
             Authentication: new SqlAuthenticationSettings(null, null, null, null),
             MetadataContract: MetadataContractOverrides.Strict,
-            ProfilingConnectionStrings: ImmutableArray.Create("QA::Server=.;Database=Secondary;"));
+            ProfilingConnectionStrings: ImmutableArray.Create("QA::Server=.;Database=Secondary;"),
+            TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty);
         var request = CreateRequest("sql", profilePath: null, sqlOptions);
 
         var result = factory.Create(request, Model);
@@ -104,7 +109,7 @@ public sealed class DataProfilerFactoryTests
         var connectionBuilder = new RecordingConnectionFactoryBuilder();
         var factory = new DataProfilerFactory(new ProfileSnapshotDeserializer(), connectionBuilder.Create);
         var sqlOptions = new ResolvedSqlOptions(
-            ConnectionString: "Server=.;Database=PrimaryDb;", 
+            ConnectionString: "Server=.;Database=PrimaryDb;",
             CommandTimeoutSeconds: null,
             Sampling: new SqlSamplingSettings(null, null),
             Authentication: new SqlAuthenticationSettings(null, null, null, null),
@@ -112,7 +117,8 @@ public sealed class DataProfilerFactoryTests
             ProfilingConnectionStrings: ImmutableArray.Create(
                 "QA::Server=.;Database=SecondaryOne;",
                 "QA::Server=.;Database=SecondaryTwo;",
-                "Server=.;Application Name=Reporting;"));
+                "Server=.;Application Name=Reporting;"),
+            TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty);
 
         var request = CreateRequest("sql", profilePath: null, sqlOptions);
 
@@ -177,7 +183,8 @@ public sealed class DataProfilerFactoryTests
             Sampling: new SqlSamplingSettings(null, null),
             Authentication: new SqlAuthenticationSettings(null, null, null, null),
             MetadataContract: MetadataContractOverrides.Strict,
-            ProfilingConnectionStrings: ImmutableArray<string>.Empty);
+            ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+            TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty);
         var request = CreateRequest("sql", profilePath: null, sqlOptions);
 
         var result = factory.Create(request, Model);
