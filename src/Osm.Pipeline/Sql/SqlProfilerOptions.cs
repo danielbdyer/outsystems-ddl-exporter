@@ -8,11 +8,7 @@ namespace Osm.Pipeline.Sql;
 /// Maps a table name from the model (source) to a different name in the target database.
 /// Used for handling table name differences between environments (e.g., dev vs QA).
 /// </summary>
-public sealed record TableNameMapping(
-    string SourceSchema,
-    string SourceTable,
-    string TargetSchema,
-    string TargetTable)
+public sealed record TableNameMapping
 {
     public TableNameMapping(string sourceSchema, string sourceTable, string targetSchema, string targetTable)
     {
@@ -41,6 +37,11 @@ public sealed record TableNameMapping(
         TargetSchema = targetSchema.Trim();
         TargetTable = targetTable.Trim();
     }
+
+    public string SourceSchema { get; init; }
+    public string SourceTable { get; init; }
+    public string TargetSchema { get; init; }
+    public string TargetTable { get; init; }
 }
 
 public sealed record SqlProfilerOptions
