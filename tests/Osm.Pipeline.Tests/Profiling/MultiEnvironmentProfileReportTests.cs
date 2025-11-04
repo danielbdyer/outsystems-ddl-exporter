@@ -121,4 +121,60 @@ public sealed class MultiEnvironmentProfileReportTests
             probeFinding.AffectedObjects,
             item => item.Contains("Probe", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void Create_surfaces_cross_environment_standardization_gaps()
+    {
+        var capturedAt = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var successProbe = ProfilingProbeStatus.CreateSucceeded(capturedAt, 1_000);
+
+        var primarySnapshot = new ProfileSnapshot(
+            ImmutableArray.Create(new ColumnProfile(
+                new SchemaName("dbo"),
+                new TableName("Orders"),
+                new ColumnName("Id"),
+                true,
+                false,
+                false,
+                false,
+                null,
+                10_000,
+                0,
+                successProbe,
+                null)),
+            ImmutableArray<UniqueCandidateProfile>.Empty,
+            ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
+            ImmutableArray<ForeignKeyReality>.Empty);
+
+        var secondarySnapshot = new ProfileSnapshot(
+            ImmutableArray<ColumnProfile>.Empty,
+            ImmutableArray<UniqueCandidateProfile>.Empty,
+            ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
+            ImmutableArray<ForeignKeyReality>.Empty);
+
+        var report = MultiEnvironmentProfileReport.Create(new[]
+        {
+            new ProfilingEnvironmentSnapshot(
+                "Production",
+                true,
+                MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided,
+                false,
+                primarySnapshot,
+                TimeSpan.FromSeconds(30)),
+            new ProfilingEnvironmentSnapshot(
+                "QA",
+                false,
+                MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided,
+                false,
+                secondarySnapshot,
+                TimeSpan.FromSeconds(15))
+        });
+
+        var missingTableFinding = Assert.Single(
+            report.Findings.Where(f => f.Code == "profiling.validation.schema.tableMissing"));
+
+        Assert.Equal(MultiEnvironmentFindingSeverity.Warning, missingTableFinding.Severity);
+        Assert.Contains("dbo.Orders", missingTableFinding.Title, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("table exists", missingTableFinding.SuggestedAction, StringComparison.OrdinalIgnoreCase);
+    }
 }

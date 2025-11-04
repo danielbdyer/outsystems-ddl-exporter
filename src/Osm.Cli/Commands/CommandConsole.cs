@@ -743,7 +743,7 @@ internal static class CommandConsole
         {
             if (i > 0)
             {
-                builder.Append("  ");
+                builder.Append(" | ");
             }
 
             var value = values[i] ?? string.Empty;
@@ -761,7 +761,7 @@ internal static class CommandConsole
         {
             if (i > 0)
             {
-                builder.Append("  ");
+                builder.Append("-+-");
             }
 
             var dashCount = Math.Max(3, widths[i]);

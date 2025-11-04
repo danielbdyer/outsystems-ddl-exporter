@@ -39,12 +39,22 @@ public sealed record MultiEnvironmentProfileReport(
             .Select(static snapshot => ProfilingEnvironmentSummary.Create(snapshot))
             .ToImmutableArray();
 
-        var findings = BuildFindings(summaries, snapshots);
+        var findingsBuilder = BuildFindings(summaries, snapshots).ToBuilder();
+
+        var validationResult = ProfilingStandardizationValidator.Instance.ValidateMultiEnvironment(snapshots);
+        if (validationResult.IsSuccess)
+        {
+            var validationFindings = BuildValidationFindings(validationResult.Value);
+            if (!validationFindings.IsDefaultOrEmpty && validationFindings.Length > 0)
+            {
+                findingsBuilder.AddRange(validationFindings);
+            }
+        }
 
         // Analyze constraint consensus across all environments
         var consensus = MultiEnvironmentConstraintConsensus.Analyze(snapshots, minimumConsensusThreshold);
 
-        return new MultiEnvironmentProfileReport(summaries, findings, consensus);
+        return new MultiEnvironmentProfileReport(summaries, findingsBuilder.ToImmutable(), consensus);
     }
 
     private static ImmutableArray<MultiEnvironmentFinding> BuildFindings(
@@ -176,6 +186,95 @@ public sealed record MultiEnvironmentProfileReport(
         }
 
         return builder.ToImmutable();
+    }
+
+    private static ImmutableArray<MultiEnvironmentFinding> BuildValidationFindings(
+        MultiEnvironmentValidationSummary summary)
+    {
+        if (summary is null || summary.AllIssues.IsDefaultOrEmpty || summary.AllIssues.Length == 0)
+        {
+            return ImmutableArray<MultiEnvironmentFinding>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<MultiEnvironmentFinding>();
+
+        foreach (var issue in summary.AllIssues)
+        {
+            if (issue is null || issue.Severity == ValidationIssueSeverity.Info)
+            {
+                continue;
+            }
+
+            if (!IsCrossEnvironmentIssue(issue.Code))
+            {
+                continue;
+            }
+
+            var severity = MapSeverity(issue.Severity);
+            var title = string.IsNullOrWhiteSpace(issue.Target)
+                ? issue.Code
+                : issue.Target;
+            var affectedObjects = string.IsNullOrWhiteSpace(issue.Target)
+                ? ImmutableArray<string>.Empty
+                : ImmutableArray.Create(issue.Target);
+
+            builder.Add(new MultiEnvironmentFinding(
+                issue.Code,
+                title,
+                issue.Message,
+                severity,
+                ResolveSuggestedAction(issue.Code, severity),
+                affectedObjects));
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static bool IsCrossEnvironmentIssue(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return false;
+        }
+
+        return code.Contains(".schema.", StringComparison.OrdinalIgnoreCase)
+            || code.Contains(".dataQuality.", StringComparison.OrdinalIgnoreCase)
+            || code.Contains(".constraint.", StringComparison.OrdinalIgnoreCase)
+            || code.Contains(".case.", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static MultiEnvironmentFindingSeverity MapSeverity(ValidationIssueSeverity severity)
+    {
+        return severity switch
+        {
+            ValidationIssueSeverity.Error => MultiEnvironmentFindingSeverity.Critical,
+            ValidationIssueSeverity.Warning => MultiEnvironmentFindingSeverity.Warning,
+            ValidationIssueSeverity.Advisory => MultiEnvironmentFindingSeverity.Advisory,
+            _ => MultiEnvironmentFindingSeverity.Advisory
+        };
+    }
+
+    private static string ResolveSuggestedAction(string code, MultiEnvironmentFindingSeverity severity)
+    {
+        return code switch
+        {
+            "profiling.validation.schema.tableMissing" =>
+                "Ensure the table exists in every profiled environment or provide a tableNameMappings entry to align names.",
+            "profiling.validation.dataQuality.nullVariance" =>
+                "Normalize null-handling across environments or adjust policy thresholds before enforcing NOT NULL constraints.",
+            "profiling.validation.constraint.uniqueDisagreement" =>
+                "Remediate duplicates in outlier environments or defer UNIQUE constraint application until alignment is complete.",
+            "profiling.validation.case.table.inconsistent" =>
+                "Standardize table casing or add naming overrides so downstream tooling can match entities deterministically.",
+            _ => severity switch
+            {
+                MultiEnvironmentFindingSeverity.Critical =>
+                    "Resolve this discrepancy before promoting constraint hardening to avoid deployment failures.",
+                MultiEnvironmentFindingSeverity.Warning =>
+                    "Plan remediation for this variance so constraints behave consistently across environments.",
+                _ => "Review this advisory when planning multi-environment readiness work."
+            }
+        };
     }
 
     private static ImmutableArray<string> IdentifyNullDrift(

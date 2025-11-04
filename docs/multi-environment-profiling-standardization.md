@@ -45,6 +45,13 @@ The system analyzes profiling data from all surveyed environments and answers:
 - **Configuration**: `AllowMissingTables = true`
 - **Use Case**: Handles schema drift without failing
 
+The secondary connections act as the "reality check" for constraint readiness. Their job is to highlight how far non-production
+data sets have drifted from the primary environment and to document the remediation steps required to realign them. Every
+variance discovered in secondary environments is projected into the consolidated multi-environment report so that remediation
+teams can standardize naming, null-handling, and relational integrity before enabling hardening policies. Think of the
+secondary database list as the sandbox that tells you **why** a constraint cannot be promoted today and exactly which columns or
+tables require cleanup.
+
 ### 2. Data Aggregation Strategy
 
 The system uses **worst-case aggregation** to ensure constraint safety:
@@ -141,6 +148,11 @@ ERROR: Table 'dbo.Customer' not found in database
 -- Missing table is gracefully skipped
 INFO: Skipping table 'dbo.Customer' - not found in metadata
 ```
+
+Every skipped table is now surfaced in the multi-environment validation findings (code:
+`profiling.validation.schema.tableMissing`). The accompanying remediation guidance inside the CLI report points the operator to
+either synchronize the missing table or supply a `tableNameMappings` entry so profiling data can be normalized across
+environments.
 
 ## Standardization Features
 
