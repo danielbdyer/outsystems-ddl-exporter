@@ -41,7 +41,7 @@ public class PolicyCommandFactoryTests
         Assert.Contains("Foreign Key", output);
         Assert.Contains("DATA_HAS_ORPHANS", output);
         Assert.Contains("report.html#foreign-key-sales-orders-regionid", output);
-        Assert.DoesNotContain("NOT NULL", output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NOT NULL Confirmed", output);
     }
 
     [Fact]
