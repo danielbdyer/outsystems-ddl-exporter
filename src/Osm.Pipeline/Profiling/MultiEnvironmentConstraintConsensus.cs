@@ -145,7 +145,8 @@ public sealed class MultiEnvironmentConstraintConsensus
         // Group columns by (schema, table, column) across all environments
         var columnsByKey = snapshots
             .SelectMany(env => env.Snapshot.Columns.Select(col => new { Environment = env.Name, Column = col }))
-            .GroupBy(item => (item.Column.Schema.Value, item.Column.Table.Value, item.Column.Column.Value),
+            .GroupBy(
+                item => (Schema: item.Column.Schema.Value, Table: item.Column.Table.Value, Column: item.Column.Column.Value),
                 ColumnKeyComparer.Instance);
 
         foreach (var group in columnsByKey)
@@ -192,7 +193,8 @@ public sealed class MultiEnvironmentConstraintConsensus
         // Analyze single-column unique constraints
         var uniqueByKey = snapshots
             .SelectMany(env => env.Snapshot.UniqueCandidates.Select(u => new { Environment = env.Name, Unique = u }))
-            .GroupBy(item => (item.Unique.Schema.Value, item.Unique.Table.Value, item.Unique.Column.Value),
+            .GroupBy(
+                item => (Schema: item.Unique.Schema.Value, Table: item.Unique.Table.Value, Column: item.Unique.Column.Value),
                 ColumnKeyComparer.Instance);
 
         foreach (var group in uniqueByKey)
@@ -232,10 +234,11 @@ public sealed class MultiEnvironmentConstraintConsensus
         // So we can only check HasDuplicate, not probe success
         var compositeByKey = snapshots
             .SelectMany(env => env.Snapshot.CompositeUniqueCandidates.Select(c => new { Environment = env.Name, Composite = c }))
-            .GroupBy(item => (
-                    item.Composite.Schema.Value,
-                    item.Composite.Table.Value,
-                    ProfilingPlanBuilder.BuildUniqueKey(item.Composite.Columns.Select(col => col.Value))),
+            .GroupBy(
+                item => (
+                    Schema: item.Composite.Schema.Value,
+                    Table: item.Composite.Table.Value,
+                    ColumnsKey: ProfilingPlanBuilder.BuildUniqueKey(item.Composite.Columns.Select(col => col.Value))),
                 (tuple, items) => new { Key = tuple, Items = items.ToList() });
 
         foreach (var group in compositeByKey)
@@ -281,12 +284,19 @@ public sealed class MultiEnvironmentConstraintConsensus
     {
         var foreignKeysByKey = snapshots
             .SelectMany(env => env.Snapshot.ForeignKeys.Select(fk => new { Environment = env.Name, ForeignKey = fk }))
-            .GroupBy(item =>
-            {
-                var fk = item.ForeignKey.Reference;
-                return (fk.FromSchema.Value, fk.FromTable.Value, fk.FromColumn.Value,
-                    fk.ToSchema.Value, fk.ToTable.Value, fk.ToColumn.Value);
-            }, ForeignKeyKeyComparer.Instance);
+            .GroupBy(
+                item =>
+                {
+                    var fk = item.ForeignKey.Reference;
+                    return (
+                        FromSchema: fk.FromSchema.Value,
+                        FromTable: fk.FromTable.Value,
+                        FromColumn: fk.FromColumn.Value,
+                        ToSchema: fk.ToSchema.Value,
+                        ToTable: fk.ToTable.Value,
+                        ToColumn: fk.ToColumn.Value);
+                },
+                ForeignKeyKeyComparer.Instance);
 
         foreach (var group in foreignKeysByKey)
         {

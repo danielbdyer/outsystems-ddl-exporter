@@ -195,7 +195,8 @@ public class CommandConsoleTests
                     "2 orphaned foreign key reference(s) detected while Primary (Sample) reports 0.",
                     MultiEnvironmentFindingSeverity.Critical,
                     "Review QA data quality before enforcing FKs.",
-                    ImmutableArray<string>.Empty)));
+                    ImmutableArray<string>.Empty)),
+            MultiEnvironmentConstraintConsensus.Empty);
 
         CommandConsole.EmitMultiEnvironmentReport(console, report);
 
