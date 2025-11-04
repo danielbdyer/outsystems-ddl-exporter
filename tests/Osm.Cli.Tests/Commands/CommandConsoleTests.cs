@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.CommandLine.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Osm.Cli;
 using Osm.Cli.Commands;
 using Osm.Domain.Abstractions;
@@ -201,13 +202,15 @@ public class CommandConsoleTests
         CommandConsole.EmitMultiEnvironmentReport(console, report);
 
         var output = console.Out!.ToString()!;
-        Assert.Contains("Multi-environment profiling summary:", output);
-        Assert.Contains("Environment | Role | Label Source", output);
-        Assert.Contains("⭐ Primary (Sample) | Primary | Provided", output);
-        Assert.Contains("QA | Secondary | Provided", output);
-        Assert.Contains("Environment findings:", output);
-        Assert.Contains("QA: orphaned foreign keys", output);
-        Assert.Contains("Review QA data quality", output);
+        var normalized = Regex.Replace(output, "\\s+", " ").Trim();
+
+        Assert.Contains("Multi-environment profiling summary:", normalized);
+        Assert.Contains("Environment | Role | Label Source", normalized);
+        Assert.Contains("⭐ Primary (Sample) | Primary | Provided", normalized);
+        Assert.Contains("QA | Secondary | Provided", normalized);
+        Assert.Contains("Environment findings:", normalized);
+        Assert.Contains("QA: orphaned foreign keys", normalized);
+        Assert.Contains("Review QA data quality", normalized);
     }
 
     [Fact]
