@@ -168,12 +168,14 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
 
     internal static string BuildUniqueKey(IEnumerable<string> columns)
     {
-        return string.Join("|", columns.Select(static column => column.ToLower(System.Globalization.CultureInfo.InvariantCulture)));
+        // Use pipe separator without case normalization - comparers handle case-insensitivity
+        return string.Join("|", columns);
     }
 
     internal static string BuildForeignKeyKey(string column, string targetSchema, string targetTable, string targetColumn)
     {
-        return string.Join("|", new[] { column, targetSchema, targetTable, targetColumn }.Select(static value => value.ToLower(System.Globalization.CultureInfo.InvariantCulture)));
+        // Use pipe separator without case normalization - comparers handle case-insensitivity
+        return string.Join("|", new[] { column, targetSchema, targetTable, targetColumn });
     }
 
     private static Dictionary<(string Schema, string Table), (string Schema, string Table)> BuildMappingLookup(
