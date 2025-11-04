@@ -441,6 +441,8 @@ public class CliIntegrationTests
 
     private static async Task<CommandResult> RunCliAsync(string workingDirectory, string arguments)
     {
+        await DotNetCli.EnsureSdkAvailableAsync().ConfigureAwait(false);
+
         var startInfo = DotNetCli.CreateStartInfo(workingDirectory, arguments);
         startInfo.Environment["DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE"] = "false";
 

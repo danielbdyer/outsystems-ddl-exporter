@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Xunit.Sdk;
 
 namespace Osm.Cli.Tests;
 
@@ -21,9 +22,14 @@ internal static class DotNetCli
         ?? "Debug";
 
     private static readonly SemaphoreSlim InProcessLock = new(1, 1);
+    private static readonly Lazy<Task> DotNetInfoVerification = new(
+        VerifyDotNetInfoAsync,
+        LazyThreadSafetyMode.ExecutionAndPublication);
 
     public static async Task<CommandResult> RunAsync(string workingDirectory, string arguments)
     {
+        await EnsureSdkAvailableAsync().ConfigureAwait(false);
+
         var invocation = TryCreateInvocation(arguments);
         if (invocation.Success)
         {
@@ -32,6 +38,11 @@ internal static class DotNetCli
 
         var startInfo = CreateStartInfo(workingDirectory, arguments);
         return await RunExternalAsync(startInfo).ConfigureAwait(false);
+    }
+
+    public static Task EnsureSdkAvailableAsync()
+    {
+        return DotNetInfoVerification.Value;
     }
 
     public static ProcessStartInfo CreateStartInfo(string workingDirectory, string arguments)
@@ -50,6 +61,42 @@ internal static class DotNetCli
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+    }
+
+    private static async Task VerifyDotNetInfoAsync()
+    {
+        var startInfo = new ProcessStartInfo("dotnet", "--info")
+        {
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            RedirectStandardInput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        CommandResult result;
+        try
+        {
+            result = await RunExternalAsync(startInfo).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not SkipException)
+        {
+            throw new SkipException(
+                $"`dotnet --info` could not be executed. Install the .NET 9 SDK as described in notes/run-checklist.md before running CLI integration tests. Underlying error: {ex.Message}");
+        }
+
+        if (result.ExitCode == 0)
+        {
+            return;
+        }
+
+        var builder = new StringBuilder();
+        builder.AppendLine("`dotnet --info` must succeed before running CLI integration tests.");
+        builder.AppendLine("Install the .NET 9 SDK and confirm the tooling setup via notes/run-checklist.md.");
+        builder.AppendLine();
+        builder.Append(result.FormatFailureMessage(expectedExitCode: 0));
+
+        throw new SkipException(builder.ToString());
     }
 
     private static CliInvocation TryCreateInvocation(string arguments)

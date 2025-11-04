@@ -2,6 +2,11 @@
 
 The repository splits fast-running unit tests from slower CLI smoke tests so contributors can iterate quickly while still having an end-to-end safety net.
 
+## Prerequisites
+
+- Install the .NET 9 SDK and confirm `dotnet --info` succeeds. The CLI test helpers will skip integration suites with guidance if the SDK cannot be located.
+- Follow the deterministic setup steps in [`notes/run-checklist.md`](../notes/run-checklist.md) before running tests so the solution is restored and built once. The CLI smoke tests assume the compiled binaries exist under `src/Osm.Cli/bin`.
+
 ## Default test run (unit tests only)
 Most test projects complete quickly and exercise the command handlers, binders, and pipeline services entirely in-process. To run just these tests use the default filter that skips the slower scenarios:
 
