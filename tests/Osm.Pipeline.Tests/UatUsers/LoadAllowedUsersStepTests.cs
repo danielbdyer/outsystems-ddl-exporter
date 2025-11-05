@@ -1,6 +1,7 @@
 using System;
 using System.Data.Common;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -46,7 +47,7 @@ public sealed class LoadAllowedUsersStepTests
         await step.ExecuteAsync(context, CancellationToken.None);
 
         Assert.Equal(3, context.AllowedUserIds.Count);
-        Assert.Contains(200L, context.AllowedUserIds);
+        Assert.Contains(context.AllowedUserIds, id => id.NumericValue == 200L);
     }
 
     [Fact]
@@ -77,7 +78,75 @@ SET IDENTITY_INSERT [dbo].[User] OFF;", Encoding.UTF8);
         var step = new LoadAllowedUsersStep();
         await step.ExecuteAsync(context, CancellationToken.None);
 
-        Assert.Equal(new[] { 1L, 2L }, context.AllowedUserIds);
+        Assert.Equal(new[] { "1", "2" }, context.AllowedUserIds.Select(id => id.Value));
+    }
+
+    [Fact]
+    public async Task ThrowsWhenNoAllowedUsersDiscovered()
+    {
+        using var temp = new TemporaryDirectory();
+        var emptyListPath = Path.Combine(temp.Path, "users.csv");
+        File.WriteAllLines(emptyListPath, new[] { "Id,Name" });
+
+        var context = new UatUsersContext(
+            new StubSchemaGraph(),
+            new UatUsersArtifacts(temp.Path),
+            new ThrowingConnectionFactory(),
+            "dbo",
+            "User",
+            "Id",
+            includeColumns: null,
+            Path.Combine(temp.Path, "map.csv"),
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: emptyListPath,
+            snapshotPath: null,
+            userEntityIdentifier: null,
+            fromLiveMetadata: false,
+            sourceFingerprint: "test/db");
+
+        var step = new LoadAllowedUsersStep();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => step.ExecuteAsync(context, CancellationToken.None));
+        Assert.Contains("No allowed user identifiers", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SupportsGuidIdentifiers()
+    {
+        using var temp = new TemporaryDirectory();
+        var listPath = Path.Combine(temp.Path, "users.csv");
+        var guidA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        var guidB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+        File.WriteAllLines(listPath, new[]
+        {
+            "UserId",
+            guidA,
+            guidB
+        });
+
+        var context = new UatUsersContext(
+            new StubSchemaGraph(),
+            new UatUsersArtifacts(temp.Path),
+            new ThrowingConnectionFactory(),
+            "dbo",
+            "User",
+            "Id",
+            includeColumns: null,
+            Path.Combine(temp.Path, "map.csv"),
+            allowedUsersSqlPath: null,
+            allowedUserIdsPath: listPath,
+            snapshotPath: null,
+            userEntityIdentifier: null,
+            fromLiveMetadata: false,
+            sourceFingerprint: "test/db");
+
+        var step = new LoadAllowedUsersStep();
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(2, context.AllowedUserIds.Count);
+        Assert.All(context.AllowedUserIds, id => Assert.True(id.IsGuid));
+        Assert.Contains(context.AllowedUserIds, id => string.Equals(id.Value, guidA, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(context.AllowedUserIds, id => string.Equals(id.Value, guidB, StringComparison.OrdinalIgnoreCase));
     }
 
     private sealed class StubSchemaGraph : IUserSchemaGraph

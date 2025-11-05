@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -8,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace Osm.Pipeline.UatUsers;
 
 internal sealed record AllowedUserLoadResult(
-    IReadOnlyCollection<long> UserIds,
+    IReadOnlyCollection<UserIdentifier> UserIds,
     int SqlRowCount,
     int ListRowCount);
 
@@ -30,7 +29,7 @@ internal static class AllowedUserLoader
             throw new ArgumentException("At least one allowed user input must be provided.");
         }
 
-        var results = new SortedSet<long>();
+        var results = new SortedSet<UserIdentifier>();
         var sqlRowCount = 0;
         var listRowCount = 0;
 
@@ -55,7 +54,7 @@ internal static class AllowedUserLoader
         return new AllowedUserLoadResult(results, sqlRowCount, listRowCount);
     }
 
-    private static IEnumerable<long> LoadFromSql(string path, string userIdColumn)
+    private static IEnumerable<UserIdentifier> LoadFromSql(string path, string userIdColumn)
     {
         if (!File.Exists(path))
         {
@@ -98,17 +97,17 @@ internal static class AllowedUserLoader
                     continue;
                 }
 
-                if (!long.TryParse(cell, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+                if (!UserIdentifier.TryParse(cell, out var identifier))
                 {
                     throw new InvalidDataException($"Unable to parse user identifier '{cell}' from '{path}'.");
                 }
 
-                yield return id;
+                yield return identifier;
             }
         }
     }
 
-    private static IEnumerable<long> LoadFromList(string path, string userIdColumn)
+    private static IEnumerable<UserIdentifier> LoadFromList(string path, string userIdColumn)
     {
         if (!File.Exists(path))
         {
@@ -127,7 +126,12 @@ internal static class AllowedUserLoader
             yield break;
         }
 
-        if (TryParseSingleValue(lines[firstDataIndex], out var singleValue))
+        var firstLine = lines[firstDataIndex];
+        var trimmedFirstLine = firstLine.Trim();
+        var looksLikeHeader = string.Equals(trimmedFirstLine, userIdColumn, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmedFirstLine, "UserId", StringComparison.OrdinalIgnoreCase);
+
+        if (!looksLikeHeader && TryParseSingleValue(firstLine, out var singleValue))
         {
             yield return singleValue;
             for (var i = firstDataIndex + 1; i < lines.Length; i++)
@@ -176,12 +180,12 @@ internal static class AllowedUserLoader
                 continue;
             }
 
-            if (!long.TryParse(cell, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+            if (!UserIdentifier.TryParse(cell, out var identifier))
             {
                 throw new InvalidDataException($"Invalid user identifier '{cell}' on line {i + 1} of '{path}'.");
             }
 
-            yield return id;
+            yield return identifier;
         }
     }
 
@@ -206,9 +210,9 @@ internal static class AllowedUserLoader
         return -1;
     }
 
-    private static bool TryParseSingleValue(string line, out long value)
+    private static bool TryParseSingleValue(string line, out UserIdentifier value)
     {
-        value = 0;
+        value = default;
         if (string.IsNullOrWhiteSpace(line))
         {
             return false;
@@ -225,7 +229,7 @@ internal static class AllowedUserLoader
             return false;
         }
 
-        return long.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        return UserIdentifier.TryParse(trimmed, out value);
     }
 
     private static List<string> ParseCsvRow(string? line)

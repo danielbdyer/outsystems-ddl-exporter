@@ -14,16 +14,27 @@ public sealed class UatUsersPipeline : IPipeline<UatUsersContext>
     private readonly ILogger<UatUsersPipeline> _logger;
 
     public UatUsersPipeline(ILoggerFactory? loggerFactory = null)
+        : this(loggerFactory, valueProvider: null, snapshotStore: null)
+    {
+    }
+
+    public UatUsersPipeline(
+        ILoggerFactory? loggerFactory,
+        IUserForeignKeyValueProvider? valueProvider,
+        IUserForeignKeySnapshotStore? snapshotStore)
     {
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<UatUsersPipeline>();
+
+        var provider = valueProvider ?? new SqlUserForeignKeyValueProvider(_loggerFactory.CreateLogger<SqlUserForeignKeyValueProvider>());
+        var store = snapshotStore ?? new FileUserForeignKeySnapshotStore(_loggerFactory.CreateLogger<FileUserForeignKeySnapshotStore>());
 
         _inner = new PipelineBuilder<UatUsersContext>(_loggerFactory)
             .Then(new DiscoverUserFkCatalogStep(_loggerFactory.CreateLogger<DiscoverUserFkCatalogStep>()))
             .Then(new LoadAllowedUsersStep(_loggerFactory.CreateLogger<LoadAllowedUsersStep>()))
             .Then(new AnalyzeForeignKeyValuesStep(
-                new SqlUserForeignKeyValueProvider(_loggerFactory.CreateLogger<SqlUserForeignKeyValueProvider>()),
-                new FileUserForeignKeySnapshotStore(_loggerFactory.CreateLogger<FileUserForeignKeySnapshotStore>()),
+                provider,
+                store,
                 _loggerFactory.CreateLogger<AnalyzeForeignKeyValuesStep>()))
             .Then(new PrepareUserMapStep(_loggerFactory.CreateLogger<PrepareUserMapStep>()))
             .Then(new EmitArtifactsStep(_loggerFactory.CreateLogger<EmitArtifactsStep>()))

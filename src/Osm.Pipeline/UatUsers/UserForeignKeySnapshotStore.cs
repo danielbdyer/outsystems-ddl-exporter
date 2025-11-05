@@ -23,6 +23,11 @@ internal sealed class FileUserForeignKeySnapshotStore : IUserForeignKeySnapshotS
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
+    static FileUserForeignKeySnapshotStore()
+    {
+        SerializerOptions.Converters.Add(new UserIdentifierJsonConverter());
+    }
+
     private readonly ILogger<FileUserForeignKeySnapshotStore> _logger;
 
     public FileUserForeignKeySnapshotStore(ILogger<FileUserForeignKeySnapshotStore>? logger = null)

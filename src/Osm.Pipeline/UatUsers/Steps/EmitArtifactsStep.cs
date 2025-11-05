@@ -88,8 +88,8 @@ public sealed class EmitArtifactsStep : IPipelineStep<UatUsersContext>
                 {
                     string.Concat(column.SchemaName, ".", column.TableName),
                     column.ColumnName,
-                    pair.Key.ToString(CultureInfo.InvariantCulture),
-                    targetUserId.ToString(CultureInfo.InvariantCulture),
+                    pair.Key.ToString(),
+                    targetUserId.ToString(),
                     pair.Value.ToString(CultureInfo.InvariantCulture)
                 };
             }

@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -127,15 +129,86 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             return ("dbo", "User");
         }
 
-        var trimmed = identifier.Trim();
-        var separator = trimmed.IndexOf('.');
-        if (separator < 0)
+        var parts = ParseIdentifierParts(identifier.Trim());
+        if (parts.Count == 0)
         {
-            return ("dbo", trimmed);
+            return ("dbo", "User");
         }
 
-        var schema = separator == 0 ? "dbo" : trimmed[..separator];
-        var table = separator >= trimmed.Length - 1 ? "User" : trimmed[(separator + 1)..];
-        return (schema, table);
+        if (parts.Count == 1)
+        {
+            var tableOnly = parts[0];
+            var singleTable = string.IsNullOrWhiteSpace(tableOnly) ? "User" : tableOnly;
+            return ("dbo", singleTable);
+        }
+
+        var schemaPart = parts[^2];
+        var tablePart = parts[^1];
+        var resolvedSchema = string.IsNullOrWhiteSpace(schemaPart) ? "dbo" : schemaPart;
+        var resolvedTable = string.IsNullOrWhiteSpace(tablePart) ? "User" : tablePart;
+        return (resolvedSchema, resolvedTable);
+    }
+
+    private static List<string> ParseIdentifierParts(string identifier)
+    {
+        var parts = new List<string>();
+        if (string.IsNullOrWhiteSpace(identifier))
+        {
+            return parts;
+        }
+
+        var span = identifier.AsSpan();
+        var builder = new StringBuilder();
+        var bracketDepth = 0;
+        var inQuotes = false;
+
+        for (var i = 0; i < span.Length; i++)
+        {
+            var ch = span[i];
+            switch (ch)
+            {
+                case '[':
+                    bracketDepth++;
+                    continue;
+                case ']':
+                    if (bracketDepth > 0)
+                    {
+                        bracketDepth--;
+                    }
+                    continue;
+                case '"':
+                    if (bracketDepth == 0)
+                    {
+                        inQuotes = !inQuotes;
+                        continue;
+                    }
+                    break;
+                case '.':
+                    if (bracketDepth == 0 && !inQuotes)
+                    {
+                        parts.Add(builder.ToString().Trim());
+                        builder.Clear();
+                        continue;
+                    }
+                    break;
+            }
+
+            builder.Append(ch);
+        }
+
+        parts.Add(builder.ToString().Trim());
+
+        for (var i = 0; i < parts.Count; i++)
+        {
+            var value = parts[i];
+            if (value.Length == 0)
+            {
+                continue;
+            }
+
+            parts[i] = value;
+        }
+
+        return parts;
     }
 }

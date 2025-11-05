@@ -42,6 +42,16 @@ public sealed class LoadAllowedUsersStep : IPipelineStep<UatUsersContext>
             loadResult.SqlRowCount,
             loadResult.ListRowCount);
 
+        if (context.AllowedUserIds.Count == 0)
+        {
+            _logger.LogError(
+                "No allowed user identifiers were discovered from the provided inputs. SqlCount={SqlCount}, ListCount={ListCount}.",
+                loadResult.SqlRowCount,
+                loadResult.ListRowCount);
+            throw new InvalidOperationException(
+                "No allowed user identifiers were discovered. Provide a dbo.User seed script or identifier list containing at least one entry.");
+        }
+
         return Task.CompletedTask;
     }
 }

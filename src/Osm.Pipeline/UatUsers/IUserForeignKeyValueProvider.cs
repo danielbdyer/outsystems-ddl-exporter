@@ -14,7 +14,7 @@ namespace Osm.Pipeline.UatUsers;
 
 public interface IUserForeignKeyValueProvider
 {
-    Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>> CollectAsync(
+    Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>> CollectAsync(
         IReadOnlyList<UserFkColumn> catalog,
         IDbConnectionFactory connectionFactory,
         CancellationToken cancellationToken);
@@ -29,7 +29,7 @@ public sealed class SqlUserForeignKeyValueProvider : IUserForeignKeyValueProvide
         _logger = logger ?? NullLogger<SqlUserForeignKeyValueProvider>.Instance;
     }
 
-    public async Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>> CollectAsync(
+    public async Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>> CollectAsync(
         IReadOnlyList<UserFkColumn> catalog,
         IDbConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
@@ -47,12 +47,12 @@ public sealed class SqlUserForeignKeyValueProvider : IUserForeignKeyValueProvide
         if (catalog.Count == 0)
         {
             _logger.LogInformation("No catalog entries provided for foreign key analysis.");
-            return ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>.Empty;
+            return ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>.Empty;
         }
 
         _logger.LogInformation("Opening SQL connection to collect foreign key statistics for {ColumnCount} columns.", catalog.Count);
         await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var results = ImmutableDictionary.CreateBuilder<UserFkColumn, IReadOnlyDictionary<long, long>>();
+        var results = ImmutableDictionary.CreateBuilder<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>();
 
         foreach (var column in catalog)
         {
@@ -69,7 +69,7 @@ public sealed class SqlUserForeignKeyValueProvider : IUserForeignKeyValueProvide
             _logger.LogDebug("Executing SQL for {Schema}.{Table}.{Column}: {Sql}", column.SchemaName, column.TableName, column.ColumnName, command.CommandText);
 
             using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            var values = new SortedDictionary<long, long>();
+            var values = new SortedDictionary<UserIdentifier, long>();
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 if (reader.IsDBNull(0))
@@ -77,7 +77,8 @@ public sealed class SqlUserForeignKeyValueProvider : IUserForeignKeyValueProvide
                     continue;
                 }
 
-                var userId = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+                var rawValue = reader.GetValue(0);
+                var userId = UserIdentifier.FromDatabaseValue(rawValue);
                 var rowCount = Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture);
                 values[userId] = rowCount;
             }
@@ -85,7 +86,7 @@ public sealed class SqlUserForeignKeyValueProvider : IUserForeignKeyValueProvide
             var distinctCount = values.Count;
             var totalRowCount = values.Sum(static pair => pair.Value);
             results[column] = distinctCount == 0
-                ? ImmutableDictionary<long, long>.Empty
+                ? ImmutableDictionary<UserIdentifier, long>.Empty
                 : values.ToImmutableDictionary(static pair => pair.Key, static pair => pair.Value);
 
             _logger.LogInformation(

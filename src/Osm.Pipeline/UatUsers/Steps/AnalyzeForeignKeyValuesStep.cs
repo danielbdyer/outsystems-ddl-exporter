@@ -49,12 +49,12 @@ public sealed class AnalyzeForeignKeyValuesStep : IPipelineStep<UatUsersContext>
         if (context.UserFkCatalog.Count == 0)
         {
             _logger.LogInformation("No foreign key columns discovered; skipping analysis.");
-            context.SetForeignKeyValueCounts(ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>.Empty);
-            context.SetOrphanUserIds(Array.Empty<long>());
+            context.SetForeignKeyValueCounts(ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>.Empty);
+            context.SetOrphanUserIds(Array.Empty<UserIdentifier>());
             return;
         }
 
-        IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> counts;
+        IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> counts;
 
         UserForeignKeySnapshot? snapshot = null;
         if (!string.IsNullOrWhiteSpace(context.SnapshotPath))
@@ -121,7 +121,7 @@ public sealed class AnalyzeForeignKeyValuesStep : IPipelineStep<UatUsersContext>
             orphans.Count);
     }
 
-    private static IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> BuildCountsFromSnapshot(
+    private static IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> BuildCountsFromSnapshot(
         UserForeignKeySnapshot snapshot,
         IReadOnlyList<UserFkColumn> catalog)
     {
@@ -145,10 +145,10 @@ public sealed class AnalyzeForeignKeyValuesStep : IPipelineStep<UatUsersContext>
             column => column,
             StringComparer.OrdinalIgnoreCase);
 
-        var builder = ImmutableDictionary.CreateBuilder<UserFkColumn, IReadOnlyDictionary<long, long>>();
+        var builder = ImmutableDictionary.CreateBuilder<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>();
         foreach (var column in catalog)
         {
-            builder[column] = ImmutableDictionary<long, long>.Empty;
+            builder[column] = ImmutableDictionary<UserIdentifier, long>.Empty;
         }
 
         foreach (var columnSnapshot in snapshot.Columns)
@@ -159,25 +159,25 @@ public sealed class AnalyzeForeignKeyValuesStep : IPipelineStep<UatUsersContext>
                 continue;
             }
 
-            var values = new SortedDictionary<long, long>();
+            var values = new SortedDictionary<UserIdentifier, long>();
             foreach (var value in columnSnapshot.Values)
             {
                 values[value.UserId] = value.RowCount;
             }
 
             builder[column] = values.Count == 0
-                ? ImmutableDictionary<long, long>.Empty
+                ? ImmutableDictionary<UserIdentifier, long>.Empty
                 : ImmutableSortedDictionary.CreateRange(values);
         }
 
         return builder.ToImmutable();
     }
 
-    private static IReadOnlyCollection<long> ComputeOrphans(
+    private static IReadOnlyCollection<UserIdentifier> ComputeOrphans(
         UatUsersContext context,
-        IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> counts)
+        IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> counts)
     {
-        var orphanSet = new SortedSet<long>();
+        var orphanSet = new SortedSet<UserIdentifier>();
         foreach (var column in counts.Values)
         {
             foreach (var pair in column)
@@ -194,13 +194,13 @@ public sealed class AnalyzeForeignKeyValuesStep : IPipelineStep<UatUsersContext>
 
     private static UserForeignKeySnapshot BuildSnapshot(
         UatUsersContext context,
-        IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> counts)
+        IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> counts)
     {
         var columns = new List<UserForeignKeySnapshotColumn>(context.UserFkCatalog.Count);
         foreach (var column in context.UserFkCatalog)
         {
             counts.TryGetValue(column, out var values);
-            values ??= ImmutableDictionary<long, long>.Empty;
+            values ??= ImmutableDictionary<UserIdentifier, long>.Empty;
 
             var snapshotValues = values
                 .OrderBy(static pair => pair.Key)

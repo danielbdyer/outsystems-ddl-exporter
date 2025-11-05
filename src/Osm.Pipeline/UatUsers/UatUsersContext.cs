@@ -11,12 +11,12 @@ public sealed class UatUsersContext
 {
     private IReadOnlyList<UserFkColumn> _userFkCatalog = Array.Empty<UserFkColumn>();
     private IReadOnlyList<UserMappingEntry> _userMappings = Array.Empty<UserMappingEntry>();
-    private readonly HashSet<long> _allowedUserIdSet = new();
-    private IReadOnlyList<long> _allowedUserIds = Array.Empty<long>();
-    private readonly HashSet<long> _orphanUserIdSet = new();
-    private IReadOnlyList<long> _orphanUserIds = Array.Empty<long>();
-    private IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> _foreignKeyValueCounts
-        = ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>.Empty;
+    private readonly HashSet<UserIdentifier> _allowedUserIdSet = new();
+    private IReadOnlyList<UserIdentifier> _allowedUserIds = Array.Empty<UserIdentifier>();
+    private readonly HashSet<UserIdentifier> _orphanUserIdSet = new();
+    private IReadOnlyList<UserIdentifier> _orphanUserIds = Array.Empty<UserIdentifier>();
+    private IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> _foreignKeyValueCounts
+        = ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>.Empty;
 
     public UatUsersContext(
         IUserSchemaGraph schemaGraph,
@@ -119,18 +119,18 @@ public sealed class UatUsersContext
 
     public IReadOnlyList<UserMappingEntry> UserMap => _userMappings;
 
-    public IReadOnlyCollection<long> AllowedUserIds => _allowedUserIds;
+    public IReadOnlyCollection<UserIdentifier> AllowedUserIds => _allowedUserIds;
 
-    public IReadOnlyCollection<long> OrphanUserIds => _orphanUserIds;
+    public IReadOnlyCollection<UserIdentifier> OrphanUserIds => _orphanUserIds;
 
-    public IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> ForeignKeyValueCounts => _foreignKeyValueCounts;
+    public IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> ForeignKeyValueCounts => _foreignKeyValueCounts;
 
-    public bool IsAllowedUser(long userId)
+    public bool IsAllowedUser(UserIdentifier userId)
     {
         return _allowedUserIdSet.Contains(userId);
     }
 
-    public bool IsOrphan(long userId)
+    public bool IsOrphan(UserIdentifier userId)
     {
         return _orphanUserIdSet.Contains(userId);
     }
@@ -145,7 +145,7 @@ public sealed class UatUsersContext
         _userMappings = mappings ?? throw new ArgumentNullException(nameof(mappings));
     }
 
-    public void SetAllowedUserIds(IReadOnlyCollection<long> allowedUserIds)
+    public void SetAllowedUserIds(IReadOnlyCollection<UserIdentifier> allowedUserIds)
     {
         if (allowedUserIds is null)
         {
@@ -153,7 +153,7 @@ public sealed class UatUsersContext
         }
 
         _allowedUserIdSet.Clear();
-        var ordered = new SortedSet<long>(allowedUserIds);
+        var ordered = new SortedSet<UserIdentifier>(allowedUserIds);
         foreach (var id in ordered)
         {
             _allowedUserIdSet.Add(id);
@@ -162,7 +162,7 @@ public sealed class UatUsersContext
         _allowedUserIds = ordered.ToList();
     }
 
-    public void SetOrphanUserIds(IReadOnlyCollection<long> orphanUserIds)
+    public void SetOrphanUserIds(IReadOnlyCollection<UserIdentifier> orphanUserIds)
     {
         if (orphanUserIds is null)
         {
@@ -170,7 +170,7 @@ public sealed class UatUsersContext
         }
 
         _orphanUserIdSet.Clear();
-        var ordered = new SortedSet<long>(orphanUserIds);
+        var ordered = new SortedSet<UserIdentifier>(orphanUserIds);
         foreach (var id in ordered)
         {
             _orphanUserIdSet.Add(id);
@@ -179,20 +179,20 @@ public sealed class UatUsersContext
         _orphanUserIds = ordered.ToList();
     }
 
-    public void SetForeignKeyValueCounts(IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> counts)
+    public void SetForeignKeyValueCounts(IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> counts)
     {
         if (counts is null)
         {
             throw new ArgumentNullException(nameof(counts));
         }
 
-        var builder = ImmutableDictionary.CreateBuilder<UserFkColumn, IReadOnlyDictionary<long, long>>();
+        var builder = ImmutableDictionary.CreateBuilder<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>();
         foreach (var pair in counts)
         {
-            IReadOnlyDictionary<long, long> values = pair.Value switch
+            IReadOnlyDictionary<UserIdentifier, long> values = pair.Value switch
             {
-                ImmutableDictionary<long, long> immutable => immutable,
-                ImmutableSortedDictionary<long, long> sorted => sorted,
+                ImmutableDictionary<UserIdentifier, long> immutable => immutable,
+                ImmutableSortedDictionary<UserIdentifier, long> sorted => sorted,
                 _ => ImmutableSortedDictionary.CreateRange(pair.Value)
             };
 

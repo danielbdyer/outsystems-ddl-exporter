@@ -19,9 +19,14 @@ public sealed class PrepareUserMapStepTests
         using var temp = new TemporaryDirectory();
         var context = CreateContext(temp.Path);
         context.SetUserFkCatalog(new List<UserFkColumn>());
-        context.SetAllowedUserIds(new[] { 1L, 2L, 3L });
-        context.SetOrphanUserIds(new[] { 100L, 200L });
-        context.SetForeignKeyValueCounts(new Dictionary<UserFkColumn, IReadOnlyDictionary<long, long>>());
+        context.SetAllowedUserIds(new[]
+        {
+            UserIdentifier.FromString("1"),
+            UserIdentifier.FromString("2"),
+            UserIdentifier.FromString("3")
+        });
+        context.SetOrphanUserIds(new[] { UserIdentifier.FromString("100"), UserIdentifier.FromString("200") });
+        context.SetForeignKeyValueCounts(new Dictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>());
 
         var mapPath = context.UserMapPath;
         File.WriteAllLines(mapPath, new[]
@@ -38,13 +43,13 @@ public sealed class PrepareUserMapStepTests
             context.UserMap,
             entry =>
             {
-                Assert.Equal(100L, entry.SourceUserId);
-                Assert.Equal<long?>(300L, entry.TargetUserId);
+                Assert.Equal("100", entry.SourceUserId.Value);
+                Assert.Equal("300", entry.TargetUserId?.Value);
                 Assert.Equal("existing", entry.Rationale);
             },
             entry =>
             {
-                Assert.Equal(200L, entry.SourceUserId);
+                Assert.Equal("200", entry.SourceUserId.Value);
                 Assert.Null(entry.TargetUserId);
                 Assert.Null(entry.Rationale);
             });

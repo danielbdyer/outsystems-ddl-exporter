@@ -16,11 +16,17 @@ public static class SqlScriptEmitter
             throw new ArgumentNullException(nameof(context));
         }
 
+        var observedIdentifiers = CollectIdentifiers(context);
+        var identifierMode = DetermineIdentifierMode(observedIdentifiers);
+        var maxIdentifierLength = observedIdentifiers.Count == 0
+            ? 1
+            : observedIdentifiers.Max(static id => id.Value.Length);
+
         var builder = new StringBuilder();
         AppendHeader(builder, context);
         builder.AppendLine("SET NOCOUNT ON;");
         builder.AppendLine();
-        builder.AppendLine("CREATE TABLE #UserRemap (SourceUserId INT PRIMARY KEY, TargetUserId INT NOT NULL, Rationale NVARCHAR(200) NULL);");
+        builder.AppendLine(BuildRemapTableDefinition(identifierMode, maxIdentifierLength));
         builder.AppendLine();
 
         var applicableMappings = context.UserMap
@@ -36,9 +42,9 @@ public static class SqlScriptEmitter
                 var entry = applicableMappings[i];
                 var suffix = i == applicableMappings.Count - 1 ? ";" : ",";
                 builder.Append("    (")
-                    .Append(entry.SourceUserId.ToString(CultureInfo.InvariantCulture))
+                    .Append(FormatIdentifierLiteral(entry.SourceUserId, identifierMode))
                     .Append(", ")
-                    .Append(entry.TargetUserId!.Value.ToString(CultureInfo.InvariantCulture))
+                    .Append(FormatIdentifierLiteral(entry.TargetUserId!.Value, identifierMode))
                     .Append(", ")
                     .Append(SqlFormatting.SqlStringLiteral(TrimRationale(entry.Rationale)))
                     .Append(')')
@@ -64,7 +70,7 @@ public static class SqlScriptEmitter
             {
                 var pending = GetPendingRowCount(context, entry.SourceUserId);
                 builder.Append("--   SourceUserId = ")
-                    .Append(entry.SourceUserId.ToString(CultureInfo.InvariantCulture))
+                    .Append(entry.SourceUserId.ToString())
                     .Append(" (rows pending: ")
                     .Append(pending.ToString(CultureInfo.InvariantCulture))
                     .AppendLine(")");
@@ -73,9 +79,9 @@ public static class SqlScriptEmitter
             builder.AppendLine();
         }
 
-        AppendTargetSanityCheck(builder, context);
+        AppendTargetSanityCheck(builder, context, identifierMode);
 
-        builder.AppendLine("CREATE TABLE #Changes (TableName sysname NOT NULL, ColumnName sysname NOT NULL, OldUserId INT NOT NULL, NewUserId INT NOT NULL, ChangedAt datetime2(3) NOT NULL);");
+        builder.AppendLine(BuildChangesTableDefinition(identifierMode));
         builder.AppendLine();
         builder.AppendLine("IF NOT EXISTS (SELECT 1 FROM #UserRemap)");
         builder.AppendLine("BEGIN");
@@ -84,19 +90,20 @@ public static class SqlScriptEmitter
         builder.AppendLine("END;");
         builder.AppendLine();
 
-        AppendTargetSanityCheck(builder, context);
+        AppendTargetSanityCheck(builder, context, identifierMode);
 
         foreach (var column in context.UserFkCatalog)
         {
-            AppendUpdateBlock(builder, column);
+            AppendUpdateBlock(builder, column, identifierMode);
         }
 
         builder.AppendLine("SELECT TableName, ColumnName, COUNT(*) AS RowsUpdated FROM #Changes GROUP BY TableName, ColumnName ORDER BY TableName, ColumnName;");
         return builder.ToString();
     }
 
-    private static void AppendUpdateBlock(StringBuilder builder, UserFkColumn column)
+    private static void AppendUpdateBlock(StringBuilder builder, UserFkColumn column, IdentifierMode mode)
     {
+        _ = mode;
         var schema = SqlFormatting.QuoteIdentifier(column.SchemaName);
         var table = SqlFormatting.QuoteIdentifier(column.TableName);
         var quotedColumn = SqlFormatting.QuoteIdentifier(column.ColumnName);
@@ -129,8 +136,9 @@ public static class SqlScriptEmitter
         builder.AppendLine();
     }
 
-    private static void AppendTargetSanityCheck(StringBuilder builder, UatUsersContext context)
+    private static void AppendTargetSanityCheck(StringBuilder builder, UatUsersContext context, IdentifierMode mode)
     {
+        _ = mode;
         var userSchema = SqlFormatting.QuoteIdentifier(context.UserSchema);
         var userTable = SqlFormatting.QuoteIdentifier(context.UserTable);
         var userIdColumn = SqlFormatting.QuoteIdentifier(context.UserIdColumn);
@@ -201,7 +209,122 @@ public static class SqlScriptEmitter
         return value.Length <= 200 ? value : value[..200];
     }
 
-    private static long GetPendingRowCount(UatUsersContext context, long sourceUserId)
+    private static string BuildRemapTableDefinition(IdentifierMode mode, int maxIdentifierLength)
+    {
+        return mode switch
+        {
+            IdentifierMode.Numeric => "CREATE TABLE #UserRemap (SourceUserId INT PRIMARY KEY, TargetUserId INT NOT NULL, Rationale NVARCHAR(200) NULL);",
+            IdentifierMode.Guid => "CREATE TABLE #UserRemap (SourceUserId UNIQUEIDENTIFIER PRIMARY KEY, TargetUserId UNIQUEIDENTIFIER NOT NULL, Rationale NVARCHAR(200) NULL);",
+            IdentifierMode.Text => BuildTextRemapDefinition(maxIdentifierLength),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported identifier mode.")
+        };
+    }
+
+    private static string BuildTextRemapDefinition(int maxIdentifierLength)
+    {
+        var length = Math.Clamp(Math.Max(maxIdentifierLength, 32), 32, 450);
+        return $"CREATE TABLE #UserRemap (SourceUserId NVARCHAR({length}) PRIMARY KEY, TargetUserId NVARCHAR({length}) NOT NULL, Rationale NVARCHAR(200) NULL);";
+    }
+
+    private static string BuildChangesTableDefinition(IdentifierMode mode)
+    {
+        var identifierType = mode switch
+        {
+            IdentifierMode.Numeric => "INT",
+            IdentifierMode.Guid => "UNIQUEIDENTIFIER",
+            _ => "NVARCHAR(450)"
+        };
+
+        return $"CREATE TABLE #Changes (TableName sysname NOT NULL, ColumnName sysname NOT NULL, OldUserId {identifierType} NOT NULL, NewUserId {identifierType} NOT NULL, ChangedAt datetime2(3) NOT NULL);";
+    }
+
+    private static string FormatIdentifierLiteral(UserIdentifier identifier, IdentifierMode mode)
+    {
+        return mode switch
+        {
+            IdentifierMode.Numeric when identifier.NumericValue.HasValue => identifier.NumericValue.Value.ToString(CultureInfo.InvariantCulture),
+            IdentifierMode.Guid => SqlFormatting.SqlStringLiteral(identifier.ToString()),
+            _ => SqlFormatting.SqlStringLiteral(identifier.ToString())
+        };
+    }
+
+    private static IReadOnlyCollection<UserIdentifier> CollectIdentifiers(UatUsersContext context)
+    {
+        var collected = new HashSet<UserIdentifier>();
+        foreach (var id in context.AllowedUserIds)
+        {
+            collected.Add(id);
+        }
+
+        foreach (var id in context.OrphanUserIds)
+        {
+            collected.Add(id);
+        }
+
+        foreach (var mapping in context.UserMap)
+        {
+            collected.Add(mapping.SourceUserId);
+            if (mapping.TargetUserId.HasValue)
+            {
+                collected.Add(mapping.TargetUserId.Value);
+            }
+        }
+
+        foreach (var column in context.ForeignKeyValueCounts.Values)
+        {
+            foreach (var pair in column)
+            {
+                collected.Add(pair.Key);
+            }
+        }
+
+        return collected.ToArray();
+    }
+
+    private static IdentifierMode DetermineIdentifierMode(IReadOnlyCollection<UserIdentifier> identifiers)
+    {
+        var seenNumeric = false;
+        var seenGuid = false;
+        var seenText = false;
+
+        foreach (var identifier in identifiers)
+        {
+            if (identifier.NumericValue.HasValue)
+            {
+                seenNumeric = true;
+                continue;
+            }
+
+            if (identifier.IsGuid)
+            {
+                seenGuid = true;
+                continue;
+            }
+
+            seenText = true;
+        }
+
+        if (seenText || (seenGuid && seenNumeric))
+        {
+            return IdentifierMode.Text;
+        }
+
+        if (seenGuid)
+        {
+            return IdentifierMode.Guid;
+        }
+
+        return IdentifierMode.Numeric;
+    }
+
+    private enum IdentifierMode
+    {
+        Numeric,
+        Guid,
+        Text
+    }
+
+    private static long GetPendingRowCount(UatUsersContext context, UserIdentifier sourceUserId)
     {
         long total = 0;
         foreach (var column in context.UserFkCatalog)
