@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Serialization;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -81,7 +82,7 @@ internal static class DotNetCli
         }
         catch (Exception ex) when (ex is not SkipException)
         {
-            throw new SkipException(
+            throw CreateSkipException(
                 $"`dotnet --info` could not be executed. Install the .NET 9 SDK as described in notes/run-checklist.md before running CLI integration tests. Underlying error: {ex.Message}");
         }
 
@@ -96,7 +97,27 @@ internal static class DotNetCli
         builder.AppendLine();
         builder.Append(result.FormatFailureMessage(expectedExitCode: 0));
 
-        throw new SkipException(builder.ToString());
+        throw CreateSkipException(builder.ToString());
+    }
+
+    private static SkipException CreateSkipException(string message)
+    {
+        var skipConstructor = typeof(SkipException).GetConstructor(
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: new[] { typeof(string) },
+            modifiers: null);
+
+        if (skipConstructor is not null)
+        {
+            return (SkipException)skipConstructor.Invoke(new object[] { message });
+        }
+
+        var skipInstance = (SkipException)FormatterServices.GetUninitializedObject(typeof(SkipException));
+        var messageField = typeof(Exception).GetField("_message", BindingFlags.Instance | BindingFlags.NonPublic);
+        messageField?.SetValue(skipInstance, message);
+
+        return skipInstance;
     }
 
     private static CliInvocation TryCreateInvocation(string arguments)

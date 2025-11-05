@@ -284,6 +284,7 @@ internal static class CommandConsole
             WriteLine(console, string.Empty);
             WriteLine(console, "⚠️  Unique constraint risks:");
 
+            WriteLine(console, $"  Summary: {FormatIssueSeverityCounts(uniqueIssues.Select(static issue => issue.Severity))}.");
             var rows = uniqueIssues
                 .OrderByDescending(static issue => issue.Severity)
                 .ThenBy(static issue => issue.Scope, StringComparer.OrdinalIgnoreCase)
@@ -313,6 +314,7 @@ internal static class CommandConsole
             WriteLine(console, string.Empty);
             WriteLine(console, "⚠️  Foreign key anomalies:");
 
+            WriteLine(console, $"  Summary: {FormatIssueSeverityCounts(foreignKeyIssues.Select(static issue => issue.Severity))}.");
             var rows = foreignKeyIssues
                 .OrderByDescending(static issue => issue.Severity)
                 .ThenBy(static issue => issue.Reference, StringComparer.OrdinalIgnoreCase)
@@ -576,6 +578,45 @@ internal static class CommandConsole
             _ => "INFO"
         };
 
+    private static string FormatIssueSeverityCounts(IEnumerable<IssueSeverity> severities)
+    {
+        if (severities is null)
+        {
+            return "no actionable issues";
+        }
+
+        var counts = new Dictionary<IssueSeverity, int>();
+
+        foreach (var severity in severities)
+        {
+            if (!counts.TryAdd(severity, 1))
+            {
+                counts[severity]++;
+            }
+        }
+
+        var parts = new List<string>();
+
+        if (counts.TryGetValue(IssueSeverity.Critical, out var critical) && critical > 0)
+        {
+            parts.Add(string.Format(CultureInfo.InvariantCulture, "{0} critical", critical));
+        }
+
+        if (counts.TryGetValue(IssueSeverity.Warning, out var warning) && warning > 0)
+        {
+            parts.Add(string.Format(CultureInfo.InvariantCulture, "{0} warning", warning));
+        }
+
+        if (counts.TryGetValue(IssueSeverity.Info, out var info) && info > 0)
+        {
+            parts.Add(string.Format(CultureInfo.InvariantCulture, "{0} informational", info));
+        }
+
+        return parts.Count > 0
+            ? string.Join(", ", parts)
+            : "no actionable issues";
+    }
+
     public static void EmitMultiEnvironmentReport(IConsole console, MultiEnvironmentProfileReport? report)
     {
         if (console is null)
@@ -621,6 +662,8 @@ internal static class CommandConsole
             .ToImmutableArray();
 
         WriteTable(console, headers, rows);
+
+        EmitEnvironmentReadinessDigest(console, report.Environments);
 
         if (!report.Findings.IsDefaultOrEmpty && report.Findings.Length > 0)
         {
@@ -693,6 +736,8 @@ internal static class CommandConsole
                 statistics.SafeForeignKeyConstraints,
                 statistics.UnsafeForeignKeyConstraints));
 
+        EmitConstraintReadinessDigest(console, results);
+
         var safeResults = results
             .Where(static result => result.IsSafeToApply)
             .OrderByDescending(static result => result.ConsensusRatio)
@@ -734,6 +779,160 @@ internal static class CommandConsole
         {
             WriteLine(console, string.Empty);
             WriteLine(console, "All analyzed constraints are ready for multi-environment DDL application.");
+        }
+    }
+
+    private static void EmitEnvironmentReadinessDigest(
+        IConsole console,
+        ImmutableArray<ProfilingEnvironmentSummary> environments)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (environments.IsDefaultOrEmpty || environments.Length < 2)
+        {
+            return;
+        }
+
+        var primary = environments.FirstOrDefault(static summary => summary is not null && summary.IsPrimary)
+            ?? environments[0];
+
+        var entries = new List<string>();
+
+        foreach (var summary in environments)
+        {
+            if (summary is null || string.Equals(summary.Name, primary.Name, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var reasons = new List<string>();
+
+            if (summary.ColumnsWithNulls > primary.ColumnsWithNulls)
+            {
+                reasons.Add("null variance");
+            }
+
+            if (summary.UniqueViolations > primary.UniqueViolations)
+            {
+                reasons.Add("uniqueness drift");
+            }
+
+            if (summary.ForeignKeyOrphans > primary.ForeignKeyOrphans)
+            {
+                reasons.Add("foreign key orphans");
+            }
+
+            if (summary.ForeignKeyProbeUnknown > primary.ForeignKeyProbeUnknown)
+            {
+                reasons.Add("probe gaps");
+            }
+
+            if (reasons.Count == 0)
+            {
+                continue;
+            }
+
+            var reasonText = string.Join(", ", reasons);
+            entries.Add(string.Format(
+                CultureInfo.InvariantCulture,
+                "Review {0} data quality ({1}).",
+                summary.Name,
+                reasonText));
+        }
+
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "Multi-environment readiness digest:");
+
+        var displayed = 0;
+        foreach (var entry in entries.Take(DefaultTableLimit))
+        {
+            WriteLine(console, $"  - {entry}");
+            displayed++;
+        }
+
+        EmitTableOverflow(console, entries.Count, displayed);
+    }
+
+    private static void EmitConstraintReadinessDigest(
+        IConsole console,
+        IReadOnlyList<ConstraintConsensusResult> results)
+    {
+        if (results is null || results.Count == 0)
+        {
+            return;
+        }
+
+        var blockedGroups = results
+            .Where(static result => !result.IsSafeToApply)
+            .GroupBy(static result => result.ConstraintType)
+            .OrderByDescending(static group => group.Count())
+            .ToList();
+
+        WriteLine(console, string.Empty);
+
+        if (blockedGroups.Count > 0)
+        {
+            WriteLine(console, "DDL readiness blockers:");
+
+            foreach (var group in blockedGroups)
+            {
+                var top = group
+                    .OrderBy(static result => result.ConsensusRatio)
+                    .ThenBy(static result => result.ConstraintDescriptor, StringComparer.OrdinalIgnoreCase)
+                    .First();
+
+                WriteLine(
+                    console,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "  - {0}: {1} blocked. Worst case {2} – {3}. {4}",
+                        DescribeConstraintType(group.Key),
+                        group.Count(),
+                        FormatConsensus(top),
+                        top.ConstraintDescriptor,
+                        top.Recommendation));
+            }
+        }
+        else
+        {
+            WriteLine(console, "DDL readiness blockers: none detected.");
+        }
+
+        var partialConsensus = results
+            .Where(static result => result.IsSafeToApply && result.ConsensusRatio < 1.0)
+            .OrderBy(static result => result.ConsensusRatio)
+            .ThenBy(static result => result.ConstraintDescriptor, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (partialConsensus.Count > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, "Watchlist (safe under configured threshold but not unanimous):");
+
+            var displayed = 0;
+            foreach (var result in partialConsensus.Take(DefaultTableLimit))
+            {
+                WriteLine(
+                    console,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "  - {0} {1}: {2}. {3}",
+                        DescribeConstraintType(result.ConstraintType),
+                        result.ConstraintDescriptor,
+                        FormatConsensus(result),
+                        result.Recommendation));
+                displayed++;
+            }
+
+            EmitTableOverflow(console, partialConsensus.Count, displayed);
         }
     }
 
