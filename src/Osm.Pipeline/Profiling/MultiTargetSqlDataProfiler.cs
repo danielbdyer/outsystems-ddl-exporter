@@ -220,7 +220,7 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
             var worstProbeStatus = AggregateProbeStatus(existing.NullCountStatus, column.NullCountStatus);
 
             // Aggregate null row samples if present in either environment
-            var aggregatedSample = existing.NullRowSample ?? column.NullRowSample;
+            var aggregatedSample = AggregateNullRowSample(existing.NullRowSample, column.NullRowSample);
 
             // Use first occurrence's metadata (physical nullability, PK, etc.) as baseline
             // but aggregate data quality metrics (row count, null count, probe status)
@@ -254,6 +254,44 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
                 }
             }
         }
+    }
+
+    private static NullRowSample? AggregateNullRowSample(NullRowSample? first, NullRowSample? second)
+    {
+        if (first is null)
+        {
+            return second;
+        }
+
+        if (second is null)
+        {
+            return first;
+        }
+
+        if (second.TotalNullRows > first.TotalNullRows)
+        {
+            return second;
+        }
+
+        if (second.TotalNullRows == first.TotalNullRows)
+        {
+            if (first.IsTruncated && !second.IsTruncated)
+            {
+                return second;
+            }
+
+            if (!first.IsTruncated && second.IsTruncated)
+            {
+                return first;
+            }
+
+            if (second.SampleRows.Length > first.SampleRows.Length)
+            {
+                return second;
+            }
+        }
+
+        return first;
     }
 
     private static void MergeUniqueCandidatesWithAggregation(
