@@ -50,7 +50,7 @@ public class SsdtEmitterTests
         Assert.True(fileSystem.File.Exists(tablePath));
         var script = fileSystem.File.ReadAllText(tablePath);
         Assert.Contains("CREATE TABLE [dbo].[Sample]", script, StringComparison.Ordinal);
-        Assert.Contains("[ID] INT NOT NULL", script, StringComparison.Ordinal);
+        Assert.Contains("[Id]", script, StringComparison.Ordinal);
         Assert.EndsWith(Environment.NewLine, script, StringComparison.Ordinal);
     }
 

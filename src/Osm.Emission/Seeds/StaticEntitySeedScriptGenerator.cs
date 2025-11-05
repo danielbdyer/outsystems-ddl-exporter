@@ -141,7 +141,12 @@ public static class StaticEntitySeedDefinitionBuilder
             .Select(attribute =>
             {
                 var physicalName = attribute.ColumnName.Value;
-                var emissionName = physicalName;
+                var emissionName = attribute.LogicalName.Value;
+
+                if (string.IsNullOrWhiteSpace(emissionName))
+                {
+                    emissionName = physicalName;
+                }
 
                 return new StaticEntitySeedColumn(
                     attribute.LogicalName.Value,
