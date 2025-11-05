@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
-using System.Linq;
 
 namespace Osm.Cli;
 
@@ -29,7 +28,7 @@ public sealed class UatUsersOptions
         UserSchema = string.IsNullOrWhiteSpace(userSchema) ? "dbo" : userSchema.Trim();
         UserTable = string.IsNullOrWhiteSpace(userTable) ? "User" : userTable.Trim();
         UserIdColumn = string.IsNullOrWhiteSpace(userIdColumn) ? "Id" : userIdColumn.Trim();
-        IncludeColumns = includeColumns?.Select(static value => value.Trim()).Where(static value => value.Length > 0).ToImmutableArray() ?? ImmutableArray<string>.Empty;
+        IncludeColumns = NormalizeIncludeColumns(includeColumns);
         OutputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
             ? Path.GetFullPath("./_artifacts")
             : Path.GetFullPath(outputDirectory);
@@ -75,4 +74,30 @@ public sealed class UatUsersOptions
     public string? SnapshotPath { get; }
 
     public string? UserEntityIdentifier { get; }
+
+    private static ImmutableArray<string> NormalizeIncludeColumns(IEnumerable<string>? includeColumns)
+    {
+        if (includeColumns is null)
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ordered = new List<string>();
+        foreach (var value in includeColumns)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var trimmed = value.Trim();
+            if (seen.Add(trimmed))
+            {
+                ordered.Add(trimmed);
+            }
+        }
+
+        return ordered.ToImmutableArray();
+    }
 }

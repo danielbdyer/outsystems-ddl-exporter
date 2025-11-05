@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -66,7 +65,7 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
         return Task.CompletedTask;
     }
 
-    private static IReadOnlyList<IReadOnlyList<string>> BuildTemplateRows(IReadOnlyCollection<long> orphanUserIds)
+    private static IReadOnlyList<IReadOnlyList<string>> BuildTemplateRows(IReadOnlyCollection<UserIdentifier> orphanUserIds)
     {
         var rows = new List<IReadOnlyList<string>>(Math.Max(orphanUserIds.Count + 1, 1))
         {
@@ -77,7 +76,7 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
         {
             rows.Add(new[]
             {
-                orphan.ToString(CultureInfo.InvariantCulture),
+                orphan.ToString(),
                 string.Empty,
                 string.Empty
             });
@@ -87,16 +86,16 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
     }
 
     private static IReadOnlyList<UserMappingEntry> MergeMappings(
-        IReadOnlyCollection<long> orphanUserIds,
+        IReadOnlyCollection<UserIdentifier> orphanUserIds,
         IReadOnlyList<UserMappingEntry> existing)
     {
-        var orphanSet = new SortedSet<long>(orphanUserIds);
+        var orphanSet = new SortedSet<UserIdentifier>(orphanUserIds);
         if (orphanSet.Count == 0)
         {
             return Array.Empty<UserMappingEntry>();
         }
 
-        var bySource = new Dictionary<long, UserMappingEntry>();
+        var bySource = new Dictionary<UserIdentifier, UserMappingEntry>();
         foreach (var entry in existing)
         {
             if (!orphanSet.Contains(entry.SourceUserId))
@@ -156,11 +155,11 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
         foreach (var entry in entries)
         {
             var target = entry.TargetUserId.HasValue
-                ? entry.TargetUserId.Value.ToString(CultureInfo.InvariantCulture)
+                ? entry.TargetUserId.Value.ToString()
                 : string.Empty;
             var rationale = entry.Rationale ?? string.Empty;
             WriteRow(writer,
-                entry.SourceUserId.ToString(CultureInfo.InvariantCulture),
+                entry.SourceUserId.ToString(),
                 target,
                 rationale);
         }

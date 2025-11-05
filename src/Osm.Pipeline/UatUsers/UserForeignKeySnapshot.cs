@@ -9,9 +9,9 @@ public sealed class UserForeignKeySnapshot
 
     public string SourceFingerprint { get; init; } = string.Empty;
 
-    public IReadOnlyList<long> AllowedUserIds { get; init; } = Array.Empty<long>();
+    public IReadOnlyList<UserIdentifier> AllowedUserIds { get; init; } = Array.Empty<UserIdentifier>();
 
-    public IReadOnlyList<long> OrphanUserIds { get; init; } = Array.Empty<long>();
+    public IReadOnlyList<UserIdentifier> OrphanUserIds { get; init; } = Array.Empty<UserIdentifier>();
 
     public IReadOnlyList<UserForeignKeySnapshotColumn> Columns { get; init; } = Array.Empty<UserForeignKeySnapshotColumn>();
 }
@@ -29,7 +29,7 @@ public sealed class UserForeignKeySnapshotColumn
 
 public sealed class UserForeignKeySnapshotValue
 {
-    public long UserId { get; init; }
+    public UserIdentifier UserId { get; init; }
 
     public long RowCount { get; init; }
 }

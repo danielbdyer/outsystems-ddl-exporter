@@ -25,12 +25,25 @@ public sealed class AnalyzeForeignKeyValuesStepTests
             new("dbo", "TableB", "UpdatedBy", "FK_TableB")
         };
         context.SetUserFkCatalog(catalog);
-        context.SetAllowedUserIds(new[] { 1L, 2L, 200L });
-
-        var counts = new Dictionary<UserFkColumn, IReadOnlyDictionary<long, long>>
+        context.SetAllowedUserIds(new[]
         {
-            [catalog[0]] = new Dictionary<long, long> { { 1L, 10L }, { 100L, 3L } },
-            [catalog[1]] = new Dictionary<long, long> { { 300L, 5L }, { 2L, 7L } }
+            UserIdentifier.FromString("1"),
+            UserIdentifier.FromString("2"),
+            UserIdentifier.FromString("200")
+        });
+
+        var counts = new Dictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>
+        {
+            [catalog[0]] = new Dictionary<UserIdentifier, long>
+            {
+                [UserIdentifier.FromString("1")] = 10L,
+                [UserIdentifier.FromString("100")] = 3L
+            },
+            [catalog[1]] = new Dictionary<UserIdentifier, long>
+            {
+                [UserIdentifier.FromString("300")] = 5L,
+                [UserIdentifier.FromString("2")] = 7L
+            }
         };
 
         var provider = new StubValueProvider(counts);
@@ -40,10 +53,10 @@ public sealed class AnalyzeForeignKeyValuesStepTests
         await step.ExecuteAsync(context, CancellationToken.None);
 
         Assert.Equal(2, context.OrphanUserIds.Count);
-        Assert.Contains(100L, context.OrphanUserIds);
-        Assert.Contains(300L, context.OrphanUserIds);
+        Assert.Contains(context.OrphanUserIds, id => id.NumericValue == 100L);
+        Assert.Contains(context.OrphanUserIds, id => id.NumericValue == 300L);
         Assert.True(context.ForeignKeyValueCounts.TryGetValue(catalog[0], out var tableACounts));
-        Assert.Equal(3L, tableACounts[100L]);
+        Assert.Equal(3L, tableACounts[UserIdentifier.FromString("100")]);
         Assert.NotNull(snapshotStore.LastSaved);
     }
 
@@ -57,14 +70,14 @@ public sealed class AnalyzeForeignKeyValuesStepTests
             new("dbo", "TableA", "CreatedBy", "FK_TableA")
         };
         context.SetUserFkCatalog(catalog);
-        context.SetAllowedUserIds(new[] { 1L });
+        context.SetAllowedUserIds(new[] { UserIdentifier.FromString("1") });
 
         var snapshot = new UserForeignKeySnapshot
         {
             CapturedAt = DateTimeOffset.UtcNow,
             SourceFingerprint = context.SourceFingerprint,
-            AllowedUserIds = new[] { 1L },
-            OrphanUserIds = new[] { 100L },
+            AllowedUserIds = new[] { UserIdentifier.FromString("1") },
+            OrphanUserIds = new[] { UserIdentifier.FromString("100") },
             Columns = new[]
             {
                 new UserForeignKeySnapshotColumn
@@ -74,7 +87,7 @@ public sealed class AnalyzeForeignKeyValuesStepTests
                     Column = "CreatedBy",
                     Values = new[]
                     {
-                        new UserForeignKeySnapshotValue { UserId = 100L, RowCount = 4L }
+                        new UserForeignKeySnapshotValue { UserId = UserIdentifier.FromString("100"), RowCount = 4L }
                     }
                 }
             }
@@ -85,8 +98,8 @@ public sealed class AnalyzeForeignKeyValuesStepTests
 
         await step.ExecuteAsync(context, CancellationToken.None);
 
-        Assert.Single(context.OrphanUserIds, 100L);
-        Assert.True(context.ForeignKeyValueCounts[catalog[0]].ContainsKey(100L));
+        Assert.Single(context.OrphanUserIds, id => id.NumericValue == 100L);
+        Assert.True(context.ForeignKeyValueCounts[catalog[0]].ContainsKey(UserIdentifier.FromString("100")));
         Assert.Null(snapshotStore.LastSaved);
     }
 
@@ -116,14 +129,14 @@ public sealed class AnalyzeForeignKeyValuesStepTests
 
     private sealed class StubValueProvider : IUserForeignKeyValueProvider
     {
-        private readonly IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> _counts;
+        private readonly IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> _counts;
 
-        public StubValueProvider(IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>> counts)
+        public StubValueProvider(IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> counts)
         {
             _counts = counts;
         }
 
-        public Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>> CollectAsync(
+        public Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>> CollectAsync(
             IReadOnlyList<UserFkColumn> catalog,
             IDbConnectionFactory connectionFactory,
             CancellationToken cancellationToken)
@@ -134,7 +147,7 @@ public sealed class AnalyzeForeignKeyValuesStepTests
 
     private sealed class ThrowingValueProvider : IUserForeignKeyValueProvider
     {
-        public Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<long, long>>> CollectAsync(
+        public Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>> CollectAsync(
             IReadOnlyList<UserFkColumn> catalog,
             IDbConnectionFactory connectionFactory,
             CancellationToken cancellationToken)

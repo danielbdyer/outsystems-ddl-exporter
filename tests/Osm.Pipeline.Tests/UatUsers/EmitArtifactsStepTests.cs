@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
-using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,19 +34,19 @@ public sealed class EmitArtifactsStepTests
             fromLiveMetadata: false,
             sourceFingerprint: "test/db");
 
-        context.SetAllowedUserIds(new[] { 1L, 2L });
-        context.SetOrphanUserIds(new[] { 100L });
+        context.SetAllowedUserIds(new[] { UserIdentifier.FromString("1"), UserIdentifier.FromString("2") });
+        context.SetOrphanUserIds(new[] { UserIdentifier.FromString("100") });
 
         var catalog = new List<UserFkColumn>
         {
             new("dbo", "Orders", "CreatedBy", "FK_Orders_Users_CreatedBy")
         };
         context.SetUserFkCatalog(catalog);
-        context.SetForeignKeyValueCounts(new Dictionary<UserFkColumn, IReadOnlyDictionary<long, long>>
+        context.SetForeignKeyValueCounts(new Dictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>
         {
-            [catalog[0]] = new Dictionary<long, long> { { 100L, 42L } }
+            [catalog[0]] = new Dictionary<UserIdentifier, long> { { UserIdentifier.FromString("100"), 42L } }
         });
-        context.SetUserMap(new List<UserMappingEntry> { new(100L, 200L, "reviewed") });
+        context.SetUserMap(new List<UserMappingEntry> { new(UserIdentifier.FromString("100"), UserIdentifier.FromString("200"), "reviewed") });
 
         var step = new EmitArtifactsStep();
         await step.ExecuteAsync(context, CancellationToken.None);

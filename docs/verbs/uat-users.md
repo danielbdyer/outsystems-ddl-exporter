@@ -10,6 +10,8 @@ The `uat-users` verb discovers every foreign-key column that references `dbo.[Us
 * **Live data analysis** – Using the supplied UAT connection, every catalogued column is scanned to collect distinct user identifiers and row counts. Results can be snapshotted to disk via `--snapshot` for repeatable dry runs.
 * **Operator-controlled mappings** – `00_user_map.template.csv` lists every orphan. Populate the corresponding `00_user_map.csv` (or provide `--user-map`) with `SourceUserId,TargetUserId` pairs. Missing mappings are surfaced in both the preview file and the generated SQL comments.
 * **Guarded apply script** – `02_apply_user_remap.sql` creates `#UserRemap` and `#Changes` temp tables, validates target existence, protects `NULL` values, and emits a summary. Updates only occur when `SourceUserId <> TargetUserId`, making the script idempotent and rerunnable.
+* **SQL-friendly configuration parsing** – The CLI accepts `[schema].[table]` and quoted identifiers for `--user-table`, trimming duplicates from `--include-columns` so catalogs stay deterministic even when operators repeat column names.
+* **Flexible identifier handling** – Allowed-user parsing and artifacts support numeric, `UNIQUEIDENTIFIER`, or free-form textual identifiers; the generated SQL automatically selects `INT`, `UNIQUEIDENTIFIER`, or `NVARCHAR` temporary table columns to match the observed inputs.
 
 ## CLI Contract
 
@@ -67,3 +69,4 @@ uat-users
 * `01_preview.csv` reports accurate row counts per orphan/column and reflects the provided mappings.
 * `02_apply_user_remap.sql` includes `WHERE t.[Column] IS NOT NULL` guards, a target sanity check, and no `IDENTITY_INSERT` statements.
 * Re-running `02_apply_user_remap.sql` after a successful apply produces zero additional changes (idempotent behavior).
+* The command fails fast when allowed user sources do not produce at least one identifier, preventing silent runs with empty allow-lists.

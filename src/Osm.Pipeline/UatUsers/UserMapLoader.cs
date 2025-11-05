@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 
 namespace Osm.Pipeline.UatUsers;
@@ -52,15 +51,15 @@ public static class UserMapLoader
 
             var sourceValue = GetCell(row, sourceIndex);
             var targetValue = GetCell(row, targetIndex);
-            if (!long.TryParse(sourceValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sourceId))
+            if (!UserIdentifier.TryParse(sourceValue, out var sourceId))
             {
                 throw new InvalidDataException($"Invalid SourceUserId '{sourceValue}' on line {i + 1}.");
             }
 
-            long? targetId = null;
+            UserIdentifier? targetId = null;
             if (!string.IsNullOrEmpty(targetValue))
             {
-                if (!long.TryParse(targetValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTarget))
+                if (!UserIdentifier.TryParse(targetValue, out var parsedTarget))
                 {
                     throw new InvalidDataException($"Invalid TargetUserId '{targetValue}' on line {i + 1}.");
                 }
@@ -73,7 +72,7 @@ public static class UserMapLoader
             raw.Add(new UserMappingEntry(sourceId, targetId, rationale));
         }
 
-        var deduplicated = new Dictionary<long, UserMappingEntry>();
+        var deduplicated = new Dictionary<UserIdentifier, UserMappingEntry>();
         foreach (var entry in raw)
         {
             if (!deduplicated.TryGetValue(entry.SourceUserId, out var existing))

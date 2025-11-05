@@ -590,10 +590,10 @@ The following catalog enumerates every `record`-based data object in the solutio
 <details>
 <summary><code>Osm.Pipeline.UatUsers</code> (7)</summary>
 
-* `internal sealed record AllowedUserLoadResult( IReadOnlyCollection<long> UserIds, int SqlRowCount, int ListRowCount);`
+* `internal sealed record AllowedUserLoadResult( IReadOnlyCollection<UserIdentifier> UserIds, int SqlRowCount, int ListRowCount);`
 * `internal sealed record PipelineStepRegistration<TContext>( IPipelineStep<TContext> Step, Func<TContext, bool>? Predicate);`
 * `public readonly record struct UserFkColumn( string SchemaName, string TableName, string ColumnName, string ForeignKeyName);`
-* `public readonly record struct UserMappingEntry(long SourceUserId, long? TargetUserId, string? Rationale);`
+* `public readonly record struct UserMappingEntry(UserIdentifier SourceUserId, UserIdentifier? TargetUserId, string? Rationale);`
 * `public sealed record ForeignKeyColumn(string ParentColumn, string ReferencedColumn);`
 * `public sealed record ForeignKeyDefinition( string Name, ForeignKeyTable Parent, ForeignKeyTable Referenced, ImmutableArray<ForeignKeyColumn> Columns);`
 * `public sealed record ForeignKeyTable(string Schema, string Table);`

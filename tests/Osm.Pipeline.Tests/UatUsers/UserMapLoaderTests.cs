@@ -29,25 +29,28 @@ public sealed class UserMapLoaderTests
         Assert.Collection(entries,
             entry =>
             {
-                Assert.Equal(100, entry.SourceUserId);
-                Assert.Equal<long?>(200, entry.TargetUserId);
+                Assert.Equal(UserIdentifier.FromString("100"), entry.SourceUserId);
+                Assert.True(entry.TargetUserId.HasValue);
+                Assert.Equal(UserIdentifier.FromString("200"), entry.TargetUserId.Value);
                 Assert.Equal("Primary", entry.Rationale);
             },
             entry =>
             {
-                Assert.Equal(200, entry.SourceUserId);
-                Assert.Equal<long?>(400, entry.TargetUserId);
+                Assert.Equal(UserIdentifier.FromString("200"), entry.SourceUserId);
+                Assert.True(entry.TargetUserId.HasValue);
+                Assert.Equal(UserIdentifier.FromString("400"), entry.TargetUserId.Value);
                 Assert.Null(entry.Rationale);
             },
             entry =>
             {
-                Assert.Equal(300, entry.SourceUserId);
-                Assert.Equal<long?>(500, entry.TargetUserId);
+                Assert.Equal(UserIdentifier.FromString("300"), entry.SourceUserId);
+                Assert.True(entry.TargetUserId.HasValue);
+                Assert.Equal(UserIdentifier.FromString("500"), entry.TargetUserId.Value);
                 Assert.Null(entry.Rationale);
             },
             entry =>
             {
-                Assert.Equal(400, entry.SourceUserId);
+                Assert.Equal(UserIdentifier.FromString("400"), entry.SourceUserId);
                 Assert.Null(entry.TargetUserId);
                 Assert.Equal("Pending", entry.Rationale);
             });

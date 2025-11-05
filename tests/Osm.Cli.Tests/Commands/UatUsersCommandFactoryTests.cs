@@ -51,6 +51,50 @@ public class UatUsersCommandFactoryTests
         Assert.Equal("Identifier", options.UserEntityIdentifier);
     }
 
+    [Theory]
+    [InlineData("\"[dbo].[Users]\"", "dbo", "Users")]
+    [InlineData("\"[custom].[User Accounts]\"", "custom", "User Accounts")]
+    [InlineData("\"schema.[User.Table]\"", "schema", "User.Table")]
+    [InlineData("\"[custom schema].User\"", "custom schema", "User")]
+    public async Task Invoke_NormalizesBracketedUserTableInput(string userTableArgument, string expectedSchema, string expectedTable)
+    {
+        var command = $"uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-ddl ddl.sql --user-table {userTableArgument}";
+        var (options, exitCode) = await InvokeAsync(command);
+
+        Assert.Equal(5, exitCode);
+        Assert.Equal(expectedSchema, options.UserSchema);
+        Assert.Equal(expectedTable, options.UserTable);
+    }
+
+    [Fact]
+    public async Task Invoke_DeduplicatesIncludeColumnsIgnoringCase()
+    {
+        var command = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-ddl ddl.sql --include-columns Name --include-columns name --include-columns Email --include-columns EMAIL";
+        var (options, exitCode) = await InvokeAsync(command);
+
+        Assert.Equal(5, exitCode);
+        Assert.Equal(new[] { "Name", "Email" }, options.IncludeColumns);
+    }
+
+    private static async Task<(UatUsersOptions Options, int ExitCode)> InvokeAsync(string commandLine)
+    {
+        var executor = new FakeUatUsersCommand();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IUatUsersCommand>(executor);
+        services.AddSingleton<UatUsersCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<UatUsersCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var exitCode = await parser.InvokeAsync(commandLine);
+
+        Assert.NotNull(executor.LastOptions);
+        return (executor.LastOptions!, exitCode);
+    }
+
     private sealed class FakeUatUsersCommand : IUatUsersCommand
     {
         public UatUsersOptions? LastOptions { get; private set; }
