@@ -285,7 +285,6 @@ internal static class CommandConsole
             WriteLine(console, "⚠️  Unique constraint risks:");
 
             WriteLine(console, $"  Summary: {FormatIssueSeverityCounts(uniqueIssues.Select(static issue => issue.Severity))}.");
-
             var rows = uniqueIssues
                 .OrderByDescending(static issue => issue.Severity)
                 .ThenBy(static issue => issue.Scope, StringComparer.OrdinalIgnoreCase)
@@ -316,7 +315,6 @@ internal static class CommandConsole
             WriteLine(console, "⚠️  Foreign key anomalies:");
 
             WriteLine(console, $"  Summary: {FormatIssueSeverityCounts(foreignKeyIssues.Select(static issue => issue.Severity))}.");
-
             var rows = foreignKeyIssues
                 .OrderByDescending(static issue => issue.Severity)
                 .ThenBy(static issue => issue.Reference, StringComparer.OrdinalIgnoreCase)
@@ -665,6 +663,8 @@ internal static class CommandConsole
 
         WriteTable(console, headers, rows);
 
+        EmitEnvironmentReadinessDigest(console, report.Environments);
+
         if (!report.Findings.IsDefaultOrEmpty && report.Findings.Length > 0)
         {
             WriteLine(console, string.Empty);
@@ -780,6 +780,85 @@ internal static class CommandConsole
             WriteLine(console, string.Empty);
             WriteLine(console, "All analyzed constraints are ready for multi-environment DDL application.");
         }
+    }
+
+    private static void EmitEnvironmentReadinessDigest(
+        IConsole console,
+        ImmutableArray<ProfilingEnvironmentSummary> environments)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (environments.IsDefaultOrEmpty || environments.Length < 2)
+        {
+            return;
+        }
+
+        var primary = environments.FirstOrDefault(static summary => summary is not null && summary.IsPrimary)
+            ?? environments[0];
+
+        var entries = new List<string>();
+
+        foreach (var summary in environments)
+        {
+            if (summary is null || string.Equals(summary.Name, primary.Name, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var reasons = new List<string>();
+
+            if (summary.ColumnsWithNulls > primary.ColumnsWithNulls)
+            {
+                reasons.Add("null variance");
+            }
+
+            if (summary.UniqueViolations > primary.UniqueViolations)
+            {
+                reasons.Add("uniqueness drift");
+            }
+
+            if (summary.ForeignKeyOrphans > primary.ForeignKeyOrphans)
+            {
+                reasons.Add("foreign key orphans");
+            }
+
+            if (summary.ForeignKeyProbeUnknown > primary.ForeignKeyProbeUnknown)
+            {
+                reasons.Add("probe gaps");
+            }
+
+            if (reasons.Count == 0)
+            {
+                continue;
+            }
+
+            var reasonText = string.Join(", ", reasons);
+            entries.Add(string.Format(
+                CultureInfo.InvariantCulture,
+                "Review {0} data quality ({1}).",
+                summary.Name,
+                reasonText));
+        }
+
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "Multi-environment readiness digest:");
+
+        var displayed = 0;
+        foreach (var entry in entries.Take(DefaultTableLimit))
+        {
+            WriteLine(console, $"  - {entry}");
+            displayed++;
+        }
+
+        EmitTableOverflow(console, entries.Count, displayed);
     }
 
     private static void EmitConstraintReadinessDigest(

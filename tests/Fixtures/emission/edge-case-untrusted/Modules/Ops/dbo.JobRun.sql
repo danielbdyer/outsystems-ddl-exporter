@@ -4,7 +4,7 @@ CREATE TABLE [dbo].[JobRun] (
             PRIMARY KEY CLUSTERED,
     [TriggeredByUserId] BIGINT   NULL,
     [CreatedOn]         DATETIME NOT NULL
-        DEFAULT (getutcdate())
+        DEFAULT getutcdate()
 )
 
 GO

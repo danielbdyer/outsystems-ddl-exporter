@@ -402,6 +402,7 @@ public class CommandConsoleTests
         Assert.Contains("Environment findings:", normalized);
         Assert.Contains("QA: orphaned foreign keys", normalized);
         Assert.Contains("Repair orphaned relationships or adjust policy exclusions before enforcing foreign keys.", normalized);
+        Assert.Contains("Review QA data quality", normalized);
         Assert.Contains("Constraint consensus across environments:", normalized);
         Assert.Contains("Analyzed 2 environments: 2/5 constraints safe to apply (40.0 % consensus)", normalized);
         Assert.Contains("NOT NULL: 1 safe / 1 risky | UNIQUE: 1 safe / 1 risky | FOREIGN KEY: 0 safe / 1 risky", normalized);

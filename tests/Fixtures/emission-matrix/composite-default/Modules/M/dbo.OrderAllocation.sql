@@ -5,7 +5,7 @@ CREATE TABLE [dbo].[OrderAllocation] (
     [CountryId]  BIGINT NOT NULL,
     [DocumentId] BIGINT NOT NULL,
     [Quantity]   INT    NULL
-        DEFAULT (0)
+        DEFAULT 0
 )
 
 GO

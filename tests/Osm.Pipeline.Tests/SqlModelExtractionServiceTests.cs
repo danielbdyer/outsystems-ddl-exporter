@@ -222,7 +222,7 @@ public class SqlModelExtractionServiceTests
 
         Assert.True(result.IsFailure);
         var error = Assert.Single(result.Errors);
-        Assert.Equal("entity.attributes.empty", error.Code);
+        Assert.Equal("entity.attributes.missingPrimaryKey", error.Code);
     }
 
     [Fact]

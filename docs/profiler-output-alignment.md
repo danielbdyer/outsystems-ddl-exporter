@@ -19,6 +19,8 @@ These notes document the core concerns the CLI must surface for both single-envi
 
 - **Environment-at-a-glance table**
   - Continue reporting per-environment module counts, probe coverage, and anomaly totals with clear labeling of primary vs. secondary sources.
+- **Readiness digest**
+  - Surface secondary environments that exceed the primary's null, duplicate, or orphan counts so operators see "Review <env> data quality" nudges before diving into the detailed findings.
 - **Findings feed**
   - Elevate cross-environment drifts (nulls, uniqueness, foreign keys, evidence gaps) with explicit action guidance so the highest-severity data issues are obvious.
 - **Constraint readiness digest**
