@@ -74,6 +74,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IModelJsonDeserializer, ModelJsonDeserializer>();
         services.AddSingleton<IProfileSnapshotDeserializer, ProfileSnapshotDeserializer>();
         services.AddSingleton<IProfileSnapshotSerializer, ProfileSnapshotSerializer>();
+        services.AddSingleton<IMultiEnvironmentProfileReportSerializer, MultiEnvironmentProfileReportSerializer>();
         services.AddSingleton<IDataProfilerFactory, DataProfilerFactory>();
         services.AddSingleton<NullCountQueryBuilder>();
         services.AddSingleton<UniqueCandidateQueryBuilder>();
