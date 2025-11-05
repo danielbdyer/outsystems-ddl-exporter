@@ -70,10 +70,10 @@ graph TD
 | Partial reconciliations leading to orphaned data | Data inconsistency | Hard fail when unresolved user IDs remain; emit summary reports |
 | Misaligned identity types (GUID vs. INT) | Conversion errors | Normalize identifiers during mapping; enforce consistent type metadata |
 
-## Open Questions
-- Should the command support **incremental** updates (only rows changed since last run) or always emit full-table replacements?
-- What audit artifacts are required for compliance (e.g., signed manifests, hash digests)?
-- Do operators need rollback scripts, or is restoring from backup sufficient?
+## Open Questions & Answers
+1. **Emission strategy**: The command will always emit full-table replacements so reconciled data can be reviewed holistically. An optional *operator sandbox* mode will cap the output scope (single table, sample rows) to speed debugging or iterative dry runs before generating the authoritative bundle.
+2. **Verification & auditability**: The pipeline will derive a verifiable logic chain by comparing row counts pre/post transformation, validating every FK edge, and producing a signed summary manifest that records mapping completeness, checksum digests per table, and the 1:1 source↔target user correlations.
+3. **Rollback expectations**: No bespoke rollback scripts are required—the operator contract relies on standard backup/restore procedures if a deployment must be undone.
 
 ## Recommended Next Steps
 1. Finalize CLI specification (inputs, flags, telemetry additions) with stakeholders.
@@ -81,4 +81,34 @@ graph TD
 3. Implement the mapping validator and FK replacement engine with unit coverage.
 4. Add emission-mode toggles, golden artifact tests, and documentation updates (`docs/verbs/uat-users.md`).
 5. Pilot the enhanced command against a staging pair of environments to validate performance and operator ergonomics.
+
+## Implementation Task List
+- [ ] Finalize CLI specification, capturing required inputs, validation rules, and telemetry fields.
+- [ ] Build dual-environment fixture assets (schema + data + user catalogs) to drive repeatable tests.
+- [ ] Implement mapping validator & FK replacement engine with accompanying unit coverage.
+- [ ] Wire emission-mode toggles and author golden artifact tests.
+- [ ] Execute a staging pilot and collect operator feedback.
+
+## Task Execution Progress
+### Task 1: CLI Specification Draft
+- Established core flags and inputs:
+
+  | Option | Description | Required |
+  | --- | --- | --- |
+  | `--source-export <path>` | Points to the Environment A export bundle containing table data and `dbo.[User]`. | Yes |
+  | `--target-users <path\|connection>` | Accepts either a CSV/JSON manifest or connection string to enumerate Environment B users. | Yes |
+  | `--sandbox-limit <table[:rows]>` | Enables the operator sandbox mode for scoped outputs during debugging. | No |
+  | `--emit-export` / `--emit-script` | Feature toggles controlling which emission modes run. | At least one |
+  | `--fingerprint <path>` | Optional override to supply pre-computed schema fingerprints for offline verification. | No |
+- Documented telemetry additions: emission mode selection, sandbox scope, total reconciled mappings, checksum per table.
+
+### Task 2: Fixture Definition Blueprint
+- Identified fixture structure: paired directories `fixtures/env-a` and `fixtures/env-b` with aligned schema metadata plus CSV payloads for FK-bearing tables.
+- Defined user catalog format: normalized columns (`UserKey`, `UserName`, `Email`, `IsActive`) to support deterministic reconciliation regardless of identifier type.
+- Planned verification harness: JSON manifest enumerating table hashes to simplify parity assertions across modes.
+
+### Task 3: Mapping Validator & FK Replacement Design Notes
+- Validator contract: require coverage of every source user ID discovered in FK traversal; surface missing entries as structured diagnostics consumable by the CLI.
+- Replacement engine sketch: stream tables row-by-row, swap user IDs via dictionary lookups, and record change manifests capturing original and substituted IDs for auditing.
+- Proposed unit coverage: fixture-driven tests for 1:1 mappings, detection of unmapped users, and assurance that non-user columns remain untouched during transformation.
 
