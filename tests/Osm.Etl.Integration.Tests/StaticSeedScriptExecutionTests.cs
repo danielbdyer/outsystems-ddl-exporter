@@ -66,9 +66,9 @@ public sealed class StaticSeedScriptExecutionTests
                 PhysicalName: "CS_STATUS",
                 EffectiveName: "CS_STATUS",
                 Columns: ImmutableArray.Create(
-                    new StaticEntitySeedColumn("Id", "ID", "ID", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                    new StaticEntitySeedColumn("Name", "NAME", "NAME", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false),
-                    new StaticEntitySeedColumn("IsActive", "ISACTIVE", "ISACTIVE", "Boolean", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                    new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
+                    new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false),
+                    new StaticEntitySeedColumn("IsActive", "ISACTIVE", "IsActive", "Boolean", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
 
             var rows = ImmutableArray.Create(
                 StaticEntityRow.Create(new object?[] { 1, "Active", true }));
@@ -83,7 +83,7 @@ public sealed class StaticSeedScriptExecutionTests
             await verificationConnection.OpenAsync();
 
             await using var command = verificationConnection.CreateCommand();
-            command.CommandText = "SELECT NAME, ISACTIVE FROM dbo.CS_STATUS WHERE ID = 1;";
+            command.CommandText = "SELECT [Name], [IsActive] FROM dbo.CS_STATUS WHERE [Id] = 1;";
             await using var reader = await command.ExecuteReaderAsync();
 
             Assert.True(await reader.ReadAsync(), "Expected a row to be seeded.");
@@ -121,9 +121,9 @@ public sealed class StaticSeedScriptExecutionTests
         command.CommandText = """
 CREATE TABLE dbo.CS_STATUS
 (
-    ID INT NOT NULL PRIMARY KEY,
-    NAME NVARCHAR(50) NOT NULL,
-    ISACTIVE BIT NOT NULL
+    [Id] INT NOT NULL PRIMARY KEY,
+    [Name] NVARCHAR(50) NOT NULL,
+    [IsActive] BIT NOT NULL
 );
 """;
         await command.ExecuteNonQueryAsync();
