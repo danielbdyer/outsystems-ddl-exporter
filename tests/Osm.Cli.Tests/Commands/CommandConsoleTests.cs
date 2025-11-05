@@ -9,10 +9,10 @@ using Osm.Cli;
 using Osm.Cli.Commands;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
+using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
-using Tests.Support;
 
 namespace Osm.Cli.Tests.Commands;
 
@@ -58,6 +58,53 @@ public class CommandConsoleTests
         }) + Environment.NewLine;
 
         Assert.Equal(expected, console.Error!.ToString());
+    }
+
+    [Fact]
+    public void EmitProfilingInsights_WritesStructuredSections()
+    {
+        var console = new TestConsole();
+
+        var insights = ImmutableArray.Create(
+            new ProfilingInsight(
+                ProfilingInsightSeverity.Error,
+                ProfilingInsightCategory.Nullability,
+                "Nulls observed in NOT NULL column.",
+                new ProfilingInsightCoordinate(
+                    new SchemaName("dbo"),
+                    new TableName("Orders"),
+                    new ColumnName("CustomerId"),
+                    null,
+                    null,
+                    null)),
+            new ProfilingInsight(
+                ProfilingInsightSeverity.Recommendation,
+                ProfilingInsightCategory.ForeignKey,
+                "Enable FK enforcement after remediation.",
+                new ProfilingInsightCoordinate(
+                    new SchemaName("dbo"),
+                    new TableName("Orders"),
+                    null,
+                    new SchemaName("dbo"),
+                    new TableName("Customers"),
+                    null)),
+            new ProfilingInsight(
+                ProfilingInsightSeverity.Info,
+                ProfilingInsightCategory.Evidence,
+                "Sampling truncated after 10k rows.",
+                null));
+
+        CommandConsole.EmitProfilingInsights(console, insights);
+
+        var output = console.Out!.ToString() ?? string.Empty;
+
+        Assert.Contains("Profiling insights: 3 total (1 errors, 0 warnings, 2 informational)", output);
+        Assert.Contains("High severity insights:", output);
+        Assert.Contains("dbo.Orders.CustomerId", output);
+        Assert.Contains("Recommendations:", output);
+        Assert.Contains("ForeignKey", output);
+        Assert.Contains("Informational insights:", output);
+        Assert.Contains("Sampling truncated", output);
     }
 
     [Fact]
@@ -130,74 +177,218 @@ public class CommandConsoleTests
     }
 
     [Fact]
-    public void EmitSqlProfilerSnapshot_WritesHeaderAndFormatterOutput()
+    public void EmitSqlProfilerSnapshot_SummarizesKeyAnomalies()
     {
         var console = new TestConsole();
-        var snapshot = ProfileFixtures.LoadSnapshot("profiling/profile.micro-unique.json");
-        var expectedJson = ProfileSnapshotDebugFormatter.ToJson(snapshot);
+
+        var notNullColumn = ColumnProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("Status"),
+            isNullablePhysical: false,
+            isComputed: false,
+            isPrimaryKey: false,
+            isUniqueKey: false,
+            defaultDefinition: null,
+            rowCount: 1_000,
+            nullCount: 125,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_000)).Value;
+
+        var coverageColumn = ColumnProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("LastLogin"),
+            isNullablePhysical: true,
+            isComputed: false,
+            isPrimaryKey: false,
+            isUniqueKey: false,
+            defaultDefinition: null,
+            rowCount: 1_000,
+            nullCount: 0,
+            ProfilingProbeStatus.CreateFallbackTimeout(DateTimeOffset.UnixEpoch, 250)).Value;
+
+        var uniqueCandidate = UniqueCandidateProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("Email"),
+            hasDuplicate: true,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0)).Value;
+
+        var fkReference = ForeignKeyReference.Create(
+            new SchemaName("dbo"),
+            new TableName("Orders"),
+            new ColumnName("CustomerId"),
+            new SchemaName("dbo"),
+            new TableName("Customers"),
+            new ColumnName("Id"),
+            hasDatabaseConstraint: true).Value;
+
+        var fkReality = ForeignKeyReality.Create(
+            fkReference,
+            hasOrphan: true,
+            isNoCheck: true,
+            ProfilingProbeStatus.CreateFallbackTimeout(DateTimeOffset.UnixEpoch, 500)).Value;
+
+        var snapshot = ProfileSnapshot.Create(
+            new[] { notNullColumn, coverageColumn },
+            new[] { uniqueCandidate },
+            Array.Empty<CompositeUniqueCandidateProfile>(),
+            new[] { fkReality }).Value;
 
         CommandConsole.EmitSqlProfilerSnapshot(console, snapshot);
 
-        var expected = string.Join(Environment.NewLine, new[]
-        {
-            "SQL profiler snapshot:",
-            expectedJson,
-        }) + Environment.NewLine;
+        var output = console.Out!.ToString() ?? string.Empty;
 
-        Assert.Equal(expected, console.Out!.ToString());
+        Assert.Contains("SQL profiler snapshot:", output);
+        Assert.Contains("Nulls in NOT NULL columns:", output);
+        Assert.Contains("dbo.Users.Status", output);
+        Assert.Contains("NULL counting coverage issues:", output);
+        Assert.Contains("dbo.Users.LastLogin", output);
+        Assert.Contains("Unique constraint risks:", output);
+        Assert.Contains("dbo.Users.Email", output);
+        Assert.Contains("Summary: 1 critical.", output);
+        Assert.Contains("Foreign key anomalies:", output);
+        Assert.Contains("dbo.Orders.CustomerId -> dbo.Customers.Id", output);
+        Assert.Contains("Summary: 1 critical.", output);
+        Assert.DoesNotContain("\"columns\"", output);
     }
 
     [Fact]
     public void EmitMultiEnvironmentReport_WritesTableAndFindings()
     {
         var console = new TestConsole();
-        var report = new MultiEnvironmentProfileReport(
-            ImmutableArray.Create(
-                new ProfilingEnvironmentSummary(
+
+        var statusPrimary = ColumnProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("Status"),
+            isNullablePhysical: false,
+            isComputed: false,
+            isPrimaryKey: false,
+            isUniqueKey: false,
+            defaultDefinition: null,
+            rowCount: 100,
+            nullCount: 0,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_000)).Value;
+
+        var statusSecondary = ColumnProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("Status"),
+            isNullablePhysical: false,
+            isComputed: false,
+            isPrimaryKey: false,
+            isUniqueKey: false,
+            defaultDefinition: null,
+            rowCount: 150,
+            nullCount: 0,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_500)).Value;
+
+        var emailPrimary = ColumnProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("Email"),
+            isNullablePhysical: false,
+            isComputed: false,
+            isPrimaryKey: false,
+            isUniqueKey: true,
+            defaultDefinition: null,
+            rowCount: 100,
+            nullCount: 0,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_000)).Value;
+
+        var emailSecondary = ColumnProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("Email"),
+            isNullablePhysical: false,
+            isComputed: false,
+            isPrimaryKey: false,
+            isUniqueKey: true,
+            defaultDefinition: null,
+            rowCount: 150,
+            nullCount: 5,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_500)).Value;
+
+        var idUniquePrimary = UniqueCandidateProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("Id"),
+            hasDuplicate: false,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_000)).Value;
+
+        var idUniqueSecondary = UniqueCandidateProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("Id"),
+            hasDuplicate: false,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_500)).Value;
+
+        var emailUniquePrimary = UniqueCandidateProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("Email"),
+            hasDuplicate: false,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_000)).Value;
+
+        var emailUniqueSecondary = UniqueCandidateProfile.Create(
+            new SchemaName("dbo"),
+            new TableName("Users"),
+            new ColumnName("Email"),
+            hasDuplicate: true,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_500)).Value;
+
+        var foreignKeyReference = ForeignKeyReference.Create(
+            new SchemaName("dbo"),
+            new TableName("Orders"),
+            new ColumnName("CustomerId"),
+            new SchemaName("dbo"),
+            new TableName("Customers"),
+            new ColumnName("Id"),
+            hasDatabaseConstraint: true).Value;
+
+        var foreignKeyPrimary = ForeignKeyReality.Create(
+            foreignKeyReference,
+            hasOrphan: false,
+            isNoCheck: false,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_000)).Value;
+
+        var foreignKeySecondary = ForeignKeyReality.Create(
+            foreignKeyReference,
+            hasOrphan: true,
+            isNoCheck: false,
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_500)).Value;
+
+        var primarySnapshot = ProfileSnapshot.Create(
+            new[] { statusPrimary, emailPrimary },
+            new[] { idUniquePrimary, emailUniquePrimary },
+            Array.Empty<CompositeUniqueCandidateProfile>(),
+            new[] { foreignKeyPrimary }).Value;
+
+        var secondarySnapshot = ProfileSnapshot.Create(
+            new[] { statusSecondary, emailSecondary },
+            new[] { idUniqueSecondary, emailUniqueSecondary },
+            Array.Empty<CompositeUniqueCandidateProfile>(),
+            new[] { foreignKeySecondary }).Value;
+
+        var report = MultiEnvironmentProfileReport.Create(
+            new[]
+            {
+                new ProfilingEnvironmentSnapshot(
                     "Primary (Sample)",
                     true,
                     MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided,
                     false,
-                    ColumnCount: 10,
-                    ColumnsWithNulls: 1,
-                    ColumnsWithUnknownNullStatus: 0,
-                    UniqueCandidateCount: 2,
-                    UniqueViolations: 0,
-                    UniqueProbeUnknown: 0,
-                    CompositeUniqueCount: 1,
-                    CompositeUniqueViolations: 0,
-                    ForeignKeyCount: 3,
-                    ForeignKeyOrphans: 0,
-                    ForeignKeyProbeUnknown: 0,
-                    ForeignKeyNoCheck: 0,
-                    Duration: TimeSpan.FromSeconds(12)),
-                new ProfilingEnvironmentSummary(
+                    primarySnapshot,
+                    TimeSpan.FromSeconds(12)),
+                new ProfilingEnvironmentSnapshot(
                     "QA",
                     false,
                     MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided,
                     false,
-                    ColumnCount: 10,
-                    ColumnsWithNulls: 3,
-                    ColumnsWithUnknownNullStatus: 1,
-                    UniqueCandidateCount: 2,
-                    UniqueViolations: 1,
-                    UniqueProbeUnknown: 0,
-                    CompositeUniqueCount: 1,
-                    CompositeUniqueViolations: 0,
-                    ForeignKeyCount: 3,
-                    ForeignKeyOrphans: 2,
-                    ForeignKeyProbeUnknown: 1,
-                    ForeignKeyNoCheck: 0,
-                    Duration: TimeSpan.FromSeconds(45))),
-            ImmutableArray.Create(
-                new MultiEnvironmentFinding(
-                    "profiling.multiEnvironment.foreignKey",
-                    "QA: orphaned foreign keys",
-                    "2 orphaned foreign key reference(s) detected while Primary (Sample) reports 0.",
-                    MultiEnvironmentFindingSeverity.Critical,
-                    "Review QA data quality before enforcing FKs.",
-                    ImmutableArray<string>.Empty)),
-            MultiEnvironmentConstraintConsensus.Empty);
+                    secondarySnapshot,
+                    TimeSpan.FromSeconds(45)),
+            });
 
         CommandConsole.EmitMultiEnvironmentReport(console, report);
 
@@ -210,7 +401,21 @@ public class CommandConsoleTests
         Assert.Contains("QA | Secondary | Provided", normalized);
         Assert.Contains("Environment findings:", normalized);
         Assert.Contains("QA: orphaned foreign keys", normalized);
-        Assert.Contains("Review QA data quality", normalized);
+        Assert.Contains("Repair orphaned relationships or adjust policy exclusions before enforcing foreign keys.", normalized);
+        Assert.Contains("Constraint consensus across environments:", normalized);
+        Assert.Contains("Analyzed 2 environments: 2/5 constraints safe to apply (40.0 % consensus)", normalized);
+        Assert.Contains("NOT NULL: 1 safe / 1 risky | UNIQUE: 1 safe / 1 risky | FOREIGN KEY: 0 safe / 1 risky", normalized);
+        Assert.Contains("DDL readiness blockers:", normalized);
+        Assert.Contains("NOT NULL: 1 blocked.", normalized);
+        Assert.Contains("UNIQUE: 1 blocked.", normalized);
+        Assert.Contains("FOREIGN KEY: 1 blocked.", normalized);
+        Assert.Contains("Constraints safe across all environments:", normalized);
+        Assert.Contains("Constraints requiring remediation before DDL enforcement:", normalized);
+        Assert.Contains("NOT NULL", output);
+        Assert.Contains("dbo.Users.Status", output);
+        Assert.Contains("dbo.Users.Email", output);
+        Assert.Contains("FOREIGN KEY", output);
+        Assert.Contains("dbo.Orders.CustomerId -> dbo.Customers.Id", output);
     }
 
     [Fact]

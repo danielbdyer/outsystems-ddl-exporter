@@ -110,15 +110,15 @@ public class BuildSsdtCommandFactoryTests
         Assert.Contains("Manifest: ", output);
         Assert.Contains("manifest.json", output);
         Assert.Contains("Tightening Statistics:", output);
-        Assert.Contains("Columns: 1/2 tightened", output);
-        Assert.Contains("Unique indexes: 1/1 enforced", output);
-        Assert.Contains("Foreign keys: 1/1 created", output);
+        Assert.Contains("Columns: 1/2 confirmed NOT NULL", output);
+        Assert.Contains("Unique indexes: 1/1 confirmed UNIQUE", output);
+        Assert.Contains("Foreign keys: 1/1 safe to create", output);
         Assert.Contains("SQL Validation:", output);
         Assert.Contains("Files: 1 validated, 0 with errors", output);
         Assert.Contains("Module summary:", output);
         Assert.Contains("Sales:", output);
         Assert.Contains("Tables: 1, Indexes: 0, Foreign Keys: 1", output);
-        Assert.Contains("Columns: 2 total, 1 tightened, 1 need remediation", output);
+        Assert.Contains("Columns: 2 total, 1 confirmed NOT NULL, 1 need remediation", output);
         Assert.Contains("Tightening toggles:", output);
         Assert.Contains("policy.mode = EvidenceGated (Configuration)", output);
         Assert.Contains("Tightening Artifacts:", output);
@@ -171,7 +171,9 @@ public class BuildSsdtCommandFactoryTests
 
         var output = console.Out.ToString() ?? string.Empty;
         Assert.Contains("Profiling insights: 1 total (0 errors, 0 warnings, 1 informational)", output);
-        Assert.Contains("[info] [Nullability] dbo.Orders.CustomerId: Column contains 12.5% null values.", output);
+        Assert.Contains("Informational insights:", output);
+        Assert.Contains("dbo.Orders.CustomerId", output);
+        Assert.Contains("Column contains 12.5% null values.", output);
     }
 
     [Fact]
