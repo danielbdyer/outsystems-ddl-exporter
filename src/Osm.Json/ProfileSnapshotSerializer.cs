@@ -61,8 +61,40 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
             DefaultDefinition = profile.DefaultDefinition,
             RowCount = profile.RowCount,
             NullCount = profile.NullCount,
-            NullCountStatus = MapProbeStatus(profile.NullCountStatus)
+            NullCountStatus = MapProbeStatus(profile.NullCountStatus),
+            NullRowSample = profile.NullRowSample is not null ? MapNullRowSample(profile.NullRowSample) : null
         };
+    }
+
+    private static NullRowSampleDocument? MapNullRowSample(NullRowSample sample)
+    {
+        if (sample is null)
+        {
+            return null;
+        }
+
+        return new NullRowSampleDocument
+        {
+            PrimaryKeyColumns = sample.PrimaryKeyColumns.ToArray(),
+            SampleRows = sample.SampleRows.Select(MapNullRowIdentifier).ToArray(),
+            TotalNullRows = sample.TotalNullRows,
+            IsTruncated = sample.IsTruncated
+        };
+    }
+
+    private static NullRowIdentifierDocument MapNullRowIdentifier(NullRowIdentifier identifier)
+    {
+        return new NullRowIdentifierDocument
+        {
+            PrimaryKeyValues = identifier.PrimaryKeyValues.Select(FormatPrimaryKeyValue).ToArray()
+        };
+    }
+
+    private static object? FormatPrimaryKeyValue(object? value)
+    {
+        // Keep the value as-is for JSON serialization
+        // JSON serializer will handle null, string, numeric, etc.
+        return value;
     }
 
     private static UniqueCandidateDocument MapUniqueCandidate(UniqueCandidateProfile profile)
@@ -167,6 +199,9 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
 
         [JsonPropertyName("NullCountStatus")]
         public ProfilingProbeStatusDocument NullCountStatus { get; init; } = new();
+
+        [JsonPropertyName("NullRowSample")]
+        public NullRowSampleDocument? NullRowSample { get; init; }
     }
 
     private sealed record UniqueCandidateDocument
@@ -251,5 +286,26 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
 
         [JsonPropertyName("Outcome")]
         public ProfilingProbeOutcome Outcome { get; init; }
+    }
+
+    private sealed record NullRowSampleDocument
+    {
+        [JsonPropertyName("PrimaryKeyColumns")]
+        public string[] PrimaryKeyColumns { get; init; } = Array.Empty<string>();
+
+        [JsonPropertyName("SampleRows")]
+        public NullRowIdentifierDocument[] SampleRows { get; init; } = Array.Empty<NullRowIdentifierDocument>();
+
+        [JsonPropertyName("TotalNullRows")]
+        public long TotalNullRows { get; init; }
+
+        [JsonPropertyName("IsTruncated")]
+        public bool IsTruncated { get; init; }
+    }
+
+    private sealed record NullRowIdentifierDocument
+    {
+        [JsonPropertyName("PrimaryKeyValues")]
+        public object?[] PrimaryKeyValues { get; init; } = Array.Empty<object?>();
     }
 }

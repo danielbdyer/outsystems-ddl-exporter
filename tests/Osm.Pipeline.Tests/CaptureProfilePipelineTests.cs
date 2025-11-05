@@ -64,9 +64,11 @@ public class CaptureProfilePipelineTests
 
         Assert.Equal(Path.Combine(output.Path, "profile.json"), payload.ProfilePath);
         Assert.Equal(Path.Combine(output.Path, "manifest.json"), payload.ManifestPath);
+        Assert.Equal(Path.Combine(output.Path, "execution-log.json"), payload.ExecutionLogPath);
 
         Assert.True(File.Exists(payload.ProfilePath));
         Assert.True(File.Exists(payload.ManifestPath));
+        Assert.True(File.Exists(payload.ExecutionLogPath));
 
         using (var stream = File.OpenRead(payload.ProfilePath))
         {
@@ -92,6 +94,15 @@ public class CaptureProfilePipelineTests
 
         Assert.NotEmpty(payload.ExecutionLog.Entries);
         Assert.Contains(payload.ExecutionLog.Entries, entry => entry.Step == "profiling.persisted");
+
+        // Verify execution log JSON file
+        using (var logStream = File.OpenRead(payload.ExecutionLogPath))
+        {
+            using var document = JsonDocument.Parse(logStream);
+            var root = document.RootElement;
+            var entries = root.GetProperty("entries");
+            Assert.True(entries.GetArrayLength() > 0);
+        }
     }
 
     private static CaptureProfilePipeline CreatePipeline()
@@ -109,8 +120,9 @@ public class CaptureProfilePipelineTests
         var profilerFactory = new DataProfilerFactory(profileDeserializer, (_, _) => new FakeConnectionFactory());
         var serializer = new ProfileSnapshotSerializer();
         var multiEnvironmentReportSerializer = new MultiEnvironmentProfileReportSerializer();
+        var executionLogSerializer = new PipelineExecutionLogSerializer();
 
-        return new CaptureProfilePipeline(timeProvider, bootstrapper, profilerFactory, serializer, multiEnvironmentReportSerializer);
+        return new CaptureProfilePipeline(timeProvider, bootstrapper, profilerFactory, serializer, multiEnvironmentReportSerializer, executionLogSerializer);
     }
 
     private static CaptureProfilePipelineRequest CreateRequest(
