@@ -36,6 +36,8 @@ public class ConfigurableConnectionTests
 
     private static async Task<CommandResult> RunCliAsync(string workingDirectory, string arguments)
     {
+        await DotNetCli.EnsureSdkAvailableAsync().ConfigureAwait(false);
+
         var startInfo = DotNetCli.CreateStartInfo(workingDirectory, arguments);
         using var process = new Process { StartInfo = startInfo };
         if (!process.Start())
