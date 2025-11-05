@@ -33,7 +33,9 @@ public sealed record CaptureProfilePipelineResult(
     ImmutableArray<ProfilingInsight> Insights,
     PipelineExecutionLog ExecutionLog,
     ImmutableArray<string> Warnings,
-    MultiEnvironmentProfileReport? MultiEnvironmentReport);
+    MultiEnvironmentProfileReport? MultiEnvironmentReport,
+    string? MultiEnvironmentReportPath = null,
+    string? ExecutionLogPath = null);
 
 public sealed record CaptureProfileManifest(
     string ModelPath,
@@ -88,17 +90,23 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
     private readonly IPipelineBootstrapper _bootstrapper;
     private readonly IDataProfilerFactory _profilerFactory;
     private readonly IProfileSnapshotSerializer _profileSerializer;
+    private readonly IMultiEnvironmentProfileReportSerializer _multiEnvironmentReportSerializer;
+    private readonly IPipelineExecutionLogSerializer _executionLogSerializer;
 
     public CaptureProfilePipeline(
         TimeProvider timeProvider,
         IPipelineBootstrapper bootstrapper,
         IDataProfilerFactory profilerFactory,
-        IProfileSnapshotSerializer profileSerializer)
+        IProfileSnapshotSerializer profileSerializer,
+        IMultiEnvironmentProfileReportSerializer multiEnvironmentReportSerializer,
+        IPipelineExecutionLogSerializer executionLogSerializer)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _bootstrapper = bootstrapper ?? throw new ArgumentNullException(nameof(bootstrapper));
         _profilerFactory = profilerFactory ?? throw new ArgumentNullException(nameof(profilerFactory));
         _profileSerializer = profileSerializer ?? throw new ArgumentNullException(nameof(profileSerializer));
+        _multiEnvironmentReportSerializer = multiEnvironmentReportSerializer ?? throw new ArgumentNullException(nameof(multiEnvironmentReportSerializer));
+        _executionLogSerializer = executionLogSerializer ?? throw new ArgumentNullException(nameof(executionLogSerializer));
     }
 
     public async Task<Result<CaptureProfilePipelineResult>> HandleAsync(
@@ -214,15 +222,77 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
                 .WithCount("profiles.columns", bootstrap.Profile.Columns.Length)
                 .Build());
 
+        // Write multi-environment report if available
+        string? multiEnvironmentReportPath = null;
+        if (bootstrap.MultiEnvironmentReport is not null)
+        {
+            multiEnvironmentReportPath = Path.Combine(request.OutputDirectory, "multi-environment-profile.json");
+            try
+            {
+                await using var stream = new FileStream(
+                    multiEnvironmentReportPath,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 4096,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+                await _multiEnvironmentReportSerializer.SerializeAsync(bootstrap.MultiEnvironmentReport, stream, cancellationToken)
+                    .ConfigureAwait(false);
+
+                log.Record(
+                    "profiling.multiEnvironment.persisted",
+                    "Persisted multi-environment profiling report.",
+                    new PipelineLogMetadataBuilder()
+                        .WithPath("multiEnvironmentReport", multiEnvironmentReportPath)
+                        .WithCount("environments", bootstrap.MultiEnvironmentReport.Environments.Length)
+                        .WithCount("findings", bootstrap.MultiEnvironmentReport.Findings.Length)
+                        .Build());
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return PersistFailure(
+                    "pipeline.captureProfile.multiEnvironmentReport.failed",
+                    $"Failed to write multi-environment profiling report to '{multiEnvironmentReportPath}': {ex.Message}");
+            }
+        }
+
+        // Build the execution log before writing it
+        var executionLog = log.Build();
+
+        // Write execution log
+        var executionLogPath = Path.Combine(request.OutputDirectory, "execution-log.json");
+        try
+        {
+            await using var stream = new FileStream(
+                executionLogPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+            await _executionLogSerializer.SerializeAsync(executionLog, stream, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return PersistFailure(
+                "pipeline.captureProfile.executionLog.failed",
+                $"Failed to write execution log to '{executionLogPath}': {ex.Message}");
+        }
+
         return new CaptureProfilePipelineResult(
             bootstrap.Profile,
             manifest,
             profilePath,
             manifestPath,
             bootstrap.Insights,
-            log.Build(),
+            executionLog,
             bootstrap.Warnings.ToImmutableArray(),
-            bootstrap.MultiEnvironmentReport);
+            bootstrap.MultiEnvironmentReport,
+            multiEnvironmentReportPath,
+            executionLogPath);
     }
 
     private PipelineBootstrapTelemetry CreateTelemetry(CaptureProfilePipelineRequest request)
