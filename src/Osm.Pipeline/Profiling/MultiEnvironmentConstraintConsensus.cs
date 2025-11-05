@@ -149,6 +149,10 @@ public sealed class MultiEnvironmentConstraintConsensus
                 item => (Schema: item.Column.Schema.Value, Table: item.Column.Table.Value, Column: item.Column.Column.Value),
                 ColumnKeyComparer.Instance);
 
+        var allEnvironmentNames = snapshots
+            .Select(env => env.Name)
+            .ToImmutableArray();
+
         foreach (var group in columnsByKey)
         {
             var key = group.Key;
@@ -160,28 +164,56 @@ public sealed class MultiEnvironmentConstraintConsensus
                 item.Column.NullCount == 0 &&
                 item.Column.NullCountStatus.Outcome == ProfilingProbeOutcome.Succeeded);
 
-            var consensusRatio = environmentsPresent > 0 ? (double)safeEnvironments / environmentsPresent : 0.0;
-            var isSafe = consensusRatio >= threshold;
+            var presentEnvironmentSet = columns
+                .Select(item => item.Environment)
+                .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var missingEnvironments = allEnvironmentNames
+                .Where(name => !presentEnvironmentSet.Contains(name))
+                .ToImmutableArray();
+
+            var consensusRatio = totalEnvironments > 0 ? (double)safeEnvironments / totalEnvironments : 0.0;
+            var isSafe = missingEnvironments.Length == 0 && consensusRatio >= threshold;
 
             var maxNullCount = columns.Max(item => item.Column.NullCount);
             var environmentsWithNulls = columns.Where(item => item.Column.NullCount > 0)
                 .Select(item => item.Environment)
                 .ToImmutableArray();
 
+            var issues = new List<string>();
+
+            if (missingEnvironments.Length > 0)
+            {
+                issues.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Missing in environments: {0}.",
+                    string.Join(", ", missingEnvironments)));
+            }
+
+            if (maxNullCount > 0 && environmentsWithNulls.Length > 0)
+            {
+                issues.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Maximum null count: {0:N0}. Environments with nulls: {1}.",
+                    maxNullCount,
+                    string.Join(", ", environmentsWithNulls)));
+            }
+
             yield return new ConstraintConsensusResult(
                 ConstraintType.NotNull,
                 $"{key.Schema}.{key.Table}.{key.Column}",
                 isSafe,
                 safeEnvironments,
-                environmentsPresent,
+                totalEnvironments,
                 consensusRatio,
                 isSafe
                     ? "NOT NULL constraint can be safely applied across all environments."
-                    : string.Format(
-                        CultureInfo.InvariantCulture,
-                        "NOT NULL constraint would fail. Maximum null count: {0:N0}. Environments with nulls: {1}",
-                        maxNullCount,
-                        string.Join(", ", environmentsWithNulls)));
+                    : issues.Count > 0
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "NOT NULL constraint would fail. {0}",
+                            string.Join(" ", issues))
+                        : "NOT NULL constraint would fail. Investigate discrepancies across environments.");
         }
     }
 
@@ -197,6 +229,10 @@ public sealed class MultiEnvironmentConstraintConsensus
                 item => (Schema: item.Unique.Schema.Value, Table: item.Unique.Table.Value, Column: item.Unique.Column.Value),
                 ColumnKeyComparer.Instance);
 
+        var allEnvironmentNames = snapshots
+            .Select(env => env.Name)
+            .ToImmutableArray();
+
         foreach (var group in uniqueByKey)
         {
             var key = group.Key;
@@ -207,26 +243,54 @@ public sealed class MultiEnvironmentConstraintConsensus
                 !item.Unique.HasDuplicate &&
                 item.Unique.ProbeStatus.Outcome == ProfilingProbeOutcome.Succeeded);
 
-            var consensusRatio = environmentsPresent > 0 ? (double)safeEnvironments / environmentsPresent : 0.0;
-            var isSafe = consensusRatio >= threshold;
+            var presentEnvironmentSet = uniques
+                .Select(item => item.Environment)
+                .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var missingEnvironments = allEnvironmentNames
+                .Where(name => !presentEnvironmentSet.Contains(name))
+                .ToImmutableArray();
+
+            var consensusRatio = totalEnvironments > 0 ? (double)safeEnvironments / totalEnvironments : 0.0;
+            var isSafe = missingEnvironments.Length == 0 && consensusRatio >= threshold;
 
             var environmentsWithDuplicates = uniques.Where(item => item.Unique.HasDuplicate)
                 .Select(item => item.Environment)
                 .ToImmutableArray();
+
+            var issues = new List<string>();
+
+            if (missingEnvironments.Length > 0)
+            {
+                issues.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Missing in environments: {0}.",
+                    string.Join(", ", missingEnvironments)));
+            }
+
+            if (environmentsWithDuplicates.Length > 0)
+            {
+                issues.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Environments with duplicates: {0}.",
+                    string.Join(", ", environmentsWithDuplicates)));
+            }
 
             yield return new ConstraintConsensusResult(
                 ConstraintType.Unique,
                 $"{key.Schema}.{key.Table}.{key.Column}",
                 isSafe,
                 safeEnvironments,
-                environmentsPresent,
+                totalEnvironments,
                 consensusRatio,
                 isSafe
                     ? "UNIQUE constraint can be safely applied across all environments."
-                    : string.Format(
-                        CultureInfo.InvariantCulture,
-                        "UNIQUE constraint would fail. Environments with duplicates: {0}",
-                        string.Join(", ", environmentsWithDuplicates)));
+                    : issues.Count > 0
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "UNIQUE constraint would fail. {0}",
+                            string.Join(" ", issues))
+                        : "UNIQUE constraint would fail. Investigate discrepancies across environments.");
         }
 
         // Analyze composite unique constraints
@@ -241,6 +305,10 @@ public sealed class MultiEnvironmentConstraintConsensus
                     ColumnsKey: ProfilingPlanBuilder.BuildUniqueKey(item.Composite.Columns.Select(col => col.Value))),
                 (tuple, items) => new { Key = tuple, Items = items.ToList() });
 
+        var compositeEnvironmentNames = snapshots
+            .Select(env => env.Name)
+            .ToImmutableArray();
+
         foreach (var group in compositeByKey)
         {
             var key = group.Key;
@@ -250,8 +318,16 @@ public sealed class MultiEnvironmentConstraintConsensus
             // Safe if no duplicates (cannot check probe status as field doesn't exist)
             var safeEnvironments = composites.Count(item => !item.Composite.HasDuplicate);
 
-            var consensusRatio = environmentsPresent > 0 ? (double)safeEnvironments / environmentsPresent : 0.0;
-            var isSafe = consensusRatio >= threshold;
+            var presentEnvironmentSet = composites
+                .Select(item => item.Environment)
+                .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var missingEnvironments = compositeEnvironmentNames
+                .Where(name => !presentEnvironmentSet.Contains(name))
+                .ToImmutableArray();
+
+            var consensusRatio = totalEnvironments > 0 ? (double)safeEnvironments / totalEnvironments : 0.0;
+            var isSafe = missingEnvironments.Length == 0 && consensusRatio >= threshold;
 
             var firstComposite = composites.First().Composite;
             var columnList = string.Join(", ", firstComposite.Columns.Select(c => c.Value));
@@ -261,19 +337,39 @@ public sealed class MultiEnvironmentConstraintConsensus
                 .Select(item => item.Environment)
                 .ToImmutableArray();
 
+            var issues = new List<string>();
+
+            if (missingEnvironments.Length > 0)
+            {
+                issues.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Missing in environments: {0}.",
+                    string.Join(", ", missingEnvironments)));
+            }
+
+            if (environmentsWithDuplicates.Length > 0)
+            {
+                issues.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Environments with duplicates: {0}.",
+                    string.Join(", ", environmentsWithDuplicates)));
+            }
+
             yield return new ConstraintConsensusResult(
                 ConstraintType.CompositeUnique,
                 descriptor,
                 isSafe,
                 safeEnvironments,
-                environmentsPresent,
+                totalEnvironments,
                 consensusRatio,
                 isSafe
                     ? "UNIQUE constraint can be safely applied across all environments."
-                    : string.Format(
-                        CultureInfo.InvariantCulture,
-                        "UNIQUE constraint would fail. Environments with duplicates: {0}",
-                        string.Join(", ", environmentsWithDuplicates)));
+                    : issues.Count > 0
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "UNIQUE constraint would fail. {0}",
+                            string.Join(" ", issues))
+                        : "UNIQUE constraint would fail. Investigate discrepancies across environments.");
         }
     }
 
@@ -298,6 +394,10 @@ public sealed class MultiEnvironmentConstraintConsensus
                 },
                 ForeignKeyKeyComparer.Instance);
 
+        var allEnvironmentNames = snapshots
+            .Select(env => env.Name)
+            .ToImmutableArray();
+
         foreach (var group in foreignKeysByKey)
         {
             var key = group.Key;
@@ -309,12 +409,38 @@ public sealed class MultiEnvironmentConstraintConsensus
                 !item.ForeignKey.IsNoCheck &&
                 item.ForeignKey.ProbeStatus.Outcome == ProfilingProbeOutcome.Succeeded);
 
-            var consensusRatio = environmentsPresent > 0 ? (double)safeEnvironments / environmentsPresent : 0.0;
-            var isSafe = consensusRatio >= threshold;
+            var presentEnvironmentSet = foreignKeys
+                .Select(item => item.Environment)
+                .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var missingEnvironments = allEnvironmentNames
+                .Where(name => !presentEnvironmentSet.Contains(name))
+                .ToImmutableArray();
+
+            var consensusRatio = totalEnvironments > 0 ? (double)safeEnvironments / totalEnvironments : 0.0;
+            var isSafe = missingEnvironments.Length == 0 && consensusRatio >= threshold;
 
             var environmentsWithOrphans = foreignKeys.Where(item => item.ForeignKey.HasOrphan)
                 .Select(item => item.Environment)
                 .ToImmutableArray();
+
+            var issues = new List<string>();
+
+            if (missingEnvironments.Length > 0)
+            {
+                issues.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Missing in environments: {0}.",
+                    string.Join(", ", missingEnvironments)));
+            }
+
+            if (environmentsWithOrphans.Length > 0)
+            {
+                issues.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Environments with orphans: {0}.",
+                    string.Join(", ", environmentsWithOrphans)));
+            }
 
             var descriptor = string.Format(
                 CultureInfo.InvariantCulture,
@@ -327,14 +453,16 @@ public sealed class MultiEnvironmentConstraintConsensus
                 descriptor,
                 isSafe,
                 safeEnvironments,
-                environmentsPresent,
+                totalEnvironments,
                 consensusRatio,
                 isSafe
                     ? "FOREIGN KEY constraint can be safely applied across all environments."
-                    : string.Format(
-                        CultureInfo.InvariantCulture,
-                        "FOREIGN KEY constraint would fail. Environments with orphans: {0}",
-                        string.Join(", ", environmentsWithOrphans)));
+                    : issues.Count > 0
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "FOREIGN KEY constraint would fail. {0}",
+                            string.Join(" ", issues))
+                        : "FOREIGN KEY constraint would fail. Investigate discrepancies across environments.");
         }
     }
 
