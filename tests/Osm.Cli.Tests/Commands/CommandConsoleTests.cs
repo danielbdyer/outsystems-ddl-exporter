@@ -246,8 +246,10 @@ public class CommandConsoleTests
         Assert.Contains("dbo.Users.LastLogin", output);
         Assert.Contains("Unique constraint risks:", output);
         Assert.Contains("dbo.Users.Email", output);
+        Assert.Contains("Summary: 1 critical.", output);
         Assert.Contains("Foreign key anomalies:", output);
         Assert.Contains("dbo.Orders.CustomerId -> dbo.Customers.Id", output);
+        Assert.Contains("Summary: 1 critical.", output);
         Assert.DoesNotContain("\"columns\"", output);
     }
 
@@ -399,10 +401,15 @@ public class CommandConsoleTests
         Assert.Contains("QA | Secondary | Provided", normalized);
         Assert.Contains("Environment findings:", normalized);
         Assert.Contains("QA: orphaned foreign keys", normalized);
+        Assert.Contains("Repair orphaned relationships or adjust policy exclusions before enforcing foreign keys.", normalized);
         Assert.Contains("Review QA data quality", normalized);
         Assert.Contains("Constraint consensus across environments:", normalized);
         Assert.Contains("Analyzed 2 environments: 2/5 constraints safe to apply (40.0 % consensus)", normalized);
         Assert.Contains("NOT NULL: 1 safe / 1 risky | UNIQUE: 1 safe / 1 risky | FOREIGN KEY: 0 safe / 1 risky", normalized);
+        Assert.Contains("DDL readiness blockers:", normalized);
+        Assert.Contains("NOT NULL: 1 blocked.", normalized);
+        Assert.Contains("UNIQUE: 1 blocked.", normalized);
+        Assert.Contains("FOREIGN KEY: 1 blocked.", normalized);
         Assert.Contains("Constraints safe across all environments:", normalized);
         Assert.Contains("Constraints requiring remediation before DDL enforcement:", normalized);
         Assert.Contains("NOT NULL", output);
