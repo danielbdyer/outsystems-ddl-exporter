@@ -1,12 +1,11 @@
--- =============================================================================
+-- ============================================================================
 -- OutSystems DDL Exporter - Needs Remediation Opportunities
--- =============================================================================
+-- ============================================================================
 -- Generated: 2024-01-01 00:00:00 UTC
 --
 -- SUMMARY:
---   Total Opportunities: 2
+--   Total Opportunities: 1
 --   ⚠️  Contradictions: 1 (Data violates model expectations - REQUIRES MANUAL REMEDIATION)
---   Recommendations: 1 (New constraints that could be safely applied)
 --
 -- This script contains 1 needs remediation opportunities.
 --
@@ -15,8 +14,10 @@
 --
 -- IMPORTANT: Never modify OutSystems model JSON files directly.
 --            These scripts are suggestions only and will not auto-execute.
--- =============================================================================
+-- ============================================================================
+
 -- ========== CONTRADICTION ==========
+
 -- ⚠️  CONTRADICTIONS - MANUAL DATA REMEDIATION REQUIRED
 --
 -- These opportunities represent the MOST SEVERE issues where actual data in the database
@@ -29,6 +30,7 @@
 -- Attempting to add these constraints without fixing the data will result in SQL errors.
 -- Review the evidence and remediation suggestions for each opportunity below.
 -- ---------- UniqueIndex ----------
+
 -- UNIQUE INDEX CONTRADICTIONS
 -- Why this matters: Your OutSystems model expects unique values, but duplicates exist.
 -- What to do: Identify and resolve duplicate records before adding unique constraints.
@@ -39,3 +41,4 @@
 -- Evidence: Unique duplicates=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)
 CREATE UNIQUE INDEX [IX_OSUSR_ABC_ORDER_OrderNumber] ON [dbo].[OSUSR_ABC_ORDER] ([OrderNumber]);
 GO
+

@@ -79,6 +79,11 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
                 context.UniqueProfiles.Find(decision.Column),
                 context.ForeignKeys.Find(decision.Column));
 
+            if (opportunity.Category == OpportunityCategory.Recommendation)
+            {
+                continue;
+            }
+
             yield return opportunity;
         }
     }
