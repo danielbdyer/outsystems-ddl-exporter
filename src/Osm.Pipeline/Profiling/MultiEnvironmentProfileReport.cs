@@ -72,7 +72,6 @@ public sealed record MultiEnvironmentProfileReport(
         var primarySnapshot = snapshots.FirstOrDefault(static snapshot => snapshot.IsPrimary)
             ?? snapshots[0];
 
-        var primaryColumnNulls = BuildColumnNullLookup(primarySnapshot.Snapshot);
         var primaryUniqueViolations = BuildUniqueViolationLookup(primarySnapshot.Snapshot);
         var primaryCompositeViolations = BuildCompositeViolationLookup(primarySnapshot.Snapshot);
         var primaryForeignKeyOrphans = BuildForeignKeyLookup(primarySnapshot.Snapshot, static fk => fk.HasOrphan);
@@ -89,26 +88,6 @@ public sealed record MultiEnvironmentProfileReport(
 
             var snapshot = snapshots.FirstOrDefault(s => string.Equals(s.Name, summary.Name, StringComparison.Ordinal));
             var affectedObjects = ImmutableArray<string>.Empty;
-
-            if (summary.ColumnsWithNulls > primary.ColumnsWithNulls)
-            {
-                affectedObjects = snapshot is null
-                    ? ImmutableArray<string>.Empty
-                    : IdentifyNullDrift(snapshot.Snapshot, primaryColumnNulls);
-
-                builder.Add(new MultiEnvironmentFinding(
-                    code: "profiling.multiEnvironment.nulls",
-                    title: $"{summary.Name}: elevated null counts",
-                    severity: MultiEnvironmentFindingSeverity.Warning,
-                    summary: string.Format(
-                        CultureInfo.InvariantCulture,
-                        "{0} columns reported null values compared to {1} in {2}.",
-                        summary.ColumnsWithNulls,
-                        primary.ColumnsWithNulls,
-                        primary.Name),
-                    suggestedAction: "Investigate data quality issues in this environment before enforcing NOT NULL policies.",
-                    affectedObjects: affectedObjects));
-            }
 
             if (summary.UniqueViolations > primary.UniqueViolations)
             {
@@ -261,7 +240,7 @@ public sealed record MultiEnvironmentProfileReport(
             "profiling.validation.schema.tableMissing" =>
                 "Ensure the table exists in every profiled environment or provide a tableNameMappings entry to align names.",
             "profiling.validation.dataQuality.nullVariance" =>
-                "Normalize null-handling across environments or adjust policy thresholds before enforcing NOT NULL constraints.",
+                "Monitor null-handling differences across environments when planning NOT NULL enforcement.",
             "profiling.validation.constraint.uniqueDisagreement" =>
                 "Remediate duplicates in outlier environments or defer UNIQUE constraint application until alignment is complete.",
             "profiling.validation.case.table.inconsistent" =>
@@ -275,43 +254,6 @@ public sealed record MultiEnvironmentProfileReport(
                 _ => "Review this advisory when planning multi-environment readiness work."
             }
         };
-    }
-
-    private static ImmutableArray<string> IdentifyNullDrift(
-        ProfileSnapshot snapshot,
-        IReadOnlyDictionary<(string Schema, string Table, string Column), long> primaryNulls)
-    {
-        var impactedColumns = snapshot.Columns
-            .Where(column => column.NullCount > 0)
-            .Select(column =>
-            {
-                var key = (column.Schema.Value, column.Table.Value, column.Column.Value);
-                primaryNulls.TryGetValue(key, out var primaryNullCount);
-                var delta = column.NullCount - primaryNullCount;
-                return new
-                {
-                    Column = column,
-                    Delta = delta,
-                    PrimaryNulls = primaryNullCount
-                };
-            })
-            .Where(item => item.Delta > 0)
-            .OrderByDescending(item => item.Delta)
-            .ThenBy(item => item.Column.Schema.Value, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(item => item.Column.Table.Value, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(item => item.Column.Column.Value, StringComparer.OrdinalIgnoreCase)
-            .Take(5)
-            .Select(item => string.Format(
-                CultureInfo.InvariantCulture,
-                "{0}.{1}.{2} (+{3:N0} NULLs; primary {4:N0})",
-                item.Column.Schema.Value,
-                item.Column.Table.Value,
-                item.Column.Column.Value,
-                item.Delta,
-                item.PrimaryNulls))
-            .ToImmutableArray();
-
-        return impactedColumns;
     }
 
     private static ImmutableArray<string> IdentifyUniqueDrift(
@@ -393,18 +335,6 @@ public sealed record MultiEnvironmentProfileReport(
             .ToImmutableArray();
 
         return offenders;
-    }
-
-    private static IReadOnlyDictionary<(string Schema, string Table, string Column), long> BuildColumnNullLookup(ProfileSnapshot snapshot)
-    {
-        var lookup = new Dictionary<(string Schema, string Table, string Column), long>(EnvironmentColumnKeyComparer.Instance);
-
-        foreach (var column in snapshot.Columns)
-        {
-            lookup[(column.Schema.Value, column.Table.Value, column.Column.Value)] = column.NullCount;
-        }
-
-        return lookup;
     }
 
     private static ISet<(string Schema, string Table, string Column)> BuildUniqueViolationLookup(ProfileSnapshot snapshot)
