@@ -49,6 +49,7 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
 
@@ -70,7 +71,7 @@ public class BuildSsdtCommandFactoryTests
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
         var console = new TestConsole();
-        var args = "build-ssdt --config config.json --modules ModuleA --include-system-modules --include-inactive-modules --allow-missing-primary-key Module::* --cache-root ./cache --refresh-cache --connection-string DataSource --model model.json --profile profile.json --profiler-provider fixture --static-data data.json --out output --rename-table Module=Override --max-degree-of-parallelism 4 --sql-metadata-out metadata.json --extract-model";
+        var args = "build-ssdt --config config.json --modules ModuleA --include-system-modules --include-inactive-modules --allow-missing-primary-key Module::* --cache-root ./cache --refresh-cache --connection-string DataSource --model model.json --profile profile.json --profiler-provider fixture --static-data data.json --out output --rename-table Module=Override --max-degree-of-parallelism 4 --sql-metadata-out metadata.json --extract-model --remediation-generate-pre-scripts false --remediation-max-rows-default-backfill 500 --remediation-sentinel-numeric 999 --remediation-sentinel-text [NULL] --remediation-sentinel-date 2000-01-01 --use-profile-mock-folder --profile-mock-folder mocks";
         var exitCode = await parser.InvokeAsync(args, console);
 
         Assert.Equal(0, exitCode);
@@ -93,6 +94,14 @@ public class BuildSsdtCommandFactoryTests
         Assert.True(input.Cache.Refresh);
         Assert.Equal("DataSource", input.Sql.ConnectionString);
         Assert.Null(input.Sql.ProfilingConnectionStrings);
+        Assert.NotNull(input.TighteningOverrides);
+        Assert.False(input.TighteningOverrides!.RemediationGeneratePreScripts);
+        Assert.Equal(500, input.TighteningOverrides.RemediationMaxRowsDefaultBackfill);
+        Assert.Equal("999", input.TighteningOverrides.RemediationSentinelNumeric);
+        Assert.Equal("[NULL]", input.TighteningOverrides.RemediationSentinelText);
+        Assert.Equal("2000-01-01", input.TighteningOverrides.RemediationSentinelDate);
+        Assert.True(input.TighteningOverrides.MockingUseProfileMockFolder);
+        Assert.Equal("mocks", input.TighteningOverrides.MockingProfileMockFolder);
 
         var result = application.LastResult!;
         Assert.Equal("output", result.OutputDirectory);
@@ -120,6 +129,11 @@ public class BuildSsdtCommandFactoryTests
         Assert.Contains("Tables: 1, Indexes: 0, Foreign Keys: 1", output);
         Assert.Contains("Columns: 2 total, 1 confirmed NOT NULL, 1 need remediation", output);
         Assert.Contains("Tightening toggles:", output);
+        Assert.Contains("remediation.sentinels.numeric", output);
+        Assert.Contains("remediation.sentinels.text", output);
+        Assert.Contains("remediation.sentinels.date", output);
+        Assert.Contains("mocking.useProfileMockFolder", output);
+        Assert.Contains("mocking.profileMockFolder", output);
         Assert.Contains("policy.mode = EvidenceGated (Configuration)", output);
         Assert.Contains("Tightening Artifacts:", output);
         Assert.Contains("Decision log: decision.log", output);
@@ -154,6 +168,7 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
 
@@ -203,6 +218,7 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
 
@@ -247,6 +263,7 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
 
@@ -286,6 +303,7 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
 
@@ -322,6 +340,7 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
 

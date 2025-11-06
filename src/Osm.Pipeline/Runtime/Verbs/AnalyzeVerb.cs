@@ -14,6 +14,7 @@ public sealed record AnalyzeVerbOptions
 {
     public string? ConfigurationPath { get; init; }
     public AnalyzeOverrides Overrides { get; init; } = new(null, null, null);
+    public TighteningOverrides? Tightening { get; init; }
 }
 
 public sealed record AnalyzeVerbResult(
@@ -58,7 +59,7 @@ public sealed class AnalyzeVerb : PipelineVerb<AnalyzeVerbOptions, AnalyzeVerbRe
         }
 
         var overrides = options.Overrides ?? new AnalyzeOverrides(null, null, null);
-        var input = new AnalyzeApplicationInput(configurationResult.Value, overrides);
+        var input = new AnalyzeApplicationInput(configurationResult.Value, overrides, options.Tightening);
 
         var applicationResult = await _applicationService
             .RunAsync(input, cancellationToken)

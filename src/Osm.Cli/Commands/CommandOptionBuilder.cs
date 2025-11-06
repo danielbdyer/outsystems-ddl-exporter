@@ -15,6 +15,9 @@ internal static class CommandOptionBuilder
     public static Command AddCacheOptions(Command command, CacheOptionBinder binder)
         => AddOptions(command, binder);
 
+    public static Command AddTighteningOptions(Command command, TighteningOptionBinder binder)
+        => AddOptions(command, binder);
+
     private static Command AddOptions(Command command, ICommandOptionSource optionSource)
     {
         if (command is null)

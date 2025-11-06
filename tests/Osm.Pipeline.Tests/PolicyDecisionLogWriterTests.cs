@@ -93,6 +93,26 @@ public sealed class PolicyDecisionLogWriterTests
         Assert.Equal(TighteningMode.EvidenceGated.ToString(), actualMode);
         Assert.Equal((int)ToggleSource.Default, mode.GetProperty("Source").GetInt32());
 
+        var numericSentinel = toggles.GetProperty(TighteningToggleKeys.RemediationSentinelNumeric);
+        Assert.Equal("0", numericSentinel.GetProperty("Value").GetString());
+        Assert.Equal((int)ToggleSource.Default, numericSentinel.GetProperty("Source").GetInt32());
+
+        var textSentinel = toggles.GetProperty(TighteningToggleKeys.RemediationSentinelText);
+        Assert.Equal(string.Empty, textSentinel.GetProperty("Value").GetString());
+        Assert.Equal((int)ToggleSource.Default, textSentinel.GetProperty("Source").GetInt32());
+
+        var dateSentinel = toggles.GetProperty(TighteningToggleKeys.RemediationSentinelDate);
+        Assert.Equal("1900-01-01", dateSentinel.GetProperty("Value").GetString());
+        Assert.Equal((int)ToggleSource.Default, dateSentinel.GetProperty("Source").GetInt32());
+
+        var mockingToggle = toggles.GetProperty(TighteningToggleKeys.MockingUseProfileMockFolder);
+        Assert.False(mockingToggle.GetProperty("Value").GetBoolean());
+        Assert.Equal((int)ToggleSource.Default, mockingToggle.GetProperty("Source").GetInt32());
+
+        var mockingFolder = toggles.GetProperty(TighteningToggleKeys.MockingProfileMockFolder);
+        Assert.Equal(JsonValueKind.Null, mockingFolder.GetProperty("Value").ValueKind);
+        Assert.Equal((int)ToggleSource.Default, mockingFolder.GetProperty("Source").GetInt32());
+
         var columns = root.GetProperty("Columns");
         Assert.Equal("Accounting", columns[0].GetProperty("Module").GetString());
         var uniqueIndexes = root.GetProperty("UniqueIndexes");

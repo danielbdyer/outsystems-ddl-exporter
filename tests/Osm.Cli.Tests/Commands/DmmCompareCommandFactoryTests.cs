@@ -38,6 +38,7 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<DmmCompareCommandFactory>();
 
@@ -77,6 +78,7 @@ public class DmmCompareCommandFactoryTests
         Assert.True(input.Cache.Refresh);
         Assert.Equal("DataSource", input.Sql.ConnectionString);
         Assert.Null(input.Sql.ProfilingConnectionStrings);
+        Assert.Null(input.TighteningOverrides);
 
         var result = application.LastResult!;
         Assert.Equal("diff.json", result.DiffOutputPath);
@@ -111,6 +113,7 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<DmmCompareCommandFactory>();
 
@@ -149,6 +152,7 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<DmmCompareCommandFactory>();
 
@@ -184,6 +188,7 @@ public class DmmCompareCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<DmmCompareCommandFactory>();
 

@@ -37,6 +37,7 @@ public class ProfileCommandFactoryTests
         services.AddSingleton<CliGlobalOptions>();
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<ProfileCommandFactory>();
 
@@ -68,6 +69,7 @@ public class ProfileCommandFactoryTests
         Assert.Equal(new[] { "ModuleA" }, input.ModuleFilter.Modules);
         Assert.Equal("DataSource", input.Sql.ConnectionString);
         Assert.Null(input.Sql.ProfilingConnectionStrings);
+        Assert.Null(input.TighteningOverrides);
 
         var result = application.LastResult!;
         Assert.Equal("output", result.OutputDirectory);
@@ -99,6 +101,7 @@ public class ProfileCommandFactoryTests
         services.AddSingleton<CliGlobalOptions>();
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<ProfileCommandFactory>();
 
@@ -134,6 +137,7 @@ public class ProfileCommandFactoryTests
         services.AddSingleton<CliGlobalOptions>();
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<ProfileCommandFactory>();
 

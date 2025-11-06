@@ -16,6 +16,25 @@ public sealed record SqlOptionsOverrides(
     string? AccessToken,
     IReadOnlyList<string>? ProfilingConnectionStrings);
 
+public sealed record TighteningOverrides(
+    bool? RemediationGeneratePreScripts,
+    int? RemediationMaxRowsDefaultBackfill,
+    bool? MockingUseProfileMockFolder,
+    string? MockingProfileMockFolder,
+    string? RemediationSentinelNumeric,
+    string? RemediationSentinelText,
+    string? RemediationSentinelDate)
+{
+    public bool HasOverrides
+        => RemediationGeneratePreScripts.HasValue
+            || RemediationMaxRowsDefaultBackfill.HasValue
+            || MockingUseProfileMockFolder.HasValue
+            || !string.IsNullOrWhiteSpace(MockingProfileMockFolder)
+            || RemediationSentinelNumeric is not null
+            || RemediationSentinelText is not null
+            || RemediationSentinelDate is not null;
+}
+
 public sealed record ModuleFilterOverrides(
     IReadOnlyList<string> Modules,
     bool? IncludeSystemModules,

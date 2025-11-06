@@ -17,6 +17,7 @@ public sealed record DmmCompareVerbOptions
     public ModuleFilterOverrides ModuleFilter { get; init; } = new(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>());
     public SqlOptionsOverrides Sql { get; init; } = new(null, null, null, null, null, null, null, null, null);
     public CacheOptionsOverrides Cache { get; init; } = new(null, null);
+    public TighteningOverrides? Tightening { get; init; }
 }
 
 public sealed record DmmCompareVerbResult(
@@ -65,7 +66,8 @@ public sealed class DmmCompareVerb : PipelineVerb<DmmCompareVerbOptions, DmmComp
             options.Overrides,
             options.ModuleFilter,
             options.Sql,
-            options.Cache);
+            options.Cache,
+            options.Tightening);
 
         var applicationResult = await _applicationService
             .RunAsync(input, cancellationToken)

@@ -31,6 +31,17 @@ internal static class PipelineRequestContextBuilder
         var configuration = request.ConfigurationContext.Configuration ?? CliConfiguration.Empty;
         var tightening = configuration.Tightening ?? TighteningOptions.Default;
 
+        if (request.TighteningOverrides is { } overrides && overrides.HasOverrides)
+        {
+            var tighteningResult = ApplyTighteningOverrides(tightening, overrides);
+            if (tighteningResult.IsFailure)
+            {
+                return Result<PipelineRequestContext>.Failure(tighteningResult.Errors);
+            }
+
+            tightening = tighteningResult.Value;
+        }
+
         var moduleFilterOverrides = request.ModuleFilterOverrides
             ?? new ModuleFilterOverrides(
                 Array.Empty<string>(),
@@ -119,6 +130,82 @@ internal static class PipelineRequestContextBuilder
         var paths = configuration.Paths ?? Array.Empty<string>();
         return new SupplementalModelOptions(includeUsers, paths.ToArray());
     }
+
+    private static Result<TighteningOptions> ApplyTighteningOverrides(
+        TighteningOptions baseOptions,
+        TighteningOverrides overrides)
+    {
+        if (baseOptions is null)
+        {
+            throw new ArgumentNullException(nameof(baseOptions));
+        }
+
+        if (overrides is null || !overrides.HasOverrides)
+        {
+            return baseOptions;
+        }
+
+        var policy = baseOptions.Policy;
+        var foreignKeys = baseOptions.ForeignKeys;
+        var uniqueness = baseOptions.Uniqueness;
+        var emission = baseOptions.Emission;
+        var remediation = baseOptions.Remediation;
+        var mocking = baseOptions.Mocking;
+
+        var remediationSentinels = remediation.Sentinels;
+        var sentinelOverrideProvided = overrides.RemediationSentinelNumeric is not null
+            || overrides.RemediationSentinelText is not null
+            || overrides.RemediationSentinelDate is not null;
+
+        if (sentinelOverrideProvided)
+        {
+            var sentinelResult = RemediationSentinelOptions.Create(
+                overrides.RemediationSentinelNumeric ?? remediationSentinels.Numeric,
+                overrides.RemediationSentinelText ?? remediationSentinels.Text,
+                overrides.RemediationSentinelDate ?? remediationSentinels.Date);
+
+            if (sentinelResult.IsFailure)
+            {
+                return Result<TighteningOptions>.Failure(sentinelResult.Errors);
+            }
+
+            remediationSentinels = sentinelResult.Value;
+        }
+
+        if (sentinelOverrideProvided
+            || overrides.RemediationGeneratePreScripts.HasValue
+            || overrides.RemediationMaxRowsDefaultBackfill.HasValue)
+        {
+            var remediationResult = RemediationOptions.Create(
+                overrides.RemediationGeneratePreScripts ?? remediation.GeneratePreScripts,
+                remediationSentinels,
+                overrides.RemediationMaxRowsDefaultBackfill ?? remediation.MaxRowsDefaultBackfill);
+
+            if (remediationResult.IsFailure)
+            {
+                return Result<TighteningOptions>.Failure(remediationResult.Errors);
+            }
+
+            remediation = remediationResult.Value;
+        }
+
+        if (overrides.MockingUseProfileMockFolder.HasValue || overrides.MockingProfileMockFolder is not null)
+        {
+            var mockFolder = overrides.MockingProfileMockFolder ?? mocking.ProfileMockFolder;
+            var mockingResult = MockingOptions.Create(
+                overrides.MockingUseProfileMockFolder ?? mocking.UseProfileMockFolder,
+                mockFolder);
+
+            if (mockingResult.IsFailure)
+            {
+                return Result<TighteningOptions>.Failure(mockingResult.Errors);
+            }
+
+            mocking = mockingResult.Value;
+        }
+
+        return TighteningOptions.Create(policy, foreignKeys, uniqueness, remediation, emission, mocking);
+    }
 }
 
 internal sealed record PipelineRequestContextBuilderRequest(
@@ -127,7 +214,8 @@ internal sealed record PipelineRequestContextBuilderRequest(
     SqlOptionsOverrides? SqlOptionsOverrides,
     CacheOptionsOverrides? CacheOptionsOverrides,
     string? SqlMetadataOutputPath,
-    NamingOverridesRequest? NamingOverrides);
+    NamingOverridesRequest? NamingOverrides,
+    TighteningOverrides? TighteningOverrides = null);
 
 internal sealed record NamingOverridesRequest(BuildSsdtOverrides Overrides, INamingOverridesBinder Binder);
 

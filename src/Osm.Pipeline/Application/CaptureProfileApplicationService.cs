@@ -14,7 +14,8 @@ public sealed record CaptureProfileApplicationInput(
     CliConfigurationContext ConfigurationContext,
     CaptureProfileOverrides Overrides,
     ModuleFilterOverrides ModuleFilter,
-    SqlOptionsOverrides Sql);
+    SqlOptionsOverrides Sql,
+    TighteningOverrides? TighteningOverrides = null);
 
 public sealed record CaptureProfileApplicationResult(
     CaptureProfilePipelineResult PipelineResult,
@@ -45,7 +46,8 @@ public sealed class CaptureProfileApplicationService : PipelineApplicationServic
             input.Sql,
             CacheOptionsOverrides: null,
             SqlMetadataOutputPath: input.Overrides.SqlMetadataOutputPath,
-            NamingOverrides: null));
+            NamingOverrides: null,
+            TighteningOverrides: input.TighteningOverrides));
         if (contextResult.IsFailure)
         {
             return Result<CaptureProfileApplicationResult>.Failure(contextResult.Errors);

@@ -13,7 +13,8 @@ namespace Osm.Pipeline.Application;
 
 public sealed record AnalyzeApplicationInput(
     CliConfigurationContext ConfigurationContext,
-    AnalyzeOverrides Overrides);
+    AnalyzeOverrides Overrides,
+    TighteningOverrides? TighteningOverrides = null);
 
 public sealed record AnalyzeApplicationResult(
     TighteningAnalysisPipelineResult PipelineResult,
@@ -57,7 +58,8 @@ public sealed class AnalyzeApplicationService : PipelineApplicationServiceBase, 
             SqlOptionsOverrides: null,
             CacheOptionsOverrides: null,
             SqlMetadataOutputPath: null,
-            NamingOverrides: null));
+            NamingOverrides: null,
+            TighteningOverrides: input.TighteningOverrides));
         if (contextResult.IsFailure)
         {
             return Result<AnalyzeApplicationResult>.Failure(contextResult.Errors);

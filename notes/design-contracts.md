@@ -51,6 +51,13 @@ This appendix complements `architecture-guardrails.md` by describing the executa
 
 This precedence chain makes toggle sources explicit and predictable: CLI ↦ environment ↦ config ↦ defaults.
 
+#### CLI overrides for remediation and profiling
+
+- `--remediation-generate-pre-scripts` and `--remediation-max-rows-default-backfill` let operators gate pre-remediation pack creation and trim batch sizes without touching configuration.
+- `--remediation-sentinel-numeric`, `--remediation-sentinel-text`, and `--remediation-sentinel-date` expose the exact sentinel values that remediation pre-scripts will emit for numeric, text, and date columns.
+- `--use-profile-mock-folder` flips the profiling pipeline to consume fixture snapshots, while `--profile-mock-folder` points at the fixture root so CI can pin deterministic evidence inputs.
+- Every flag above wires through `TighteningOptionBinder` so overrides are honoured uniformly by `build-ssdt`, `analyze`, `profile`, and `dmm-compare` commands, with the resulting toggle provenance rendered in the policy decision report (`TogglePrecedence`).
+
 #### Nullability (NOT NULL)
 
 | Mode | Signal (code) | Participation | Evidence requirement | Missing-evidence remediation | Rationale payload |
