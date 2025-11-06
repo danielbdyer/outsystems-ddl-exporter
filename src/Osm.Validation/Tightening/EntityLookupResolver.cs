@@ -60,11 +60,23 @@ public static class EntityLookupResolver
         NamingOverrideOptions namingOverrides)
     {
         var moduleOverrideMatches = candidates
-            .Where(candidate => namingOverrides.TryGetModuleScopedEntityOverride(
-                candidate.Module.Name.Value,
-                logicalName.Value,
-                out _))
+            .Select(candidate =>
+                namingOverrides.TryGetModuleScopedEntityOverride(
+                    candidate.Module.Name.Value,
+                    logicalName.Value,
+                    out var overrideName)
+                    ? new ModuleOverrideMatch(candidate, overrideName)
+                    : null)
+            .Where(match => match is not null)
+            .Select(match => match!)
             .ToArray();
+
+        var hasSingleOverride = moduleOverrideMatches.Length == 1;
+        var overridesCoverAllDuplicates = moduleOverrideMatches.Length == candidates.Count &&
+            moduleOverrideMatches
+                .Select(match => match.Override.Value)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count() == moduleOverrideMatches.Length;
 
         DuplicateCandidate canonical;
         bool resolvedByOverride;
@@ -72,13 +84,27 @@ public static class EntityLookupResolver
         string message;
         TighteningDiagnosticSeverity severity;
 
-        if (moduleOverrideMatches.Length == 1)
+        if (hasSingleOverride)
         {
-            canonical = moduleOverrideMatches[0];
+            canonical = moduleOverrideMatches[0].Candidate;
             resolvedByOverride = true;
             severity = TighteningDiagnosticSeverity.Info;
             code = "tightening.entity.duplicate.resolved";
             message = BuildResolvedDuplicateMessage(logicalName.Value, canonical.Module.Name.Value, candidates);
+        }
+        else if (overridesCoverAllDuplicates)
+        {
+            canonical = moduleOverrideMatches
+                .Select(match => match.Candidate)
+                .OrderBy(c => c.Module.Name.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(c => c.Entity.Schema.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(c => c.Entity.PhysicalName.Value, StringComparer.OrdinalIgnoreCase)
+                .First();
+
+            resolvedByOverride = true;
+            severity = TighteningDiagnosticSeverity.Info;
+            code = "tightening.entity.duplicate.resolved";
+            message = BuildFullyResolvedDuplicateMessage(logicalName.Value, canonical.Module.Name.Value, candidates);
         }
         else
         {
@@ -133,6 +159,15 @@ public static class EntityLookupResolver
         return $"Entity logical name '{logicalName}' appears in modules [{modules}]. Canonical module '{canonicalModule}' was selected via module-scoped naming override.";
     }
 
+    private static string BuildFullyResolvedDuplicateMessage(
+        string logicalName,
+        string canonicalModule,
+        IReadOnlyList<DuplicateCandidate> candidates)
+    {
+        var modules = string.Join(", ", candidates.Select(c => c.Module.Name.Value).Distinct(StringComparer.OrdinalIgnoreCase));
+        return $"Entity logical name '{logicalName}' appears in modules [{modules}]. Module-scoped naming overrides exist for all duplicates; canonical module '{canonicalModule}' was selected by deterministic ordering.";
+    }
+
     private static string BuildUnresolvedDuplicateMessage(
         string logicalName,
         string canonicalModule,
@@ -149,6 +184,8 @@ public static class EntityLookupResolver
     }
 
     private sealed record DuplicateCandidate(ModuleModel Module, EntityModel Entity);
+
+    private sealed record ModuleOverrideMatch(DuplicateCandidate Candidate, TableName Override);
 
     private sealed record DuplicateResolution(DuplicateCandidate Canonical, TighteningDiagnostic Diagnostic);
 }
