@@ -17,7 +17,8 @@ public sealed record BuildSsdtApplicationInput(
     BuildSsdtOverrides Overrides,
     ModuleFilterOverrides ModuleFilter,
     SqlOptionsOverrides Sql,
-    CacheOptionsOverrides Cache);
+    CacheOptionsOverrides Cache,
+    TighteningOverrides? TighteningOverrides = null);
 
 public sealed record BuildSsdtApplicationResult(
     BuildSsdtPipelineResult PipelineResult,
@@ -65,7 +66,8 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             input.Sql,
             input.Cache,
             input.Overrides.SqlMetadataOutputPath,
-            new NamingOverridesRequest(input.Overrides, _namingOverridesBinder)));
+            new NamingOverridesRequest(input.Overrides, _namingOverridesBinder),
+            input.TighteningOverrides));
         if (contextResult.IsFailure)
         {
             return Result<BuildSsdtApplicationResult>.Failure(contextResult.Errors);

@@ -15,6 +15,7 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
     private readonly CliGlobalOptions _globalOptions;
     private readonly ModuleFilterOptionBinder _moduleFilterBinder;
     private readonly SqlOptionBinder _sqlOptionBinder;
+    private readonly TighteningOptionBinder _tighteningBinder;
 
     private readonly Option<string?> _modelOption = new("--model", "Path to the model JSON file.");
     private readonly Option<string?> _profileOption = new("--profile", "Path to the profiling fixture when using the fixture provider.");
@@ -26,12 +27,14 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
         IServiceScopeFactory scopeFactory,
         CliGlobalOptions globalOptions,
         ModuleFilterOptionBinder moduleFilterBinder,
-        SqlOptionBinder sqlOptionBinder)
+        SqlOptionBinder sqlOptionBinder,
+        TighteningOptionBinder tighteningOptionBinder)
         : base(scopeFactory)
     {
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
         _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
+        _tighteningBinder = tighteningOptionBinder ?? throw new ArgumentNullException(nameof(tighteningOptionBinder));
     }
 
     protected override string VerbName => ProfileVerb.VerbName;
@@ -50,6 +53,7 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
         command.AddGlobalOption(_globalOptions.ConfigPath);
         CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
         CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
+        CommandOptionBuilder.AddTighteningOptions(command, _tighteningBinder);
         return command;
     }
 
@@ -63,6 +67,7 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
         var parseResult = context.ParseResult;
         var moduleFilter = _moduleFilterBinder.Bind(parseResult);
         var sqlOverrides = _sqlOptionBinder.Bind(parseResult);
+        var tightening = _tighteningBinder.Bind(parseResult);
 
         var overrides = new CaptureProfileOverrides(
             parseResult.GetValueForOption(_modelOption),
@@ -76,7 +81,8 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
             ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
             Overrides = overrides,
             ModuleFilter = moduleFilter,
-            Sql = sqlOverrides
+            Sql = sqlOverrides,
+            Tightening = tightening
         };
     }
 

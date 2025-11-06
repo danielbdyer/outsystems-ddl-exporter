@@ -21,6 +21,7 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
     private readonly ModuleFilterOptionBinder _moduleFilterBinder;
     private readonly CacheOptionBinder _cacheOptionBinder;
     private readonly SqlOptionBinder _sqlOptionBinder;
+    private readonly TighteningOptionBinder _tighteningBinder;
 
     private readonly Option<string?> _modelOption = new("--model", "Path to the model JSON file.");
     private readonly Option<string?> _profileOption = new("--profile", "Path to the profiling snapshot.");
@@ -37,13 +38,15 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         CliGlobalOptions globalOptions,
         ModuleFilterOptionBinder moduleFilterBinder,
         CacheOptionBinder cacheOptionBinder,
-        SqlOptionBinder sqlOptionBinder)
+        SqlOptionBinder sqlOptionBinder,
+        TighteningOptionBinder tighteningOptionBinder)
         : base(scopeFactory)
     {
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
         _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
         _cacheOptionBinder = cacheOptionBinder ?? throw new ArgumentNullException(nameof(cacheOptionBinder));
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
+        _tighteningBinder = tighteningOptionBinder ?? throw new ArgumentNullException(nameof(tighteningOptionBinder));
     }
 
     protected override string VerbName => BuildSsdtVerb.VerbName;
@@ -68,6 +71,7 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
         CommandOptionBuilder.AddCacheOptions(command, _cacheOptionBinder);
         CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
+        CommandOptionBuilder.AddTighteningOptions(command, _tighteningBinder);
         return command;
     }
 
@@ -82,6 +86,7 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         var moduleFilter = _moduleFilterBinder.Bind(parseResult);
         var cache = _cacheOptionBinder.Bind(parseResult);
         var sqlOverrides = _sqlOptionBinder.Bind(parseResult);
+        var tightening = _tighteningBinder.Bind(parseResult);
 
         var overrides = new BuildSsdtOverrides(
             parseResult.GetValueForOption(_modelOption),
@@ -100,7 +105,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             Overrides = overrides,
             ModuleFilter = moduleFilter,
             Sql = sqlOverrides,
-            Cache = cache
+            Cache = cache,
+            Tightening = tightening
         };
     }
 

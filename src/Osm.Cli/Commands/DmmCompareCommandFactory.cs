@@ -16,6 +16,7 @@ internal sealed class DmmCompareCommandFactory : PipelineCommandFactory<DmmCompa
     private readonly ModuleFilterOptionBinder _moduleFilterBinder;
     private readonly CacheOptionBinder _cacheOptionBinder;
     private readonly SqlOptionBinder _sqlOptionBinder;
+    private readonly TighteningOptionBinder _tighteningBinder;
 
     private readonly Option<string?> _modelOption = new("--model", "Path to the model JSON file.");
     private readonly Option<string?> _profileOption = new("--profile", "Path to the profiling snapshot.");
@@ -27,13 +28,15 @@ internal sealed class DmmCompareCommandFactory : PipelineCommandFactory<DmmCompa
         CliGlobalOptions globalOptions,
         ModuleFilterOptionBinder moduleFilterBinder,
         CacheOptionBinder cacheOptionBinder,
-        SqlOptionBinder sqlOptionBinder)
+        SqlOptionBinder sqlOptionBinder,
+        TighteningOptionBinder tighteningOptionBinder)
         : base(scopeFactory)
     {
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
         _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
         _cacheOptionBinder = cacheOptionBinder ?? throw new ArgumentNullException(nameof(cacheOptionBinder));
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
+        _tighteningBinder = tighteningOptionBinder ?? throw new ArgumentNullException(nameof(tighteningOptionBinder));
     }
 
     protected override string VerbName => DmmCompareVerb.VerbName;
@@ -53,6 +56,7 @@ internal sealed class DmmCompareCommandFactory : PipelineCommandFactory<DmmCompa
         CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
         CommandOptionBuilder.AddCacheOptions(command, _cacheOptionBinder);
         CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
+        CommandOptionBuilder.AddTighteningOptions(command, _tighteningBinder);
         return command;
     }
 
@@ -67,6 +71,7 @@ internal sealed class DmmCompareCommandFactory : PipelineCommandFactory<DmmCompa
         var moduleFilter = _moduleFilterBinder.Bind(parseResult);
         var cache = _cacheOptionBinder.Bind(parseResult);
         var sqlOverrides = _sqlOptionBinder.Bind(parseResult);
+        var tightening = _tighteningBinder.Bind(parseResult);
 
         var overrides = new CompareWithDmmOverrides(
             parseResult.GetValueForOption(_modelOption),
@@ -81,7 +86,8 @@ internal sealed class DmmCompareCommandFactory : PipelineCommandFactory<DmmCompa
             Overrides = overrides,
             ModuleFilter = moduleFilter,
             Sql = sqlOverrides,
-            Cache = cache
+            Cache = cache,
+            Tightening = tightening
         };
     }
 

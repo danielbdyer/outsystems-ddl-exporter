@@ -15,6 +15,7 @@ public sealed record ProfileVerbOptions
     public CaptureProfileOverrides Overrides { get; init; } = new(null, null, null, null, null);
     public ModuleFilterOverrides ModuleFilter { get; init; } = new(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>());
     public SqlOptionsOverrides Sql { get; init; } = new(null, null, null, null, null, null, null, null, null);
+    public TighteningOverrides? Tightening { get; init; }
 }
 
 public sealed record ProfileVerbResult(
@@ -62,7 +63,8 @@ public sealed class ProfileVerb : PipelineVerb<ProfileVerbOptions, ProfileVerbRe
             configurationResult.Value,
             options.Overrides,
             options.ModuleFilter,
-            options.Sql);
+            options.Sql,
+            options.Tightening);
 
         var applicationResult = await _applicationService
             .RunAsync(input, cancellationToken)

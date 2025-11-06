@@ -85,6 +85,26 @@
     "remediation.maxRowsDefaultBackfill": {
       "Value": 100000,
       "Source": 0
+    },
+    "remediation.sentinels.numeric": {
+      "Value": "0",
+      "Source": 0
+    },
+    "remediation.sentinels.text": {
+      "Value": "",
+      "Source": 0
+    },
+    "remediation.sentinels.date": {
+      "Value": "1900-01-01",
+      "Source": 0
+    },
+    "mocking.useProfileMockFolder": {
+      "Value": false,
+      "Source": 0
+    },
+    "mocking.profileMockFolder": {
+      "Value": null,
+      "Source": 0
     }
   },
   "Columns": [

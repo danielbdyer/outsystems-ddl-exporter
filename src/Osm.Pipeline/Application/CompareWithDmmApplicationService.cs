@@ -15,7 +15,8 @@ public sealed record CompareWithDmmApplicationInput(
     CompareWithDmmOverrides Overrides,
     ModuleFilterOverrides ModuleFilter,
     SqlOptionsOverrides Sql,
-    CacheOptionsOverrides Cache);
+    CacheOptionsOverrides Cache,
+    TighteningOverrides? TighteningOverrides = null);
 
 public sealed record CompareWithDmmApplicationResult(
     DmmComparePipelineResult PipelineResult,
@@ -49,7 +50,8 @@ public sealed class CompareWithDmmApplicationService : PipelineApplicationServic
             input.Sql,
             input.Cache,
             SqlMetadataOutputPath: null,
-            NamingOverrides: null));
+            NamingOverrides: null,
+            TighteningOverrides: input.TighteningOverrides));
         if (contextResult.IsFailure)
         {
             return Result<CompareWithDmmApplicationResult>.Failure(contextResult.Errors);

@@ -4,6 +4,7 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime;
@@ -16,15 +17,20 @@ internal sealed class AnalyzeCommandFactory : ICommandFactory
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly CliGlobalOptions _globalOptions;
+    private readonly TighteningOptionBinder _tighteningBinder;
 
     private readonly Option<string?> _modelOption = new("--model", "Path to the model JSON file.");
     private readonly Option<string?> _profileOption = new("--profile", "Path to the profiling snapshot.");
     private readonly Option<string?> _outputOption = new("--out", () => "out", "Output directory for tightening analysis outputs.");
 
-    public AnalyzeCommandFactory(IServiceScopeFactory scopeFactory, CliGlobalOptions globalOptions)
+    public AnalyzeCommandFactory(
+        IServiceScopeFactory scopeFactory,
+        CliGlobalOptions globalOptions,
+        TighteningOptionBinder tighteningBinder)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
+        _tighteningBinder = tighteningBinder ?? throw new ArgumentNullException(nameof(tighteningBinder));
 
         _modelOption.AddAlias("--in");
     }
@@ -39,6 +45,7 @@ internal sealed class AnalyzeCommandFactory : ICommandFactory
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
+        CommandOptionBuilder.AddTighteningOptions(command, _tighteningBinder);
         command.SetHandler(async context => await ExecuteAsync(context).ConfigureAwait(false));
         return command;
     }
@@ -56,10 +63,13 @@ internal sealed class AnalyzeCommandFactory : ICommandFactory
             parseResult.GetValueForOption(_profileOption),
             parseResult.GetValueForOption(_outputOption));
 
+        var tightening = _tighteningBinder.Bind(parseResult);
+
         var options = new AnalyzeVerbOptions
         {
             ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
-            Overrides = overrides
+            Overrides = overrides,
+            Tightening = tightening
         };
 
         var run = await verb.RunAsync(options, context.GetCancellationToken()).ConfigureAwait(false);

@@ -24,6 +24,11 @@ public static class TighteningToggleKeys
     public const string UniquenessEnforceMultiColumn = "uniqueness.enforceMultiColumn";
     public const string RemediationGeneratePreScripts = "remediation.generatePreScripts";
     public const string RemediationMaxRowsDefaultBackfill = "remediation.maxRowsDefaultBackfill";
+    public const string RemediationSentinelNumeric = "remediation.sentinels.numeric";
+    public const string RemediationSentinelText = "remediation.sentinels.text";
+    public const string RemediationSentinelDate = "remediation.sentinels.date";
+    public const string MockingUseProfileMockFolder = "mocking.useProfileMockFolder";
+    public const string MockingProfileMockFolder = "mocking.profileMockFolder";
 }
 
 public sealed record ToggleState<T>(T Value, ToggleSource Source);
@@ -47,7 +52,12 @@ public sealed record TighteningToggleSnapshot(
     ToggleState<bool> SingleColumnUniqueEnforced,
     ToggleState<bool> MultiColumnUniqueEnforced,
     ToggleState<bool> RemediationGeneratePreScripts,
-    ToggleState<int> RemediationMaxRowsDefaultBackfill)
+    ToggleState<int> RemediationMaxRowsDefaultBackfill,
+    ToggleState<string> RemediationSentinelNumeric,
+    ToggleState<string> RemediationSentinelText,
+    ToggleState<string> RemediationSentinelDate,
+    ToggleState<bool> MockingUseProfileMockFolder,
+    ToggleState<string?> MockingProfileMockFolder)
 {
     public static TighteningToggleSnapshot Create(
         TighteningOptions options,
@@ -75,7 +85,12 @@ public sealed record TighteningToggleSnapshot(
             Resolve(TighteningToggleKeys.UniquenessEnforceSingleColumn, options.Uniqueness.EnforceSingleColumnUnique, baseline.Uniqueness.EnforceSingleColumnUnique, sourceResolver),
             Resolve(TighteningToggleKeys.UniquenessEnforceMultiColumn, options.Uniqueness.EnforceMultiColumnUnique, baseline.Uniqueness.EnforceMultiColumnUnique, sourceResolver),
             Resolve(TighteningToggleKeys.RemediationGeneratePreScripts, options.Remediation.GeneratePreScripts, baseline.Remediation.GeneratePreScripts, sourceResolver),
-            Resolve(TighteningToggleKeys.RemediationMaxRowsDefaultBackfill, options.Remediation.MaxRowsDefaultBackfill, baseline.Remediation.MaxRowsDefaultBackfill, sourceResolver));
+            Resolve(TighteningToggleKeys.RemediationMaxRowsDefaultBackfill, options.Remediation.MaxRowsDefaultBackfill, baseline.Remediation.MaxRowsDefaultBackfill, sourceResolver),
+            Resolve(TighteningToggleKeys.RemediationSentinelNumeric, options.Remediation.Sentinels.Numeric, baseline.Remediation.Sentinels.Numeric, sourceResolver),
+            Resolve(TighteningToggleKeys.RemediationSentinelText, options.Remediation.Sentinels.Text, baseline.Remediation.Sentinels.Text, sourceResolver),
+            Resolve(TighteningToggleKeys.RemediationSentinelDate, options.Remediation.Sentinels.Date, baseline.Remediation.Sentinels.Date, sourceResolver),
+            Resolve(TighteningToggleKeys.MockingUseProfileMockFolder, options.Mocking.UseProfileMockFolder, baseline.Mocking.UseProfileMockFolder, sourceResolver),
+            Resolve(TighteningToggleKeys.MockingProfileMockFolder, options.Mocking.ProfileMockFolder, baseline.Mocking.ProfileMockFolder, sourceResolver));
     }
 
     public IReadOnlyDictionary<string, ToggleExportValue> ToExportDictionary()
@@ -91,7 +106,12 @@ public sealed record TighteningToggleSnapshot(
             [TighteningToggleKeys.UniquenessEnforceSingleColumn] = ToggleExportValue.From(SingleColumnUniqueEnforced),
             [TighteningToggleKeys.UniquenessEnforceMultiColumn] = ToggleExportValue.From(MultiColumnUniqueEnforced),
             [TighteningToggleKeys.RemediationGeneratePreScripts] = ToggleExportValue.From(RemediationGeneratePreScripts),
-            [TighteningToggleKeys.RemediationMaxRowsDefaultBackfill] = ToggleExportValue.From(RemediationMaxRowsDefaultBackfill)
+            [TighteningToggleKeys.RemediationMaxRowsDefaultBackfill] = ToggleExportValue.From(RemediationMaxRowsDefaultBackfill),
+            [TighteningToggleKeys.RemediationSentinelNumeric] = ToggleExportValue.From(RemediationSentinelNumeric),
+            [TighteningToggleKeys.RemediationSentinelText] = ToggleExportValue.From(RemediationSentinelText),
+            [TighteningToggleKeys.RemediationSentinelDate] = ToggleExportValue.From(RemediationSentinelDate),
+            [TighteningToggleKeys.MockingUseProfileMockFolder] = ToggleExportValue.From(MockingUseProfileMockFolder),
+            [TighteningToggleKeys.MockingProfileMockFolder] = ToggleExportValue.From(MockingProfileMockFolder)
         };
 
         return dictionary;

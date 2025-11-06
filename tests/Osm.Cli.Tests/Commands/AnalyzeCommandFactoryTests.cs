@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands;
+using Osm.Cli.Commands.Binders;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Application;
@@ -31,6 +32,7 @@ public sealed class AnalyzeCommandFactoryTests
         services.AddSingleton<ICliConfigurationService>(configurationService);
         services.AddSingleton<IApplicationService<AnalyzeApplicationInput, AnalyzeApplicationResult>>(applicationService);
         services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, applicationService));
         services.AddSingleton<AnalyzeCommandFactory>();
 
@@ -50,6 +52,7 @@ public sealed class AnalyzeCommandFactoryTests
         Assert.Equal("model.json", input.Overrides.ModelPath);
         Assert.Equal("profile.json", input.Overrides.ProfilePath);
         Assert.Equal("out", input.Overrides.OutputDirectory);
+        Assert.Null(input.TighteningOverrides);
     }
 
     private sealed class FakeConfigurationService : ICliConfigurationService
