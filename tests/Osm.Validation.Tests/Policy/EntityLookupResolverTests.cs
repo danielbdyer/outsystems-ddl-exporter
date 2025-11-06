@@ -11,7 +11,7 @@ namespace Osm.Validation.Tests.Policy;
 public sealed class EntityLookupResolverTests
 {
     [Fact]
-    public void Should_Report_Conflicting_Module_Overrides()
+    public void Should_Report_Conflicting_Module_Overrides_When_Not_All_Duplicates_Are_Covered()
     {
         var customerA = TighteningEvaluatorTestHelper.CreateEntity(
             "Sales",
@@ -31,9 +31,19 @@ public sealed class EntityLookupResolverTests
                 TighteningEvaluatorTestHelper.CreateAttribute("Id", "ID", isIdentifier: true)
             });
 
+        var customerC = TighteningEvaluatorTestHelper.CreateEntity(
+            "Billing",
+            "Customer",
+            "OSUSR_BILLING_CUSTOMER",
+            new[]
+            {
+                TighteningEvaluatorTestHelper.CreateAttribute("Id", "ID", isIdentifier: true)
+            });
+
         var salesModule = TighteningEvaluatorTestHelper.CreateModule("Sales", customerA);
         var supportModule = TighteningEvaluatorTestHelper.CreateModule("Support", customerB);
-        var model = TighteningEvaluatorTestHelper.CreateModel(salesModule, supportModule);
+        var billingModule = TighteningEvaluatorTestHelper.CreateModule("Billing", customerC);
+        var model = TighteningEvaluatorTestHelper.CreateModel(salesModule, supportModule, billingModule);
 
         var overrides = Result.Collect(new[]
         {
@@ -51,7 +61,7 @@ public sealed class EntityLookupResolverTests
         Assert.Equal(TighteningDiagnosticSeverity.Warning, diagnostic.Severity);
         Assert.False(diagnostic.ResolvedByOverride);
         Assert.Equal("Customer", diagnostic.LogicalName);
-        Assert.Equal("Sales", diagnostic.CanonicalModule);
+        Assert.Equal("Billing", diagnostic.CanonicalModule);
     }
 
     [Fact]
@@ -93,6 +103,50 @@ public sealed class EntityLookupResolverTests
         Assert.Equal("tightening.entity.duplicate.resolved", diagnostic.Code);
         Assert.True(diagnostic.ResolvedByOverride);
         Assert.Equal("Sales", diagnostic.CanonicalModule);
+        Assert.True(resolution.Lookup.TryGetValue(new EntityName("Customer"), out var canonical));
+        Assert.Equal("Sales", canonical.Module.Value);
+    }
+
+    [Fact]
+    public void Should_Treat_All_Module_Overrides_As_Resolved()
+    {
+        var customerA = TighteningEvaluatorTestHelper.CreateEntity(
+            "Sales",
+            "Customer",
+            "OSUSR_SALES_CUSTOMER",
+            new[]
+            {
+                TighteningEvaluatorTestHelper.CreateAttribute("Id", "ID", isIdentifier: true)
+            });
+
+        var customerB = TighteningEvaluatorTestHelper.CreateEntity(
+            "Support",
+            "Customer",
+            "OSUSR_SUPPORT_CUSTOMER",
+            new[]
+            {
+                TighteningEvaluatorTestHelper.CreateAttribute("Id", "ID", isIdentifier: true)
+            });
+
+        var salesModule = TighteningEvaluatorTestHelper.CreateModule("Sales", customerA);
+        var supportModule = TighteningEvaluatorTestHelper.CreateModule("Support", customerB);
+        var model = TighteningEvaluatorTestHelper.CreateModel(salesModule, supportModule);
+
+        var overrides = Result.Collect(new[]
+        {
+            NamingOverrideRule.Create(null, null, "Sales", "Customer", "CUSTOMER_SALES"),
+            NamingOverrideRule.Create(null, null, "Support", "Customer", "CUSTOMER_SUPPORT")
+        }).Value;
+
+        var namingOverrides = NamingOverrideOptions.Create(overrides).Value;
+
+        var resolution = EntityLookupResolver.Resolve(model, namingOverrides);
+
+        var diagnostic = Assert.Single(resolution.Diagnostics);
+        Assert.Equal("tightening.entity.duplicate.resolved", diagnostic.Code);
+        Assert.Equal(TighteningDiagnosticSeverity.Info, diagnostic.Severity);
+        Assert.True(diagnostic.ResolvedByOverride);
+        Assert.Equal("Customer", diagnostic.LogicalName);
         Assert.True(resolution.Lookup.TryGetValue(new EntityName("Customer"), out var canonical));
         Assert.Equal("Sales", canonical.Module.Value);
     }
