@@ -105,8 +105,11 @@ public sealed class MultiEnvironmentProfileReportTests
         Assert.False(report.Findings.IsDefaultOrEmpty);
         Assert.True(report.Findings.Length >= 3);
 
-        var nullFinding = Assert.Single(report.Findings.Where(f => f.Code == "profiling.multiEnvironment.nulls"));
-        Assert.Contains(nullFinding.AffectedObjects, item => item.Contains("dbo.Customer.Email", StringComparison.Ordinal));
+        Assert.DoesNotContain(report.Findings, finding => finding.Code == "profiling.multiEnvironment.nulls");
+
+        var nullVarianceFinding = Assert.Single(
+            report.Findings.Where(f => f.Code == "profiling.validation.dataQuality.nullVariance"));
+        Assert.Equal(MultiEnvironmentFindingSeverity.Advisory, nullVarianceFinding.Severity);
 
         var uniqueFinding = Assert.Single(report.Findings.Where(f => f.Code == "profiling.multiEnvironment.uniqueness"));
         Assert.Contains(uniqueFinding.AffectedObjects, item => item.Contains("dbo.Customer.Email", StringComparison.Ordinal));

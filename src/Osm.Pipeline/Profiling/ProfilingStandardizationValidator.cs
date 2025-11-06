@@ -323,12 +323,12 @@ public sealed class ProfilingStandardizationValidator
             var min = nullCounts.Min();
             var max = nullCounts.Max();
 
-            // Warn if variance is significant (>10% difference or >1000 rows)
+            // Flag if variance is significant (>10% difference or >1000 rows)
             if (max > min && (max - min > 1000 || (max > 0 && (double)(max - min) / max > 0.1)))
             {
                 var envDetails = string.Join(", ", columnGroup.Select(c => $"{c.Environment}: {c.NullCount:N0}"));
                 issues.Add(new ValidationIssue(
-                    ValidationIssueSeverity.Warning,
+                    ValidationIssueSeverity.Advisory,
                     $"{columnGroup.Key.Schema}.{columnGroup.Key.Table}.{columnGroup.Key.Column}",
                     $"Significant NULL count variance across environments ({envDetails})",
                     "profiling.validation.dataQuality.nullVariance"));

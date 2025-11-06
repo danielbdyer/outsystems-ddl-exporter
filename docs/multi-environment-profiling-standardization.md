@@ -373,11 +373,12 @@ Consider:
 
 **Cause**: Data quality variance - normal in multi-environment setups
 
-**Solution**: The merged snapshot uses the **maximum** NULL count. Review findings:
+**Solution**: The merged snapshot uses the **maximum** NULL count. Review advisory findings that document variance without
+blocking remediation:
 
 ```
-[WARNING] profiling.multiEnvironment.nulls: QA: elevated null counts
-- Suggested Action: Investigate data quality issues in this environment before enforcing NOT NULL policies.
+[ADVISORY] profiling.validation.dataQuality.nullVariance: dbo.Customer.Email
+- Suggested Action: Monitor null-handling differences across environments when planning NOT NULL enforcement.
 ```
 
 ### Issue: Consensus Shows 0% Agreement
