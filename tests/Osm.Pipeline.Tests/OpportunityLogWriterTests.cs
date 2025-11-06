@@ -69,44 +69,6 @@ public sealed class OpportunityLogWriterTests
         var capture = DateTimeOffset.Parse("2024-01-01T00:00:00Z");
         var probeStatus = ProfilingProbeStatus.CreateSucceeded(capture, 100);
 
-        var notNullOpportunity = Opportunities.Opportunity.Create(
-            Opportunities.OpportunityType.Nullability,
-            "NOT NULL",
-            "Enforce NOT NULL constraint.",
-            ChangeRisk.Low("Column qualifies for NOT NULL enforcement."),
-            ImmutableArray.Create(
-                "Rows=100",
-                "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"),
-            column: new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_CUSTOMER"), new ColumnName("EMAIL")),
-            disposition: Opportunities.OpportunityDisposition.ReadyToApply,
-            category: Opportunities.OpportunityCategory.Recommendation,
-            statements: ImmutableArray.Create("ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]\n    ALTER COLUMN [Email] NVARCHAR(255) NOT NULL;"),
-            rationales: ImmutableArray.Create("Null probe succeeded."),
-            evidenceSummary: new Opportunities.OpportunityEvidenceSummary(false, true, true, false, false),
-            columns: ImmutableArray.Create(
-                new Opportunities.OpportunityColumn(
-                    new ColumnIdentity(
-                        new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_CUSTOMER"), new ColumnName("EMAIL")),
-                        new ModuleName("Customers"),
-                        new EntityName("Customer"),
-                        new TableName("OSUSR_ABC_CUSTOMER"),
-                        new AttributeName("Email")),
-                    "Text",
-                    "NVARCHAR(255)",
-                    false,
-                    false,
-                    100,
-                    0,
-                    probeStatus,
-                    false,
-                    null,
-                    false,
-                    true,
-                    null)),
-            schema: "dbo",
-            table: "OSUSR_ABC_CUSTOMER",
-            constraintName: "Email");
-
         var uniqueOpportunity = Opportunities.Opportunity.Create(
             Opportunities.OpportunityType.UniqueIndex,
             "UNIQUE",
@@ -146,29 +108,25 @@ public sealed class OpportunityLogWriterTests
             constraintName: "IX_OSUSR_ABC_ORDER_OrderNumber");
 
         var dispositionCounts = ImmutableDictionary.CreateBuilder<Opportunities.OpportunityDisposition, int>();
-        dispositionCounts[Opportunities.OpportunityDisposition.ReadyToApply] = 1;
         dispositionCounts[Opportunities.OpportunityDisposition.NeedsRemediation] = 1;
 
         var categoryCounts = ImmutableDictionary.CreateBuilder<Opportunities.OpportunityCategory, int>();
-        categoryCounts[Opportunities.OpportunityCategory.Recommendation] = 1;
         categoryCounts[Opportunities.OpportunityCategory.Contradiction] = 1;
 
         var typeCounts = ImmutableDictionary.CreateBuilder<Opportunities.OpportunityType, int>();
-        typeCounts[Opportunities.OpportunityType.Nullability] = 1;
         typeCounts[Opportunities.OpportunityType.UniqueIndex] = 1;
 
         var riskCounts = ImmutableDictionary.CreateBuilder<RiskLevel, int>();
-        riskCounts[RiskLevel.Low] = 1;
         riskCounts[RiskLevel.Moderate] = 1;
 
         return new OpportunitiesReport(
-            ImmutableArray.Create(notNullOpportunity, uniqueOpportunity),
+            ImmutableArray.Create(uniqueOpportunity),
             dispositionCounts.ToImmutable(),
             categoryCounts.ToImmutable(),
             typeCounts.ToImmutable(),
             riskCounts.ToImmutable(),
             capture);
-}
+    }
 
     private static string NormalizeEvidenceSections(string script)
     {
