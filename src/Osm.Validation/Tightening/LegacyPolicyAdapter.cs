@@ -8,7 +8,10 @@ internal sealed class LegacyPolicyAdapter : ILegacyPolicyAdapter
     public TighteningOptions Adapt(TighteningMode mode)
     {
         var defaults = TighteningOptions.Default;
-        var policyResult = PolicyOptions.Create(mode, defaults.Policy.NullBudget);
+        var policyResult = PolicyOptions.Create(
+            mode,
+            defaults.Policy.NullBudget,
+            defaults.Policy.AllowCautiousNullabilityRelaxation);
 
         if (!policyResult.IsSuccess)
         {

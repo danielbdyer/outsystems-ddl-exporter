@@ -41,7 +41,10 @@ public sealed record TighteningOptions
     public MockingOptions Mocking { get; }
 
     public static TighteningOptions Default { get; } = Create(
-        PolicyOptions.Create(TighteningMode.EvidenceGated, 0.0).Value,
+        PolicyOptions.Create(
+            TighteningMode.EvidenceGated,
+            0.0,
+            allowCautiousNullabilityRelaxation: false).Value,
         ForeignKeyOptions.Create(
             enableCreation: true,
             allowCrossSchema: false,
@@ -106,17 +109,26 @@ public sealed record TighteningOptions
 
 public sealed record PolicyOptions
 {
-    private PolicyOptions(TighteningMode mode, double nullBudget)
+    private PolicyOptions(
+        TighteningMode mode,
+        double nullBudget,
+        bool allowCautiousNullabilityRelaxation)
     {
         Mode = mode;
         NullBudget = nullBudget;
+        AllowCautiousNullabilityRelaxation = allowCautiousNullabilityRelaxation;
     }
 
     public TighteningMode Mode { get; }
 
     public double NullBudget { get; }
 
-    public static Result<PolicyOptions> Create(TighteningMode mode, double nullBudget)
+    public bool AllowCautiousNullabilityRelaxation { get; }
+
+    public static Result<PolicyOptions> Create(
+        TighteningMode mode,
+        double nullBudget,
+        bool allowCautiousNullabilityRelaxation = false)
     {
         if (double.IsNaN(nullBudget) || double.IsInfinity(nullBudget))
         {
@@ -128,7 +140,7 @@ public sealed record PolicyOptions
             return ValidationError.Create("options.policy.nullBudget.outOfRange", "Null budget must be between 0 and 1 inclusive.");
         }
 
-        return new PolicyOptions(mode, nullBudget);
+        return new PolicyOptions(mode, nullBudget, allowCautiousNullabilityRelaxation);
     }
 }
 
