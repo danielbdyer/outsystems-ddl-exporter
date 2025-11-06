@@ -60,7 +60,10 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
             return ValidationError.Create("config.policy.mode.invalid", $"Unrecognized tightening mode '{document.Policy.Mode}'.");
         }
 
-        var policyResult = PolicyOptions.Create(mode, document.Policy.NullBudget);
+        var policyResult = PolicyOptions.Create(
+            mode,
+            document.Policy.NullBudget,
+            document.Policy.AllowCautiousNullabilityRelaxation);
         if (policyResult.IsFailure)
         {
             return Result<TighteningOptions>.Failure(policyResult.Errors);
@@ -274,6 +277,9 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
 
         [JsonPropertyName("nullBudget")]
         public double NullBudget { get; init; }
+
+        [JsonPropertyName("allowCautiousNullabilityRelaxation")]
+        public bool AllowCautiousNullabilityRelaxation { get; init; }
     }
 
     private sealed record ForeignKeysDocument

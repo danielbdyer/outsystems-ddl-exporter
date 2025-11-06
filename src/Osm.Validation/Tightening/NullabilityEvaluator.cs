@@ -135,10 +135,23 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
         }
 
         var requiresRemediation = false;
+        var relaxationBlocked = false;
 
         if (_options.Policy.Mode == TighteningMode.Aggressive && makeNotNull && conditionalTriggered && !dataTrace.Result)
         {
             requiresRemediation = true;
+            rationales.Add(TighteningRationales.RemediateBeforeTighten);
+        }
+
+        if (_options.Policy.Mode == TighteningMode.Cautious &&
+            !_options.Policy.AllowCautiousNullabilityRelaxation &&
+            attribute.IsMandatory &&
+            !makeNotNull)
+        {
+            relaxationBlocked = true;
+            makeNotNull = true;
+            requiresRemediation = true;
+            rationales.Add(TighteningRationales.CautiousRelaxationDisabled);
             rationales.Add(TighteningRationales.RemediateBeforeTighten);
         }
 
@@ -147,6 +160,26 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
         foreach (var supplementary in supplementalTraces)
         {
             trace = trace.AppendChild(supplementary);
+        }
+
+        if (trace is not null)
+        {
+            trace = trace with { Result = makeNotNull };
+
+            if (relaxationBlocked)
+            {
+                var overrideNode = SignalEvaluation.Create(
+                    "CAUTIOUS_RELAXATION_OVERRIDE",
+                    "Cautious relaxation disabled; enforcing NOT NULL per configuration.",
+                    result: true,
+                    rationales: new[]
+                    {
+                        TighteningRationales.CautiousRelaxationDisabled,
+                        TighteningRationales.RemediateBeforeTighten
+                    });
+
+                trace = trace.AppendChild(overrideNode);
+            }
         }
 
         return NullabilityDecision.Create(

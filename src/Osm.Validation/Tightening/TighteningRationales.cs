@@ -25,4 +25,5 @@ public static class TighteningRationales
     public const string CompositeUniqueDuplicatesPresent = "COMPOSITE_UNIQUE_DUPLICATES_PRESENT";
     public const string PhysicalUniqueKey = "PHYSICAL_UNIQUE_KEY";
     public const string UniquePolicyDisabled = "UNIQUE_POLICY_DISABLED";
+    public const string CautiousRelaxationDisabled = "CAUTIOUS_RELAXATION_DISABLED";
 }
