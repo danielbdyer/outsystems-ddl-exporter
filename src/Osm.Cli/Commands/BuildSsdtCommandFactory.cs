@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
+using Osm.Domain.Profiling;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime;
@@ -140,12 +141,33 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             CommandConsole.EmitMultiEnvironmentReport(context.Console, pipelineResult.MultiEnvironmentReport);
         }
 
-        // Execution log and warnings
-        CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
-        CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
+        var pipelineWarnings = pipelineResult.Warnings
+            .Where(static warning => !string.IsNullOrWhiteSpace(warning))
+            .ToImmutableArray();
 
-        // Profiling insights
-        CommandConsole.EmitProfilingInsights(context.Console, pipelineResult.ProfilingInsights);
+        var actionableProfilingInsights = pipelineResult.ProfilingInsights
+            .Where(static insight => insight is
+            {
+                Severity: ProfilingInsightSeverity.Warning or ProfilingInsightSeverity.Error
+                    or ProfilingInsightSeverity.Recommendation
+            })
+            .ToImmutableArray();
+
+        if ((pipelineWarnings.Length > 0 || actionableProfilingInsights.Length > 0)
+            && pipelineResult.ExecutionLog.Entries.Count > 0)
+        {
+            CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
+        }
+
+        if (pipelineWarnings.Length > 0)
+        {
+            CommandConsole.EmitPipelineWarnings(context.Console, pipelineWarnings);
+        }
+
+        if (actionableProfilingInsights.Length > 0)
+        {
+            CommandConsole.EmitProfilingInsights(context.Console, actionableProfilingInsights);
+        }
 
         // Tightening diagnostics
         EmitTighteningDiagnostics(context, pipelineResult.DecisionReport.Diagnostics);

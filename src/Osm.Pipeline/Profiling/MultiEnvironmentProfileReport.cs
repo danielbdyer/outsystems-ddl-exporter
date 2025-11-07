@@ -76,6 +76,7 @@ public sealed record MultiEnvironmentProfileReport(
         var primaryCompositeViolations = BuildCompositeViolationLookup(primarySnapshot.Snapshot);
         var primaryForeignKeyOrphans = BuildForeignKeyLookup(primarySnapshot.Snapshot, static fk => fk.HasOrphan);
         var primaryForeignKeyProbeUnknown = BuildForeignKeyLookup(primarySnapshot.Snapshot, static fk => fk.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded);
+        var primaryNotNullViolations = BuildNotNullViolationLookup(primarySnapshot.Snapshot);
 
         var builder = ImmutableArray.CreateBuilder<MultiEnvironmentFinding>();
 
@@ -88,6 +89,25 @@ public sealed record MultiEnvironmentProfileReport(
 
             var snapshot = snapshots.FirstOrDefault(s => string.Equals(s.Name, summary.Name, StringComparison.Ordinal));
             var affectedObjects = ImmutableArray<string>.Empty;
+
+            var notNullVariance = snapshot is null
+                ? (Count: 0, Offenders: ImmutableArray<string>.Empty)
+                : IdentifyNotNullViolations(snapshot.Snapshot, primaryNotNullViolations);
+
+            if (notNullVariance.Count > 0)
+            {
+                builder.Add(new MultiEnvironmentFinding(
+                    code: "profiling.multiEnvironment.nullability",
+                    title: $"{summary.Name}: NOT NULL violations",
+                    severity: MultiEnvironmentFindingSeverity.Critical,
+                    summary: string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Detected {0} NOT NULL violation(s) not observed in {1}.",
+                        notNullVariance.Count,
+                        primary.Name),
+                    suggestedAction: "Remediate null values or adjust policy exclusions before enforcing NOT NULL constraints.",
+                    affectedObjects: notNullVariance.Offenders));
+            }
 
             if (summary.UniqueViolations > primary.UniqueViolations)
             {
@@ -256,6 +276,35 @@ public sealed record MultiEnvironmentProfileReport(
         };
     }
 
+    private static (int Count, ImmutableArray<string> Offenders) IdentifyNotNullViolations(
+        ProfileSnapshot snapshot,
+        ISet<(string Schema, string Table, string Column)> primaryViolations)
+    {
+        var offenders = snapshot.Columns
+            .Where(static column => !column.IsNullablePhysical && column.NullCount > 0)
+            .Select(column => (
+                Schema: column.Schema.Value,
+                Table: column.Table.Value,
+                Column: column.Column.Value))
+            .Where(tuple => !primaryViolations.Contains(tuple))
+            .ToList();
+
+        var display = offenders
+            .OrderBy(static tuple => tuple.Schema, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static tuple => tuple.Table, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static tuple => tuple.Column, StringComparer.OrdinalIgnoreCase)
+            .Take(5)
+            .Select(tuple => string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}.{1}.{2}",
+                tuple.Schema,
+                tuple.Table,
+                tuple.Column))
+            .ToImmutableArray();
+
+        return (offenders.Count, display);
+    }
+
     private static ImmutableArray<string> IdentifyUniqueDrift(
         ProfileSnapshot snapshot,
         ISet<(string Schema, string Table, string Column)> primarySingles,
@@ -335,6 +384,18 @@ public sealed record MultiEnvironmentProfileReport(
             .ToImmutableArray();
 
         return offenders;
+    }
+
+    private static ISet<(string Schema, string Table, string Column)> BuildNotNullViolationLookup(ProfileSnapshot snapshot)
+    {
+        var lookup = new HashSet<(string Schema, string Table, string Column)>(EnvironmentColumnKeyComparer.Instance);
+
+        foreach (var column in snapshot.Columns.Where(static column => !column.IsNullablePhysical && column.NullCount > 0))
+        {
+            lookup.Add((column.Schema.Value, column.Table.Value, column.Column.Value));
+        }
+
+        return lookup;
     }
 
     private static ISet<(string Schema, string Table, string Column)> BuildUniqueViolationLookup(ProfileSnapshot snapshot)
