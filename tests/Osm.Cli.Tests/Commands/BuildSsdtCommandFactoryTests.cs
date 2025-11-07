@@ -112,6 +112,7 @@ public class BuildSsdtCommandFactoryTests
         Assert.Equal("Orders", table.Table);
         Assert.Equal("dbo", table.Schema);
         Assert.Equal("dbo.Orders.sql", table.TableFile);
+        Assert.NotEmpty(result.PipelineResult.DecisionReport.TogglePrecedence);
 
         var output = console.Out.ToString() ?? string.Empty;
         Assert.Contains("SSDT Emission Summary:", output);
@@ -129,11 +130,6 @@ public class BuildSsdtCommandFactoryTests
         Assert.Contains("Tables: 1, Indexes: 0, Foreign Keys: 1", output);
         Assert.Contains("Columns: 2 total, 1 confirmed NOT NULL, 1 need remediation", output);
         Assert.Contains("Tightening toggles:", output);
-        Assert.Contains("remediation.sentinels.numeric", output);
-        Assert.Contains("remediation.sentinels.text", output);
-        Assert.Contains("remediation.sentinels.date", output);
-        Assert.Contains("mocking.useProfileMockFolder", output);
-        Assert.Contains("mocking.profileMockFolder", output);
         Assert.Contains("policy.mode = EvidenceGated (Configuration)", output);
         Assert.Contains("Tightening Artifacts:", output);
         Assert.Contains("Decision log: decision.log", output);
@@ -142,7 +138,7 @@ public class BuildSsdtCommandFactoryTests
     }
 
     [Fact]
-    public async Task Invoke_EmitsProfilingInsightsWhenPresent()
+    public async Task Invoke_SuppressesInformationalProfilingInsightsWhenNoActionRequired()
     {
         var configurationService = new FakeConfigurationService();
         var application = new FakeBuildApplicationService
@@ -185,10 +181,9 @@ public class BuildSsdtCommandFactoryTests
         Assert.Equal(0, exitCode);
 
         var output = console.Out.ToString() ?? string.Empty;
-        Assert.Contains("Profiling insights: 1 total (0 errors, 0 warnings, 1 informational)", output);
-        Assert.Contains("Informational insights:", output);
-        Assert.Contains("dbo.Orders.CustomerId", output);
-        Assert.Contains("Column contains 12.5% null values.", output);
+        Assert.DoesNotContain("Profiling insights:", output);
+        Assert.DoesNotContain("Informational insights:", output);
+        Assert.DoesNotContain("Column contains 12.5% null values.", output);
     }
 
     [Fact]
