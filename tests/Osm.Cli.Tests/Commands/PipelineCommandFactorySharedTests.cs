@@ -35,6 +35,7 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<ModuleFilterOptionBinder>();
                     services.AddSingleton<CacheOptionBinder>();
                     services.AddSingleton<SqlOptionBinder>();
+                    services.AddSingleton<TighteningOptionBinder>();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<BuildSsdtCommandFactory>();
                 },
@@ -63,6 +64,7 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<ModuleFilterOptionBinder>();
                     services.AddSingleton<CacheOptionBinder>();
                     services.AddSingleton<SqlOptionBinder>();
+                    services.AddSingleton<TighteningOptionBinder>();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<DmmCompareCommandFactory>();
                 },

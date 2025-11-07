@@ -2,6 +2,7 @@ using System;
 using System.Collections.Immutable;
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
@@ -101,8 +102,19 @@ internal sealed class AnalyzeCommandFactory : ICommandFactory
         CommandConsole.WriteLine(context.Console, $"Profile: {application.ProfilePath}");
         CommandConsole.WriteLine(context.Console, $"Output directory: {application.OutputDirectory}");
 
-        CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
-        CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
+        var pipelineWarnings = pipelineResult.Warnings
+            .Where(static warning => !string.IsNullOrWhiteSpace(warning))
+            .ToImmutableArray();
+
+        if (pipelineWarnings.Length > 0 && pipelineResult.ExecutionLog.Entries.Count > 0)
+        {
+            CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
+        }
+
+        if (pipelineWarnings.Length > 0)
+        {
+            CommandConsole.EmitPipelineWarnings(context.Console, pipelineWarnings);
+        }
 
         foreach (var diagnostic in report.Diagnostics)
         {

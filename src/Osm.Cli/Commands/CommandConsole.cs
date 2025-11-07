@@ -810,11 +810,6 @@ internal static class CommandConsole
 
             var reasons = new List<string>();
 
-            if (summary.ColumnsWithNulls > primary.ColumnsWithNulls)
-            {
-                reasons.Add("null variance");
-            }
-
             if (summary.UniqueViolations > primary.UniqueViolations)
             {
                 reasons.Add("uniqueness drift");

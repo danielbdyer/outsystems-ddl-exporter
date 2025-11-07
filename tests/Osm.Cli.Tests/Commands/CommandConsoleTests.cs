@@ -400,6 +400,8 @@ public class CommandConsoleTests
         Assert.Contains("⭐ Primary (Sample) | Primary | Provided", normalized);
         Assert.Contains("QA | Secondary | Provided", normalized);
         Assert.Contains("Environment findings:", normalized);
+        Assert.Contains("QA: NOT NULL violations", normalized);
+        Assert.Contains("Remediate null values or adjust policy exclusions before enforcing NOT NULL constraints.", normalized);
         Assert.Contains("QA: orphaned foreign keys", normalized);
         Assert.Contains("Repair orphaned relationships or adjust policy exclusions before enforcing foreign keys.", normalized);
         Assert.Contains("Review QA data quality", normalized);
