@@ -87,10 +87,99 @@
           "Attribute": "Id"
         }
       ]
+    },
+    {
+      "Type": "ForeignKey",
+      "Title": "FOREIGN KEY",
+      "Summary": "Foreign key constraint can be safely created based upon profiling evidence.",
+      "Evidence": [
+        "HasConstraint=true",
+        "HasOrphans=False (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "OrphanCount=0"
+      ],
+      "Rationales": [
+        "FK_ENFORCED",
+        "POLICY_ENABLE_CREATION"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_ABC_ORDER"
+        },
+        "Column": {
+          "Value": "CUSTOMERID"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_ORDER",
+      "ConstraintName": "FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_ABC_ORDER"
+              },
+              "Column": {
+                "Value": "CUSTOMERID"
+              }
+            },
+            "Module": {
+              "Value": "Orders"
+            },
+            "EntityLogicalName": {
+              "Value": "Order"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_ABC_ORDER"
+            },
+            "AttributeLogicalName": {
+              "Value": "CustomerId"
+            },
+            "ModuleName": "Orders",
+            "EntityName": "Order",
+            "TableName": "OSUSR_ABC_ORDER",
+            "AttributeName": "CustomerId"
+          },
+          "DataType": "Integer",
+          "SqlType": "INT",
+          "PhysicalNullable": false,
+          "PhysicalUnique": false,
+          "RowCount": null,
+          "NullCount": null,
+          "NullProbeStatus": null,
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": false,
+          "HasDatabaseConstraint": true,
+          "DeleteRule": "R",
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_ORDER"
+            },
+            "Column": {
+              "Value": "CUSTOMERID"
+            }
+          },
+          "Module": "Orders",
+          "Entity": "Order",
+          "Attribute": "CustomerId"
+        }
+      ]
     }
   ],
   "TypeCounts": {
-    "Nullability": 1
+    "Nullability": 1,
+    "ForeignKey": 1
   },
   "GeneratedAtUtc": "2024-01-01T00:00:00+00:00"
 }
