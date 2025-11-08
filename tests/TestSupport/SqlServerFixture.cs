@@ -40,7 +40,18 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync().ConfigureAwait(false);
+        DockerAvailability.EnsureAvailable();
+
+        try
+        {
+            await _container.StartAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (DockerAvailability.IsConnectivityException(ex))
+        {
+            throw new InvalidOperationException(
+                $"{DockerAvailability.GetDefaultSkipMessage()} Details: {ex.Message}",
+                ex);
+        }
 
         var masterBuilder = new SqlConnectionStringBuilder(_container.ConnectionString)
         {
@@ -156,4 +167,5 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
             yield return builder.ToString();
         }
     }
+
 }

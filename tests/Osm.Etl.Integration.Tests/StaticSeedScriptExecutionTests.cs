@@ -21,7 +21,7 @@ public sealed class StaticSeedScriptExecutionTests
         _fixture = fixture;
     }
 
-    [Fact]
+    [DockerFact]
     public async Task StaticSeedScript_WithCaseSensitiveColumnNames_ExecutesSuccessfully()
     {
         var masterBuilder = new SqlConnectionStringBuilder(_fixture.DatabaseConnectionString)

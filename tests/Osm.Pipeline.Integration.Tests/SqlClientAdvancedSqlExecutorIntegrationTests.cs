@@ -61,7 +61,7 @@ public sealed class SqlClientAdvancedSqlExecutorIntegrationTests
         }
     }
 
-    [Theory]
+    [DockerTheory]
     [MemberData(nameof(GetAdvancedSqlCases))]
     public async Task ExecuteAsync_ShouldMatchAdvancedSqlFixture(AdvancedSqlCase testCase)
     {
@@ -99,7 +99,7 @@ public sealed class SqlClientAdvancedSqlExecutorIntegrationTests
         Canonicalize(payload).Should().Be(Canonicalize(expected));
     }
 
-    [Fact]
+    [DockerFact]
     public async Task ExecuteAsync_ShouldHonorCommandTimeout()
     {
         var connectionFactory = new SqlConnectionFactory(_fixture.DatabaseConnectionString);
