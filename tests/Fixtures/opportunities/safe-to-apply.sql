@@ -4,8 +4,8 @@
 -- Generated: 2024-01-01 00:00:00 UTC
 --
 -- SUMMARY:
---   Total Opportunities: 1
---   ⚠️  Contradictions: 1 (Data violates model expectations - REQUIRES MANUAL REMEDIATION)
+--   Total Opportunities: 3
+--   ⚠️  Contradictions: 3 (Data violates model expectations - REQUIRES MANUAL REMEDIATION)
 --
 -- This script contains 0 safe to apply opportunities.
 --

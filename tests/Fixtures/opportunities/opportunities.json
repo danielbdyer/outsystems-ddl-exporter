@@ -1,6 +1,115 @@
 {
   "Opportunities": [
     {
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "DATA CONTRADICTION: Profiling found NULL values that violate the model's mandatory constraint. Manual remediation required.",
+      "Risk": {
+        "Level": "Moderate",
+        "Label": "Moderate",
+        "Description": "Data remediation is required before enforcing NOT NULL."
+      },
+      "Disposition": "NeedsRemediation",
+      "Category": "Contradiction",
+      "Evidence": [
+        "Nulls=5 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "Rows=100"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_ABC_ORDER"
+        },
+        "Column": {
+          "Value": "DELIVERYDATE"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_ORDER",
+      "ConstraintName": "DELIVERYDATE",
+      "Statements": [
+        "ALTER TABLE [dbo].[OSUSR_ABC_ORDER]\n    ALTER COLUMN [DeliveryDate] DATETIME NOT NULL;"
+      ],
+      "Rationales": [
+        "DATA_HAS_NULLS",
+        "MANDATORY"
+      ],
+      "EvidenceSummary": {
+        "RequiresRemediation": true,
+        "EvidenceAvailable": true,
+        "DataClean": false,
+        "HasDuplicates": null,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_ABC_ORDER"
+              },
+              "Column": {
+                "Value": "DELIVERYDATE"
+              }
+            },
+            "Module": {
+              "Value": "Orders"
+            },
+            "EntityLogicalName": {
+              "Value": "Order"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_ABC_ORDER"
+            },
+            "AttributeLogicalName": {
+              "Value": "DeliveryDate"
+            },
+            "ModuleName": "Orders",
+            "EntityName": "Order",
+            "TableName": "OSUSR_ABC_ORDER",
+            "AttributeName": "DeliveryDate"
+          },
+          "DataType": "DateTime",
+          "SqlType": "DATETIME",
+          "PhysicalNullable": true,
+          "PhysicalUnique": false,
+          "RowCount": 100,
+          "NullCount": 5,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 100,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_ORDER"
+            },
+            "Column": {
+              "Value": "DELIVERYDATE"
+            }
+          },
+          "Module": "Orders",
+          "Entity": "Order",
+          "Attribute": "DeliveryDate"
+        }
+      ],
+      "HasStatements": true
+    },
+    {
       "Type": "UniqueIndex",
       "Title": "UNIQUE",
       "Summary": "Remediate data before enforcing the unique index.",
@@ -110,19 +219,129 @@
         }
       ],
       "HasStatements": true
+    },
+    {
+      "Type": "ForeignKey",
+      "Title": "FOREIGN KEY",
+      "Summary": "DATA CONTRADICTION: Profiling found orphaned rows that violate referential integrity. Manual remediation required.",
+      "Risk": {
+        "Level": "High",
+        "Label": "High",
+        "Description": "Orphaned rows detected - remediation required before constraint creation."
+      },
+      "Disposition": "NeedsRemediation",
+      "Category": "Contradiction",
+      "Evidence": [
+        "HasConstraint=False",
+        "HasOrphans=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "OrphanCount=3",
+        "OrphanSample=(101) -> 'MissingCustomer'"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_ABC_ORDER"
+        },
+        "Column": {
+          "Value": "CUSTOMERID"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_ORDER",
+      "ConstraintName": "FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER",
+      "Statements": [
+        "ALTER TABLE [dbo].[OSUSR_ABC_ORDER] WITH CHECK ADD CONSTRAINT [FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[OSUSR_DEF_CUSTOMER] ([Id]);",
+        "ALTER TABLE [dbo].[OSUSR_ABC_ORDER] CHECK CONSTRAINT [FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER];"
+      ],
+      "Rationales": [
+        "DATA_HAS_ORPHANS"
+      ],
+      "EvidenceSummary": {
+        "RequiresRemediation": true,
+        "EvidenceAvailable": true,
+        "DataClean": false,
+        "HasDuplicates": null,
+        "HasOrphans": true
+      },
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_ABC_ORDER"
+              },
+              "Column": {
+                "Value": "CUSTOMERID"
+              }
+            },
+            "Module": {
+              "Value": "Orders"
+            },
+            "EntityLogicalName": {
+              "Value": "Order"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_ABC_ORDER"
+            },
+            "AttributeLogicalName": {
+              "Value": "CustomerId"
+            },
+            "ModuleName": "Orders",
+            "EntityName": "Order",
+            "TableName": "OSUSR_ABC_ORDER",
+            "AttributeName": "CustomerId"
+          },
+          "DataType": "Integer",
+          "SqlType": "INT",
+          "PhysicalNullable": true,
+          "PhysicalUnique": false,
+          "RowCount": null,
+          "NullCount": null,
+          "NullProbeStatus": null,
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": true,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_ORDER"
+            },
+            "Column": {
+              "Value": "CUSTOMERID"
+            }
+          },
+          "Module": "Orders",
+          "Entity": "Order",
+          "Attribute": "CustomerId"
+        }
+      ],
+      "HasStatements": true
     }
   ],
   "DispositionCounts": {
-    "NeedsRemediation": 1
+    "NeedsRemediation": 3
   },
   "CategoryCounts": {
-    "Contradiction": 1
+    "Contradiction": 3
   },
   "TypeCounts": {
-    "UniqueIndex": 1
+    "Nullability": 1,
+    "UniqueIndex": 1,
+    "ForeignKey": 1
   },
   "RiskCounts": {
-    "Moderate": 1
+    "High": 1,
+    "Moderate": 2
   },
   "GeneratedAtUtc": "2024-01-01T00:00:00+00:00"
 }

@@ -83,6 +83,45 @@ public sealed class OpportunityLogWriterTests
         var capture = DateTimeOffset.Parse("2024-01-01T00:00:00Z");
         var probeStatus = ProfilingProbeStatus.CreateSucceeded(capture, 100);
 
+        var nullOpportunity = Opportunities.Opportunity.Create(
+            Opportunities.OpportunityType.Nullability,
+            "NOT NULL",
+            "DATA CONTRADICTION: Profiling found NULL values that violate the model's mandatory constraint. Manual remediation required.",
+            ChangeRisk.Moderate("Data remediation is required before enforcing NOT NULL."),
+            ImmutableArray.Create(
+                "Nulls=5 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
+                "Rows=100"),
+            column: new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new ColumnName("DELIVERYDATE")),
+            disposition: Opportunities.OpportunityDisposition.NeedsRemediation,
+            category: Opportunities.OpportunityCategory.Contradiction,
+            statements: ImmutableArray.Create(
+                "ALTER TABLE [dbo].[OSUSR_ABC_ORDER]\n    ALTER COLUMN [DeliveryDate] DATETIME NOT NULL;"),
+            rationales: ImmutableArray.Create(TighteningRationales.DataHasNulls, TighteningRationales.Mandatory),
+            evidenceSummary: new Opportunities.OpportunityEvidenceSummary(true, true, false, null, null),
+            columns: ImmutableArray.Create(
+                new Opportunities.OpportunityColumn(
+                    new ColumnIdentity(
+                        new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new ColumnName("DELIVERYDATE")),
+                        new ModuleName("Orders"),
+                        new EntityName("Order"),
+                        new TableName("OSUSR_ABC_ORDER"),
+                        new AttributeName("DeliveryDate")),
+                    "DateTime",
+                    "DATETIME",
+                    true,
+                    false,
+                    100,
+                    5,
+                    probeStatus,
+                    null,
+                    null,
+                    null,
+                    false,
+                    null)),
+            schema: "dbo",
+            table: "OSUSR_ABC_ORDER",
+            constraintName: "DELIVERYDATE");
+
         var uniqueOpportunity = Opportunities.Opportunity.Create(
             Opportunities.OpportunityType.UniqueIndex,
             "UNIQUE",
@@ -121,20 +160,65 @@ public sealed class OpportunityLogWriterTests
             table: "OSUSR_ABC_ORDER",
             constraintName: "IX_OSUSR_ABC_ORDER_OrderNumber");
 
+        var foreignKeyOpportunity = Opportunities.Opportunity.Create(
+            Opportunities.OpportunityType.ForeignKey,
+            "FOREIGN KEY",
+            "DATA CONTRADICTION: Profiling found orphaned rows that violate referential integrity. Manual remediation required.",
+            ChangeRisk.High("Orphaned rows detected - remediation required before constraint creation."),
+            ImmutableArray.Create(
+                "HasConstraint=False",
+                "HasOrphans=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
+                "OrphanCount=3",
+                "OrphanSample=(101) -> 'MissingCustomer'"),
+            column: new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new ColumnName("CUSTOMERID")),
+            disposition: Opportunities.OpportunityDisposition.NeedsRemediation,
+            category: Opportunities.OpportunityCategory.Contradiction,
+            statements: ImmutableArray.Create(
+                "ALTER TABLE [dbo].[OSUSR_ABC_ORDER] WITH CHECK ADD CONSTRAINT [FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[OSUSR_DEF_CUSTOMER] ([Id]);",
+                "ALTER TABLE [dbo].[OSUSR_ABC_ORDER] CHECK CONSTRAINT [FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER];"),
+            rationales: ImmutableArray.Create(TighteningRationales.DataHasOrphans),
+            evidenceSummary: new Opportunities.OpportunityEvidenceSummary(true, true, false, null, true),
+            columns: ImmutableArray.Create(
+                new Opportunities.OpportunityColumn(
+                    new ColumnIdentity(
+                        new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new ColumnName("CUSTOMERID")),
+                        new ModuleName("Orders"),
+                        new EntityName("Order"),
+                        new TableName("OSUSR_ABC_ORDER"),
+                        new AttributeName("CustomerId")),
+                    "Integer",
+                    "INT",
+                    true,
+                    false,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    true,
+                    false,
+                    null)),
+            schema: "dbo",
+            table: "OSUSR_ABC_ORDER",
+            constraintName: "FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER");
+
         var dispositionCounts = ImmutableDictionary.CreateBuilder<Opportunities.OpportunityDisposition, int>();
-        dispositionCounts[Opportunities.OpportunityDisposition.NeedsRemediation] = 1;
+        dispositionCounts[Opportunities.OpportunityDisposition.NeedsRemediation] = 3;
 
         var categoryCounts = ImmutableDictionary.CreateBuilder<Opportunities.OpportunityCategory, int>();
-        categoryCounts[Opportunities.OpportunityCategory.Contradiction] = 1;
+        categoryCounts[Opportunities.OpportunityCategory.Contradiction] = 3;
 
         var typeCounts = ImmutableDictionary.CreateBuilder<Opportunities.OpportunityType, int>();
+        typeCounts[Opportunities.OpportunityType.Nullability] = 1;
         typeCounts[Opportunities.OpportunityType.UniqueIndex] = 1;
+        typeCounts[Opportunities.OpportunityType.ForeignKey] = 1;
 
         var riskCounts = ImmutableDictionary.CreateBuilder<RiskLevel, int>();
-        riskCounts[RiskLevel.Moderate] = 1;
+        riskCounts[RiskLevel.Moderate] = 2;
+        riskCounts[RiskLevel.High] = 1;
 
         return new OpportunitiesReport(
-            ImmutableArray.Create(uniqueOpportunity),
+            ImmutableArray.Create(nullOpportunity, uniqueOpportunity, foreignKeyOpportunity),
             dispositionCounts.ToImmutable(),
             categoryCounts.ToImmutable(),
             typeCounts.ToImmutable(),
@@ -179,11 +263,47 @@ public sealed class OpportunityLogWriterTests
                     true,
                     null)));
 
+        var foreignKeyValidation = new Osm.Validation.Tightening.Validations.ValidationFinding(
+            Opportunities.OpportunityType.ForeignKey,
+            "FOREIGN KEY",
+            "Foreign key constraint can be safely created based upon profiling evidence.",
+            ImmutableArray.Create(
+                "HasConstraint=true",
+                "HasOrphans=False (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
+                "OrphanCount=0"),
+            ImmutableArray.Create(TighteningRationales.ForeignKeyEnforced, TighteningRationales.PolicyEnableCreation),
+            new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new ColumnName("CUSTOMERID")),
+            null,
+            "dbo",
+            "OSUSR_ABC_ORDER",
+            "FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER",
+            ImmutableArray.Create(
+                new Opportunities.OpportunityColumn(
+                    new ColumnIdentity(
+                        new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new ColumnName("CUSTOMERID")),
+                        new ModuleName("Orders"),
+                        new EntityName("Order"),
+                        new TableName("OSUSR_ABC_ORDER"),
+                        new AttributeName("CustomerId")),
+                    "Integer",
+                    "INT",
+                    false,
+                    false,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    true,
+                    "R")));
+
         var typeCounts = ImmutableDictionary.CreateBuilder<Opportunities.OpportunityType, int>();
         typeCounts[Opportunities.OpportunityType.Nullability] = 1;
+        typeCounts[Opportunities.OpportunityType.ForeignKey] = 1;
 
         return new ValidationReport(
-            ImmutableArray.Create(validation),
+            ImmutableArray.Create(validation, foreignKeyValidation),
             typeCounts.ToImmutable(),
             capture);
     }

@@ -546,9 +546,9 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             OpportunityCategory.Contradiction =>
                 "DATA CONTRADICTION: Profiling found orphaned rows that violate referential integrity. Manual remediation required.",
             OpportunityCategory.Validation =>
-                "Validated: Foreign key constraint already exists and profiling confirms referential integrity.",
+                "Foreign key constraint can be safely created based upon profiling evidence.",
             OpportunityCategory.Recommendation when disposition == OpportunityDisposition.ReadyToApply =>
-                "Recommendation: Foreign key constraint can be safely created based on profiling evidence.",
+                "Recommendation: Create foreign key constraint to enforce referential integrity.",
             _ => "Create foreign key constraint."
         };
 
@@ -623,6 +623,21 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             $"HasConstraint={fkReality.Reference.HasDatabaseConstraint}");
         builder.Add(
             $"HasOrphans={fkReality.HasOrphan} (Outcome={fkReality.ProbeStatus.Outcome}, Sample={fkReality.ProbeStatus.SampleSize.ToString(CultureInfo.InvariantCulture)}, Captured={fkReality.ProbeStatus.CapturedAtUtc:O})");
+        builder.Add(
+            $"OrphanCount={fkReality.OrphanCount.ToString(CultureInfo.InvariantCulture)}");
+
+        if (fkReality.OrphanSample is { SampleRows.Length: > 0 } sample)
+        {
+            var rows = sample.SampleRows
+                .Select(static r => r.ToString())
+                .Where(static row => !string.IsNullOrWhiteSpace(row))
+                .ToArray();
+
+            if (rows.Length > 0)
+            {
+                builder.Add($"OrphanSample={string.Join(", ", rows)}");
+            }
+        }
 
         return builder.ToImmutable();
     }
