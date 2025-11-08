@@ -21,6 +21,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
     private readonly NullRowSampleQueryBuilder _nullRowSampleQueryBuilder;
     private readonly UniqueCandidateQueryBuilder _uniqueCandidateQueryBuilder;
     private readonly ForeignKeyProbeQueryBuilder _foreignKeyProbeQueryBuilder;
+    private readonly ForeignKeyOrphanSampleQueryBuilder _foreignKeyOrphanSampleQueryBuilder;
     private readonly IProfilingProbePolicy _probePolicy;
 
     public ProfilingQueryExecutor(
@@ -40,6 +41,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         _nullRowSampleQueryBuilder = new NullRowSampleQueryBuilder();
         _uniqueCandidateQueryBuilder = uniqueCandidateQueryBuilder ?? new UniqueCandidateQueryBuilder();
         _foreignKeyProbeQueryBuilder = foreignKeyProbeQueryBuilder ?? new ForeignKeyProbeQueryBuilder();
+        _foreignKeyOrphanSampleQueryBuilder = new ForeignKeyOrphanSampleQueryBuilder();
         var provider = timeProvider ?? TimeProvider.System;
         _probePolicy = probePolicy ?? new ProfilingProbePolicy(provider);
     }
@@ -93,6 +95,14 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         var foreignKeyStatuses = BuildStatusDictionary(foreignKeyReality.Value.Orphans.Keys, foreignKeyReality.Status);
         var foreignKeyNoCheckStatuses = BuildStatusDictionary(foreignKeyReality.Value.IsNoCheck.Keys, foreignKeyReality.Status);
 
+        var foreignKeySamples = await ComputeForeignKeyOrphanSamplesAsync(
+            connection,
+            plan,
+            foreignKeyReality.Value.Orphans,
+            shouldSample,
+            samplingParameter,
+            cancellationToken).ConfigureAwait(false);
+
         return new TableProfilingResults(
             nullCounts.Value,
             nullCountStatuses,
@@ -102,7 +112,8 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             foreignKeyStatuses,
             foreignKeyReality.Value.IsNoCheck,
             foreignKeyNoCheckStatuses,
-            nullRowSamples);
+            nullRowSamples,
+            foreignKeySamples);
     }
 
     private async Task<IReadOnlyDictionary<string, long>> ComputeNullCountsAsync(
@@ -225,7 +236,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         return dictionary;
     }
 
-    private async Task<(IReadOnlyDictionary<string, bool> Orphans, IReadOnlyDictionary<string, bool> IsNoCheck)> ComputeForeignKeyRealityAsync(
+    private async Task<(IReadOnlyDictionary<string, long> Orphans, IReadOnlyDictionary<string, bool> IsNoCheck)> ComputeForeignKeyRealityAsync(
         DbConnection connection,
         TableProfilingPlan plan,
         bool useSampling,
@@ -234,7 +245,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
     {
         if (plan.ForeignKeys.IsDefaultOrEmpty)
         {
-            return (ImmutableDictionary<string, bool>.Empty, ImmutableDictionary<string, bool>.Empty);
+            return (ImmutableDictionary<string, long>.Empty, ImmutableDictionary<string, bool>.Empty);
         }
 
         await using var command = connection.CreateCommand();
@@ -242,21 +253,21 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
 
         ApplyCommandTimeout(command);
 
-        var results = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var results = ImmutableDictionary.CreateBuilder<string, long>(StringComparer.OrdinalIgnoreCase);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var key = reader.GetString(0);
-            var hasOrphans = !reader.IsDBNull(1) && reader.GetBoolean(1);
-            results[key] = hasOrphans;
+            var orphanCount = !reader.IsDBNull(1) ? reader.GetInt64(1) : 0L;
+            results[key] = orphanCount;
         }
 
         foreach (var candidate in plan.ForeignKeys)
         {
             if (!results.ContainsKey(candidate.Key))
             {
-                results[candidate.Key] = false;
+                results[candidate.Key] = 0L;
             }
         }
 
@@ -275,7 +286,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
                 useSampling,
                 orphans = dictionary
                     .OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
-                    .Select(entry => new { candidate = entry.Key, hasOrphans = entry.Value })
+                    .Select(entry => new { candidate = entry.Key, orphanCount = entry.Value, hasOrphans = entry.Value > 0 })
                     .ToArray()
             });
 
@@ -396,17 +407,18 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         return builder.ToImmutable();
     }
 
-    private static IReadOnlyDictionary<string, bool> BuildConservativeForeignKeyResults(TableProfilingPlan plan)
+    private static IReadOnlyDictionary<string, long> BuildConservativeForeignKeyResults(TableProfilingPlan plan)
     {
         if (plan.ForeignKeys.IsDefaultOrEmpty)
         {
-            return ImmutableDictionary<string, bool>.Empty;
+            return ImmutableDictionary<string, long>.Empty;
         }
 
-        var builder = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var fallbackCount = plan.RowCount > 0 ? plan.RowCount : 1L;
+        var builder = ImmutableDictionary.CreateBuilder<string, long>(StringComparer.OrdinalIgnoreCase);
         foreach (var candidate in plan.ForeignKeys)
         {
-            builder[candidate.Key] = true;
+            builder[candidate.Key] = fallbackCount;
         }
 
         return builder.ToImmutable();
@@ -478,6 +490,99 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             {
                 // If we fail to capture NULL row samples, just use empty sample
                 results[column] = NullRowSample.Empty;
+            }
+        }
+
+        return results.ToImmutable();
+    }
+
+    private async Task<IReadOnlyDictionary<string, ForeignKeyOrphanSample>> ComputeForeignKeyOrphanSamplesAsync(
+        DbConnection connection,
+        TableProfilingPlan plan,
+        IReadOnlyDictionary<string, long> orphanCounts,
+        bool useSampling,
+        int samplingParameter,
+        CancellationToken cancellationToken)
+    {
+        if (plan.ForeignKeys.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<string, ForeignKeyOrphanSample>.Empty;
+        }
+
+        var results = ImmutableDictionary.CreateBuilder<string, ForeignKeyOrphanSample>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in plan.ForeignKeys)
+        {
+            if (!orphanCounts.TryGetValue(candidate.Key, out var orphanCount) || orphanCount <= 0)
+            {
+                continue;
+            }
+
+            if (plan.PrimaryKeyColumns.IsDefaultOrEmpty)
+            {
+                results[candidate.Key] = ForeignKeyOrphanSample.Create(
+                    ImmutableArray<string>.Empty,
+                    candidate.Column,
+                    ImmutableArray<ForeignKeyOrphanIdentifier>.Empty,
+                    orphanCount);
+                continue;
+            }
+
+            try
+            {
+                await using var command = connection.CreateCommand();
+                _foreignKeyOrphanSampleQueryBuilder.Configure(
+                    command,
+                    plan.TargetSchema,
+                    plan.TargetTable,
+                    candidate,
+                    plan.PrimaryKeyColumns,
+                    useSampling,
+                    samplingParameter);
+
+                ApplyCommandTimeout(command);
+
+                var sampleRows = ImmutableArray.CreateBuilder<ForeignKeyOrphanIdentifier>();
+                long totalOrphans = orphanCount;
+
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    var pkValues = ImmutableArray.CreateBuilder<object?>();
+                    for (var i = 0; i < plan.PrimaryKeyColumns.Length; i++)
+                    {
+                        pkValues.Add(reader.IsDBNull(i) ? null : reader.GetValue(i));
+                    }
+
+                    var fkValueIndex = plan.PrimaryKeyColumns.Length;
+                    var fkValue = reader.IsDBNull(fkValueIndex) ? null : reader.GetValue(fkValueIndex);
+                    var totalIndex = fkValueIndex + 1;
+
+                    if (!reader.IsDBNull(totalIndex))
+                    {
+                        var observedOrphans = reader.GetInt64(totalIndex);
+                        if (observedOrphans > totalOrphans)
+                        {
+                            totalOrphans = observedOrphans;
+                        }
+                    }
+
+                    sampleRows.Add(new ForeignKeyOrphanIdentifier(pkValues.ToImmutable(), fkValue));
+                }
+
+                results[candidate.Key] = ForeignKeyOrphanSample.Create(
+                    plan.PrimaryKeyColumns,
+                    candidate.Column,
+                    sampleRows.ToImmutable(),
+                    totalOrphans);
+            }
+            catch (DbException)
+            {
+                results[candidate.Key] = ForeignKeyOrphanSample.Create(
+                    plan.PrimaryKeyColumns,
+                    candidate.Column,
+                    ImmutableArray<ForeignKeyOrphanIdentifier>.Empty,
+                    orphanCount);
             }
         }
 

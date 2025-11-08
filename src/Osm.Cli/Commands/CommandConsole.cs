@@ -308,6 +308,7 @@ internal static class CommandConsole
 
             WriteTable(console, headers, rows);
             EmitTableOverflow(console, notNullViolations, rows.Length);
+            EmitNullViolationSamples(console, snapshot);
         }
 
         if (columnProbeIssues.Count > 0)
@@ -393,6 +394,7 @@ internal static class CommandConsole
 
             WriteTable(console, headers, rows);
             EmitTableOverflow(console, foreignKeyIssues.Count, rows.Length);
+            EmitForeignKeyOrphanSamples(console, snapshot);
         }
 
         if (notNullViolations == 0
@@ -488,7 +490,11 @@ internal static class CommandConsole
 
             if (fk.HasOrphan)
             {
-                details.Add((IssueSeverity.Critical, "Orphaned rows detected"));
+                var orphanDetail = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Orphaned rows detected ({0:N0})",
+                    Math.Max(fk.OrphanCount, 0));
+                details.Add((IssueSeverity.Critical, orphanDetail));
             }
 
             if (fk.IsNoCheck)
@@ -566,6 +572,97 @@ internal static class CommandConsole
 
     private static string FormatPath(string? path)
         => string.IsNullOrWhiteSpace(path) ? "(not emitted)" : path;
+
+    private static void EmitNullViolationSamples(IConsole console, ProfileSnapshot snapshot)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        var samples = snapshot.Columns
+            .Where(static column => !column.IsNullablePhysical
+                && column.NullCount > 0
+                && column.NullRowSample is { SampleRows.Length: > 0 })
+            .OrderByDescending(static column => column.NullCount)
+            .ToList();
+
+        if (samples.Count == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "  Sample rows violating NOT NULL:");
+
+        foreach (var column in samples)
+        {
+            var sample = column.NullRowSample!;
+            WriteLine(
+                console,
+                $"    {FormatColumnCoordinate(column)} {FormatSampleSummary(sample.SampleRows.Length, sample.TotalNullRows, sample.IsTruncated)}");
+
+            foreach (var row in sample.SampleRows)
+            {
+                WriteLine(console, $"      {row}");
+            }
+        }
+    }
+
+    private static void EmitForeignKeyOrphanSamples(IConsole console, ProfileSnapshot snapshot)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        var samples = snapshot.ForeignKeys
+            .Where(static fk => fk.HasOrphan && fk.OrphanSample is { SampleRows.Length: > 0 })
+            .OrderByDescending(static fk => fk.OrphanCount)
+            .ToList();
+
+        if (samples.Count == 0)
+        {
+            return;
+        }
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "  Foreign key orphan samples:");
+
+        foreach (var foreignKey in samples)
+        {
+            var sample = foreignKey.OrphanSample!;
+            WriteLine(
+                console,
+                $"    {FormatForeignKeyReference(foreignKey.Reference)} {FormatSampleSummary(sample.SampleRows.Length, sample.TotalOrphans, sample.IsTruncated)}");
+
+            foreach (var row in sample.SampleRows)
+            {
+                WriteLine(console, $"      {row}");
+            }
+        }
+    }
+
+    private static string FormatSampleSummary(int displayedCount, long totalCount, bool isTruncated)
+    {
+        var suffix = isTruncated ? ", truncated" : string.Empty;
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "(showing {0} of {1:N0}{2})",
+            displayedCount,
+            totalCount,
+            suffix);
+    }
 
     private static string FormatForeignKeyReference(ForeignKeyReference reference)
     {

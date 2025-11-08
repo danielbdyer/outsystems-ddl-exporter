@@ -124,7 +124,7 @@ public sealed class ProfilingInsightGeneratorTests
             .Value;
 
         var reality = ForeignKeyReality
-            .Create(reference, hasOrphan: true, isNoCheck: false, ProfilingProbeStatus.Unknown)
+            .Create(reference, hasOrphan: true, orphanCount: 0, isNoCheck: false, ProfilingProbeStatus.Unknown)
             .Value;
 
         var snapshot = ProfileSnapshot
@@ -220,7 +220,7 @@ public sealed class ProfilingInsightGeneratorTests
             .Value;
 
         var reality = ForeignKeyReality
-            .Create(reference, hasOrphan: false, isNoCheck: false, status)
+            .Create(reference, hasOrphan: false, orphanCount: 0, isNoCheck: false, status)
             .Value;
 
         var snapshot = ProfileSnapshot

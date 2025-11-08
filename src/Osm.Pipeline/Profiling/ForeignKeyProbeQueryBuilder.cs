@@ -90,7 +90,7 @@ internal sealed class ForeignKeyProbeQueryBuilder
         }
 
         builder.AppendLine(")");
-        builder.AppendLine("SELECT CandidateId, HasOrphans");
+        builder.AppendLine("SELECT CandidateId, OrphanCount");
         builder.AppendLine("FROM (");
         for (var i = 0; i < candidates.Length; i++)
         {
@@ -107,7 +107,9 @@ internal sealed class ForeignKeyProbeQueryBuilder
 
             builder.Append("    SELECT ");
             builder.Append(parameter.ParameterName);
-            builder.Append(" AS CandidateId, CASE WHEN EXISTS (SELECT 1 FROM Source AS source LEFT JOIN ");
+            builder.Append(" AS CandidateId, COUNT_BIG(*) AS OrphanCount");
+            builder.AppendLine();
+            builder.Append("    FROM Source AS source LEFT JOIN ");
             builder.Append(SqlIdentifierFormatter.Qualify(candidates[i].TargetSchema, candidates[i].TargetTable));
             builder.Append(" AS target WITH (NOLOCK) ON source.");
             builder.Append(SqlIdentifierFormatter.Quote(candidates[i].Column));
@@ -117,7 +119,7 @@ internal sealed class ForeignKeyProbeQueryBuilder
             builder.Append(SqlIdentifierFormatter.Quote(candidates[i].Column));
             builder.Append(" IS NOT NULL AND target.");
             builder.Append(SqlIdentifierFormatter.Quote(candidates[i].TargetColumn));
-            builder.Append(" IS NULL) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasOrphans");
+            builder.Append(" IS NULL");
             builder.AppendLine();
         }
 

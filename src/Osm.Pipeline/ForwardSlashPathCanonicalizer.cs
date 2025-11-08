@@ -31,5 +31,5 @@ internal sealed class ForwardSlashPathCanonicalizer : IPathCanonicalizer
     }
 
     private static string NormalizeSeparators(string value)
-        => value.IndexOf('\', StringComparison.Ordinal) < 0 ? value : value.Replace('\\', '/');
+        => value.IndexOf('\\', StringComparison.Ordinal) < 0 ? value : value.Replace('\\', '/');
 }

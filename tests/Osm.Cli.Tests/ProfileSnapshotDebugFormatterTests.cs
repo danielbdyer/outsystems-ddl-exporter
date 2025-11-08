@@ -54,8 +54,10 @@ public class ProfileSnapshotDebugFormatterTests
         var foreignKeyReality = ForeignKeyReality.Create(
             foreignKeyReference,
             hasOrphan: false,
+            orphanCount: 0,
             isNoCheck: true,
-            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0)).Value;
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0),
+            orphanSample: null).Value;
 
         var snapshot = ProfileSnapshot.Create(
             new[] { columnProfile },

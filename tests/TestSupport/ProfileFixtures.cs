@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
 using Osm.Domain.Profiling;
@@ -52,6 +53,9 @@ public static class ProfileFixtures
         var status = element.TryGetProperty("NullCountStatus", out var statusElement)
             ? ParseProbeStatus(statusElement, rowCount)
             : ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, rowCount);
+        var nullSample = element.TryGetProperty("NullSample", out var sampleElement)
+            ? ParseNullSample(sampleElement)
+            : null;
 
         return ColumnProfile.Create(
             schema,
@@ -64,7 +68,8 @@ public static class ProfileFixtures
             defaultDefinition,
             rowCount,
             nullCount,
-            status).Value;
+            status,
+            nullSample).Value;
     }
 
     private static UniqueCandidateProfile ParseUnique(JsonElement element)
@@ -114,7 +119,103 @@ public static class ProfileFixtures
         var status = element.TryGetProperty("ProbeStatus", out var statusElement)
             ? ParseProbeStatus(statusElement, defaultSampleSize: 0)
             : ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0);
-        return ForeignKeyReality.Create(reference, hasOrphan, isNoCheck, status).Value;
+        var orphanCount = element.TryGetProperty("OrphanCount", out var countElement)
+            ? countElement.GetInt64()
+            : hasOrphan ? 1 : 0;
+        var orphanSample = element.TryGetProperty("OrphanSample", out var sampleElement)
+            ? ParseOrphanSample(sampleElement, orphanCount)
+            : null;
+
+        return ForeignKeyReality.Create(reference, hasOrphan, orphanCount, isNoCheck, status, orphanSample).Value;
+    }
+
+    private static NullRowSample? ParseNullSample(JsonElement element)
+    {
+        if (!element.TryGetProperty("TotalNullRows", out var totalElement))
+        {
+            return null;
+        }
+
+        var totalNulls = totalElement.GetInt64();
+        if (totalNulls <= 0)
+        {
+            return null;
+        }
+
+        var primaryKeyColumns = element.TryGetProperty("PrimaryKeyColumns", out var pkElement)
+            ? pkElement.EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToImmutableArray()
+            : ImmutableArray<string>.Empty;
+
+        var rows = element.TryGetProperty("Rows", out var rowsElement)
+            ? rowsElement.EnumerateArray()
+                .Select(row => new NullRowIdentifier(ParseSampleValues(row.GetProperty("PrimaryKeyValues"))))
+                .ToImmutableArray()
+            : ImmutableArray<NullRowIdentifier>.Empty;
+
+        return NullRowSample.Create(primaryKeyColumns, rows, totalNulls);
+    }
+
+    private static ForeignKeyOrphanSample? ParseOrphanSample(JsonElement element, long fallbackTotal)
+    {
+        if (!element.TryGetProperty("TotalOrphans", out var totalElement))
+        {
+            return fallbackTotal > 0
+                ? ForeignKeyOrphanSample.Create(ImmutableArray<string>.Empty, string.Empty, ImmutableArray<ForeignKeyOrphanIdentifier>.Empty, fallbackTotal)
+                : null;
+        }
+
+        var totalOrphans = totalElement.GetInt64();
+        if (totalOrphans <= 0)
+        {
+            return null;
+        }
+
+        var foreignKeyColumn = element.TryGetProperty("ForeignKeyColumn", out var columnElement)
+            ? columnElement.GetString() ?? string.Empty
+            : string.Empty;
+
+        var primaryKeyColumns = element.TryGetProperty("PrimaryKeyColumns", out var pkElement)
+            ? pkElement.EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToImmutableArray()
+            : ImmutableArray<string>.Empty;
+
+        var rows = element.TryGetProperty("Rows", out var rowsElement)
+            ? rowsElement.EnumerateArray()
+                .Select(row => new ForeignKeyOrphanIdentifier(
+                    ParseSampleValues(row.GetProperty("PrimaryKeyValues")),
+                    row.TryGetProperty("ForeignKeyValue", out var valueElement) ? ParseSampleValue(valueElement) : null))
+                .ToImmutableArray()
+            : ImmutableArray<ForeignKeyOrphanIdentifier>.Empty;
+
+        return ForeignKeyOrphanSample.Create(primaryKeyColumns, foreignKeyColumn, rows, totalOrphans);
+    }
+
+    private static ImmutableArray<object?> ParseSampleValues(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            return ImmutableArray<object?>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<object?>();
+        foreach (var value in element.EnumerateArray())
+        {
+            builder.Add(ParseSampleValue(value));
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static object? ParseSampleValue(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Null => null,
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var longValue) ? longValue : element.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => element.ToString()
+        };
     }
 
     private static ProfilingProbeStatus ParseProbeStatus(JsonElement element, long defaultSampleSize)

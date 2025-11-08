@@ -227,11 +227,19 @@ public class CommandConsoleTests
             new ColumnName("Id"),
             hasDatabaseConstraint: true).Value;
 
+        var fkSample = ForeignKeyOrphanSample.Create(
+            ImmutableArray.Create("Id"),
+            "CustomerId",
+            ImmutableArray.Create(new ForeignKeyOrphanIdentifier(ImmutableArray.Create<object?>(42), 99)),
+            totalOrphans: 2);
+
         var fkReality = ForeignKeyReality.Create(
             fkReference,
             hasOrphan: true,
+            orphanCount: 2,
             isNoCheck: true,
-            ProfilingProbeStatus.CreateFallbackTimeout(DateTimeOffset.UnixEpoch, 500)).Value;
+            ProfilingProbeStatus.CreateFallbackTimeout(DateTimeOffset.UnixEpoch, 500),
+            fkSample).Value;
 
         var snapshot = ProfileSnapshot.Create(
             new[] { notNullColumn, coverageColumn },
@@ -254,6 +262,8 @@ public class CommandConsoleTests
         Assert.Contains("Foreign key anomalies:", output);
         Assert.Contains("dbo.Orders.CustomerId -> dbo.Customers.Id", output);
         Assert.Contains("Summary: 1 critical.", output);
+        Assert.Contains("Sample rows violating NOT NULL:", output);
+        Assert.Contains("Foreign key orphan samples:", output);
         Assert.DoesNotContain("\"columns\"", output);
     }
 
@@ -354,14 +364,24 @@ public class CommandConsoleTests
         var foreignKeyPrimary = ForeignKeyReality.Create(
             foreignKeyReference,
             hasOrphan: false,
+            orphanCount: 0,
             isNoCheck: false,
-            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_000)).Value;
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_000),
+            orphanSample: null).Value;
+
+        var secondarySample = ForeignKeyOrphanSample.Create(
+            ImmutableArray.Create("Id"),
+            "CustomerId",
+            ImmutableArray.Create(new ForeignKeyOrphanIdentifier(ImmutableArray.Create<object?>(77), 101)),
+            totalOrphans: 3);
 
         var foreignKeySecondary = ForeignKeyReality.Create(
             foreignKeyReference,
             hasOrphan: true,
+            orphanCount: 3,
             isNoCheck: false,
-            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_500)).Value;
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_500),
+            secondarySample).Value;
 
         var primarySnapshot = ProfileSnapshot.Create(
             new[] { statusPrimary, emailPrimary },
