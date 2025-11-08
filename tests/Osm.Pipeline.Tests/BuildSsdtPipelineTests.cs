@@ -347,7 +347,7 @@ public class BuildSsdtPipelineTests
             new OpportunityLogWriter());
         var validationStep = new BuildSsdtSqlValidationStep(sqlValidator ?? new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
-        var telemetryPackagingStep = new BuildSsdtTelemetryPackagingStep();
+        var telemetryPackagingStep = new BuildSsdtTelemetryPackagingStep(TimeProvider.System);
 
         return new BuildSsdtPipeline(
             timeProvider,

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -93,12 +94,34 @@ public static class DirectorySnapshot
         return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
-                path => NormalizeRelativePath(Path.GetRelativePath(root, path)),
-                path => NormalizeContent(path, File.ReadAllText(path)),
+                path => NormalizeComparisonPath(NormalizeRelativePath(Path.GetRelativePath(root, path))),
+                path => NormalizeFileContent(path),
                 StringComparer.OrdinalIgnoreCase);
     }
 
     private static string NormalizeRelativePath(string path) => path.Replace('\\', '/');
+
+    private static string NormalizeComparisonPath(string path)
+    {
+        const string CanonicalZipSuffix = ".zip.canonical.txt";
+
+        if (path.EndsWith(CanonicalZipSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return path.Substring(0, path.Length - CanonicalZipSuffix.Length) + ".zip";
+        }
+
+        return path;
+    }
+
+    private static string NormalizeFileContent(string path)
+    {
+        if (Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return NormalizeZipContent(path);
+        }
+
+        return NormalizeContent(path, File.ReadAllText(path));
+    }
 
     private static string NormalizeContent(string path, string content)
     {
@@ -115,6 +138,30 @@ public static class DirectorySnapshot
         }
 
         return content.Replace("\r\n", "\n").TrimEnd();
+    }
+
+    private static string NormalizeZipContent(string path)
+    {
+        using var archive = ZipFile.OpenRead(path);
+        var builder = new StringBuilder();
+
+        foreach (var entry in archive.Entries.OrderBy(e => e.FullName, StringComparer.OrdinalIgnoreCase))
+        {
+            builder.AppendLine($"entry:{entry.FullName}");
+
+            if (entry.Length == 0)
+            {
+                builder.AppendLine();
+                continue;
+            }
+
+            using var stream = entry.Open();
+            using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: false);
+            var entryContent = reader.ReadToEnd();
+            builder.AppendLine(NormalizeContent(entry.FullName, entryContent));
+        }
+
+        return builder.ToString().TrimEnd();
     }
 
     private static void WriteCanonicalJson(Utf8JsonWriter writer, JsonElement element)

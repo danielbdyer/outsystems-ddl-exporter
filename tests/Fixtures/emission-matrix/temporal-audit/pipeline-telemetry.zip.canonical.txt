@@ -1,0 +1,629 @@
+entry:manifest.json
+{
+  "Coverage": {
+    "Columns": {
+      "Emitted": 10,
+      "Percentage": 100,
+      "Total": 10
+    },
+    "Constraints": {
+      "Emitted": 5,
+      "Percentage": 100,
+      "Total": 5
+    },
+    "Tables": {
+      "Emitted": 3,
+      "Percentage": 100,
+      "Total": 3
+    }
+  },
+  "Emission": {
+    "Algorithm": "SHA256",
+    "Hash": "25efa4355e1cd7a94aa6a0e7576655d0b855cc614d2799f196b772316cfa4eac"
+  },
+  "Options": {
+    "EmitBareTableOnly": false,
+    "IncludePlatformAutoIndexes": false,
+    "ModuleParallelism": 1,
+    "SanitizeModuleNames": true
+  },
+  "PolicySummary": {
+    "ColumnCount": 8,
+    "ColumnRationales": {
+      "DATA_NO_NULLS": 5,
+      "DEFAULT_PRESENT": 1,
+      "FK_ENFORCED": 1,
+      "MANDATORY": 5,
+      "PHYSICAL_NOT_NULL": 5,
+      "PK": 2,
+      "PROFILE_MISSING": 1
+    },
+    "ForeignKeyCount": 1,
+    "ForeignKeyRationales": {
+      "DB_CONSTRAINT_PRESENT": 1
+    },
+    "ForeignKeysCreatedCount": 1,
+    "ModuleRollups": {
+      "Matrix": {
+        "ColumnCount": 8,
+        "ColumnRationales": {
+          "DATA_NO_NULLS": 5,
+          "DEFAULT_PRESENT": 1,
+          "FK_ENFORCED": 1,
+          "MANDATORY": 5,
+          "PHYSICAL_NOT_NULL": 5,
+          "PK": 2,
+          "PROFILE_MISSING": 1
+        },
+        "ForeignKeyCount": 1,
+        "ForeignKeyRationales": {
+          "DB_CONSTRAINT_PRESENT": 1
+        },
+        "ForeignKeysCreatedCount": 1,
+        "RemediationColumnCount": 0,
+        "TightenedColumnCount": 5,
+        "UniqueIndexCount": 0,
+        "UniqueIndexRationales": {},
+        "UniqueIndexesEnforcedCount": 0,
+        "UniqueIndexesRequireRemediationCount": 0
+      }
+    },
+    "RemediationColumnCount": 0,
+    "TightenedColumnCount": 5,
+    "TogglePrecedence": {
+      "foreignKeys.allowCrossCatalog": {
+        "Source": 0,
+        "Value": false
+      },
+      "foreignKeys.allowCrossSchema": {
+        "Source": 0,
+        "Value": false
+      },
+      "foreignKeys.enableCreation": {
+        "Source": 0,
+        "Value": true
+      },
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+        "Source": 0,
+        "Value": false
+      },
+      "mocking.profileMockFolder": {
+        "Source": 0,
+        "Value": null
+      },
+      "mocking.useProfileMockFolder": {
+        "Source": 0,
+        "Value": false
+      },
+      "policy.mode": {
+        "Source": 0,
+        "Value": "EvidenceGated"
+      },
+      "policy.nullBudget": {
+        "Source": 0,
+        "Value": 0
+      },
+      "remediation.generatePreScripts": {
+        "Source": 0,
+        "Value": true
+      },
+      "remediation.maxRowsDefaultBackfill": {
+        "Source": 0,
+        "Value": 100000
+      },
+      "remediation.sentinels.date": {
+        "Source": 0,
+        "Value": "1900-01-01"
+      },
+      "remediation.sentinels.numeric": {
+        "Source": 0,
+        "Value": "0"
+      },
+      "remediation.sentinels.text": {
+        "Source": 0,
+        "Value": ""
+      },
+      "uniqueness.enforceMultiColumn": {
+        "Source": 0,
+        "Value": true
+      },
+      "uniqueness.enforceSingleColumn": {
+        "Source": 0,
+        "Value": true
+      }
+    },
+    "UniqueIndexCount": 0,
+    "UniqueIndexRationales": {},
+    "UniqueIndexesEnforcedCount": 0,
+    "UniqueIndexesRequireRemediationCount": 0
+  },
+  "PreRemediation": [],
+  "PredicateCoverage": {
+    "PredicateCounts": {
+      "HasCheckConstraint": 1,
+      "HasDefaultConstraint": 1,
+      "HasExtendedProperties": 1,
+      "HasFilteredIndex": 1,
+      "HasInactiveColumns": 1,
+      "HasIncludedIndexColumns": 1,
+      "HasLogicalForeignKey": 1,
+      "HasLogicalForeignKeyWithDbConstraint": 1,
+      "HasTemporalHistory": 1,
+      "HasTrigger": 1,
+      "IsStaticEntity": 1
+    },
+    "Tables": [
+      {
+        "Module": "Matrix",
+        "Predicates": [],
+        "Schema": "dbo",
+        "Table": "OSUSR_M_AUDIT"
+      },
+      {
+        "Module": "Matrix",
+        "Predicates": [
+          "HasCheckConstraint",
+          "HasDefaultConstraint",
+          "HasExtendedProperties",
+          "HasFilteredIndex",
+          "HasInactiveColumns",
+          "HasIncludedIndexColumns",
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithDbConstraint",
+          "HasTemporalHistory",
+          "HasTrigger",
+          "IsStaticEntity"
+        ],
+        "Schema": "dbo",
+        "Table": "OSUSR_M_TEMPORALORDER"
+      },
+      {
+        "Module": "Users",
+        "Predicates": [],
+        "Schema": "dbo",
+        "Table": "OSUSR_U_USER"
+      }
+    ]
+  },
+  "Tables": [
+    {
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": true,
+      "Indexes": [],
+      "Module": "Matrix",
+      "Schema": "dbo",
+      "Table": "Audit",
+      "TableFile": "Modules/Matrix/dbo.Audit.sql"
+    },
+    {
+      "ForeignKeys": [
+        "FK_TemporalOrder_Audit_AuditId"
+      ],
+      "IncludesExtendedProperties": true,
+      "Indexes": [
+        "IX_TemporalOrder_Status_AuditId"
+      ],
+      "Module": "Matrix",
+      "Schema": "dbo",
+      "Table": "TemporalOrder",
+      "TableFile": "Modules/Matrix/dbo.TemporalOrder.sql"
+    },
+    {
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false,
+      "Indexes": [],
+      "Module": "Users",
+      "Schema": "dbo",
+      "Table": "User",
+      "TableFile": "Modules/Users/dbo.User.sql"
+    }
+  ],
+  "Unsupported": []
+}
+entry:policy-decisions.json
+{
+  "ColumnCount": 8,
+  "ColumnRationales": {
+    "DATA_NO_NULLS": 5,
+    "DEFAULT_PRESENT": 1,
+    "FK_ENFORCED": 1,
+    "MANDATORY": 5,
+    "PHYSICAL_NOT_NULL": 5,
+    "PK": 2,
+    "PROFILE_MISSING": 1
+  },
+  "Columns": [
+    {
+      "Column": "DETAILS",
+      "MakeNotNull": false,
+      "Module": "Matrix",
+      "Rationales": [
+        "PROFILE_MISSING"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_AUDIT"
+    },
+    {
+      "Column": "ID",
+      "MakeNotNull": true,
+      "Module": "Matrix",
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_AUDIT"
+    },
+    {
+      "Column": "AUDITID",
+      "MakeNotNull": false,
+      "Module": "Matrix",
+      "Rationales": [
+        "FK_ENFORCED"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER"
+    },
+    {
+      "Column": "ID",
+      "MakeNotNull": true,
+      "Module": "Matrix",
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER"
+    },
+    {
+      "Column": "LEGACYCODE",
+      "MakeNotNull": false,
+      "Module": "Matrix",
+      "Rationales": [],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER"
+    },
+    {
+      "Column": "STATUS",
+      "MakeNotNull": true,
+      "Module": "Matrix",
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER"
+    },
+    {
+      "Column": "VALIDFROM",
+      "MakeNotNull": true,
+      "Module": "Matrix",
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER"
+    },
+    {
+      "Column": "VALIDTO",
+      "MakeNotNull": true,
+      "Module": "Matrix",
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER"
+    }
+  ],
+  "Diagnostics": [],
+  "ForeignKeyCount": 1,
+  "ForeignKeyRationales": {
+    "DB_CONSTRAINT_PRESENT": 1
+  },
+  "ForeignKeys": [
+    {
+      "Column": "AUDITID",
+      "CreateConstraint": true,
+      "Module": "Matrix",
+      "Rationales": [
+        "DB_CONSTRAINT_PRESENT"
+      ],
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER"
+    }
+  ],
+  "ForeignKeysCreatedCount": 1,
+  "ModuleRollups": {
+    "Matrix": {
+      "ColumnCount": 8,
+      "ColumnRationales": {
+        "DATA_NO_NULLS": 5,
+        "DEFAULT_PRESENT": 1,
+        "FK_ENFORCED": 1,
+        "MANDATORY": 5,
+        "PHYSICAL_NOT_NULL": 5,
+        "PK": 2,
+        "PROFILE_MISSING": 1
+      },
+      "ForeignKeyCount": 1,
+      "ForeignKeyRationales": {
+        "DB_CONSTRAINT_PRESENT": 1
+      },
+      "ForeignKeysCreatedCount": 1,
+      "RemediationColumnCount": 0,
+      "TightenedColumnCount": 5,
+      "UniqueIndexCount": 0,
+      "UniqueIndexRationales": {},
+      "UniqueIndexesEnforcedCount": 0,
+      "UniqueIndexesRequireRemediationCount": 0
+    }
+  },
+  "PredicateCoverage": {
+    "PredicateCounts": {
+      "HasCheckConstraint": 1,
+      "HasDefaultConstraint": 1,
+      "HasExtendedProperties": 1,
+      "HasFilteredIndex": 1,
+      "HasInactiveColumns": 1,
+      "HasIncludedIndexColumns": 1,
+      "HasLogicalForeignKey": 1,
+      "HasLogicalForeignKeyWithDbConstraint": 1,
+      "HasTemporalHistory": 1,
+      "HasTrigger": 1,
+      "IsStaticEntity": 1
+    },
+    "Tables": [
+      {
+        "Module": "Matrix",
+        "Predicates": [],
+        "Schema": "dbo",
+        "Table": "OSUSR_M_AUDIT"
+      },
+      {
+        "Module": "Matrix",
+        "Predicates": [
+          "HasCheckConstraint",
+          "HasDefaultConstraint",
+          "HasExtendedProperties",
+          "HasFilteredIndex",
+          "HasInactiveColumns",
+          "HasIncludedIndexColumns",
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithDbConstraint",
+          "HasTemporalHistory",
+          "HasTrigger",
+          "IsStaticEntity"
+        ],
+        "Schema": "dbo",
+        "Table": "OSUSR_M_TEMPORALORDER"
+      },
+      {
+        "Module": "Users",
+        "Predicates": [],
+        "Schema": "dbo",
+        "Table": "OSUSR_U_USER"
+      }
+    ]
+  },
+  "RemediationColumnCount": 0,
+  "TightenedColumnCount": 5,
+  "TogglePrecedence": {
+    "foreignKeys.allowCrossCatalog": {
+      "Source": 0,
+      "Value": false
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Source": 0,
+      "Value": false
+    },
+    "foreignKeys.enableCreation": {
+      "Source": 0,
+      "Value": true
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Source": 0,
+      "Value": false
+    },
+    "mocking.profileMockFolder": {
+      "Source": 0,
+      "Value": null
+    },
+    "mocking.useProfileMockFolder": {
+      "Source": 0,
+      "Value": false
+    },
+    "policy.mode": {
+      "Source": 0,
+      "Value": "EvidenceGated"
+    },
+    "policy.nullBudget": {
+      "Source": 0,
+      "Value": 0
+    },
+    "remediation.generatePreScripts": {
+      "Source": 0,
+      "Value": true
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Source": 0,
+      "Value": 100000
+    },
+    "remediation.sentinels.date": {
+      "Source": 0,
+      "Value": "1900-01-01"
+    },
+    "remediation.sentinels.numeric": {
+      "Source": 0,
+      "Value": "0"
+    },
+    "remediation.sentinels.text": {
+      "Source": 0,
+      "Value": ""
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Source": 0,
+      "Value": true
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Source": 0,
+      "Value": true
+    }
+  },
+  "UniqueIndexCount": 0,
+  "UniqueIndexRationales": {},
+  "UniqueIndexes": [],
+  "UniqueIndexesEnforcedCount": 0,
+  "UniqueIndexesRequireRemediationCount": 0
+}
+entry:suggestions/needs-remediation.sql
+-- ============================================================================
+-- OutSystems DDL Exporter - Needs Remediation Opportunities
+-- ============================================================================
+-- Generated: 2024-01-01 00:00:00 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 6
+--   Validations: 6 (Existing constraints confirmed by profiling)
+--
+-- This script contains 0 needs remediation opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- ============================================================================
+
+-- No opportunities in this category.
+entry:suggestions/safe-to-apply.sql
+-- ============================================================================
+-- OutSystems DDL Exporter - Safe to Apply Opportunities
+-- ============================================================================
+-- Generated: 2024-01-01 00:00:00 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 6
+--   Validations: 6 (Existing constraints confirmed by profiling)
+--
+-- This script contains 6 safe to apply opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- ============================================================================
+
+-- ========== VALIDATION ==========
+
+-- VALIDATIONS - INFORMATIONAL
+--
+-- These opportunities represent EXISTING constraints that profiling has validated.
+-- The database already has these constraints in place, and the data conforms to them.
+-- Examples include:
+--   • Columns already marked as NOT NULL that have no null values
+--   • Existing unique indexes with no duplicate values
+--   • Foreign key constraints with no orphaned references
+--
+-- ACTION: No action needed. This is confirmation that your database and model are aligned.
+-- ---------- Nullability ----------
+
+-- NULLABILITY VALIDATIONS
+-- Why this matters: Confirms that existing NOT NULL constraints are working correctly.
+-- What to do: No action needed - this is validation that your constraints are effective.
+-- Nullability dbo.OSUSR_M_AUDIT (ID) Category=Validation Risk=Low
+-- Summary: Validated: Column is already NOT NULL and profiling confirms data integrity.
+-- Rationale: DATA_NO_NULLS
+-- Rationale: MANDATORY
+-- Rationale: PHYSICAL_NOT_NULL
+-- Rationale: PK
+-- Evidence: MANDATORY
+-- Evidence: Nulls=0 (Outcome=Succeeded, Sample=250, Captured=2024-01-01T00:00:00.0000000+00:00)
+-- Evidence: PHYSICAL_NOT_NULL
+-- Evidence: PK
+-- Evidence: Rows=250
+ALTER TABLE [dbo].[OSUSR_M_AUDIT]
+    ALTER COLUMN [ID] int NOT NULL;
+GO
+
+-- Nullability dbo.OSUSR_M_TEMPORALORDER (ID) Category=Validation Risk=Low
+-- Summary: Validated: Column is already NOT NULL and profiling confirms data integrity.
+-- Rationale: DATA_NO_NULLS
+-- Rationale: MANDATORY
+-- Rationale: PHYSICAL_NOT_NULL
+-- Rationale: PK
+-- Evidence: MANDATORY
+-- Evidence: Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)
+-- Evidence: PHYSICAL_NOT_NULL
+-- Evidence: PK
+-- Evidence: Rows=1024
+ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]
+    ALTER COLUMN [ID] int NOT NULL;
+GO
+
+-- Nullability dbo.OSUSR_M_TEMPORALORDER (STATUS) Category=Validation Risk=Low
+-- Summary: Validated: Column is already NOT NULL and profiling confirms data integrity.
+-- Rationale: DATA_NO_NULLS
+-- Rationale: DEFAULT_PRESENT
+-- Rationale: MANDATORY
+-- Rationale: PHYSICAL_NOT_NULL
+-- Evidence: DEFAULT_PRESENT
+-- Evidence: MANDATORY
+-- Evidence: Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)
+-- Evidence: PHYSICAL_NOT_NULL
+-- Evidence: Rows=1024
+ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]
+    ALTER COLUMN [STATUS] nvarchar NOT NULL;
+GO
+
+-- Nullability dbo.OSUSR_M_TEMPORALORDER (VALIDFROM) Category=Validation Risk=Low
+-- Summary: Validated: Column is already NOT NULL and profiling confirms data integrity.
+-- Rationale: DATA_NO_NULLS
+-- Rationale: MANDATORY
+-- Rationale: PHYSICAL_NOT_NULL
+-- Evidence: MANDATORY
+-- Evidence: Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)
+-- Evidence: PHYSICAL_NOT_NULL
+-- Evidence: Rows=1024
+ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]
+    ALTER COLUMN [VALIDFROM] datetime2 NOT NULL;
+GO
+
+-- Nullability dbo.OSUSR_M_TEMPORALORDER (VALIDTO) Category=Validation Risk=Low
+-- Summary: Validated: Column is already NOT NULL and profiling confirms data integrity.
+-- Rationale: DATA_NO_NULLS
+-- Rationale: MANDATORY
+-- Rationale: PHYSICAL_NOT_NULL
+-- Evidence: MANDATORY
+-- Evidence: Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)
+-- Evidence: PHYSICAL_NOT_NULL
+-- Evidence: Rows=1024
+ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]
+    ALTER COLUMN [VALIDTO] datetime2 NOT NULL;
+GO
+
+-- ---------- ForeignKey ----------
+
+-- FOREIGN KEY VALIDATIONS
+-- Why this matters: Confirms that existing foreign key constraints are working correctly.
+-- What to do: No action needed - this validates your referential integrity is maintained.
+-- ForeignKey dbo.OSUSR_M_TEMPORALORDER (FK_OSUSR_M_TEMPORALORDER_AUDITID_OSUSR_M_AUDIT) Category=Validation Risk=Low
+-- Summary: Validated: Foreign key constraint already exists and profiling confirms referential integrity.
+-- Rationale: DB_CONSTRAINT_PRESENT
+-- Evidence: HasConstraint=True
+-- Evidence: HasOrphans=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)
+ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER] WITH CHECK ADD CONSTRAINT [FK_OSUSR_M_TEMPORALORDER_AUDITID_OSUSR_M_AUDIT] FOREIGN KEY ([AUDITID]) REFERENCES [dbo].[OSUSR_M_AUDIT] ([ID]);
+ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER] CHECK CONSTRAINT [FK_OSUSR_M_TEMPORALORDER_AUDITID_OSUSR_M_AUDIT];
+GO

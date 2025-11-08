@@ -1,28 +1,15 @@
--- Nullability dbo.OSUSR_A (ID) Risk=Low
--- Rationale: DATA_NO_NULLS
--- Rationale: MANDATORY
--- Rationale: PHYSICAL_NOT_NULL
--- Rationale: PK
--- Evidence: MANDATORY
--- Evidence: Nulls=0 (Outcome=Succeeded, Sample=200, Captured=2024-01-01T00:00:00.0000000+00:00)
--- Evidence: PHYSICAL_NOT_NULL
--- Evidence: PK
--- Evidence: Rows=200
-ALTER TABLE [dbo].[OSUSR_A]
-    ALTER COLUMN [ID] Identifier NOT NULL;
-GO
+-- ============================================================================
+-- OutSystems DDL Exporter - Safe to Apply Opportunities
+-- ============================================================================
+-- Generated: 2024-01-01 00:00:00 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 0
+--
+-- This script contains 0 safe to apply opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- ============================================================================
 
--- Nullability dbo.OSUSR_B (ID) Risk=Low
--- Rationale: DATA_NO_NULLS
--- Rationale: MANDATORY
--- Rationale: PHYSICAL_NOT_NULL
--- Rationale: PK
--- Evidence: MANDATORY
--- Evidence: Nulls=0 (Outcome=Succeeded, Sample=4000, Captured=2024-01-01T00:00:00.0000000+00:00)
--- Evidence: PHYSICAL_NOT_NULL
--- Evidence: PK
--- Evidence: Rows=4000
-ALTER TABLE [dbo].[OSUSR_B]
-    ALTER COLUMN [ID] Identifier NOT NULL;
-GO
-
+-- No opportunities in this category.

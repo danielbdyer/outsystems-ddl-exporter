@@ -23,16 +23,13 @@
       "IncludesExtendedProperties": true
     },
     {
-      "Module": "UserExtension_CS",
+      "Module": "Users",
       "Schema": "dbo",
       "Table": "User",
-      "TableFile": "Modules/UserExtension_CS/dbo.User.sql",
-      "Indexes": [
-        "UIX_User_Email",
-        "UIX_User_Username"
-      ],
+      "TableFile": "Modules/Users/dbo.User.sql",
+      "Indexes": [],
       "ForeignKeys": [],
-      "IncludesExtendedProperties": true
+      "IncludesExtendedProperties": false
     }
   ],
   "Options": {
@@ -51,13 +48,13 @@
     "ForeignKeyCount": 1,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
-      "MANDATORY": 5,
-      "FK_ENFORCED": 1,
-      "PHYSICAL_NOT_NULL": 5,
       "DEFAULT_PRESENT": 1,
+      "PK": 2,
+      "FK_ENFORCED": 1,
       "PROFILE_MISSING": 1,
-      "DATA_NO_NULLS": 5,
-      "PK": 2
+      "PHYSICAL_NOT_NULL": 5,
+      "MANDATORY": 5,
+      "DATA_NO_NULLS": 5
     },
     "UniqueIndexRationales": {},
     "ForeignKeyRationales": {
@@ -74,13 +71,13 @@
         "ForeignKeyCount": 1,
         "ForeignKeysCreatedCount": 1,
         "ColumnRationales": {
-          "MANDATORY": 5,
-          "FK_ENFORCED": 1,
-          "PHYSICAL_NOT_NULL": 5,
           "DEFAULT_PRESENT": 1,
+          "PK": 2,
+          "FK_ENFORCED": 1,
           "PROFILE_MISSING": 1,
-          "DATA_NO_NULLS": 5,
-          "PK": 2
+          "PHYSICAL_NOT_NULL": 5,
+          "MANDATORY": 5,
+          "DATA_NO_NULLS": 5
         },
         "UniqueIndexRationales": {},
         "ForeignKeyRationales": {
@@ -93,19 +90,7 @@
         "Value": "EvidenceGated",
         "Source": 0
       },
-      "policy.nullBudget": {
-        "Value": 0,
-        "Source": 0
-      },
-      "foreignKeys.enableCreation": {
-        "Value": true,
-        "Source": 0
-      },
-      "foreignKeys.allowCrossSchema": {
-        "Value": false,
-        "Source": 0
-      },
-      "foreignKeys.allowCrossCatalog": {
+      "mocking.useProfileMockFolder": {
         "Value": false,
         "Source": 0
       },
@@ -113,47 +98,59 @@
         "Value": false,
         "Source": 0
       },
-      "uniqueness.enforceSingleColumn": {
-        "Value": true,
-        "Source": 0
-      },
       "uniqueness.enforceMultiColumn": {
         "Value": true,
         "Source": 0
       },
-      "remediation.generatePreScripts": {
+      "foreignKeys.enableCreation": {
         "Value": true,
+        "Source": 0
+      },
+      "mocking.profileMockFolder": {
+        "Value": null,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossSchema": {
+        "Value": false,
         "Source": 0
       },
       "remediation.maxRowsDefaultBackfill": {
         "Value": 100000,
         "Source": 0
       },
-      "remediation.sentinels.numeric": {
-        "Value": "0",
-        "Source": 0
-      },
       "remediation.sentinels.text": {
         "Value": "",
+        "Source": 0
+      },
+      "remediation.sentinels.numeric": {
+        "Value": "0",
         "Source": 0
       },
       "remediation.sentinels.date": {
         "Value": "1900-01-01",
         "Source": 0
       },
-      "mocking.useProfileMockFolder": {
+      "policy.nullBudget": {
+        "Value": 0,
+        "Source": 0
+      },
+      "remediation.generatePreScripts": {
+        "Value": true,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossCatalog": {
         "Value": false,
         "Source": 0
       },
-      "mocking.profileMockFolder": {
-        "Value": null,
+      "uniqueness.enforceSingleColumn": {
+        "Value": true,
         "Source": 0
       }
     }
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "192d89676d3285c4d0eac28c4454b92c072dbed34cc42b1c7fcc103c8658d603"
+    "Hash": "25efa4355e1cd7a94aa6a0e7576655d0b855cc614d2799f196b772316cfa4eac"
   },
   "PreRemediation": [],
   "Coverage": {
@@ -168,8 +165,8 @@
       "Percentage": 100
     },
     "Constraints": {
-      "Emitted": 7,
-      "Total": 7,
+      "Emitted": 5,
+      "Total": 5,
       "Percentage": 100
     }
   },
@@ -200,12 +197,10 @@
         ]
       },
       {
-        "Module": "UserExtension_CS",
+        "Module": "Users",
         "Schema": "dbo",
-        "Table": "ossys_User",
-        "Predicates": [
-          "HasUniqueIndex"
-        ]
+        "Table": "OSUSR_U_USER",
+        "Predicates": []
       }
     ],
     "PredicateCounts": {
@@ -219,7 +214,6 @@
       "HasLogicalForeignKeyWithDbConstraint": 1,
       "HasTemporalHistory": 1,
       "HasTrigger": 1,
-      "HasUniqueIndex": 1,
       "IsStaticEntity": 1
     }
   },

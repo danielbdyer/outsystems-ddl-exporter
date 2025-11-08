@@ -1,0 +1,429 @@
+entry:manifest.json
+{
+  "Coverage": {
+    "Columns": {
+      "Emitted": 6,
+      "Percentage": 100,
+      "Total": 6
+    },
+    "Constraints": {
+      "Emitted": 3,
+      "Percentage": 100,
+      "Total": 3
+    },
+    "Tables": {
+      "Emitted": 3,
+      "Percentage": 100,
+      "Total": 3
+    }
+  },
+  "Emission": {
+    "Algorithm": "SHA256",
+    "Hash": "1d87f623e667bed761544965a87441b198e3278cd0e4429b19ec4b346a380812"
+  },
+  "Options": {
+    "EmitBareTableOnly": false,
+    "IncludePlatformAutoIndexes": false,
+    "ModuleParallelism": 1,
+    "SanitizeModuleNames": true
+  },
+  "PolicySummary": {
+    "ColumnCount": 3,
+    "ColumnRationales": {
+      "DATA_HAS_ORPHANS": 1,
+      "DATA_NO_NULLS": 2,
+      "DELETE_RULE_IGNORE": 1,
+      "MANDATORY": 2,
+      "PHYSICAL_NOT_NULL": 2,
+      "PK": 2
+    },
+    "ForeignKeyCount": 1,
+    "ForeignKeyRationales": {
+      "DATA_HAS_ORPHANS": 1,
+      "DELETE_RULE_IGNORE": 1
+    },
+    "ForeignKeysCreatedCount": 0,
+    "ModuleRollups": {
+      "M": {
+        "ColumnCount": 3,
+        "ColumnRationales": {
+          "DATA_HAS_ORPHANS": 1,
+          "DATA_NO_NULLS": 2,
+          "DELETE_RULE_IGNORE": 1,
+          "MANDATORY": 2,
+          "PHYSICAL_NOT_NULL": 2,
+          "PK": 2
+        },
+        "ForeignKeyCount": 1,
+        "ForeignKeyRationales": {
+          "DATA_HAS_ORPHANS": 1,
+          "DELETE_RULE_IGNORE": 1
+        },
+        "ForeignKeysCreatedCount": 0,
+        "RemediationColumnCount": 0,
+        "TightenedColumnCount": 2,
+        "UniqueIndexCount": 0,
+        "UniqueIndexRationales": {},
+        "UniqueIndexesEnforcedCount": 0,
+        "UniqueIndexesRequireRemediationCount": 0
+      }
+    },
+    "RemediationColumnCount": 0,
+    "TightenedColumnCount": 2,
+    "TogglePrecedence": {
+      "foreignKeys.allowCrossCatalog": {
+        "Source": 0,
+        "Value": false
+      },
+      "foreignKeys.allowCrossSchema": {
+        "Source": 0,
+        "Value": false
+      },
+      "foreignKeys.enableCreation": {
+        "Source": 0,
+        "Value": true
+      },
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+        "Source": 0,
+        "Value": false
+      },
+      "mocking.profileMockFolder": {
+        "Source": 0,
+        "Value": null
+      },
+      "mocking.useProfileMockFolder": {
+        "Source": 0,
+        "Value": false
+      },
+      "policy.mode": {
+        "Source": 0,
+        "Value": "EvidenceGated"
+      },
+      "policy.nullBudget": {
+        "Source": 0,
+        "Value": 0
+      },
+      "remediation.generatePreScripts": {
+        "Source": 0,
+        "Value": true
+      },
+      "remediation.maxRowsDefaultBackfill": {
+        "Source": 0,
+        "Value": 100000
+      },
+      "remediation.sentinels.date": {
+        "Source": 0,
+        "Value": "1900-01-01"
+      },
+      "remediation.sentinels.numeric": {
+        "Source": 0,
+        "Value": "0"
+      },
+      "remediation.sentinels.text": {
+        "Source": 0,
+        "Value": ""
+      },
+      "uniqueness.enforceMultiColumn": {
+        "Source": 0,
+        "Value": true
+      },
+      "uniqueness.enforceSingleColumn": {
+        "Source": 0,
+        "Value": true
+      }
+    },
+    "UniqueIndexCount": 0,
+    "UniqueIndexRationales": {},
+    "UniqueIndexesEnforcedCount": 0,
+    "UniqueIndexesRequireRemediationCount": 0
+  },
+  "PreRemediation": [],
+  "PredicateCoverage": {
+    "PredicateCounts": {
+      "HasLogicalForeignKey": 1,
+      "HasLogicalForeignKeyWithoutDbConstraint": 1
+    },
+    "Tables": [
+      {
+        "Module": "M",
+        "Predicates": [],
+        "Schema": "dbo",
+        "Table": "OSUSR_A"
+      },
+      {
+        "Module": "M",
+        "Predicates": [
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithoutDbConstraint"
+        ],
+        "Schema": "dbo",
+        "Table": "OSUSR_B"
+      },
+      {
+        "Module": "Users",
+        "Predicates": [],
+        "Schema": "dbo",
+        "Table": "OSUSR_U_USER"
+      }
+    ]
+  },
+  "Tables": [
+    {
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false,
+      "Indexes": [],
+      "Module": "M",
+      "Schema": "dbo",
+      "Table": "A",
+      "TableFile": "Modules/M/dbo.A.sql"
+    },
+    {
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false,
+      "Indexes": [],
+      "Module": "M",
+      "Schema": "dbo",
+      "Table": "B",
+      "TableFile": "Modules/M/dbo.B.sql"
+    },
+    {
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false,
+      "Indexes": [],
+      "Module": "Users",
+      "Schema": "dbo",
+      "Table": "User",
+      "TableFile": "Modules/Users/dbo.User.sql"
+    }
+  ],
+  "Unsupported": []
+}
+entry:policy-decisions.json
+{
+  "ColumnCount": 3,
+  "ColumnRationales": {
+    "DATA_HAS_ORPHANS": 1,
+    "DATA_NO_NULLS": 2,
+    "DELETE_RULE_IGNORE": 1,
+    "MANDATORY": 2,
+    "PHYSICAL_NOT_NULL": 2,
+    "PK": 2
+  },
+  "Columns": [
+    {
+      "Column": "ID",
+      "MakeNotNull": true,
+      "Module": "M",
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_A"
+    },
+    {
+      "Column": "AID",
+      "MakeNotNull": false,
+      "Module": "M",
+      "Rationales": [
+        "DATA_HAS_ORPHANS",
+        "DELETE_RULE_IGNORE"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_B"
+    },
+    {
+      "Column": "ID",
+      "MakeNotNull": true,
+      "Module": "M",
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_B"
+    }
+  ],
+  "Diagnostics": [],
+  "ForeignKeyCount": 1,
+  "ForeignKeyRationales": {
+    "DATA_HAS_ORPHANS": 1,
+    "DELETE_RULE_IGNORE": 1
+  },
+  "ForeignKeys": [
+    {
+      "Column": "AID",
+      "CreateConstraint": false,
+      "Module": "M",
+      "Rationales": [
+        "DATA_HAS_ORPHANS",
+        "DELETE_RULE_IGNORE"
+      ],
+      "Schema": "dbo",
+      "Table": "OSUSR_B"
+    }
+  ],
+  "ForeignKeysCreatedCount": 0,
+  "ModuleRollups": {
+    "M": {
+      "ColumnCount": 3,
+      "ColumnRationales": {
+        "DATA_HAS_ORPHANS": 1,
+        "DATA_NO_NULLS": 2,
+        "DELETE_RULE_IGNORE": 1,
+        "MANDATORY": 2,
+        "PHYSICAL_NOT_NULL": 2,
+        "PK": 2
+      },
+      "ForeignKeyCount": 1,
+      "ForeignKeyRationales": {
+        "DATA_HAS_ORPHANS": 1,
+        "DELETE_RULE_IGNORE": 1
+      },
+      "ForeignKeysCreatedCount": 0,
+      "RemediationColumnCount": 0,
+      "TightenedColumnCount": 2,
+      "UniqueIndexCount": 0,
+      "UniqueIndexRationales": {},
+      "UniqueIndexesEnforcedCount": 0,
+      "UniqueIndexesRequireRemediationCount": 0
+    }
+  },
+  "PredicateCoverage": {
+    "PredicateCounts": {
+      "HasLogicalForeignKey": 1,
+      "HasLogicalForeignKeyWithoutDbConstraint": 1
+    },
+    "Tables": [
+      {
+        "Module": "M",
+        "Predicates": [],
+        "Schema": "dbo",
+        "Table": "OSUSR_A"
+      },
+      {
+        "Module": "M",
+        "Predicates": [
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithoutDbConstraint"
+        ],
+        "Schema": "dbo",
+        "Table": "OSUSR_B"
+      },
+      {
+        "Module": "Users",
+        "Predicates": [],
+        "Schema": "dbo",
+        "Table": "OSUSR_U_USER"
+      }
+    ]
+  },
+  "RemediationColumnCount": 0,
+  "TightenedColumnCount": 2,
+  "TogglePrecedence": {
+    "foreignKeys.allowCrossCatalog": {
+      "Source": 0,
+      "Value": false
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Source": 0,
+      "Value": false
+    },
+    "foreignKeys.enableCreation": {
+      "Source": 0,
+      "Value": true
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Source": 0,
+      "Value": false
+    },
+    "mocking.profileMockFolder": {
+      "Source": 0,
+      "Value": null
+    },
+    "mocking.useProfileMockFolder": {
+      "Source": 0,
+      "Value": false
+    },
+    "policy.mode": {
+      "Source": 0,
+      "Value": "EvidenceGated"
+    },
+    "policy.nullBudget": {
+      "Source": 0,
+      "Value": 0
+    },
+    "remediation.generatePreScripts": {
+      "Source": 0,
+      "Value": true
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Source": 0,
+      "Value": 100000
+    },
+    "remediation.sentinels.date": {
+      "Source": 0,
+      "Value": "1900-01-01"
+    },
+    "remediation.sentinels.numeric": {
+      "Source": 0,
+      "Value": "0"
+    },
+    "remediation.sentinels.text": {
+      "Source": 0,
+      "Value": ""
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Source": 0,
+      "Value": true
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Source": 0,
+      "Value": true
+    }
+  },
+  "UniqueIndexCount": 0,
+  "UniqueIndexRationales": {},
+  "UniqueIndexes": [],
+  "UniqueIndexesEnforcedCount": 0,
+  "UniqueIndexesRequireRemediationCount": 0
+}
+entry:suggestions/needs-remediation.sql
+-- ============================================================================
+-- OutSystems DDL Exporter - Needs Remediation Opportunities
+-- ============================================================================
+-- Generated: 2024-01-01 00:00:00 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 0
+--
+-- This script contains 0 needs remediation opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- ============================================================================
+
+-- No opportunities in this category.
+entry:suggestions/safe-to-apply.sql
+-- ============================================================================
+-- OutSystems DDL Exporter - Safe to Apply Opportunities
+-- ============================================================================
+-- Generated: 2024-01-01 00:00:00 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 0
+--
+-- This script contains 0 safe to apply opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- ============================================================================
+
+-- No opportunities in this category.

@@ -8,9 +8,9 @@
   "ForeignKeyCount": 0,
   "ForeignKeysCreatedCount": 0,
   "ColumnRationales": {
-    "MANDATORY": 2,
     "PK": 1,
-    "PROFILE_MISSING": 2
+    "PROFILE_MISSING": 2,
+    "MANDATORY": 2
   },
   "UniqueIndexRationales": {
     "PHYSICAL_UNIQUE_KEY": 2
@@ -27,9 +27,9 @@
       "ForeignKeyCount": 0,
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
-        "MANDATORY": 2,
         "PK": 1,
-        "PROFILE_MISSING": 2
+        "PROFILE_MISSING": 2,
+        "MANDATORY": 2
       },
       "UniqueIndexRationales": {
         "PHYSICAL_UNIQUE_KEY": 2
@@ -42,19 +42,7 @@
       "Value": "EvidenceGated",
       "Source": 0
     },
-    "policy.nullBudget": {
-      "Value": 0,
-      "Source": 0
-    },
-    "foreignKeys.enableCreation": {
-      "Value": true,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossSchema": {
-      "Value": false,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossCatalog": {
+    "mocking.useProfileMockFolder": {
       "Value": false,
       "Source": 0
     },
@@ -62,40 +50,52 @@
       "Value": false,
       "Source": 0
     },
-    "uniqueness.enforceSingleColumn": {
-      "Value": true,
-      "Source": 0
-    },
     "uniqueness.enforceMultiColumn": {
       "Value": true,
       "Source": 0
     },
-    "remediation.generatePreScripts": {
+    "foreignKeys.enableCreation": {
       "Value": true,
+      "Source": 0
+    },
+    "mocking.profileMockFolder": {
+      "Value": null,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
       "Source": 0
     },
     "remediation.maxRowsDefaultBackfill": {
       "Value": 100000,
       "Source": 0
     },
-    "remediation.sentinels.numeric": {
-      "Value": "0",
-      "Source": 0
-    },
     "remediation.sentinels.text": {
       "Value": "",
+      "Source": 0
+    },
+    "remediation.sentinels.numeric": {
+      "Value": "0",
       "Source": 0
     },
     "remediation.sentinels.date": {
       "Value": "1900-01-01",
       "Source": 0
     },
-    "mocking.useProfileMockFolder": {
+    "policy.nullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
       "Value": false,
       "Source": 0
     },
-    "mocking.profileMockFolder": {
-      "Value": null,
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
       "Source": 0
     }
   },
@@ -110,7 +110,8 @@
         "MANDATORY",
         "PK",
         "PROFILE_MISSING"
-      ]
+      ],
+      "Module": "Operator"
     },
     {
       "Schema": "dbo",
@@ -121,7 +122,8 @@
       "Rationales": [
         "MANDATORY",
         "PROFILE_MISSING"
-      ]
+      ],
+      "Module": "Operator"
     }
   ],
   "UniqueIndexes": [
@@ -133,7 +135,8 @@
       "RequiresRemediation": false,
       "Rationales": [
         "PHYSICAL_UNIQUE_KEY"
-      ]
+      ],
+      "Module": "Operator"
     },
     {
       "Schema": "dbo",
@@ -143,7 +146,8 @@
       "RequiresRemediation": false,
       "Rationales": [
         "PHYSICAL_UNIQUE_KEY"
-      ]
+      ],
+      "Module": "Operator"
     }
   ],
   "ForeignKeys": [],
@@ -159,16 +163,14 @@
         ]
       },
       {
-        "Module": "UserExtension_CS",
+        "Module": "Users",
         "Schema": "dbo",
-        "Table": "ossys_User",
-        "Predicates": [
-          "HasUniqueIndex"
-        ]
+        "Table": "OSUSR_U_USER",
+        "Predicates": []
       }
     ],
     "PredicateCounts": {
-      "HasUniqueIndex": 2
+      "HasUniqueIndex": 1
     }
   }
 }

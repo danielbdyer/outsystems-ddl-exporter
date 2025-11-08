@@ -339,7 +339,7 @@ public class BuildSsdtPipelineStepTests
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
         var seedState = (await staticSeedStep.ExecuteAsync(validatedState)).Value;
 
-        var step = new BuildSsdtTelemetryPackagingStep();
+        var step = new BuildSsdtTelemetryPackagingStep(TimeProvider.System);
         var result = await step.ExecuteAsync(seedState);
 
         Assert.True(result.IsSuccess);

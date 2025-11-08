@@ -1,8 +1,134 @@
 {
-  "Opportunities": [],
-  "DispositionCounts": {},
-  "TypeCounts": {},
-  "RiskCounts": {},
-  "GeneratedAtUtc": "2025-10-29T12:29:29.3815208+00:00",
-  "TotalCount": 0
+  "Opportunities": [
+    {
+      "Type": "UniqueIndex",
+      "Title": "UNIQUE",
+      "Summary": "Validated: Index is already UNIQUE and profiling confirms data integrity.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Unique index can be enforced automatically."
+      },
+      "Disposition": "ReadyToApply",
+      "Category": "Validation",
+      "Evidence": [
+        "Unique duplicates=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)"
+      ],
+      "Column": null,
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_U_USER"
+        },
+        "Index": {
+          "Value": "UX_USER_EMAIL"
+        }
+      },
+      "Schema": "dbo",
+      "Table": "OSUSR_U_USER",
+      "ConstraintName": "UX_USER_EMAIL",
+      "Statements": [
+        "CREATE UNIQUE NONCLUSTERED INDEX [UX_USER_EMAIL] ON [dbo].[OSUSR_U_USER] ([EMAIL] ASC);"
+      ],
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY",
+        "UNIQUE_NO_NULLS"
+      ],
+      "EvidenceSummary": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": false,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_U_USER"
+              },
+              "Column": {
+                "Value": "EMAIL"
+              }
+            },
+            "Module": {
+              "Value": "M"
+            },
+            "EntityLogicalName": {
+              "Value": "User"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_U_USER"
+            },
+            "AttributeLogicalName": {
+              "Value": "Email"
+            },
+            "ModuleName": "M",
+            "EntityName": "User",
+            "TableName": "OSUSR_U_USER",
+            "AttributeName": "Email"
+          },
+          "DataType": "Text",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 100,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 100,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": false,
+          "UniqueProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 0,
+            "Outcome": "Succeeded"
+          },
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_U_USER"
+            },
+            "Column": {
+              "Value": "EMAIL"
+            }
+          },
+          "Module": "M",
+          "Entity": "User",
+          "Attribute": "Email"
+        }
+      ],
+      "HasStatements": true,
+      "IsContradiction": false
+    }
+  ],
+  "DispositionCounts": {
+    "ReadyToApply": 1
+  },
+  "CategoryCounts": {
+    "Validation": 1
+  },
+  "TypeCounts": {
+    "UniqueIndex": 1
+  },
+  "RiskCounts": {
+    "Low": 1
+  },
+  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00",
+  "TotalCount": 1,
+  "ContradictionCount": 0,
+  "RecommendationCount": 0,
+  "ValidationCount": 1
 }

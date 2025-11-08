@@ -12,16 +12,13 @@
       "IncludesExtendedProperties": false
     },
     {
-      "Module": "UserExtension_CS",
+      "Module": "Users",
       "Schema": "dbo",
       "Table": "User",
-      "TableFile": "Modules/UserExtension_CS/dbo.User.sql",
-      "Indexes": [
-        "UIX_User_Email",
-        "UIX_User_Username"
-      ],
+      "TableFile": "Modules/Users/dbo.User.sql",
+      "Indexes": [],
       "ForeignKeys": [],
-      "IncludesExtendedProperties": true
+      "IncludesExtendedProperties": false
     }
   ],
   "Options": {
@@ -40,9 +37,9 @@
     "ForeignKeyCount": 0,
     "ForeignKeysCreatedCount": 0,
     "ColumnRationales": {
-      "MANDATORY": 2,
       "PK": 1,
-      "PROFILE_MISSING": 2
+      "PROFILE_MISSING": 2,
+      "MANDATORY": 2
     },
     "UniqueIndexRationales": {
       "PHYSICAL_UNIQUE_KEY": 2
@@ -59,9 +56,9 @@
         "ForeignKeyCount": 0,
         "ForeignKeysCreatedCount": 0,
         "ColumnRationales": {
-          "MANDATORY": 2,
           "PK": 1,
-          "PROFILE_MISSING": 2
+          "PROFILE_MISSING": 2,
+          "MANDATORY": 2
         },
         "UniqueIndexRationales": {
           "PHYSICAL_UNIQUE_KEY": 2
@@ -74,19 +71,7 @@
         "Value": "EvidenceGated",
         "Source": 0
       },
-      "policy.nullBudget": {
-        "Value": 0,
-        "Source": 0
-      },
-      "foreignKeys.enableCreation": {
-        "Value": true,
-        "Source": 0
-      },
-      "foreignKeys.allowCrossSchema": {
-        "Value": false,
-        "Source": 0
-      },
-      "foreignKeys.allowCrossCatalog": {
+      "mocking.useProfileMockFolder": {
         "Value": false,
         "Source": 0
       },
@@ -94,47 +79,59 @@
         "Value": false,
         "Source": 0
       },
-      "uniqueness.enforceSingleColumn": {
-        "Value": true,
-        "Source": 0
-      },
       "uniqueness.enforceMultiColumn": {
         "Value": true,
         "Source": 0
       },
-      "remediation.generatePreScripts": {
+      "foreignKeys.enableCreation": {
         "Value": true,
+        "Source": 0
+      },
+      "mocking.profileMockFolder": {
+        "Value": null,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossSchema": {
+        "Value": false,
         "Source": 0
       },
       "remediation.maxRowsDefaultBackfill": {
         "Value": 100000,
         "Source": 0
       },
-      "remediation.sentinels.numeric": {
-        "Value": "0",
-        "Source": 0
-      },
       "remediation.sentinels.text": {
         "Value": "",
+        "Source": 0
+      },
+      "remediation.sentinels.numeric": {
+        "Value": "0",
         "Source": 0
       },
       "remediation.sentinels.date": {
         "Value": "1900-01-01",
         "Source": 0
       },
-      "mocking.useProfileMockFolder": {
+      "policy.nullBudget": {
+        "Value": 0,
+        "Source": 0
+      },
+      "remediation.generatePreScripts": {
+        "Value": true,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossCatalog": {
         "Value": false,
         "Source": 0
       },
-      "mocking.profileMockFolder": {
-        "Value": null,
+      "uniqueness.enforceSingleColumn": {
+        "Value": true,
         "Source": 0
       }
     }
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "b7bebd7b42cbf3b8dd7bef7bb5ed313f4ea7c4cf9ae5d36a850d4dcd60dc4f06"
+    "Hash": "0bd2084435001cc8c51c0795cdd796460e6869069174c746b9d43d59b59d7f3f"
   },
   "PreRemediation": [],
   "Coverage": {
@@ -149,8 +146,8 @@
       "Percentage": 100
     },
     "Constraints": {
-      "Emitted": 5,
-      "Total": 5,
+      "Emitted": 3,
+      "Total": 3,
       "Percentage": 100
     }
   },
@@ -165,16 +162,14 @@
         ]
       },
       {
-        "Module": "UserExtension_CS",
+        "Module": "Users",
         "Schema": "dbo",
-        "Table": "ossys_User",
-        "Predicates": [
-          "HasUniqueIndex"
-        ]
+        "Table": "OSUSR_U_USER",
+        "Predicates": []
       }
     ],
     "PredicateCounts": {
-      "HasUniqueIndex": 2
+      "HasUniqueIndex": 1
     }
   },
   "Unsupported": []

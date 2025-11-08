@@ -12,6 +12,12 @@ namespace Osm.Pipeline.Orchestration;
 public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<StaticSeedsGenerated, TelemetryPackaged>
 {
     private const string PackageFileName = "pipeline-telemetry.zip";
+    private readonly TimeProvider _timeProvider;
+
+    public BuildSsdtTelemetryPackagingStep(TimeProvider? timeProvider = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
 
     public Task<Result<TelemetryPackaged>> ExecuteAsync(
         StaticSeedsGenerated state,
@@ -68,7 +74,11 @@ public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<StaticSeeds
 
                 var relativeEntry = GetRelativePath(normalizedOutput, artifact.Path);
                 packagedEntries.Add(relativeEntry);
-                archive.CreateEntryFromFile(artifact.Path, relativeEntry, CompressionLevel.Optimal);
+                var entry = archive.CreateEntry(relativeEntry, CompressionLevel.Optimal);
+                entry.LastWriteTime = _timeProvider.GetUtcNow();
+                using var entryStream = entry.Open();
+                using var sourceStream = File.OpenRead(artifact.Path);
+                sourceStream.CopyTo(entryStream);
             }
         }
 

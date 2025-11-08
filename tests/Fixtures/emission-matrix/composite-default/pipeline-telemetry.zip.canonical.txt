@@ -1,0 +1,439 @@
+entry:manifest.json
+{
+  "Coverage": {
+    "Columns": {
+      "Emitted": 7,
+      "Percentage": 100,
+      "Total": 7
+    },
+    "Constraints": {
+      "Emitted": 3,
+      "Percentage": 100,
+      "Total": 3
+    },
+    "Tables": {
+      "Emitted": 2,
+      "Percentage": 100,
+      "Total": 2
+    }
+  },
+  "Emission": {
+    "Algorithm": "SHA256",
+    "Hash": "9c20b44a776fca98a0ba36e3986e49551425d1bdca9bac31ba73de9ac1280688"
+  },
+  "Options": {
+    "EmitBareTableOnly": false,
+    "IncludePlatformAutoIndexes": false,
+    "ModuleParallelism": 1,
+    "SanitizeModuleNames": true
+  },
+  "PolicySummary": {
+    "ColumnCount": 4,
+    "ColumnRationales": {
+      "COMPOSITE_UNIQUE_NO_NULLS": 2,
+      "DATA_NO_NULLS": 3,
+      "MANDATORY": 3,
+      "PHYSICAL_NOT_NULL": 1,
+      "PK": 1
+    },
+    "ForeignKeyCount": 0,
+    "ForeignKeyRationales": {},
+    "ForeignKeysCreatedCount": 0,
+    "ModuleRollups": {
+      "M": {
+        "ColumnCount": 4,
+        "ColumnRationales": {
+          "COMPOSITE_UNIQUE_NO_NULLS": 2,
+          "DATA_NO_NULLS": 3,
+          "MANDATORY": 3,
+          "PHYSICAL_NOT_NULL": 1,
+          "PK": 1
+        },
+        "ForeignKeyCount": 0,
+        "ForeignKeyRationales": {},
+        "ForeignKeysCreatedCount": 0,
+        "RemediationColumnCount": 0,
+        "TightenedColumnCount": 3,
+        "UniqueIndexCount": 1,
+        "UniqueIndexRationales": {
+          "COMPOSITE_UNIQUE_NO_NULLS": 1
+        },
+        "UniqueIndexesEnforcedCount": 1,
+        "UniqueIndexesRequireRemediationCount": 0
+      }
+    },
+    "RemediationColumnCount": 0,
+    "TightenedColumnCount": 3,
+    "TogglePrecedence": {
+      "foreignKeys.allowCrossCatalog": {
+        "Source": 0,
+        "Value": false
+      },
+      "foreignKeys.allowCrossSchema": {
+        "Source": 0,
+        "Value": false
+      },
+      "foreignKeys.enableCreation": {
+        "Source": 0,
+        "Value": true
+      },
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+        "Source": 0,
+        "Value": false
+      },
+      "mocking.profileMockFolder": {
+        "Source": 0,
+        "Value": null
+      },
+      "mocking.useProfileMockFolder": {
+        "Source": 0,
+        "Value": false
+      },
+      "policy.mode": {
+        "Source": 0,
+        "Value": "EvidenceGated"
+      },
+      "policy.nullBudget": {
+        "Source": 0,
+        "Value": 0
+      },
+      "remediation.generatePreScripts": {
+        "Source": 0,
+        "Value": true
+      },
+      "remediation.maxRowsDefaultBackfill": {
+        "Source": 0,
+        "Value": 100000
+      },
+      "remediation.sentinels.date": {
+        "Source": 0,
+        "Value": "1900-01-01"
+      },
+      "remediation.sentinels.numeric": {
+        "Source": 0,
+        "Value": "0"
+      },
+      "remediation.sentinels.text": {
+        "Source": 0,
+        "Value": ""
+      },
+      "uniqueness.enforceMultiColumn": {
+        "Source": 0,
+        "Value": true
+      },
+      "uniqueness.enforceSingleColumn": {
+        "Source": 0,
+        "Value": true
+      }
+    },
+    "UniqueIndexCount": 1,
+    "UniqueIndexRationales": {
+      "COMPOSITE_UNIQUE_NO_NULLS": 1
+    },
+    "UniqueIndexesEnforcedCount": 1,
+    "UniqueIndexesRequireRemediationCount": 0
+  },
+  "PreRemediation": [],
+  "PredicateCoverage": {
+    "PredicateCounts": {
+      "HasCompositeUniqueIndex": 1,
+      "HasDefaultConstraint": 1,
+      "HasUniqueIndex": 1
+    },
+    "Tables": [
+      {
+        "Module": "M",
+        "Predicates": [
+          "HasCompositeUniqueIndex",
+          "HasDefaultConstraint",
+          "HasUniqueIndex"
+        ],
+        "Schema": "dbo",
+        "Table": "OSUSR_A_ORDERALLOCATION"
+      },
+      {
+        "Module": "Users",
+        "Predicates": [],
+        "Schema": "dbo",
+        "Table": "OSUSR_U_USER"
+      }
+    ]
+  },
+  "Tables": [
+    {
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false,
+      "Indexes": [
+        "UIX_OrderAllocation_CountryId_DocumentId"
+      ],
+      "Module": "M",
+      "Schema": "dbo",
+      "Table": "OrderAllocation",
+      "TableFile": "Modules/M/dbo.OrderAllocation.sql"
+    },
+    {
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": false,
+      "Indexes": [],
+      "Module": "Users",
+      "Schema": "dbo",
+      "Table": "User",
+      "TableFile": "Modules/Users/dbo.User.sql"
+    }
+  ],
+  "Unsupported": []
+}
+entry:policy-decisions.json
+{
+  "ColumnCount": 4,
+  "ColumnRationales": {
+    "COMPOSITE_UNIQUE_NO_NULLS": 2,
+    "DATA_NO_NULLS": 3,
+    "MANDATORY": 3,
+    "PHYSICAL_NOT_NULL": 1,
+    "PK": 1
+  },
+  "Columns": [
+    {
+      "Column": "COUNTRYID",
+      "MakeNotNull": true,
+      "Module": "M",
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS",
+        "DATA_NO_NULLS",
+        "MANDATORY"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION"
+    },
+    {
+      "Column": "DOCUMENTID",
+      "MakeNotNull": true,
+      "Module": "M",
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS",
+        "DATA_NO_NULLS",
+        "MANDATORY"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION"
+    },
+    {
+      "Column": "ID",
+      "MakeNotNull": true,
+      "Module": "M",
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION"
+    },
+    {
+      "Column": "QTY",
+      "MakeNotNull": false,
+      "Module": "M",
+      "Rationales": [],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION"
+    }
+  ],
+  "Diagnostics": [],
+  "ForeignKeyCount": 0,
+  "ForeignKeyRationales": {},
+  "ForeignKeys": [],
+  "ForeignKeysCreatedCount": 0,
+  "ModuleRollups": {
+    "M": {
+      "ColumnCount": 4,
+      "ColumnRationales": {
+        "COMPOSITE_UNIQUE_NO_NULLS": 2,
+        "DATA_NO_NULLS": 3,
+        "MANDATORY": 3,
+        "PHYSICAL_NOT_NULL": 1,
+        "PK": 1
+      },
+      "ForeignKeyCount": 0,
+      "ForeignKeyRationales": {},
+      "ForeignKeysCreatedCount": 0,
+      "RemediationColumnCount": 0,
+      "TightenedColumnCount": 3,
+      "UniqueIndexCount": 1,
+      "UniqueIndexRationales": {
+        "COMPOSITE_UNIQUE_NO_NULLS": 1
+      },
+      "UniqueIndexesEnforcedCount": 1,
+      "UniqueIndexesRequireRemediationCount": 0
+    }
+  },
+  "PredicateCoverage": {
+    "PredicateCounts": {
+      "HasCompositeUniqueIndex": 1,
+      "HasDefaultConstraint": 1,
+      "HasUniqueIndex": 1
+    },
+    "Tables": [
+      {
+        "Module": "M",
+        "Predicates": [
+          "HasCompositeUniqueIndex",
+          "HasDefaultConstraint",
+          "HasUniqueIndex"
+        ],
+        "Schema": "dbo",
+        "Table": "OSUSR_A_ORDERALLOCATION"
+      },
+      {
+        "Module": "Users",
+        "Predicates": [],
+        "Schema": "dbo",
+        "Table": "OSUSR_U_USER"
+      }
+    ]
+  },
+  "RemediationColumnCount": 0,
+  "TightenedColumnCount": 3,
+  "TogglePrecedence": {
+    "foreignKeys.allowCrossCatalog": {
+      "Source": 0,
+      "Value": false
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Source": 0,
+      "Value": false
+    },
+    "foreignKeys.enableCreation": {
+      "Source": 0,
+      "Value": true
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Source": 0,
+      "Value": false
+    },
+    "mocking.profileMockFolder": {
+      "Source": 0,
+      "Value": null
+    },
+    "mocking.useProfileMockFolder": {
+      "Source": 0,
+      "Value": false
+    },
+    "policy.mode": {
+      "Source": 0,
+      "Value": "EvidenceGated"
+    },
+    "policy.nullBudget": {
+      "Source": 0,
+      "Value": 0
+    },
+    "remediation.generatePreScripts": {
+      "Source": 0,
+      "Value": true
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Source": 0,
+      "Value": 100000
+    },
+    "remediation.sentinels.date": {
+      "Source": 0,
+      "Value": "1900-01-01"
+    },
+    "remediation.sentinels.numeric": {
+      "Source": 0,
+      "Value": "0"
+    },
+    "remediation.sentinels.text": {
+      "Source": 0,
+      "Value": ""
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Source": 0,
+      "Value": true
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Source": 0,
+      "Value": true
+    }
+  },
+  "UniqueIndexCount": 1,
+  "UniqueIndexRationales": {
+    "COMPOSITE_UNIQUE_NO_NULLS": 1
+  },
+  "UniqueIndexes": [
+    {
+      "EnforceUnique": true,
+      "Index": "UX_ORDERALLOC_COUNTRY_DOCUMENT",
+      "Module": "M",
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS"
+      ],
+      "RequiresRemediation": false,
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION"
+    }
+  ],
+  "UniqueIndexesEnforcedCount": 1,
+  "UniqueIndexesRequireRemediationCount": 0
+}
+entry:suggestions/needs-remediation.sql
+-- ============================================================================
+-- OutSystems DDL Exporter - Needs Remediation Opportunities
+-- ============================================================================
+-- Generated: 2024-01-01 00:00:00 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 1
+--   Validations: 1 (Existing constraints confirmed by profiling)
+--
+-- This script contains 0 needs remediation opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- ============================================================================
+
+-- No opportunities in this category.
+entry:suggestions/safe-to-apply.sql
+-- ============================================================================
+-- OutSystems DDL Exporter - Safe to Apply Opportunities
+-- ============================================================================
+-- Generated: 2024-01-01 00:00:00 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 1
+--   Validations: 1 (Existing constraints confirmed by profiling)
+--
+-- This script contains 1 safe to apply opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- ============================================================================
+
+-- ========== VALIDATION ==========
+
+-- VALIDATIONS - INFORMATIONAL
+--
+-- These opportunities represent EXISTING constraints that profiling has validated.
+-- The database already has these constraints in place, and the data conforms to them.
+-- Examples include:
+--   • Columns already marked as NOT NULL that have no null values
+--   • Existing unique indexes with no duplicate values
+--   • Foreign key constraints with no orphaned references
+--
+-- ACTION: No action needed. This is confirmation that your database and model are aligned.
+-- ---------- UniqueIndex ----------
+
+-- UNIQUE INDEX VALIDATIONS
+-- Why this matters: Confirms that existing unique constraints are working correctly.
+-- What to do: No action needed - this validates your unique constraints are effective.
+-- UniqueIndex dbo.OSUSR_A_ORDERALLOCATION (UX_ORDERALLOC_COUNTRY_DOCUMENT) Category=Validation Risk=Low
+-- Summary: Validated: Index is already UNIQUE and profiling confirms data integrity.
+-- Rationale: COMPOSITE_UNIQUE_NO_NULLS
+-- Evidence: Composite duplicates=False
+CREATE UNIQUE NONCLUSTERED INDEX [UX_ORDERALLOC_COUNTRY_DOCUMENT] ON [dbo].[OSUSR_A_ORDERALLOCATION] ([COUNTRYID] ASC, [DOCUMENTID] ASC);
+GO

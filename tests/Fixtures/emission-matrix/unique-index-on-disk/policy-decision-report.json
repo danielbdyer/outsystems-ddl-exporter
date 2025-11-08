@@ -1,0 +1,254 @@
+{
+  "Columns": [
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_OP_OPERATORPROFILE"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "MANDATORY",
+        "PK",
+        "PROFILE_MISSING"
+      ]
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_OP_OPERATORPROFILE"
+        },
+        "Column": {
+          "Value": "OPERATORCODE"
+        }
+      },
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "MANDATORY",
+        "PROFILE_MISSING"
+      ]
+    }
+  ],
+  "UniqueIndexes": [
+    {
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_OP_OPERATORPROFILE"
+        },
+        "Index": {
+          "Value": "PK_OperatorProfile_Id"
+        }
+      },
+      "EnforceUnique": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY"
+      ]
+    },
+    {
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_OP_OPERATORPROFILE"
+        },
+        "Index": {
+          "Value": "UIX_OPERATORPROFILE_OPERATORCODE"
+        }
+      },
+      "EnforceUnique": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY"
+      ]
+    }
+  ],
+  "ForeignKeys": [],
+  "ColumnRationaleCounts": {
+    "PK": 1,
+    "PROFILE_MISSING": 2,
+    "MANDATORY": 2
+  },
+  "UniqueIndexRationaleCounts": {
+    "PHYSICAL_UNIQUE_KEY": 2
+  },
+  "ForeignKeyRationaleCounts": {},
+  "Diagnostics": [],
+  "ModuleRollups": {
+    "Operator": {
+      "ColumnCount": 2,
+      "TightenedColumnCount": 2,
+      "RemediationColumnCount": 0,
+      "UniqueIndexCount": 2,
+      "UniqueIndexesEnforcedCount": 2,
+      "UniqueIndexesRequireRemediationCount": 0,
+      "ForeignKeyCount": 0,
+      "ForeignKeysCreatedCount": 0,
+      "ColumnRationales": {
+        "PK": 1,
+        "PROFILE_MISSING": 2,
+        "MANDATORY": 2
+      },
+      "UniqueIndexRationales": {
+        "PHYSICAL_UNIQUE_KEY": 2
+      },
+      "ForeignKeyRationales": {}
+    }
+  },
+  "TogglePrecedence": {
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
+    },
+    "mocking.useProfileMockFolder": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "mocking.profileMockFolder": {
+      "Value": null,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "remediation.sentinels.text": {
+      "Value": "",
+      "Source": 0
+    },
+    "remediation.sentinels.numeric": {
+      "Value": "0",
+      "Source": 0
+    },
+    "remediation.sentinels.date": {
+      "Value": "1900-01-01",
+      "Source": 0
+    },
+    "policy.nullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    }
+  },
+  "ColumnModules": {
+    "dbo.OSUSR_OP_OPERATORPROFILE.ID": "Operator",
+    "dbo.OSUSR_OP_OPERATORPROFILE.OPERATORCODE": "Operator"
+  },
+  "IndexModules": {
+    "dbo.OSUSR_OP_OPERATORPROFILE.UIX_OPERATORPROFILE_OPERATORCODE": "Operator",
+    "dbo.OSUSR_OP_OPERATORPROFILE.PK_OperatorProfile_Id": "Operator"
+  },
+  "Toggles": {
+    "Mode": {
+      "Value": 1,
+      "Source": 0
+    },
+    "NullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "ForeignKeyCreationEnabled": {
+      "Value": true,
+      "Source": 0
+    },
+    "ForeignKeyCrossSchemaAllowed": {
+      "Value": false,
+      "Source": 0
+    },
+    "ForeignKeyCrossCatalogAllowed": {
+      "Value": false,
+      "Source": 0
+    },
+    "ForeignKeyTreatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "SingleColumnUniqueEnforced": {
+      "Value": true,
+      "Source": 0
+    },
+    "MultiColumnUniqueEnforced": {
+      "Value": true,
+      "Source": 0
+    },
+    "RemediationGeneratePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "RemediationMaxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "RemediationSentinelNumeric": {
+      "Value": "0",
+      "Source": 0
+    },
+    "RemediationSentinelText": {
+      "Value": "",
+      "Source": 0
+    },
+    "RemediationSentinelDate": {
+      "Value": "1900-01-01",
+      "Source": 0
+    },
+    "MockingUseProfileMockFolder": {
+      "Value": false,
+      "Source": 0
+    },
+    "MockingProfileMockFolder": {
+      "Value": null,
+      "Source": 0
+    }
+  },
+  "ColumnCount": 2,
+  "TightenedColumnCount": 2,
+  "RemediationColumnCount": 0,
+  "UniqueIndexCount": 2,
+  "UniqueIndexesEnforcedCount": 2,
+  "UniqueIndexesRequireRemediationCount": 0,
+  "ForeignKeyCount": 0,
+  "ForeignKeysCreatedCount": 0,
+  "ModuleCount": 1
+}

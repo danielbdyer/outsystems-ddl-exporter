@@ -120,7 +120,7 @@ public sealed class SsdtMatrixTests
     {
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var evidenceCacheStep = new BuildSsdtEvidenceCacheStep(new EvidenceCacheCoordinator(new EvidenceCacheService()));
-        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer(TestTimeProvider));
         var emissionStep = new BuildSsdtEmissionStep(
             new SmoModelFactory(),
             new SsdtEmitter(),
@@ -129,10 +129,10 @@ public sealed class SsdtMatrixTests
             new OpportunityLogWriter());
         var sqlValidationStep = new BuildSsdtSqlValidationStep(new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
-        var telemetryPackagingStep = new BuildSsdtTelemetryPackagingStep();
+        var telemetryPackagingStep = new BuildSsdtTelemetryPackagingStep(TestTimeProvider);
 
         return new BuildSsdtPipeline(
-            TimeProvider.System,
+            TestTimeProvider,
             bootstrapStep,
             evidenceCacheStep,
             policyStep,
@@ -141,6 +141,8 @@ public sealed class SsdtMatrixTests
             staticSeedStep,
             telemetryPackagingStep);
     }
+
+    private static readonly TimeProvider TestTimeProvider = new FixedTimeProvider(new DateTimeOffset(2024, 01, 01, 0, 0, 0, TimeSpan.Zero));
 
     private static PipelineBootstrapper CreatePipelineBootstrapper()
     {
@@ -188,4 +190,16 @@ public sealed class SsdtMatrixTests
         [property: JsonPropertyName("module")] string Module,
         [property: JsonPropertyName("schema")] string Schema,
         [property: JsonPropertyName("table")] string Table);
+
+    private sealed class FixedTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset _utcNow;
+
+        public FixedTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+    }
 }

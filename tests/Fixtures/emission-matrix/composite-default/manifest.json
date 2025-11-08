@@ -12,16 +12,13 @@
       "IncludesExtendedProperties": false
     },
     {
-      "Module": "UserExtension_CS",
+      "Module": "Users",
       "Schema": "dbo",
       "Table": "User",
-      "TableFile": "Modules/UserExtension_CS/dbo.User.sql",
-      "Indexes": [
-        "UIX_User_Email",
-        "UIX_User_Username"
-      ],
+      "TableFile": "Modules/Users/dbo.User.sql",
+      "Indexes": [],
       "ForeignKeys": [],
-      "IncludesExtendedProperties": true
+      "IncludesExtendedProperties": false
     }
   ],
   "Options": {
@@ -40,11 +37,11 @@
     "ForeignKeyCount": 0,
     "ForeignKeysCreatedCount": 0,
     "ColumnRationales": {
-      "MANDATORY": 3,
       "COMPOSITE_UNIQUE_NO_NULLS": 2,
+      "MANDATORY": 3,
       "DATA_NO_NULLS": 3,
-      "PHYSICAL_NOT_NULL": 1,
-      "PK": 1
+      "PK": 1,
+      "PHYSICAL_NOT_NULL": 1
     },
     "UniqueIndexRationales": {
       "COMPOSITE_UNIQUE_NO_NULLS": 1
@@ -61,11 +58,11 @@
         "ForeignKeyCount": 0,
         "ForeignKeysCreatedCount": 0,
         "ColumnRationales": {
-          "MANDATORY": 3,
           "COMPOSITE_UNIQUE_NO_NULLS": 2,
+          "MANDATORY": 3,
           "DATA_NO_NULLS": 3,
-          "PHYSICAL_NOT_NULL": 1,
-          "PK": 1
+          "PK": 1,
+          "PHYSICAL_NOT_NULL": 1
         },
         "UniqueIndexRationales": {
           "COMPOSITE_UNIQUE_NO_NULLS": 1
@@ -74,12 +71,32 @@
       }
     },
     "TogglePrecedence": {
-      "policy.mode": {
-        "Value": "EvidenceGated",
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+        "Value": false,
         "Source": 0
       },
-      "policy.nullBudget": {
-        "Value": 0,
+      "mocking.useProfileMockFolder": {
+        "Value": false,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossCatalog": {
+        "Value": false,
+        "Source": 0
+      },
+      "uniqueness.enforceSingleColumn": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.generatePreScripts": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.sentinels.date": {
+        "Value": "1900-01-01",
+        "Source": 0
+      },
+      "remediation.sentinels.text": {
+        "Value": "",
         "Source": 0
       },
       "foreignKeys.enableCreation": {
@@ -90,55 +107,35 @@
         "Value": false,
         "Source": 0
       },
-      "foreignKeys.allowCrossCatalog": {
-        "Value": false,
-        "Source": 0
-      },
-      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
-        "Value": false,
-        "Source": 0
-      },
-      "uniqueness.enforceSingleColumn": {
-        "Value": true,
-        "Source": 0
-      },
       "uniqueness.enforceMultiColumn": {
         "Value": true,
         "Source": 0
       },
-      "remediation.generatePreScripts": {
-        "Value": true,
+      "policy.mode": {
+        "Value": "EvidenceGated",
         "Source": 0
       },
-      "remediation.maxRowsDefaultBackfill": {
-        "Value": 100000,
+      "policy.nullBudget": {
+        "Value": 0,
+        "Source": 0
+      },
+      "mocking.profileMockFolder": {
+        "Value": null,
         "Source": 0
       },
       "remediation.sentinels.numeric": {
         "Value": "0",
         "Source": 0
       },
-      "remediation.sentinels.text": {
-        "Value": "",
-        "Source": 0
-      },
-      "remediation.sentinels.date": {
-        "Value": "1900-01-01",
-        "Source": 0
-      },
-      "mocking.useProfileMockFolder": {
-        "Value": false,
-        "Source": 0
-      },
-      "mocking.profileMockFolder": {
-        "Value": null,
+      "remediation.maxRowsDefaultBackfill": {
+        "Value": 100000,
         "Source": 0
       }
     }
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "5e2f3bfa4e5eb24963980a6c1a7cd787faf819967953bc6634daf131d1445226"
+    "Hash": "9c20b44a776fca98a0ba36e3986e49551425d1bdca9bac31ba73de9ac1280688"
   },
   "PreRemediation": [],
   "Coverage": {
@@ -153,8 +150,8 @@
       "Percentage": 100
     },
     "Constraints": {
-      "Emitted": 5,
-      "Total": 5,
+      "Emitted": 3,
+      "Total": 3,
       "Percentage": 100
     }
   },
@@ -171,18 +168,16 @@
         ]
       },
       {
-        "Module": "UserExtension_CS",
+        "Module": "Users",
         "Schema": "dbo",
-        "Table": "ossys_User",
-        "Predicates": [
-          "HasUniqueIndex"
-        ]
+        "Table": "OSUSR_U_USER",
+        "Predicates": []
       }
     ],
     "PredicateCounts": {
       "HasCompositeUniqueIndex": 1,
       "HasDefaultConstraint": 1,
-      "HasUniqueIndex": 2
+      "HasUniqueIndex": 1
     }
   },
   "Unsupported": []

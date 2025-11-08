@@ -19,16 +19,13 @@
       "IncludesExtendedProperties": false
     },
     {
-      "Module": "UserExtension_CS",
+      "Module": "Users",
       "Schema": "dbo",
       "Table": "User",
-      "TableFile": "Modules/UserExtension_CS/dbo.User.sql",
-      "Indexes": [
-        "UIX_User_Email",
-        "UIX_User_Username"
-      ],
+      "TableFile": "Modules/Users/dbo.User.sql",
+      "Indexes": [],
       "ForeignKeys": [],
-      "IncludesExtendedProperties": true
+      "IncludesExtendedProperties": false
     }
   ],
   "Options": {
@@ -47,17 +44,17 @@
     "ForeignKeyCount": 1,
     "ForeignKeysCreatedCount": 0,
     "ColumnRationales": {
+      "MANDATORY": 2,
+      "DELETE_RULE_IGNORE": 1,
+      "DATA_NO_NULLS": 2,
       "PK": 2,
       "PHYSICAL_NOT_NULL": 2,
-      "DATA_NO_NULLS": 2,
-      "DATA_HAS_ORPHANS": 1,
-      "DELETE_RULE_IGNORE": 1,
-      "MANDATORY": 2
+      "DATA_HAS_ORPHANS": 1
     },
     "UniqueIndexRationales": {},
     "ForeignKeyRationales": {
-      "DATA_HAS_ORPHANS": 1,
-      "DELETE_RULE_IGNORE": 1
+      "DELETE_RULE_IGNORE": 1,
+      "DATA_HAS_ORPHANS": 1
     },
     "ModuleRollups": {
       "M": {
@@ -70,27 +67,47 @@
         "ForeignKeyCount": 1,
         "ForeignKeysCreatedCount": 0,
         "ColumnRationales": {
+          "MANDATORY": 2,
+          "DELETE_RULE_IGNORE": 1,
+          "DATA_NO_NULLS": 2,
           "PK": 2,
           "PHYSICAL_NOT_NULL": 2,
-          "DATA_NO_NULLS": 2,
-          "DATA_HAS_ORPHANS": 1,
-          "DELETE_RULE_IGNORE": 1,
-          "MANDATORY": 2
+          "DATA_HAS_ORPHANS": 1
         },
         "UniqueIndexRationales": {},
         "ForeignKeyRationales": {
-          "DATA_HAS_ORPHANS": 1,
-          "DELETE_RULE_IGNORE": 1
+          "DELETE_RULE_IGNORE": 1,
+          "DATA_HAS_ORPHANS": 1
         }
       }
     },
     "TogglePrecedence": {
-      "policy.mode": {
-        "Value": "EvidenceGated",
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+        "Value": false,
         "Source": 0
       },
-      "policy.nullBudget": {
-        "Value": 0,
+      "mocking.useProfileMockFolder": {
+        "Value": false,
+        "Source": 0
+      },
+      "foreignKeys.allowCrossCatalog": {
+        "Value": false,
+        "Source": 0
+      },
+      "uniqueness.enforceSingleColumn": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.generatePreScripts": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.sentinels.date": {
+        "Value": "1900-01-01",
+        "Source": 0
+      },
+      "remediation.sentinels.text": {
+        "Value": "",
         "Source": 0
       },
       "foreignKeys.enableCreation": {
@@ -101,55 +118,35 @@
         "Value": false,
         "Source": 0
       },
-      "foreignKeys.allowCrossCatalog": {
-        "Value": false,
-        "Source": 0
-      },
-      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
-        "Value": false,
-        "Source": 0
-      },
-      "uniqueness.enforceSingleColumn": {
-        "Value": true,
-        "Source": 0
-      },
       "uniqueness.enforceMultiColumn": {
         "Value": true,
         "Source": 0
       },
-      "remediation.generatePreScripts": {
-        "Value": true,
+      "policy.mode": {
+        "Value": "EvidenceGated",
         "Source": 0
       },
-      "remediation.maxRowsDefaultBackfill": {
-        "Value": 100000,
+      "policy.nullBudget": {
+        "Value": 0,
+        "Source": 0
+      },
+      "mocking.profileMockFolder": {
+        "Value": null,
         "Source": 0
       },
       "remediation.sentinels.numeric": {
         "Value": "0",
         "Source": 0
       },
-      "remediation.sentinels.text": {
-        "Value": "",
-        "Source": 0
-      },
-      "remediation.sentinels.date": {
-        "Value": "1900-01-01",
-        "Source": 0
-      },
-      "mocking.useProfileMockFolder": {
-        "Value": false,
-        "Source": 0
-      },
-      "mocking.profileMockFolder": {
-        "Value": null,
+      "remediation.maxRowsDefaultBackfill": {
+        "Value": 100000,
         "Source": 0
       }
     }
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "8d75f26369ddc857cb0e8b72fe9942478cbb66dbe8fd0c29d539f931b66b3150"
+    "Hash": "1d87f623e667bed761544965a87441b198e3278cd0e4429b19ec4b346a380812"
   },
   "PreRemediation": [],
   "Coverage": {
@@ -164,8 +161,8 @@
       "Percentage": 100
     },
     "Constraints": {
-      "Emitted": 5,
-      "Total": 5,
+      "Emitted": 3,
+      "Total": 3,
       "Percentage": 100
     }
   },
@@ -187,18 +184,15 @@
         ]
       },
       {
-        "Module": "UserExtension_CS",
+        "Module": "Users",
         "Schema": "dbo",
-        "Table": "ossys_User",
-        "Predicates": [
-          "HasUniqueIndex"
-        ]
+        "Table": "OSUSR_U_USER",
+        "Predicates": []
       }
     ],
     "PredicateCounts": {
       "HasLogicalForeignKey": 1,
-      "HasLogicalForeignKeyWithoutDbConstraint": 1,
-      "HasUniqueIndex": 1
+      "HasLogicalForeignKeyWithoutDbConstraint": 1
     }
   },
   "Unsupported": []

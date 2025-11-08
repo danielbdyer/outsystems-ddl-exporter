@@ -18,6 +18,13 @@ public interface ITighteningAnalyzer
 
 public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 {
+    private readonly TimeProvider _timeProvider;
+
+    public TighteningOpportunitiesAnalyzer(TimeProvider? timeProvider = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
     public OpportunitiesReport Analyze(OsmModel model, ProfileSnapshot profile, PolicyDecisionSet decisions)
     {
         if (model is null)
@@ -36,7 +43,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         }
 
         var context = OpportunityAnalysisContext.Create(model, profile);
-        var accumulator = new OpportunityAccumulator();
+        var accumulator = new OpportunityAccumulator(_timeProvider);
 
         foreach (var opportunity in AnalyzeNullability(decisions.Nullability.Values, context))
         {
@@ -663,6 +670,12 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         private readonly Dictionary<OpportunityCategory, int> _categoryCounts = new();
         private readonly Dictionary<OpportunityType, int> _typeCounts = new();
         private readonly Dictionary<RiskLevel, int> _riskCounts = new();
+        private readonly TimeProvider _timeProvider;
+
+        public OpportunityAccumulator(TimeProvider timeProvider)
+        {
+            _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        }
 
         public void Record(Opportunity opportunity)
         {
@@ -675,13 +688,22 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 
         public OpportunitiesReport BuildReport()
         {
+            var ordered = _opportunities
+                .ToImmutable()
+                .OrderBy(opportunity => opportunity.Category)
+                .ThenBy(opportunity => opportunity.Type)
+                .ThenBy(opportunity => opportunity.Schema, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(opportunity => opportunity.Table, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(opportunity => opportunity.ConstraintName, StringComparer.OrdinalIgnoreCase)
+                .ToImmutableArray();
+
             return new OpportunitiesReport(
-                _opportunities.ToImmutable(),
+                ordered,
                 _dispositionCounts.ToImmutableDictionary(),
                 _categoryCounts.ToImmutableDictionary(),
                 _typeCounts.ToImmutableDictionary(),
                 _riskCounts.ToImmutableDictionary(),
-                DateTimeOffset.UtcNow);
+                _timeProvider.GetUtcNow());
         }
     }
 

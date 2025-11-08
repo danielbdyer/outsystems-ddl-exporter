@@ -1,8 +1,190 @@
 {
-  "Opportunities": [],
-  "DispositionCounts": {},
-  "TypeCounts": {},
-  "RiskCounts": {},
-  "GeneratedAtUtc": "2025-10-29T12:31:12.2247542+00:00",
-  "TotalCount": 0
+  "Opportunities": [
+    {
+      "Type": "UniqueIndex",
+      "Title": "UNIQUE",
+      "Summary": "Validated: Index is already UNIQUE and profiling confirms data integrity.",
+      "Risk": {
+        "Level": "Low",
+        "Label": "Low",
+        "Description": "Unique index can be enforced automatically."
+      },
+      "Disposition": "ReadyToApply",
+      "Category": "Validation",
+      "Evidence": [
+        "Composite duplicates=False"
+      ],
+      "Column": null,
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Index": {
+          "Value": "UX_ORDERALLOC_COUNTRY_DOCUMENT"
+        }
+      },
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "ConstraintName": "UX_ORDERALLOC_COUNTRY_DOCUMENT",
+      "Statements": [
+        "CREATE UNIQUE NONCLUSTERED INDEX [UX_ORDERALLOC_COUNTRY_DOCUMENT] ON [dbo].[OSUSR_A_ORDERALLOCATION] ([COUNTRYID] ASC, [DOCUMENTID] ASC);"
+      ],
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS"
+      ],
+      "EvidenceSummary": {
+        "RequiresRemediation": false,
+        "EvidenceAvailable": true,
+        "DataClean": true,
+        "HasDuplicates": false,
+        "HasOrphans": null
+      },
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_A_ORDERALLOCATION"
+              },
+              "Column": {
+                "Value": "COUNTRYID"
+              }
+            },
+            "Module": {
+              "Value": "M"
+            },
+            "EntityLogicalName": {
+              "Value": "OrderAllocation"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_A_ORDERALLOCATION"
+            },
+            "AttributeLogicalName": {
+              "Value": "CountryId"
+            },
+            "ModuleName": "M",
+            "EntityName": "OrderAllocation",
+            "TableName": "OSUSR_A_ORDERALLOCATION",
+            "AttributeName": "CountryId"
+          },
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 1200,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 1200,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_A_ORDERALLOCATION"
+            },
+            "Column": {
+              "Value": "COUNTRYID"
+            }
+          },
+          "Module": "M",
+          "Entity": "OrderAllocation",
+          "Attribute": "CountryId"
+        },
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_A_ORDERALLOCATION"
+              },
+              "Column": {
+                "Value": "DOCUMENTID"
+              }
+            },
+            "Module": {
+              "Value": "M"
+            },
+            "EntityLogicalName": {
+              "Value": "OrderAllocation"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_A_ORDERALLOCATION"
+            },
+            "AttributeLogicalName": {
+              "Value": "DocumentId"
+            },
+            "ModuleName": "M",
+            "EntityName": "OrderAllocation",
+            "TableName": "OSUSR_A_ORDERALLOCATION",
+            "AttributeName": "DocumentId"
+          },
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 1200,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 1200,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_A_ORDERALLOCATION"
+            },
+            "Column": {
+              "Value": "DOCUMENTID"
+            }
+          },
+          "Module": "M",
+          "Entity": "OrderAllocation",
+          "Attribute": "DocumentId"
+        }
+      ],
+      "HasStatements": true,
+      "IsContradiction": false
+    }
+  ],
+  "DispositionCounts": {
+    "ReadyToApply": 1
+  },
+  "CategoryCounts": {
+    "Validation": 1
+  },
+  "TypeCounts": {
+    "UniqueIndex": 1
+  },
+  "RiskCounts": {
+    "Low": 1
+  },
+  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00",
+  "TotalCount": 1,
+  "ContradictionCount": 0,
+  "RecommendationCount": 0,
+  "ValidationCount": 1
 }
