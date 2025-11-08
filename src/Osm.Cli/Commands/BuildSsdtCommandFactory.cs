@@ -69,6 +69,7 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
+        command.AddGlobalOption(_globalOptions.Verbosity);
         CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
         CommandOptionBuilder.AddCacheOptions(command, _cacheOptionBinder);
         CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
@@ -121,6 +122,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
     {
         var applicationResult = payload.ApplicationResult;
         var pipelineResult = applicationResult.PipelineResult;
+        var verbosity = context.ParseResult.GetValueForOption(_globalOptions.Verbosity);
+        var isVerbose = verbosity == CliVerbosity.Verbose;
 
         if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
         {
@@ -137,8 +140,11 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
 
         if (IsSqlProfiler(applicationResult.ProfilerProvider))
         {
-            CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
-            CommandConsole.EmitMultiEnvironmentReport(context.Console, pipelineResult.MultiEnvironmentReport);
+            if (isVerbose)
+            {
+                CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
+                CommandConsole.EmitMultiEnvironmentReport(context.Console, pipelineResult.MultiEnvironmentReport);
+            }
         }
 
         var pipelineWarnings = pipelineResult.Warnings
@@ -153,7 +159,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             })
             .ToImmutableArray();
 
-        if ((pipelineWarnings.Length > 0 || actionableProfilingInsights.Length > 0)
+        if (isVerbose
+            && (pipelineWarnings.Length > 0 || actionableProfilingInsights.Length > 0)
             && pipelineResult.ExecutionLog.Entries.Count > 0)
         {
             CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
@@ -164,13 +171,13 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             CommandConsole.EmitPipelineWarnings(context.Console, pipelineWarnings);
         }
 
-        if (actionableProfilingInsights.Length > 0)
+        if (isVerbose && actionableProfilingInsights.Length > 0)
         {
             CommandConsole.EmitProfilingInsights(context.Console, actionableProfilingInsights);
         }
 
         // Tightening diagnostics
-        EmitTighteningDiagnostics(context, pipelineResult.DecisionReport.Diagnostics);
+        EmitTighteningDiagnostics(context, pipelineResult.DecisionReport.Diagnostics, isVerbose);
 
         // Evidence cache notification
         if (pipelineResult.EvidenceCache is { } cacheResult)
@@ -179,24 +186,30 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         }
 
         // SSDT emission summary
-        EmitSsdtEmissionSummary(context, applicationResult, pipelineResult);
+        EmitSsdtEmissionSummary(context, applicationResult, pipelineResult, isVerbose);
 
         // SQL validation
         EmitSqlValidationSummary(context, pipelineResult);
 
-        CommandConsole.EmitModuleRollups(
-            context.Console,
-            pipelineResult.ModuleManifestRollups,
-            pipelineResult.DecisionReport.ModuleRollups);
-
-        CommandConsole.EmitTogglePrecedence(context.Console, pipelineResult.DecisionReport.TogglePrecedence);
-
-        foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(pipelineResult.DecisionReport))
+        if (isVerbose)
         {
-            CommandConsole.WriteLine(context.Console, summary);
+            CommandConsole.EmitModuleRollups(
+                context.Console,
+                pipelineResult.ModuleManifestRollups,
+                pipelineResult.DecisionReport.ModuleRollups);
+
+            CommandConsole.EmitTogglePrecedence(context.Console, pipelineResult.DecisionReport.TogglePrecedence);
+
+            foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(pipelineResult.DecisionReport))
+            {
+                CommandConsole.WriteLine(context.Console, summary);
+            }
         }
 
-        CommandConsole.EmitContradictionDetails(context.Console, pipelineResult.Opportunities);
+        if (isVerbose)
+        {
+            CommandConsole.EmitContradictionDetails(context.Console, pipelineResult.Opportunities);
+        }
 
         CommandConsole.WriteLine(context.Console, string.Empty);
         CommandConsole.WriteLine(context.Console, "Tightening Artifacts:");
@@ -235,7 +248,10 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         }
     }
 
-    private static void EmitTighteningDiagnostics(InvocationContext context, ImmutableArray<TighteningDiagnostic> diagnostics)
+    private static void EmitTighteningDiagnostics(
+        InvocationContext context,
+        ImmutableArray<TighteningDiagnostic> diagnostics,
+        bool includeTemplate)
     {
         if (diagnostics.IsDefaultOrEmpty || diagnostics.Length == 0)
         {
@@ -254,10 +270,17 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             }
         }
 
-        CommandConsole.EmitNamingOverrideTemplate(context.Console, diagnostics);
+        if (includeTemplate)
+        {
+            CommandConsole.EmitNamingOverrideTemplate(context.Console, diagnostics);
+        }
     }
 
-    private static void EmitSsdtEmissionSummary(InvocationContext context, BuildSsdtApplicationResult applicationResult, BuildSsdtPipelineResult pipelineResult)
+    private static void EmitSsdtEmissionSummary(
+        InvocationContext context,
+        BuildSsdtApplicationResult applicationResult,
+        BuildSsdtPipelineResult pipelineResult,
+        bool includeDetails)
     {
         CommandConsole.WriteLine(context.Console, string.Empty);
         CommandConsole.WriteLine(context.Console, "SSDT Emission Summary:");
@@ -298,7 +321,10 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         CommandConsole.WriteLine(context.Console, $"  Unique indexes: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount} confirmed UNIQUE");
         CommandConsole.WriteLine(context.Console, $"  Foreign keys: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount} safe to create");
 
-        CommandConsole.EmitTighteningStatisticsDetails(context.Console, pipelineResult.DecisionReport);
+        if (includeDetails)
+        {
+            CommandConsole.EmitTighteningStatisticsDetails(context.Console, pipelineResult.DecisionReport);
+        }
     }
 
     private static void EmitSqlValidationSummary(InvocationContext context, BuildSsdtPipelineResult pipelineResult)

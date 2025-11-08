@@ -31,6 +31,9 @@ public class CliIntegrationTests
         var buildResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --static-data {staticDataPath} --max-degree-of-parallelism 2 --out {output.Path}");
         AssertExitCode(buildResult, 0);
 
+        Assert.DoesNotContain("Pipeline execution log:", buildResult.StandardOutput);
+        Assert.DoesNotContain("Module summary:", buildResult.StandardOutput);
+
         var manifestPath = Path.Combine(output.Path, "manifest.json");
         Assert.True(File.Exists(manifestPath));
 
@@ -88,6 +91,25 @@ public class CliIntegrationTests
             Assert.Equal(0, root.GetProperty("modelDifferences").GetArrayLength());
             Assert.Equal(0, root.GetProperty("ssdtDifferences").GetArrayLength());
         }
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task BuildSsdt_with_verbose_verbosity_emits_diagnostics()
+    {
+        var repoRoot = FixtureFile.RepositoryRoot;
+        var cliProject = Path.Combine(repoRoot, "src", "Osm.Cli", "Osm.Cli.csproj");
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        var staticDataPath = FixtureFile.GetPath(Path.Combine("static-data", "static-entities.edge-case.json"));
+
+        using var output = new TempDirectory();
+        var buildResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --static-data {staticDataPath} --max-degree-of-parallelism 2 --out {output.Path} --verbosity verbose");
+
+        AssertExitCode(buildResult, 0);
+        Assert.Contains("Pipeline execution log:", buildResult.StandardOutput);
+        Assert.Contains("Module summary:", buildResult.StandardOutput);
+        Assert.Contains("Tightening toggles:", buildResult.StandardOutput);
     }
 
     [Fact]

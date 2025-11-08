@@ -125,16 +125,67 @@ public class BuildSsdtCommandFactoryTests
         Assert.Contains("Foreign keys: 1/1 safe to create", output);
         Assert.Contains("SQL Validation:", output);
         Assert.Contains("Files: 1 validated, 0 with errors", output);
-        Assert.Contains("Module summary:", output);
-        Assert.Contains("Sales:", output);
-        Assert.Contains("Tables: 1, Indexes: 0, Foreign Keys: 1", output);
-        Assert.Contains("Columns: 2 total, 1 confirmed NOT NULL, 1 need remediation", output);
-        Assert.Contains("Tightening toggles:", output);
-        Assert.Contains("policy.mode = EvidenceGated (Configuration)", output);
         Assert.Contains("Tightening Artifacts:", output);
         Assert.Contains("Decision log: decision.log", output);
 
+        Assert.DoesNotContain("Module summary:", output);
+        Assert.DoesNotContain("Tightening toggles:", output);
+
         Assert.Equal(string.Empty, console.Error.ToString());
+    }
+
+    [Fact]
+    public async Task Invoke_WithVerboseVerbosity_EmitsDiagnosticSections()
+    {
+        var configurationService = new FakeConfigurationService();
+        var logBuilder = new PipelineExecutionLogBuilder();
+        logBuilder.Record("Extract", "Completed successfully");
+
+        var application = new FakeBuildApplicationService
+        {
+            ProfilingInsights = ImmutableArray.Create(
+                new ProfilingInsight(
+                    ProfilingInsightSeverity.Warning,
+                    ProfilingInsightCategory.Nullability,
+                    "Column contains null values during profiling.",
+                    new ProfilingInsightCoordinate(
+                        new SchemaName("dbo"),
+                        new TableName("Orders"),
+                        new ColumnName("CustomerId"),
+                        null,
+                        null,
+                        null))),
+            ExecutionLog = logBuilder.Build(),
+            PipelineWarnings = ImmutableArray.Create("Profiling detected issues.")
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<BuildSsdtCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var exitCode = await parser.InvokeAsync("build-ssdt --model model.json --profile profile.json --out output --verbosity verbose", console);
+
+        Assert.Equal(0, exitCode);
+
+        var output = console.Out.ToString() ?? string.Empty;
+        Assert.Contains("Pipeline execution log:", output);
+        Assert.Contains("Profiling insights:", output);
+        Assert.Contains("Module summary:", output);
+        Assert.Contains("Tightening toggles:", output);
     }
 
     [Fact]
@@ -384,6 +435,10 @@ public class BuildSsdtCommandFactoryTests
 
         public ImmutableArray<ProfilingInsight> ProfilingInsights { get; init; } = ImmutableArray<ProfilingInsight>.Empty;
 
+        public ImmutableArray<string> PipelineWarnings { get; init; } = ImmutableArray<string>.Empty;
+
+        public PipelineExecutionLog ExecutionLog { get; init; } = PipelineExecutionLog.Empty;
+
         public SsdtSqlValidationSummary? SqlValidationSummaryOverride { get; init; }
 
         public Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
@@ -511,8 +566,8 @@ public class BuildSsdtCommandFactoryTests
                 ImmutableArray<string>.Empty,
                 sqlValidation,
                 null,
-                PipelineExecutionLog.Empty,
-                ImmutableArray<string>.Empty,
+                ExecutionLog,
+                PipelineWarnings,
                 MultiEnvironmentProfileReport.Empty);
 
             return new BuildSsdtApplicationResult(
