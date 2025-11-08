@@ -212,6 +212,7 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
 
         var summary = BuildNullabilitySummary(decision);
         var risk = ChangeRiskClassifier.ForNotNull(decision);
+        var disposition = ResolveOpportunityDisposition(decision);
         var opportunity = Opportunity.Create(
             OpportunityType.Nullability,
             "NOT NULL",
@@ -219,13 +220,39 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
             risk,
             decision.Rationales,
             column: context.Column,
-            disposition: decision.RequiresRemediation ? OpportunityDisposition.NeedsRemediation : OpportunityDisposition.ReadyToApply);
+            disposition: disposition);
 
         builder.AddOpportunity(opportunity);
     }
 
+    private static readonly ISet<string> ActionableBlockerRationales = new HashSet<string>(StringComparer.Ordinal)
+    {
+        TighteningRationales.ProfileMissing,
+        TighteningRationales.NullBudgetEpsilon,
+        TighteningRationales.DataHasNulls,
+        TighteningRationales.DataHasOrphans
+    };
+
     private static bool ShouldCreateOpportunity(NullabilityDecision decision)
-        => decision.RequiresRemediation || !decision.MakeNotNull;
+        => decision.RequiresRemediation || (!decision.MakeNotNull && HasActionableBlocker(decision));
+
+    private static OpportunityDisposition ResolveOpportunityDisposition(NullabilityDecision decision)
+        => decision.RequiresRemediation || (!decision.MakeNotNull && HasActionableBlocker(decision))
+            ? OpportunityDisposition.NeedsRemediation
+            : OpportunityDisposition.ReadyToApply;
+
+    private static bool HasActionableBlocker(NullabilityDecision decision)
+    {
+        foreach (var rationale in decision.Rationales)
+        {
+            if (ActionableBlockerRationales.Contains(rationale))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static string BuildNullabilitySummary(NullabilityDecision decision)
     {

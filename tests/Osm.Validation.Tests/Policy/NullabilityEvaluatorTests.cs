@@ -1,9 +1,11 @@
 using System.Collections.Generic;
+using System.Collections.Generic;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 using Xunit;
 
 namespace Osm.Validation.Tests.Policy;
@@ -201,5 +203,105 @@ public sealed class NullabilityEvaluatorTests
         Assert.True(decision.RequiresRemediation);
         Assert.Contains(TighteningRationales.UniqueNoNulls, decision.Rationales);
         Assert.Contains(TighteningRationales.RemediateBeforeTighten, decision.Rationales);
+    }
+
+    [Fact]
+    public void Analyze_Should_Create_Remediation_Opportunity_When_Data_Has_Nulls()
+    {
+        var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated, nullBudget: 0.05);
+
+        var coordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_TEST_SAMPLE"), new ColumnName("MANDATORY"));
+        var mandatoryAttribute = TighteningEvaluatorTestHelper.CreateAttribute("Mandatory", "MANDATORY", isMandatory: true);
+        var identifier = TighteningEvaluatorTestHelper.CreateAttribute("Id", "ID", isIdentifier: true);
+        var entity = TighteningEvaluatorTestHelper.CreateEntity("Sample", "SampleEntity", "OSUSR_TEST_SAMPLE", new[] { identifier, mandatoryAttribute });
+        var module = TighteningEvaluatorTestHelper.CreateModule("Sample", entity);
+        var model = TighteningEvaluatorTestHelper.CreateModel(module);
+
+        var foreignKeyTargets = TighteningEvaluatorTestHelper.CreateForeignKeyTargetIndex(
+            model,
+            new Dictionary<EntityName, EntityModel> { [entity.LogicalName] = entity });
+
+        var columnProfile = TighteningEvaluatorTestHelper.CreateColumnProfile(coordinate, isNullablePhysical: true, rowCount: 100, nullCount: 12);
+
+        var evaluator = new NullabilityEvaluator(
+            options,
+            new Dictionary<ColumnCoordinate, ColumnProfile> { [coordinate] = columnProfile },
+            new Dictionary<ColumnCoordinate, UniqueCandidateProfile>(),
+            new Dictionary<ColumnCoordinate, ForeignKeyReality>(),
+            foreignKeyTargets,
+            new HashSet<ColumnCoordinate>(),
+            new HashSet<ColumnCoordinate>(),
+            new HashSet<ColumnCoordinate>(),
+            new HashSet<ColumnCoordinate>());
+
+        var identity = ColumnIdentity.From(entity, mandatoryAttribute);
+        var builder = new ColumnAnalysisBuilder(identity);
+        var context = new EntityContext(
+            entity,
+            mandatoryAttribute,
+            identity,
+            columnProfile,
+            null,
+            null,
+            null,
+            SingleColumnUniqueClean: false,
+            SingleColumnUniqueHasDuplicates: false,
+            CompositeUniqueClean: false,
+            CompositeUniqueHasDuplicates: false);
+
+        evaluator.Analyze(context, builder);
+
+        var opportunity = Assert.Single(builder.Opportunities);
+        Assert.Equal(OpportunityDisposition.NeedsRemediation, opportunity.Disposition);
+        Assert.Equal("NOT NULL was not applied. Profiling detected NULL values that contradict the logical mandatory flag.", opportunity.Summary);
+    }
+
+    [Fact]
+    public void Analyze_Should_Skip_Opportunity_For_Intentional_Nullability()
+    {
+        var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.EvidenceGated, nullBudget: 0.05);
+
+        var coordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_TEST_SAMPLE"), new ColumnName("OPTIONAL"));
+        var optionalAttribute = TighteningEvaluatorTestHelper.CreateAttribute("Optional", "OPTIONAL", isMandatory: false);
+        var identifier = TighteningEvaluatorTestHelper.CreateAttribute("Id", "ID", isIdentifier: true);
+        var entity = TighteningEvaluatorTestHelper.CreateEntity("Sample", "SampleEntity", "OSUSR_TEST_SAMPLE", new[] { identifier, optionalAttribute });
+        var module = TighteningEvaluatorTestHelper.CreateModule("Sample", entity);
+        var model = TighteningEvaluatorTestHelper.CreateModel(module);
+
+        var foreignKeyTargets = TighteningEvaluatorTestHelper.CreateForeignKeyTargetIndex(
+            model,
+            new Dictionary<EntityName, EntityModel> { [entity.LogicalName] = entity });
+
+        var columnProfile = TighteningEvaluatorTestHelper.CreateColumnProfile(coordinate, isNullablePhysical: true, rowCount: 100, nullCount: 0);
+
+        var evaluator = new NullabilityEvaluator(
+            options,
+            new Dictionary<ColumnCoordinate, ColumnProfile> { [coordinate] = columnProfile },
+            new Dictionary<ColumnCoordinate, UniqueCandidateProfile>(),
+            new Dictionary<ColumnCoordinate, ForeignKeyReality>(),
+            foreignKeyTargets,
+            new HashSet<ColumnCoordinate>(),
+            new HashSet<ColumnCoordinate>(),
+            new HashSet<ColumnCoordinate>(),
+            new HashSet<ColumnCoordinate>());
+
+        var identity = ColumnIdentity.From(entity, optionalAttribute);
+        var builder = new ColumnAnalysisBuilder(identity);
+        var context = new EntityContext(
+            entity,
+            optionalAttribute,
+            identity,
+            columnProfile,
+            null,
+            null,
+            null,
+            SingleColumnUniqueClean: false,
+            SingleColumnUniqueHasDuplicates: false,
+            CompositeUniqueClean: false,
+            CompositeUniqueHasDuplicates: false);
+
+        evaluator.Analyze(context, builder);
+
+        Assert.Empty(builder.Opportunities);
     }
 }

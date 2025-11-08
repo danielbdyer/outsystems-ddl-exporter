@@ -39,12 +39,8 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         var analyzer = new TighteningOpportunitiesAnalyzer();
         var report = analyzer.Analyze(model, snapshot, decisions);
 
-        Assert.Equal(1, report.TotalCount);
-        var opportunity = Assert.Single(report.Opportunities);
-        Assert.Equal(OpportunityType.Nullability, opportunity.Type);
-        Assert.Equal(OpportunityDisposition.ReadyToApply, opportunity.Disposition);
-        Assert.Equal(RiskLevel.Low, opportunity.Risk.Level);
-        Assert.Contains("ALTER TABLE", opportunity.Statements[0]);
+        Assert.Equal(0, report.TotalCount);
+        Assert.Empty(report.Opportunities);
     }
 
     [Fact]
