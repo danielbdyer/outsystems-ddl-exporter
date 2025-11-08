@@ -16,6 +16,7 @@ using Osm.Pipeline.Sql;
 using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using Opportunities = Osm.Validation.Tightening.Opportunities;
+using ValidationReport = Osm.Validation.Tightening.Validations.ValidationReport;
 using Xunit;
 
 namespace Osm.Pipeline.Tests;
@@ -122,16 +123,20 @@ public sealed class BuildSsdtApplicationServiceTests
             ImmutableDictionary<RiskLevel, int>.Empty,
             DateTimeOffset.UtcNow);
 
+        var validations = ValidationReport.Empty(DateTimeOffset.UtcNow);
+
         return new BuildSsdtPipelineResult(
             profileResult.Value,
             ImmutableArray<ProfilingInsight>.Empty,
             report,
             opportunities,
+            validations,
             manifest,
             ImmutableDictionary<string, ModuleManifestRollup>.Empty,
             ImmutableArray<PipelineInsight>.Empty,
             "decision.log",
             "opportunities.json",
+            "validations.json",
             "suggestions/safe-to-apply.sql",
             "-- safe script\nGO\n",
             "suggestions/needs-remediation.sql",

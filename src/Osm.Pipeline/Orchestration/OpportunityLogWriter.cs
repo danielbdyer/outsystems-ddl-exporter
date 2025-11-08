@@ -11,11 +11,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Validation.Tightening.Opportunities;
+using Osm.Validation.Tightening.Validations;
 
 namespace Osm.Pipeline.Orchestration;
 
 public sealed record OpportunityArtifacts(
     string ReportPath,
+    string ValidationsPath,
     string SafeScriptPath,
     string SafeScript,
     string RemediationScriptPath,
@@ -45,6 +47,7 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
     public async Task<Result<OpportunityArtifacts>> WriteAsync(
         string outputDirectory,
         OpportunitiesReport report,
+        ValidationReport validations,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
@@ -57,6 +60,11 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
             throw new ArgumentNullException(nameof(report));
         }
 
+        if (validations is null)
+        {
+            throw new ArgumentNullException(nameof(validations));
+        }
+
         try
         {
             _fileSystem.Directory.CreateDirectory(outputDirectory);
@@ -64,11 +72,16 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
             _fileSystem.Directory.CreateDirectory(suggestionsDirectory);
 
             var reportPath = _fileSystem.Path.Combine(outputDirectory, "opportunities.json");
+            var validationsPath = _fileSystem.Path.Combine(outputDirectory, "validations.json");
             var safePath = _fileSystem.Path.Combine(suggestionsDirectory, "safe-to-apply.sql");
             var remediationPath = _fileSystem.Path.Combine(suggestionsDirectory, "needs-remediation.sql");
 
             var json = JsonSerializer.Serialize(report, JsonOptions);
             await _fileSystem.File.WriteAllTextAsync(reportPath, json, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+
+            var validationsJson = JsonSerializer.Serialize(validations, JsonOptions);
+            await _fileSystem.File.WriteAllTextAsync(validationsPath, validationsJson, Utf8NoBom, cancellationToken)
+                .ConfigureAwait(false);
 
             var safeOpportunities = report.Opportunities.Where(o => o.Disposition == OpportunityDisposition.ReadyToApply).ToList();
             var safeScript = BuildSql(safeOpportunities, report, "Safe to Apply");
@@ -78,7 +91,7 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
             var remediationScript = BuildSql(remediationOpportunities, report, "Needs Remediation");
             await _fileSystem.File.WriteAllTextAsync(remediationPath, remediationScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
-            return Result<OpportunityArtifacts>.Success(new OpportunityArtifacts(reportPath, safePath, safeScript, remediationPath, remediationScript));
+            return Result<OpportunityArtifacts>.Success(new OpportunityArtifacts(reportPath, validationsPath, safePath, safeScript, remediationPath, remediationScript));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -109,11 +122,6 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
         if (report.RecommendationCount > 0)
         {
             builder.AppendLine($"--   Recommendations: {report.RecommendationCount} (New constraints that could be safely applied)");
-        }
-
-        if (report.ValidationCount > 0)
-        {
-            builder.AppendLine($"--   Validations: {report.ValidationCount} (Existing constraints confirmed by profiling)");
         }
 
         builder.AppendLine("--");

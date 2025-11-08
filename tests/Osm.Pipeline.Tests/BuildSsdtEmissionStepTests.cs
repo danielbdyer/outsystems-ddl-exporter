@@ -18,6 +18,7 @@ using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
+using Osm.Validation.Tightening.Validations;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
 using Tests.Support;
 using Xunit;
@@ -279,13 +280,16 @@ public sealed class BuildSsdtEmissionStepTests
             ImmutableDictionary<string, string>.Empty,
             TighteningToggleSnapshot.Create(TighteningOptions.Default));
 
+        var generatedAt = DateTimeOffset.UtcNow;
         var opportunities = new OpportunitiesReport(
             ImmutableArray<Opportunity>.Empty,
             ImmutableDictionary<OpportunityDisposition, int>.Empty,
             ImmutableDictionary<OpportunityCategory, int>.Empty,
             ImmutableDictionary<OpportunityType, int>.Empty,
             ImmutableDictionary<RiskLevel, int>.Empty,
-            DateTimeOffset.UtcNow);
+            generatedAt);
+
+        var validations = ValidationReport.Empty(generatedAt);
 
         return new DecisionsSynthesized(
             request,
@@ -295,6 +299,7 @@ public sealed class BuildSsdtEmissionStepTests
             decisions,
             report,
             opportunities,
+            validations,
             ImmutableArray<PipelineInsight>.Empty);
     }
 
@@ -521,6 +526,7 @@ public sealed class BuildSsdtEmissionStepTests
         public Task<Result<OpportunityArtifacts>> WriteAsync(
             string outputDirectory,
             OpportunitiesReport report,
+            ValidationReport validations,
             CancellationToken cancellationToken = default)
         {
             Invoked = true;

@@ -47,6 +47,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                 state.Decisions,
                 state.Report,
                 state.Opportunities,
+                state.Validations,
                 state.Insights,
                 state.Manifest,
                 state.DecisionLogPath,
@@ -169,11 +170,12 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
             state.Decisions,
             state.Report,
             state.Opportunities,
+            state.Validations,
             state.Insights,
-                state.Manifest,
-                state.DecisionLogPath,
-                state.OpportunityArtifacts,
-                state.SqlValidation,
+            state.Manifest,
+            state.DecisionLogPath,
+            state.OpportunityArtifacts,
+            state.SqlValidation,
                 seedPaths));
     }
 }

@@ -204,6 +204,7 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         CommandConsole.WriteLine(context.Console, "Tightening Artifacts:");
         CommandConsole.WriteLine(context.Console, $"  Decision log: {pipelineResult.DecisionLogPath}");
         CommandConsole.WriteLine(context.Console, $"  Opportunities report: {pipelineResult.OpportunitiesPath}");
+        CommandConsole.WriteLine(context.Console, $"  Validations report: {pipelineResult.ValidationsPath}");
 
         if (pipelineResult.Opportunities.ContradictionCount > 0)
         {
@@ -214,7 +215,7 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             CommandConsole.WriteLine(context.Console, $"  Needs remediation: {pipelineResult.RemediationScriptPath}");
         }
 
-        CommandConsole.WriteLine(context.Console, $"  Safe to apply ({pipelineResult.Opportunities.RecommendationCount + pipelineResult.Opportunities.ValidationCount} opportunities): {pipelineResult.SafeScriptPath}");
+        CommandConsole.WriteLine(context.Console, $"  Safe to apply ({pipelineResult.Opportunities.RecommendationCount} opportunities): {pipelineResult.SafeScriptPath}");
 
         if (!context.ParseResult.GetValueForOption(_openReportOption))
         {

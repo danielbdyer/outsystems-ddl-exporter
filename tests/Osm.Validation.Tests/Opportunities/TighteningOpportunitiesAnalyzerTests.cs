@@ -37,7 +37,8 @@ public sealed class TighteningOpportunitiesAnalyzerTests
             TighteningOptions.Default);
 
         var analyzer = new TighteningOpportunitiesAnalyzer();
-        var report = analyzer.Analyze(model, snapshot, decisions);
+        var findings = analyzer.Analyze(model, snapshot, decisions);
+        var report = findings.Opportunities;
 
         Assert.Equal(0, report.TotalCount);
         Assert.Empty(report.Opportunities);
@@ -84,7 +85,8 @@ public sealed class TighteningOpportunitiesAnalyzerTests
             TighteningOptions.Default);
 
         var analyzer = new TighteningOpportunitiesAnalyzer();
-        var report = analyzer.Analyze(model, snapshot, decisions);
+        var findings = analyzer.Analyze(model, snapshot, decisions);
+        var report = findings.Opportunities;
 
         Assert.Equal(1, report.TotalCount);
         var opportunity = Assert.Single(report.Opportunities);
@@ -154,7 +156,8 @@ public sealed class TighteningOpportunitiesAnalyzerTests
             TighteningOptions.Default);
 
         var analyzer = new TighteningOpportunitiesAnalyzer();
-        var report = analyzer.Analyze(model, snapshot, decisions);
+        var findings = analyzer.Analyze(model, snapshot, decisions);
+        var report = findings.Opportunities;
 
         var opportunity = Assert.Single(report.Opportunities);
         Assert.Equal(OpportunityType.UniqueIndex, opportunity.Type);
@@ -197,7 +200,8 @@ public sealed class TighteningOpportunitiesAnalyzerTests
             TighteningOptions.Default);
 
         var analyzer = new TighteningOpportunitiesAnalyzer();
-        var report = analyzer.Analyze(model, snapshot, decisions);
+        var findings = analyzer.Analyze(model, snapshot, decisions);
+        var report = findings.Opportunities;
 
         Assert.Equal(1, report.TotalCount);
         var opportunity = Assert.Single(report.Opportunities);
@@ -235,7 +239,8 @@ public sealed class TighteningOpportunitiesAnalyzerTests
 
         var analyzer = new TighteningOpportunitiesAnalyzer();
 
-        var report = analyzer.Analyze(model, snapshot, decisions);
+        var findings = analyzer.Analyze(model, snapshot, decisions);
+        var report = findings.Opportunities;
 
         Assert.Equal(0, report.TotalCount);
     }

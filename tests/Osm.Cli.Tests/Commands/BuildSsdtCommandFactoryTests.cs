@@ -26,6 +26,7 @@ using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+using ValidationReport = Osm.Validation.Tightening.Validations.ValidationReport;
 using Opportunity = Osm.Validation.Tightening.Opportunities.Opportunity;
 using OpportunityType = Osm.Validation.Tightening.Opportunities.OpportunityType;
 using OpportunityDisposition = Osm.Validation.Tightening.Opportunities.OpportunityDisposition;
@@ -502,6 +503,8 @@ public class BuildSsdtCommandFactoryTests
                 ImmutableDictionary<RiskLevel, int>.Empty,
                 DateTimeOffset.UnixEpoch);
 
+            var validations = ValidationReport.Empty(DateTimeOffset.UnixEpoch);
+
             var sqlValidation = SqlValidationSummaryOverride ?? SsdtSqlValidationSummary.Create(
                 manifest.Tables.Count,
                 Array.Empty<SsdtSqlValidationIssue>());
@@ -511,11 +514,13 @@ public class BuildSsdtCommandFactoryTests
                 ProfilingInsights,
                 report,
                 opportunities,
+                validations,
                 manifest,
                 ImmutableDictionary<string, ModuleManifestRollup>.Empty.Add("Sales", new ModuleManifestRollup(1, 0, 1)),
                 ImmutableArray<PipelineInsight>.Empty,
                 "decision.log",
                 "opportunities.json",
+                "validations.json",
                 "suggestions/safe-to-apply.sql",
                 string.Empty,
                 "suggestions/needs-remediation.sql",

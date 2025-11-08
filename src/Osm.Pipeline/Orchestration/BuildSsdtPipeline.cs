@@ -92,6 +92,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                 .WithPath("manifest", Path.Combine(request.OutputDirectory, "manifest.json"))
                 .WithPath("decisionLog", finalState.DecisionLogPath)
                 .WithPath("opportunities", finalState.OpportunityArtifacts.ReportPath)
+                .WithPath("validations", finalState.OpportunityArtifacts.ValidationsPath)
                 .WithValue(
                     "outputs.seedScripts",
                     finalState.StaticSeedScriptPaths.IsDefaultOrEmpty
@@ -112,11 +113,13 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.Bootstrap.Insights,
             finalState.Report,
             finalState.Opportunities,
+            finalState.Validations,
             finalState.Manifest,
             moduleManifestRollups,
             finalState.Insights,
             finalState.DecisionLogPath,
             finalState.OpportunityArtifacts.ReportPath,
+            finalState.OpportunityArtifacts.ValidationsPath,
             finalState.OpportunityArtifacts.SafeScriptPath,
             finalState.OpportunityArtifacts.SafeScript,
             finalState.OpportunityArtifacts.RemediationScriptPath,

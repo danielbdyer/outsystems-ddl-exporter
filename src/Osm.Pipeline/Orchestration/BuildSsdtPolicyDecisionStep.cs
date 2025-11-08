@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
+using Osm.Validation.Tightening.Validations;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -36,7 +37,7 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
 
         var decisions = _tighteningPolicy.Decide(model, profile, state.Request.Scope.TighteningOptions);
         var report = PolicyDecisionReporter.Create(decisions);
-        var opportunities = _analyzer.Analyze(model, profile, decisions);
+        var findings = _analyzer.Analyze(model, profile, decisions);
 
         state.Log.Record(
             "policy.decisions.synthesized",
@@ -49,7 +50,8 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
                 .WithCount("indexes.uniqueEnforced", report.UniqueIndexesEnforcedCount)
                 .WithCount("foreignKeys.total", report.ForeignKeyCount)
                 .WithCount("foreignKeys.created", report.ForeignKeysCreatedCount)
-                .WithCount("opportunities.total", opportunities.TotalCount)
+                .WithCount("opportunities.total", findings.Opportunities.TotalCount)
+                .WithCount("opportunities.validations", findings.Validations.TotalCount)
                 .WithCount("modules", report.ModuleCount)
                 .Build());
 
@@ -62,7 +64,8 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
             state.EvidenceCache,
             decisions,
             report,
-            opportunities,
+            findings.Opportunities,
+            findings.Validations,
             moduleInsights)));
     }
 

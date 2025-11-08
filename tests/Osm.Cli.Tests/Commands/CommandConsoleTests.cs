@@ -17,6 +17,7 @@ using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
+using Osm.Validation.Tightening.Validations;
 
 namespace Osm.Cli.Tests.Commands;
 
@@ -573,16 +574,20 @@ public class CommandConsoleTests
             ImmutableDictionary<RiskLevel, int>.Empty,
             DateTimeOffset.UnixEpoch);
 
+        var validations = ValidationReport.Empty(DateTimeOffset.UnixEpoch);
+
         var pipelineResult = new BuildSsdtPipelineResult(
             snapshot,
             ImmutableArray<ProfilingInsight>.Empty,
             decisionReport,
             opportunities,
+            validations,
             manifest,
             ImmutableDictionary<string, ModuleManifestRollup>.Empty,
             ImmutableArray<PipelineInsight>.Empty,
             "decision-log.json",
             "opportunities.json",
+            "validations.json",
             "safe.sql",
             string.Empty,
             "remediation.sql",
@@ -613,6 +618,7 @@ public class CommandConsoleTests
         Assert.Contains("Manifest: /tmp/output/manifest.json", output);
         Assert.Contains("Decision log: decision-log.json", output);
         Assert.Contains("Opportunities: opportunities.json", output);
+        Assert.Contains("Validations: validations.json", output);
         Assert.Contains("Safe script: safe.sql (3 ready)", output);
         Assert.Contains("Remediation script: remediation.sql (⚠️ 2 contradictions)", output);
         Assert.Contains("Tightening: Columns 1/2, Unique 1/1, Foreign Keys 1/1", output);

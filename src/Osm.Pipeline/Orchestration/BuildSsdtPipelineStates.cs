@@ -3,6 +3,7 @@ using Osm.Emission;
 using Osm.Pipeline.Evidence;
 using Osm.Validation.Tightening;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+using ValidationReport = Osm.Validation.Tightening.Validations.ValidationReport;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -31,6 +32,7 @@ public record DecisionsSynthesized(
     PolicyDecisionSet Decisions,
     PolicyDecisionReport Report,
     OpportunitiesReport Opportunities,
+    ValidationReport Validations,
     ImmutableArray<PipelineInsight> Insights)
     : EvidencePrepared(Request, Log, Bootstrap, EvidenceCache);
 
@@ -42,11 +44,12 @@ public record EmissionReady(
     PolicyDecisionSet Decisions,
     PolicyDecisionReport Report,
     OpportunitiesReport Opportunities,
+    ValidationReport Validations,
     ImmutableArray<PipelineInsight> Insights,
     SsdtManifest Manifest,
     string DecisionLogPath,
     OpportunityArtifacts OpportunityArtifacts)
-    : DecisionsSynthesized(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights);
+    : DecisionsSynthesized(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights);
 
 public record SqlValidated(
     BuildSsdtPipelineRequest Request,
@@ -56,12 +59,13 @@ public record SqlValidated(
     PolicyDecisionSet Decisions,
     PolicyDecisionReport Report,
     OpportunitiesReport Opportunities,
+    ValidationReport Validations,
     ImmutableArray<PipelineInsight> Insights,
     SsdtManifest Manifest,
     string DecisionLogPath,
     OpportunityArtifacts OpportunityArtifacts,
     SsdtSqlValidationSummary SqlValidation)
-    : EmissionReady(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights, Manifest, DecisionLogPath, OpportunityArtifacts);
+    : EmissionReady(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts);
 
 public record StaticSeedsGenerated(
     BuildSsdtPipelineRequest Request,
@@ -71,13 +75,14 @@ public record StaticSeedsGenerated(
     PolicyDecisionSet Decisions,
     PolicyDecisionReport Report,
     OpportunitiesReport Opportunities,
+    ValidationReport Validations,
     ImmutableArray<PipelineInsight> Insights,
     SsdtManifest Manifest,
     string DecisionLogPath,
     OpportunityArtifacts OpportunityArtifacts,
     SsdtSqlValidationSummary SqlValidation,
     ImmutableArray<string> StaticSeedScriptPaths)
-    : SqlValidated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation);
+    : SqlValidated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation);
 
 public record TelemetryPackaged(
     BuildSsdtPipelineRequest Request,
@@ -87,6 +92,7 @@ public record TelemetryPackaged(
     PolicyDecisionSet Decisions,
     PolicyDecisionReport Report,
     OpportunitiesReport Opportunities,
+    ValidationReport Validations,
     ImmutableArray<PipelineInsight> Insights,
     SsdtManifest Manifest,
     string DecisionLogPath,
@@ -94,4 +100,4 @@ public record TelemetryPackaged(
     SsdtSqlValidationSummary SqlValidation,
     ImmutableArray<string> StaticSeedScriptPaths,
     ImmutableArray<string> TelemetryPackagePaths)
-    : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation, StaticSeedScriptPaths);
+    : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation, StaticSeedScriptPaths);
