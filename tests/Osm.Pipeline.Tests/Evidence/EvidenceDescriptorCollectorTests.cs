@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Pipeline;
 using Osm.Pipeline.Evidence;
 
 namespace Osm.Pipeline.Tests.Evidence;
@@ -20,7 +21,8 @@ public sealed class EvidenceDescriptorCollectorTests
             ["/inputs/dmm"] = new MockFileData("SELECT 1;"),
         });
 
-        var collector = new EvidenceDescriptorCollector(fileSystem);
+        var canonicalizer = new ForwardSlashPathCanonicalizer();
+        var collector = new EvidenceDescriptorCollector(fileSystem, canonicalizer);
         var request = new EvidenceCacheRequest(
             RootDirectory: "/cache",
             Command: "build",
@@ -47,7 +49,7 @@ public sealed class EvidenceDescriptorCollectorTests
     public async Task CollectAsync_ShouldReturnFailure_WhenModelMissing()
     {
         var fileSystem = new MockFileSystem();
-        var collector = new EvidenceDescriptorCollector(fileSystem);
+        var collector = new EvidenceDescriptorCollector(fileSystem, new ForwardSlashPathCanonicalizer());
         var request = new EvidenceCacheRequest(
             RootDirectory: "/cache",
             Command: "build",

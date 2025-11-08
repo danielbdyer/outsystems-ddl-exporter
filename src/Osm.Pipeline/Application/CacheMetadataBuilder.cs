@@ -12,9 +12,16 @@ using Osm.Smo;
 
 namespace Osm.Pipeline.Application;
 
-internal static class CacheMetadataBuilder
+internal sealed class CacheMetadataBuilder
 {
-    public static IReadOnlyDictionary<string, string?> Build(
+    private readonly IPathCanonicalizer _pathCanonicalizer;
+
+    public CacheMetadataBuilder(IPathCanonicalizer pathCanonicalizer)
+    {
+        _pathCanonicalizer = pathCanonicalizer ?? throw new ArgumentNullException(nameof(pathCanonicalizer));
+    }
+
+    public IReadOnlyDictionary<string, string?> Build(
         TighteningOptions options,
         ModuleFilterOptions moduleFilter,
         CliConfiguration configuration,
@@ -65,39 +72,39 @@ internal static class CacheMetadataBuilder
 
         if (!string.IsNullOrWhiteSpace(options.Mocking.ProfileMockFolder))
         {
-            metadata["mocking.profileMockFolder"] = Path.GetFullPath(options.Mocking.ProfileMockFolder);
+            metadata["mocking.profileMockFolder"] = CanonicalizeFullPath(options.Mocking.ProfileMockFolder);
         }
 
         if (!string.IsNullOrWhiteSpace(resolvedModelPath))
         {
-            metadata["inputs.model"] = Path.GetFullPath(resolvedModelPath);
+            metadata["inputs.model"] = CanonicalizeFullPath(resolvedModelPath);
         }
         else if (!string.IsNullOrWhiteSpace(configuration.ModelPath))
         {
-            metadata["inputs.model"] = Path.GetFullPath(configuration.ModelPath);
+            metadata["inputs.model"] = CanonicalizeFullPath(configuration.ModelPath);
         }
 
         if (!string.IsNullOrWhiteSpace(resolvedProfilePath))
         {
-            metadata["inputs.profile"] = Path.GetFullPath(resolvedProfilePath);
+            metadata["inputs.profile"] = CanonicalizeFullPath(resolvedProfilePath);
         }
         else if (!string.IsNullOrWhiteSpace(configuration.ProfilePath))
         {
-            metadata["inputs.profile"] = Path.GetFullPath(configuration.ProfilePath);
+            metadata["inputs.profile"] = CanonicalizeFullPath(configuration.ProfilePath);
         }
 
         if (!string.IsNullOrWhiteSpace(resolvedDmmPath))
         {
-            metadata["inputs.dmm"] = Path.GetFullPath(resolvedDmmPath);
+            metadata["inputs.dmm"] = CanonicalizeFullPath(resolvedDmmPath);
         }
         else if (!string.IsNullOrWhiteSpace(configuration.DmmPath))
         {
-            metadata["inputs.dmm"] = Path.GetFullPath(configuration.DmmPath);
+            metadata["inputs.dmm"] = CanonicalizeFullPath(configuration.DmmPath);
         }
 
         if (!string.IsNullOrWhiteSpace(configuration.Cache.Root))
         {
-            metadata["cache.root"] = Path.GetFullPath(configuration.Cache.Root);
+            metadata["cache.root"] = CanonicalizeFullPath(configuration.Cache.Root);
         }
 
         if (configuration.Cache.Refresh.HasValue)
@@ -118,7 +125,7 @@ internal static class CacheMetadataBuilder
 
         if (!string.IsNullOrWhiteSpace(configuration.Profiler.MockFolder))
         {
-            metadata["profiler.mockFolder"] = Path.GetFullPath(configuration.Profiler.MockFolder);
+            metadata["profiler.mockFolder"] = CanonicalizeFullPath(configuration.Profiler.MockFolder);
         }
 
         if (!string.IsNullOrWhiteSpace(configuration.Sql.ConnectionString))
@@ -164,7 +171,7 @@ internal static class CacheMetadataBuilder
         if (!string.IsNullOrWhiteSpace(configuration.TypeMapping.Path))
         {
             var resolvedPath = Path.GetFullPath(configuration.TypeMapping.Path);
-            metadata["typeMapping.path"] = resolvedPath;
+            metadata["typeMapping.path"] = _pathCanonicalizer.Canonicalize(resolvedPath);
             metadata["typeMapping.hash"] = ComputeFileHash(resolvedPath);
         }
 
@@ -180,6 +187,9 @@ internal static class CacheMetadataBuilder
 
         return metadata;
     }
+
+    private string CanonicalizeFullPath(string path)
+        => _pathCanonicalizer.Canonicalize(Path.GetFullPath(path));
 
     private static string ComputeSha256(string value)
     {

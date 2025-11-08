@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Pipeline;
 using Osm.Pipeline.Evidence;
 
 namespace Osm.Pipeline.Tests.Evidence;
@@ -20,7 +21,14 @@ public sealed class CacheEntryCreatorTests
         var modelContent = "{\"model\":true}";
         fileSystem.AddFile(modelPath, new MockFileData(modelContent));
 
-        var descriptor = CreateDescriptor(EvidenceArtifactType.Model, modelPath, modelContent, ".json");
+        var canonicalizer = new ForwardSlashPathCanonicalizer();
+        var metadataBuilder = new CacheMetadataBuilder(canonicalizer);
+        var optionsFactory = new EvidenceCacheOptionsFactory(metadataBuilder, canonicalizer);
+        var descriptor = CreateDescriptor(
+            EvidenceArtifactType.Model,
+            canonicalizer.Canonicalize(modelPath),
+            modelContent,
+            ".json");
         var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["cache.ttlSeconds"] = "3600"
@@ -28,14 +36,16 @@ public sealed class CacheEntryCreatorTests
 
         var moduleSelection = new EvidenceCacheModuleSelection(true, true, 1, "hash", new[] { "Alpha" });
         var context = new CacheRequestContext(
-            "/cache",
-            cacheDirectory,
+            canonicalizer.Canonicalize("/cache"),
+            canonicalizer.Canonicalize(cacheDirectory),
             "ingest",
             "abcd",
             metadata,
             new[] { descriptor },
             moduleSelection,
-            Refresh: false);
+            Refresh: false,
+            metadataBuilder,
+            optionsFactory);
 
         var invalidationMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -43,8 +53,7 @@ public sealed class CacheEntryCreatorTests
         };
 
         var creationTimestamp = new DateTimeOffset(2024, 8, 7, 9, 0, 0, TimeSpan.Zero);
-        var writer = new EvidenceCacheWriter(fileSystem);
-        var metadataBuilder = new CacheMetadataBuilder();
+        var writer = new EvidenceCacheWriter(fileSystem, canonicalizer);
         var creator = new CacheEntryCreator(writer, () => creationTimestamp, metadataBuilder);
 
         var result = await creator.CreateAsync(
@@ -55,7 +64,7 @@ public sealed class CacheEntryCreatorTests
             invalidationMetadata,
             CancellationToken.None);
 
-        Assert.Equal(cacheDirectory, result.CacheDirectory);
+        Assert.Equal(canonicalizer.Canonicalize(cacheDirectory), result.CacheDirectory);
         Assert.Equal(creationTimestamp, result.Manifest.CreatedAtUtc);
         Assert.Equal(EvidenceCacheOutcome.Created, result.Evaluation.Outcome);
         Assert.Equal(EvidenceCacheInvalidationReason.ManifestMissing, result.Evaluation.Reason);

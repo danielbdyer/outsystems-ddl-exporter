@@ -106,6 +106,10 @@ internal static class PipelineRequestContextBuilder
 
         var cacheOverrides = request.CacheOptionsOverrides ?? new CacheOptionsOverrides(null, null);
 
+        var pathCanonicalizer = new ForwardSlashPathCanonicalizer();
+        var cacheMetadataBuilder = new CacheMetadataBuilder(pathCanonicalizer);
+        var cacheOptionsFactory = new EvidenceCacheOptionsFactory(cacheMetadataBuilder, pathCanonicalizer);
+
         var context = new PipelineRequestContext(
             configuration,
             request.ConfigurationContext.ConfigPath,
@@ -118,7 +122,9 @@ internal static class PipelineRequestContextBuilder
             cacheOverrides,
             request.SqlMetadataOutputPath,
             metadataLog,
-            flushMetadataAsync);
+            flushMetadataAsync,
+            cacheMetadataBuilder,
+            cacheOptionsFactory);
 
         return Result<PipelineRequestContext>.Success(context);
     }
@@ -231,14 +237,16 @@ internal sealed record PipelineRequestContext(
     CacheOptionsOverrides CacheOverrides,
     string? SqlMetadataOutputPath,
     SqlMetadataLog? SqlMetadataLog,
-    Func<CancellationToken, Task> FlushMetadataAsync)
+    Func<CancellationToken, Task> FlushMetadataAsync,
+    CacheMetadataBuilder MetadataBuilder,
+    EvidenceCacheOptionsFactory CacheOptionsFactory)
 {
     public EvidenceCachePipelineOptions? CreateCacheOptions(
         string command,
         string modelPath,
         string? profilePath,
         string? dmmPath)
-        => EvidenceCacheOptionsFactory.Create(
+        => CacheOptionsFactory.Create(
             command,
             Configuration,
             Tightening,
@@ -253,7 +261,7 @@ internal sealed record PipelineRequestContext(
         string? modelPath,
         string? profilePath,
         string? dmmPath)
-        => CacheMetadataBuilder.Build(
+        => MetadataBuilder.Build(
             Tightening,
             ModuleFilter,
             Configuration,

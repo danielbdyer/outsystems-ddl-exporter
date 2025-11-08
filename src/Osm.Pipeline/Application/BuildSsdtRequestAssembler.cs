@@ -9,6 +9,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Emission.Seeds;
+using Osm.Pipeline;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
@@ -57,7 +58,10 @@ public sealed class BuildSsdtRequestAssembler
         }
 
         var profilePath = profilePathResult.Value;
-        var cacheOptions = EvidenceCacheOptionsFactory.Create(
+        var pathCanonicalizer = new ForwardSlashPathCanonicalizer();
+        var metadataBuilder = new CacheMetadataBuilder(pathCanonicalizer);
+        var optionsFactory = new EvidenceCacheOptionsFactory(metadataBuilder, pathCanonicalizer);
+        var cacheOptions = optionsFactory.Create(
             "build-ssdt",
             context.Configuration,
             context.TighteningOptions,

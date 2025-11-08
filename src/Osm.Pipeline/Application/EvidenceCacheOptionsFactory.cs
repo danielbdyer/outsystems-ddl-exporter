@@ -5,9 +5,18 @@ using Osm.Pipeline.Orchestration;
 
 namespace Osm.Pipeline.Application;
 
-internal static class EvidenceCacheOptionsFactory
+internal sealed class EvidenceCacheOptionsFactory
 {
-    public static EvidenceCachePipelineOptions? Create(
+    private readonly CacheMetadataBuilder _metadataBuilder;
+    private readonly IPathCanonicalizer _pathCanonicalizer;
+
+    public EvidenceCacheOptionsFactory(CacheMetadataBuilder metadataBuilder, IPathCanonicalizer pathCanonicalizer)
+    {
+        _metadataBuilder = metadataBuilder ?? throw new ArgumentNullException(nameof(metadataBuilder));
+        _pathCanonicalizer = pathCanonicalizer ?? throw new ArgumentNullException(nameof(pathCanonicalizer));
+    }
+
+    public EvidenceCachePipelineOptions? Create(
         string command,
         CliConfiguration configuration,
         TighteningOptions tightening,
@@ -47,22 +56,28 @@ internal static class EvidenceCacheOptionsFactory
         }
 
         var refresh = overrides.Refresh ?? configuration.Cache.Refresh ?? false;
-        var metadata = CacheMetadataBuilder.Build(
+
+        var canonicalModelPath = _pathCanonicalizer.Canonicalize(modelPath);
+        var canonicalProfilePath = _pathCanonicalizer.CanonicalizeOrNull(profilePath);
+        var canonicalDmmPath = _pathCanonicalizer.CanonicalizeOrNull(dmmPath);
+        var canonicalConfigPath = _pathCanonicalizer.CanonicalizeOrNull(configPath);
+
+        var metadata = _metadataBuilder.Build(
             tightening,
             moduleFilter,
             configuration,
-            modelPath,
-            profilePath,
-            dmmPath);
+            canonicalModelPath,
+            canonicalProfilePath,
+            canonicalDmmPath);
 
         return new EvidenceCachePipelineOptions(
-            cacheRoot.Trim(),
+            _pathCanonicalizer.Canonicalize(cacheRoot),
             refresh,
-            command,
-            modelPath,
-            profilePath,
-            dmmPath,
-            configPath,
+            command.Trim(),
+            canonicalModelPath,
+            canonicalProfilePath,
+            canonicalDmmPath,
+            canonicalConfigPath,
             metadata);
     }
 }

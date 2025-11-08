@@ -4,6 +4,7 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Pipeline;
 using Osm.Pipeline.Evidence;
 
 namespace Osm.Pipeline.Tests.Evidence;
@@ -84,8 +85,9 @@ public sealed class CacheEntryEvaluatorTests
             ["moduleFilter.moduleCount"] = "1"
         };
 
-        var descriptorCollector = new EvidenceDescriptorCollector(fileSystem);
-        var normalizer = new CacheRequestNormalizer(fileSystem, descriptorCollector);
+        var canonicalizer = new ForwardSlashPathCanonicalizer();
+        var descriptorCollector = new EvidenceDescriptorCollector(fileSystem, canonicalizer);
+        var normalizer = new CacheRequestNormalizer(fileSystem, descriptorCollector, canonicalizer);
         var request = new EvidenceCacheRequest(
             context.NormalizedRootDirectory,
             context.Command,
@@ -119,8 +121,9 @@ public sealed class CacheEntryEvaluatorTests
         var modelPath = "/inputs/model.json";
         fileSystem.AddFile(modelPath, new MockFileData("{\"model\":true}"));
 
-        var descriptorCollector = new EvidenceDescriptorCollector(fileSystem);
-        var normalizer = new CacheRequestNormalizer(fileSystem, descriptorCollector);
+        var canonicalizer = new ForwardSlashPathCanonicalizer();
+        var descriptorCollector = new EvidenceDescriptorCollector(fileSystem, canonicalizer);
+        var normalizer = new CacheRequestNormalizer(fileSystem, descriptorCollector, canonicalizer);
         var request = new EvidenceCacheRequest(
             root,
             "ingest",
@@ -134,9 +137,9 @@ public sealed class CacheEntryEvaluatorTests
         var normalized = await normalizer.TryNormalizeAsync(request, CancellationToken.None);
         var context = normalized.Value;
 
-        var metadataBuilder = new CacheMetadataBuilder();
+        var metadataBuilder = new CacheMetadataBuilder(canonicalizer);
         var creator = new CacheEntryCreator(
-            new EvidenceCacheWriter(fileSystem),
+            new EvidenceCacheWriter(fileSystem, canonicalizer),
             () => new DateTimeOffset(2024, 8, 7, 10, 0, 0, TimeSpan.Zero),
             metadataBuilder);
 

@@ -12,10 +12,12 @@ namespace Osm.Pipeline.Evidence;
 internal sealed class EvidenceDescriptorCollector
 {
     private readonly IFileSystem _fileSystem;
+    private readonly IPathCanonicalizer _pathCanonicalizer;
 
-    public EvidenceDescriptorCollector(IFileSystem fileSystem)
+    public EvidenceDescriptorCollector(IFileSystem fileSystem, IPathCanonicalizer pathCanonicalizer)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+        _pathCanonicalizer = pathCanonicalizer ?? throw new ArgumentNullException(nameof(pathCanonicalizer));
     }
 
     public async Task<Result<IReadOnlyList<EvidenceArtifactDescriptor>>> CollectAsync(
@@ -107,8 +109,10 @@ internal sealed class EvidenceDescriptorCollector
             };
         }
 
+        var canonicalPath = _pathCanonicalizer.Canonicalize(trimmed);
+
         return Result<EvidenceArtifactDescriptor?>.Success(
-            new EvidenceArtifactDescriptor(type, trimmed, hash, length, extension));
+            new EvidenceArtifactDescriptor(type, canonicalPath, hash, length, extension));
     }
 
     private static string GetMissingCode(EvidenceArtifactType type)
