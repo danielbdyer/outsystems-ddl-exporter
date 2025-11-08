@@ -31,9 +31,12 @@ public sealed class TighteningPolicyGoldenVectorsTests
         Assert.False(email.RequiresRemediation);
 
         var externalId = decisions.Nullability[CustomerColumn("EXTERNALID")];
-        Assert.False(externalId.MakeNotNull);
+        Assert.True(externalId.MakeNotNull);
+        Assert.True(externalId.RequiresRemediation);
 
-        Assert.False(decisions.Nullability[OrderColumn("CUSTOMERID")].MakeNotNull);
+        var orderCustomer = decisions.Nullability[OrderColumn("CUSTOMERID")];
+        Assert.False(orderCustomer.MakeNotNull);
+        Assert.False(orderCustomer.RequiresRemediation);
 
         Assert.True(decisions.ForeignKeys[OrderColumn("CUSTOMERID")].CreateConstraint);
 
@@ -55,7 +58,8 @@ public sealed class TighteningPolicyGoldenVectorsTests
         Assert.False(email.RequiresRemediation);
 
         Assert.False(decisions.Nullability[CustomerColumn("EXTERNALID")].MakeNotNull);
-        Assert.False(decisions.Nullability[OrderColumn("CUSTOMERID")].MakeNotNull);
+        var orderCustomer = decisions.Nullability[OrderColumn("CUSTOMERID")];
+        Assert.False(orderCustomer.MakeNotNull);
 
         Assert.True(decisions.ForeignKeys[OrderColumn("CUSTOMERID")].CreateConstraint);
 

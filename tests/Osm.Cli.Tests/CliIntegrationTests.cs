@@ -58,7 +58,7 @@ public class CliIntegrationTests
 
         var emission = EmissionOutput.Load(output.Path);
 
-        Assert.Equal(4, emission.Manifest.Tables.Count);
+        Assert.Equal(5, emission.Manifest.Tables.Count);
         Assert.Contains("Customer", emission.Manifest.Tables.Select(t => t.Table));
         Assert.True(emission.Manifest.Options.SanitizeModuleNames);
 
@@ -485,6 +485,16 @@ CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
     [CREATEDON] DATETIME NOT NULL DEFAULT (getutcdate()),
     CONSTRAINT [PK_JobRun_Id] PRIMARY KEY ([ID])
 );
+CREATE TABLE [dbo].[User](
+    [Id] BIGINT IDENTITY (1, 1) NOT NULL,
+    [Username] NVARCHAR(50) NOT NULL,
+    [Email] NVARCHAR(255) NOT NULL,
+    CONSTRAINT [PK_User_Id] PRIMARY KEY ([Id])
+);
+CREATE UNIQUE INDEX [UIX_User_Username]
+    ON [dbo].[User]([Username]);
+CREATE UNIQUE INDEX [UIX_User_Email]
+    ON [dbo].[User]([Email]);
 ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
 ADD CONSTRAINT [FK_Customer_City_CityId]
 FOREIGN KEY ([CITYID]) REFERENCES [dbo].[OSUSR_DEF_CITY]([ID]);";
@@ -515,6 +525,16 @@ CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
     [CREATEDON] DATETIME NOT NULL DEFAULT (getutcdate()),
     CONSTRAINT [PK_JobRun_Id] PRIMARY KEY ([ID])
 );
+CREATE TABLE [dbo].[User](
+    [Id] BIGINT IDENTITY (1, 1) NOT NULL,
+    [Username] NVARCHAR(50) NOT NULL,
+    [Email] NVARCHAR(255) NOT NULL,
+    CONSTRAINT [PK_User_Id] PRIMARY KEY ([Id])
+);
+CREATE UNIQUE INDEX [UIX_User_Username]
+    ON [dbo].[User]([Username]);
+CREATE UNIQUE INDEX [UIX_User_Email]
+    ON [dbo].[User]([Email]);
 ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
 ADD CONSTRAINT [FK_Customer_City_CityId]
 FOREIGN KEY ([CITYID]) REFERENCES [dbo].[OSUSR_DEF_CITY]([ID]);";

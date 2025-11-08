@@ -8,25 +8,25 @@
   "ForeignKeyCount": 2,
   "ForeignKeysCreatedCount": 1,
   "ColumnRationales": {
-    "DATA_HAS_ORPHANS": 1,
+    "PK": 4,
     "DELETE_RULE_IGNORE": 1,
+    "DATA_NO_NULLS": 10,
     "DEFAULT_PRESENT": 2,
     "UNIQUE_NO_NULLS": 2,
-    "FK_ENFORCED": 1,
-    "DATA_NO_NULLS": 10,
-    "PK": 4,
     "MANDATORY": 10,
     "PHYSICAL_NOT_NULL": 4,
-    "PROFILE_MISSING": 1
+    "DATA_HAS_ORPHANS": 1,
+    "PROFILE_MISSING": 1,
+    "FK_ENFORCED": 1
   },
   "UniqueIndexRationales": {
     "UNIQUE_NO_NULLS": 2,
     "PHYSICAL_UNIQUE_KEY": 2
   },
   "ForeignKeyRationales": {
-    "DATA_HAS_ORPHANS": 1,
     "DELETE_RULE_IGNORE": 1,
-    "DB_CONSTRAINT_PRESENT": 1
+    "DB_CONSTRAINT_PRESENT": 1,
+    "DATA_HAS_ORPHANS": 1
   },
   "ModuleRollups": {
     "ExtBilling": {
@@ -39,41 +39,17 @@
       "ForeignKeyCount": 0,
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
-        "DATA_NO_NULLS": 2,
-        "MANDATORY": 2,
-        "PHYSICAL_NOT_NULL": 1,
         "PK": 1,
-        "UNIQUE_NO_NULLS": 1
+        "DATA_NO_NULLS": 2,
+        "UNIQUE_NO_NULLS": 1,
+        "MANDATORY": 2,
+        "PHYSICAL_NOT_NULL": 1
       },
       "UniqueIndexRationales": {
-        "PHYSICAL_UNIQUE_KEY": 1,
-        "UNIQUE_NO_NULLS": 1
+        "UNIQUE_NO_NULLS": 1,
+        "PHYSICAL_UNIQUE_KEY": 1
       },
       "ForeignKeyRationales": {}
-    },
-    "Ops": {
-      "ColumnCount": 3,
-      "TightenedColumnCount": 2,
-      "RemediationColumnCount": 0,
-      "UniqueIndexCount": 0,
-      "UniqueIndexesEnforcedCount": 0,
-      "UniqueIndexesRequireRemediationCount": 0,
-      "ForeignKeyCount": 1,
-      "ForeignKeysCreatedCount": 0,
-      "ColumnRationales": {
-        "DATA_HAS_ORPHANS": 1,
-        "DATA_NO_NULLS": 2,
-        "DEFAULT_PRESENT": 1,
-        "DELETE_RULE_IGNORE": 1,
-        "MANDATORY": 2,
-        "PHYSICAL_NOT_NULL": 1,
-        "PK": 1
-      },
-      "UniqueIndexRationales": {},
-      "ForeignKeyRationales": {
-        "DATA_HAS_ORPHANS": 1,
-        "DELETE_RULE_IGNORE": 1
-      }
     },
     "AppCore": {
       "ColumnCount": 9,
@@ -85,42 +61,74 @@
       "ForeignKeyCount": 1,
       "ForeignKeysCreatedCount": 1,
       "ColumnRationales": {
+        "PK": 2,
         "DATA_NO_NULLS": 6,
         "DEFAULT_PRESENT": 1,
-        "FK_ENFORCED": 1,
+        "UNIQUE_NO_NULLS": 1,
         "MANDATORY": 6,
         "PHYSICAL_NOT_NULL": 2,
-        "PK": 2,
         "PROFILE_MISSING": 1,
-        "UNIQUE_NO_NULLS": 1
+        "FK_ENFORCED": 1
       },
       "UniqueIndexRationales": {
-        "PHYSICAL_UNIQUE_KEY": 1,
-        "UNIQUE_NO_NULLS": 1
+        "UNIQUE_NO_NULLS": 1,
+        "PHYSICAL_UNIQUE_KEY": 1
       },
       "ForeignKeyRationales": {
         "DB_CONSTRAINT_PRESENT": 1
       }
+    },
+    "Ops": {
+      "ColumnCount": 3,
+      "TightenedColumnCount": 2,
+      "RemediationColumnCount": 0,
+      "UniqueIndexCount": 0,
+      "UniqueIndexesEnforcedCount": 0,
+      "UniqueIndexesRequireRemediationCount": 0,
+      "ForeignKeyCount": 1,
+      "ForeignKeysCreatedCount": 0,
+      "ColumnRationales": {
+        "PK": 1,
+        "DELETE_RULE_IGNORE": 1,
+        "DATA_NO_NULLS": 2,
+        "DEFAULT_PRESENT": 1,
+        "MANDATORY": 2,
+        "PHYSICAL_NOT_NULL": 1,
+        "DATA_HAS_ORPHANS": 1
+      },
+      "UniqueIndexRationales": {},
+      "ForeignKeyRationales": {
+        "DELETE_RULE_IGNORE": 1,
+        "DATA_HAS_ORPHANS": 1
+      }
     }
   },
   "TogglePrecedence": {
+    "mocking.profileMockFolder": {
+      "Value": null,
+      "Source": 0
+    },
     "policy.mode": {
       "Value": "EvidenceGated",
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "mocking.useProfileMockFolder": {
+      "Value": false,
       "Source": 0
     },
     "policy.nullBudget": {
       "Value": 0,
       "Source": 0
     },
-    "foreignKeys.enableCreation": {
-      "Value": true,
-      "Source": 0
-    },
     "foreignKeys.allowCrossSchema": {
-      "Value": false,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossCatalog": {
       "Value": false,
       "Source": 0
     },
@@ -128,36 +136,32 @@
       "Value": true,
       "Source": 0
     },
-    "uniqueness.enforceMultiColumn": {
+    "remediation.sentinels.date": {
+      "Value": "1900-01-01",
+      "Source": 0
+    },
+    "foreignKeys.enableCreation": {
       "Value": true,
       "Source": 0
     },
-    "remediation.generatePreScripts": {
-      "Value": true,
-      "Source": 0
-    },
-    "remediation.maxRowsDefaultBackfill": {
-      "Value": 100000,
-      "Source": 0
-    },
-    "remediation.sentinels.numeric": {
-      "Value": "0",
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
       "Source": 0
     },
     "remediation.sentinels.text": {
       "Value": "",
       "Source": 0
     },
-    "remediation.sentinels.date": {
-      "Value": "1900-01-01",
-      "Source": 0
-    },
-    "mocking.useProfileMockFolder": {
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
       "Value": false,
       "Source": 0
     },
-    "mocking.profileMockFolder": {
-      "Value": null,
+    "remediation.sentinels.numeric": {
+      "Value": "0",
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
       "Source": 0
     }
   },
@@ -172,7 +176,8 @@
         "DATA_NO_NULLS",
         "MANDATORY",
         "UNIQUE_NO_NULLS"
-      ]
+      ],
+      "Module": "ExtBilling"
     },
     {
       "Schema": "billing",
@@ -180,7 +185,8 @@
       "Column": "EXTREF",
       "MakeNotNull": false,
       "RequiresRemediation": false,
-      "Rationales": []
+      "Rationales": [],
+      "Module": "ExtBilling"
     },
     {
       "Schema": "billing",
@@ -193,7 +199,8 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "Module": "ExtBilling"
     },
     {
       "Schema": "dbo",
@@ -205,7 +212,8 @@
         "DATA_NO_NULLS",
         "FK_ENFORCED",
         "MANDATORY"
-      ]
+      ],
+      "Module": "AppCore"
     },
     {
       "Schema": "dbo",
@@ -217,7 +225,8 @@
         "DATA_NO_NULLS",
         "MANDATORY",
         "UNIQUE_NO_NULLS"
-      ]
+      ],
+      "Module": "AppCore"
     },
     {
       "Schema": "dbo",
@@ -225,7 +234,8 @@
       "Column": "FIRSTNAME",
       "MakeNotNull": false,
       "RequiresRemediation": false,
-      "Rationales": []
+      "Rationales": [],
+      "Module": "AppCore"
     },
     {
       "Schema": "dbo",
@@ -238,7 +248,8 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "Module": "AppCore"
     },
     {
       "Schema": "dbo",
@@ -246,7 +257,8 @@
       "Column": "LASTNAME",
       "MakeNotNull": false,
       "RequiresRemediation": false,
-      "Rationales": []
+      "Rationales": [],
+      "Module": "AppCore"
     },
     {
       "Schema": "dbo",
@@ -256,7 +268,8 @@
       "RequiresRemediation": false,
       "Rationales": [
         "PROFILE_MISSING"
-      ]
+      ],
+      "Module": "AppCore"
     },
     {
       "Schema": "dbo",
@@ -269,7 +282,8 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "Module": "AppCore"
     },
     {
       "Schema": "dbo",
@@ -281,7 +295,8 @@
         "DATA_NO_NULLS",
         "DEFAULT_PRESENT",
         "MANDATORY"
-      ]
+      ],
+      "Module": "AppCore"
     },
     {
       "Schema": "dbo",
@@ -292,7 +307,8 @@
       "Rationales": [
         "DATA_NO_NULLS",
         "MANDATORY"
-      ]
+      ],
+      "Module": "AppCore"
     },
     {
       "Schema": "dbo",
@@ -304,7 +320,8 @@
         "DATA_NO_NULLS",
         "DEFAULT_PRESENT",
         "MANDATORY"
-      ]
+      ],
+      "Module": "Ops"
     },
     {
       "Schema": "dbo",
@@ -317,7 +334,8 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "Module": "Ops"
     },
     {
       "Schema": "dbo",
@@ -328,31 +346,34 @@
       "Rationales": [
         "DATA_HAS_ORPHANS",
         "DELETE_RULE_IGNORE"
-      ]
+      ],
+      "Module": "Ops"
     }
   ],
   "UniqueIndexes": [
     {
       "Schema": "billing",
       "Table": "BILLING_ACCOUNT",
-      "Index": "UIX_BillingAccount_AccountNumber",
+      "Index": "IDX_BILLINGACCOUNT_ACCTNUM",
       "EnforceUnique": true,
       "RequiresRemediation": false,
       "Rationales": [
         "PHYSICAL_UNIQUE_KEY",
         "UNIQUE_NO_NULLS"
-      ]
+      ],
+      "Module": "ExtBilling"
     },
     {
       "Schema": "dbo",
       "Table": "OSUSR_ABC_CUSTOMER",
-      "Index": "UIX_Customer_Email",
+      "Index": "IDX_CUSTOMER_EMAIL",
       "EnforceUnique": true,
       "RequiresRemediation": false,
       "Rationales": [
         "PHYSICAL_UNIQUE_KEY",
         "UNIQUE_NO_NULLS"
-      ]
+      ],
+      "Module": "AppCore"
     }
   ],
   "ForeignKeys": [
@@ -363,7 +384,8 @@
       "CreateConstraint": true,
       "Rationales": [
         "DB_CONSTRAINT_PRESENT"
-      ]
+      ],
+      "Module": "AppCore"
     },
     {
       "Schema": "dbo",
@@ -373,8 +395,75 @@
       "Rationales": [
         "DATA_HAS_ORPHANS",
         "DELETE_RULE_IGNORE"
-      ]
+      ],
+      "Module": "Ops"
     }
   ],
-  "Diagnostics": []
+  "Diagnostics": [],
+  "PredicateCoverage": {
+    "Tables": [
+      {
+        "Module": "AppCore",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Predicates": [
+          "HasDefaultConstraint",
+          "HasFilteredIndex",
+          "HasInactiveColumns",
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithDbConstraint",
+          "HasUniqueIndex"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Schema": "dbo",
+        "Table": "OSUSR_DEF_CITY",
+        "Predicates": [
+          "HasDefaultConstraint",
+          "IsStaticEntity"
+        ]
+      },
+      {
+        "Module": "ExtBilling",
+        "Schema": "billing",
+        "Table": "BILLING_ACCOUNT",
+        "Predicates": [
+          "HasUniqueIndex",
+          "IsExternalEntity"
+        ]
+      },
+      {
+        "Module": "Ops",
+        "Schema": "dbo",
+        "Table": "OSUSR_XYZ_JOBRUN",
+        "Predicates": [
+          "HasDefaultConstraint",
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithoutDbConstraint",
+          "HasTrigger"
+        ]
+      },
+      {
+        "Module": "UserExtension_CS",
+        "Schema": "dbo",
+        "Table": "ossys_User",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      }
+    ],
+    "PredicateCounts": {
+      "HasDefaultConstraint": 3,
+      "HasFilteredIndex": 1,
+      "HasInactiveColumns": 1,
+      "HasLogicalForeignKey": 2,
+      "HasLogicalForeignKeyWithDbConstraint": 1,
+      "HasLogicalForeignKeyWithoutDbConstraint": 1,
+      "HasTrigger": 1,
+      "HasUniqueIndex": 3,
+      "IsExternalEntity": 1,
+      "IsStaticEntity": 1
+    }
+  }
 }

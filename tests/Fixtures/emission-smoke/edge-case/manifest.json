@@ -6,8 +6,8 @@
       "Table": "Customer",
       "TableFile": "Modules/AppCore/dbo.Customer.sql",
       "Indexes": [
-        "UIX_Customer_Email",
-        "IX_Customer_LastName_FirstName"
+        "IX_Customer_LastName_FirstName",
+        "UIX_Customer_Email"
       ],
       "ForeignKeys": [
         "FK_Customer_City_CityId"
@@ -42,6 +42,18 @@
       "Indexes": [],
       "ForeignKeys": [],
       "IncludesExtendedProperties": false
+    },
+    {
+      "Module": "UserExtension_CS",
+      "Schema": "dbo",
+      "Table": "User",
+      "TableFile": "Modules/UserExtension_CS/dbo.User.sql",
+      "Indexes": [
+        "UIX_User_Email",
+        "UIX_User_Username"
+      ],
+      "ForeignKeys": [],
+      "IncludesExtendedProperties": true
     }
   ],
   "Options": {
@@ -60,25 +72,25 @@
     "ForeignKeyCount": 2,
     "ForeignKeysCreatedCount": 1,
     "ColumnRationales": {
-      "DATA_HAS_ORPHANS": 1,
+      "PK": 4,
       "DELETE_RULE_IGNORE": 1,
+      "DATA_NO_NULLS": 10,
       "DEFAULT_PRESENT": 2,
       "UNIQUE_NO_NULLS": 2,
-      "FK_ENFORCED": 1,
-      "DATA_NO_NULLS": 10,
-      "PK": 4,
       "MANDATORY": 10,
       "PHYSICAL_NOT_NULL": 4,
-      "PROFILE_MISSING": 1
+      "DATA_HAS_ORPHANS": 1,
+      "PROFILE_MISSING": 1,
+      "FK_ENFORCED": 1
     },
     "UniqueIndexRationales": {
       "UNIQUE_NO_NULLS": 2,
       "PHYSICAL_UNIQUE_KEY": 2
     },
     "ForeignKeyRationales": {
-      "DATA_HAS_ORPHANS": 1,
       "DELETE_RULE_IGNORE": 1,
-      "DB_CONSTRAINT_PRESENT": 1
+      "DB_CONSTRAINT_PRESENT": 1,
+      "DATA_HAS_ORPHANS": 1
     },
     "ModuleRollups": {
       "ExtBilling": {
@@ -91,41 +103,17 @@
         "ForeignKeyCount": 0,
         "ForeignKeysCreatedCount": 0,
         "ColumnRationales": {
-          "DATA_NO_NULLS": 2,
-          "MANDATORY": 2,
-          "PHYSICAL_NOT_NULL": 1,
           "PK": 1,
-          "UNIQUE_NO_NULLS": 1
+          "DATA_NO_NULLS": 2,
+          "UNIQUE_NO_NULLS": 1,
+          "MANDATORY": 2,
+          "PHYSICAL_NOT_NULL": 1
         },
         "UniqueIndexRationales": {
-          "PHYSICAL_UNIQUE_KEY": 1,
-          "UNIQUE_NO_NULLS": 1
+          "UNIQUE_NO_NULLS": 1,
+          "PHYSICAL_UNIQUE_KEY": 1
         },
         "ForeignKeyRationales": {}
-      },
-      "Ops": {
-        "ColumnCount": 3,
-        "TightenedColumnCount": 2,
-        "RemediationColumnCount": 0,
-        "UniqueIndexCount": 0,
-        "UniqueIndexesEnforcedCount": 0,
-        "UniqueIndexesRequireRemediationCount": 0,
-        "ForeignKeyCount": 1,
-        "ForeignKeysCreatedCount": 0,
-        "ColumnRationales": {
-          "DATA_HAS_ORPHANS": 1,
-          "DATA_NO_NULLS": 2,
-          "DEFAULT_PRESENT": 1,
-          "DELETE_RULE_IGNORE": 1,
-          "MANDATORY": 2,
-          "PHYSICAL_NOT_NULL": 1,
-          "PK": 1
-        },
-        "UniqueIndexRationales": {},
-        "ForeignKeyRationales": {
-          "DATA_HAS_ORPHANS": 1,
-          "DELETE_RULE_IGNORE": 1
-        }
       },
       "AppCore": {
         "ColumnCount": 9,
@@ -137,42 +125,74 @@
         "ForeignKeyCount": 1,
         "ForeignKeysCreatedCount": 1,
         "ColumnRationales": {
+          "PK": 2,
           "DATA_NO_NULLS": 6,
           "DEFAULT_PRESENT": 1,
-          "FK_ENFORCED": 1,
+          "UNIQUE_NO_NULLS": 1,
           "MANDATORY": 6,
           "PHYSICAL_NOT_NULL": 2,
-          "PK": 2,
           "PROFILE_MISSING": 1,
-          "UNIQUE_NO_NULLS": 1
+          "FK_ENFORCED": 1
         },
         "UniqueIndexRationales": {
-          "PHYSICAL_UNIQUE_KEY": 1,
-          "UNIQUE_NO_NULLS": 1
+          "UNIQUE_NO_NULLS": 1,
+          "PHYSICAL_UNIQUE_KEY": 1
         },
         "ForeignKeyRationales": {
           "DB_CONSTRAINT_PRESENT": 1
         }
+      },
+      "Ops": {
+        "ColumnCount": 3,
+        "TightenedColumnCount": 2,
+        "RemediationColumnCount": 0,
+        "UniqueIndexCount": 0,
+        "UniqueIndexesEnforcedCount": 0,
+        "UniqueIndexesRequireRemediationCount": 0,
+        "ForeignKeyCount": 1,
+        "ForeignKeysCreatedCount": 0,
+        "ColumnRationales": {
+          "PK": 1,
+          "DELETE_RULE_IGNORE": 1,
+          "DATA_NO_NULLS": 2,
+          "DEFAULT_PRESENT": 1,
+          "MANDATORY": 2,
+          "PHYSICAL_NOT_NULL": 1,
+          "DATA_HAS_ORPHANS": 1
+        },
+        "UniqueIndexRationales": {},
+        "ForeignKeyRationales": {
+          "DELETE_RULE_IGNORE": 1,
+          "DATA_HAS_ORPHANS": 1
+        }
       }
     },
     "TogglePrecedence": {
+      "mocking.profileMockFolder": {
+        "Value": null,
+        "Source": 0
+      },
       "policy.mode": {
         "Value": "EvidenceGated",
+        "Source": 0
+      },
+      "remediation.maxRowsDefaultBackfill": {
+        "Value": 100000,
+        "Source": 0
+      },
+      "remediation.generatePreScripts": {
+        "Value": true,
+        "Source": 0
+      },
+      "mocking.useProfileMockFolder": {
+        "Value": false,
         "Source": 0
       },
       "policy.nullBudget": {
         "Value": 0,
         "Source": 0
       },
-      "foreignKeys.enableCreation": {
-        "Value": true,
-        "Source": 0
-      },
       "foreignKeys.allowCrossSchema": {
-        "Value": false,
-        "Source": 0
-      },
-      "foreignKeys.allowCrossCatalog": {
         "Value": false,
         "Source": 0
       },
@@ -180,63 +200,123 @@
         "Value": true,
         "Source": 0
       },
-      "uniqueness.enforceMultiColumn": {
+      "remediation.sentinels.date": {
+        "Value": "1900-01-01",
+        "Source": 0
+      },
+      "foreignKeys.enableCreation": {
         "Value": true,
         "Source": 0
       },
-      "remediation.generatePreScripts": {
-        "Value": true,
-        "Source": 0
-      },
-      "remediation.maxRowsDefaultBackfill": {
-        "Value": 100000,
-        "Source": 0
-      },
-      "remediation.sentinels.numeric": {
-        "Value": "0",
+      "foreignKeys.allowCrossCatalog": {
+        "Value": false,
         "Source": 0
       },
       "remediation.sentinels.text": {
         "Value": "",
         "Source": 0
       },
-      "remediation.sentinels.date": {
-        "Value": "1900-01-01",
-        "Source": 0
-      },
-      "mocking.useProfileMockFolder": {
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
         "Value": false,
         "Source": 0
       },
-      "mocking.profileMockFolder": {
-        "Value": null,
+      "remediation.sentinels.numeric": {
+        "Value": "0",
+        "Source": 0
+      },
+      "uniqueness.enforceMultiColumn": {
+        "Value": true,
         "Source": 0
       }
     }
   },
   "Emission": {
     "Algorithm": "SHA256",
-    "Hash": "13ab16133d53404175eeb5a7d281696e9db2b3fba42cb85c1129d3c44d6d2291"
+    "Hash": "8731827d3370a91d9b9c049af660efbf2d59df377b087d55d1e225f1c414d4a0"
   },
   "PreRemediation": [],
   "Coverage": {
     "Tables": {
-      "Emitted": 4,
+      "Emitted": 5,
       "Total": 5,
-      "Percentage": 80.0
+      "Percentage": 100
     },
     "Columns": {
-      "Emitted": 14,
+      "Emitted": 17,
       "Total": 17,
-      "Percentage": 82.35
+      "Percentage": 100
     },
     "Constraints": {
-      "Emitted": 8,
-      "Total": 9,
-      "Percentage": 88.89
+      "Emitted": 11,
+      "Total": 11,
+      "Percentage": 100
     }
   },
-  "Unsupported": [
-    "Table dbo.OSUSR_U_USER missing from emission output."
-  ]
+  "PredicateCoverage": {
+    "Tables": [
+      {
+        "Module": "AppCore",
+        "Schema": "dbo",
+        "Table": "OSUSR_ABC_CUSTOMER",
+        "Predicates": [
+          "HasDefaultConstraint",
+          "HasFilteredIndex",
+          "HasInactiveColumns",
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithDbConstraint",
+          "HasUniqueIndex"
+        ]
+      },
+      {
+        "Module": "AppCore",
+        "Schema": "dbo",
+        "Table": "OSUSR_DEF_CITY",
+        "Predicates": [
+          "HasDefaultConstraint",
+          "IsStaticEntity"
+        ]
+      },
+      {
+        "Module": "ExtBilling",
+        "Schema": "billing",
+        "Table": "BILLING_ACCOUNT",
+        "Predicates": [
+          "HasUniqueIndex",
+          "IsExternalEntity"
+        ]
+      },
+      {
+        "Module": "Ops",
+        "Schema": "dbo",
+        "Table": "OSUSR_XYZ_JOBRUN",
+        "Predicates": [
+          "HasDefaultConstraint",
+          "HasLogicalForeignKey",
+          "HasLogicalForeignKeyWithoutDbConstraint",
+          "HasTrigger"
+        ]
+      },
+      {
+        "Module": "UserExtension_CS",
+        "Schema": "dbo",
+        "Table": "ossys_User",
+        "Predicates": [
+          "HasUniqueIndex"
+        ]
+      }
+    ],
+    "PredicateCounts": {
+      "HasDefaultConstraint": 3,
+      "HasFilteredIndex": 1,
+      "HasInactiveColumns": 1,
+      "HasLogicalForeignKey": 2,
+      "HasLogicalForeignKeyWithDbConstraint": 1,
+      "HasLogicalForeignKeyWithoutDbConstraint": 1,
+      "HasTrigger": 1,
+      "HasUniqueIndex": 3,
+      "IsExternalEntity": 1,
+      "IsStaticEntity": 1
+    }
+  },
+  "Unsupported": []
 }
