@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -61,7 +62,8 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
             DefaultDefinition = profile.DefaultDefinition,
             RowCount = profile.RowCount,
             NullCount = profile.NullCount,
-            NullCountStatus = MapProbeStatus(profile.NullCountStatus)
+            NullCountStatus = MapProbeStatus(profile.NullCountStatus),
+            NullSample = MapNullSample(profile.NullRowSample)
         };
     }
 
@@ -103,8 +105,10 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
                 HasDbConstraint = reality.Reference.HasDatabaseConstraint
             },
             HasOrphan = reality.HasOrphan,
+            OrphanCount = reality.OrphanCount,
             IsNoCheck = reality.IsNoCheck,
-            ProbeStatus = MapProbeStatus(reality.ProbeStatus)
+            ProbeStatus = MapProbeStatus(reality.ProbeStatus),
+            OrphanSample = MapForeignKeySample(reality.OrphanSample)
         };
     }
 
@@ -116,6 +120,70 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
             Outcome = status.Outcome,
             SampleSize = status.SampleSize
         };
+    }
+
+    private static NullRowSampleDocument? MapNullSample(NullRowSample? sample)
+    {
+        if (sample is null || sample.TotalNullRows <= 0)
+        {
+            return null;
+        }
+
+        return new NullRowSampleDocument
+        {
+            PrimaryKeyColumns = sample.PrimaryKeyColumns.ToArray(),
+            Rows = sample.SampleRows
+                .Select(row => new NullRowIdentifierDocument
+                {
+                    PrimaryKeyValues = row.PrimaryKeyValues.Select(FormatSampleValue).ToArray()
+                })
+                .ToArray(),
+            TotalNullRows = sample.TotalNullRows,
+            IsTruncated = sample.IsTruncated
+        };
+    }
+
+    private static ForeignKeyOrphanSampleDocument? MapForeignKeySample(ForeignKeyOrphanSample? sample)
+    {
+        if (sample is null || sample.TotalOrphans <= 0)
+        {
+            return null;
+        }
+
+        return new ForeignKeyOrphanSampleDocument
+        {
+            PrimaryKeyColumns = sample.PrimaryKeyColumns.ToArray(),
+            ForeignKeyColumn = sample.ForeignKeyColumn,
+            Rows = sample.SampleRows
+                .Select(row => new ForeignKeyOrphanRowDocument
+                {
+                    PrimaryKeyValues = row.PrimaryKeyValues.Select(FormatSampleValue).ToArray(),
+                    ForeignKeyValue = FormatSampleValue(row.ForeignKeyValue)
+                })
+                .ToArray(),
+            TotalOrphans = sample.TotalOrphans,
+            IsTruncated = sample.IsTruncated
+        };
+    }
+
+    private static string? FormatSampleValue(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is string s)
+        {
+            return s;
+        }
+
+        if (value is IFormattable formattable)
+        {
+            return formattable.ToString(null, CultureInfo.InvariantCulture);
+        }
+
+        return value.ToString();
     }
 
     private sealed record ProfileSnapshotDocument
@@ -167,6 +235,9 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
 
         [JsonPropertyName("NullCountStatus")]
         public ProfilingProbeStatusDocument NullCountStatus { get; init; } = new();
+
+        [JsonPropertyName("NullSample")]
+        public NullRowSampleDocument? NullSample { get; init; }
     }
 
     private sealed record UniqueCandidateDocument
@@ -204,17 +275,23 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
 
     private sealed record ForeignKeyDocument
     {
-        [JsonPropertyName("Ref")]
+        [JsonPropertyName("Reference")]
         public ForeignKeyReferenceDocument Reference { get; init; } = new();
 
         [JsonPropertyName("HasOrphan")]
         public bool HasOrphan { get; init; }
+
+        [JsonPropertyName("OrphanCount")]
+        public long OrphanCount { get; init; }
 
         [JsonPropertyName("IsNoCheck")]
         public bool IsNoCheck { get; init; }
 
         [JsonPropertyName("ProbeStatus")]
         public ProfilingProbeStatusDocument ProbeStatus { get; init; } = new();
+
+        [JsonPropertyName("OrphanSample")]
+        public ForeignKeyOrphanSampleDocument? OrphanSample { get; init; }
     }
 
     private sealed record ForeignKeyReferenceDocument
@@ -241,15 +318,63 @@ public sealed class ProfileSnapshotSerializer : IProfileSnapshotSerializer
         public bool HasDbConstraint { get; init; }
     }
 
+    private sealed record NullRowSampleDocument
+    {
+        [JsonPropertyName("PrimaryKeyColumns")]
+        public string[] PrimaryKeyColumns { get; init; } = Array.Empty<string>();
+
+        [JsonPropertyName("Rows")]
+        public NullRowIdentifierDocument[] Rows { get; init; } = Array.Empty<NullRowIdentifierDocument>();
+
+        [JsonPropertyName("TotalNullRows")]
+        public long TotalNullRows { get; init; }
+
+        [JsonPropertyName("IsTruncated")]
+        public bool IsTruncated { get; init; }
+    }
+
+    private sealed record NullRowIdentifierDocument
+    {
+        [JsonPropertyName("PrimaryKeyValues")]
+        public string?[] PrimaryKeyValues { get; init; } = Array.Empty<string?>();
+    }
+
+    private sealed record ForeignKeyOrphanSampleDocument
+    {
+        [JsonPropertyName("PrimaryKeyColumns")]
+        public string[] PrimaryKeyColumns { get; init; } = Array.Empty<string>();
+
+        [JsonPropertyName("ForeignKeyColumn")]
+        public string ForeignKeyColumn { get; init; } = string.Empty;
+
+        [JsonPropertyName("Rows")]
+        public ForeignKeyOrphanRowDocument[] Rows { get; init; } = Array.Empty<ForeignKeyOrphanRowDocument>();
+
+        [JsonPropertyName("TotalOrphans")]
+        public long TotalOrphans { get; init; }
+
+        [JsonPropertyName("IsTruncated")]
+        public bool IsTruncated { get; init; }
+    }
+
+    private sealed record ForeignKeyOrphanRowDocument
+    {
+        [JsonPropertyName("PrimaryKeyValues")]
+        public string?[] PrimaryKeyValues { get; init; } = Array.Empty<string?>();
+
+        [JsonPropertyName("ForeignKeyValue")]
+        public string? ForeignKeyValue { get; init; }
+    }
+
     private sealed record ProfilingProbeStatusDocument
     {
         [JsonPropertyName("CapturedAtUtc")]
         public DateTimeOffset CapturedAtUtc { get; init; }
 
-        [JsonPropertyName("SampleSize")]
-        public long SampleSize { get; init; }
-
         [JsonPropertyName("Outcome")]
         public ProfilingProbeOutcome Outcome { get; init; }
+
+        [JsonPropertyName("SampleSize")]
+        public long SampleSize { get; init; }
     }
 }

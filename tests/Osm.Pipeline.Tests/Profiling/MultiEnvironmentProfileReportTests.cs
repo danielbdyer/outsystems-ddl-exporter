@@ -37,7 +37,7 @@ public sealed class MultiEnvironmentProfileReportTests
                 false,
                 nullProbe)),
             ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
-            ImmutableArray.Create(new ForeignKeyReality(
+            ImmutableArray.Create(ForeignKeyReality.Create(
                 new ForeignKeyReference(
                     new SchemaName("dbo"),
                     new TableName("Order"),
@@ -46,9 +46,10 @@ public sealed class MultiEnvironmentProfileReportTests
                     new TableName("Customer"),
                     new ColumnName("Id"),
                     true),
-                false,
-                false,
-                ProfilingProbeStatus.CreateSucceeded(capturedAt, 1_000))));
+                hasOrphan: false,
+                orphanCount: 0,
+                isNoCheck: false,
+                probeStatus: ProfilingProbeStatus.CreateSucceeded(capturedAt, 1_000)).Value));
 
         var secondarySnapshot = new ProfileSnapshot(
             ImmutableArray.Create(new ColumnProfile(
@@ -71,7 +72,7 @@ public sealed class MultiEnvironmentProfileReportTests
                 true,
                 nullProbe)),
             ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
-            ImmutableArray.Create(new ForeignKeyReality(
+            ImmutableArray.Create(ForeignKeyReality.Create(
                 new ForeignKeyReference(
                     new SchemaName("dbo"),
                     new TableName("Order"),
@@ -80,9 +81,10 @@ public sealed class MultiEnvironmentProfileReportTests
                     new TableName("Customer"),
                     new ColumnName("Id"),
                     false),
-                true,
-                false,
-                ProfilingProbeStatus.CreateFallbackTimeout(capturedAt, 100))));
+                hasOrphan: true,
+                orphanCount: 25,
+                isNoCheck: false,
+                probeStatus: ProfilingProbeStatus.CreateFallbackTimeout(capturedAt, 100)).Value));
 
         var report = MultiEnvironmentProfileReport.Create(new[]
         {

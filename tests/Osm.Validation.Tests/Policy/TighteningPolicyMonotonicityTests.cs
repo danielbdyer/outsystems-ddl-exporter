@@ -120,7 +120,15 @@ public sealed class TighteningPolicyMonotonicityTests
             ? original.ProbeStatus
             : ProfilingProbeStatus.CreateSucceeded(original.ProbeStatus.CapturedAtUtc, original.ProbeStatus.SampleSize);
 
-        var updated = ForeignKeyReality.Create(original.Reference, hasOrphan, original.IsNoCheck, status).Value;
+        var orphanCount = hasOrphan ? Math.Max(original.OrphanCount, 1) : 0;
+        var orphanSample = hasOrphan ? original.OrphanSample : null;
+        var updated = ForeignKeyReality.Create(
+            original.Reference,
+            hasOrphan,
+            orphanCount,
+            original.IsNoCheck,
+            status,
+            orphanSample).Value;
         var updatedForeignKeys = snapshot.ForeignKeys.SetItem(foreignKeyIndex, updated);
         return snapshot with { ForeignKeys = updatedForeignKeys };
     }

@@ -149,7 +149,9 @@ internal static class TighteningEvaluatorTestHelper
         return ForeignKeyReality.Create(
             reference,
             hasOrphan,
+            hasOrphan ? 1 : 0,
             isNoCheck: false,
-            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0)).Value;
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 0),
+            orphanSample: null).Value;
     }
 }

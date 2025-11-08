@@ -61,11 +61,12 @@ public sealed class SqlDataProfilerOrchestrationTests
             {
                 ["email"] = probeStatus
             },
-            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, long>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
-            new Dictionary<string, NullRowSample>(System.StringComparer.OrdinalIgnoreCase));
+            new Dictionary<string, NullRowSample>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ForeignKeyOrphanSample>(System.StringComparer.OrdinalIgnoreCase));
 
         var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
         var planBuilder = new StubPlanBuilder(plan);
@@ -139,9 +140,9 @@ public sealed class SqlDataProfilerOrchestrationTests
             },
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
-            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase)
+            new Dictionary<string, long>(System.StringComparer.OrdinalIgnoreCase)
             {
-                [foreignKeyKey] = false
+                [foreignKeyKey] = 0L
             },
             new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase)
             {
@@ -155,7 +156,8 @@ public sealed class SqlDataProfilerOrchestrationTests
             {
                 [foreignKeyKey] = probeStatus
             },
-            new Dictionary<string, NullRowSample>(System.StringComparer.OrdinalIgnoreCase));
+            new Dictionary<string, NullRowSample>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, ForeignKeyOrphanSample>(System.StringComparer.OrdinalIgnoreCase));
 
         var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
         var planBuilder = new StubPlanBuilder(new Dictionary<(string Schema, string Table), TableProfilingPlan>(TableKeyComparer.Instance)

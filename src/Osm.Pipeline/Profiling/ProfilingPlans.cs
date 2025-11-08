@@ -29,20 +29,22 @@ internal sealed record TableProfilingResults(
     IReadOnlyDictionary<string, ProfilingProbeStatus> NullCountStatuses,
     IReadOnlyDictionary<string, bool> UniqueDuplicates,
     IReadOnlyDictionary<string, ProfilingProbeStatus> UniqueDuplicateStatuses,
-    IReadOnlyDictionary<string, bool> ForeignKeys,
+    IReadOnlyDictionary<string, long> ForeignKeyOrphanCounts,
     IReadOnlyDictionary<string, ProfilingProbeStatus> ForeignKeyStatuses,
     IReadOnlyDictionary<string, bool> ForeignKeyIsNoCheck,
     IReadOnlyDictionary<string, ProfilingProbeStatus> ForeignKeyNoCheckStatuses,
-    IReadOnlyDictionary<string, NullRowSample> NullRowSamples)
+    IReadOnlyDictionary<string, NullRowSample> NullRowSamples,
+    IReadOnlyDictionary<string, ForeignKeyOrphanSample> ForeignKeyOrphanSamples)
 {
     public static TableProfilingResults Empty { get; } = new(
         ImmutableDictionary<string, long>.Empty,
         ImmutableDictionary<string, ProfilingProbeStatus>.Empty,
         ImmutableDictionary<string, bool>.Empty,
         ImmutableDictionary<string, ProfilingProbeStatus>.Empty,
-        ImmutableDictionary<string, bool>.Empty,
+        ImmutableDictionary<string, long>.Empty,
         ImmutableDictionary<string, ProfilingProbeStatus>.Empty,
         ImmutableDictionary<string, bool>.Empty,
         ImmutableDictionary<string, ProfilingProbeStatus>.Empty,
-        ImmutableDictionary<string, NullRowSample>.Empty);
+        ImmutableDictionary<string, NullRowSample>.Empty,
+        ImmutableDictionary<string, ForeignKeyOrphanSample>.Empty);
 }

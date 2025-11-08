@@ -23,7 +23,6 @@ public sealed class CacheEntryCreatorTests
 
         var canonicalizer = new ForwardSlashPathCanonicalizer();
         var metadataBuilder = new CacheMetadataBuilder(canonicalizer);
-        var optionsFactory = new EvidenceCacheOptionsFactory(metadataBuilder, canonicalizer);
         var descriptor = CreateDescriptor(
             EvidenceArtifactType.Model,
             canonicalizer.Canonicalize(modelPath),
@@ -43,9 +42,7 @@ public sealed class CacheEntryCreatorTests
             metadata,
             new[] { descriptor },
             moduleSelection,
-            Refresh: false,
-            metadataBuilder,
-            optionsFactory);
+            Refresh: false);
 
         var invalidationMetadata = new Dictionary<string, string?>(StringComparer.Ordinal)
         {

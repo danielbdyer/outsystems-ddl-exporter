@@ -335,7 +335,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             return Task.FromResult(Result<ModelResolutionResult>.Success(result));
         }
     }
-}
 
     private static string CanonicalizeFullPath(string relativePath)
         => Canonicalizer.Canonicalize(Path.GetFullPath(relativePath));
+}

@@ -52,9 +52,9 @@ internal sealed class CacheRequestNormalizer
                 pair => pair.Value is null ? null : pair.Value,
                 StringComparer.Ordinal);
 
-        foreach (var key in metadata.Keys.ToArray())
+        foreach (var metadataKey in metadata.Keys.ToArray())
         {
-            metadata[key] = _pathCanonicalizer.CanonicalizeOrNull(metadata[key]);
+            metadata[metadataKey] = _pathCanonicalizer.CanonicalizeOrNull(metadata[metadataKey]);
         }
 
         var descriptorsResult = await _descriptorCollector

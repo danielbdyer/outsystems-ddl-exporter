@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using Osm.Pipeline;
 using System.Threading.Tasks;
 using Osm.Pipeline.Evidence;
 
@@ -16,6 +17,7 @@ public sealed class EvidenceCacheWriterTests
     public async Task WriteAsync_ShouldPersistManifestAndArtifacts()
     {
         var fileSystem = new MockFileSystem();
+        var canonicalizer = new ForwardSlashPathCanonicalizer();
         const string cacheDirectory = "/cache/abcd";
         const string modelPath = "/inputs/model.json";
         const string configPath = "/inputs/config.json";
@@ -37,7 +39,7 @@ public sealed class EvidenceCacheWriterTests
             ["cache.ttlSeconds"] = "3600"
         };
 
-        var writer = new EvidenceCacheWriter(fileSystem);
+        var writer = new EvidenceCacheWriter(fileSystem, canonicalizer);
         var creationTimestamp = new DateTimeOffset(2024, 08, 06, 10, 00, 00, TimeSpan.Zero);
         var manifest = await writer.WriteAsync(
             cacheDirectory,
@@ -78,7 +80,8 @@ public sealed class EvidenceCacheWriterTests
         fileSystem.AddFile(dmmPath, new MockFileData(content));
 
         var descriptor = CreateDescriptor(EvidenceArtifactType.Dmm, dmmPath, content, ".sql");
-        var writer = new EvidenceCacheWriter(fileSystem);
+        var canonicalizer = new ForwardSlashPathCanonicalizer();
+        var writer = new EvidenceCacheWriter(fileSystem, canonicalizer);
         var manifest = await writer.WriteAsync(
             cacheDirectory,
             "manifest.json",

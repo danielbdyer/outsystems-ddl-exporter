@@ -271,13 +271,19 @@ public sealed class SqlDataProfiler : IDataProfiler
                         targetEntity.PhysicalName.Value,
                         targetIdentifier.ColumnName.Value);
 
-                    var hasOrphans = tableResults.ForeignKeys.TryGetValue(foreignKeyKey, out var orphaned) && orphaned;
+                    var orphanCount = tableResults.ForeignKeyOrphanCounts.TryGetValue(foreignKeyKey, out var count)
+                        ? count
+                        : 0L;
+                    var hasOrphans = orphanCount > 0;
                     var isNoCheck = tableResults.ForeignKeyIsNoCheck.TryGetValue(foreignKeyKey, out var noCheck) && noCheck;
                     var foreignKeyStatus = tableResults.ForeignKeyStatuses.TryGetValue(foreignKeyKey, out var fkStatus)
                         ? fkStatus
                         : tableResults.ForeignKeyNoCheckStatuses.TryGetValue(foreignKeyKey, out var noCheckStatus)
                             ? noCheckStatus
                             : ProfilingProbeStatus.Unknown;
+                    var orphanSample = tableResults.ForeignKeyOrphanSamples.TryGetValue(foreignKeyKey, out var sample)
+                        ? sample
+                        : null;
 
                     var referenceResult = ForeignKeyReference.Create(
                         SchemaName.Create(schema).Value,
@@ -293,7 +299,13 @@ public sealed class SqlDataProfiler : IDataProfiler
                         continue;
                     }
 
-                    var realityResult = ForeignKeyReality.Create(referenceResult.Value, hasOrphans, isNoCheck, foreignKeyStatus);
+                    var realityResult = ForeignKeyReality.Create(
+                        referenceResult.Value,
+                        hasOrphans,
+                        orphanCount,
+                        isNoCheck,
+                        foreignKeyStatus,
+                        orphanSample);
                     if (realityResult.IsSuccess)
                     {
                         foreignKeys.Add(realityResult.Value);

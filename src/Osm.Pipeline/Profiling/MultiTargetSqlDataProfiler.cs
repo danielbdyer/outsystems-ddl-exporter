@@ -216,18 +216,29 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
             // If Environment A has 1000 rows and Environment B has 2000 rows with 1500 NULLs,
             // we must use 2000 as row count to allow 1500 NULLs to validate
             var maxRowCount = Math.Max(existing.RowCount, column.RowCount);
-            var maxNullCount = Math.Max(existing.NullCount, column.NullCount);
+            var baseNullCount = Math.Max(existing.NullCount, column.NullCount);
             var worstProbeStatus = AggregateProbeStatus(existing.NullCountStatus, column.NullCountStatus);
 
-            // Aggregate null row samples if present in either environment
-            var aggregatedSample = AggregateNullRowSample(existing.NullRowSample, column.NullRowSample);
+            // Aggregate null row samples if present in either environment and normalize totals
+            var (aggregatedSample, aggregatedNullTotal) = AggregateNullRowSample(
+                existing.NullRowSample,
+                column.NullRowSample,
+                baseNullCount);
+
+            var maxNullCount = Math.Max(baseNullCount, aggregatedNullTotal);
+            if (aggregatedSample is not null)
+            {
+                maxNullCount = Math.Max(maxNullCount, aggregatedSample.TotalNullRows);
+            }
+
+            maxRowCount = Math.Max(maxRowCount, maxNullCount);
 
             // Use first occurrence's metadata (physical nullability, PK, etc.) as baseline
             // but aggregate data quality metrics (row count, null count, probe status)
             if (maxRowCount != existing.RowCount ||
                 maxNullCount != existing.NullCount ||
                 worstProbeStatus != existing.NullCountStatus ||
-                aggregatedSample != existing.NullRowSample)
+                !Equals(aggregatedSample, existing.NullRowSample))
             {
                 var aggregated = ColumnProfile.Create(
                     existing.Schema,
@@ -256,42 +267,60 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
         }
     }
 
-    private static NullRowSample? AggregateNullRowSample(NullRowSample? first, NullRowSample? second)
+    private static (NullRowSample? Sample, long TotalNullRows) AggregateNullRowSample(
+        NullRowSample? first,
+        NullRowSample? second,
+        long baseNullCount)
     {
+        if (first is null && second is null)
+        {
+            return (null, baseNullCount);
+        }
+
         if (first is null)
         {
-            return second;
+            return NormalizeNullRowSample(second!, baseNullCount);
         }
 
         if (second is null)
         {
-            return first;
+            return NormalizeNullRowSample(first, baseNullCount);
         }
 
-        if (second.TotalNullRows > first.TotalNullRows)
+        var primaryKeyColumns = !second.PrimaryKeyColumns.IsDefaultOrEmpty
+            ? second.PrimaryKeyColumns
+            : first.PrimaryKeyColumns;
+
+        if (primaryKeyColumns.IsDefaultOrEmpty)
         {
-            return second;
+            primaryKeyColumns = first.PrimaryKeyColumns;
         }
 
-        if (second.TotalNullRows == first.TotalNullRows)
+        var combinedRows = first.SampleRows
+            .Concat(second.SampleRows)
+            .Distinct(NullRowIdentifierComparer.Instance)
+            .ToImmutableArray();
+
+        var totalNullRows = Math.Max(baseNullCount, Math.Max(first.TotalNullRows, second.TotalNullRows));
+        totalNullRows = Math.Max(totalNullRows, combinedRows.Length);
+
+        var sample = NullRowSample.Create(primaryKeyColumns, combinedRows, totalNullRows);
+        return (sample, totalNullRows);
+    }
+
+    private static (NullRowSample Sample, long TotalNullRows) NormalizeNullRowSample(
+        NullRowSample sample,
+        long baseNullCount)
+    {
+        var totalNullRows = Math.Max(baseNullCount, Math.Max(sample.TotalNullRows, sample.SampleRows.Length));
+
+        if (totalNullRows == sample.TotalNullRows)
         {
-            if (first.IsTruncated && !second.IsTruncated)
-            {
-                return second;
-            }
-
-            if (!first.IsTruncated && second.IsTruncated)
-            {
-                return first;
-            }
-
-            if (second.SampleRows.Length > first.SampleRows.Length)
-            {
-                return second;
-            }
+            return (sample, totalNullRows);
         }
 
-        return first;
+        var normalized = NullRowSample.Create(sample.PrimaryKeyColumns, sample.SampleRows, totalNullRows);
+        return (normalized, totalNullRows);
     }
 
     private static void MergeUniqueCandidatesWithAggregation(
@@ -393,22 +422,188 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
             var hasOrphan = existing.HasOrphan || reality.HasOrphan;
             var isNoCheck = existing.IsNoCheck || reality.IsNoCheck;
             var worstProbeStatus = AggregateProbeStatus(existing.ProbeStatus, reality.ProbeStatus);
+            var (aggregatedSample, aggregatedCount) = AggregateOrphanSample(
+                existing.OrphanSample,
+                reality.OrphanSample,
+                existing.OrphanCount,
+                reality.OrphanCount);
+
+            hasOrphan = hasOrphan || aggregatedCount > 0;
 
             if (hasOrphan != existing.HasOrphan ||
+                aggregatedCount != existing.OrphanCount ||
                 isNoCheck != existing.IsNoCheck ||
-                worstProbeStatus != existing.ProbeStatus)
+                worstProbeStatus != existing.ProbeStatus ||
+                !Equals(aggregatedSample, existing.OrphanSample))
             {
                 var aggregated = ForeignKeyReality.Create(
                     existing.Reference,  // Use first occurrence's reference
                     hasOrphan,
+                    aggregatedCount,
                     isNoCheck,
-                    worstProbeStatus);
+                    worstProbeStatus,
+                    aggregatedSample);
 
                 if (aggregated.IsSuccess)
                 {
                     map[key] = aggregated.Value;
                 }
             }
+        }
+    }
+
+    private static (ForeignKeyOrphanSample? Sample, long TotalOrphans) AggregateOrphanSample(
+        ForeignKeyOrphanSample? first,
+        ForeignKeyOrphanSample? second,
+        long firstCount,
+        long secondCount)
+    {
+        var baseCount = Math.Max(firstCount, secondCount);
+
+        if (first is null && second is null)
+        {
+            return (null, baseCount);
+        }
+
+        if (first is null)
+        {
+            return NormalizeOrphanSample(second!, baseCount);
+        }
+
+        if (second is null)
+        {
+            return NormalizeOrphanSample(first, baseCount);
+        }
+
+        var primaryKeyColumns = !second.PrimaryKeyColumns.IsDefaultOrEmpty
+            ? second.PrimaryKeyColumns
+            : first.PrimaryKeyColumns;
+
+        if (primaryKeyColumns.IsDefaultOrEmpty)
+        {
+            primaryKeyColumns = first.PrimaryKeyColumns;
+        }
+
+        var foreignKeyColumn = string.IsNullOrWhiteSpace(second.ForeignKeyColumn)
+            ? first.ForeignKeyColumn
+            : second.ForeignKeyColumn;
+
+        var combinedRows = first.SampleRows
+            .Concat(second.SampleRows)
+            .Distinct(ForeignKeyOrphanIdentifierComparer.Instance)
+            .ToImmutableArray();
+
+        var totalOrphans = Math.Max(baseCount, Math.Max(first.TotalOrphans, second.TotalOrphans));
+        totalOrphans = Math.Max(totalOrphans, combinedRows.Length);
+
+        var sample = ForeignKeyOrphanSample.Create(primaryKeyColumns, foreignKeyColumn, combinedRows, totalOrphans);
+        return (sample, totalOrphans);
+    }
+
+    private static (ForeignKeyOrphanSample Sample, long TotalOrphans) NormalizeOrphanSample(
+        ForeignKeyOrphanSample sample,
+        long baseCount)
+    {
+        var totalOrphans = Math.Max(baseCount, Math.Max(sample.TotalOrphans, sample.SampleRows.Length));
+
+        if (totalOrphans == sample.TotalOrphans)
+        {
+            return (sample, totalOrphans);
+        }
+
+        var normalized = ForeignKeyOrphanSample.Create(sample.PrimaryKeyColumns, sample.ForeignKeyColumn, sample.SampleRows, totalOrphans);
+        return (normalized, totalOrphans);
+    }
+
+    private sealed class NullRowIdentifierComparer : IEqualityComparer<NullRowIdentifier>
+    {
+        public static NullRowIdentifierComparer Instance { get; } = new();
+
+        public bool Equals(NullRowIdentifier? x, NullRowIdentifier? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null)
+            {
+                return false;
+            }
+
+            if (x.PrimaryKeyValues.Length != y.PrimaryKeyValues.Length)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < x.PrimaryKeyValues.Length; i++)
+            {
+                if (!Equals(x.PrimaryKeyValues[i], y.PrimaryKeyValues[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public int GetHashCode(NullRowIdentifier obj)
+        {
+            var hash = new HashCode();
+
+            foreach (var value in obj.PrimaryKeyValues)
+            {
+                hash.Add(value);
+            }
+
+            return hash.ToHashCode();
+        }
+    }
+
+    private sealed class ForeignKeyOrphanIdentifierComparer : IEqualityComparer<ForeignKeyOrphanIdentifier>
+    {
+        public static ForeignKeyOrphanIdentifierComparer Instance { get; } = new();
+
+        public bool Equals(ForeignKeyOrphanIdentifier? x, ForeignKeyOrphanIdentifier? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null)
+            {
+                return false;
+            }
+
+            if (x.PrimaryKeyValues.Length != y.PrimaryKeyValues.Length)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < x.PrimaryKeyValues.Length; i++)
+            {
+                if (!Equals(x.PrimaryKeyValues[i], y.PrimaryKeyValues[i]))
+                {
+                    return false;
+                }
+            }
+
+            return Equals(x.ForeignKeyValue, y.ForeignKeyValue);
+        }
+
+        public int GetHashCode(ForeignKeyOrphanIdentifier obj)
+        {
+            var hash = new HashCode();
+
+            foreach (var value in obj.PrimaryKeyValues)
+            {
+                hash.Add(value);
+            }
+
+            hash.Add(obj.ForeignKeyValue);
+
+            return hash.ToHashCode();
         }
     }
 
