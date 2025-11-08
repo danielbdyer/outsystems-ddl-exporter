@@ -7,18 +7,19 @@ using System.Text;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Validation.Tightening.Signals;
+using Osm.Validation.Tightening.Validations;
 using Osm.Domain.ValueObjects;
 
 namespace Osm.Validation.Tightening.Opportunities;
 
 public interface ITighteningAnalyzer
 {
-    OpportunitiesReport Analyze(OsmModel model, ProfileSnapshot profile, PolicyDecisionSet decisions);
+    TighteningFindings Analyze(OsmModel model, ProfileSnapshot profile, PolicyDecisionSet decisions);
 }
 
 public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 {
-    public OpportunitiesReport Analyze(OsmModel model, ProfileSnapshot profile, PolicyDecisionSet decisions)
+    public TighteningFindings Analyze(OsmModel model, ProfileSnapshot profile, PolicyDecisionSet decisions)
     {
         if (model is null)
         {
@@ -659,13 +660,22 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
     private sealed class OpportunityAccumulator
     {
         private readonly ImmutableArray<Opportunity>.Builder _opportunities = ImmutableArray.CreateBuilder<Opportunity>();
+        private readonly ImmutableArray<ValidationFinding>.Builder _validations = ImmutableArray.CreateBuilder<ValidationFinding>();
         private readonly Dictionary<OpportunityDisposition, int> _dispositionCounts = new();
         private readonly Dictionary<OpportunityCategory, int> _categoryCounts = new();
         private readonly Dictionary<OpportunityType, int> _typeCounts = new();
         private readonly Dictionary<RiskLevel, int> _riskCounts = new();
+        private readonly Dictionary<OpportunityType, int> _validationTypeCounts = new();
 
         public void Record(Opportunity opportunity)
         {
+            if (opportunity.Category == OpportunityCategory.Validation)
+            {
+                _validations.Add(ValidationFinding.FromOpportunity(opportunity));
+                Increment(_validationTypeCounts, opportunity.Type);
+                return;
+            }
+
             _opportunities.Add(opportunity);
             Increment(_dispositionCounts, opportunity.Disposition);
             Increment(_categoryCounts, opportunity.Category);
@@ -673,15 +683,25 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             Increment(_riskCounts, opportunity.Risk.Level);
         }
 
-        public OpportunitiesReport BuildReport()
+        public TighteningFindings BuildReport()
         {
-            return new OpportunitiesReport(
+            var generatedAt = DateTimeOffset.UtcNow;
+            var opportunities = new OpportunitiesReport(
                 _opportunities.ToImmutable(),
                 _dispositionCounts.ToImmutableDictionary(),
                 _categoryCounts.ToImmutableDictionary(),
                 _typeCounts.ToImmutableDictionary(),
                 _riskCounts.ToImmutableDictionary(),
-                DateTimeOffset.UtcNow);
+                generatedAt);
+
+            var validations = _validations.Count == 0
+                ? ValidationReport.Empty(generatedAt)
+                : new ValidationReport(
+                    _validations.ToImmutable(),
+                    _validationTypeCounts.ToImmutableDictionary(),
+                    generatedAt);
+
+            return TighteningFindings.Create(opportunities, validations);
         }
     }
 
@@ -910,5 +930,23 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 
         public bool TryGet(IndexCoordinate coordinate, out (EntityModel Entity, IndexModel Index) entry)
             => _indexes.TryGetValue(coordinate, out entry);
+    }
+}
+
+public sealed record TighteningFindings(OpportunitiesReport Opportunities, ValidationReport Validations)
+{
+    public static TighteningFindings Create(OpportunitiesReport opportunities, ValidationReport validations)
+    {
+        if (opportunities is null)
+        {
+            throw new ArgumentNullException(nameof(opportunities));
+        }
+
+        if (validations is null)
+        {
+            throw new ArgumentNullException(nameof(validations));
+        }
+
+        return new TighteningFindings(opportunities, validations);
     }
 }

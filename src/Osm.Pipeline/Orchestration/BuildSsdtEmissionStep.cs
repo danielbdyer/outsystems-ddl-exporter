@@ -13,7 +13,9 @@ using Osm.Emission;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
+using Osm.Validation.Tightening.Validations;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+using ValidationReport = Osm.Validation.Tightening.Validations.ValidationReport;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -48,6 +50,7 @@ public interface IOpportunityLogWriter
     Task<Result<OpportunityArtifacts>> WriteAsync(
         string outputDirectory,
         OpportunitiesReport report,
+        ValidationReport validations,
         CancellationToken cancellationToken = default);
 }
 
@@ -166,6 +169,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
             state.Decisions,
             state.Report,
             state.Opportunities,
+            state.Validations,
             state.Insights,
             emissionResult.Value.Manifest,
             decisionLogResult.Value.Path,
@@ -277,7 +281,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         CancellationToken cancellationToken)
     {
         var artifactsResult = await _opportunityWriter
-            .WriteAsync(state.Request.OutputDirectory, state.Opportunities, cancellationToken)
+            .WriteAsync(state.Request.OutputDirectory, state.Opportunities, state.Validations, cancellationToken)
             .ConfigureAwait(false);
         if (artifactsResult.IsFailure)
         {
@@ -288,9 +292,11 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
 
         var metadata = new PipelineLogMetadataBuilder()
             .WithPath("report", opportunityArtifacts.ReportPath)
+            .WithPath("validations", opportunityArtifacts.ValidationsPath)
             .WithPath("safeScript", opportunityArtifacts.SafeScriptPath)
             .WithPath("remediationScript", opportunityArtifacts.RemediationScriptPath)
             .WithCount("total", state.Opportunities.TotalCount)
+            .WithCount("validations", state.Validations.TotalCount)
             .Build();
 
         return Result<OpportunityPersistenceResult>.Success(new OpportunityPersistenceResult(opportunityArtifacts, metadata));
@@ -516,9 +522,10 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         public Task<Result<OpportunityArtifacts>> WriteAsync(
             string outputDirectory,
             OpportunitiesReport report,
+            ValidationReport validations,
             CancellationToken cancellationToken = default)
         {
-            return _inner.WriteAsync(outputDirectory, report, cancellationToken);
+            return _inner.WriteAsync(outputDirectory, report, validations, cancellationToken);
         }
     }
 }

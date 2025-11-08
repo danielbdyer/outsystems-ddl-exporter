@@ -102,6 +102,11 @@ public sealed class BuildSsdtVerb : PipelineVerb<BuildSsdtVerbOptions, BuildSsdt
             artifacts.Add(new PipelineArtifact("opportunities", pipelineResult.OpportunitiesPath, "application/json"));
         }
 
+        if (!string.IsNullOrWhiteSpace(pipelineResult.ValidationsPath))
+        {
+            artifacts.Add(new PipelineArtifact("validations", pipelineResult.ValidationsPath, "application/json"));
+        }
+
         if (!string.IsNullOrWhiteSpace(pipelineResult.SafeScriptPath))
         {
             artifacts.Add(new PipelineArtifact("opportunity-safe", pipelineResult.SafeScriptPath, "application/sql"));

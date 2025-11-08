@@ -89,6 +89,7 @@ public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<StaticSeeds
             state.Decisions,
             state.Report,
             state.Opportunities,
+            state.Validations,
             state.Insights,
             state.Manifest,
             state.DecisionLogPath,

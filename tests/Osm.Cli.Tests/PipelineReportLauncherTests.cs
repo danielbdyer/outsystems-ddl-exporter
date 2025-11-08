@@ -12,6 +12,7 @@ using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+using ValidationReport = Osm.Validation.Tightening.Validations.ValidationReport;
 using Opportunity = Osm.Validation.Tightening.Opportunities.Opportunity;
 using OpportunityType = Osm.Validation.Tightening.Opportunities.OpportunityType;
 using OpportunityDisposition = Osm.Validation.Tightening.Opportunities.OpportunityDisposition;
@@ -228,8 +229,13 @@ public class PipelineReportLauncherTests
             ImmutableDictionary<RiskLevel, int>.Empty,
             DateTimeOffset.UnixEpoch);
 
+        var validations = ValidationReport.Empty(DateTimeOffset.UnixEpoch);
+
         var opportunitiesPath = Path.Combine(output.Path, "opportunities.json");
         await File.WriteAllTextAsync(opportunitiesPath, "{}");
+
+        var validationsPath = Path.Combine(output.Path, "validations.json");
+        await File.WriteAllTextAsync(validationsPath, "{}");
 
         var suggestionsRoot = Path.Combine(output.Path, "suggestions");
         Directory.CreateDirectory(suggestionsRoot);
@@ -251,6 +257,7 @@ public class PipelineReportLauncherTests
             ImmutableArray<ProfilingInsight>.Empty,
             decisionReport,
             opportunities,
+            validations,
             manifest,
             ImmutableDictionary<string, ModuleManifestRollup>.Empty
                 .Add("AppCore", new ModuleManifestRollup(1, 1, 1))
@@ -258,6 +265,7 @@ public class PipelineReportLauncherTests
             insights.IsDefault ? ImmutableArray<PipelineInsight>.Empty : insights,
             policyPath,
             opportunitiesPath,
+            validationsPath,
             safePath,
             string.Empty,
             remediationPath,

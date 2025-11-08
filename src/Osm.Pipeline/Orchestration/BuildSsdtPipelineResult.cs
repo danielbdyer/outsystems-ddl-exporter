@@ -5,6 +5,7 @@ using Osm.Pipeline.Evidence;
 using Osm.Validation.Tightening;
 using Osm.Pipeline.Profiling;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+using ValidationReport = Osm.Validation.Tightening.Validations.ValidationReport;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -13,11 +14,13 @@ public sealed record BuildSsdtPipelineResult(
     ImmutableArray<ProfilingInsight> ProfilingInsights,
     PolicyDecisionReport DecisionReport,
     OpportunitiesReport Opportunities,
+    ValidationReport Validations,
     SsdtManifest Manifest,
     ImmutableDictionary<string, ModuleManifestRollup> ModuleManifestRollups,
     ImmutableArray<PipelineInsight> PipelineInsights,
     string DecisionLogPath,
     string OpportunitiesPath,
+    string ValidationsPath,
     string SafeScriptPath,
     string SafeScript,
     string RemediationScriptPath,

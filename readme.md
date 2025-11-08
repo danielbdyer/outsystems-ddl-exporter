@@ -414,7 +414,8 @@ dotnet run --project src/Osm.Cli -- build-ssdt \
 
 Every run also emits a tightening opportunity bundle next to the SSDT schema:
 
-* `<out>/opportunities.json` captures every candidate the analyzer reviewed (constraint type, risk level, evidence, and per-column profiling metrics).
+* `<out>/opportunities.json` captures contradiction and recommendation candidates (constraint type, risk level, evidence, and per-column profiling metrics).
+* `<out>/validations.json` summarizes existing constraints that profiling confirmed so operators can document clean columns without mixing them into opportunity risk tallies.
 * `<out>/suggestions/safe-to-apply.sql` concatenates statement-ready fixes that require no remediation.
 * `<out>/suggestions/needs-remediation.sql` captures SQL that should be reviewed alongside data cleanup guidance before deployment.
 

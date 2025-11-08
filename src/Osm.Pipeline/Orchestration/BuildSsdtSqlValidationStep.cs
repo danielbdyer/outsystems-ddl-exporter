@@ -57,6 +57,7 @@ public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<EmissionReady, S
             state.Decisions,
             state.Report,
             state.Opportunities,
+            state.Validations,
             state.Insights,
             manifest,
             state.DecisionLogPath,

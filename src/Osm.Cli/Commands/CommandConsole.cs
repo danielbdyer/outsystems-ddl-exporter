@@ -67,9 +67,10 @@ internal static class CommandConsole
             : Path.Combine(outputDirectory, "manifest.json");
         var decisionReport = pipelineResult.DecisionReport;
         var opportunities = pipelineResult.Opportunities;
+        var validations = pipelineResult.Validations;
         var contradictionCount = opportunities?.ContradictionCount ?? 0;
-        var readyOpportunities = (opportunities?.RecommendationCount ?? 0)
-            + (opportunities?.ValidationCount ?? 0);
+        var readyOpportunities = opportunities?.RecommendationCount ?? 0;
+        var validationCount = validations?.TotalCount ?? 0;
 
         WriteLine(console, string.Empty);
         WriteLine(console, "SSDT build summary:");
@@ -77,6 +78,7 @@ internal static class CommandConsole
         WriteLine(console, $"  Manifest: {FormatPath(manifestPath)}");
         WriteLine(console, $"  Decision log: {FormatPath(pipelineResult.DecisionLogPath)}");
         WriteLine(console, $"  Opportunities: {FormatPath(pipelineResult.OpportunitiesPath)}");
+        WriteLine(console, FormatValidationsLine(pipelineResult.ValidationsPath, validationCount));
         WriteLine(console, FormatSafeScriptLine(pipelineResult.SafeScriptPath, readyOpportunities));
         WriteLine(console, FormatRemediationScriptLine(pipelineResult.RemediationScriptPath, contradictionCount));
 
@@ -553,6 +555,21 @@ internal static class CommandConsole
             "  Safe script: {0} ({1} ready)",
             formattedPath,
             readyOpportunities);
+    }
+
+    private static string FormatValidationsLine(string? path, int validationCount)
+    {
+        var formattedPath = FormatPath(path);
+        if (validationCount <= 0)
+        {
+            return $"  Validations: {formattedPath}";
+        }
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "  Validations: {0} ({1} confirmed)",
+            formattedPath,
+            validationCount);
     }
 
     private static string FormatRemediationScriptLine(string? path, int contradictionCount)

@@ -76,7 +76,8 @@ The OutSystems DDL Exporter implements a **multi-stage, evidence-driven pipeline
 │   └── needs-remediation.sql        # Requires data cleanup first
 ├── manifest.json                     # Complete emission metadata
 ├── policy-decisions.json             # All tightening decisions + rationales
-├── opportunities.json                # Detailed tightening analysis
+├── opportunities.json                # Contradictions and recommendations
+├── validations.json                  # Evidence for already-enforced constraints
 └── README.txt                        # Import guidance for SSDT
 
 ```
@@ -168,7 +169,8 @@ tests/Fixtures/
 |------|---------|--------|
 | `manifest.json` | Complete emission summary (tables, indexes, FKs, options) | JSON |
 | `policy-decisions.json` | All nullability/unique/FK decisions with rationales | JSON |
-| `opportunities.json` | Tightening opportunities analysis | JSON |
+| `opportunities.json` | Tightening contradictions/recommendations | JSON |
+| `validations.json` | Profiling-confirmed constraints | JSON |
 | `suggestions/safe-to-apply.sql` | Ready-to-apply constraint additions | SQL |
 | `suggestions/needs-remediation.sql` | Requires data cleanup before applying | SQL |
 
@@ -1797,6 +1799,21 @@ suggestions/
     "TotalRows": 10523
   },
   "Rationales": ["MANDATORY", "DATA_HAS_NULLS"]
+}
+```
+
+**In validations.json**:
+```json
+{
+  "Type": "Nullability",
+  "Summary": "Validated: Column is already NOT NULL and profiling confirms data integrity.",
+  "Schema": "dbo",
+  "Table": "Customer",
+  "ConstraintName": "Email",
+  "Evidence": [
+    "Rows=10523",
+    "Nulls=0 (Outcome=Succeeded, Sample=10523, Captured=2024-01-01T00:00:00Z)"
+  ]
 }
 ```
 

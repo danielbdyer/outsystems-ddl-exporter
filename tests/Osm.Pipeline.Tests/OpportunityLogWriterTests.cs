@@ -12,6 +12,7 @@ using Osm.Pipeline.Orchestration;
 using Osm.Validation.Tightening;
 using Opportunities = Osm.Validation.Tightening.Opportunities;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+using ValidationReport = Osm.Validation.Tightening.Validations.ValidationReport;
 using Tests.Support;
 using Xunit;
 
@@ -23,16 +24,18 @@ public sealed class OpportunityLogWriterTests
     public async Task WriteAsync_PersistsDeterministicArtifacts()
     {
         var report = CreateReport();
+        var validations = CreateValidations();
         var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), "/");
         fileSystem.AddDirectory("/work");
         fileSystem.Directory.SetCurrentDirectory("/work");
         var writer = new OpportunityLogWriter(fileSystem);
 
-        var result = await writer.WriteAsync("/work/output", report);
+        var result = await writer.WriteAsync("/work/output", report, validations);
         Assert.True(result.IsSuccess);
         var artifacts = result.Value;
 
         var expectedJson = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/opportunities.json"));
+        var expectedValidations = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/validations.json"));
         var expectedSafe = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/safe-to-apply.sql"));
         var expectedRemediation = await File.ReadAllTextAsync(FixtureFile.GetPath("opportunities/needs-remediation.sql"));
 
@@ -41,6 +44,12 @@ public sealed class OpportunityLogWriterTests
             actualJson,
             new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } });
         Assert.NotNull(actualReport);
+
+        var actualValidationsJson = fileSystem.File.ReadAllText(artifacts.ValidationsPath);
+        var actualValidations = JsonSerializer.Deserialize<ValidationReport>(
+            actualValidationsJson,
+            new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } });
+        Assert.NotNull(actualValidations);
 
         var expectedOpportunities = report.Opportunities;
         var actualOpportunities = actualReport!.Opportunities;
@@ -62,6 +71,11 @@ public sealed class OpportunityLogWriterTests
             NormalizeEvidenceSections(fileSystem.File.ReadAllText(artifacts.RemediationScriptPath)));
         Assert.Equal(NormalizeEvidenceSections(expectedSafe), NormalizeEvidenceSections(artifacts.SafeScript));
         Assert.Equal(NormalizeEvidenceSections(expectedRemediation), NormalizeEvidenceSections(artifacts.RemediationScript));
+        Assert.Equal(
+            expectedValidations.Trim(),
+            actualValidationsJson.Trim());
+        Assert.Equal(validations.TotalCount, actualValidations!.TotalCount);
+        Assert.Equal(validations.Validations[0].Summary, actualValidations.Validations[0].Summary);
     }
 
     private static OpportunitiesReport CreateReport()
@@ -125,6 +139,52 @@ public sealed class OpportunityLogWriterTests
             categoryCounts.ToImmutable(),
             typeCounts.ToImmutable(),
             riskCounts.ToImmutable(),
+            capture);
+    }
+
+    private static ValidationReport CreateValidations()
+    {
+        var capture = DateTimeOffset.Parse("2024-01-01T00:00:00Z");
+        var columnIdentity = new ColumnIdentity(
+            new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new ColumnName("ID")),
+            new ModuleName("Orders"),
+            new EntityName("Order"),
+            new TableName("OSUSR_ABC_ORDER"),
+            new AttributeName("Id"));
+
+        var validation = new Osm.Validation.Tightening.Validations.ValidationFinding(
+            Opportunities.OpportunityType.Nullability,
+            "NOT NULL",
+            "Validated: Column is already NOT NULL and profiling confirms data integrity.",
+            ImmutableArray.Create("Rows=100", "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"),
+            ImmutableArray<string>.Empty,
+            columnIdentity.Coordinate,
+            null,
+            "dbo",
+            "OSUSR_ABC_ORDER",
+            "ID",
+            ImmutableArray.Create(
+                new Opportunities.OpportunityColumn(
+                    columnIdentity,
+                    "Integer",
+                    "INT",
+                    false,
+                    false,
+                    100,
+                    0,
+                    ProfilingProbeStatus.CreateSucceeded(capture, 100),
+                    false,
+                    null,
+                    null,
+                    true,
+                    null)));
+
+        var typeCounts = ImmutableDictionary.CreateBuilder<Opportunities.OpportunityType, int>();
+        typeCounts[Opportunities.OpportunityType.Nullability] = 1;
+
+        return new ValidationReport(
+            ImmutableArray.Create(validation),
+            typeCounts.ToImmutable(),
             capture);
     }
 
