@@ -31,6 +31,16 @@ public class CliIntegrationTests
         var buildResult = await RunCliAsync(repoRoot, $"run --project {cliProject} -- build-ssdt --model {modelPath} --profile {profilePath} --static-data {staticDataPath} --max-degree-of-parallelism 2 --out {output.Path}");
         AssertExitCode(buildResult, 0);
 
+        var buildStdout = buildResult.StandardOutput;
+        Assert.Contains("SSDT build summary:", buildStdout);
+        Assert.Contains($"Output: {output.Path}", buildStdout);
+        Assert.Contains($"Manifest: {Path.Combine(output.Path, "manifest.json")}", buildStdout);
+        var buildSummaryIndex = buildStdout.IndexOf("SSDT build summary:", StringComparison.Ordinal);
+        var buildDetailsIndex = buildStdout.IndexOf("SSDT Emission Summary:", StringComparison.Ordinal);
+        Assert.InRange(buildSummaryIndex, 0, int.MaxValue);
+        Assert.InRange(buildDetailsIndex, 0, int.MaxValue);
+        Assert.True(buildSummaryIndex < buildDetailsIndex, buildStdout);
+
         var manifestPath = Path.Combine(output.Path, "manifest.json");
         Assert.True(File.Exists(manifestPath));
 

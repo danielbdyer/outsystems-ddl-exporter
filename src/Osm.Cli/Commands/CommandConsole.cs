@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.CommandLine;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -10,6 +11,7 @@ using System.Text.Json.Serialization;
 using Osm.Cli;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
+using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
@@ -36,6 +38,63 @@ internal static class CommandConsole
     private sealed record UniqueIssue(IssueSeverity Severity, string Scope, string Target, string Details, string Probe);
 
     private sealed record ForeignKeyIssue(IssueSeverity Severity, string Reference, string Details, string Probe);
+
+    public static void EmitBuildSsdtSummary(
+        IConsole console,
+        BuildSsdtApplicationResult applicationResult,
+        BuildSsdtPipelineResult pipelineResult)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (applicationResult is null)
+        {
+            throw new ArgumentNullException(nameof(applicationResult));
+        }
+
+        if (pipelineResult is null)
+        {
+            throw new ArgumentNullException(nameof(pipelineResult));
+        }
+
+        var outputDirectory = string.IsNullOrWhiteSpace(applicationResult.OutputDirectory)
+            ? string.Empty
+            : applicationResult.OutputDirectory;
+        var manifestPath = string.IsNullOrWhiteSpace(outputDirectory)
+            ? "manifest.json"
+            : Path.Combine(outputDirectory, "manifest.json");
+        var decisionReport = pipelineResult.DecisionReport;
+        var opportunities = pipelineResult.Opportunities;
+        var contradictionCount = opportunities?.ContradictionCount ?? 0;
+        var readyOpportunities = (opportunities?.RecommendationCount ?? 0)
+            + (opportunities?.ValidationCount ?? 0);
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "SSDT build summary:");
+        WriteLine(console, $"  Output: {FormatPath(outputDirectory)}");
+        WriteLine(console, $"  Manifest: {FormatPath(manifestPath)}");
+        WriteLine(console, $"  Decision log: {FormatPath(pipelineResult.DecisionLogPath)}");
+        WriteLine(console, $"  Opportunities: {FormatPath(pipelineResult.OpportunitiesPath)}");
+        WriteLine(console, FormatSafeScriptLine(pipelineResult.SafeScriptPath, readyOpportunities));
+        WriteLine(console, FormatRemediationScriptLine(pipelineResult.RemediationScriptPath, contradictionCount));
+
+        if (decisionReport is not null)
+        {
+            WriteLine(
+                console,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "  Tightening: Columns {0}/{1}, Unique {2}/{3}, Foreign Keys {4}/{5}",
+                    decisionReport.TightenedColumnCount,
+                    decisionReport.ColumnCount,
+                    decisionReport.UniqueIndexesEnforcedCount,
+                    decisionReport.UniqueIndexCount,
+                    decisionReport.ForeignKeysCreatedCount,
+                    decisionReport.ForeignKeyCount));
+        }
+    }
 
     public static void WriteLine(IConsole console, string message)
     {
@@ -474,6 +533,39 @@ internal static class CommandConsole
 
     private static string FormatUniqueTarget(string schema, string table, string column)
         => $"{schema}.{table}.{column}";
+
+    private static string FormatSafeScriptLine(string? path, int readyOpportunities)
+    {
+        var formattedPath = FormatPath(path);
+        if (readyOpportunities <= 0)
+        {
+            return $"  Safe script: {formattedPath}";
+        }
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "  Safe script: {0} ({1} ready)",
+            formattedPath,
+            readyOpportunities);
+    }
+
+    private static string FormatRemediationScriptLine(string? path, int contradictionCount)
+    {
+        var formattedPath = FormatPath(path);
+        if (contradictionCount <= 0)
+        {
+            return $"  Remediation script: {formattedPath}";
+        }
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "  Remediation script: {0} (⚠️ {1} contradictions)",
+            formattedPath,
+            contradictionCount);
+    }
+
+    private static string FormatPath(string? path)
+        => string.IsNullOrWhiteSpace(path) ? "(not emitted)" : path;
 
     private static string FormatForeignKeyReference(ForeignKeyReference reference)
     {

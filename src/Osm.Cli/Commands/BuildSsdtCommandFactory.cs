@@ -122,6 +122,20 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         var applicationResult = payload.ApplicationResult;
         var pipelineResult = applicationResult.PipelineResult;
 
+        var pipelineWarnings = pipelineResult.Warnings
+            .Where(static warning => !string.IsNullOrWhiteSpace(warning))
+            .ToImmutableArray();
+
+        var actionableProfilingInsights = pipelineResult.ProfilingInsights
+            .Where(static insight => insight is
+            {
+                Severity: ProfilingInsightSeverity.Warning or ProfilingInsightSeverity.Error
+                    or ProfilingInsightSeverity.Recommendation,
+            })
+            .ToImmutableArray();
+
+        var hasPipelineLogEntries = pipelineResult.ExecutionLog.Entries.Count > 0;
+
         if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
         {
             var modelMessage = applicationResult.ModelWasExtracted
@@ -141,20 +155,22 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             CommandConsole.EmitMultiEnvironmentReport(context.Console, pipelineResult.MultiEnvironmentReport);
         }
 
-        var pipelineWarnings = pipelineResult.Warnings
-            .Where(static warning => !string.IsNullOrWhiteSpace(warning))
-            .ToImmutableArray();
+        CommandConsole.EmitBuildSsdtSummary(context.Console, applicationResult, pipelineResult);
+        CommandConsole.EmitContradictionDetails(context.Console, pipelineResult.Opportunities);
 
-        var actionableProfilingInsights = pipelineResult.ProfilingInsights
-            .Where(static insight => insight is
-            {
-                Severity: ProfilingInsightSeverity.Warning or ProfilingInsightSeverity.Error
-                    or ProfilingInsightSeverity.Recommendation
-            })
-            .ToImmutableArray();
+        // Tightening diagnostics
+        EmitTighteningDiagnostics(context, pipelineResult.DecisionReport.Diagnostics);
 
-        if ((pipelineWarnings.Length > 0 || actionableProfilingInsights.Length > 0)
-            && pipelineResult.ExecutionLog.Entries.Count > 0)
+        // Evidence cache notification
+        if (pipelineResult.EvidenceCache is { } cacheResult)
+        {
+            CommandConsole.WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");
+        }
+
+        // SQL validation
+        EmitSqlValidationSummary(context, pipelineResult);
+
+        if ((pipelineWarnings.Length > 0 || actionableProfilingInsights.Length > 0) && hasPipelineLogEntries)
         {
             CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
         }
@@ -169,20 +185,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             CommandConsole.EmitProfilingInsights(context.Console, actionableProfilingInsights);
         }
 
-        // Tightening diagnostics
-        EmitTighteningDiagnostics(context, pipelineResult.DecisionReport.Diagnostics);
-
-        // Evidence cache notification
-        if (pipelineResult.EvidenceCache is { } cacheResult)
-        {
-            CommandConsole.WriteLine(context.Console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");
-        }
-
         // SSDT emission summary
         EmitSsdtEmissionSummary(context, applicationResult, pipelineResult);
-
-        // SQL validation
-        EmitSqlValidationSummary(context, pipelineResult);
 
         CommandConsole.EmitModuleRollups(
             context.Console,
@@ -195,8 +199,6 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         {
             CommandConsole.WriteLine(context.Console, summary);
         }
-
-        CommandConsole.EmitContradictionDetails(context.Console, pipelineResult.Opportunities);
 
         CommandConsole.WriteLine(context.Console, string.Empty);
         CommandConsole.WriteLine(context.Console, "Tightening Artifacts:");
