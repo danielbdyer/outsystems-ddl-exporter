@@ -12,10 +12,12 @@ namespace Osm.Pipeline.Evidence;
 internal sealed class EvidenceCacheWriter
 {
     private readonly IFileSystem _fileSystem;
+    private readonly IPathCanonicalizer _pathCanonicalizer;
 
-    public EvidenceCacheWriter(IFileSystem fileSystem)
+    public EvidenceCacheWriter(IFileSystem fileSystem, IPathCanonicalizer pathCanonicalizer)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+        _pathCanonicalizer = pathCanonicalizer ?? throw new ArgumentNullException(nameof(pathCanonicalizer));
     }
 
     public async Task<EvidenceCacheManifest> WriteAsync(

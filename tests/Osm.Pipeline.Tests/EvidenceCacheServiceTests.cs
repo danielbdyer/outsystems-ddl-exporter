@@ -5,6 +5,7 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Osm.Pipeline;
 using Osm.Pipeline.Evidence;
 
 namespace Osm.Pipeline.Tests;
@@ -205,15 +206,17 @@ public sealed class EvidenceCacheServiceTests
             Metadata: metadata,
             Refresh: false);
 
+        var canonicalizer = new ForwardSlashPathCanonicalizer();
         var service = new EvidenceCacheService(
             fileSystem,
-            () => new DateTimeOffset(2024, 08, 01, 14, 00, 00, TimeSpan.Zero));
+            () => new DateTimeOffset(2024, 08, 01, 14, 00, 00, TimeSpan.Zero),
+            canonicalizer);
 
         var result = await service.CacheAsync(request);
 
         Assert.True(result.IsSuccess);
         Assert.Equal("build-ssdt", result.Value.Manifest.Command);
-        Assert.StartsWith("/cache/", result.Value.CacheDirectory, StringComparison.Ordinal);
+        Assert.StartsWith(canonicalizer.Canonicalize("/cache/"), result.Value.CacheDirectory, StringComparison.Ordinal);
         Assert.True(fileSystem.Directory.Exists("/cache"));
 
         metadata["policy.mode"] = "Aggressive";

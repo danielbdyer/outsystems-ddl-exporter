@@ -4,6 +4,7 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
+using Osm.Pipeline;
 using Osm.Pipeline.Evidence;
 
 namespace Osm.Pipeline.Tests.Evidence;
@@ -14,8 +15,8 @@ public sealed class CacheRequestNormalizerTests
     public async Task TryNormalizeAsync_ShouldReturnErrorWhenRootMissing()
     {
         var fileSystem = new MockFileSystem();
-        var descriptorCollector = new EvidenceDescriptorCollector(fileSystem);
-        var normalizer = new CacheRequestNormalizer(fileSystem, descriptorCollector);
+        var descriptorCollector = new EvidenceDescriptorCollector(fileSystem, new ForwardSlashPathCanonicalizer());
+        var normalizer = new CacheRequestNormalizer(fileSystem, descriptorCollector, new ForwardSlashPathCanonicalizer());
         var request = new EvidenceCacheRequest(string.Empty, "ingest", null, null, null, null, new Dictionary<string, string?>(), false);
 
         var result = await normalizer.TryNormalizeAsync(request, CancellationToken.None);
@@ -42,8 +43,9 @@ public sealed class CacheRequestNormalizerTests
             ["moduleFilter.includeSystemModules"] = "false"
         };
 
-        var descriptorCollector = new EvidenceDescriptorCollector(fileSystem);
-        var normalizer = new CacheRequestNormalizer(fileSystem, descriptorCollector);
+        var canonicalizer = new ForwardSlashPathCanonicalizer();
+        var descriptorCollector = new EvidenceDescriptorCollector(fileSystem, canonicalizer);
+        var normalizer = new CacheRequestNormalizer(fileSystem, descriptorCollector, canonicalizer);
         var request = new EvidenceCacheRequest(
             root,
             "ingest",
@@ -58,7 +60,7 @@ public sealed class CacheRequestNormalizerTests
 
         Assert.True(result.IsSuccess);
         var context = result.Value;
-        Assert.Equal(fileSystem.Path.Combine(root, context.Key), context.CacheDirectory);
+        Assert.Equal(canonicalizer.Canonicalize(fileSystem.Path.Combine(root, context.Key)), context.CacheDirectory);
         Assert.Equal("ingest", context.Command);
         Assert.Equal(2, context.ModuleSelection.Modules.Count);
 

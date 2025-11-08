@@ -15,11 +15,16 @@ internal sealed class CacheRequestNormalizer
 {
     private readonly IFileSystem _fileSystem;
     private readonly EvidenceDescriptorCollector _descriptorCollector;
+    private readonly IPathCanonicalizer _pathCanonicalizer;
 
-    public CacheRequestNormalizer(IFileSystem fileSystem, EvidenceDescriptorCollector descriptorCollector)
+    public CacheRequestNormalizer(
+        IFileSystem fileSystem,
+        EvidenceDescriptorCollector descriptorCollector,
+        IPathCanonicalizer pathCanonicalizer)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         _descriptorCollector = descriptorCollector ?? throw new ArgumentNullException(nameof(descriptorCollector));
+        _pathCanonicalizer = pathCanonicalizer ?? throw new ArgumentNullException(nameof(pathCanonicalizer));
     }
 
     public async Task<Result<CacheRequestContext>> TryNormalizeAsync(
@@ -38,10 +43,19 @@ internal sealed class CacheRequestNormalizer
 
         var normalizedRoot = _fileSystem.Path.GetFullPath(request.RootDirectory.Trim());
         _fileSystem.Directory.CreateDirectory(normalizedRoot);
+        var canonicalRoot = _pathCanonicalizer.Canonicalize(normalizedRoot);
 
         var metadata = request.Metadata is null
             ? new Dictionary<string, string?>(StringComparer.Ordinal)
-            : new Dictionary<string, string?>(request.Metadata, StringComparer.Ordinal);
+            : request.Metadata.ToDictionary(
+                static pair => pair.Key,
+                pair => pair.Value is null ? null : pair.Value,
+                StringComparer.Ordinal);
+
+        foreach (var key in metadata.Keys.ToArray())
+        {
+            metadata[key] = _pathCanonicalizer.CanonicalizeOrNull(metadata[key]);
+        }
 
         var descriptorsResult = await _descriptorCollector
             .CollectAsync(request, cancellationToken)
@@ -64,10 +78,11 @@ internal sealed class CacheRequestNormalizer
         var moduleSelection = BuildModuleSelection(metadata);
         var key = ComputeKey(command, descriptors, metadata);
         var cacheDirectory = _fileSystem.Path.Combine(normalizedRoot, key);
+        var canonicalCacheDirectory = _pathCanonicalizer.Canonicalize(cacheDirectory);
 
         return new CacheRequestContext(
-            normalizedRoot,
-            cacheDirectory,
+            canonicalRoot,
+            canonicalCacheDirectory,
             command,
             key,
             metadata,

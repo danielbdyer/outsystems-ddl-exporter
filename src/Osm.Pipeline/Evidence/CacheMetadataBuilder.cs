@@ -1,11 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 namespace Osm.Pipeline.Evidence;
 
 internal sealed class CacheMetadataBuilder
 {
+    private readonly IPathCanonicalizer _pathCanonicalizer;
+
+    public CacheMetadataBuilder(IPathCanonicalizer pathCanonicalizer)
+    {
+        _pathCanonicalizer = pathCanonicalizer ?? throw new ArgumentNullException(nameof(pathCanonicalizer));
+    }
+
     public IReadOnlyDictionary<string, string?> BuildOutcomeMetadata(
         DateTimeOffset evaluatedAtUtc,
         EvidenceCacheManifest manifest,
@@ -43,6 +51,11 @@ internal sealed class CacheMetadataBuilder
         if (!metadata.ContainsKey("reason"))
         {
             metadata["reason"] = EvidenceCacheReasonMapper.Map(reason);
+        }
+
+        foreach (var key in metadata.Keys.ToArray())
+        {
+            metadata[key] = _pathCanonicalizer.CanonicalizeOrNull(metadata[key]);
         }
 
         return metadata;

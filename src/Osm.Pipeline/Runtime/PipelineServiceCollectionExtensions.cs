@@ -48,6 +48,7 @@ public static class PipelineServiceCollectionExtensions
     {
         services.AddSingleton<TimeProvider>(TimeProvider.System);
         services.AddSingleton<IFileSystem, FileSystem>();
+        services.AddSingleton<IPathCanonicalizer, ForwardSlashPathCanonicalizer>();
 
         return services;
     }

@@ -93,6 +93,10 @@ public sealed class PipelineApplicationServiceBaseTests
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty);
 
+        var pathCanonicalizer = new ForwardSlashPathCanonicalizer();
+        var metadataBuilder = new CacheMetadataBuilder(pathCanonicalizer);
+        var optionsFactory = new EvidenceCacheOptionsFactory(metadataBuilder, pathCanonicalizer);
+
         return new PipelineRequestContext(
             configuration,
             "config.json",
@@ -116,7 +120,9 @@ public sealed class PipelineApplicationServiceBaseTests
             {
                 onFlush?.Invoke();
                 return Task.CompletedTask;
-            });
+            },
+            metadataBuilder,
+            optionsFactory);
     }
 
     private sealed class TestService : PipelineApplicationServiceBase

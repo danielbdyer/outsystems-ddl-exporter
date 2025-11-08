@@ -18,17 +18,19 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
 
     public EvidenceCacheService(
         IFileSystem? fileSystem = null,
-        Func<DateTimeOffset>? timestampProvider = null)
+        Func<DateTimeOffset>? timestampProvider = null,
+        IPathCanonicalizer? pathCanonicalizer = null)
     {
         _fileSystem = fileSystem ?? new FileSystem();
         var timestamp = timestampProvider ?? (() => DateTimeOffset.UtcNow);
+        var canonicalizer = pathCanonicalizer ?? new ForwardSlashPathCanonicalizer();
 
-        var descriptorCollector = new EvidenceDescriptorCollector(_fileSystem);
+        var descriptorCollector = new EvidenceDescriptorCollector(_fileSystem, canonicalizer);
         var manifestEvaluator = new ManifestEvaluator(_fileSystem);
-        var cacheWriter = new EvidenceCacheWriter(_fileSystem);
-        var metadataBuilder = new CacheMetadataBuilder();
+        var cacheWriter = new EvidenceCacheWriter(_fileSystem, canonicalizer);
+        var metadataBuilder = new CacheMetadataBuilder(canonicalizer);
 
-        _normalizer = new CacheRequestNormalizer(_fileSystem, descriptorCollector);
+        _normalizer = new CacheRequestNormalizer(_fileSystem, descriptorCollector, canonicalizer);
         _evaluator = new CacheEntryEvaluator(_fileSystem, manifestEvaluator, timestamp, metadataBuilder);
         _creator = new CacheEntryCreator(cacheWriter, timestamp, metadataBuilder);
     }

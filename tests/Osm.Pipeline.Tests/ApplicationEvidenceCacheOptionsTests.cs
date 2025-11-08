@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Pipeline;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
@@ -19,6 +20,8 @@ namespace Osm.Pipeline.Tests;
 
 public sealed class ApplicationEvidenceCacheOptionsTests
 {
+    private static readonly IPathCanonicalizer Canonicalizer = new ForwardSlashPathCanonicalizer();
+
     private static readonly SqlOptionsOverrides DefaultSqlOverrides = new(
         null,
         null,
@@ -76,8 +79,8 @@ public sealed class ApplicationEvidenceCacheOptionsTests
         Assert.Null(cache.DmmPath);
         Assert.Equal("config.json", cache.ConfigPath);
         Assert.NotNull(cache.Metadata);
-        Assert.Equal(Path.GetFullPath("model.json"), cache.Metadata!["inputs.model"]);
-        Assert.Equal(Path.GetFullPath("profile.snapshot"), cache.Metadata["inputs.profile"]);
+        Assert.Equal(CanonicalizeFullPath("model.json"), cache.Metadata!["inputs.model"]);
+        Assert.Equal(CanonicalizeFullPath("profile.snapshot"), cache.Metadata["inputs.profile"]);
         Assert.Equal("all", cache.Metadata["moduleFilter.selectionScope"]);
     }
 
@@ -206,7 +209,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
         Assert.False(cache.Refresh);
         Assert.Equal("dmm-compare", cache.Command);
         Assert.Equal("baseline.dmm", cache.DmmPath);
-        Assert.Equal(Path.GetFullPath("baseline.dmm"), cache.Metadata!["inputs.dmm"]);
+        Assert.Equal(CanonicalizeFullPath("baseline.dmm"), cache.Metadata!["inputs.dmm"]);
     }
 
     [Fact]
@@ -333,3 +336,6 @@ public sealed class ApplicationEvidenceCacheOptionsTests
         }
     }
 }
+
+    private static string CanonicalizeFullPath(string relativePath)
+        => Canonicalizer.Canonicalize(Path.GetFullPath(relativePath));
