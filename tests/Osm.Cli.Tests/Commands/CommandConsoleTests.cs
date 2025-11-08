@@ -10,9 +10,13 @@ using Osm.Cli.Commands;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
+using Osm.Domain.Configuration;
+using Osm.Emission;
+using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Cli.Tests.Commands;
 
@@ -487,6 +491,131 @@ public class CommandConsoleTests
 
         Assert.True(string.IsNullOrEmpty(console.Out!.ToString()));
         Assert.True(string.IsNullOrEmpty(console.Error!.ToString()));
+    }
+
+    [Fact]
+    public void EmitBuildSsdtSummary_WritesCompactBlock()
+    {
+        var console = new TestConsole();
+
+        var snapshot = ProfileSnapshot.Create(
+            Array.Empty<ColumnProfile>(),
+            Array.Empty<UniqueCandidateProfile>(),
+            Array.Empty<CompositeUniqueCandidateProfile>(),
+            Array.Empty<ForeignKeyReality>()).Value;
+
+        var columns = ImmutableArray.Create(
+            new ColumnDecisionReport(
+                new ColumnCoordinate(new SchemaName("dbo"), new TableName("Orders"), new ColumnName("CustomerId")),
+                true,
+                false,
+                ImmutableArray<string>.Empty),
+            new ColumnDecisionReport(
+                new ColumnCoordinate(new SchemaName("dbo"), new TableName("Orders"), new ColumnName("Notes")),
+                false,
+                true,
+                ImmutableArray<string>.Empty));
+
+        var uniqueIndexes = ImmutableArray.Create(
+            new UniqueIndexDecisionReport(
+                new IndexCoordinate(new SchemaName("dbo"), new TableName("Orders"), new IndexName("IX_Orders_Customer")),
+                true,
+                false,
+                ImmutableArray<string>.Empty));
+
+        var foreignKeys = ImmutableArray.Create(
+            new ForeignKeyDecisionReport(
+                new ColumnCoordinate(new SchemaName("dbo"), new TableName("Orders"), new ColumnName("CustomerId")),
+                true,
+                ImmutableArray<string>.Empty));
+
+        var decisionReport = new PolicyDecisionReport(
+            columns,
+            uniqueIndexes,
+            foreignKeys,
+            ImmutableDictionary<string, int>.Empty,
+            ImmutableDictionary<string, int>.Empty,
+            ImmutableDictionary<string, int>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<string, ModuleDecisionRollup>.Empty,
+            ImmutableDictionary<string, ToggleExportValue>.Empty,
+            ImmutableDictionary<string, string>.Empty,
+            ImmutableDictionary<string, string>.Empty,
+            TighteningToggleSnapshot.Create(TighteningOptions.Default));
+
+        var manifest = new SsdtManifest(
+            new[]
+            {
+                new TableManifestEntry(
+                    "Sales",
+                    "dbo",
+                    "Orders",
+                    "dbo.Orders.sql",
+                    Array.Empty<string>(),
+                    Array.Empty<string>(),
+                    true),
+            },
+            new SsdtManifestOptions(false, false, false, 1),
+            null,
+            new SsdtEmissionMetadata("sha256", "hash"),
+            Array.Empty<PreRemediationManifestEntry>(),
+            SsdtCoverageSummary.CreateComplete(0, 0, 0),
+            SsdtPredicateCoverage.Empty,
+            Array.Empty<string>());
+
+        var opportunities = new Osm.Validation.Tightening.Opportunities.OpportunitiesReport(
+            ImmutableArray<Opportunity>.Empty,
+            ImmutableDictionary<OpportunityDisposition, int>.Empty,
+            ImmutableDictionary<OpportunityCategory, int>.Empty
+                .Add(OpportunityCategory.Contradiction, 2)
+                .Add(OpportunityCategory.Recommendation, 3),
+            ImmutableDictionary<OpportunityType, int>.Empty,
+            ImmutableDictionary<RiskLevel, int>.Empty,
+            DateTimeOffset.UnixEpoch);
+
+        var pipelineResult = new BuildSsdtPipelineResult(
+            snapshot,
+            ImmutableArray<ProfilingInsight>.Empty,
+            decisionReport,
+            opportunities,
+            manifest,
+            ImmutableDictionary<string, ModuleManifestRollup>.Empty,
+            ImmutableArray<PipelineInsight>.Empty,
+            "decision-log.json",
+            "opportunities.json",
+            "safe.sql",
+            string.Empty,
+            "remediation.sql",
+            string.Empty,
+            ImmutableArray<string>.Empty,
+            ImmutableArray<string>.Empty,
+            SsdtSqlValidationSummary.Empty,
+            null,
+            PipelineExecutionLog.Empty,
+            ImmutableArray<string>.Empty,
+            MultiEnvironmentProfileReport.Empty);
+
+        var applicationResult = new BuildSsdtApplicationResult(
+            pipelineResult,
+            "fixture",
+            "profile.json",
+            "/tmp/output",
+            "model.json",
+            false,
+            ImmutableArray<string>.Empty);
+
+        CommandConsole.EmitBuildSsdtSummary(console, applicationResult, pipelineResult);
+
+        var output = console.Out!.ToString() ?? string.Empty;
+
+        Assert.Contains("SSDT build summary:", output);
+        Assert.Contains("Output: /tmp/output", output);
+        Assert.Contains("Manifest: /tmp/output/manifest.json", output);
+        Assert.Contains("Decision log: decision-log.json", output);
+        Assert.Contains("Opportunities: opportunities.json", output);
+        Assert.Contains("Safe script: safe.sql (3 ready)", output);
+        Assert.Contains("Remediation script: remediation.sql (⚠️ 2 contradictions)", output);
+        Assert.Contains("Tightening: Columns 1/2, Unique 1/1, Foreign Keys 1/1", output);
     }
 
     private static PipelineExecutionLog CreateExecutionLog(IReadOnlyList<PipelineLogEntry> entries)

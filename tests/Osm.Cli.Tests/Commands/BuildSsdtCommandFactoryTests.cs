@@ -115,6 +115,19 @@ public class BuildSsdtCommandFactoryTests
         Assert.NotEmpty(result.PipelineResult.DecisionReport.TogglePrecedence);
 
         var output = console.Out.ToString() ?? string.Empty;
+        Assert.Contains("SSDT build summary:", output);
+        Assert.Contains("Output: output", output);
+        Assert.Contains("Manifest: output/manifest.json", output);
+        Assert.Contains("Decision log: decision.log", output);
+        Assert.Contains("Opportunities: opportunities.json", output);
+        Assert.Contains("Safe script: suggestions/safe-to-apply.sql", output);
+        Assert.Contains("Remediation script: suggestions/needs-remediation.sql", output);
+        Assert.Contains("Tightening: Columns 1/2, Unique 1/1, Foreign Keys 1/1", output);
+        var summaryIndex = output.IndexOf("SSDT build summary:", StringComparison.Ordinal);
+        var detailedIndex = output.IndexOf("SSDT Emission Summary:", StringComparison.Ordinal);
+        Assert.InRange(summaryIndex, 0, int.MaxValue);
+        Assert.InRange(detailedIndex, 0, int.MaxValue);
+        Assert.True(summaryIndex < detailedIndex, output);
         Assert.Contains("SSDT Emission Summary:", output);
         Assert.Contains("Tables: 1 emitted to output", output);
         Assert.Contains("Manifest: ", output);
