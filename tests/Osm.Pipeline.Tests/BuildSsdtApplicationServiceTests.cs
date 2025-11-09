@@ -147,6 +147,8 @@ public sealed class BuildSsdtApplicationServiceTests
             SsdtSqlValidationSummary.Empty,
             null,
             PipelineExecutionLog.Empty,
+            StaticSeedTopologicalOrderApplied: false,
+            DynamicInsertTopologicalOrderApplied: false,
             ImmutableArray<string>.Empty,
             MultiEnvironmentProfileReport.Empty);
     }

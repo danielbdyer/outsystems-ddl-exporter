@@ -8,6 +8,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
+using Osm.Domain.Profiling;
+using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
@@ -21,6 +24,8 @@ using Osm.Json;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
+using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+using ValidationReport = Osm.Validation.Tightening.Validations.ValidationReport;
 using Osm.Validation.Profiling;
 using Tests.Support;
 using Xunit;
@@ -199,6 +204,110 @@ public class BuildSsdtPipelineStepTests
         Assert.All(state.StaticSeedScriptPaths, path => Assert.True(File.Exists(path)));
         var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "staticData.seed.generated");
+    }
+
+    [Fact]
+    public async Task StaticSeedStep_OrdersTablesByForeignKeyDependencies()
+    {
+        using var output = new TempDirectory();
+        var request = CreateForeignKeyRequest(output.Path);
+        var logBuilder = new PipelineExecutionLogBuilder(TimeProvider.System);
+        var bootstrap = CreateForeignKeyBootstrapContext(request, logBuilder);
+
+        var policyDecisions = PolicyDecisionSet.Create(
+            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty,
+            ImmutableDictionary<IndexCoordinate, string>.Empty,
+            TighteningOptions.Default);
+
+        var toggles = TighteningToggleSnapshot.Create(TighteningOptions.Default, _ => null);
+        var decisionReport = new PolicyDecisionReport(
+            ImmutableArray<ColumnDecisionReport>.Empty,
+            ImmutableArray<UniqueIndexDecisionReport>.Empty,
+            ImmutableArray<ForeignKeyDecisionReport>.Empty,
+            ImmutableDictionary<string, int>.Empty,
+            ImmutableDictionary<string, int>.Empty,
+            ImmutableDictionary<string, int>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<string, ModuleDecisionRollup>.Empty,
+            ImmutableDictionary<string, ToggleExportValue>.Empty,
+            ImmutableDictionary<string, string>.Empty,
+            ImmutableDictionary<string, string>.Empty,
+            toggles);
+
+        var opportunities = new OpportunitiesReport(
+            ImmutableArray<Opportunity>.Empty,
+            ImmutableDictionary<OpportunityDisposition, int>.Empty,
+            ImmutableDictionary<OpportunityCategory, int>.Empty,
+            ImmutableDictionary<OpportunityType, int>.Empty,
+            ImmutableDictionary<RiskLevel, int>.Empty,
+            DateTimeOffset.UtcNow);
+
+        var validations = ValidationReport.Empty(DateTimeOffset.UtcNow);
+
+        var manifest = new SsdtManifest(
+            Array.Empty<TableManifestEntry>(),
+            new SsdtManifestOptions(false, false, true, 1),
+            null,
+            new SsdtEmissionMetadata("sha256", "hash"),
+            Array.Empty<PreRemediationManifestEntry>(),
+            SsdtCoverageSummary.CreateComplete(0, 0, 0),
+            SsdtPredicateCoverage.Empty,
+            Array.Empty<string>());
+
+        var decisionLogPath = Path.Combine(output.Path, "decision-log.json");
+        await File.WriteAllTextAsync(decisionLogPath, "{}");
+        var opportunitiesPath = Path.Combine(output.Path, "opportunities.json");
+        await File.WriteAllTextAsync(opportunitiesPath, "{}");
+        var validationsPath = Path.Combine(output.Path, "validations.json");
+        await File.WriteAllTextAsync(validationsPath, "{}");
+        var safePath = Path.Combine(output.Path, "safe.sql");
+        await File.WriteAllTextAsync(safePath, "PRINT 1;");
+        var remediationPath = Path.Combine(output.Path, "remediation.sql");
+        await File.WriteAllTextAsync(remediationPath, "PRINT 2;");
+
+        var opportunityArtifacts = new OpportunityArtifacts(opportunitiesPath, validationsPath, safePath, "PRINT 1;", remediationPath, "PRINT 2;");
+
+        var state = new SqlValidated(
+            request,
+            logBuilder,
+            bootstrap,
+            EvidenceCache: null,
+            policyDecisions,
+            decisionReport,
+            opportunities,
+            validations,
+            ImmutableArray<PipelineInsight>.Empty,
+            manifest,
+            decisionLogPath,
+            opportunityArtifacts,
+            SsdtSqlValidationSummary.Empty);
+
+        var step = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
+
+        var result = await step.ExecuteAsync(state);
+
+        Assert.True(result.IsSuccess);
+        var seeds = result.Value;
+        Assert.True(seeds.StaticSeedTopologicalOrderApplied);
+        Assert.Equal(2, seeds.StaticSeedData.Length);
+
+        var parentIndex = seeds.StaticSeedData
+            .Select((table, index) => (table, index))
+            .First(pair => string.Equals(pair.table.Definition.LogicalName, "Parent", StringComparison.OrdinalIgnoreCase)).index;
+        var childIndex = seeds.StaticSeedData
+            .Select((table, index) => (table, index))
+            .First(pair => string.Equals(pair.table.Definition.LogicalName, "Child", StringComparison.OrdinalIgnoreCase)).index;
+        Assert.True(parentIndex < childIndex);
+
+        var moduleSeedPath = Assert.Single(seeds.StaticSeedScriptPaths);
+        var script = await File.ReadAllTextAsync(moduleSeedPath);
+        Assert.True(
+            script.IndexOf("-- Entity: Parent", StringComparison.Ordinal) <
+            script.IndexOf("-- Entity: Child", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -517,6 +626,114 @@ public class BuildSsdtPipelineStepTests
             new ProfilingInsightGenerator());
     }
 
+    private static BuildSsdtPipelineRequest CreateForeignKeyRequest(string outputDirectory)
+    {
+        var scope = new ModelExecutionScope(
+            Path.Combine(outputDirectory, "model.json"),
+            ModuleFilterOptions.IncludeAll,
+            SupplementalModelOptions.Default,
+            TighteningOptions.Default,
+            new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict,
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+                TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty),
+            SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission),
+            TypeMappingPolicyLoader.LoadDefault());
+
+        return new BuildSsdtPipelineRequest(
+            scope,
+            outputDirectory,
+            "fixture",
+            EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
+            StaticDataProvider: new ForeignKeyStaticEntityDataProvider(),
+            SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
+            SqlMetadataLog: null);
+    }
+
+    private static PipelineBootstrapContext CreateForeignKeyBootstrapContext(
+        BuildSsdtPipelineRequest request,
+        PipelineExecutionLogBuilder logBuilder)
+    {
+        var model = CreateForeignKeyModel();
+        var profile = ProfileSnapshot.Create(
+            Array.Empty<ColumnProfile>(),
+            Array.Empty<UniqueCandidateProfile>(),
+            Array.Empty<CompositeUniqueCandidateProfile>(),
+            Array.Empty<ForeignKeyReality>()).Value;
+
+        return new PipelineBootstrapContext(
+            model,
+            ImmutableArray<EntityModel>.Empty,
+            profile,
+            ImmutableArray<ProfilingInsight>.Empty,
+            ImmutableArray<string>.Empty,
+            MultiEnvironmentProfileReport.Empty);
+    }
+
+    private static OsmModel CreateForeignKeyModel()
+    {
+        var parentEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true),
+                CreateAttribute("Name", "NAME")
+            }).Value;
+
+        var relationship = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_CHILD_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_PARENT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[]
+                    {
+                        RelationshipActualConstraintColumn.Create("PARENTID", "ParentId", "ID", "Id", 0)
+                    })
+            }).Value;
+
+        var childEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Child"),
+            new TableName("OSUSR_SAMPLE_CHILD"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true),
+                CreateAttribute("ParentId", "PARENTID"),
+                CreateAttribute("Name", "NAME")
+            },
+            relationships: new[] { relationship }).Value;
+
+        var module = ModuleModel.Create(new ModuleName("Sample"), isSystemModule: false, isActive: true, entities: new[] { parentEntity, childEntity }).Value;
+        return OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+    }
+
     private sealed class FakeEvidenceCacheService : IEvidenceCacheService
     {
         private readonly Result<EvidenceCacheResult> _result;
@@ -613,5 +830,57 @@ public class BuildSsdtPipelineStepTests
 
             return values;
         }
+    }
+
+    private sealed class ForeignKeyStaticEntityDataProvider : IStaticEntityDataProvider
+    {
+        public Task<Result<IReadOnlyList<StaticEntityTableData>>> GetDataAsync(
+            IReadOnlyList<StaticEntitySeedTableDefinition> definitions,
+            CancellationToken cancellationToken = default)
+        {
+            var tables = definitions
+                .OrderBy(definition => string.Equals(definition.LogicalName, "Parent", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                .ThenBy(definition => definition.LogicalName, StringComparer.OrdinalIgnoreCase)
+                .Select(definition => StaticEntityTableData.Create(definition, CreateRows(definition)))
+                .Cast<StaticEntityTableData>()
+                .ToArray();
+
+            Array.Reverse(tables);
+            return Task.FromResult(Result<IReadOnlyList<StaticEntityTableData>>.Success(tables));
+        }
+
+        private static IEnumerable<StaticEntityRow> CreateRows(StaticEntitySeedTableDefinition definition)
+        {
+            var values = new object?[definition.Columns.Length];
+            for (var i = 0; i < definition.Columns.Length; i++)
+            {
+                var column = definition.Columns[i];
+                if (column.IsPrimaryKey || string.Equals(column.LogicalName, "ParentId", StringComparison.OrdinalIgnoreCase))
+                {
+                    values[i] = 1;
+                }
+                else
+                {
+                    values[i] = $"{definition.LogicalName}_{column.LogicalName}";
+                }
+            }
+
+            yield return StaticEntityRow.Create(values);
+        }
+    }
+
+    private static AttributeModel CreateAttribute(string logicalName, string columnName, bool isIdentifier = false)
+    {
+        return AttributeModel.Create(
+            new AttributeName(logicalName),
+            new ColumnName(columnName),
+            dataType: "INT",
+            isMandatory: isIdentifier,
+            isIdentifier: isIdentifier,
+            isAutoNumber: false,
+            isActive: true,
+            reality: new AttributeReality(null, null, null, null, IsPresentButInactive: false),
+            metadata: AttributeMetadata.Empty,
+            onDisk: AttributeOnDiskMetadata.Empty).Value;
     }
 }

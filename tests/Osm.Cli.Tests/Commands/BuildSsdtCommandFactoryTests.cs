@@ -527,12 +527,14 @@ public class BuildSsdtCommandFactoryTests
                 string.Empty,
                 ImmutableArray<string>.Empty,
                 ImmutableArray<string>.Empty,
-                ImmutableArray<string>.Empty,
-                sqlValidation,
-                null,
-                PipelineExecutionLog.Empty,
-                ImmutableArray<string>.Empty,
-                MultiEnvironmentProfileReport.Empty);
+            ImmutableArray<string>.Empty,
+            sqlValidation,
+            null,
+            PipelineExecutionLog.Empty,
+            StaticSeedTopologicalOrderApplied: false,
+            DynamicInsertTopologicalOrderApplied: false,
+            ImmutableArray<string>.Empty,
+            MultiEnvironmentProfileReport.Empty);
 
             return new BuildSsdtApplicationResult(
                 pipelineResult,

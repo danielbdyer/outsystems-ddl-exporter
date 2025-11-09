@@ -618,6 +618,8 @@ public class CommandConsoleTests
             SsdtSqlValidationSummary.Empty,
             null,
             PipelineExecutionLog.Empty,
+            StaticSeedTopologicalOrderApplied: false,
+            DynamicInsertTopologicalOrderApplied: false,
             ImmutableArray<string>.Empty,
             MultiEnvironmentProfileReport.Empty);
 

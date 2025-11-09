@@ -209,6 +209,11 @@ public sealed class FullExportRunManifestTests
         Assert.Equal(expectedDynamicRoot, Path.GetFullPath(stageDynamicRoot!));
         Assert.Equal(expectedDynamicRoot, Path.GetFullPath(FullExportRunManifest.ResolveDynamicInsertRoot(build.PipelineResult)!));
 
+        Assert.True(buildStage.Artifacts.TryGetValue("staticSeedOrdering", out var seedOrdering));
+        Assert.Equal("alphabetical", seedOrdering);
+        Assert.True(buildStage.Artifacts.TryGetValue("dynamicInsertOrdering", out var insertOrdering));
+        Assert.Equal("alphabetical", insertOrdering);
+
         var dynamicFiles = Directory.GetFiles(dynamicRoot, "*", SearchOption.AllDirectories);
         Assert.DoesNotContain(dynamicFiles, path => Path.GetFullPath(path).StartsWith(seedRootFullPath, StringComparison.OrdinalIgnoreCase));
 
@@ -352,6 +357,8 @@ public sealed class FullExportRunManifestTests
             SsdtSqlValidationSummary.Empty,
             null,
             PipelineExecutionLog.Empty,
+            StaticSeedTopologicalOrderApplied: false,
+            DynamicInsertTopologicalOrderApplied: false,
             ImmutableArray<string>.Empty,
             null);
 

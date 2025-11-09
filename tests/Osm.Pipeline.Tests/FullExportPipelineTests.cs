@@ -353,6 +353,8 @@ public sealed class FullExportPipelineTests
             SsdtSqlValidationSummary.Empty,
             null,
             PipelineExecutionLog.Empty,
+            StaticSeedTopologicalOrderApplied: false,
+            DynamicInsertTopologicalOrderApplied: false,
             ImmutableArray<string>.Empty,
             null);
 

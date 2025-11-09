@@ -56,10 +56,16 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 state.SqlValidation,
                 state.StaticSeedScriptPaths,
                 state.StaticSeedData,
-                ImmutableArray<string>.Empty));
+                ImmutableArray<string>.Empty,
+                state.StaticSeedTopologicalOrderApplied,
+                DynamicInsertTopologicalOrderApplied: false));
         }
 
-        var scripts = _generator.GenerateScripts(dataset, state.StaticSeedData);
+        var scripts = _generator.GenerateScripts(
+            dataset,
+            state.StaticSeedData,
+            model: state.Bootstrap.FilteredModel);
+        var dynamicOrderApplied = state.Bootstrap.FilteredModel is not null && !scripts.IsDefaultOrEmpty;
         if (scripts.IsDefaultOrEmpty || scripts.Length == 0)
         {
             state.Log.Record(
@@ -82,7 +88,9 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 state.SqlValidation,
                 state.StaticSeedScriptPaths,
                 state.StaticSeedData,
-                ImmutableArray<string>.Empty));
+                ImmutableArray<string>.Empty,
+                state.StaticSeedTopologicalOrderApplied,
+                DynamicInsertTopologicalOrderApplied: dynamicOrderApplied));
         }
 
         var outputRoot = state.Request.DynamicDataOutputDirectoryHint;
@@ -160,6 +168,8 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
             state.SqlValidation,
             state.StaticSeedScriptPaths,
             state.StaticSeedData,
-            scriptPaths.ToImmutable()));
+            scriptPaths.ToImmutable(),
+            state.StaticSeedTopologicalOrderApplied,
+            DynamicInsertTopologicalOrderApplied: dynamicOrderApplied));
     }
 }

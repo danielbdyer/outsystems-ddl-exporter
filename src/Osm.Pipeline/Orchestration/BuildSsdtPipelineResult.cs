@@ -31,6 +31,8 @@ public sealed record BuildSsdtPipelineResult(
     SsdtSqlValidationSummary SqlValidation,
     EvidenceCacheResult? EvidenceCache,
     PipelineExecutionLog ExecutionLog,
+    bool StaticSeedTopologicalOrderApplied,
+    bool DynamicInsertTopologicalOrderApplied,
     ImmutableArray<string> Warnings,
     MultiEnvironmentProfileReport? MultiEnvironmentReport);
 

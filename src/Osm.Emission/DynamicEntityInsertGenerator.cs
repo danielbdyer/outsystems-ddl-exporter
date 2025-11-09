@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
+using Osm.Domain.Model;
 using Osm.Smo;
 
 namespace Osm.Emission;
@@ -64,7 +65,8 @@ public sealed class DynamicEntityInsertGenerator
     public ImmutableArray<DynamicEntityInsertScript> GenerateScripts(
         DynamicEntityDataset dataset,
         ImmutableArray<StaticEntityTableData> staticSeedCatalog,
-        DynamicEntityInsertGenerationOptions? options = null)
+        DynamicEntityInsertGenerationOptions? options = null,
+        OsmModel? model = null)
     {
         if (dataset is null)
         {
@@ -84,12 +86,11 @@ public sealed class DynamicEntityInsertGenerator
         }
 
         var staticIndex = BuildStaticIndex(staticSeedCatalog);
-        var orderedTables = dataset.Tables
-            .Where(static table => table is not null)
-            .OrderBy(table => table.Definition.Module, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(table => table.Definition.LogicalName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(table => table.Definition.EffectiveName, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var orderedTables = StaticEntityDependencySorter.SortByForeignKeys(dataset.Tables, model);
+        if (orderedTables.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<DynamicEntityInsertScript>.Empty;
+        }
 
         var scripts = ImmutableArray.CreateBuilder<DynamicEntityInsertScript>(orderedTables.Length);
 
