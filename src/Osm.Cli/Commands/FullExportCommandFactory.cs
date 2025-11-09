@@ -236,8 +236,12 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         var safeScriptPath = ResolveScriptPath(pipeline.SafeScriptPath);
         var remediationScriptPath = ResolveScriptPath(pipeline.RemediationScriptPath);
         var staticSeedPaths = ResolveScriptPaths(pipeline.StaticSeedScriptPaths);
+        var dynamicInsertPaths = ResolveScriptPaths(pipeline.DynamicInsertScriptPaths);
 
-        if (safeScriptPath is null && remediationScriptPath is null && staticSeedPaths.IsDefaultOrEmpty)
+        if (safeScriptPath is null
+            && remediationScriptPath is null
+            && staticSeedPaths.IsDefaultOrEmpty
+            && dynamicInsertPaths.IsDefaultOrEmpty)
         {
             CommandConsole.WriteErrorLine(context.Console, "[warning] Load harness skipped (no scripts were generated).");
             return;
@@ -252,6 +256,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
             safeScriptPath,
             remediationScriptPath,
             staticSeedPaths,
+            dynamicInsertPaths,
             reportOutput,
             commandTimeout);
 
