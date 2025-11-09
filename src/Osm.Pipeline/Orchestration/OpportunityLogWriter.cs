@@ -190,6 +190,8 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
                     builder.Append("-- Summary: ");
                     builder.AppendLine(opportunity.Summary);
 
+                    AppendForeignKeyGuidance(builder, opportunity);
+
                     if (!opportunity.Rationales.IsDefaultOrEmpty)
                     {
                         foreach (var rationale in opportunity.Rationales)
@@ -227,6 +229,73 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
         }
 
         return builder.ToString();
+    }
+
+    private static void AppendForeignKeyGuidance(StringBuilder builder, Opportunity opportunity)
+    {
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        if (opportunity is null)
+        {
+            throw new ArgumentNullException(nameof(opportunity));
+        }
+
+        if (opportunity.Type != OpportunityType.ForeignKey)
+        {
+            return;
+        }
+
+        if (opportunity.Columns.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var column = opportunity.Columns[0];
+        var hasOrphans = column.HasOrphans ?? false;
+        var hasConstraint = column.HasDatabaseConstraint;
+        var hasNoCheckEvidence = opportunity.Evidence.Any(static evidence =>
+            evidence.StartsWith("ConstraintTrust=", StringComparison.Ordinal)
+            && evidence.Contains("NO CHECK", StringComparison.Ordinal));
+
+        if (opportunity.Category == OpportunityCategory.Contradiction && hasOrphans)
+        {
+            if (hasConstraint is true)
+            {
+                var message = hasNoCheckEvidence
+                    ? "Existing constraint is marked WITH NOCHECK so SQL Server is not validating existing data."
+                    : "Existing constraint should block these rows—verify it has not been disabled or replicated without checks.";
+                builder.Append("-- Foreign key state: ");
+                builder.AppendLine(message);
+            }
+            else if (hasConstraint is false)
+            {
+                builder.AppendLine("-- Foreign key state: No database constraint currently enforces this relationship.");
+            }
+
+            builder.AppendLine("-- Remediation steps:");
+            builder.AppendLine("--   1. Use the CLI orphan samples to query the child rows and confirm they lack parents.");
+            builder.AppendLine("--   2. Repair or backfill the offending child rows so every key maps to a valid parent.");
+            builder.AppendLine("--   3. Re-run build-ssdt; once orphan counts reach zero the FK moves into the safe scripts.");
+
+            if (hasConstraint is true)
+            {
+                var trustMessage = hasNoCheckEvidence
+                    ? "--   4. Run ALTER TABLE ... WITH CHECK CHECK CONSTRAINT after cleanup to re-trust the FK."
+                    : "--   4. Re-enable the constraint (WITH CHECK) after remediation to keep enforcement active.";
+                builder.AppendLine(trustMessage);
+            }
+
+            builder.AppendLine("--");
+        }
+        else if (opportunity.Category == OpportunityCategory.Recommendation && hasConstraint is false)
+        {
+            builder.AppendLine("-- Evidence: Profiler observed zero orphans and there is no existing database constraint.");
+            builder.AppendLine("-- Action: Apply the generated WITH CHECK statements to formalize referential integrity.");
+            builder.AppendLine("--");
+        }
     }
 
     private static int GetCategoryPriority(OpportunityCategory category)

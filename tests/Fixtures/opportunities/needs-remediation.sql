@@ -64,8 +64,15 @@ GO
 -- What to do: Either remove or repair orphaned child rows before enabling the foreign key constraint.
 -- ForeignKey dbo.OSUSR_ABC_ORDER (FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER) Category=Contradiction Risk=High
 -- Summary: DATA CONTRADICTION: Profiling found orphaned rows that violate referential integrity. Manual remediation required.
+-- Foreign key state: No database constraint currently enforces this relationship.
+-- Remediation steps:
+--   1. Use the CLI orphan samples to query the child rows and confirm they lack parents.
+--   2. Repair or backfill the offending child rows so every key maps to a valid parent.
+--   3. Re-run build-ssdt; once orphan counts reach zero the FK moves into the safe scripts.
+--
 -- Rationale: DATA_HAS_ORPHANS
 -- Evidence: HasConstraint=False
+-- Evidence: ConstraintTrust=Missing
 -- Evidence: HasOrphans=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)
 -- Evidence: OrphanCount=3
 -- Evidence: OrphanSample=(101) -> 'MissingCustomer'

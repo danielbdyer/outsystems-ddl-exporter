@@ -167,6 +167,7 @@ public sealed class OpportunityLogWriterTests
             ChangeRisk.High("Orphaned rows detected - remediation required before constraint creation."),
             ImmutableArray.Create(
                 "HasConstraint=False",
+                "ConstraintTrust=Missing",
                 "HasOrphans=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
                 "OrphanCount=3",
                 "OrphanSample=(101) -> 'MissingCustomer'"),
@@ -269,6 +270,7 @@ public sealed class OpportunityLogWriterTests
             "Validated: Foreign key constraint is already being created to enforce referential integrity.",
             ImmutableArray.Create(
                 "HasConstraint=true",
+                "ConstraintTrust=Trusted (WITH CHECK)",
                 "HasOrphans=False (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
                 "OrphanCount=0"),
             ImmutableArray.Create(TighteningRationales.ForeignKeyEnforced, TighteningRationales.PolicyEnableCreation),
