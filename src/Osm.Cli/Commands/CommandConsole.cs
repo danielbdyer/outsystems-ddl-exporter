@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Cli;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
@@ -308,6 +309,8 @@ internal static class CommandConsole
             var totalSeedCount = applyResult.StaticSeedScriptPaths.IsDefaultOrEmpty ? 0 : applyResult.StaticSeedScriptPaths.Length;
             WriteLine(console, $"  Static seeds applied: {(applyResult.StaticSeedsApplied ? "yes" : "no")} ({appliedSeedCount}/{totalSeedCount})");
             WriteLine(console, $"  Duration: {applyResult.Duration.TotalSeconds:F2}s");
+
+            EmitStaticSeedValidation(console, applyResult);
         }
 
         WriteLine(console, $"  Pending remediation count: {applyResult.PendingRemediationCount}");
@@ -329,6 +332,41 @@ internal static class CommandConsole
             {
                 WriteErrorLine(console, $"    [warning] {warning}");
             }
+        }
+    }
+
+    private static void EmitStaticSeedValidation(IConsole console, SchemaApplyResult applyResult)
+    {
+        var validation = applyResult.StaticSeedValidation;
+        var mode = applyResult.StaticSeedSynchronizationMode;
+        var modeLabel = mode.ToString();
+
+        var validationAttempted = validation.Attempted;
+
+        if (mode == StaticSeedSynchronizationMode.NonDestructive && !validationAttempted)
+        {
+            return;
+        }
+
+        string status;
+        if (!validationAttempted)
+        {
+            status = "not run";
+        }
+        else if (validation.Failed)
+        {
+            status = "failed";
+        }
+        else
+        {
+            status = "passed";
+        }
+
+        WriteLine(console, $"  Static seed mode: {modeLabel} (validation {status})");
+
+        if (validation.Failed && !string.IsNullOrWhiteSpace(validation.FailureReason))
+        {
+            WriteErrorLine(console, $"    [validation] {validation.FailureReason}");
         }
     }
 

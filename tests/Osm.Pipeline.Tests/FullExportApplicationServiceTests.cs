@@ -280,7 +280,8 @@ public sealed class FullExportApplicationServiceTests
                 ExecutedBatchCount: 0,
                 TimeSpan.Zero,
                 MaxBatchSizeBytes: 0,
-                StreamingEnabled: true)));
+                StreamingEnabled: true,
+                StaticSeedValidation: StaticSeedValidationSummary.NotAttempted)));
     }
 
     private sealed class StubModelJsonDeserializer : IModelJsonDeserializer

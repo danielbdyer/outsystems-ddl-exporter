@@ -88,7 +88,8 @@ public sealed class FullExportPipelineTests
                 ExecutedBatchCount: 3,
                 Duration: TimeSpan.FromMilliseconds(125),
                 MaxBatchSizeBytes: 4096,
-                StreamingEnabled: true))
+                StreamingEnabled: true,
+                StaticSeedValidation: StaticSeedValidationSummary.NotAttempted))
         };
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
         var pipeline = new FullExportPipeline(dispatcher, orchestrator, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
@@ -483,7 +484,8 @@ public sealed class FullExportPipelineTests
                 ExecutedBatchCount: 0,
                 Duration: TimeSpan.Zero,
                 MaxBatchSizeBytes: 0,
-                StreamingEnabled: true));
+                StreamingEnabled: true,
+                StaticSeedValidation: StaticSeedValidationSummary.NotAttempted));
 
         public Task<Result<SchemaDataApplyOutcome>> ApplyAsync(
             SchemaDataApplyRequest request,

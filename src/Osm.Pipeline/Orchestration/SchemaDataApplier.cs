@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Orchestration;
@@ -19,7 +20,18 @@ public sealed record SchemaDataApplyRequest(
     SqlConnectionOptions ConnectionOptions,
     int? CommandTimeoutSeconds,
     ImmutableArray<string> ScriptPaths,
-    ImmutableArray<string> SeedScriptPaths);
+    ImmutableArray<string> SeedScriptPaths,
+    StaticSeedSynchronizationMode StaticSeedSynchronizationMode = StaticSeedSynchronizationMode.NonDestructive);
+
+public sealed record StaticSeedValidationSummary(bool Attempted, bool Failed, string? FailureReason)
+{
+    public static StaticSeedValidationSummary NotAttempted { get; } = new(false, false, null);
+
+    public static StaticSeedValidationSummary Success { get; } = new(true, false, null);
+
+    public static StaticSeedValidationSummary Failure(string? reason)
+        => new(true, true, string.IsNullOrWhiteSpace(reason) ? null : reason);
+}
 
 public sealed record SchemaDataApplyOutcome(
     ImmutableArray<string> AppliedScripts,
@@ -27,7 +39,8 @@ public sealed record SchemaDataApplyOutcome(
     int ExecutedBatchCount,
     TimeSpan Duration,
     long MaxBatchSizeBytes,
-    bool StreamingEnabled);
+    bool StreamingEnabled,
+    StaticSeedValidationSummary StaticSeedValidation);
 
 public interface ISchemaDataApplier
 {
@@ -86,12 +99,19 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
                     cancellationToken)
                 .ConfigureAwait(false);
 
+            var validateStaticSeeds = request.StaticSeedSynchronizationMode
+                is StaticSeedSynchronizationMode.ValidateThenApply
+                or StaticSeedSynchronizationMode.Authoritative;
+
+            var validationSummary = StaticSeedValidationSummary.NotAttempted;
+
             foreach (var path in scriptPaths)
             {
                 var result = await ExecuteBatchesAsync(
                         connection,
                         LoadBatchesAsync(path, cancellationToken),
                         request.CommandTimeoutSeconds,
+                        transaction: null,
                         cancellationToken)
                     .ConfigureAwait(false);
 
@@ -99,6 +119,29 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
                 if (result.MaxBatchBytes > maxBatchBytes)
                 {
                     maxBatchBytes = result.MaxBatchBytes;
+                }
+            }
+
+            if (validateStaticSeeds && !seedPaths.IsDefaultOrEmpty)
+            {
+                validationSummary = await ValidateStaticSeedsAsync(
+                        connection,
+                        seedPaths,
+                        request.CommandTimeoutSeconds,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (validationSummary.Failed)
+                {
+                    var elapsed = _timeProvider.GetElapsedTime(startTimestamp);
+                    return new SchemaDataApplyOutcome(
+                        scriptPaths,
+                        ImmutableArray<string>.Empty,
+                        executedBatches,
+                        elapsed,
+                        maxBatchBytes,
+                        StreamingEnabled: true,
+                        validationSummary);
                 }
             }
 
@@ -108,6 +151,7 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
                         connection,
                         LoadBatchesAsync(path, cancellationToken),
                         request.CommandTimeoutSeconds,
+                        transaction: null,
                         cancellationToken)
                     .ConfigureAwait(false);
 
@@ -117,6 +161,16 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
                     maxBatchBytes = result.MaxBatchBytes;
                 }
             }
+
+            var duration = _timeProvider.GetElapsedTime(startTimestamp);
+            return new SchemaDataApplyOutcome(
+                scriptPaths,
+                seedPaths,
+                executedBatches,
+                duration,
+                maxBatchBytes,
+                StreamingEnabled: true,
+                validationSummary);
         }
         catch (OperationCanceledException)
         {
@@ -129,15 +183,6 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
                 "pipeline.fullExport.apply.failed",
                 $"Schema apply failed: {ex.Message}");
         }
-
-        var duration = _timeProvider.GetElapsedTime(startTimestamp);
-        return new SchemaDataApplyOutcome(
-            scriptPaths,
-            seedPaths,
-            executedBatches,
-            duration,
-            maxBatchBytes,
-            StreamingEnabled: true);
     }
 
     private ImmutableArray<string> NormalizePaths(ImmutableArray<string> paths)
@@ -230,6 +275,7 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
         DbConnection connection,
         IAsyncEnumerable<string> batches,
         int? commandTimeoutSeconds,
+        DbTransaction? transaction,
         CancellationToken cancellationToken)
     {
         var executed = 0;
@@ -250,6 +296,7 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
 
             await using var command = connection.CreateCommand();
             command.CommandText = batch;
+            command.Transaction = transaction;
 
             if (commandTimeoutSeconds.HasValue)
             {
@@ -261,6 +308,58 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
         }
 
         return new BatchExecutionMetrics(executed, maxBatchBytes);
+    }
+
+    private async Task<StaticSeedValidationSummary> ValidateStaticSeedsAsync(
+        DbConnection connection,
+        ImmutableArray<string> seedPaths,
+        int? commandTimeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await connection
+            .BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            foreach (var path in seedPaths)
+            {
+                await ExecuteBatchesAsync(
+                        connection,
+                        LoadBatchesAsync(path, cancellationToken),
+                        commandTimeoutSeconds,
+                        transaction,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return StaticSeedValidationSummary.Success;
+        }
+        catch (SqlException ex) when (IsStaticSeedDrift(ex))
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return StaticSeedValidationSummary.Failure(ex.Message);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private static bool IsStaticSeedDrift(SqlException exception)
+    {
+        foreach (SqlError error in exception.Errors)
+        {
+            if (error.Number == 50000
+                || error.Message.Contains("Static entity seed data drift detected", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private readonly record struct BatchExecutionMetrics(int ExecutedCount, long MaxBatchBytes);

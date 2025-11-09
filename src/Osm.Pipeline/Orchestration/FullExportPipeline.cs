@@ -43,7 +43,9 @@ public sealed record SchemaApplyResult(
     string? SafeScriptPath,
     string? RemediationScriptPath,
     ImmutableArray<string> StaticSeedScriptPaths,
-    TimeSpan Duration);
+    TimeSpan Duration,
+    StaticSeedSynchronizationMode StaticSeedSynchronizationMode,
+    StaticSeedValidationSummary StaticSeedValidation);
 
 public sealed record FullExportPipelineRequest(
     ExtractModelPipelineRequest ExtractModel,
