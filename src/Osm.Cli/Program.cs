@@ -20,6 +20,7 @@ hostBuilder.Services.AddSingleton<CacheOptionBinder>();
 hostBuilder.Services.AddSingleton<SqlOptionBinder>();
 hostBuilder.Services.AddSingleton<TighteningOptionBinder>();
 hostBuilder.Services.AddSingleton<SchemaApplyOptionBinder>();
+hostBuilder.Services.AddSingleton<UatUsersOptionBinder>();
 hostBuilder.Services.AddSingleton<ILoadHarnessRunner, LoadHarnessRunner>();
 hostBuilder.Services.AddSingleton<LoadHarnessReportWriter>();
 hostBuilder.Services.AddSingleton<ICommandFactory, BuildSsdtCommandFactory>();

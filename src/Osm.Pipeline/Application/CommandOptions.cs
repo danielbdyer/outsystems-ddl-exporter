@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
@@ -96,17 +97,46 @@ public sealed record SchemaApplyOverrides(
     public static SchemaApplyOverrides Empty { get; } = new(null, null, null, null, null, null, null, null, null);
 }
 
+public sealed record UatUsersOverrides(
+    bool Enabled,
+    string? ConnectionString,
+    string? UserSchema,
+    string? UserTable,
+    string? UserIdColumn,
+    IReadOnlyList<string> IncludeColumns,
+    string? UserMapPath,
+    string? AllowedUsersSqlPath,
+    string? AllowedUserIdsPath,
+    string? SnapshotPath,
+    string? UserEntityIdentifier)
+{
+    public static UatUsersOverrides Disabled { get; } = new(
+        false,
+        null,
+        null,
+        null,
+        null,
+        Array.Empty<string>(),
+        null,
+        null,
+        null,
+        null,
+        null);
+}
+
 public sealed record FullExportOverrides(
     BuildSsdtOverrides Build,
     CaptureProfileOverrides Profile,
     ExtractModelOverrides Extract,
     SchemaApplyOverrides? Apply,
-    bool ReuseModelPath = false)
+    bool ReuseModelPath = false,
+    UatUsersOverrides? UatUsers = null)
 {
     public static FullExportOverrides Empty { get; } = new(
         new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
         new CaptureProfileOverrides(null, null, null, null, null),
         new ExtractModelOverrides(null, null, null, null, null, null),
         null,
-        false);
+        false,
+        UatUsersOverrides.Disabled);
 }
