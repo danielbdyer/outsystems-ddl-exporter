@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Osm.Cli;
 using Osm.Cli.Commands;
 using Osm.Cli.Commands.Binders;
+using Osm.LoadHarness;
 using Osm.Pipeline.Runtime;
 
 var hostBuilder = Host.CreateApplicationBuilder(args);
@@ -19,6 +20,8 @@ hostBuilder.Services.AddSingleton<CacheOptionBinder>();
 hostBuilder.Services.AddSingleton<SqlOptionBinder>();
 hostBuilder.Services.AddSingleton<TighteningOptionBinder>();
 hostBuilder.Services.AddSingleton<SchemaApplyOptionBinder>();
+hostBuilder.Services.AddSingleton<LoadHarnessRunner>();
+hostBuilder.Services.AddSingleton<LoadHarnessReportWriter>();
 hostBuilder.Services.AddSingleton<ICommandFactory, BuildSsdtCommandFactory>();
 hostBuilder.Services.AddSingleton<ICommandFactory, FullExportCommandFactory>();
 hostBuilder.Services.AddSingleton<ICommandFactory, ProfileCommandFactory>();

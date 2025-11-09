@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Osm.Validation\Osm.Validation.csproj" />
     <ProjectReference Include="..\Osm.Pipeline\Osm.Pipeline.csproj" />
+    <ProjectReference Include="..\Osm.LoadHarness\Osm.LoadHarness.csproj" />
   </ItemGroup>
 
   <ItemGroup>

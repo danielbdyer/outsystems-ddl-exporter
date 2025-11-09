@@ -3,10 +3,13 @@ using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
+using System.Collections.Immutable;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
+using Osm.LoadHarness;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
@@ -21,6 +24,8 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
     private readonly SqlOptionBinder _sqlOptionBinder;
     private readonly TighteningOptionBinder _tighteningBinder;
     private readonly SchemaApplyOptionBinder _schemaApplyBinder;
+    private readonly LoadHarnessRunner _loadHarnessRunner;
+    private readonly LoadHarnessReportWriter _loadHarnessReportWriter;
 
     private readonly Option<string?> _modelOption = new("--model", "Path to an existing model JSON file to reuse.");
     private readonly Option<string?> _profileOption = new("--profile", "Path to the profiling snapshot or fixture input.");
@@ -30,6 +35,11 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
     private readonly Option<string?> _renameOption = new("--rename-table", "Rename tables using source=Override syntax.");
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
     private readonly Option<string?> _buildSqlMetadataOption = new("--build-sql-metadata-out", "Path to write SQL metadata diagnostics for SSDT emission (JSON).");
+
+    private readonly Option<bool> _runLoadHarnessOption = new("--run-load-harness", () => false, "Replay generated scripts against a staging database and capture telemetry.");
+    private readonly Option<string?> _loadHarnessConnectionOption = new("--load-harness-connection-string", "Connection string override for the load harness (defaults to apply connection string).");
+    private readonly Option<string?> _loadHarnessReportOption = new("--load-harness-report-out", "Path to write the load harness telemetry report (JSON).");
+    private readonly Option<int?> _loadHarnessCommandTimeoutOption = new("--load-harness-command-timeout", "Command timeout in seconds for load harness batches (defaults to apply timeout).");
 
     private readonly Option<string?> _profileOutputOption = new("--profile-out", () => "profiles", "Directory to write profiling artifacts.");
     private readonly Option<string?> _profileSqlMetadataOption = new("--profile-sql-metadata-out", "Path to write profiling SQL metadata diagnostics (JSON).");
@@ -47,7 +57,9 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         CacheOptionBinder cacheOptionBinder,
         SqlOptionBinder sqlOptionBinder,
         TighteningOptionBinder tighteningOptionBinder,
-        SchemaApplyOptionBinder schemaApplyOptionBinder)
+        SchemaApplyOptionBinder schemaApplyOptionBinder,
+        LoadHarnessRunner loadHarnessRunner,
+        LoadHarnessReportWriter loadHarnessReportWriter)
         : base(scopeFactory)
     {
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
@@ -56,6 +68,8 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
         _tighteningBinder = tighteningOptionBinder ?? throw new ArgumentNullException(nameof(tighteningOptionBinder));
         _schemaApplyBinder = schemaApplyOptionBinder ?? throw new ArgumentNullException(nameof(schemaApplyOptionBinder));
+        _loadHarnessRunner = loadHarnessRunner ?? throw new ArgumentNullException(nameof(loadHarnessRunner));
+        _loadHarnessReportWriter = loadHarnessReportWriter ?? throw new ArgumentNullException(nameof(loadHarnessReportWriter));
     }
 
     protected override string VerbName => FullExportVerb.VerbName;
@@ -74,6 +88,10 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
             _renameOption,
             _openReportOption,
             _buildSqlMetadataOption,
+            _runLoadHarnessOption,
+            _loadHarnessConnectionOption,
+            _loadHarnessReportOption,
+            _loadHarnessCommandTimeoutOption,
             _profileOutputOption,
             _profileSqlMetadataOption,
             _extractOutputOption,
@@ -190,7 +208,133 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         CommandConsole.WriteLine(context.Console, "Schema apply:");
         CommandConsole.EmitSchemaApplySummary(context.Console, applyResult);
 
+        if (context.ParseResult.GetValueForOption(_runLoadHarnessOption))
+        {
+            await RunLoadHarnessAsync(context, buildResult, cancellationToken: context.GetCancellationToken())
+                .ConfigureAwait(false);
+        }
+
         return 0;
+    }
+
+    private async Task RunLoadHarnessAsync(
+        InvocationContext context,
+        BuildSsdtApplicationResult buildResult,
+        CancellationToken cancellationToken)
+    {
+        var parseResult = context.ParseResult;
+        var applyOverrides = _schemaApplyBinder.Bind(parseResult);
+        var connectionString = parseResult.GetValueForOption(_loadHarnessConnectionOption) ?? applyOverrides.ConnectionString;
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            CommandConsole.WriteErrorLine(context.Console, "[warning] Load harness skipped (no connection string provided).");
+            return;
+        }
+
+        var pipeline = buildResult.PipelineResult;
+        var safeScriptPath = ResolveScriptPath(pipeline.SafeScriptPath);
+        var remediationScriptPath = ResolveScriptPath(pipeline.RemediationScriptPath);
+        var staticSeedPaths = ResolveScriptPaths(pipeline.StaticSeedScriptPaths);
+
+        if (safeScriptPath is null && remediationScriptPath is null && staticSeedPaths.IsDefaultOrEmpty)
+        {
+            CommandConsole.WriteErrorLine(context.Console, "[warning] Load harness skipped (no scripts were generated).");
+            return;
+        }
+
+        var reportOutput = parseResult.GetValueForOption(_loadHarnessReportOption);
+        var commandTimeout = parseResult.GetValueForOption(_loadHarnessCommandTimeoutOption)
+            ?? applyOverrides.CommandTimeoutSeconds;
+
+        var options = LoadHarnessOptions.Create(
+            connectionString,
+            safeScriptPath,
+            remediationScriptPath,
+            staticSeedPaths,
+            reportOutput,
+            commandTimeout);
+
+        var report = await _loadHarnessRunner.RunAsync(options, cancellationToken).ConfigureAwait(false);
+        var reportPath = Path.GetFullPath(options.ReportOutputPath);
+
+        await _loadHarnessReportWriter
+            .WriteAsync(report, reportPath, cancellationToken)
+            .ConfigureAwait(false);
+
+        CommandConsole.WriteLine(context.Console, string.Empty);
+        CommandConsole.WriteLine(context.Console, "Load harness replay:");
+        CommandConsole.WriteLine(context.Console, $"  Scripts replayed: {report.Scripts.Length}");
+        CommandConsole.WriteLine(context.Console, $"  Total duration: {report.TotalDuration:g}");
+        CommandConsole.WriteLine(context.Console, $"  Report: {reportPath}");
+
+        foreach (var script in report.Scripts)
+        {
+            CommandConsole.WriteLine(context.Console, string.Empty);
+            CommandConsole.WriteLine(context.Console, $"  {script.Category}: {script.ScriptPath}");
+            CommandConsole.WriteLine(context.Console, $"    Duration: {script.Duration:g} ({script.BatchCount} batches)");
+
+            if (!script.WaitStats.IsDefaultOrEmpty)
+            {
+                CommandConsole.WriteLine(context.Console, "    Wait stats delta (ms):");
+                foreach (var wait in script.WaitStats)
+                {
+                    CommandConsole.WriteLine(context.Console, $"      {wait.WaitType}: {wait.DeltaMilliseconds:N0}");
+                }
+            }
+
+            if (!script.LockSummary.IsDefaultOrEmpty)
+            {
+                CommandConsole.WriteLine(context.Console, "    Lock summary:");
+                foreach (var entry in script.LockSummary)
+                {
+                    CommandConsole.WriteLine(context.Console, $"      {entry.ResourceType} ({entry.RequestMode}): {entry.Count}");
+                }
+            }
+
+            if (!script.IndexFragmentation.IsDefaultOrEmpty)
+            {
+                CommandConsole.WriteLine(context.Console, "    Fragmented indexes:");
+                foreach (var index in script.IndexFragmentation)
+                {
+                    CommandConsole.WriteLine(
+                        context.Console,
+                        $"      {index.SchemaName}.{index.ObjectName}.{index.IndexName}: {index.AverageFragmentationPercent:F1}% ({index.PageCount:N0} pages)");
+                }
+            }
+
+            if (!script.Warnings.IsDefaultOrEmpty)
+            {
+                foreach (var warning in script.Warnings)
+                {
+                    CommandConsole.WriteErrorLine(context.Console, $"[warning] {warning}");
+                }
+            }
+        }
+    }
+
+    private static string? ResolveScriptPath(string? path)
+        => string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
+
+    private static ImmutableArray<string> ResolveScriptPaths(ImmutableArray<string> paths)
+    {
+        if (paths.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<string>(paths.Length);
+        foreach (var path in paths)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
+
+            builder.Add(Path.GetFullPath(path));
+        }
+
+        return builder.ToImmutable();
     }
 
     private bool? ResolveOnlyActiveOverride(ParseResult parseResult, ModuleFilterOverrides moduleFilter)
