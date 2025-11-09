@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using Osm.Domain.Profiling;
+using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Profiling;
 
@@ -35,13 +36,15 @@ public sealed record MultiEnvironmentProfileReport(
             return Empty;
         }
 
-        var summaries = snapshots
+        var normalizedSnapshots = ProfilingSnapshotNormalizer.Normalize(snapshots);
+
+        var summaries = normalizedSnapshots
             .Select(static snapshot => ProfilingEnvironmentSummary.Create(snapshot))
             .ToImmutableArray();
 
-        var findingsBuilder = BuildFindings(summaries, snapshots).ToBuilder();
+        var findingsBuilder = BuildFindings(summaries, normalizedSnapshots).ToBuilder();
 
-        var validationResult = ProfilingStandardizationValidator.Instance.ValidateMultiEnvironment(snapshots);
+        var validationResult = ProfilingStandardizationValidator.Instance.ValidateMultiEnvironment(normalizedSnapshots);
         if (validationResult.IsSuccess)
         {
             var validationFindings = BuildValidationFindings(validationResult.Value);
@@ -52,7 +55,7 @@ public sealed record MultiEnvironmentProfileReport(
         }
 
         // Analyze constraint consensus across all environments
-        var consensus = MultiEnvironmentConstraintConsensus.Analyze(snapshots, minimumConsensusThreshold);
+        var consensus = MultiEnvironmentConstraintConsensus.Analyze(normalizedSnapshots, minimumConsensusThreshold);
 
         return new MultiEnvironmentProfileReport(summaries, findingsBuilder.ToImmutable(), consensus);
     }
@@ -456,7 +459,27 @@ public sealed record ProfilingEnvironmentSnapshot(
     MultiTargetSqlDataProfiler.EnvironmentLabelOrigin LabelOrigin,
     bool LabelWasAdjusted,
     ProfileSnapshot Snapshot,
-    TimeSpan Duration);
+    TimeSpan Duration,
+    ImmutableArray<TableNameMapping> TableNameMappings)
+{
+    public ProfilingEnvironmentSnapshot(
+        string name,
+        bool isPrimary,
+        MultiTargetSqlDataProfiler.EnvironmentLabelOrigin labelOrigin,
+        bool labelWasAdjusted,
+        ProfileSnapshot snapshot,
+        TimeSpan duration)
+        : this(
+            name,
+            isPrimary,
+            labelOrigin,
+            labelWasAdjusted,
+            snapshot,
+            duration,
+            ImmutableArray<TableNameMapping>.Empty)
+    {
+    }
+}
 
 public sealed record ProfilingEnvironmentSummary(
     string Name,

@@ -4,6 +4,7 @@ using System.Linq;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Sql;
 using Xunit;
 
 namespace Tests.Osm.Pipeline.Tests.Profiling;
@@ -181,5 +182,73 @@ public sealed class MultiEnvironmentProfileReportTests
         Assert.Equal(MultiEnvironmentFindingSeverity.Warning, missingTableFinding.Severity);
         Assert.Contains("dbo.Orders", missingTableFinding.Title, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("table exists", missingTableFinding.SuggestedAction, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Create_normalizes_table_name_mappings_prior_to_validation()
+    {
+        var capturedAt = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var successProbe = ProfilingProbeStatus.CreateSucceeded(capturedAt, 500);
+
+        var primarySnapshot = new ProfileSnapshot(
+            ImmutableArray.Create(new ColumnProfile(
+                new SchemaName("dbo"),
+                new TableName("Customer"),
+                new ColumnName("Id"),
+                true,
+                false,
+                true,
+                true,
+                null,
+                1_000,
+                0,
+                successProbe,
+                null)),
+            ImmutableArray<UniqueCandidateProfile>.Empty,
+            ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
+            ImmutableArray<ForeignKeyReality>.Empty);
+
+        var secondarySnapshot = new ProfileSnapshot(
+            ImmutableArray.Create(new ColumnProfile(
+                new SchemaName("dbo"),
+                new TableName("Customer_4"),
+                new ColumnName("Id"),
+                true,
+                false,
+                true,
+                true,
+                null,
+                950,
+                0,
+                successProbe,
+                null)),
+            ImmutableArray<UniqueCandidateProfile>.Empty,
+            ImmutableArray<CompositeUniqueCandidateProfile>.Empty,
+            ImmutableArray<ForeignKeyReality>.Empty);
+
+        var mapping = new TableNameMapping("dbo", "Customer", "dbo", "Customer_4");
+
+        var report = MultiEnvironmentProfileReport.Create(new[]
+        {
+            new ProfilingEnvironmentSnapshot(
+                "Primary",
+                true,
+                MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided,
+                false,
+                primarySnapshot,
+                TimeSpan.FromSeconds(5)),
+            new ProfilingEnvironmentSnapshot(
+                "QA",
+                false,
+                MultiTargetSqlDataProfiler.EnvironmentLabelOrigin.Provided,
+                false,
+                secondarySnapshot,
+                TimeSpan.FromSeconds(5),
+                ImmutableArray.Create(mapping))
+        });
+
+        Assert.DoesNotContain(
+            report.Findings,
+            finding => finding.Code == "profiling.validation.schema.tableMissing");
     }
 }

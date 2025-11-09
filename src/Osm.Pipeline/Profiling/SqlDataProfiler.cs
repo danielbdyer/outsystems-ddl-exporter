@@ -14,7 +14,12 @@ using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Profiling;
 
-public sealed class SqlDataProfiler : IDataProfiler
+internal interface ITableNameMappingProvider
+{
+    ImmutableArray<TableNameMapping> TableNameMappings { get; }
+}
+
+public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly OsmModel _model;
@@ -322,6 +327,8 @@ public sealed class SqlDataProfiler : IDataProfiler
                 $"Failed to capture profiling snapshot: {ex.Message}"));
         }
     }
+
+    ImmutableArray<TableNameMapping> ITableNameMappingProvider.TableNameMappings => _options.TableNameMappings;
 
     private IReadOnlyCollection<(string Schema, string Table)> CollectTables()
     {
