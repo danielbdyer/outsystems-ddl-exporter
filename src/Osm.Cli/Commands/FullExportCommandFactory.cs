@@ -125,8 +125,9 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         var tightening = _tighteningBinder.Bind(parseResult);
         var applyOverrides = _schemaApplyBinder.Bind(parseResult);
 
+        var modelPath = parseResult.GetValueForOption(_modelOption);
         var buildOverrides = new BuildSsdtOverrides(
-            parseResult.GetValueForOption(_modelOption),
+            modelPath,
             parseResult.GetValueForOption(_profileOption),
             parseResult.GetValueForOption(_buildOutputOption),
             parseResult.GetValueForOption(_profilerProviderOption),
@@ -136,7 +137,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
             parseResult.GetValueForOption(_buildSqlMetadataOption));
 
         var profileOverrides = new CaptureProfileOverrides(
-            parseResult.GetValueForOption(_modelOption),
+            modelPath,
             parseResult.GetValueForOption(_profileOutputOption),
             parseResult.GetValueForOption(_profilerProviderOption),
             parseResult.GetValueForOption(_profileOption),
@@ -153,15 +154,37 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
             parseResult.GetValueForOption(_mockSqlOption),
             parseResult.GetValueForOption(_extractSqlMetadataOption));
 
+        var reuseModelPath = !string.IsNullOrWhiteSpace(modelPath)
+            && !HasConflictingExtractOverrides(parseResult);
+
         return new FullExportVerbOptions
         {
             ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
-            Overrides = new FullExportOverrides(buildOverrides, profileOverrides, extractOverrides, applyOverrides),
+            Overrides = new FullExportOverrides(
+                buildOverrides,
+                profileOverrides,
+                extractOverrides,
+                applyOverrides,
+                reuseModelPath),
             ModuleFilter = moduleFilter,
             Sql = sqlOverrides,
             Cache = cache,
             Tightening = tightening
         };
+    }
+
+    private bool HasConflictingExtractOverrides(ParseResult parseResult)
+    {
+        if (parseResult is null)
+        {
+            throw new ArgumentNullException(nameof(parseResult));
+        }
+
+        return parseResult.HasOption(_extractOutputOption)
+            || parseResult.HasOption(_mockSqlOption)
+            || parseResult.HasOption(_extractSqlMetadataOption)
+            || parseResult.HasOption(_onlyActiveAttributesOption)
+            || parseResult.HasOption(_includeInactiveAttributesOption);
     }
 
     protected override async Task<int> OnRunSucceededAsync(InvocationContext context, FullExportVerbResult payload)

@@ -20,7 +20,8 @@ public sealed record ExtractModelApplicationInput(
 
 public sealed record ExtractModelApplicationResult(
     ModelExtractionResult ExtractionResult,
-    string OutputPath);
+    string OutputPath,
+    bool ModelWasReused = false);
 
 public sealed class ExtractModelApplicationService : PipelineApplicationServiceBase, IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>
 {

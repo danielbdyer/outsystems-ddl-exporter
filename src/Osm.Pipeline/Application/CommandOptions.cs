@@ -100,11 +100,13 @@ public sealed record FullExportOverrides(
     BuildSsdtOverrides Build,
     CaptureProfileOverrides Profile,
     ExtractModelOverrides Extract,
-    SchemaApplyOverrides? Apply)
+    SchemaApplyOverrides? Apply,
+    bool ReuseModelPath = false)
 {
     public static FullExportOverrides Empty { get; } = new(
         new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
         new CaptureProfileOverrides(null, null, null, null, null),
         new ExtractModelOverrides(null, null, null, null, null, null),
-        null);
+        null,
+        false);
 }
