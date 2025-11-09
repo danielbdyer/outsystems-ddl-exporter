@@ -81,3 +81,14 @@ public sealed record ExtractModelOverrides(
     string? OutputPath,
     string? MockAdvancedSqlManifest,
     string? SqlMetadataOutputPath);
+
+public sealed record FullExportOverrides(
+    BuildSsdtOverrides Build,
+    CaptureProfileOverrides Profile,
+    ExtractModelOverrides Extract)
+{
+    public static FullExportOverrides Empty { get; } = new(
+        new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
+        new CaptureProfileOverrides(null, null, null, null, null),
+        new ExtractModelOverrides(null, null, null, null, null, null));
+}

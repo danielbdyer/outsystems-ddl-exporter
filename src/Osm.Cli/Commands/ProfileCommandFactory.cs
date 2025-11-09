@@ -88,27 +88,17 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
 
     protected override Task<int> OnRunSucceededAsync(InvocationContext context, ProfileVerbResult payload)
     {
-        var applicationResult = payload.ApplicationResult;
-        var pipelineResult = applicationResult.PipelineResult;
-
-        if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
+        if (context is null)
         {
-            CommandConsole.WriteLine(context.Console, $"Using model at {applicationResult.ModelPath}.");
+            throw new ArgumentNullException(nameof(context));
         }
 
-        CommandConsole.EmitPipelineLog(context.Console, pipelineResult.ExecutionLog);
-        CommandConsole.EmitPipelineWarnings(context.Console, pipelineResult.Warnings);
-        CommandConsole.EmitProfilingInsights(context.Console, pipelineResult.Insights);
-
-        if (string.Equals(applicationResult.ProfilerProvider, "sql", StringComparison.OrdinalIgnoreCase))
+        if (payload is null)
         {
-            CommandConsole.EmitSqlProfilerSnapshot(context.Console, pipelineResult.Profile);
-            CommandConsole.EmitMultiEnvironmentReport(context.Console, pipelineResult.MultiEnvironmentReport);
+            throw new ArgumentNullException(nameof(payload));
         }
 
-        CommandConsole.WriteLine(context.Console, $"Profile written to {pipelineResult.ProfilePath}");
-        CommandConsole.WriteLine(context.Console, $"Manifest written to {pipelineResult.ManifestPath}");
-
+        CommandConsole.EmitProfileSummary(context.Console, payload.ApplicationResult);
         return Task.FromResult(0);
     }
 }
