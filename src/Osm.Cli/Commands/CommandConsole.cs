@@ -363,9 +363,11 @@ internal static class CommandConsole
             }
         }
 
-        WriteLine(console, $"Extracted {moduleCount} modules spanning {entityCount} entities.");
+        var verb = applicationResult.ModelWasReused ? "Reused" : "Extracted";
+        WriteLine(console, $"{verb} {moduleCount} modules spanning {entityCount} entities.");
         WriteLine(console, $"Attributes: {attributeCount}");
-        WriteLine(console, $"Model written to {resolvedOutputPath}.");
+        var action = applicationResult.ModelWasReused ? "Model reused from" : "Model written to";
+        WriteLine(console, $"{action} {resolvedOutputPath}.");
         WriteLine(console, $"Extraction timestamp (UTC): {extractionResult.ExtractedAtUtc:O}");
     }
 

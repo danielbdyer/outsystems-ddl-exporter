@@ -1,10 +1,18 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
+using Osm.Emission;
+using Osm.Json;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.SqlExtraction;
 
 namespace Osm.Pipeline.Application;
 
@@ -29,17 +37,45 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
     private readonly IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult> _extractService;
     private readonly IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult> _buildService;
     private readonly SchemaApplyOrchestrator _schemaApplyOrchestrator;
+    private readonly IModelJsonDeserializer _modelDeserializer;
+    private static readonly OutsystemsMetadataSnapshot PlaceholderMetadataSnapshot = new(
+        Array.Empty<OutsystemsModuleRow>(),
+        Array.Empty<OutsystemsEntityRow>(),
+        Array.Empty<OutsystemsAttributeRow>(),
+        Array.Empty<OutsystemsReferenceRow>(),
+        Array.Empty<OutsystemsPhysicalTableRow>(),
+        Array.Empty<OutsystemsColumnRealityRow>(),
+        Array.Empty<OutsystemsColumnCheckRow>(),
+        Array.Empty<OutsystemsColumnCheckJsonRow>(),
+        Array.Empty<OutsystemsPhysicalColumnPresenceRow>(),
+        Array.Empty<OutsystemsIndexRow>(),
+        Array.Empty<OutsystemsIndexColumnRow>(),
+        Array.Empty<OutsystemsForeignKeyRow>(),
+        Array.Empty<OutsystemsForeignKeyColumnRow>(),
+        Array.Empty<OutsystemsForeignKeyAttrMapRow>(),
+        Array.Empty<OutsystemsAttributeHasFkRow>(),
+        Array.Empty<OutsystemsForeignKeyColumnsJsonRow>(),
+        Array.Empty<OutsystemsForeignKeyAttributeJsonRow>(),
+        Array.Empty<OutsystemsTriggerRow>(),
+        Array.Empty<OutsystemsAttributeJsonRow>(),
+        Array.Empty<OutsystemsRelationshipJsonRow>(),
+        Array.Empty<OutsystemsIndexJsonRow>(),
+        Array.Empty<OutsystemsTriggerJsonRow>(),
+        Array.Empty<OutsystemsModuleJsonRow>(),
+        "(reused)");
 
     public FullExportApplicationService(
         IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult> profileService,
         IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult> extractService,
         IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult> buildService,
-        SchemaApplyOrchestrator schemaApplyOrchestrator)
+        SchemaApplyOrchestrator schemaApplyOrchestrator,
+        IModelJsonDeserializer modelDeserializer)
     {
         _profileService = profileService ?? throw new ArgumentNullException(nameof(profileService));
         _extractService = extractService ?? throw new ArgumentNullException(nameof(extractService));
         _buildService = buildService ?? throw new ArgumentNullException(nameof(buildService));
         _schemaApplyOrchestrator = schemaApplyOrchestrator ?? throw new ArgumentNullException(nameof(schemaApplyOrchestrator));
+        _modelDeserializer = modelDeserializer ?? throw new ArgumentNullException(nameof(modelDeserializer));
     }
 
     public async Task<Result<FullExportApplicationResult>> RunAsync(
@@ -54,6 +90,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var profileOverrides = overrides.Profile ?? FullExportOverrides.Empty.Profile;
         var extractOverrides = overrides.Extract ?? FullExportOverrides.Empty.Extract;
         var moduleFilter = input.ModuleFilter;
+        var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
 
         if ((extractOverrides.Modules is null || extractOverrides.Modules.Count == 0) && moduleFilter.Modules.Count > 0)
         {
@@ -70,10 +107,34 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             extractOverrides = extractOverrides with { OnlyActiveAttributes = !moduleFilter.IncludeInactiveModules.Value };
         }
 
-        var extractInput = new ExtractModelApplicationInput(configurationContext, extractOverrides, input.Sql);
-        var extractResult = await _extractService
-            .RunAsync(extractInput, cancellationToken)
-            .ConfigureAwait(false);
+        var includeSystemModules = moduleFilter.IncludeSystemModules
+            ?? configuration.ModuleFilter.IncludeSystemModules
+            ?? true;
+        var includeInactiveModules = moduleFilter.IncludeInactiveModules
+            ?? configuration.ModuleFilter.IncludeInactiveModules
+            ?? true;
+
+        Result<ExtractModelApplicationResult> extractResult;
+
+        if (overrides.ReuseModelPath)
+        {
+            var reusePath = ResolveReuseModelPath(buildOverrides, profileOverrides, configuration);
+            if (string.IsNullOrWhiteSpace(reusePath))
+            {
+                return ValidationError.Create(
+                    "pipeline.fullExport.model.reuse.missing",
+                    "Model reuse was requested but no model path was provided. Supply --model or configure model.path.");
+            }
+
+            extractResult = CreateReuseExtractionResult(reusePath!, includeSystemModules, includeInactiveModules);
+        }
+        else
+        {
+            var extractInput = new ExtractModelApplicationInput(configurationContext, extractOverrides, input.Sql);
+            extractResult = await _extractService
+                .RunAsync(extractInput, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         if (extractResult.IsFailure)
         {
@@ -153,6 +214,137 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         }
 
         return new FullExportApplicationResult(buildResult.Value, profile, extraction, applyResult.Value);
+    }
+
+    private Result<ExtractModelApplicationResult> CreateReuseExtractionResult(
+        string modelPath,
+        bool includeSystemModules,
+        bool includeInactiveModules)
+    {
+        if (string.IsNullOrWhiteSpace(modelPath))
+        {
+            throw new ArgumentException("Model path must be provided.", nameof(modelPath));
+        }
+
+        if (!File.Exists(modelPath))
+        {
+            return Result<ExtractModelApplicationResult>.Failure(ValidationError.Create(
+                "pipeline.fullExport.model.reuse.notFound",
+                $"Model path '{modelPath}' does not exist."));
+        }
+
+        try
+        {
+            using var stream = File.Open(modelPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var warnings = new List<string>();
+            var options = ModelJsonDeserializerOptions.Default
+                .WithAllowDuplicateAttributeLogicalNames(true)
+                .WithAllowDuplicateAttributeColumnNames(true);
+            var modelResult = _modelDeserializer.Deserialize(stream, warnings, options);
+            if (modelResult.IsFailure)
+            {
+                return Result<ExtractModelApplicationResult>.Failure(modelResult.Errors);
+            }
+
+            var model = modelResult.Value;
+            AppendModuleWarnings(model, includeSystemModules, includeInactiveModules, warnings);
+
+            var extraction = new ModelExtractionResult(
+                model,
+                ModelJsonPayload.FromFile(modelPath),
+                NormalizeExportTimestamp(model.ExportedAtUtc),
+                warnings,
+                PlaceholderMetadataSnapshot,
+                DynamicEntityDataset.Empty);
+
+            return Result<ExtractModelApplicationResult>.Success(
+                new ExtractModelApplicationResult(extraction, modelPath, ModelWasReused: true));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Result<ExtractModelApplicationResult>.Failure(ValidationError.Create(
+                "pipeline.fullExport.model.reuse.io",
+                $"Failed to open model path '{modelPath}': {ex.Message}"));
+        }
+    }
+
+    private static string? ResolveReuseModelPath(
+        BuildSsdtOverrides buildOverrides,
+        CaptureProfileOverrides profileOverrides,
+        CliConfiguration configuration)
+    {
+        if (!string.IsNullOrWhiteSpace(buildOverrides?.ModelPath))
+        {
+            return buildOverrides.ModelPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(profileOverrides?.ModelPath))
+        {
+            return profileOverrides.ModelPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(configuration?.ModelPath))
+        {
+            return configuration.ModelPath;
+        }
+
+        return null;
+    }
+
+    private static void AppendModuleWarnings(
+        OsmModel model,
+        bool includeSystemModules,
+        bool includeInactiveModules,
+        ICollection<string> warnings)
+    {
+        if (model is null)
+        {
+            throw new ArgumentNullException(nameof(model));
+        }
+
+        if (warnings is null)
+        {
+            throw new ArgumentNullException(nameof(warnings));
+        }
+
+        var seen = new HashSet<string>(warnings, StringComparer.Ordinal);
+
+        foreach (var module in model.Modules)
+        {
+            if (!includeSystemModules && module.IsSystemModule)
+            {
+                continue;
+            }
+
+            var entityCount = includeInactiveModules
+                ? module.Entities.Length
+                : module.Entities.Count(static entity => entity.IsActive);
+
+            if (entityCount > 0)
+            {
+                continue;
+            }
+
+            var message = $"Module '{module.Name.Value}' contains no entities and will be skipped.";
+            if (seen.Add(message))
+            {
+                warnings.Add(message);
+            }
+        }
+    }
+
+    private static DateTimeOffset NormalizeExportTimestamp(DateTime exportedAtUtc)
+    {
+        if (exportedAtUtc.Kind == DateTimeKind.Local)
+        {
+            exportedAtUtc = exportedAtUtc.ToUniversalTime();
+        }
+        else if (exportedAtUtc.Kind == DateTimeKind.Unspecified)
+        {
+            exportedAtUtc = DateTime.SpecifyKind(exportedAtUtc, DateTimeKind.Utc);
+        }
+
+        return new DateTimeOffset(exportedAtUtc, TimeSpan.Zero);
     }
 
     private static string? ResolveModelPath(
