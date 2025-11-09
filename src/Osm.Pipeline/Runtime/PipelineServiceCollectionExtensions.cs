@@ -136,11 +136,13 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<BuildSsdtSqlValidationStep>();
         services.AddSingleton<BuildSsdtStaticSeedStep>();
         services.AddSingleton<BuildSsdtTelemetryPackagingStep>();
+        services.AddSingleton<ISchemaDataApplier, SchemaDataApplier>();
 
         services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
         services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();
         services.AddSingleton<ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>, ExtractModelPipeline>();
         services.AddSingleton<ICommandHandler<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>, CaptureProfilePipeline>();
+        services.AddSingleton<ICommandHandler<FullExportPipelineRequest, FullExportPipelineResult>, FullExportPipeline>();
         services.AddSingleton<ICommandHandler<TighteningAnalysisPipelineRequest, TighteningAnalysisPipelineResult>, TighteningAnalysisPipeline>();
 
         return services;

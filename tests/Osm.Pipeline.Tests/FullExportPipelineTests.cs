@@ -1,0 +1,367 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
+using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
+using Osm.Domain.Model;
+using Osm.Domain.Profiling;
+using Osm.Emission;
+using Osm.Pipeline.Configuration;
+using Osm.Pipeline.Mediation;
+using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Sql;
+using Osm.Pipeline.SqlExtraction;
+using Osm.Smo;
+using Osm.Validation.Profiling;
+using Osm.Validation.Tightening;
+using Osm.Validation.Tightening.Opportunities;
+using Osm.Validation.Tightening.Validations;
+using Tests.Support;
+using Xunit;
+using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
+
+namespace Osm.Pipeline.Tests;
+
+public sealed class FullExportPipelineTests
+{
+    private static readonly string SafeScriptPath = Path.Combine(Path.GetTempPath(), "full-export-safe.sql");
+    private static readonly string RemediationScriptPath = Path.Combine(Path.GetTempPath(), "full-export-remediation.sql");
+    private static readonly string SeedScriptPath = Path.Combine(Path.GetTempPath(), "full-export-seed.sql");
+
+    [Fact]
+    public async Task HandleAsync_skips_apply_when_connection_missing()
+    {
+        var dispatcher = new StubCommandDispatcher();
+        var schemaApplier = new FakeSchemaDataApplier();
+        var pipeline = new FullExportPipeline(dispatcher, schemaApplier, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+
+        var (extractRequest, extractResult) = CreateExtractionArtifacts();
+        var (captureRequest, captureResult) = CreateCaptureArtifacts();
+        var (buildRequest, buildResult) = CreateBuildArtifacts();
+
+        dispatcher.Register<ExtractModelPipelineRequest, ModelExtractionResult>((request, _) =>
+        {
+            Assert.Equal(extractRequest, request);
+            return Task.FromResult(Result<ModelExtractionResult>.Success(extractResult));
+        });
+        dispatcher.Register<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>((request, _) =>
+        {
+            Assert.Equal(captureRequest, request);
+            return Task.FromResult(Result<CaptureProfilePipelineResult>.Success(captureResult));
+        });
+        dispatcher.Register<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>((request, _) =>
+        {
+            Assert.Equal(buildRequest, request);
+            return Task.FromResult(Result<BuildSsdtPipelineResult>.Success(buildResult));
+        });
+
+        var request = new FullExportPipelineRequest(extractRequest, captureRequest, buildRequest, SchemaApplyOptions.Disabled);
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(schemaApplier.LastRequest);
+
+        var apply = result.Value.Apply;
+        Assert.False(apply.Attempted);
+        Assert.Equal(buildResult.Opportunities.ContradictionCount, apply.PendingRemediationCount);
+        Assert.Equal(buildResult.RemediationScriptPath, apply.RemediationScriptPath);
+        Assert.Contains(result.Value.ExecutionLog.Entries, entry => entry.Step == "fullExport.apply.skipped");
+        Assert.Contains(result.Value.ExecutionLog.Entries, entry => entry.Step == "fullExport.apply.remediationPending");
+    }
+
+    [Fact]
+    public async Task HandleAsync_invokes_schema_applier_when_enabled()
+    {
+        var dispatcher = new StubCommandDispatcher();
+        var schemaApplier = new FakeSchemaDataApplier
+        {
+            Result = Result<SchemaDataApplyOutcome>.Success(new SchemaDataApplyOutcome(
+                ImmutableArray.Create(SafeScriptPath),
+                ImmutableArray.Create(SeedScriptPath),
+                ExecutedBatchCount: 3,
+                Duration: TimeSpan.FromMilliseconds(125)))
+        };
+        var pipeline = new FullExportPipeline(dispatcher, schemaApplier, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+
+        var (extractRequest, extractResult) = CreateExtractionArtifacts();
+        var (captureRequest, captureResult) = CreateCaptureArtifacts();
+        var (buildRequest, buildResult) = CreateBuildArtifacts();
+
+        dispatcher.Register<ExtractModelPipelineRequest, ModelExtractionResult>((_, _) => Task.FromResult(Result<ModelExtractionResult>.Success(extractResult)));
+        dispatcher.Register<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>((_, _) => Task.FromResult(Result<CaptureProfilePipelineResult>.Success(captureResult)));
+        dispatcher.Register<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>((_, _) => Task.FromResult(Result<BuildSsdtPipelineResult>.Success(buildResult)));
+
+        var applyOptions = new SchemaApplyOptions(
+            Enabled: true,
+            ConnectionString: "Server=(localdb)\\MSSQLLocalDB;Database=Test;Integrated Security=true;",
+            Authentication: new SqlAuthenticationSettings(null, null, null, null),
+            CommandTimeoutSeconds: 30,
+            ApplySafeScript: true,
+            ApplyStaticSeeds: true,
+            StaticSeedSynchronizationMode.NonDestructive);
+
+        var request = new FullExportPipelineRequest(extractRequest, captureRequest, buildRequest, applyOptions);
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(schemaApplier.LastRequest);
+        Assert.Equal(applyOptions.ConnectionString, schemaApplier.LastRequest!.ConnectionString);
+        Assert.Equal(ImmutableArray.Create(SafeScriptPath), schemaApplier.LastRequest.ScriptPaths);
+        Assert.Equal(ImmutableArray.Create(SeedScriptPath), schemaApplier.LastRequest.SeedScriptPaths);
+
+        var apply = result.Value.Apply;
+        Assert.True(apply.Attempted);
+        Assert.True(apply.SafeScriptApplied);
+        Assert.True(apply.StaticSeedsApplied);
+        Assert.Contains(SafeScriptPath, apply.AppliedScripts);
+        Assert.Contains(SeedScriptPath, apply.AppliedSeedScripts);
+        Assert.Contains(result.Value.ExecutionLog.Entries, entry => entry.Step == "fullExport.apply.completed");
+    }
+
+    private static (ExtractModelPipelineRequest Request, ModelExtractionResult Result) CreateExtractionArtifacts()
+    {
+        var commandResult = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: true, includeInactiveModules: false, onlyActiveAttributes: true);
+        var command = commandResult.IsSuccess ? commandResult.Value : throw new InvalidOperationException("Failed to create extraction command.");
+        var sqlOptions = CreateSqlOptions();
+        var outputPath = Path.Combine(Path.GetTempPath(), "model.json");
+        var request = new ExtractModelPipelineRequest(command, sqlOptions, AdvancedSqlFixtureManifestPath: null, OutputPath: outputPath, SqlMetadataOutputPath: null);
+        var result = CreateExtractionResult();
+        return (request, result);
+    }
+
+    private static (CaptureProfilePipelineRequest Request, CaptureProfilePipelineResult Result) CreateCaptureArtifacts()
+    {
+        var scope = CreateScope();
+        var outputDirectory = Path.Combine(Path.GetTempPath(), "profile-output");
+        var fixtureProfilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        var request = new CaptureProfilePipelineRequest(scope, "fixture", outputDirectory, fixtureProfilePath, SqlMetadataLog: null);
+        var profile = ProfileFixtures.LoadSnapshot(Path.Combine("profiling", "profile.edge-case.json"));
+        var manifest = new CaptureProfileManifest(
+            scope.ModelPath,
+            fixtureProfilePath,
+            "fixture",
+            new CaptureProfileModuleSummary(false, Array.Empty<string>(), true, true),
+            new CaptureProfileSupplementalSummary(false, Array.Empty<string>()),
+            new CaptureProfileSnapshotSummary(0, 0, 0, 0, 0),
+            Array.Empty<CaptureProfileInsight>(),
+            Array.Empty<string>(),
+            DateTimeOffset.UtcNow);
+        var result = new CaptureProfilePipelineResult(
+            profile,
+            manifest,
+            fixtureProfilePath,
+            Path.Combine(outputDirectory, "manifest.json"),
+            ImmutableArray<ProfilingInsight>.Empty,
+            PipelineExecutionLog.Empty,
+            ImmutableArray<string>.Empty,
+            null);
+        return (request, result);
+    }
+
+    private static (BuildSsdtPipelineRequest Request, BuildSsdtPipelineResult Result) CreateBuildArtifacts()
+    {
+        var scope = CreateScope(profilePath: FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json")));
+        var outputDirectory = Path.Combine(Path.GetTempPath(), "ssdt-output");
+        var request = new BuildSsdtPipelineRequest(scope, outputDirectory, "fixture", EvidenceCache: null, StaticDataProvider: null, SeedOutputDirectoryHint: Path.Combine(outputDirectory, "Seeds"), SqlMetadataLog: null);
+
+        var manifest = new SsdtManifest(
+            new[]
+            {
+                new TableManifestEntry("Core", "dbo", "Sample", "Modules/Core.Sample.sql", Array.Empty<string>(), Array.Empty<string>(), false)
+            },
+            new SsdtManifestOptions(false, false, true, 1),
+            null,
+            new SsdtEmissionMetadata("sha256", "abc123"),
+            Array.Empty<PreRemediationManifestEntry>(),
+            SsdtCoverageSummary.CreateComplete(1, 1, 1),
+            SsdtPredicateCoverage.Empty,
+            Array.Empty<string>());
+
+        var toggleSnapshot = TighteningToggleSnapshot.Create(TighteningOptions.Default);
+        var togglePrecedence = toggleSnapshot.ToExportDictionary().ToImmutableDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+        var decisionReport = new PolicyDecisionReport(
+            ImmutableArray<ColumnDecisionReport>.Empty,
+            ImmutableArray<UniqueIndexDecisionReport>.Empty,
+            ImmutableArray<ForeignKeyDecisionReport>.Empty,
+            ImmutableDictionary<string, int>.Empty,
+            ImmutableDictionary<string, int>.Empty,
+            ImmutableDictionary<string, int>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<string, ModuleDecisionRollup>.Empty,
+            togglePrecedence,
+            ImmutableDictionary<string, string>.Empty,
+            ImmutableDictionary<string, string>.Empty,
+            toggleSnapshot);
+
+        var opportunities = new OpportunitiesReport(
+            ImmutableArray<Opportunity>.Empty,
+            ImmutableDictionary<OpportunityDisposition, int>.Empty,
+            ImmutableDictionary<OpportunityCategory, int>.Empty.Add(OpportunityCategory.Contradiction, 2),
+            ImmutableDictionary<OpportunityType, int>.Empty,
+            ImmutableDictionary<RiskLevel, int>.Empty,
+            DateTimeOffset.UtcNow);
+
+        var validations = ValidationReport.Empty(DateTimeOffset.UtcNow);
+
+        var result = new BuildSsdtPipelineResult(
+            ProfileFixtures.LoadSnapshot(Path.Combine("profiling", "profile.edge-case.json")),
+            ImmutableArray<ProfilingInsight>.Empty,
+            decisionReport,
+            opportunities,
+            validations,
+            manifest,
+            ImmutableDictionary<string, ModuleManifestRollup>.Empty,
+            ImmutableArray<PipelineInsight>.Empty,
+            Path.Combine(outputDirectory, "decision-log.json"),
+            Path.Combine(outputDirectory, "opportunities.json"),
+            Path.Combine(outputDirectory, "validations.json"),
+            SafeScriptPath,
+            "PRINT 'safe';",
+            RemediationScriptPath,
+            "PRINT 'remediation';",
+            ImmutableArray.Create(SeedScriptPath),
+            ImmutableArray<string>.Empty,
+            SsdtSqlValidationSummary.Empty,
+            null,
+            PipelineExecutionLog.Empty,
+            ImmutableArray<string>.Empty,
+            null);
+
+        return (request, result);
+    }
+
+    private static ModelExecutionScope CreateScope(string? modelPath = null, string? profilePath = null)
+    {
+        var resolvedModelPath = modelPath ?? FixtureFile.GetPath("model.edge-case.json");
+        var tightening = TighteningOptions.Default;
+        return new ModelExecutionScope(
+            resolvedModelPath,
+            ModuleFilterOptions.IncludeAll,
+            SupplementalModelOptions.Default,
+            tightening,
+            CreateSqlOptions(),
+            SmoBuildOptions.FromEmission(tightening.Emission),
+            TypeMappingPolicyLoader.LoadDefault(),
+            profilePath);
+    }
+
+    private static ResolvedSqlOptions CreateSqlOptions()
+    {
+        return new ResolvedSqlOptions(
+            ConnectionString: null,
+            CommandTimeoutSeconds: null,
+            Sampling: new SqlSamplingSettings(null, null),
+            Authentication: new SqlAuthenticationSettings(null, null, null, null),
+            MetadataContract: MetadataContractOverrides.Strict,
+            ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+            TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty);
+    }
+
+    private static ModelExtractionResult CreateExtractionResult()
+    {
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var payload = ModelJsonPayload.FromFile(FixtureFile.GetPath("model.edge-case.json"));
+        var metadata = CreateMetadataSnapshot("TestDatabase");
+        return new ModelExtractionResult(model, payload, DateTimeOffset.UtcNow, Array.Empty<string>(), metadata);
+    }
+
+    private static OutsystemsMetadataSnapshot CreateMetadataSnapshot(string databaseName)
+    {
+        return new OutsystemsMetadataSnapshot(
+            Modules: Array.Empty<OutsystemsModuleRow>(),
+            Entities: Array.Empty<OutsystemsEntityRow>(),
+            Attributes: Array.Empty<OutsystemsAttributeRow>(),
+            References: Array.Empty<OutsystemsReferenceRow>(),
+            PhysicalTables: Array.Empty<OutsystemsPhysicalTableRow>(),
+            ColumnReality: Array.Empty<OutsystemsColumnRealityRow>(),
+            ColumnChecks: Array.Empty<OutsystemsColumnCheckRow>(),
+            ColumnCheckJson: Array.Empty<OutsystemsColumnCheckJsonRow>(),
+            PhysicalColumnsPresent: Array.Empty<OutsystemsPhysicalColumnPresenceRow>(),
+            Indexes: Array.Empty<OutsystemsIndexRow>(),
+            IndexColumns: Array.Empty<OutsystemsIndexColumnRow>(),
+            ForeignKeys: Array.Empty<OutsystemsForeignKeyRow>(),
+            ForeignKeyColumns: Array.Empty<OutsystemsForeignKeyColumnRow>(),
+            ForeignKeyAttributeMap: Array.Empty<OutsystemsForeignKeyAttrMapRow>(),
+            AttributeForeignKeys: Array.Empty<OutsystemsAttributeHasFkRow>(),
+            ForeignKeyColumnsJson: Array.Empty<OutsystemsForeignKeyColumnsJsonRow>(),
+            ForeignKeyAttributeJson: Array.Empty<OutsystemsForeignKeyAttributeJsonRow>(),
+            Triggers: Array.Empty<OutsystemsTriggerRow>(),
+            AttributeJson: Array.Empty<OutsystemsAttributeJsonRow>(),
+            RelationshipJson: Array.Empty<OutsystemsRelationshipJsonRow>(),
+            IndexJson: Array.Empty<OutsystemsIndexJsonRow>(),
+            TriggerJson: Array.Empty<OutsystemsTriggerJsonRow>(),
+            ModuleJson: Array.Empty<OutsystemsModuleJsonRow>(),
+            DatabaseName: databaseName);
+    }
+
+    private sealed class StubCommandDispatcher : ICommandDispatcher
+    {
+        private readonly Dictionary<Type, Func<object, CancellationToken, Task<Result<object>>>> _handlers = new();
+
+        public Task<Result<TResponse>> DispatchAsync<TCommand, TResponse>(TCommand command, CancellationToken cancellationToken = default)
+            where TCommand : ICommand<TResponse>
+        {
+            if (!_handlers.TryGetValue(typeof(TCommand), out var handler))
+            {
+                throw new InvalidOperationException($"No handler registered for {typeof(TCommand).Name}.");
+            }
+
+            return InvokeAsync<TResponse>(handler, command!, cancellationToken);
+        }
+
+        public void Register<TCommand, TResponse>(Func<TCommand, CancellationToken, Task<Result<TResponse>>> handler)
+            where TCommand : ICommand<TResponse>
+        {
+            if (handler is null)
+            {
+                throw new ArgumentNullException(nameof(handler));
+            }
+
+            _handlers[typeof(TCommand)] = async (command, token) =>
+            {
+                var result = await handler((TCommand)command, token).ConfigureAwait(false);
+                return result.Map<object>(value => value!);
+            };
+        }
+
+        private static async Task<Result<TResponse>> InvokeAsync<TResponse>(
+            Func<object, CancellationToken, Task<Result<object>>> handler,
+            object command,
+            CancellationToken cancellationToken)
+        {
+            var result = await handler(command, cancellationToken).ConfigureAwait(false);
+            if (result.IsFailure)
+            {
+                return Result<TResponse>.Failure(result.Errors);
+            }
+
+            return Result<TResponse>.Success((TResponse)result.Value);
+        }
+    }
+
+    private sealed class FakeSchemaDataApplier : ISchemaDataApplier
+    {
+        public SchemaDataApplyRequest? LastRequest { get; private set; }
+
+        public Result<SchemaDataApplyOutcome> Result { get; set; } = Result<SchemaDataApplyOutcome>.Success(
+            new SchemaDataApplyOutcome(
+                ImmutableArray<string>.Empty,
+                ImmutableArray<string>.Empty,
+                ExecutedBatchCount: 0,
+                Duration: TimeSpan.Zero));
+
+        public Task<Result<SchemaDataApplyOutcome>> ApplyAsync(
+            SchemaDataApplyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return Task.FromResult(Result);
+        }
+    }
+}
