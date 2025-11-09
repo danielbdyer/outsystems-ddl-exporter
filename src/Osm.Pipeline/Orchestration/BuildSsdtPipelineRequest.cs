@@ -1,4 +1,5 @@
 using Osm.Domain.Configuration;
+using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -12,6 +13,8 @@ public sealed record BuildSsdtPipelineRequest(
     string OutputDirectory,
     string ProfilerProvider,
     EvidenceCachePipelineOptions? EvidenceCache,
+    DynamicEntityDataset DynamicDataset,
     IStaticEntityDataProvider? StaticDataProvider,
     string? SeedOutputDirectoryHint,
+    string? DynamicDataOutputDirectoryHint,
     SqlMetadataLog? SqlMetadataLog = null) : ICommand<BuildSsdtPipelineResult>;

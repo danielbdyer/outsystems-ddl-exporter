@@ -281,7 +281,16 @@ public sealed class FullExportPipelineTests
     {
         var scope = CreateScope(profilePath: FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json")));
         var outputDirectory = Path.Combine(Path.GetTempPath(), "ssdt-output");
-        var request = new BuildSsdtPipelineRequest(scope, outputDirectory, "fixture", EvidenceCache: null, StaticDataProvider: null, SeedOutputDirectoryHint: Path.Combine(outputDirectory, "Seeds"), SqlMetadataLog: null);
+        var request = new BuildSsdtPipelineRequest(
+            scope,
+            outputDirectory,
+            "fixture",
+            EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
+            StaticDataProvider: null,
+            SeedOutputDirectoryHint: Path.Combine(outputDirectory, "Seeds"),
+            DynamicDataOutputDirectoryHint: Path.Combine(outputDirectory, "DynamicData"),
+            SqlMetadataLog: null);
 
         var manifest = new SsdtManifest(
             new[]
@@ -339,6 +348,7 @@ public sealed class FullExportPipelineTests
             RemediationScriptPath,
             "PRINT 'remediation';",
             ImmutableArray.Create(SeedScriptPath),
+            ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,
             SsdtSqlValidationSummary.Empty,
             null,

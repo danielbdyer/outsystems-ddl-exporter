@@ -19,6 +19,7 @@ public sealed record FullExportRunManifest(
     ImmutableArray<string> Warnings)
 {
     private const string StaticSeedArtifactName = "static-seed";
+    private const string DynamicInsertArtifactName = "dynamic-insert";
 
     public const bool DefaultIncludeStaticSeedArtifactsInDynamic = true;
 
@@ -195,6 +196,16 @@ public sealed record FullExportRunManifest(
             }
         }
 
+        if (!pipelineResult.DynamicInsertScriptPaths.IsDefaultOrEmpty)
+        {
+            artifacts["dynamicInsertScripts"] = string.Join(";", pipelineResult.DynamicInsertScriptPaths);
+            var dynamicInsertRoot = ResolveDynamicInsertRoot(pipelineResult);
+            if (!string.IsNullOrWhiteSpace(dynamicInsertRoot))
+            {
+                artifacts["dynamicInsertRoot"] = dynamicInsertRoot;
+            }
+        }
+
         if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty)
         {
             artifacts["telemetryPackages"] = string.Join(";", pipelineResult.TelemetryPackagePaths);
@@ -292,6 +303,34 @@ public sealed record FullExportRunManifest(
         }
 
         var directories = pipelineResult.StaticSeedScriptPaths
+            .Where(static path => !string.IsNullOrWhiteSpace(path))
+            .Select(static path => Path.GetDirectoryName(path))
+            .Where(static directory => !string.IsNullOrWhiteSpace(directory))
+            .Select(static directory => NormalizeDirectory(directory!))
+            .ToArray();
+
+        if (directories.Length == 0)
+        {
+            return null;
+        }
+
+        var common = FindCommonDirectoryPrefix(directories);
+        return string.IsNullOrWhiteSpace(common) ? directories[0] : common;
+    }
+
+    public static string? ResolveDynamicInsertRoot(BuildSsdtPipelineResult pipelineResult)
+    {
+        if (pipelineResult is null)
+        {
+            throw new ArgumentNullException(nameof(pipelineResult));
+        }
+
+        if (pipelineResult.DynamicInsertScriptPaths.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var directories = pipelineResult.DynamicInsertScriptPaths
             .Where(static path => !string.IsNullOrWhiteSpace(path))
             .Select(static path => Path.GetDirectoryName(path))
             .Where(static directory => !string.IsNullOrWhiteSpace(directory))

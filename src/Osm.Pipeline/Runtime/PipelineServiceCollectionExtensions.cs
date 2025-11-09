@@ -115,6 +115,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<StaticSeedSqlBuilder>();
         services.AddSingleton<StaticEntitySeedTemplateService>();
         services.AddSingleton<StaticEntitySeedScriptGenerator>();
+        services.AddSingleton<DynamicEntityInsertGenerator>();
         services.AddSingleton<ISsdtSqlValidator, SsdtSqlValidator>();
 
         return services;
@@ -135,6 +136,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<BuildSsdtEmissionStep>();
         services.AddSingleton<BuildSsdtSqlValidationStep>();
         services.AddSingleton<BuildSsdtStaticSeedStep>();
+        services.AddSingleton<BuildSsdtDynamicInsertStep>();
         services.AddSingleton<BuildSsdtTelemetryPackagingStep>();
         services.AddSingleton<ISchemaDataApplier, SchemaDataApplier>();
         services.AddSingleton<SchemaApplyOrchestrator>();

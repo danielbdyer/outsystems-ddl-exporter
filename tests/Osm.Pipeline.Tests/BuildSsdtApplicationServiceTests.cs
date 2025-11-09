@@ -143,6 +143,7 @@ public sealed class BuildSsdtApplicationServiceTests
             "-- remediation script\nGO\n",
             ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,
+            ImmutableArray<string>.Empty,
             SsdtSqlValidationSummary.Empty,
             null,
             PipelineExecutionLog.Empty,

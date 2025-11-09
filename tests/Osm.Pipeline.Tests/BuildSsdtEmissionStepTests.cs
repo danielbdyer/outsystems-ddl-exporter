@@ -231,8 +231,11 @@ public sealed class BuildSsdtEmissionStepTests
             outputDirectory,
             "fixture",
             EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
             StaticDataProvider: null,
-            SeedOutputDirectoryHint: null);
+            SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
+            SqlMetadataLog: null);
     }
 
     private static PipelineBootstrapContext CreateBootstrapContext()

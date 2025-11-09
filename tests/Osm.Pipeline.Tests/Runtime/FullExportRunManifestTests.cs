@@ -67,7 +67,8 @@ public sealed class FullExportRunManifestTests
 
         var dynamicArtifacts = ImmutableArray.Create(
             new FullExportManifestArtifact("model-json", "/tmp/model.json", "application/json"),
-            new FullExportManifestArtifact("full-export-manifest", "/tmp/full-export.manifest.json", "application/json"));
+            new FullExportManifestArtifact("full-export-manifest", "/tmp/full-export.manifest.json", "application/json"),
+            new FullExportManifestArtifact("dynamic-insert", "/tmp/DynamicData/App/Entity.dynamic.sql", "application/sql"));
         var staticArtifacts = ImmutableArray.Create(
             new FullExportManifestArtifact("static-seed", "/tmp/Seeds/StaticEntities.seed.sql", "application/sql"));
 
@@ -100,10 +101,11 @@ public sealed class FullExportRunManifestTests
         Assert.True(root.GetProperty("StaticSeedArtifactsIncludedInDynamic").GetBoolean());
 
         var dynamicElement = root.GetProperty("DynamicArtifacts");
-        Assert.Equal(2, dynamicElement.GetArrayLength());
+        Assert.Equal(3, dynamicElement.GetArrayLength());
         Assert.Equal("model-json", dynamicElement[0].GetProperty("Name").GetString());
         Assert.Equal("/tmp/model.json", dynamicElement[0].GetProperty("Path").GetString());
         Assert.Equal("full-export-manifest", dynamicElement[1].GetProperty("Name").GetString());
+        Assert.Equal("dynamic-insert", dynamicElement[2].GetProperty("Name").GetString());
 
         var staticElement = root.GetProperty("StaticSeedArtifacts");
         Assert.Single(staticElement.EnumerateArray());
@@ -176,6 +178,11 @@ public sealed class FullExportRunManifestTests
             new("full-export-manifest", manifestPath, "application/json")
         };
 
+        foreach (var insertPath in build.PipelineResult.DynamicInsertScriptPaths)
+        {
+            artifacts.Add(new PipelineArtifact("dynamic-insert", insertPath, "application/sql"));
+        }
+
         var manifest = FullExportRunManifest.Create(verbResult, artifacts, TimeProvider.System);
 
         Assert.True(manifest.StaticSeedArtifactsIncludedInDynamic);
@@ -191,6 +198,11 @@ public sealed class FullExportRunManifestTests
         Assert.True(buildStage.Artifacts.TryGetValue("staticSeedRoot", out var stageSeedRoot));
         Assert.Equal(seedRootFullPath, Path.GetFullPath(stageSeedRoot!));
         Assert.Equal(seedRootFullPath, Path.GetFullPath(FullExportRunManifest.ResolveStaticSeedRoot(build.PipelineResult)!));
+
+        Assert.True(buildStage.Artifacts.TryGetValue("dynamicInsertRoot", out var stageDynamicRoot));
+        var expectedDynamicRoot = Path.GetFullPath(Path.Combine(dynamicRoot, "DynamicData", "ModuleA"));
+        Assert.Equal(expectedDynamicRoot, Path.GetFullPath(stageDynamicRoot!));
+        Assert.Equal(expectedDynamicRoot, Path.GetFullPath(FullExportRunManifest.ResolveDynamicInsertRoot(build.PipelineResult)!));
 
         var dynamicFiles = Directory.GetFiles(dynamicRoot, "*", SearchOption.AllDirectories);
         Assert.DoesNotContain(dynamicFiles, path => Path.GetFullPath(path).StartsWith(seedRootFullPath, StringComparison.OrdinalIgnoreCase));
@@ -308,6 +320,10 @@ public sealed class FullExportRunManifestTests
         File.WriteAllText(opportunitiesPath, "{}");
         var validationsPath = Path.Combine(outputDirectory, "validations.json");
         File.WriteAllText(validationsPath, "{}");
+        var dynamicInsertDirectory = Path.Combine(outputDirectory, "DynamicData", "ModuleA");
+        Directory.CreateDirectory(dynamicInsertDirectory);
+        var dynamicInsertPath = Path.Combine(dynamicInsertDirectory, "Entity.dynamic.sql");
+        File.WriteAllText(dynamicInsertPath, "-- dynamic insert");
 
         var pipelineResult = new BuildSsdtPipelineResult(
             ProfileFixtures.LoadSnapshot(Path.Combine("profiling", "profile.edge-case.json")),
@@ -326,6 +342,7 @@ public sealed class FullExportRunManifestTests
             remediationScriptPath,
             "PRINT 'remediation';",
             staticSeedPaths,
+            ImmutableArray.Create(dynamicInsertPath),
             ImmutableArray<string>.Empty,
             SsdtSqlValidationSummary.Empty,
             null,

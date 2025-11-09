@@ -152,6 +152,17 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             }
         }
 
+        if (!buildPipeline.DynamicInsertScriptPaths.IsDefaultOrEmpty)
+        {
+            foreach (var insertPath in buildPipeline.DynamicInsertScriptPaths)
+            {
+                if (!string.IsNullOrWhiteSpace(insertPath))
+                {
+                    artifacts.Add(new PipelineArtifact("dynamic-insert", insertPath, "application/sql"));
+                }
+            }
+        }
+
         if (!buildPipeline.TelemetryPackagePaths.IsDefaultOrEmpty)
         {
             foreach (var packagePath in buildPipeline.TelemetryPackagePaths)
@@ -207,6 +218,11 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             if (!string.IsNullOrWhiteSpace(staticSeedRoot))
             {
                 builder["build.staticSeedRoot"] = staticSeedRoot;
+            }
+            var dynamicInsertRoot = FullExportRunManifest.ResolveDynamicInsertRoot(application.Build.PipelineResult);
+            if (!string.IsNullOrWhiteSpace(dynamicInsertRoot))
+            {
+                builder["build.dynamicInsertRoot"] = dynamicInsertRoot;
             }
             builder["build.staticSeedsInDynamicManifest"] = FullExportRunManifest
                 .DefaultIncludeStaticSeedArtifactsInDynamic

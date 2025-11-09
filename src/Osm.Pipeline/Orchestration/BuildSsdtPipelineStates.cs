@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.Evidence;
 using Osm.Validation.Tightening;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
@@ -81,8 +82,28 @@ public record StaticSeedsGenerated(
     string DecisionLogPath,
     OpportunityArtifacts OpportunityArtifacts,
     SsdtSqlValidationSummary SqlValidation,
-    ImmutableArray<string> StaticSeedScriptPaths)
+    ImmutableArray<string> StaticSeedScriptPaths,
+    ImmutableArray<StaticEntityTableData> StaticSeedData)
     : SqlValidated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation);
+
+public record DynamicInsertsGenerated(
+    BuildSsdtPipelineRequest Request,
+    PipelineExecutionLogBuilder Log,
+    PipelineBootstrapContext Bootstrap,
+    EvidenceCacheResult? EvidenceCache,
+    PolicyDecisionSet Decisions,
+    PolicyDecisionReport Report,
+    OpportunitiesReport Opportunities,
+    ValidationReport Validations,
+    ImmutableArray<PipelineInsight> Insights,
+    SsdtManifest Manifest,
+    string DecisionLogPath,
+    OpportunityArtifacts OpportunityArtifacts,
+    SsdtSqlValidationSummary SqlValidation,
+    ImmutableArray<string> StaticSeedScriptPaths,
+    ImmutableArray<StaticEntityTableData> StaticSeedData,
+    ImmutableArray<string> DynamicInsertScriptPaths)
+    : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation, StaticSeedScriptPaths, StaticSeedData);
 
 public record TelemetryPackaged(
     BuildSsdtPipelineRequest Request,
@@ -99,5 +120,7 @@ public record TelemetryPackaged(
     OpportunityArtifacts OpportunityArtifacts,
     SsdtSqlValidationSummary SqlValidation,
     ImmutableArray<string> StaticSeedScriptPaths,
+    ImmutableArray<StaticEntityTableData> StaticSeedData,
+    ImmutableArray<string> DynamicInsertScriptPaths,
     ImmutableArray<string> TelemetryPackagePaths)
-    : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation, StaticSeedScriptPaths);
+    : DynamicInsertsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths);

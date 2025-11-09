@@ -272,6 +272,7 @@ public class PipelineReportLauncherTests
             string.Empty,
             seedPaths,
             ImmutableArray<string>.Empty,
+            ImmutableArray<string>.Empty,
             sqlSummary,
             null,
             PipelineExecutionLog.Empty,

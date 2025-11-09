@@ -41,8 +41,10 @@ public class BuildSsdtPipelineTests
             OutputDirectory: Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
             ProfilerProvider: "fixture",
             EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
             SqlMetadataLog: null);
 
         var pipeline = CreatePipeline();
@@ -63,8 +65,10 @@ public class BuildSsdtPipelineTests
             OutputDirectory: string.Empty,
             ProfilerProvider: "fixture",
             EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
             SqlMetadataLog: null);
 
         var pipeline = CreatePipeline();
@@ -103,8 +107,10 @@ public class BuildSsdtPipelineTests
             outputDirectory,
             "fixture",
             EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
             SqlMetadataLog: null);
 
         var pipeline = CreatePipeline(bootstrapper);
@@ -142,8 +148,10 @@ public class BuildSsdtPipelineTests
             outputDirectory,
             "sql",
             EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
             SqlMetadataLog: null);
 
         var pipeline = CreatePipeline(bootstrapper);
@@ -180,8 +188,10 @@ public class BuildSsdtPipelineTests
                 DmmPath: null,
                 ConfigPath: null,
                 Metadata: new Dictionary<string, string?>()),
+            DynamicDataset: DynamicEntityDataset.Empty,
             new EmptyStaticEntityDataProvider(),
-            Path.Combine(output.Path, "Seeds"));
+            Path.Combine(output.Path, "Seeds"),
+            Path.Combine(output.Path, "DynamicData"));
 
         var pipeline = CreatePipeline();
         var result = await pipeline.HandleAsync(request);
@@ -281,8 +291,10 @@ public class BuildSsdtPipelineTests
             output.Path,
             "fixture",
             EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
             SqlMetadataLog: null);
 
         var issue = SsdtSqlValidationIssue.Create(
@@ -347,6 +359,7 @@ public class BuildSsdtPipelineTests
             new OpportunityLogWriter());
         var validationStep = new BuildSsdtSqlValidationStep(sqlValidator ?? new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
+        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
         var telemetryPackagingStep = new BuildSsdtTelemetryPackagingStep();
 
         return new BuildSsdtPipeline(
@@ -357,6 +370,7 @@ public class BuildSsdtPipelineTests
             emissionStep,
             validationStep,
             staticSeedStep,
+            dynamicInsertStep,
             telemetryPackagingStep);
     }
 

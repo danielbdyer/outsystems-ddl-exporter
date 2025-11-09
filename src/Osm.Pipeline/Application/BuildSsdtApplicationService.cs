@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Emission;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
@@ -18,7 +19,8 @@ public sealed record BuildSsdtApplicationInput(
     ModuleFilterOverrides ModuleFilter,
     SqlOptionsOverrides Sql,
     CacheOptionsOverrides Cache,
-    TighteningOverrides? TighteningOverrides = null);
+    TighteningOverrides? TighteningOverrides = null,
+    DynamicEntityDataset? DynamicDataset = null);
 
 public sealed record BuildSsdtApplicationResult(
     BuildSsdtPipelineResult PipelineResult,
@@ -74,6 +76,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
         }
 
         var context = contextResult.Value;
+        var dynamicDataset = input.DynamicDataset ?? DynamicEntityDataset.Empty;
         var outputDirectory = _outputDirectoryResolver.Resolve(input.Overrides);
 
         var modelResolutionResult = await _modelResolutionService.ResolveModelAsync(
@@ -91,6 +94,10 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
         }
 
         var modelResolution = modelResolutionResult.Value;
+        if (dynamicDataset.IsEmpty && modelResolution.Extraction is { } extractionResult && !extractionResult.Dataset.IsEmpty)
+        {
+            dynamicDataset = extractionResult.Dataset;
+        }
         var staticDataProviderResult = _staticDataProviderFactory.Create(input.Overrides, context.SqlOptions, context.Tightening);
         staticDataProviderResult = await EnsureSuccessOrFlushAsync(staticDataProviderResult, context, cancellationToken).ConfigureAwait(false);
         if (staticDataProviderResult.IsFailure)
@@ -125,6 +132,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             smoOptions,
             modelResolution.ModelPath,
             outputDirectory,
+            dynamicDataset,
             staticDataProviderResult.Value,
             context.CacheOverrides,
             context.ConfigPath,

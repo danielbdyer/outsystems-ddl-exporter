@@ -443,6 +443,26 @@ internal static class CommandConsole
             WriteLine(console, "  Seed artifacts: none");
         }
 
+        var dynamicPaths = pipelineResult.DynamicInsertScriptPaths;
+        var dynamicCount = dynamicPaths.IsDefaultOrEmpty ? 0 : dynamicPaths.Length;
+        if (dynamicCount > 0)
+        {
+            WriteLine(console, $"  Dynamic INSERT scripts: {dynamicCount} file(s)");
+            foreach (var dynamicPath in dynamicPaths.Take(3))
+            {
+                WriteLine(console, $"    - {dynamicPath}");
+            }
+
+            if (dynamicCount > 3)
+            {
+                WriteLine(console, $"    ... {dynamicCount - 3} more");
+            }
+        }
+        else
+        {
+            WriteLine(console, "  Dynamic INSERT scripts: none");
+        }
+
         if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty && pipelineResult.TelemetryPackagePaths.Length > 0)
         {
             WriteLine(console, $"  Telemetry packages: {pipelineResult.TelemetryPackagePaths.Length} file(s)");
