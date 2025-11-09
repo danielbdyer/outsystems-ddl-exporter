@@ -16,6 +16,7 @@ using Osm.Domain.Profiling;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
@@ -420,18 +421,26 @@ internal static class CommandConsole
         WriteLine(console, $"  Tables: {pipelineResult.Manifest.Tables.Count} emitted to {applicationResult.OutputDirectory}");
         WriteLine(console, $"  Manifest: {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
 
-        if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty && pipelineResult.StaticSeedScriptPaths.Length > 0)
+        var seedPaths = pipelineResult.StaticSeedScriptPaths;
+        var seedCount = seedPaths.IsDefaultOrEmpty ? 0 : seedPaths.Length;
+        var seedRoot = FullExportRunManifest.ResolveStaticSeedRoot(pipelineResult);
+
+        if (seedCount > 0)
         {
-            WriteLine(console, $"  Static seed scripts: {pipelineResult.StaticSeedScriptPaths.Length} file(s)");
-            foreach (var seedPath in pipelineResult.StaticSeedScriptPaths.Take(3))
+            WriteLine(console, $"  Seed artifacts: {seedCount} file(s)");
+            foreach (var seedPath in seedPaths.Take(3))
             {
                 WriteLine(console, $"    - {seedPath}");
             }
 
-            if (pipelineResult.StaticSeedScriptPaths.Length > 3)
+            if (seedCount > 3)
             {
-                WriteLine(console, $"    ... {pipelineResult.StaticSeedScriptPaths.Length - 3} more");
+                WriteLine(console, $"    ... {seedCount - 3} more");
             }
+        }
+        else
+        {
+            WriteLine(console, "  Seed artifacts: none");
         }
 
         if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty && pipelineResult.TelemetryPackagePaths.Length > 0)
@@ -447,6 +456,12 @@ internal static class CommandConsole
                 WriteLine(console, $"    ... {pipelineResult.TelemetryPackagePaths.Length - 3} more");
             }
         }
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "Manifest semantics:");
+        WriteLine(console, $"  Dynamic artifact root: {applicationResult.OutputDirectory}");
+        WriteLine(console, $"  Static seed root: {seedRoot ?? "<none>"}");
+        WriteLine(console, $"  Seeds mirrored in dynamic manifest: {(FullExportRunManifest.DefaultIncludeStaticSeedArtifactsInDynamic ? "yes" : "no")}");
 
         WriteLine(console, string.Empty);
         WriteLine(console, "Tightening Statistics:");
