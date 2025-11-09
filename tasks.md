@@ -57,3 +57,9 @@
 - [ ] Scope optional remediation-pack generation that translates policy "pre-remediation required" hints into executable SQL bundles behind a feature flag. *(Guardrails §8 roadmap)*
 - [ ] Capture open performance and scalability questions (e.g., 200+ entity modules, streaming IO) for future grooming sessions in `notes/backlog-ideas.md`.
 
+## 9. Full-Export Pipeline Enhancements
+- [ ] Establish an export artifact contract that separates dynamic full-export payloads from the static seed set, documenting manifest semantics and validating the split with regression tests that diff directory structures. *(Guardrails §§3,8; Test Plan §§7.1,13.1)*
+- [ ] Implement a SQL INSERT script generator that deduplicates rows against the seed catalog, enforces deterministic ordering, and applies batching hints (e.g., minimally-logged bulk patterns) so downstream application performs efficiently. Cover the generator with high-volume fixture tests and SSDT import smoke checks. *(Guardrails §§5,7; Test Plan §§2.5,8.3,13.1)*
+- [ ] Extend the extraction service to surface profiling telemetry (row counts, chunk times, checksum signatures) for the full-export verb so operators can audit source performance and verify parity with generated scripts. Persist the telemetry to structured logs and add CLI surface area for exporting the report. *(Guardrails §§6,10; Test Plan §§10.2,17)*
+- [ ] Add an application-side load harness that replays the generated SQL scripts into a staging database, capturing lock contention, batch runtimes, and index maintenance costs; publish the findings in `notes/perf-readout.md` with remediation guidance. *(Guardrails §§7,8; Test Plan §§10.2,13.1)*
+
