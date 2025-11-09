@@ -546,9 +546,9 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             OpportunityCategory.Contradiction =>
                 "DATA CONTRADICTION: Profiling found orphaned rows that violate referential integrity. Manual remediation required.",
             OpportunityCategory.Validation =>
-                "Foreign key constraint can be safely created based upon profiling evidence.",
+                "Validated: Foreign key constraint is already being created to enforce referential integrity.",
             OpportunityCategory.Recommendation when disposition == OpportunityDisposition.ReadyToApply =>
-                "Recommendation: Create foreign key constraint to enforce referential integrity.",
+                "Recommendation: Generated foreign key constraint will enforce referential integrity when applied.",
             _ => "Create foreign key constraint."
         };
 
