@@ -888,6 +888,7 @@ public class SmoModelFactoryTests
         Assert.True(string.Equals("UserExtension_CS", userTable.OriginalModule, StringComparison.Ordinal));
         Assert.True(string.Equals("User", userTable.LogicalName, StringComparison.Ordinal));
         Assert.True(string.Equals("dbo", userTable.Schema, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(10, userTable.Columns.Length);
 
         var idColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("ID", StringComparison.OrdinalIgnoreCase));
         Assert.False(idColumn.Nullable);
@@ -897,13 +898,49 @@ public class SmoModelFactoryTests
         var usernameColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("USERNAME", StringComparison.OrdinalIgnoreCase));
         Assert.False(usernameColumn.Nullable);
         Assert.Equal(SqlDataType.NVarChar, usernameColumn.DataType.SqlDataType);
-        Assert.Equal(50, usernameColumn.DataType.MaximumLength);
+        Assert.Equal(250, usernameColumn.DataType.MaximumLength);
 
         var emailColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("EMAIL", StringComparison.OrdinalIgnoreCase));
         Assert.False(emailColumn.Nullable);
         Assert.Equal(SqlDataType.NVarChar, emailColumn.DataType.SqlDataType);
-        Assert.Equal(255, emailColumn.DataType.MaximumLength);
+        Assert.Equal(250, emailColumn.DataType.MaximumLength);
         Assert.Equal("Latin1_General_CI_AI", emailColumn.Collation);
+
+        var nameColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("NAME", StringComparison.OrdinalIgnoreCase));
+        Assert.True(nameColumn.Nullable);
+        Assert.Equal(SqlDataType.NVarChar, nameColumn.DataType.SqlDataType);
+        Assert.Equal(256, nameColumn.DataType.MaximumLength);
+        Assert.Equal("Latin1_General_CI_AI", nameColumn.Collation);
+
+        var mobilePhoneColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("MOBILEPHONE", StringComparison.OrdinalIgnoreCase));
+        Assert.True(mobilePhoneColumn.Nullable);
+        Assert.Equal(SqlDataType.NVarChar, mobilePhoneColumn.DataType.SqlDataType);
+        Assert.Equal(20, mobilePhoneColumn.DataType.MaximumLength);
+        Assert.Equal("Latin1_General_CI_AI", mobilePhoneColumn.Collation);
+
+        var passwordColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("PASSWORD", StringComparison.OrdinalIgnoreCase));
+        Assert.True(passwordColumn.Nullable);
+        Assert.Equal(SqlDataType.NVarChar, passwordColumn.DataType.SqlDataType);
+        Assert.Equal(256, passwordColumn.DataType.MaximumLength);
+        Assert.Equal("Latin1_General_CI_AI", passwordColumn.Collation);
+
+        var externalIdColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("EXTERNAL_ID", StringComparison.OrdinalIgnoreCase));
+        Assert.True(externalIdColumn.Nullable);
+        Assert.Equal(SqlDataType.NVarChar, externalIdColumn.DataType.SqlDataType);
+        Assert.Equal(36, externalIdColumn.DataType.MaximumLength);
+        Assert.Equal("Latin1_General_CI_AI", externalIdColumn.Collation);
+
+        var isActiveColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("IS_ACTIVE", StringComparison.OrdinalIgnoreCase));
+        Assert.True(isActiveColumn.Nullable);
+        Assert.Equal(SqlDataType.Bit, isActiveColumn.DataType.SqlDataType);
+
+        var creationDateColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("CREATION_DATE", StringComparison.OrdinalIgnoreCase));
+        Assert.True(creationDateColumn.Nullable);
+        Assert.Equal(SqlDataType.DateTime, creationDateColumn.DataType.SqlDataType);
+
+        var lastLoginColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("LAST_LOGIN", StringComparison.OrdinalIgnoreCase));
+        Assert.True(lastLoginColumn.Nullable);
+        Assert.Equal(SqlDataType.DateTime, lastLoginColumn.DataType.SqlDataType);
 
         Assert.Equal(3, userTable.Indexes.Length);
         var primaryKey = Assert.Single(userTable.Indexes, index => index.IsPrimaryKey);

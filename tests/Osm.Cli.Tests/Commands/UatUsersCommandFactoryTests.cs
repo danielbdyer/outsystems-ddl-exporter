@@ -32,7 +32,7 @@ public class UatUsersCommandFactoryTests
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
-        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-schema dbo --user-table dbo.Users --user-id-column UserId --include-columns Name --include-columns Email --out artifacts --user-map map.csv --user-ddl ddl.sql --snapshot snap.json --user-entity-id Identifier";
+        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-schema dbo --user-table dbo.Users --user-id-column UserId --include-columns Name --include-columns EMail --out artifacts --user-map map.csv --user-ddl ddl.sql --snapshot snap.json --user-entity-id Identifier";
         var exitCode = await parser.InvokeAsync(args);
 
         Assert.Equal(5, exitCode);
@@ -43,7 +43,7 @@ public class UatUsersCommandFactoryTests
         Assert.Equal("dbo", options.UserSchema);
         Assert.Equal("Users", options.UserTable);
         Assert.Equal("UserId", options.UserIdColumn);
-        Assert.Equal(new[] { "Name", "Email" }, options.IncludeColumns);
+        Assert.Equal(new[] { "Name", "EMail" }, options.IncludeColumns);
         Assert.Equal(Path.GetFullPath("artifacts"), options.OutputDirectory);
         Assert.Equal(Path.GetFullPath("map.csv"), options.UserMapPath);
         Assert.Equal(Path.GetFullPath("ddl.sql"), options.AllowedUsersSqlPath);
@@ -69,11 +69,11 @@ public class UatUsersCommandFactoryTests
     [Fact]
     public async Task Invoke_DeduplicatesIncludeColumnsIgnoringCase()
     {
-        var command = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-ddl ddl.sql --include-columns Name --include-columns name --include-columns Email --include-columns EMAIL";
+        var command = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-ddl ddl.sql --include-columns Name --include-columns name --include-columns EMail --include-columns EMAIL";
         var (options, exitCode) = await InvokeAsync(command);
 
         Assert.Equal(5, exitCode);
-        Assert.Equal(new[] { "Name", "Email" }, options.IncludeColumns);
+        Assert.Equal(new[] { "Name", "EMail" }, options.IncludeColumns);
     }
 
     private static async Task<(UatUsersOptions Options, int ExitCode)> InvokeAsync(string commandLine)

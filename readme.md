@@ -824,6 +824,7 @@ OutSystems modules frequently reference **system** or **external** tables (for e
           "isActive": true,
           "isExternal": false,
           "isStatic": false,
+          "meta": "End-user of the applications. Shared between spaces with the same user provider (defined in Service Studio).",
           "attributes": [
             {
               "name": "Id",
@@ -833,10 +834,18 @@ OutSystems modules frequently reference **system** or **external** tables (for e
               "isIdentifier": true,
               "precision": 19,
               "scale": 0,
+              "meta": "Unique identifier of the user.",
               "onDisk": { "sqlType": "bigint", "isNullable": false, "isIdentity": true }
             },
-            { "name": "Username", "physicalName": "USERNAME", "dataType": "Text", "isMandatory": true, "length": 50 },
-            { "name": "Email", "physicalName": "EMAIL", "dataType": "Text", "isMandatory": true, "length": 255 }
+            { "name": "Username", "physicalName": "USERNAME", "dataType": "Text", "isMandatory": true, "length": 250, "meta": "Login name of the user." },
+            { "name": "EMail", "physicalName": "EMAIL", "dataType": "Text", "isMandatory": true, "length": 250, "meta": "Email contact of the user." },
+            { "name": "Name", "physicalName": "NAME", "dataType": "Text", "isMandatory": false, "length": 256, "meta": "Full name of the user." },
+            { "name": "MobilePhone", "physicalName": "MOBILEPHONE", "dataType": "Text", "isMandatory": false, "length": 20, "meta": "Mobile phone number of the user." },
+            { "name": "Password", "physicalName": "PASSWORD", "dataType": "Text", "isMandatory": false, "length": 256, "meta": "Login password of the user." },
+            { "name": "External_Id", "physicalName": "EXTERNAL_ID", "dataType": "Text", "isMandatory": false, "length": 36, "meta": "The user identifier in an external system to the Platform." },
+            { "name": "Is_Active", "physicalName": "IS_ACTIVE", "dataType": "Boolean", "isMandatory": false, "meta": "Indicates if the user is still active." },
+            { "name": "Creation_Date", "physicalName": "CREATION_DATE", "dataType": "DateTime", "isMandatory": false, "meta": "The date the user was created." },
+            { "name": "Last_Login", "physicalName": "LAST_LOGIN", "dataType": "DateTime", "isMandatory": false, "meta": "Last time the user logged in the application." }
           ],
           "indexes": [],
           "relationships": []
