@@ -155,51 +155,52 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
     private static Result<ForeignKeyReality> MapForeignKey(ForeignKeyDocument doc)
     {
-        if (doc.Reference is null)
+        var reference = doc.Reference ?? doc.Ref;
+        if (reference is null)
         {
             return Result<ForeignKeyReality>.Failure(ValidationError.Create("profile.foreignKey.reference.missing", "Foreign key entries must include reference metadata."));
         }
 
-        var fromSchemaResult = SchemaName.Create(doc.Reference.FromSchema);
+        var fromSchemaResult = SchemaName.Create(reference.FromSchema);
         if (fromSchemaResult.IsFailure)
         {
             return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(fromSchemaResult.Errors, doc.Reference, isSource: true));
+                DecorateForeignKeyMetadata(fromSchemaResult.Errors, reference, isSource: true));
         }
 
-        var fromTableResult = TableName.Create(doc.Reference.FromTable);
+        var fromTableResult = TableName.Create(reference.FromTable);
         if (fromTableResult.IsFailure)
         {
             return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(fromTableResult.Errors, doc.Reference, isSource: true));
+                DecorateForeignKeyMetadata(fromTableResult.Errors, reference, isSource: true));
         }
 
-        var fromColumnResult = ColumnName.Create(doc.Reference.FromColumn);
+        var fromColumnResult = ColumnName.Create(reference.FromColumn);
         if (fromColumnResult.IsFailure)
         {
             return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(fromColumnResult.Errors, doc.Reference, isSource: true));
+                DecorateForeignKeyMetadata(fromColumnResult.Errors, reference, isSource: true));
         }
 
-        var toSchemaResult = SchemaName.Create(doc.Reference.ToSchema);
+        var toSchemaResult = SchemaName.Create(reference.ToSchema);
         if (toSchemaResult.IsFailure)
         {
             return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(toSchemaResult.Errors, doc.Reference, isSource: false));
+                DecorateForeignKeyMetadata(toSchemaResult.Errors, reference, isSource: false));
         }
 
-        var toTableResult = TableName.Create(doc.Reference.ToTable);
+        var toTableResult = TableName.Create(reference.ToTable);
         if (toTableResult.IsFailure)
         {
             return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(toTableResult.Errors, doc.Reference, isSource: false));
+                DecorateForeignKeyMetadata(toTableResult.Errors, reference, isSource: false));
         }
 
-        var toColumnResult = ColumnName.Create(doc.Reference.ToColumn);
+        var toColumnResult = ColumnName.Create(reference.ToColumn);
         if (toColumnResult.IsFailure)
         {
             return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(toColumnResult.Errors, doc.Reference, isSource: false));
+                DecorateForeignKeyMetadata(toColumnResult.Errors, reference, isSource: false));
         }
 
         var referenceResult = ForeignKeyReference.Create(
@@ -209,7 +210,7 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
             toSchemaResult.Value,
             toTableResult.Value,
             toColumnResult.Value,
-            doc.Reference.HasDbConstraint);
+            reference.HasDbConstraint);
 
         if (referenceResult.IsFailure)
         {
@@ -482,6 +483,9 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
     {
         [JsonPropertyName("Reference")]
         public ForeignKeyReferenceDocument? Reference { get; init; }
+
+        [JsonPropertyName("Ref")]
+        public ForeignKeyReferenceDocument? Ref { get; init; }
 
         [JsonPropertyName("HasOrphan")]
         public bool HasOrphan { get; init; }

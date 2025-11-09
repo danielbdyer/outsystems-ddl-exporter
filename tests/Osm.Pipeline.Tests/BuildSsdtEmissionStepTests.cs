@@ -411,9 +411,10 @@ public sealed class BuildSsdtEmissionStepTests
     private static OpportunityArtifacts CreateOpportunityArtifacts(string outputDirectory)
     {
         var reportPath = Path.Combine(outputDirectory, "opportunities.json");
+        var validationsPath = Path.Combine(outputDirectory, "validations.json");
         var safePath = Path.Combine(outputDirectory, "safe.sql");
         var remediationPath = Path.Combine(outputDirectory, "remediation.sql");
-        return new OpportunityArtifacts(reportPath, safePath, "SELECT 1;", remediationPath, "SELECT 2;");
+        return new OpportunityArtifacts(reportPath, validationsPath, safePath, "SELECT 1;", remediationPath, "SELECT 2;");
     }
 
     private sealed class FakeSmoModelFactory : ISmoModelFactory

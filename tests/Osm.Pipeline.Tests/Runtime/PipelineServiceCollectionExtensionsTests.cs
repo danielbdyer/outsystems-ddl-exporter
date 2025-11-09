@@ -136,11 +136,13 @@ public class PipelineServiceCollectionExtensionsTests
         Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtSqlValidationStep) && d.ImplementationType == typeof(BuildSsdtSqlValidationStep));
         Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtStaticSeedStep) && d.ImplementationType == typeof(BuildSsdtStaticSeedStep));
         Assert.Contains(services, d => d.ServiceType == typeof(BuildSsdtTelemetryPackagingStep) && d.ImplementationType == typeof(BuildSsdtTelemetryPackagingStep));
+        Assert.Contains(services, d => d.ServiceType == typeof(ISchemaDataApplier) && d.ImplementationType == typeof(SchemaDataApplier));
 
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>) && d.ImplementationType == typeof(BuildSsdtPipeline));
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>) && d.ImplementationType == typeof(DmmComparePipeline));
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<ExtractModelPipelineRequest, ModelExtractionResult>) && d.ImplementationType == typeof(ExtractModelPipeline));
         Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>) && d.ImplementationType == typeof(CaptureProfilePipeline));
+        Assert.Contains(services, d => d.ServiceType == typeof(ICommandHandler<FullExportPipelineRequest, FullExportPipelineResult>) && d.ImplementationType == typeof(FullExportPipeline));
     }
 
     [Fact]
