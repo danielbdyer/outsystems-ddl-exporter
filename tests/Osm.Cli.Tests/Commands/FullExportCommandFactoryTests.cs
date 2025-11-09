@@ -66,9 +66,11 @@ public class FullExportCommandFactoryTests
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
         services.AddSingleton<ILoadHarnessRunner>(loadHarnessRunner);
         services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
-        services.AddSingleton<IVerbRegistry>(_ => new FakeVerbRegistry(new FakeFullExportVerb(verbResult)));
+        var fakeVerb = new FakeFullExportVerb(verbResult);
+        services.AddSingleton<IVerbRegistry>(_ => new FakeVerbRegistry(fakeVerb));
         services.AddSingleton<FullExportCommandFactory>();
 
         await using var provider = services.BuildServiceProvider();
@@ -86,6 +88,173 @@ public class FullExportCommandFactoryTests
         Assert.NotNull(loadHarnessRunner.LastOptions);
         Assert.Equal(connectionString, loadHarnessRunner.LastOptions!.ConnectionString);
         Assert.Equal(string.Empty, console.Error.ToString());
+    }
+
+    [Fact]
+    public async Task Invoke_BindsUatUsersOverridesWhenEnabled()
+    {
+        using var tempDir = new TempDirectory();
+
+        var loadHarnessRunner = new FakeLoadHarnessRunner();
+        var configuration = CliConfiguration.Empty;
+        var applicationResult = CreateFullExportApplicationResult(tempDir.Path, "Server=Test;");
+        var verbResult = new FullExportVerbResult(
+            new CliConfigurationContext(configuration, "config.json"),
+            applicationResult);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(new StubConfigurationService());
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
+        services.AddSingleton<ILoadHarnessRunner>(loadHarnessRunner);
+        services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
+        var fakeVerb = new FakeFullExportVerb(verbResult);
+        services.AddSingleton<IVerbRegistry>(_ => new FakeVerbRegistry(fakeVerb));
+        services.AddSingleton<FullExportCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<FullExportCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+
+        var args = string.Join(
+            ' ',
+            "full-export",
+            "--enable-uat-users",
+            "--uat-conn",
+            "Server=Uat;",
+            "--user-table",
+            "Security.Users",
+            "--user-id-column",
+            "PersonId",
+            "--include-columns",
+            "SourceId,TargetId",
+            "--user-map",
+            "map.csv",
+            "--user-ddl",
+            "allowed.sql",
+            "--snapshot",
+            "snapshot.json",
+            "--user-entity-id",
+            "Users::Entity");
+
+        var exitCode = await parser.InvokeAsync(args);
+
+        Assert.Equal(0, exitCode);
+        Assert.NotNull(fakeVerb.LastOptions);
+        var overrides = fakeVerb.LastOptions!.Overrides.UatUsers;
+        Assert.NotNull(overrides);
+        Assert.True(overrides!.Enabled);
+        Assert.Equal("Server=Uat;", overrides.ConnectionString);
+        Assert.Equal("Security", overrides.UserSchema);
+        Assert.Equal("Users", overrides.UserTable);
+        Assert.Equal("PersonId", overrides.UserIdColumn);
+        Assert.Equal(new[] { "SourceId", "TargetId" }, overrides.IncludeColumns);
+        Assert.Equal("map.csv", overrides.UserMapPath);
+        Assert.Equal("allowed.sql", overrides.AllowedUsersSqlPath);
+        Assert.Null(overrides.AllowedUserIdsPath);
+        Assert.Equal("snapshot.json", overrides.SnapshotPath);
+        Assert.Equal("Users::Entity", overrides.UserEntityIdentifier);
+    }
+
+    [Fact]
+    public async Task Invoke_WhenUatUsersEnabledRequiresConnectionString()
+    {
+        using var tempDir = new TempDirectory();
+
+        var configuration = CliConfiguration.Empty;
+        var applicationResult = CreateFullExportApplicationResult(tempDir.Path, "Server=Test;");
+        var verbResult = new FullExportVerbResult(
+            new CliConfigurationContext(configuration, "config.json"),
+            applicationResult);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(new StubConfigurationService());
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
+        services.AddSingleton<ILoadHarnessRunner, FakeLoadHarnessRunner>();
+        services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
+        var fakeVerb = new FakeFullExportVerb(verbResult);
+        services.AddSingleton<IVerbRegistry>(_ => new FakeVerbRegistry(fakeVerb));
+        services.AddSingleton<FullExportCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<FullExportCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = string.Join(
+            ' ',
+            "full-export",
+            "--enable-uat-users",
+            "--user-ddl",
+            "allowed.sql");
+
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("--uat-conn is required", console.Error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Null(fakeVerb.LastOptions);
+    }
+
+    [Fact]
+    public async Task Invoke_WhenUatUsersEnabledRequiresAllowedUsersSource()
+    {
+        using var tempDir = new TempDirectory();
+
+        var configuration = CliConfiguration.Empty;
+        var applicationResult = CreateFullExportApplicationResult(tempDir.Path, "Server=Test;");
+        var verbResult = new FullExportVerbResult(
+            new CliConfigurationContext(configuration, "config.json"),
+            applicationResult);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(new StubConfigurationService());
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
+        services.AddSingleton<ILoadHarnessRunner, FakeLoadHarnessRunner>();
+        services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
+        var fakeVerb = new FakeFullExportVerb(verbResult);
+        services.AddSingleton<IVerbRegistry>(_ => new FakeVerbRegistry(fakeVerb));
+        services.AddSingleton<FullExportCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<FullExportCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = string.Join(
+            ' ',
+            "full-export",
+            "--enable-uat-users",
+            "--uat-conn",
+            "Server=Uat;");
+
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("Either --user-ddl or --user-ids must be supplied", console.Error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Null(fakeVerb.LastOptions);
     }
 
     private static FullExportApplicationResult CreateFullExportApplicationResult(string root, string connectionString)
@@ -326,12 +495,15 @@ public class FullExportCommandFactoryTests
             _result = result;
         }
 
+        public FullExportVerbOptions? LastOptions { get; private set; }
+
         public string Name => FullExportVerb.VerbName;
 
         public Type OptionsType => typeof(FullExportVerbOptions);
 
         public Task<IPipelineRun> RunAsync(object options, CancellationToken cancellationToken = default)
         {
+            LastOptions = Assert.IsType<FullExportVerbOptions>(options);
             var outcome = Result<FullExportVerbResult>.Success(_result);
             var run = new PipelineRun<FullExportVerbResult>(
                 Name,

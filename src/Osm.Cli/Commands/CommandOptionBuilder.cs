@@ -21,6 +21,9 @@ internal static class CommandOptionBuilder
     public static Command AddSchemaApplyOptions(Command command, SchemaApplyOptionBinder binder)
         => AddOptions(command, binder);
 
+    public static Command AddUatUsersOptions(Command command, UatUsersOptionBinder binder)
+        => AddOptions(command, binder);
+
     private static Command AddOptions(Command command, ICommandOptionSource optionSource)
     {
         if (command is null)

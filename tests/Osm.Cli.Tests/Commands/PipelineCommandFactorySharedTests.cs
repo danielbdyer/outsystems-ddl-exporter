@@ -5,6 +5,7 @@ using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Parsing;
 using System.CommandLine.IO;
+using System.IO.Abstractions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
@@ -12,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands;
 using Osm.Cli.Commands.Binders;
 using Osm.Domain.Abstractions;
+using Osm.LoadHarness;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Xunit;
@@ -170,6 +172,9 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<SqlOptionBinder>();
                     services.AddSingleton<TighteningOptionBinder>();
                     services.AddSingleton<SchemaApplyOptionBinder>();
+                    services.AddSingleton<UatUsersOptionBinder>();
+                    services.AddSingleton<ILoadHarnessRunner, NullLoadHarnessRunner>();
+                    services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<FullExportCommandFactory>();
                 },
@@ -238,6 +243,10 @@ public class PipelineCommandFactorySharedTests
                     Assert.Equal("APPLYTOKEN", typed.Overrides.Apply.AccessToken);
                     Assert.False(typed.Overrides.Apply.ApplySafeScript);
                     Assert.True(typed.Overrides.Apply.ApplyStaticSeeds);
+
+                    Assert.NotNull(typed.Overrides.UatUsers);
+                    Assert.False(typed.Overrides.UatUsers!.Enabled);
+                    Assert.Empty(typed.Overrides.UatUsers.IncludeColumns);
                 })
         };
     }
@@ -353,6 +362,14 @@ public class PipelineCommandFactorySharedTests
         {
             verb = _verb;
             return true;
+        }
+    }
+
+    private sealed class NullLoadHarnessRunner : ILoadHarnessRunner
+    {
+        public Task<LoadHarnessReport> RunAsync(LoadHarnessOptions options, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(LoadHarnessReport.Empty());
         }
     }
 

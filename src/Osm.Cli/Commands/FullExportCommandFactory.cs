@@ -24,6 +24,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
     private readonly SqlOptionBinder _sqlOptionBinder;
     private readonly TighteningOptionBinder _tighteningBinder;
     private readonly SchemaApplyOptionBinder _schemaApplyBinder;
+    private readonly UatUsersOptionBinder _uatUsersBinder;
     private readonly ILoadHarnessRunner _loadHarnessRunner;
     private readonly LoadHarnessReportWriter _loadHarnessReportWriter;
 
@@ -58,6 +59,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         SqlOptionBinder sqlOptionBinder,
         TighteningOptionBinder tighteningOptionBinder,
         SchemaApplyOptionBinder schemaApplyOptionBinder,
+        UatUsersOptionBinder uatUsersOptionBinder,
         ILoadHarnessRunner loadHarnessRunner,
         LoadHarnessReportWriter loadHarnessReportWriter)
         : base(scopeFactory)
@@ -68,6 +70,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
         _tighteningBinder = tighteningOptionBinder ?? throw new ArgumentNullException(nameof(tighteningOptionBinder));
         _schemaApplyBinder = schemaApplyOptionBinder ?? throw new ArgumentNullException(nameof(schemaApplyOptionBinder));
+        _uatUsersBinder = uatUsersOptionBinder ?? throw new ArgumentNullException(nameof(uatUsersOptionBinder));
         _loadHarnessRunner = loadHarnessRunner ?? throw new ArgumentNullException(nameof(loadHarnessRunner));
         _loadHarnessReportWriter = loadHarnessReportWriter ?? throw new ArgumentNullException(nameof(loadHarnessReportWriter));
     }
@@ -108,6 +111,29 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
         CommandOptionBuilder.AddTighteningOptions(command, _tighteningBinder);
         CommandOptionBuilder.AddSchemaApplyOptions(command, _schemaApplyBinder);
+        CommandOptionBuilder.AddUatUsersOptions(command, _uatUsersBinder);
+
+        command.AddValidator(result =>
+        {
+            if (!result.GetValueForOption(_uatUsersBinder.EnableOption))
+            {
+                return;
+            }
+
+            var connectionString = result.GetValueForOption(_uatUsersBinder.UatConnectionOption);
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                result.ErrorMessage = "--uat-conn is required when --enable-uat-users is specified.";
+                return;
+            }
+
+            var allowedUsersPath = result.GetValueForOption(_uatUsersBinder.UserDdlOption);
+            var allowedIdsPath = result.GetValueForOption(_uatUsersBinder.UserIdsOption);
+            if (string.IsNullOrWhiteSpace(allowedUsersPath) && string.IsNullOrWhiteSpace(allowedIdsPath))
+            {
+                result.ErrorMessage = "Either --user-ddl or --user-ids must be supplied when --enable-uat-users is specified.";
+            }
+        });
         return command;
     }
 
@@ -124,6 +150,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         var sqlOverrides = _sqlOptionBinder.Bind(parseResult);
         var tightening = _tighteningBinder.Bind(parseResult);
         var applyOverrides = _schemaApplyBinder.Bind(parseResult);
+        var uatUsersOverrides = _uatUsersBinder.Bind(parseResult);
 
         var modelPath = parseResult.GetValueForOption(_modelOption);
         var buildOverrides = new BuildSsdtOverrides(
@@ -165,7 +192,8 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
                 profileOverrides,
                 extractOverrides,
                 applyOverrides,
-                reuseModelPath),
+                reuseModelPath,
+                uatUsersOverrides),
             ModuleFilter = moduleFilter,
             Sql = sqlOverrides,
             Cache = cache,
