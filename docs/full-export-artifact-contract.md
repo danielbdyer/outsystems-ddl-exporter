@@ -37,6 +37,7 @@ entries:
 | --- | --- |
 | `build.staticSeedRoot` | Absolute path to the seed directory calculated from the emitted seed scripts. |
 | `build.staticSeedsInDynamicManifest` | Indicates whether seed artifacts are mirrored into the dynamic manifest list. |
+| `build.dynamicInsertRoot` | Directory containing dynamic replay scripts (one per entity) generated from live data. |
 
 The CLI `SSDT Emission Summary` explicitly labels the seed artifacts and prints the
 manifest semantics block so operators can validate the directory split without
@@ -44,3 +45,102 @@ inspecting the manifest JSON directly. 【F:src/Osm.Pipeline/Runtime/Verbs/FullE
 
 Downstream tooling can rely on these fields to stage seed scripts independently of the
 SSDT output while still applying the full export bundle on first-run deployments.
+
+## SSDT Integration Playbook
+
+### 1. Land static seed MERGE scripts in Post-Deployment
+
+1. In your SSDT project, create a `Seeds/` folder under **Post-Deployment** and copy the
+   generated seed scripts from `build.staticSeedRoot`. The directory contains
+   module-level `*.seed.sql` files plus any master aggregates emitted by the pipeline.
+2. Edit `Script.PostDeployment.sql` and reference each seed script with SQLCMD includes:
+
+   ```sql
+   :r .\Seeds\AppCore\StaticEntities.seed.sql
+   :r .\Seeds\MasterSeed.aggregate.sql
+   ```
+
+3. Because the scripts are written with `MERGE` and idempotent guards, they may be
+   executed during every publish. SSDT treats the includes as part of the post-deploy
+   batch, guaranteeing the static catalog stays synchronized with the seed manifest.
+
+The manifest records the full path so pipeline automation can mirror the files directly
+into the SSDT repository:
+
+```bash
+jq -r '.Metadata["build.staticSeedRoot"]' out/full-export/full-export.manifest.json
+```
+
+### 2. Stage dynamic inserts for deployment pipelines
+
+Dynamic insert scripts are generated beneath `build.dynamicInsertRoot`, defaulting to
+`<build-out>/DynamicData/<Module>/<Entity>.dynamic.sql`. These files replay data that
+fell outside the static catalog. They are not imported into SSDT; instead, schedule them
+as a deployment pipeline step:
+
+1. After the dacpac publish, execute the dynamic scripts via `sqlcmd`, `SqlPackage` post
+   scripts, or a runbook. A simple example:
+
+   ```bash
+   for script in "$(jq -r '.Stages[] | select(.Name=="build-ssdt").Artifacts.dynamicInsertScripts' \
+     out/full-export/full-export.manifest.json | tr ';' '\n')"; do
+     sqlcmd -S "$SQLSERVER" -d "$DB" -i "$script"
+   done
+   ```
+
+2. When using Azure DevOps or GitHub Actions, treat the dynamic folder as a published
+   artifact so operations can rerun the inserts after refreshing lower environments.
+3. The load harness (`tools/FullExportLoadHarness`) accepts the same list of scripts to
+   validate timing and locking before the production rollout.
+
+### 3. Consume manifest metadata from automation
+
+The `full-export.manifest.json` file provides stable keys for orchestration:
+
+* `Metadata["build.staticSeedRoot"]` → location for static seeds imported via
+  `Script.PostDeployment.sql`.
+* `Stages[].Artifacts.dynamicInsertRoot` → base directory for dynamic inserts.
+* `Stages[].Artifacts.staticSeedOrdering` / `dynamicInsertOrdering` → whether a
+  topological order was applied before writing the scripts.
+
+Keep both directories in the deployment artifact so subsequent runs can diff contents
+against previous releases or rerun seeds in disaster recovery scenarios.
+
+## Fixture Validation Walkthrough
+
+Use the repository’s edge-case fixtures to validate an SSDT project end-to-end:
+
+1. Generate a fresh bundle (or reuse the curated output):
+
+   ```bash
+   dotnet run --project src/Osm.Cli \
+     full-export \
+     --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
+     --profile tests/Fixtures/profiling/profile.edge-case.json \
+     --build-out ./out/full-export.edge-case
+   ```
+
+   The emitted manifest will expose the static and dynamic roots discussed above.
+
+2. Import `out/full-export.edge-case/Modules/...` into SSDT (or copy
+   `tests/Fixtures/emission/edge-case/Modules/...` if you prefer the checked-in
+   baseline). Add the `Seeds/` hierarchy from the run output to `Post-Deployment` and
+   include it via `Script.PostDeployment.sql`.
+3. Publish the SSDT project to a scratch database, then execute any dynamic insert
+   scripts under `DynamicData/`. Use the load harness to replay them locally:
+
+   ```bash
+   dotnet run --project tools/FullExportLoadHarness \
+     --safe out/full-export.edge-case/SafeScript.sql \
+     --static-seed "$(jq -r '.Stages[] | select(.Name=="build-ssdt").Artifacts.staticSeedScripts' \
+       out/full-export.edge-case/full-export.manifest.json)" \
+     --dynamic-insert-root "$(jq -r '.Stages[] | select(.Name=="build-ssdt").Artifacts.dynamicInsertRoot' \
+       out/full-export.edge-case/full-export.manifest.json)"
+   ```
+
+4. Compare the deployed schema against the fixture manifest (`tests/Fixtures/emission/edge-case/manifest.json`)
+   to confirm the SSDT project and seed scripts align with the documented contract.
+
+Running this drill ensures new contributors can verify the SSDT workflow without waiting
+for a live database and gives operators a repeatable recipe for validating future
+changes.
