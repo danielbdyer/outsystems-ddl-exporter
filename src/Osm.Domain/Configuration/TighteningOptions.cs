@@ -44,7 +44,8 @@ public sealed record TighteningOptions
         PolicyOptions.Create(
             TighteningMode.EvidenceGated,
             0.0,
-            allowCautiousNullabilityRelaxation: false).Value,
+            allowCautiousNullabilityRelaxation: false,
+            NullabilityOverrideOptions.Empty).Value,
         ForeignKeyOptions.Create(
             enableCreation: true,
             allowCrossSchema: false,
@@ -112,11 +113,13 @@ public sealed record PolicyOptions
     private PolicyOptions(
         TighteningMode mode,
         double nullBudget,
-        bool allowCautiousNullabilityRelaxation)
+        bool allowCautiousNullabilityRelaxation,
+        NullabilityOverrideOptions nullabilityOverrides)
     {
         Mode = mode;
         NullBudget = nullBudget;
         AllowCautiousNullabilityRelaxation = allowCautiousNullabilityRelaxation;
+        NullabilityOverrides = nullabilityOverrides;
     }
 
     public TighteningMode Mode { get; }
@@ -125,10 +128,13 @@ public sealed record PolicyOptions
 
     public bool AllowCautiousNullabilityRelaxation { get; }
 
+    public NullabilityOverrideOptions NullabilityOverrides { get; }
+
     public static Result<PolicyOptions> Create(
         TighteningMode mode,
         double nullBudget,
-        bool allowCautiousNullabilityRelaxation = false)
+        bool allowCautiousNullabilityRelaxation = false,
+        NullabilityOverrideOptions? nullabilityOverrides = null)
     {
         if (double.IsNaN(nullBudget) || double.IsInfinity(nullBudget))
         {
@@ -140,7 +146,9 @@ public sealed record PolicyOptions
             return ValidationError.Create("options.policy.nullBudget.outOfRange", "Null budget must be between 0 and 1 inclusive.");
         }
 
-        return new PolicyOptions(mode, nullBudget, allowCautiousNullabilityRelaxation);
+        nullabilityOverrides ??= NullabilityOverrideOptions.Empty;
+
+        return new PolicyOptions(mode, nullBudget, allowCautiousNullabilityRelaxation, nullabilityOverrides);
     }
 }
 

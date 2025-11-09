@@ -440,6 +440,67 @@ Every nullability decision includes one or more rationales explaining why the co
 
 ---
 
+### 5.6 Configuration-Driven Nullability Overrides
+
+**Purpose**: Allow operators to deliberately relax individual attributes to remain nullable even when tightening policy signals would normally enforce NOT NULL.
+
+**Configuration Entry**:
+
+```json
+{
+  "policy": {
+    "nullabilityOverrides": {
+      "modules": [
+        {
+          "module": "Sales",
+          "entities": [
+            {
+              "entity": "Customer",
+              "attributes": ["Email"]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+**Behavior**:
+
+1. The JSON deserializer emits a `NullabilityOverrideRule` for each configured module/entity/attribute combination, producing `NullabilityOverrideOptions` inside `TighteningOptions.Policy`.【F:src/Osm.Json/Configuration/TighteningOptionsDeserializer.cs†L63-L113】【F:src/Osm.Domain/Configuration/NullabilityOverrideOptions.cs†L47-L103】
+2. During evaluation, `NullabilityEvaluator` checks `Policy.NullabilityOverrides.ShouldRelax(...)`. When it returns `true`, the evaluator forces `MakeNotNull = false`, clears remediation directives, and adds the `NULLABILITY_OVERRIDE` rationale while appending a dedicated trace node.【F:src/Osm.Validation/Tightening/NullabilityEvaluator.cs†L186-L227】
+3. `ChangeRiskClassifier` interprets the rationale and reports a low-risk nullable decision with the message “Configuration override keeps this attribute nullable.” in the CLI change-risk summary.【F:src/Osm.Validation/Tightening/ChangeRiskClassifier.cs†L17-L33】
+4. The generated `policy-decisions.json` entry records `"MakeNotNull": false` with the override rationale so downstream reviewers can audit the explicit relaxation.
+
+**Positive Usage Example**:
+
+```json
+{
+  "Coordinate": {
+    "Module": "Sales",
+    "Entity": "Customer",
+    "Attribute": "Email"
+  },
+  "MakeNotNull": false,
+  "RequiresRemediation": false,
+  "Rationales": ["NULLABILITY_OVERRIDE"],
+  "Trace": {
+    "Signal": "NULLABILITY_OVERRIDE",
+    "Description": "Configuration override keeps this attribute nullable.",
+    "Result": false
+  },
+  "ChangeRisk": {
+    "Level": "Low",
+    "Reason": "Configuration override keeps this attribute nullable."
+  }
+}
+```
+
+This makes the override visible in policy telemetry, CLI summaries, and downstream reviews without muting other columns’ evidence-driven tightening.
+
+---
+
 ## 6. Foreign Key Creation Logic
 
 ### 6.1 FK Creation Decision Process
@@ -2200,7 +2261,11 @@ export OSM_CLI_SQL_COMMAND_TIMEOUT=300
 {
   "policy": {
     "mode": "EvidenceGated",
-    "nullBudget": 0.0
+    "nullBudget": 0.0,
+    "allowCautiousNullabilityRelaxation": false,
+    "nullabilityOverrides": {
+      "modules": []
+    }
   },
   "foreignKeys": {
     "enableCreation": true,
@@ -2250,6 +2315,7 @@ export OSM_CLI_SQL_COMMAND_TIMEOUT=300
 - Disable `enableCreation` to skip all FK generation
 - Customize `sentinels` for domain-specific defaults
 - Enable `emitTableHeaders` for audit trail
+- Populate `nullabilityOverrides.modules` with module/entity/attribute entries to force specific columns to remain nullable and surface `NULLABILITY_OVERRIDE` decisions in telemetry (see §5.6)
 
 ---
 

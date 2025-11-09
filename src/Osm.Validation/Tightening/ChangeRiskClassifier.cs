@@ -16,6 +16,11 @@ public static class ChangeRiskClassifier
 
         if (!decision.MakeNotNull)
         {
+            if (decision.Rationales.Contains(TighteningRationales.NullabilityOverride))
+            {
+                return ChangeRisk.Low("Configuration override keeps this attribute nullable.");
+            }
+
             if (ContainsAny(decision.Rationales, TighteningRationales.ProfileMissing, TighteningRationales.NullBudgetEpsilon))
             {
                 return ChangeRisk.High("Profiling evidence is missing or null budget constraints block tightening.");

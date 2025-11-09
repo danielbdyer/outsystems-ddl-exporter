@@ -60,10 +60,61 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
             return ValidationError.Create("config.policy.mode.invalid", $"Unrecognized tightening mode '{document.Policy.Mode}'.");
         }
 
+        NullabilityOverrideOptions policyOverrides = NullabilityOverrideOptions.Empty;
+        if (document.Policy.NullabilityOverrides is { } overrideDocument)
+        {
+            var rules = new List<NullabilityOverrideRule>();
+
+            if (overrideDocument.Modules is { Length: > 0 } moduleDocuments)
+            {
+                foreach (var moduleDocument in moduleDocuments)
+                {
+                    if (moduleDocument.Entities is not { Length: > 0 } entityDocuments)
+                    {
+                        continue;
+                    }
+
+                    foreach (var entityDocument in entityDocuments)
+                    {
+                        if (entityDocument.Attributes is not { Length: > 0 } attributeNames)
+                        {
+                            continue;
+                        }
+
+                        foreach (var attribute in attributeNames)
+                        {
+                            var ruleResult = NullabilityOverrideRule.Create(
+                                moduleDocument.Module,
+                                entityDocument.Entity,
+                                attribute);
+                            if (ruleResult.IsFailure)
+                            {
+                                return Result<TighteningOptions>.Failure(ruleResult.Errors);
+                            }
+
+                            rules.Add(ruleResult.Value);
+                        }
+                    }
+                }
+            }
+
+            if (rules.Count > 0)
+            {
+                var overrideResult = NullabilityOverrideOptions.Create(rules);
+                if (overrideResult.IsFailure)
+                {
+                    return Result<TighteningOptions>.Failure(overrideResult.Errors);
+                }
+
+                policyOverrides = overrideResult.Value;
+            }
+        }
+
         var policyResult = PolicyOptions.Create(
             mode,
             document.Policy.NullBudget,
-            document.Policy.AllowCautiousNullabilityRelaxation);
+            document.Policy.AllowCautiousNullabilityRelaxation,
+            policyOverrides);
         if (policyResult.IsFailure)
         {
             return Result<TighteningOptions>.Failure(policyResult.Errors);
@@ -280,6 +331,33 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
 
         [JsonPropertyName("allowCautiousNullabilityRelaxation")]
         public bool AllowCautiousNullabilityRelaxation { get; init; }
+
+        [JsonPropertyName("nullabilityOverrides")]
+        public NullabilityOverridesDocument? NullabilityOverrides { get; init; }
+    }
+
+    private sealed record NullabilityOverridesDocument
+    {
+        [JsonPropertyName("modules")]
+        public ModuleNullabilityOverrideDocument[]? Modules { get; init; }
+    }
+
+    private sealed record ModuleNullabilityOverrideDocument
+    {
+        [JsonPropertyName("module")]
+        public string? Module { get; init; }
+
+        [JsonPropertyName("entities")]
+        public EntityNullabilityOverrideDocument[]? Entities { get; init; }
+    }
+
+    private sealed record EntityNullabilityOverrideDocument
+    {
+        [JsonPropertyName("entity")]
+        public string? Entity { get; init; }
+
+        [JsonPropertyName("attributes")]
+        public string[]? Attributes { get; init; }
     }
 
     private sealed record ForeignKeysDocument

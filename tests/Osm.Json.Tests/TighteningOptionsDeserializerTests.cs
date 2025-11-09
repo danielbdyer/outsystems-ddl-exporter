@@ -48,7 +48,7 @@ public class TighteningOptionsDeserializerTests
     [Fact]
     public void Deserialize_Should_Parse_Entity_Naming_Overrides()
     {
-        const string json = "{ \"policy\": { \"mode\": \"EvidenceGated\", \"nullBudget\": 0.0 }, \"foreignKeys\": { \"enableCreation\": true, \"allowCrossSchema\": false, \"allowCrossCatalog\": false }, \"uniqueness\": { \"enforceSingleColumnUnique\": true, \"enforceMultiColumnUnique\": true }, \"remediation\": { \"generatePreScripts\": true, \"sentinels\": { \"numeric\": \"0\", \"text\": \"\", \"date\": \"1900-01-01\" }, \"maxRowsDefaultBackfill\": 10 }, \"emission\": { \"perTableFiles\": true, \"includePlatformAutoIndexes\": false, \"sanitizeModuleNames\": true, \"emitBareTableOnly\": false, \"namingOverrides\": { \"rules\": [ { \"module\": null, \"entity\": \"Customer\", \"override\": \"CUSTOMER_EXTERNAL\" } ] } }, \"mocking\": { \"useProfileMockFolder\": false, \"profileMockFolder\": null } }"; 
+        const string json = "{ \"policy\": { \"mode\": \"EvidenceGated\", \"nullBudget\": 0.0 }, \"foreignKeys\": { \"enableCreation\": true, \"allowCrossSchema\": false, \"allowCrossCatalog\": false }, \"uniqueness\": { \"enforceSingleColumnUnique\": true, \"enforceMultiColumnUnique\": true }, \"remediation\": { \"generatePreScripts\": true, \"sentinels\": { \"numeric\": \"0\", \"text\": \"\", \"date\": \"1900-01-01\" }, \"maxRowsDefaultBackfill\": 10 }, \"emission\": { \"perTableFiles\": true, \"includePlatformAutoIndexes\": false, \"sanitizeModuleNames\": true, \"emitBareTableOnly\": false, \"namingOverrides\": { \"rules\": [ { \"module\": null, \"entity\": \"Customer\", \"override\": \"CUSTOMER_EXTERNAL\" } ] } }, \"mocking\": { \"useProfileMockFolder\": false, \"profileMockFolder\": null } }";
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
 
         var result = _deserializer.Deserialize(stream);
@@ -57,6 +57,18 @@ public class TighteningOptionsDeserializerTests
         var namingOverrides = result.Value.Emission.NamingOverrides;
         Assert.True(namingOverrides.TryGetEntityOverride(null, "Customer", out var tableName));
         Assert.Equal("CUSTOMER_EXTERNAL", tableName.Value);
+    }
+
+    [Fact]
+    public void Deserialize_Should_Parse_Nullability_Overrides()
+    {
+        const string json = "{ \"policy\": { \"mode\": \"EvidenceGated\", \"nullBudget\": 0.0, \"nullabilityOverrides\": { \"modules\": [ { \"module\": \"Sales\", \"entities\": [ { \"entity\": \"Customer\", \"attributes\": [ \"Email\" ] } ] } ] } }, \"foreignKeys\": { \"enableCreation\": true, \"allowCrossSchema\": false, \"allowCrossCatalog\": false }, \"uniqueness\": { \"enforceSingleColumnUnique\": true, \"enforceMultiColumnUnique\": true }, \"remediation\": { \"generatePreScripts\": true, \"sentinels\": { \"numeric\": \"0\", \"text\": \"\", \"date\": \"1900-01-01\" }, \"maxRowsDefaultBackfill\": 10 }, \"emission\": { \"perTableFiles\": true, \"includePlatformAutoIndexes\": false, \"sanitizeModuleNames\": true, \"emitBareTableOnly\": false }, \"mocking\": { \"useProfileMockFolder\": false, \"profileMockFolder\": null } }";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+
+        var result = _deserializer.Deserialize(stream);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.Policy.NullabilityOverrides.ShouldRelax("Sales", "Customer", "Email"));
     }
 
     [Fact]
