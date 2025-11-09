@@ -13,6 +13,7 @@ using Osm.Json;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.UatUsers;
 
 namespace Osm.Pipeline.Application;
 
@@ -30,7 +31,8 @@ public sealed record FullExportApplicationResult(
     CaptureProfileApplicationResult Profile,
     ExtractModelApplicationResult Extraction,
     SchemaApplyResult Apply,
-    SchemaApplyOptions ApplyOptions);
+    SchemaApplyOptions ApplyOptions,
+    UatUsersApplicationResult UatUsers);
 
 public sealed class FullExportApplicationService : PipelineApplicationServiceBase, IApplicationService<FullExportApplicationInput, FullExportApplicationResult>
 {
@@ -39,6 +41,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
     private readonly IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult> _buildService;
     private readonly SchemaApplyOrchestrator _schemaApplyOrchestrator;
     private readonly IModelJsonDeserializer _modelDeserializer;
+    private readonly IUatUsersPipelineRunner _uatUsersRunner;
     private static readonly OutsystemsMetadataSnapshot PlaceholderMetadataSnapshot = new(
         Array.Empty<OutsystemsModuleRow>(),
         Array.Empty<OutsystemsEntityRow>(),
@@ -70,13 +73,15 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult> extractService,
         IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult> buildService,
         SchemaApplyOrchestrator schemaApplyOrchestrator,
-        IModelJsonDeserializer modelDeserializer)
+        IModelJsonDeserializer modelDeserializer,
+        IUatUsersPipelineRunner uatUsersRunner)
     {
         _profileService = profileService ?? throw new ArgumentNullException(nameof(profileService));
         _extractService = extractService ?? throw new ArgumentNullException(nameof(extractService));
         _buildService = buildService ?? throw new ArgumentNullException(nameof(buildService));
         _schemaApplyOrchestrator = schemaApplyOrchestrator ?? throw new ArgumentNullException(nameof(schemaApplyOrchestrator));
         _modelDeserializer = modelDeserializer ?? throw new ArgumentNullException(nameof(modelDeserializer));
+        _uatUsersRunner = uatUsersRunner ?? throw new ArgumentNullException(nameof(uatUsersRunner));
     }
 
     public async Task<Result<FullExportApplicationResult>> RunAsync(
@@ -214,7 +219,42 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             return Result<FullExportApplicationResult>.Failure(applyResult.Errors);
         }
 
-        return new FullExportApplicationResult(buildResult.Value, profile, extraction, applyResult.Value, applyOptions);
+        var uatUsersOverrides = overrides.UatUsers ?? FullExportOverrides.Empty.UatUsers;
+        var uatUsersOutcome = UatUsersApplicationResult.Disabled;
+
+        if (uatUsersOverrides.Enabled)
+        {
+            if (string.IsNullOrWhiteSpace(buildResult.Value.OutputDirectory))
+            {
+                return Result<FullExportApplicationResult>.Failure(ValidationError.Create(
+                    "pipeline.fullExport.uatUsers.outputDirectory.missing",
+                    "Build output directory is required to emit uat-users artifacts."));
+            }
+
+            var uatUsersRequest = new UatUsersPipelineRequest(
+                uatUsersOverrides,
+                extraction.ExtractionResult,
+                buildResult.Value.OutputDirectory);
+
+            var uatUsersResult = await _uatUsersRunner
+                .RunAsync(uatUsersRequest, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (uatUsersResult.IsFailure)
+            {
+                return Result<FullExportApplicationResult>.Failure(uatUsersResult.Errors);
+            }
+
+            uatUsersOutcome = uatUsersResult.Value;
+        }
+
+        return new FullExportApplicationResult(
+            buildResult.Value,
+            profile,
+            extraction,
+            applyResult.Value,
+            applyOptions,
+            uatUsersOutcome);
     }
 
     private Result<ExtractModelApplicationResult> CreateReuseExtractionResult(

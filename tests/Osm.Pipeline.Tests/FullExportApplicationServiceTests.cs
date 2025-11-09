@@ -18,6 +18,8 @@ using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
+using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.UatUsers;
 using Osm.Validation.Tightening;
 using Opportunities = Osm.Validation.Tightening.Opportunities;
 using ValidationReport = Osm.Validation.Tightening.Validations.ValidationReport;
@@ -51,14 +53,16 @@ public sealed class FullExportApplicationServiceTests
             var buildResult = CreateBuildResult(modelPath);
             var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
 
-            var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
+        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
+        var uatRunner = new RecordingUatUsersRunner();
 
-            var service = new FullExportApplicationService(
-                profileService,
-                extractService,
-                buildService,
-                schemaApplyOrchestrator,
-                modelDeserializer);
+        var service = new FullExportApplicationService(
+            profileService,
+            extractService,
+            buildService,
+            schemaApplyOrchestrator,
+            modelDeserializer,
+            uatRunner);
 
             var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
             var overrides = new FullExportOverrides(
@@ -84,6 +88,7 @@ public sealed class FullExportApplicationServiceTests
             Assert.True(buildService.LastInput.DynamicDataset!.IsEmpty);
             Assert.True(result.Value.Extraction.ModelWasReused);
             Assert.Equal(Path.GetFullPath(modelPath), Path.GetFullPath(result.Value.Extraction.OutputPath));
+            Assert.False(result.Value.UatUsers.Executed);
         }
         finally
         {
@@ -92,6 +97,191 @@ public sealed class FullExportApplicationServiceTests
                 File.Delete(modelPath);
             }
         }
+    }
+
+    [Fact]
+    public async Task RunAsync_ExecutesUatUsersPipelineWhenEnabled()
+    {
+        var model = CreateModel();
+        var extractionResult = CreateExtractionApplicationResult(model);
+        var profileResult = new CaptureProfileApplicationResult(
+            CreateCaptureProfilePipelineResult(),
+            OutputDirectory: "profiles",
+            ModelPath: "model.json",
+            ProfilerProvider: "fixture",
+            FixtureProfilePath: null);
+        var buildResult = CreateBuildResult("model.json");
+
+        var profileService = new StubProfileService(Result<CaptureProfileApplicationResult>.Success(profileResult));
+        var extractService = new StubExtractService(Result<ExtractModelApplicationResult>.Success(extractionResult));
+        var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
+        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
+        var modelDeserializer = new StubModelJsonDeserializer(model);
+        var uatRunner = new RecordingUatUsersRunner
+        {
+            ResultToReturn = Result<UatUsersApplicationResult>.Success(new UatUsersApplicationResult(
+                Executed: true,
+                Context: null,
+                Warnings: ImmutableArray<string>.Empty))
+        };
+
+        var service = new FullExportApplicationService(
+            profileService,
+            extractService,
+            buildService,
+            schemaApplyOrchestrator,
+            modelDeserializer,
+            uatRunner);
+
+        var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
+        var overrides = new FullExportOverrides(
+            Build: new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
+            Profile: new CaptureProfileOverrides(null, null, null, null, null),
+            Extract: new ExtractModelOverrides(null, null, null, null, null, null),
+            Apply: null,
+            ReuseModelPath: false,
+            UatUsers: new UatUsersOverrides(
+                Enabled: true,
+                ConnectionString: "Server=Test;Database=Uat;Integrated Security=true;",
+                UserSchema: "dbo",
+                UserTable: "User",
+                UserIdColumn: "Id",
+                IncludeColumns: Array.Empty<string>(),
+                UserMapPath: null,
+                AllowedUsersSqlPath: "allowed.sql",
+                AllowedUserIdsPath: null,
+                SnapshotPath: null,
+                UserEntityIdentifier: null));
+        var input = new FullExportApplicationInput(
+            configurationContext,
+            overrides,
+            new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new CacheOptionsOverrides(null, null));
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.UatUsers.Executed);
+        var request = Assert.NotNull(uatRunner.LastRequest);
+        Assert.Equal("Server=Test;Database=Uat;Integrated Security=true;", request.Overrides.ConnectionString);
+        Assert.Equal(extractionResult, request.Extraction);
+        Assert.Equal(buildResult.OutputDirectory, request.OutputDirectory);
+    }
+
+    [Fact]
+    public async Task RunAsync_ReturnsFailureWhenUatUsersPipelineFails()
+    {
+        var model = CreateModel();
+        var extractionResult = CreateExtractionApplicationResult(model);
+        var profileResult = new CaptureProfileApplicationResult(
+            CreateCaptureProfilePipelineResult(),
+            OutputDirectory: "profiles",
+            ModelPath: "model.json",
+            ProfilerProvider: "fixture",
+            FixtureProfilePath: null);
+        var buildResult = CreateBuildResult("model.json");
+
+        var profileService = new StubProfileService(Result<CaptureProfileApplicationResult>.Success(profileResult));
+        var extractService = new StubExtractService(Result<ExtractModelApplicationResult>.Success(extractionResult));
+        var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
+        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
+        var modelDeserializer = new StubModelJsonDeserializer(model);
+        var failureError = ValidationError.Create("pipeline.uatUsers.failure", "uat-users failed");
+        var uatRunner = new RecordingUatUsersRunner
+        {
+            ResultToReturn = Result<UatUsersApplicationResult>.Failure(failureError)
+        };
+
+        var service = new FullExportApplicationService(
+            profileService,
+            extractService,
+            buildService,
+            schemaApplyOrchestrator,
+            modelDeserializer,
+            uatRunner);
+
+        var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
+        var overrides = new FullExportOverrides(
+            Build: new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
+            Profile: new CaptureProfileOverrides(null, null, null, null, null),
+            Extract: new ExtractModelOverrides(null, null, null, null, null, null),
+            Apply: null,
+            ReuseModelPath: false,
+            UatUsers: new UatUsersOverrides(
+                Enabled: true,
+                ConnectionString: "Server=Test;",
+                UserSchema: "dbo",
+                UserTable: "User",
+                UserIdColumn: "Id",
+                IncludeColumns: Array.Empty<string>(),
+                UserMapPath: null,
+                AllowedUsersSqlPath: "allowed.sql",
+                AllowedUserIdsPath: null,
+                SnapshotPath: null,
+                UserEntityIdentifier: null));
+        var input = new FullExportApplicationInput(
+            configurationContext,
+            overrides,
+            new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new CacheOptionsOverrides(null, null));
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(failureError, Assert.Single(result.Errors));
+        Assert.NotNull(uatRunner.LastRequest);
+    }
+
+    [Fact]
+    public async Task RunAsync_SkipsUatUsersWhenDisabled()
+    {
+        var model = CreateModel();
+        var extractionResult = CreateExtractionApplicationResult(model);
+        var profileResult = new CaptureProfileApplicationResult(
+            CreateCaptureProfilePipelineResult(),
+            OutputDirectory: "profiles",
+            ModelPath: "model.json",
+            ProfilerProvider: "fixture",
+            FixtureProfilePath: null);
+        var buildResult = CreateBuildResult("model.json");
+
+        var profileService = new StubProfileService(Result<CaptureProfileApplicationResult>.Success(profileResult));
+        var extractService = new StubExtractService(Result<ExtractModelApplicationResult>.Success(extractionResult));
+        var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
+        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
+        var modelDeserializer = new StubModelJsonDeserializer(model);
+        var uatRunner = new RecordingUatUsersRunner();
+
+        var service = new FullExportApplicationService(
+            profileService,
+            extractService,
+            buildService,
+            schemaApplyOrchestrator,
+            modelDeserializer,
+            uatRunner);
+
+        var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
+        var overrides = new FullExportOverrides(
+            Build: new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
+            Profile: new CaptureProfileOverrides(null, null, null, null, null),
+            Extract: new ExtractModelOverrides(null, null, null, null, null, null),
+            Apply: null,
+            ReuseModelPath: false,
+            UatUsers: UatUsersOverrides.Disabled);
+        var input = new FullExportApplicationInput(
+            configurationContext,
+            overrides,
+            new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new CacheOptionsOverrides(null, null));
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(result.Value.UatUsers.Executed);
+        Assert.Null(uatRunner.LastRequest);
     }
 
     private static OsmModel CreateModel()
@@ -122,6 +312,45 @@ public sealed class FullExportApplicationServiceTests
             allowMissingPrimaryKey: false).Value;
         var module = ModuleModel.Create(moduleName, isSystemModule: false, isActive: true, new[] { entity }).Value;
         return OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+    }
+
+    private static ExtractModelApplicationResult CreateExtractionApplicationResult(OsmModel model)
+    {
+        var payload = ModelJsonPayload.FromStream(new MemoryStream(Array.Empty<byte>()));
+        var metadata = new OutsystemsMetadataSnapshot(
+            Array.Empty<OutsystemsModuleRow>(),
+            Array.Empty<OutsystemsEntityRow>(),
+            Array.Empty<OutsystemsAttributeRow>(),
+            Array.Empty<OutsystemsReferenceRow>(),
+            Array.Empty<OutsystemsPhysicalTableRow>(),
+            Array.Empty<OutsystemsColumnRealityRow>(),
+            Array.Empty<OutsystemsColumnCheckRow>(),
+            Array.Empty<OutsystemsColumnCheckJsonRow>(),
+            Array.Empty<OutsystemsPhysicalColumnPresenceRow>(),
+            Array.Empty<OutsystemsIndexRow>(),
+            Array.Empty<OutsystemsIndexColumnRow>(),
+            Array.Empty<OutsystemsForeignKeyRow>(),
+            Array.Empty<OutsystemsForeignKeyColumnRow>(),
+            Array.Empty<OutsystemsForeignKeyAttrMapRow>(),
+            Array.Empty<OutsystemsAttributeHasFkRow>(),
+            Array.Empty<OutsystemsForeignKeyColumnsJsonRow>(),
+            Array.Empty<OutsystemsForeignKeyAttributeJsonRow>(),
+            Array.Empty<OutsystemsTriggerRow>(),
+            Array.Empty<OutsystemsAttributeJsonRow>(),
+            Array.Empty<OutsystemsRelationshipJsonRow>(),
+            Array.Empty<OutsystemsIndexJsonRow>(),
+            Array.Empty<OutsystemsTriggerJsonRow>(),
+            Array.Empty<OutsystemsModuleJsonRow>(),
+            "TestDatabase");
+
+        var extraction = new ModelExtractionResult(
+            model,
+            payload,
+            DateTimeOffset.UtcNow,
+            Array.Empty<string>(),
+            metadata,
+            DynamicEntityDataset.Empty);
+        return new ExtractModelApplicationResult(extraction, "model.json");
     }
 
     private static CaptureProfilePipelineResult CreateCaptureProfilePipelineResult()
@@ -252,6 +481,19 @@ public sealed class FullExportApplicationServiceTests
         }
     }
 
+    private sealed class StubExtractService : IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>
+    {
+        private readonly Result<ExtractModelApplicationResult> _result;
+
+        public StubExtractService(Result<ExtractModelApplicationResult> result)
+        {
+            _result = result;
+        }
+
+        public Task<Result<ExtractModelApplicationResult>> RunAsync(ExtractModelApplicationInput input, CancellationToken cancellationToken = default)
+            => Task.FromResult(_result);
+    }
+
     private sealed class RecordingBuildService : IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>
     {
         private readonly Result<BuildSsdtApplicationResult> _result;
@@ -267,6 +509,22 @@ public sealed class FullExportApplicationServiceTests
         {
             LastInput = input;
             return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class RecordingUatUsersRunner : IUatUsersPipelineRunner
+    {
+        public Result<UatUsersApplicationResult> ResultToReturn { get; set; }
+            = Result<UatUsersApplicationResult>.Success(UatUsersApplicationResult.Disabled);
+
+        public UatUsersPipelineRequest? LastRequest { get; private set; }
+
+        public Task<Result<UatUsersApplicationResult>> RunAsync(
+            UatUsersPipelineRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return Task.FromResult(ResultToReturn);
         }
     }
 

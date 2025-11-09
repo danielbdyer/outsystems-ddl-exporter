@@ -15,6 +15,7 @@ using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.UatUsers;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
@@ -141,6 +142,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<BuildSsdtTelemetryPackagingStep>();
         services.AddSingleton<ISchemaDataApplier, SchemaDataApplier>();
         services.AddSingleton<SchemaApplyOrchestrator>();
+        services.AddSingleton<IUatUsersPipelineRunner, UatUsersPipelineRunner>();
 
         services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
         services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();
