@@ -153,6 +153,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>, ExtractModelApplicationService>();
         services.AddSingleton<IApplicationService<AnalyzeApplicationInput, AnalyzeApplicationResult>, AnalyzeApplicationService>();
         services.AddSingleton<IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult>, CaptureProfileApplicationService>();
+        services.AddSingleton<IApplicationService<FullExportApplicationInput, FullExportApplicationResult>, FullExportApplicationService>();
 
         return services;
     }
@@ -164,6 +165,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IPipelineVerb, DmmCompareVerb>();
         services.AddSingleton<IPipelineVerb, ExtractModelVerb>();
         services.AddSingleton<IPipelineVerb, AnalyzeVerb>();
+        services.AddSingleton<IPipelineVerb, FullExportVerb>();
         services.AddSingleton<IVerbRegistry, VerbRegistry>();
 
         return services;

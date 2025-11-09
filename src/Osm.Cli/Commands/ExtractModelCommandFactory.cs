@@ -141,22 +141,6 @@ internal sealed class ExtractModelCommandFactory : PipelineCommandFactory<Extrac
             resolvedOutputPath = requestedFullPath;
         }
 
-        var model = result.ExtractionResult.Model;
-        var moduleCount = model.Modules.Length;
-        var entityCount = model.Modules.Sum(static m => m.Entities.Length);
-        var attributeCount = model.Modules.Sum(static m => m.Entities.Sum(static e => e.Attributes.Length));
-
-        if (result.ExtractionResult.Warnings.Count > 0)
-        {
-            foreach (var warning in result.ExtractionResult.Warnings)
-            {
-                CommandConsole.WriteErrorLine(context.Console, $"Warning: {warning}");
-            }
-        }
-
-        CommandConsole.WriteLine(context.Console, $"Extracted {moduleCount} modules spanning {entityCount} entities.");
-        CommandConsole.WriteLine(context.Console, $"Attributes: {attributeCount}");
-        CommandConsole.WriteLine(context.Console, $"Model written to {resolvedOutputPath}.");
-        CommandConsole.WriteLine(context.Console, $"Extraction timestamp (UTC): {result.ExtractionResult.ExtractedAtUtc:O}");
+        CommandConsole.EmitExtractModelSummary(context.Console, result, resolvedOutputPath);
     }
 }

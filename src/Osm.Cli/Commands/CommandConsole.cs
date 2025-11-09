@@ -8,6 +8,8 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using Osm.Cli;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
@@ -38,6 +40,143 @@ internal static class CommandConsole
     private sealed record UniqueIssue(IssueSeverity Severity, string Scope, string Target, string Details, string Probe);
 
     private sealed record ForeignKeyIssue(IssueSeverity Severity, string Reference, string Details, string Probe);
+
+    public static async Task EmitBuildSsdtRunAsync(
+        IConsole console,
+        BuildSsdtApplicationResult applicationResult,
+        BuildSsdtPipelineResult pipelineResult,
+        bool openReport,
+        CancellationToken cancellationToken)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (applicationResult is null)
+        {
+            throw new ArgumentNullException(nameof(applicationResult));
+        }
+
+        if (pipelineResult is null)
+        {
+            throw new ArgumentNullException(nameof(pipelineResult));
+        }
+
+        if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
+        {
+            var modelMessage = applicationResult.ModelWasExtracted
+                ? $"Extracted model to {applicationResult.ModelPath}."
+                : $"Using model at {applicationResult.ModelPath}.";
+            WriteLine(console, modelMessage);
+        }
+
+        if (!applicationResult.ModelExtractionWarnings.IsDefaultOrEmpty && applicationResult.ModelExtractionWarnings.Length > 0)
+        {
+            EmitPipelineWarnings(console, applicationResult.ModelExtractionWarnings);
+        }
+
+        var profilerProvider = applicationResult.ProfilerProvider;
+        if (IsSqlProfiler(profilerProvider))
+        {
+            EmitSqlProfilerSnapshot(console, pipelineResult.Profile);
+            EmitMultiEnvironmentReport(console, pipelineResult.MultiEnvironmentReport);
+        }
+
+        EmitBuildSsdtSummary(console, applicationResult, pipelineResult);
+        EmitContradictionDetails(console, pipelineResult.Opportunities);
+
+        EmitTighteningDiagnostics(console, pipelineResult.DecisionReport.Diagnostics);
+
+        if (pipelineResult.EvidenceCache is { } cacheResult)
+        {
+            WriteLine(console, $"Cached inputs to {cacheResult.CacheDirectory} (key {cacheResult.Manifest.Key}).");
+        }
+
+        EmitSqlValidationSummary(console, pipelineResult);
+
+        var pipelineWarnings = pipelineResult.Warnings
+            .Where(static warning => !string.IsNullOrWhiteSpace(warning))
+            .ToImmutableArray();
+
+        var actionableProfilingInsights = pipelineResult.ProfilingInsights
+            .Where(static insight => insight is
+            {
+                Severity: ProfilingInsightSeverity.Warning or ProfilingInsightSeverity.Error
+                    or ProfilingInsightSeverity.Recommendation,
+            })
+            .ToImmutableArray();
+
+        var hasPipelineLogEntries = pipelineResult.ExecutionLog.Entries.Count > 0;
+
+        if ((pipelineWarnings.Length > 0 || actionableProfilingInsights.Length > 0) && hasPipelineLogEntries)
+        {
+            EmitPipelineLog(console, pipelineResult.ExecutionLog);
+        }
+
+        if (pipelineWarnings.Length > 0)
+        {
+            EmitPipelineWarnings(console, pipelineWarnings);
+        }
+
+        if (actionableProfilingInsights.Length > 0)
+        {
+            EmitProfilingInsights(console, actionableProfilingInsights);
+        }
+
+        EmitSsdtEmissionSummary(console, applicationResult, pipelineResult);
+
+        EmitModuleRollups(
+            console,
+            pipelineResult.ModuleManifestRollups,
+            pipelineResult.DecisionReport.ModuleRollups);
+
+        EmitTogglePrecedence(console, pipelineResult.DecisionReport.TogglePrecedence);
+
+        foreach (var summary in PolicyDecisionSummaryFormatter.FormatForConsole(pipelineResult.DecisionReport))
+        {
+            WriteLine(console, summary);
+        }
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "Tightening Artifacts:");
+        WriteLine(console, $"  Decision log: {pipelineResult.DecisionLogPath}");
+        WriteLine(console, $"  Opportunities report: {pipelineResult.OpportunitiesPath}");
+        WriteLine(console, $"  Validations report: {pipelineResult.ValidationsPath}");
+
+        if (pipelineResult.Opportunities.ContradictionCount > 0)
+        {
+            WriteLine(console, $"  ⚠️  Needs remediation ({pipelineResult.Opportunities.ContradictionCount} contradictions): {pipelineResult.RemediationScriptPath}");
+        }
+        else
+        {
+            WriteLine(console, $"  Needs remediation: {pipelineResult.RemediationScriptPath}");
+        }
+
+        WriteLine(console, $"  Safe to apply ({pipelineResult.Opportunities.RecommendationCount} opportunities): {pipelineResult.SafeScriptPath}");
+
+        if (!openReport)
+        {
+            return;
+        }
+
+        try
+        {
+            var reportPath = await PipelineReportLauncher
+                .GenerateAsync(applicationResult, cancellationToken)
+                .ConfigureAwait(false);
+            WriteLine(console, $"Report written to {reportPath}");
+            PipelineReportLauncher.TryOpen(reportPath, console);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            WriteErrorLine(console, $"[warning] Failed to open report: {ex.Message}");
+        }
+    }
 
     public static void EmitBuildSsdtSummary(
         IConsole console,
@@ -97,6 +236,220 @@ internal static class CommandConsole
                     decisionReport.ForeignKeyCount));
         }
     }
+
+    public static void EmitProfileSummary(
+        IConsole console,
+        CaptureProfileApplicationResult applicationResult)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (applicationResult is null)
+        {
+            throw new ArgumentNullException(nameof(applicationResult));
+        }
+
+        var pipelineResult = applicationResult.PipelineResult
+            ?? throw new ArgumentNullException(nameof(applicationResult.PipelineResult));
+
+        if (!string.IsNullOrWhiteSpace(applicationResult.ModelPath))
+        {
+            WriteLine(console, $"Using model at {applicationResult.ModelPath}.");
+        }
+
+        EmitPipelineLog(console, pipelineResult.ExecutionLog);
+        EmitPipelineWarnings(console, pipelineResult.Warnings);
+        EmitProfilingInsights(console, pipelineResult.Insights);
+
+        if (IsSqlProfiler(applicationResult.ProfilerProvider))
+        {
+            EmitSqlProfilerSnapshot(console, pipelineResult.Profile);
+            EmitMultiEnvironmentReport(console, pipelineResult.MultiEnvironmentReport);
+        }
+
+        WriteLine(console, $"Profile written to {pipelineResult.ProfilePath}");
+        WriteLine(console, $"Manifest written to {pipelineResult.ManifestPath}");
+    }
+
+    public static void EmitExtractModelSummary(
+        IConsole console,
+        ExtractModelApplicationResult applicationResult,
+        string resolvedOutputPath)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (applicationResult is null)
+        {
+            throw new ArgumentNullException(nameof(applicationResult));
+        }
+
+        var extractionResult = applicationResult.ExtractionResult
+            ?? throw new ArgumentNullException(nameof(applicationResult.ExtractionResult));
+
+        var model = extractionResult.Model;
+        var moduleCount = model.Modules.Length;
+        var entityCount = model.Modules.Sum(static m => m.Entities.Length);
+        var attributeCount = model.Modules.Sum(static m => m.Entities.Sum(static e => e.Attributes.Length));
+
+        if (extractionResult.Warnings.Count > 0)
+        {
+            foreach (var warning in extractionResult.Warnings)
+            {
+                WriteErrorLine(console, $"Warning: {warning}");
+            }
+        }
+
+        WriteLine(console, $"Extracted {moduleCount} modules spanning {entityCount} entities.");
+        WriteLine(console, $"Attributes: {attributeCount}");
+        WriteLine(console, $"Model written to {resolvedOutputPath}.");
+        WriteLine(console, $"Extraction timestamp (UTC): {extractionResult.ExtractedAtUtc:O}");
+    }
+
+    public static void EmitTighteningDiagnostics(IConsole console, ImmutableArray<TighteningDiagnostic> diagnostics)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (diagnostics.IsDefaultOrEmpty || diagnostics.Length == 0)
+        {
+            return;
+        }
+
+        var warnings = diagnostics.Where(static d => d.Severity == TighteningDiagnosticSeverity.Warning).ToArray();
+
+        if (warnings.Length > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, $"Tightening diagnostics: {warnings.Length} warning(s)");
+            foreach (var diagnostic in warnings)
+            {
+                WriteErrorLine(console, $"  [warning] {diagnostic.Message}");
+            }
+        }
+
+        EmitNamingOverrideTemplate(console, diagnostics);
+    }
+
+    public static void EmitSsdtEmissionSummary(
+        IConsole console,
+        BuildSsdtApplicationResult applicationResult,
+        BuildSsdtPipelineResult pipelineResult)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (applicationResult is null)
+        {
+            throw new ArgumentNullException(nameof(applicationResult));
+        }
+
+        if (pipelineResult is null)
+        {
+            throw new ArgumentNullException(nameof(pipelineResult));
+        }
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "SSDT Emission Summary:");
+        WriteLine(console, $"  Tables: {pipelineResult.Manifest.Tables.Count} emitted to {applicationResult.OutputDirectory}");
+        WriteLine(console, $"  Manifest: {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
+
+        if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty && pipelineResult.StaticSeedScriptPaths.Length > 0)
+        {
+            WriteLine(console, $"  Static seed scripts: {pipelineResult.StaticSeedScriptPaths.Length} file(s)");
+            foreach (var seedPath in pipelineResult.StaticSeedScriptPaths.Take(3))
+            {
+                WriteLine(console, $"    - {seedPath}");
+            }
+
+            if (pipelineResult.StaticSeedScriptPaths.Length > 3)
+            {
+                WriteLine(console, $"    ... {pipelineResult.StaticSeedScriptPaths.Length - 3} more");
+            }
+        }
+
+        if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty && pipelineResult.TelemetryPackagePaths.Length > 0)
+        {
+            WriteLine(console, $"  Telemetry packages: {pipelineResult.TelemetryPackagePaths.Length} file(s)");
+            foreach (var packagePath in pipelineResult.TelemetryPackagePaths.Take(3))
+            {
+                WriteLine(console, $"    - {packagePath}");
+            }
+
+            if (pipelineResult.TelemetryPackagePaths.Length > 3)
+            {
+                WriteLine(console, $"    ... {pipelineResult.TelemetryPackagePaths.Length - 3} more");
+            }
+        }
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "Tightening Statistics:");
+        WriteLine(console, $"  Columns: {pipelineResult.DecisionReport.TightenedColumnCount}/{pipelineResult.DecisionReport.ColumnCount} confirmed NOT NULL");
+        WriteLine(console, $"  Unique indexes: {pipelineResult.DecisionReport.UniqueIndexesEnforcedCount}/{pipelineResult.DecisionReport.UniqueIndexCount} confirmed UNIQUE");
+        WriteLine(console, $"  Foreign keys: {pipelineResult.DecisionReport.ForeignKeysCreatedCount}/{pipelineResult.DecisionReport.ForeignKeyCount} safe to create");
+
+        EmitTighteningStatisticsDetails(console, pipelineResult.DecisionReport);
+    }
+
+    public static void EmitSqlValidationSummary(IConsole console, BuildSsdtPipelineResult pipelineResult)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (pipelineResult is null)
+        {
+            throw new ArgumentNullException(nameof(pipelineResult));
+        }
+
+        var summary = pipelineResult.SqlValidation ?? SsdtSqlValidationSummary.Empty;
+
+        WriteLine(console, string.Empty);
+        WriteLine(console, "SQL Validation:");
+        WriteLine(console, $"  Files: {summary.TotalFiles} validated, {summary.FilesWithErrors} with errors");
+        WriteLine(console, $"  Errors: {summary.ErrorCount} total");
+
+        if (summary.ErrorCount <= 0 || summary.Issues.IsDefaultOrEmpty || summary.Issues.Length == 0)
+        {
+            return;
+        }
+
+        const int MaxSamples = 5;
+        WriteLine(console, string.Empty);
+        WriteErrorLine(console, "  Error samples:");
+
+        var samples = summary.Issues
+            .Where(static issue => issue is not null)
+            .SelectMany(issue => issue.Errors.Select(error => (issue.Path, error)))
+            .Take(MaxSamples)
+            .ToArray();
+
+        foreach (var sample in samples)
+        {
+            var error = sample.error;
+            WriteErrorLine(
+                console,
+                $"    {sample.Path}:{error.Line}:{error.Column} [#{error.Number}] {error.Message}");
+        }
+
+        var remaining = summary.ErrorCount - samples.Length;
+        if (remaining > 0)
+        {
+            WriteErrorLine(console, $"    ... {remaining} additional error(s) omitted");
+        }
+    }
+
+    private static bool IsSqlProfiler(string provider)
+        => string.Equals(provider, "sql", StringComparison.OrdinalIgnoreCase);
 
     public static void WriteLine(IConsole console, string message)
     {

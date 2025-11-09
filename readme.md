@@ -61,7 +61,18 @@
 
    The command evaluates NOT NULL/UNIQUE/FK decisions, materializes SMO tables, emits SSDT-ready per-table files to `./out/Modules/...`, and records a structured summary in `./out/policy-decisions.json` alongside the `manifest.json` snapshot.
 
-  The emitted manifest mirrors the fixtures we keep under `tests/Fixtures/emission/edge-case` (and the rename variant under `tests/Fixtures/emission/edge-case-rename`), so you can diff your live runs against the curated baselines.
+   ```bash
+   dotnet run --project src/Osm.Cli \
+     full-export \
+     --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
+     --profile-out ./out/profiles \
+     --build-out ./out/full-export \
+     --modules "AppCore,ExtBilling,Ops"
+   ```
+
+   The `full-export` verb chains model extraction, profiling, and SSDT emission in one run, streaming each stage’s summary so operators can monitor progress without losing visibility into intermediate artifacts. Treat this orchestrator as a first-class workflow: preserve its real-time reporting and continue to watch for performance and usability improvements as new features land.
+
+   The emitted manifest mirrors the fixtures we keep under `tests/Fixtures/emission/edge-case` (and the rename variant under `tests/Fixtures/emission/edge-case-rename`), so you can diff your live runs against the curated baselines.
 3. **(Optional) Verify DMM parity** using the same model/profile inputs:
 
    ```bash
@@ -105,7 +116,7 @@ src/
   Osm.Smo/                    # SMO builder + PerTableDdlEmitter
   Osm.Dmm/                    # DMM lens, ScriptDom parser, comparator
   Osm.Pipeline/               # Orchestrators (use cases)
-  Osm.Cli/                    # CLI entry points (extract-model, build-ssdt, dmm-compare)
+  Osm.Cli/                    # CLI entry points (extract-model, build-ssdt, full-export, dmm-compare)
 tests/
   Osm.Domain.Tests/
   Osm.Validation.Tests/
