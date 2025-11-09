@@ -130,10 +130,22 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
             parseResult.GetValueForOption(_mockSqlOption),
             parseResult.GetValueForOption(_extractSqlMetadataOption));
 
+        var hasModelOverride = parseResult.HasOption(_modelOption);
+        var hasProfileOverride = parseResult.HasOption(_profileOption);
+        var hasSqlConnection = !string.IsNullOrWhiteSpace(sqlOverrides.ConnectionString);
+        var hasExtractionFixture = !string.IsNullOrWhiteSpace(extractOverrides.MockAdvancedSqlManifest);
+        var hasProfilingConnections = sqlOverrides.ProfilingConnectionStrings is { Count: > 0 };
+        var usesFixtureProfiler = !string.IsNullOrWhiteSpace(profileOverrides.ProfilerProvider)
+            && string.Equals(profileOverrides.ProfilerProvider, "fixture", StringComparison.OrdinalIgnoreCase);
+        var hasFixtureProfileInput = usesFixtureProfiler && !string.IsNullOrWhiteSpace(profileOverrides.ProfilePath);
+
+        var skipExtraction = hasModelOverride && !hasSqlConnection && !hasExtractionFixture;
+        var skipProfiling = hasProfileOverride && !hasSqlConnection && !hasProfilingConnections && !hasFixtureProfileInput;
+
         return new FullExportVerbOptions
         {
             ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
-            Overrides = new FullExportOverrides(buildOverrides, profileOverrides, extractOverrides),
+            Overrides = new FullExportOverrides(buildOverrides, profileOverrides, extractOverrides, skipExtraction, skipProfiling),
             ModuleFilter = moduleFilter,
             Sql = sqlOverrides,
             Cache = cache,

@@ -95,15 +95,18 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             artifacts.Add(new PipelineArtifact("model-json", application.Extraction.OutputPath, "application/json"));
         }
 
-        var profilePipeline = application.Profile.PipelineResult;
-        if (!string.IsNullOrWhiteSpace(profilePipeline.ProfilePath))
+        var profileResult = application.Profile;
+        if (!string.IsNullOrWhiteSpace(profileResult.ProfilePath))
         {
-            artifacts.Add(new PipelineArtifact("profile", profilePipeline.ProfilePath, "application/json"));
+            artifacts.Add(new PipelineArtifact("profile", profileResult.ProfilePath, "application/json"));
         }
 
-        if (!string.IsNullOrWhiteSpace(profilePipeline.ManifestPath))
+        if (profileResult.PipelineResult is { } profilePipeline)
         {
-            artifacts.Add(new PipelineArtifact("profile-manifest", profilePipeline.ManifestPath, "application/json"));
+            if (!string.IsNullOrWhiteSpace(profilePipeline.ManifestPath))
+            {
+                artifacts.Add(new PipelineArtifact("profile-manifest", profilePipeline.ManifestPath, "application/json"));
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(buildPipeline.DecisionLogPath))
@@ -189,8 +192,21 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             builder["build.profilerProvider"] = application.Build.ProfilerProvider;
             builder["profile.outputDirectory"] = application.Profile.OutputDirectory;
             builder["profile.profilerProvider"] = application.Profile.ProfilerProvider;
+            builder["profile.profilePath"] = application.Profile.ProfilePath;
+            if (application.Profile.Skipped)
+            {
+                builder["profile.reused"] = "true";
+            }
+
             builder["extract.outputPath"] = application.Extraction.OutputPath;
-            builder["extract.extractedAtUtc"] = application.Extraction.ExtractionResult.ExtractedAtUtc.ToString("O", CultureInfo.InvariantCulture);
+            if (!application.Extraction.Skipped && application.Extraction.ExtractionResult is { } extraction)
+            {
+                builder["extract.extractedAtUtc"] = extraction.ExtractedAtUtc.ToString("O", CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                builder["extract.reused"] = "true";
+            }
         }
 
         return builder.ToImmutable();

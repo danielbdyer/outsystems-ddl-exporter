@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -63,42 +64,106 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             extractOverrides = extractOverrides with { OnlyActiveAttributes = !moduleFilter.IncludeInactiveModules.Value };
         }
 
-        var extractInput = new ExtractModelApplicationInput(configurationContext, extractOverrides, input.Sql);
-        var extractResult = await _extractService
-            .RunAsync(extractInput, cancellationToken)
-            .ConfigureAwait(false);
+        var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
 
-        if (extractResult.IsFailure)
+        ExtractModelApplicationResult extraction;
+        if (overrides.SkipExtraction)
         {
-            return Result<FullExportApplicationResult>.Failure(extractResult.Errors);
+            var reuseModelPath = buildOverrides.ModelPath
+                ?? profileOverrides.ModelPath
+                ?? extractOverrides.OutputPath
+                ?? configuration.ModelPath;
+
+            if (string.IsNullOrWhiteSpace(reuseModelPath))
+            {
+                return Result<FullExportApplicationResult>.Failure(ValidationError.Create(
+                    "pipeline.fullExport.extract.reuseMissingPath",
+                    "Model path must be provided when skipping model extraction."));
+            }
+
+            extraction = new ExtractModelApplicationResult(null, reuseModelPath, Skipped: true);
+        }
+        else
+        {
+            var extractInput = new ExtractModelApplicationInput(configurationContext, extractOverrides, input.Sql);
+            var extractResult = await _extractService
+                .RunAsync(extractInput, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (extractResult.IsFailure)
+            {
+                return Result<FullExportApplicationResult>.Failure(extractResult.Errors);
+            }
+
+            extraction = extractResult.Value;
         }
 
-        var extraction = extractResult.Value;
         var resolvedModelPath = ResolveModelPath(buildOverrides, profileOverrides, extraction);
 
-        if (string.IsNullOrWhiteSpace(profileOverrides.ModelPath) && !string.IsNullOrWhiteSpace(resolvedModelPath))
+        if (string.IsNullOrWhiteSpace(resolvedModelPath))
+        {
+            return Result<FullExportApplicationResult>.Failure(ValidationError.Create(
+                "pipeline.fullExport.model.missing",
+                "Model path could not be resolved for the full export pipeline."));
+        }
+
+        if (string.IsNullOrWhiteSpace(profileOverrides.ModelPath))
         {
             profileOverrides = profileOverrides with { ModelPath = resolvedModelPath };
         }
 
-        var profileInput = new CaptureProfileApplicationInput(
-            configurationContext,
-            profileOverrides,
-            moduleFilter,
-            input.Sql,
-            input.TighteningOverrides);
-
-        var profileResult = await _profileService
-            .RunAsync(profileInput, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (profileResult.IsFailure)
+        CaptureProfileApplicationResult profile;
+        if (overrides.SkipProfiling)
         {
-            return Result<FullExportApplicationResult>.Failure(profileResult.Errors);
+            var providedProfilePath = profileOverrides.ProfilePath
+                ?? buildOverrides.ProfilePath
+                ?? configuration.ProfilePath
+                ?? configuration.Profiler.ProfilePath;
+
+            if (string.IsNullOrWhiteSpace(providedProfilePath))
+            {
+                return Result<FullExportApplicationResult>.Failure(ValidationError.Create(
+                    "pipeline.fullExport.profile.reuseMissingPath",
+                    "Profile path must be provided when skipping profiling."));
+            }
+
+            var profilerProvider = ResolveProfilerProvider(configuration, profileOverrides);
+            var outputDirectory = ResolveProfileReuseOutputDirectory(profileOverrides, providedProfilePath);
+            var fixtureProfilePath = string.Equals(profilerProvider, "fixture", StringComparison.OrdinalIgnoreCase)
+                ? providedProfilePath
+                : null;
+
+            profile = new CaptureProfileApplicationResult(
+                null,
+                outputDirectory,
+                resolvedModelPath,
+                profilerProvider,
+                providedProfilePath,
+                fixtureProfilePath,
+                Skipped: true);
+        }
+        else
+        {
+            var profileInput = new CaptureProfileApplicationInput(
+                configurationContext,
+                profileOverrides,
+                moduleFilter,
+                input.Sql,
+                input.TighteningOverrides);
+
+            var profileResult = await _profileService
+                .RunAsync(profileInput, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (profileResult.IsFailure)
+            {
+                return Result<FullExportApplicationResult>.Failure(profileResult.Errors);
+            }
+
+            profile = profileResult.Value;
         }
 
-        var profile = profileResult.Value;
-        var profileSnapshotPath = profile.PipelineResult?.ProfilePath;
+        var profileSnapshotPath = profile.ProfilePath;
 
         if (string.IsNullOrWhiteSpace(buildOverrides.ModelPath) && !string.IsNullOrWhiteSpace(resolvedModelPath))
         {
@@ -133,6 +198,37 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         }
 
         return new FullExportApplicationResult(buildResult.Value, profile, extraction);
+    }
+
+    private static string ResolveProfilerProvider(CliConfiguration configuration, CaptureProfileOverrides overrides)
+    {
+        if (!string.IsNullOrWhiteSpace(overrides.ProfilerProvider))
+        {
+            return overrides.ProfilerProvider!;
+        }
+
+        if (!string.IsNullOrWhiteSpace(configuration.Profiler.Provider))
+        {
+            return configuration.Profiler.Provider!;
+        }
+
+        return "sql";
+    }
+
+    private static string ResolveProfileReuseOutputDirectory(CaptureProfileOverrides overrides, string profilePath)
+    {
+        if (!string.IsNullOrWhiteSpace(overrides.OutputDirectory))
+        {
+            return overrides.OutputDirectory!;
+        }
+
+        var directory = Path.GetDirectoryName(profilePath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return Directory.GetCurrentDirectory();
+        }
+
+        return Path.GetFullPath(directory);
     }
 
     private static string? ResolveModelPath(

@@ -225,6 +225,7 @@ public class ProfileCommandFactoryTests
                 "output",
                 "model.json",
                 "fixture",
+                pipelineResult.ProfilePath,
                 "profile.json");
         }
     }

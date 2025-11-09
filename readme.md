@@ -78,6 +78,8 @@
    * Point profiling at a destination with `--profile-out` and choose a provider (`--profiler-provider` or `--use-profile-mock-folder`/`--profile-mock-folder`) so evidence collection mirrors the standalone `profile` verb. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L24-L42】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L29-L55】
    * Declare an SSDT output root with `--build-out` (plus rename/static-data overrides) to land the emission artifacts alongside the manifest and telemetry bundle generated during the run. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L24-L42】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L36-L53】
 
+   When a previous run already produced a `model.json` or profiling snapshot, you can resume quickly by pointing `--model` and/or `--profile` at those artifacts without supplying mock or live SQL inputs for that stage. The CLI detects the missing connection/fixture inputs, skips the redundant extraction or profiling call, and surfaces a reuse message before proceeding straight to SSDT emission. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L122-L152】【F:src/Osm.Pipeline/Application/FullExportApplicationService.cs†L54-L148】【F:src/Osm.Cli/Commands/CommandConsole.cs†L240-L317】
+
    **Feature flags carried into the pipeline**
 
    * Evidence cache management (`--cache-root`, `--refresh-cache`) and SQL fan-out (`--profiling-connection-string`) flow unchanged to the application service so repeated runs can short-circuit expensive calls while preserving audit trails. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L96-L113】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L8-L33】

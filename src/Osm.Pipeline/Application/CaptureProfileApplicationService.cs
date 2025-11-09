@@ -18,11 +18,13 @@ public sealed record CaptureProfileApplicationInput(
     TighteningOverrides? TighteningOverrides = null);
 
 public sealed record CaptureProfileApplicationResult(
-    CaptureProfilePipelineResult PipelineResult,
+    CaptureProfilePipelineResult? PipelineResult,
     string OutputDirectory,
     string ModelPath,
     string ProfilerProvider,
-    string? FixtureProfilePath);
+    string ProfilePath,
+    string? FixtureProfilePath,
+    bool Skipped = false);
 
 public sealed class CaptureProfileApplicationService : PipelineApplicationServiceBase, IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult>
 {
@@ -117,6 +119,7 @@ public sealed class CaptureProfileApplicationService : PipelineApplicationServic
             outputDirectory,
             modelPath,
             profilerProvider,
+            pipelineResult.Value.ProfilePath,
             fixtureProfilePath);
     }
 

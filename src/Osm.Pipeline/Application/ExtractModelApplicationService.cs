@@ -19,8 +19,9 @@ public sealed record ExtractModelApplicationInput(
     SqlOptionsOverrides Sql);
 
 public sealed record ExtractModelApplicationResult(
-    ModelExtractionResult ExtractionResult,
-    string OutputPath);
+    ModelExtractionResult? ExtractionResult,
+    string OutputPath,
+    bool Skipped = false);
 
 public sealed class ExtractModelApplicationService : PipelineApplicationServiceBase, IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>
 {

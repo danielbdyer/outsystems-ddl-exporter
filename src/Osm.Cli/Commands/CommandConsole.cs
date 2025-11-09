@@ -251,6 +251,20 @@ internal static class CommandConsole
             throw new ArgumentNullException(nameof(applicationResult));
         }
 
+        if (applicationResult.Skipped)
+        {
+            if (!string.IsNullOrWhiteSpace(applicationResult.ProfilePath))
+            {
+                WriteLine(console, $"Reusing profile at {applicationResult.ProfilePath}.");
+            }
+            else
+            {
+                WriteLine(console, "Reusing existing profile artifacts.");
+            }
+
+            return;
+        }
+
         var pipelineResult = applicationResult.PipelineResult
             ?? throw new ArgumentNullException(nameof(applicationResult.PipelineResult));
 
@@ -286,6 +300,12 @@ internal static class CommandConsole
         if (applicationResult is null)
         {
             throw new ArgumentNullException(nameof(applicationResult));
+        }
+
+        if (applicationResult.Skipped)
+        {
+            WriteLine(console, $"Reusing model at {resolvedOutputPath}.");
+            return;
         }
 
         var extractionResult = applicationResult.ExtractionResult

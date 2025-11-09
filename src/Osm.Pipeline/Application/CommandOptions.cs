@@ -85,7 +85,9 @@ public sealed record ExtractModelOverrides(
 public sealed record FullExportOverrides(
     BuildSsdtOverrides Build,
     CaptureProfileOverrides Profile,
-    ExtractModelOverrides Extract)
+    ExtractModelOverrides Extract,
+    bool SkipExtraction = false,
+    bool SkipProfiling = false)
 {
     public static FullExportOverrides Empty { get; } = new(
         new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
