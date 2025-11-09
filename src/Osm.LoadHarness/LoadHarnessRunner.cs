@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Osm.LoadHarness;
 
-public sealed class LoadHarnessRunner
+public sealed class LoadHarnessRunner : ILoadHarnessRunner
 {
     private const string WaitStatsSql = @"
 SELECT wait_type, wait_time_ms

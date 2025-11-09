@@ -21,7 +21,8 @@ public sealed record FullExportApplicationResult(
     BuildSsdtApplicationResult Build,
     CaptureProfileApplicationResult Profile,
     ExtractModelApplicationResult Extraction,
-    SchemaApplyResult Apply);
+    SchemaApplyResult Apply,
+    SchemaApplyOptions ApplyOptions);
 
 public sealed class FullExportApplicationService : PipelineApplicationServiceBase, IApplicationService<FullExportApplicationInput, FullExportApplicationResult>
 {
@@ -152,7 +153,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             return Result<FullExportApplicationResult>.Failure(applyResult.Errors);
         }
 
-        return new FullExportApplicationResult(buildResult.Value, profile, extraction, applyResult.Value);
+        return new FullExportApplicationResult(buildResult.Value, profile, extraction, applyResult.Value, applyOptions);
     }
 
     private static string? ResolveModelPath(

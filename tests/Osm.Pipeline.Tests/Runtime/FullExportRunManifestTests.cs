@@ -155,7 +155,12 @@ public sealed class FullExportRunManifestTests
             StaticSeedScriptPaths: staticSeedPaths,
             Duration: TimeSpan.Zero);
 
-        var applicationResult = new FullExportApplicationResult(build, capture, extraction, schemaApply);
+        var applicationResult = new FullExportApplicationResult(
+            build,
+            capture,
+            extraction,
+            schemaApply,
+            SchemaApplyOptions.Disabled);
         var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, "config/full-export.json");
         var verbResult = new FullExportVerbResult(configurationContext, applicationResult);
 
