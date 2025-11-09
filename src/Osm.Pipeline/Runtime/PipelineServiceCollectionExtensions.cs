@@ -142,6 +142,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<BuildSsdtTelemetryPackagingStep>();
         services.AddSingleton<ISchemaDataApplier, SchemaDataApplier>();
         services.AddSingleton<SchemaApplyOrchestrator>();
+        services.AddSingleton<IModelUserSchemaGraphFactory, ModelUserSchemaGraphFactory>();
         services.AddSingleton<IUatUsersPipelineRunner, UatUsersPipelineRunner>();
 
         services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();

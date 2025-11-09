@@ -55,6 +55,7 @@ public sealed class FullExportApplicationServiceTests
 
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
         var uatRunner = new RecordingUatUsersRunner();
+        var schemaGraphFactory = new RecordingSchemaGraphFactory();
 
         var service = new FullExportApplicationService(
             profileService,
@@ -62,7 +63,8 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
-            uatRunner);
+            uatRunner,
+            schemaGraphFactory);
 
             var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
             var overrides = new FullExportOverrides(
@@ -89,6 +91,7 @@ public sealed class FullExportApplicationServiceTests
             Assert.True(result.Value.Extraction.ModelWasReused);
             Assert.Equal(Path.GetFullPath(modelPath), Path.GetFullPath(result.Value.Extraction.OutputPath));
             Assert.False(result.Value.UatUsers.Executed);
+            Assert.Null(schemaGraphFactory.LastExtraction);
         }
         finally
         {
@@ -124,6 +127,10 @@ public sealed class FullExportApplicationServiceTests
                 Context: null,
                 Warnings: ImmutableArray<string>.Empty))
         };
+        var schemaGraphFactory = new RecordingSchemaGraphFactory
+        {
+            GraphToReturn = new ModelSchemaGraph(model)
+        };
 
         var service = new FullExportApplicationService(
             profileService,
@@ -131,7 +138,8 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
-            uatRunner);
+            uatRunner,
+            schemaGraphFactory);
 
         var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
         var overrides = new FullExportOverrides(
@@ -163,10 +171,12 @@ public sealed class FullExportApplicationServiceTests
 
         Assert.True(result.IsSuccess);
         Assert.True(result.Value.UatUsers.Executed);
-        var request = Assert.NotNull(uatRunner.LastRequest);
+        var request = Assert.IsType<UatUsersPipelineRequest>(uatRunner.LastRequest);
         Assert.Equal("Server=Test;Database=Uat;Integrated Security=true;", request.Overrides.ConnectionString);
-        Assert.Equal(extractionResult, request.Extraction);
+        Assert.Equal(extractionResult.ExtractionResult, request.Extraction);
         Assert.Equal(buildResult.OutputDirectory, request.OutputDirectory);
+        Assert.Same(schemaGraphFactory.GraphToReturn, request.SchemaGraph);
+        Assert.Same(extractionResult.ExtractionResult, schemaGraphFactory.LastExtraction);
     }
 
     [Fact]
@@ -192,6 +202,10 @@ public sealed class FullExportApplicationServiceTests
         {
             ResultToReturn = Result<UatUsersApplicationResult>.Failure(failureError)
         };
+        var schemaGraphFactory = new RecordingSchemaGraphFactory
+        {
+            GraphToReturn = new ModelSchemaGraph(model)
+        };
 
         var service = new FullExportApplicationService(
             profileService,
@@ -199,7 +213,8 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
-            uatRunner);
+            uatRunner,
+            schemaGraphFactory);
 
         var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
         var overrides = new FullExportOverrides(
@@ -232,6 +247,76 @@ public sealed class FullExportApplicationServiceTests
         Assert.True(result.IsFailure);
         Assert.Equal(failureError, Assert.Single(result.Errors));
         Assert.NotNull(uatRunner.LastRequest);
+        Assert.Same(extractionResult.ExtractionResult, schemaGraphFactory.LastExtraction);
+    }
+
+    [Fact]
+    public async Task RunAsync_ReturnsFailureWhenSchemaGraphFactoryFails()
+    {
+        var model = CreateModel();
+        var extractionResult = CreateExtractionApplicationResult(model);
+        var profileResult = new CaptureProfileApplicationResult(
+            CreateCaptureProfilePipelineResult(),
+            OutputDirectory: "profiles",
+            ModelPath: "model.json",
+            ProfilerProvider: "fixture",
+            FixtureProfilePath: null);
+        var buildResult = CreateBuildResult("model.json");
+
+        var profileService = new StubProfileService(Result<CaptureProfileApplicationResult>.Success(profileResult));
+        var extractService = new StubExtractService(Result<ExtractModelApplicationResult>.Success(extractionResult));
+        var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
+        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
+        var modelDeserializer = new StubModelJsonDeserializer(model);
+        var uatRunner = new RecordingUatUsersRunner();
+        var schemaGraphFactory = new RecordingSchemaGraphFactory
+        {
+            ShouldFail = true,
+            FailureErrors = ImmutableArray.Create(ValidationError.Create("uatUsers.schemaGraph.error", "graph failed"))
+        };
+
+        var service = new FullExportApplicationService(
+            profileService,
+            extractService,
+            buildService,
+            schemaApplyOrchestrator,
+            modelDeserializer,
+            uatRunner,
+            schemaGraphFactory);
+
+        var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
+        var overrides = new FullExportOverrides(
+            Build: new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
+            Profile: new CaptureProfileOverrides(null, null, null, null, null),
+            Extract: new ExtractModelOverrides(null, null, null, null, null, null),
+            Apply: null,
+            ReuseModelPath: false,
+            UatUsers: new UatUsersOverrides(
+                Enabled: true,
+                ConnectionString: "Server=Test;",
+                UserSchema: "dbo",
+                UserTable: "User",
+                UserIdColumn: "Id",
+                IncludeColumns: Array.Empty<string>(),
+                UserMapPath: null,
+                AllowedUsersSqlPath: "allowed.sql",
+                AllowedUserIdsPath: null,
+                SnapshotPath: null,
+                UserEntityIdentifier: null));
+        var input = new FullExportApplicationInput(
+            configurationContext,
+            overrides,
+            new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new CacheOptionsOverrides(null, null));
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("uatUsers.schemaGraph.error", error.Code);
+        Assert.Null(uatRunner.LastRequest);
+        Assert.Same(extractionResult.ExtractionResult, schemaGraphFactory.LastExtraction);
     }
 
     [Fact]
@@ -253,6 +338,7 @@ public sealed class FullExportApplicationServiceTests
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
         var modelDeserializer = new StubModelJsonDeserializer(model);
         var uatRunner = new RecordingUatUsersRunner();
+        var schemaGraphFactory = new RecordingSchemaGraphFactory();
 
         var service = new FullExportApplicationService(
             profileService,
@@ -260,7 +346,8 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
-            uatRunner);
+            uatRunner,
+            schemaGraphFactory);
 
         var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
         var overrides = new FullExportOverrides(
@@ -282,6 +369,7 @@ public sealed class FullExportApplicationServiceTests
         Assert.True(result.IsSuccess);
         Assert.False(result.Value.UatUsers.Executed);
         Assert.Null(uatRunner.LastRequest);
+        Assert.Null(schemaGraphFactory.LastExtraction);
     }
 
     private static OsmModel CreateModel()
@@ -525,6 +613,38 @@ public sealed class FullExportApplicationServiceTests
         {
             LastRequest = request;
             return Task.FromResult(ResultToReturn);
+        }
+    }
+
+    private sealed class RecordingSchemaGraphFactory : IModelUserSchemaGraphFactory
+    {
+        public ModelExtractionResult? LastExtraction { get; private set; }
+
+        public ModelSchemaGraph? GraphToReturn { get; set; }
+
+        public bool ShouldFail { get; set; }
+
+        public ImmutableArray<ValidationError> FailureErrors { get; set; }
+            = ImmutableArray<ValidationError>.Empty;
+
+        public Result<ModelSchemaGraph> Create(ModelExtractionResult extraction)
+        {
+            LastExtraction = extraction;
+
+            if (ShouldFail)
+            {
+                var errors = FailureErrors.IsDefaultOrEmpty
+                    ? ImmutableArray.Create(ValidationError.Create("uatUsers.schemaGraph.failure", "Factory failure."))
+                    : FailureErrors;
+                return Result<ModelSchemaGraph>.Failure(errors);
+            }
+
+            if (GraphToReturn is not null)
+            {
+                return Result<ModelSchemaGraph>.Success(GraphToReturn);
+            }
+
+            return Result<ModelSchemaGraph>.Success(new ModelSchemaGraph(extraction.Model));
         }
     }
 

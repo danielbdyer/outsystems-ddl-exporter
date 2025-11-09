@@ -23,7 +23,8 @@ public interface IUatUsersPipelineRunner
 public sealed record UatUsersPipelineRequest(
     UatUsersOverrides Overrides,
     ModelExtractionResult Extraction,
-    string OutputDirectory);
+    string OutputDirectory,
+    IUserSchemaGraph? SchemaGraph = null);
 
 public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
 {
@@ -109,7 +110,7 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 includeColumns = Array.Empty<string>();
             }
 
-            var schemaGraph = new ModelSchemaGraph(request.Extraction.Model);
+            var schemaGraph = request.SchemaGraph ?? new ModelSchemaGraph(request.Extraction.Model);
             var context = new UatUsersContext(
                 schemaGraph,
                 artifacts,
