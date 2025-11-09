@@ -24,7 +24,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
     private readonly SqlOptionBinder _sqlOptionBinder;
     private readonly TighteningOptionBinder _tighteningBinder;
     private readonly SchemaApplyOptionBinder _schemaApplyBinder;
-    private readonly LoadHarnessRunner _loadHarnessRunner;
+    private readonly ILoadHarnessRunner _loadHarnessRunner;
     private readonly LoadHarnessReportWriter _loadHarnessReportWriter;
 
     private readonly Option<string?> _modelOption = new("--model", "Path to an existing model JSON file to reuse.");
@@ -58,7 +58,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         SqlOptionBinder sqlOptionBinder,
         TighteningOptionBinder tighteningOptionBinder,
         SchemaApplyOptionBinder schemaApplyOptionBinder,
-        LoadHarnessRunner loadHarnessRunner,
+        ILoadHarnessRunner loadHarnessRunner,
         LoadHarnessReportWriter loadHarnessReportWriter)
         : base(scopeFactory)
     {
@@ -233,7 +233,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
 
         if (context.ParseResult.GetValueForOption(_runLoadHarnessOption))
         {
-            await RunLoadHarnessAsync(context, buildResult, cancellationToken: context.GetCancellationToken())
+            await RunLoadHarnessAsync(context, payload, cancellationToken: context.GetCancellationToken())
                 .ConfigureAwait(false);
         }
 
@@ -242,20 +242,29 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
 
     private async Task RunLoadHarnessAsync(
         InvocationContext context,
-        BuildSsdtApplicationResult buildResult,
+        FullExportVerbResult payload,
         CancellationToken cancellationToken)
     {
         var parseResult = context.ParseResult;
-        var applyOverrides = _schemaApplyBinder.Bind(parseResult);
-        var connectionString = parseResult.GetValueForOption(_loadHarnessConnectionOption) ?? applyOverrides.ConnectionString;
+        var applyOptions = payload.ApplicationResult.ApplyOptions;
+        var cliConnectionString = parseResult.GetValueForOption(_loadHarnessConnectionOption);
+        var hasCliConnection = !string.IsNullOrWhiteSpace(cliConnectionString);
+        var connectionString = hasCliConnection
+            ? cliConnectionString
+            : applyOptions.ConnectionString;
 
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            CommandConsole.WriteErrorLine(context.Console, "[warning] Load harness skipped (no connection string provided).");
+            if (!hasCliConnection && string.IsNullOrWhiteSpace(applyOptions.ConnectionString))
+            {
+                CommandConsole.WriteErrorLine(
+                    context.Console,
+                    "[warning] Load harness skipped (no connection string provided via CLI or configuration).");
+            }
             return;
         }
 
-        var pipeline = buildResult.PipelineResult;
+        var pipeline = payload.ApplicationResult.Build.PipelineResult;
         var safeScriptPath = ResolveScriptPath(pipeline.SafeScriptPath);
         var remediationScriptPath = ResolveScriptPath(pipeline.RemediationScriptPath);
         var staticSeedPaths = ResolveScriptPaths(pipeline.StaticSeedScriptPaths);
@@ -272,7 +281,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
 
         var reportOutput = parseResult.GetValueForOption(_loadHarnessReportOption);
         var commandTimeout = parseResult.GetValueForOption(_loadHarnessCommandTimeoutOption)
-            ?? applyOverrides.CommandTimeoutSeconds;
+            ?? applyOptions.CommandTimeoutSeconds;
 
         var options = LoadHarnessOptions.Create(
             connectionString,
