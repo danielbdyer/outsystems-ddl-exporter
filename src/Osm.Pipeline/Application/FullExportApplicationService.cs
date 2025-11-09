@@ -42,6 +42,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
     private readonly SchemaApplyOrchestrator _schemaApplyOrchestrator;
     private readonly IModelJsonDeserializer _modelDeserializer;
     private readonly IUatUsersPipelineRunner _uatUsersRunner;
+    private readonly IModelUserSchemaGraphFactory _schemaGraphFactory;
     private static readonly OutsystemsMetadataSnapshot PlaceholderMetadataSnapshot = new(
         Array.Empty<OutsystemsModuleRow>(),
         Array.Empty<OutsystemsEntityRow>(),
@@ -74,7 +75,8 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult> buildService,
         SchemaApplyOrchestrator schemaApplyOrchestrator,
         IModelJsonDeserializer modelDeserializer,
-        IUatUsersPipelineRunner uatUsersRunner)
+        IUatUsersPipelineRunner uatUsersRunner,
+        IModelUserSchemaGraphFactory schemaGraphFactory)
     {
         _profileService = profileService ?? throw new ArgumentNullException(nameof(profileService));
         _extractService = extractService ?? throw new ArgumentNullException(nameof(extractService));
@@ -82,6 +84,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         _schemaApplyOrchestrator = schemaApplyOrchestrator ?? throw new ArgumentNullException(nameof(schemaApplyOrchestrator));
         _modelDeserializer = modelDeserializer ?? throw new ArgumentNullException(nameof(modelDeserializer));
         _uatUsersRunner = uatUsersRunner ?? throw new ArgumentNullException(nameof(uatUsersRunner));
+        _schemaGraphFactory = schemaGraphFactory ?? throw new ArgumentNullException(nameof(schemaGraphFactory));
     }
 
     public async Task<Result<FullExportApplicationResult>> RunAsync(
@@ -231,10 +234,17 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
                     "Build output directory is required to emit uat-users artifacts."));
             }
 
+            var schemaGraphResult = _schemaGraphFactory.Create(extraction.ExtractionResult);
+            if (schemaGraphResult.IsFailure)
+            {
+                return Result<FullExportApplicationResult>.Failure(schemaGraphResult.Errors);
+            }
+
             var uatUsersRequest = new UatUsersPipelineRequest(
                 uatUsersOverrides,
                 extraction.ExtractionResult,
-                buildResult.Value.OutputDirectory);
+                buildResult.Value.OutputDirectory,
+                schemaGraphResult.Value);
 
             var uatUsersResult = await _uatUsersRunner
                 .RunAsync(uatUsersRequest, cancellationToken)
