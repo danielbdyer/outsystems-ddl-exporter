@@ -16,6 +16,7 @@ using Osm.Domain.Profiling;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.Runtime.Verbs;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
 
@@ -154,6 +155,15 @@ internal static class CommandConsole
         }
 
         WriteLine(console, $"  Safe to apply ({pipelineResult.Opportunities.RecommendationCount} opportunities): {pipelineResult.SafeScriptPath}");
+
+        if (!string.IsNullOrWhiteSpace(applicationResult.OutputDirectory))
+        {
+            var manifestPath = Path.Combine(applicationResult.OutputDirectory, FullExportVerb.RunManifestFileName);
+            if (File.Exists(manifestPath))
+            {
+                WriteLine(console, $"  Run manifest: {manifestPath}");
+            }
+        }
 
         if (!openReport)
         {
