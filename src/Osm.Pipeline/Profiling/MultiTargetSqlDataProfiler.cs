@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Profiling;
+using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Profiling;
 
@@ -99,13 +100,21 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
         }
 
         Report = MultiEnvironmentProfileReport.Create(
-            captures.Select(capture => new ProfilingEnvironmentSnapshot(
-                capture.Environment.Name,
-                capture.Environment.IsPrimary,
-                capture.Environment.LabelOrigin,
-                capture.Environment.LabelWasAdjusted,
-                capture.Snapshot,
-                capture.Duration)),
+            captures.Select(capture =>
+            {
+                var tableNameMappings = capture.Environment.Profiler is ITableNameMappingProvider provider
+                    ? provider.TableNameMappings
+                    : ImmutableArray<TableNameMapping>.Empty;
+
+                return new ProfilingEnvironmentSnapshot(
+                    capture.Environment.Name,
+                    capture.Environment.IsPrimary,
+                    capture.Environment.LabelOrigin,
+                    capture.Environment.LabelWasAdjusted,
+                    capture.Snapshot,
+                    capture.Duration,
+                    tableNameMappings);
+            }),
             _minimumConsensusThreshold);
 
         if (captures.Count == 1)
