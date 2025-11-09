@@ -136,6 +136,10 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
 
         var requiresRemediation = false;
         var relaxationBlocked = false;
+        var overrideApplied = _options.Policy.NullabilityOverrides.ShouldRelax(
+            entity.Module,
+            entity.LogicalName,
+            attribute.LogicalName);
 
         if (_options.Policy.Mode == TighteningMode.Aggressive && makeNotNull && conditionalTriggered && !dataTrace.Result)
         {
@@ -146,13 +150,23 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
         if (_options.Policy.Mode == TighteningMode.Cautious &&
             !_options.Policy.AllowCautiousNullabilityRelaxation &&
             attribute.IsMandatory &&
-            !makeNotNull)
+            !makeNotNull &&
+            !overrideApplied)
         {
             relaxationBlocked = true;
             makeNotNull = true;
             requiresRemediation = true;
             rationales.Add(TighteningRationales.CautiousRelaxationDisabled);
             rationales.Add(TighteningRationales.RemediateBeforeTighten);
+        }
+
+        if (overrideApplied)
+        {
+            makeNotNull = false;
+            requiresRemediation = false;
+            rationales.Remove(TighteningRationales.CautiousRelaxationDisabled);
+            rationales.Remove(TighteningRationales.RemediateBeforeTighten);
+            rationales.Add(TighteningRationales.NullabilityOverride);
         }
 
         var trace = _policyDefinition.EvidenceEmbeddedInRoot ? signalTrace : signalTrace.AppendChild(dataTrace);
@@ -180,6 +194,25 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
 
                 trace = trace.AppendChild(overrideNode);
             }
+
+            if (overrideApplied)
+            {
+                var overrideNode = SignalEvaluation.Create(
+                    "NULLABILITY_OVERRIDE",
+                    "Configuration override keeps this attribute nullable.",
+                    result: false,
+                    rationales: new[] { TighteningRationales.NullabilityOverride });
+
+                trace = trace.AppendChild(overrideNode);
+            }
+        }
+        else if (overrideApplied)
+        {
+            trace = SignalEvaluation.Create(
+                "NULLABILITY_OVERRIDE",
+                "Configuration override keeps this attribute nullable.",
+                result: false,
+                rationales: new[] { TighteningRationales.NullabilityOverride });
         }
 
         return NullabilityDecision.Create(

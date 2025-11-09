@@ -304,4 +304,46 @@ public sealed class NullabilityEvaluatorTests
 
         Assert.Empty(builder.Opportunities);
     }
+
+    [Fact]
+    public void NullabilityOverride_Should_Keep_Column_Nullable()
+    {
+        var rule = NullabilityOverrideRule.Create("Sample", "SampleEntity", "Mandatory").Value;
+        var overrides = NullabilityOverrideOptions.Create(new[] { rule }).Value;
+        var options = TighteningPolicyTestHelper.CreateOptions(
+            TighteningMode.EvidenceGated,
+            nullBudget: 0.0,
+            allowCautiousNullabilityRelaxation: false,
+            overrides);
+
+        var coordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_TEST_SAMPLE"), new ColumnName("MANDATORY"));
+        var mandatoryAttribute = TighteningEvaluatorTestHelper.CreateAttribute("Mandatory", "MANDATORY", isMandatory: true);
+        var identifier = TighteningEvaluatorTestHelper.CreateAttribute("Id", "ID", isIdentifier: true);
+        var entity = TighteningEvaluatorTestHelper.CreateEntity("Sample", "SampleEntity", "OSUSR_TEST_SAMPLE", new[] { identifier, mandatoryAttribute });
+        var module = TighteningEvaluatorTestHelper.CreateModule("Sample", entity);
+        var model = TighteningEvaluatorTestHelper.CreateModel(module);
+
+        var foreignKeyTargets = TighteningEvaluatorTestHelper.CreateForeignKeyTargetIndex(
+            model,
+            new Dictionary<EntityName, EntityModel> { [entity.LogicalName] = entity });
+
+        var columnProfile = TighteningEvaluatorTestHelper.CreateColumnProfile(coordinate, isNullablePhysical: true, rowCount: 100, nullCount: 0);
+
+        var evaluator = new NullabilityEvaluator(
+            options,
+            new Dictionary<ColumnCoordinate, ColumnProfile> { [coordinate] = columnProfile },
+            new Dictionary<ColumnCoordinate, UniqueCandidateProfile>(),
+            new Dictionary<ColumnCoordinate, ForeignKeyReality>(),
+            foreignKeyTargets,
+            new HashSet<ColumnCoordinate>(),
+            new HashSet<ColumnCoordinate>(),
+            new HashSet<ColumnCoordinate>(),
+            new HashSet<ColumnCoordinate>());
+
+        var decision = evaluator.Evaluate(entity, mandatoryAttribute, coordinate);
+
+        Assert.False(decision.MakeNotNull);
+        Assert.False(decision.RequiresRemediation);
+        Assert.Contains(TighteningRationales.NullabilityOverride, decision.Rationales);
+    }
 }

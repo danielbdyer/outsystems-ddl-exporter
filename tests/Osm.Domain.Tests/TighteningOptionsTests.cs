@@ -142,4 +142,25 @@ public class TighteningOptionsTests
         var fallback = optionsResult.Value.GetEffectiveTableName("dbo", "OSUSR_RTJ_CATEGORY", null);
         Assert.Equal("CATEGORY_STATIC", fallback);
     }
+
+    [Fact]
+    public void NullabilityOverrideRule_Should_Require_Module_Entity_And_Attribute()
+    {
+        var result = NullabilityOverrideRule.Create(null, "Customer", "Email");
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "module.name.invalid");
+    }
+
+    [Fact]
+    public void NullabilityOverrideOptions_Should_Relax_Configured_Column()
+    {
+        var rule = NullabilityOverrideRule.Create("Sales", "Customer", "Email").Value;
+
+        var options = NullabilityOverrideOptions.Create(new[] { rule });
+
+        Assert.True(options.IsSuccess);
+        Assert.True(options.Value.ShouldRelax("Sales", "Customer", "Email"));
+        Assert.False(options.Value.ShouldRelax("Sales", "Customer", "Phone"));
+    }
 }
