@@ -91,7 +91,9 @@ public sealed class SchemaApplyOrchestrator
                 SafeScriptPath: safeScriptPath,
                 RemediationScriptPath: remediationPath,
                 StaticSeedScriptPaths: staticSeedPaths,
-                Duration: TimeSpan.Zero);
+                Duration: TimeSpan.Zero,
+                StaticSeedSynchronizationMode: applyOptions.StaticSeedSynchronizationMode,
+                StaticSeedValidation: StaticSeedValidationSummary.NotAttempted);
         }
 
         var applyScripts = ImmutableArray<string>.Empty;
@@ -111,16 +113,7 @@ public sealed class SchemaApplyOrchestrator
         var seedScripts = ImmutableArray<string>.Empty;
         if (applyOptions.ApplyStaticSeeds && !staticSeedPaths.IsDefaultOrEmpty)
         {
-            if (applyOptions.StaticSeedSynchronizationMode != StaticSeedSynchronizationMode.NonDestructive)
-            {
-                warningsBuilder.Add(
-                    $"Static seed synchronization mode '{applyOptions.StaticSeedSynchronizationMode}' is not supported for automated apply. Scripts were not executed.");
-                skippedBuilder.AddRange(staticSeedPaths);
-            }
-            else
-            {
-                seedScripts = staticSeedPaths;
-            }
+            seedScripts = staticSeedPaths;
         }
         else if (!staticSeedPaths.IsDefaultOrEmpty)
         {
@@ -150,7 +143,9 @@ public sealed class SchemaApplyOrchestrator
                 SafeScriptPath: safeScriptPath,
                 RemediationScriptPath: remediationPath,
                 StaticSeedScriptPaths: staticSeedPaths,
-                Duration: TimeSpan.Zero);
+                Duration: TimeSpan.Zero,
+                StaticSeedSynchronizationMode: applyOptions.StaticSeedSynchronizationMode,
+                StaticSeedValidation: StaticSeedValidationSummary.NotAttempted);
         }
 
         var connectionOptions = new SqlConnectionOptions(
@@ -164,7 +159,8 @@ public sealed class SchemaApplyOrchestrator
             connectionOptions,
             applyOptions.CommandTimeoutSeconds,
             applyScripts,
-            seedScripts);
+            seedScripts,
+            applyOptions.StaticSeedSynchronizationMode);
 
         var outcome = await _schemaDataApplier
             .ApplyAsync(applyRequest, cancellationToken)
@@ -176,6 +172,18 @@ public sealed class SchemaApplyOrchestrator
         }
 
         var value = outcome.Value;
+        if (value.StaticSeedValidation.Failed)
+        {
+            var message = value.StaticSeedValidation.FailureReason
+                ?? "Static seed validation failed.";
+            warningsBuilder.Add(message);
+
+            if (!seedScripts.IsDefaultOrEmpty)
+            {
+                skippedBuilder.AddRange(seedScripts);
+            }
+        }
+
         var metadata = new PipelineLogMetadataBuilder()
             .WithFlag("apply.enabled", true)
             .WithFlag("apply.streaming", value.StreamingEnabled)
@@ -189,7 +197,10 @@ public sealed class SchemaApplyOrchestrator
             .WithCount("contradictions.pending", build.Opportunities.ContradictionCount)
             .WithCount(
                 "staticSeeds.total",
-                staticSeedPaths.IsDefaultOrEmpty ? 0 : staticSeedPaths.Length);
+                staticSeedPaths.IsDefaultOrEmpty ? 0 : staticSeedPaths.Length)
+            .WithFlag("staticSeeds.validationAttempted", value.StaticSeedValidation.Attempted)
+            .WithFlag("staticSeeds.validationFailed", value.StaticSeedValidation.Failed)
+            .WithValue("staticSeeds.mode", applyOptions.StaticSeedSynchronizationMode.ToString());
 
         log?.Record("fullExport.apply.completed", "Schema apply completed successfully.", metadata.Build());
 
@@ -205,6 +216,8 @@ public sealed class SchemaApplyOrchestrator
             SafeScriptPath: safeScriptPath,
             RemediationScriptPath: remediationPath,
             StaticSeedScriptPaths: staticSeedPaths,
-            Duration: value.Duration);
+            Duration: value.Duration,
+            StaticSeedSynchronizationMode: applyOptions.StaticSeedSynchronizationMode,
+            StaticSeedValidation: value.StaticSeedValidation);
     }
 }

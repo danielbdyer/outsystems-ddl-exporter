@@ -153,7 +153,9 @@ public sealed class FullExportRunManifestTests
             SafeScriptPath: safeScriptPath,
             RemediationScriptPath: remediationScriptPath,
             StaticSeedScriptPaths: staticSeedPaths,
-            Duration: TimeSpan.Zero);
+            Duration: TimeSpan.Zero,
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.NonDestructive,
+            StaticSeedValidation: StaticSeedValidationSummary.NotAttempted);
 
         var applicationResult = new FullExportApplicationResult(
             build,

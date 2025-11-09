@@ -123,7 +123,9 @@ public class FullExportCommandFactoryTests
             SafeScriptPath: safeScriptPath,
             RemediationScriptPath: remediationScriptPath,
             StaticSeedScriptPaths: ImmutableArray.Create(staticSeedPath),
-            Duration: TimeSpan.Zero);
+            Duration: TimeSpan.Zero,
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.NonDestructive,
+            StaticSeedValidation: StaticSeedValidationSummary.NotAttempted);
 
         var authentication = new SqlAuthenticationSettings(null, null, null, null);
         var applyOptions = new SchemaApplyOptions(

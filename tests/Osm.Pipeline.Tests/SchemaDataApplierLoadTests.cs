@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
 using Xunit;
@@ -47,7 +48,8 @@ public sealed class SchemaDataApplierLoadTests
                 ConnectionOptions: SqlConnectionOptions.Default,
                 CommandTimeoutSeconds: 120,
                 ScriptPaths: ImmutableArray.Create(scriptPath),
-                SeedScriptPaths: ImmutableArray<string>.Empty);
+                SeedScriptPaths: ImmutableArray<string>.Empty,
+                StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.NonDestructive);
 
             var result = await applier.ApplyAsync(request, CancellationToken.None);
 

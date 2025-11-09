@@ -113,6 +113,36 @@ public class CommandConsoleTests
     }
 
     [Fact]
+    public void EmitSchemaApplySummary_IncludesStaticSeedValidationStatus()
+    {
+        var console = new TestConsole();
+
+        var applyResult = new SchemaApplyResult(
+            Attempted: true,
+            SafeScriptApplied: true,
+            StaticSeedsApplied: false,
+            AppliedScripts: ImmutableArray.Create("safe.sql"),
+            AppliedSeedScripts: ImmutableArray<string>.Empty,
+            SkippedScripts: ImmutableArray.Create("seed.sql"),
+            Warnings: ImmutableArray<string>.Empty,
+            PendingRemediationCount: 0,
+            SafeScriptPath: "safe.sql",
+            RemediationScriptPath: "remediation.sql",
+            StaticSeedScriptPaths: ImmutableArray.Create("seed.sql"),
+            Duration: TimeSpan.FromSeconds(5),
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.ValidateThenApply,
+            StaticSeedValidation: StaticSeedValidationSummary.Failure("Static entity seed data drift detected."));
+
+        CommandConsole.EmitSchemaApplySummary(console, applyResult);
+
+        var standardOutput = console.Out!.ToString() ?? string.Empty;
+        var errorOutput = console.Error!.ToString() ?? string.Empty;
+
+        Assert.Contains("Static seed mode: ValidateThenApply (validation failed)", standardOutput);
+        Assert.Contains("[validation] Static entity seed data drift detected.", errorOutput);
+    }
+
+    [Fact]
     public void EmitPipelineLog_GroupsDuplicatesAndEmitsSamples()
     {
         var console = new TestConsole();
