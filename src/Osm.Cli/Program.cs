@@ -18,6 +18,7 @@ hostBuilder.Services.AddSingleton<ModuleFilterOptionBinder>();
 hostBuilder.Services.AddSingleton<CacheOptionBinder>();
 hostBuilder.Services.AddSingleton<SqlOptionBinder>();
 hostBuilder.Services.AddSingleton<TighteningOptionBinder>();
+hostBuilder.Services.AddSingleton<SchemaApplyOptionBinder>();
 hostBuilder.Services.AddSingleton<ICommandFactory, BuildSsdtCommandFactory>();
 hostBuilder.Services.AddSingleton<ICommandFactory, FullExportCommandFactory>();
 hostBuilder.Services.AddSingleton<ICommandFactory, ProfileCommandFactory>();

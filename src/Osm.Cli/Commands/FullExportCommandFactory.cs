@@ -20,6 +20,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
     private readonly CacheOptionBinder _cacheOptionBinder;
     private readonly SqlOptionBinder _sqlOptionBinder;
     private readonly TighteningOptionBinder _tighteningBinder;
+    private readonly SchemaApplyOptionBinder _schemaApplyBinder;
 
     private readonly Option<string?> _modelOption = new("--model", "Path to an existing model JSON file to reuse.");
     private readonly Option<string?> _profileOption = new("--profile", "Path to the profiling snapshot or fixture input.");
@@ -45,7 +46,8 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         ModuleFilterOptionBinder moduleFilterBinder,
         CacheOptionBinder cacheOptionBinder,
         SqlOptionBinder sqlOptionBinder,
-        TighteningOptionBinder tighteningOptionBinder)
+        TighteningOptionBinder tighteningOptionBinder,
+        SchemaApplyOptionBinder schemaApplyOptionBinder)
         : base(scopeFactory)
     {
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
@@ -53,6 +55,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         _cacheOptionBinder = cacheOptionBinder ?? throw new ArgumentNullException(nameof(cacheOptionBinder));
         _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
         _tighteningBinder = tighteningOptionBinder ?? throw new ArgumentNullException(nameof(tighteningOptionBinder));
+        _schemaApplyBinder = schemaApplyOptionBinder ?? throw new ArgumentNullException(nameof(schemaApplyOptionBinder));
     }
 
     protected override string VerbName => FullExportVerb.VerbName;
@@ -86,6 +89,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         CommandOptionBuilder.AddCacheOptions(command, _cacheOptionBinder);
         CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
         CommandOptionBuilder.AddTighteningOptions(command, _tighteningBinder);
+        CommandOptionBuilder.AddSchemaApplyOptions(command, _schemaApplyBinder);
         return command;
     }
 
@@ -101,6 +105,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         var cache = _cacheOptionBinder.Bind(parseResult);
         var sqlOverrides = _sqlOptionBinder.Bind(parseResult);
         var tightening = _tighteningBinder.Bind(parseResult);
+        var applyOverrides = _schemaApplyBinder.Bind(parseResult);
 
         var buildOverrides = new BuildSsdtOverrides(
             parseResult.GetValueForOption(_modelOption),
@@ -133,7 +138,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         return new FullExportVerbOptions
         {
             ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
-            Overrides = new FullExportOverrides(buildOverrides, profileOverrides, extractOverrides),
+            Overrides = new FullExportOverrides(buildOverrides, profileOverrides, extractOverrides, applyOverrides),
             ModuleFilter = moduleFilter,
             Sql = sqlOverrides,
             Cache = cache,
@@ -157,6 +162,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         var extractResult = applicationResult.Extraction;
         var profileResult = applicationResult.Profile;
         var buildResult = applicationResult.Build;
+        var applyResult = applicationResult.Apply;
 
         var extractionOutput = extractResult.OutputPath ?? "model.extracted.json";
         var resolvedExtractionPath = Path.GetFullPath(extractionOutput);
@@ -179,6 +185,10 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
                 openReport,
                 context.GetCancellationToken())
             .ConfigureAwait(false);
+
+        CommandConsole.WriteLine(context.Console, string.Empty);
+        CommandConsole.WriteLine(context.Console, "Schema apply:");
+        CommandConsole.EmitSchemaApplySummary(context.Console, applyResult);
 
         return 0;
     }

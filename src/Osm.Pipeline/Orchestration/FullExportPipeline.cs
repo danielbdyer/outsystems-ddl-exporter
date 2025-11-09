@@ -61,18 +61,18 @@ public sealed record FullExportPipelineResult(
 public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineRequest, FullExportPipelineResult>
 {
     private readonly ICommandDispatcher _dispatcher;
-    private readonly ISchemaDataApplier _schemaDataApplier;
+    private readonly SchemaApplyOrchestrator _schemaApplyOrchestrator;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<FullExportPipeline> _logger;
 
     public FullExportPipeline(
         ICommandDispatcher dispatcher,
-        ISchemaDataApplier schemaDataApplier,
+        SchemaApplyOrchestrator schemaApplyOrchestrator,
         TimeProvider timeProvider,
         ILogger<FullExportPipeline> logger)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
-        _schemaDataApplier = schemaDataApplier ?? throw new ArgumentNullException(nameof(schemaDataApplier));
+        _schemaApplyOrchestrator = schemaApplyOrchestrator ?? throw new ArgumentNullException(nameof(schemaApplyOrchestrator));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -145,7 +145,9 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
                 .WithCount("opportunities.total", build.Opportunities.TotalCount)
                 .Build());
 
-        var applyResult = await ExecuteApplyAsync(build, request.ApplyOptions, log, cancellationToken).ConfigureAwait(false);
+        var applyResult = await _schemaApplyOrchestrator
+            .ExecuteAsync(build, request.ApplyOptions, log, cancellationToken)
+            .ConfigureAwait(false);
         if (applyResult.IsFailure)
         {
             LogFailure(log, "fullExport.apply.failed", "Schema apply failed.", applyResult.Errors);
@@ -156,184 +158,6 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
 
         var apply = applyResult.Value;
         return new FullExportPipelineResult(extraction, profile, build, apply, log.Build());
-    }
-
-    private async Task<Result<SchemaApplyResult>> ExecuteApplyAsync(
-        BuildSsdtPipelineResult build,
-        SchemaApplyOptions applyOptions,
-        PipelineExecutionLogBuilder log,
-        CancellationToken cancellationToken)
-    {
-        applyOptions ??= SchemaApplyOptions.Disabled;
-
-        var safeScriptPath = string.IsNullOrWhiteSpace(build.SafeScriptPath) ? null : build.SafeScriptPath;
-        var remediationPath = string.IsNullOrWhiteSpace(build.RemediationScriptPath) ? null : build.RemediationScriptPath;
-        var staticSeedPaths = build.StaticSeedScriptPaths.IsDefault
-            ? ImmutableArray<string>.Empty
-            : build.StaticSeedScriptPaths;
-
-        var warningsBuilder = ImmutableArray.CreateBuilder<string>();
-        var skippedBuilder = ImmutableArray.CreateBuilder<string>();
-
-        if (build.Opportunities.ContradictionCount > 0)
-        {
-            var message = $"{build.Opportunities.ContradictionCount} contradiction(s) require remediation before deployment.";
-            warningsBuilder.Add(message);
-            log.Record(
-                "fullExport.apply.remediationPending",
-                message,
-                new PipelineLogMetadataBuilder()
-                    .WithCount("contradictions.pending", build.Opportunities.ContradictionCount)
-                    .WithPath("paths.remediationScript", remediationPath)
-                    .Build());
-        }
-
-        if (!applyOptions.Enabled || string.IsNullOrWhiteSpace(applyOptions.ConnectionString))
-        {
-            if (!string.IsNullOrWhiteSpace(safeScriptPath))
-            {
-                skippedBuilder.Add(safeScriptPath);
-            }
-
-            if (!staticSeedPaths.IsDefaultOrEmpty)
-            {
-                skippedBuilder.AddRange(staticSeedPaths);
-            }
-
-            log.Record(
-                "fullExport.apply.skipped",
-                "Schema apply skipped (no connection configured).",
-                new PipelineLogMetadataBuilder()
-                    .WithFlag("apply.enabled", false)
-                    .WithPath("paths.safeScript", safeScriptPath)
-                    .WithPath("paths.remediationScript", remediationPath)
-                    .Build());
-
-            return new SchemaApplyResult(
-                Attempted: false,
-                SafeScriptApplied: false,
-                StaticSeedsApplied: false,
-                AppliedScripts: ImmutableArray<string>.Empty,
-                AppliedSeedScripts: ImmutableArray<string>.Empty,
-                SkippedScripts: skippedBuilder.ToImmutable(),
-                Warnings: warningsBuilder.ToImmutable(),
-                PendingRemediationCount: build.Opportunities.ContradictionCount,
-                SafeScriptPath: safeScriptPath,
-                RemediationScriptPath: remediationPath,
-                StaticSeedScriptPaths: staticSeedPaths,
-                Duration: TimeSpan.Zero);
-        }
-
-        var applyScripts = ImmutableArray<string>.Empty;
-        if (applyOptions.ApplySafeScript && !string.IsNullOrWhiteSpace(safeScriptPath))
-        {
-            applyScripts = ImmutableArray.Create(safeScriptPath);
-        }
-        else if (!string.IsNullOrWhiteSpace(safeScriptPath))
-        {
-            skippedBuilder.Add(safeScriptPath);
-        }
-        else if (applyOptions.ApplySafeScript)
-        {
-            warningsBuilder.Add("Safe script apply was requested but no safe script path was generated.");
-        }
-
-        var seedScripts = ImmutableArray<string>.Empty;
-        if (applyOptions.ApplyStaticSeeds && !staticSeedPaths.IsDefaultOrEmpty)
-        {
-            if (applyOptions.StaticSeedSynchronizationMode != StaticSeedSynchronizationMode.NonDestructive)
-            {
-                warningsBuilder.Add(
-                    $"Static seed synchronization mode '{applyOptions.StaticSeedSynchronizationMode}' is not supported for automated apply. Scripts were not executed.");
-                skippedBuilder.AddRange(staticSeedPaths);
-            }
-            else
-            {
-                seedScripts = staticSeedPaths;
-            }
-        }
-        else if (!staticSeedPaths.IsDefaultOrEmpty)
-        {
-            skippedBuilder.AddRange(staticSeedPaths);
-        }
-
-        if (applyScripts.IsDefaultOrEmpty && seedScripts.IsDefaultOrEmpty)
-        {
-            log.Record(
-                "fullExport.apply.noop",
-                "Schema apply skipped (no scripts selected).",
-                new PipelineLogMetadataBuilder()
-                    .WithFlag("apply.enabled", true)
-                    .WithPath("paths.safeScript", safeScriptPath)
-                    .WithPath("paths.remediationScript", remediationPath)
-                    .Build());
-
-            return new SchemaApplyResult(
-                Attempted: false,
-                SafeScriptApplied: false,
-                StaticSeedsApplied: false,
-                AppliedScripts: ImmutableArray<string>.Empty,
-                AppliedSeedScripts: ImmutableArray<string>.Empty,
-                SkippedScripts: skippedBuilder.ToImmutable(),
-                Warnings: warningsBuilder.ToImmutable(),
-                PendingRemediationCount: build.Opportunities.ContradictionCount,
-                SafeScriptPath: safeScriptPath,
-                RemediationScriptPath: remediationPath,
-                StaticSeedScriptPaths: staticSeedPaths,
-                Duration: TimeSpan.Zero);
-        }
-
-        var connectionOptions = new SqlConnectionOptions(
-            applyOptions.Authentication.Method,
-            applyOptions.Authentication.TrustServerCertificate,
-            applyOptions.Authentication.ApplicationName,
-            applyOptions.Authentication.AccessToken);
-
-        var applyRequest = new SchemaDataApplyRequest(
-            applyOptions.ConnectionString!,
-            connectionOptions,
-            applyOptions.CommandTimeoutSeconds,
-            applyScripts,
-            seedScripts);
-
-        var outcome = await _schemaDataApplier
-            .ApplyAsync(applyRequest, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (outcome.IsFailure)
-        {
-            return Result<SchemaApplyResult>.Failure(outcome.Errors);
-        }
-
-        var value = outcome.Value;
-        var metadata = new PipelineLogMetadataBuilder()
-            .WithFlag("apply.enabled", true)
-            .WithCount("scripts.applied", value.AppliedScripts.Length)
-            .WithCount("seeds.applied", value.AppliedSeedScripts.Length)
-            .WithCount("batches.executed", value.ExecutedBatchCount)
-            .WithMetric("duration.ms", value.Duration.TotalMilliseconds)
-            .WithPath("paths.safeScript", safeScriptPath)
-            .WithPath("paths.remediationScript", remediationPath)
-            .WithCount("contradictions.pending", build.Opportunities.ContradictionCount)
-            .WithCount(
-                "staticSeeds.total",
-                staticSeedPaths.IsDefaultOrEmpty ? 0 : staticSeedPaths.Length);
-
-        log.Record("fullExport.apply.completed", "Schema apply completed successfully.", metadata.Build());
-
-        return new SchemaApplyResult(
-            Attempted: true,
-            SafeScriptApplied: value.AppliedScripts.Length > 0,
-            StaticSeedsApplied: value.AppliedSeedScripts.Length > 0,
-            AppliedScripts: value.AppliedScripts,
-            AppliedSeedScripts: value.AppliedSeedScripts,
-            SkippedScripts: skippedBuilder.ToImmutable(),
-            Warnings: warningsBuilder.ToImmutable(),
-            PendingRemediationCount: build.Opportunities.ContradictionCount,
-            SafeScriptPath: safeScriptPath,
-            RemediationScriptPath: remediationPath,
-            StaticSeedScriptPaths: staticSeedPaths,
-            Duration: value.Duration);
     }
 
     private void LogFailure(

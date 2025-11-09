@@ -143,6 +143,15 @@ public class PipelineCommandFactorySharedTests
                     "--only-active-attributes",
                     "--mock-advanced-sql manifest.json",
                     "--extract-sql-metadata-out extract-metadata.json",
+                    "--apply",
+                    "--apply-connection-string Server=Sql01;Database=Apply;Trusted_Connection=True;",
+                    "--apply-command-timeout 90",
+                    "--apply-sql-authentication ActiveDirectoryIntegrated",
+                    "--apply-trust-server-certificate false",
+                    "--apply-application-name OsmCliApply",
+                    "--apply-access-token APPLYTOKEN",
+                    "--apply-safe-script false",
+                    "--apply-static-seeds true",
                     "--remediation-generate-pre-scripts false",
                     "--remediation-max-rows-default-backfill 250",
                     "--remediation-sentinel-numeric 999",
@@ -160,6 +169,7 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<CacheOptionBinder>();
                     services.AddSingleton<SqlOptionBinder>();
                     services.AddSingleton<TighteningOptionBinder>();
+                    services.AddSingleton<SchemaApplyOptionBinder>();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<FullExportCommandFactory>();
                 },
@@ -217,6 +227,17 @@ public class PipelineCommandFactorySharedTests
                     Assert.Equal("extracted.json", typed.Overrides.Extract.OutputPath);
                     Assert.Equal("manifest.json", typed.Overrides.Extract.MockAdvancedSqlManifest);
                     Assert.Equal("extract-metadata.json", typed.Overrides.Extract.SqlMetadataOutputPath);
+
+                    Assert.NotNull(typed.Overrides.Apply);
+                    Assert.True(typed.Overrides.Apply!.Enabled);
+                    Assert.Equal("Server=Sql01;Database=Apply;Trusted_Connection=True;", typed.Overrides.Apply.ConnectionString);
+                    Assert.Equal(90, typed.Overrides.Apply.CommandTimeoutSeconds);
+                    Assert.Equal(SqlAuthenticationMethod.ActiveDirectoryIntegrated, typed.Overrides.Apply.AuthenticationMethod);
+                    Assert.False(typed.Overrides.Apply.TrustServerCertificate);
+                    Assert.Equal("OsmCliApply", typed.Overrides.Apply.ApplicationName);
+                    Assert.Equal("APPLYTOKEN", typed.Overrides.Apply.AccessToken);
+                    Assert.False(typed.Overrides.Apply.ApplySafeScript);
+                    Assert.True(typed.Overrides.Apply.ApplyStaticSeeds);
                 })
         };
     }

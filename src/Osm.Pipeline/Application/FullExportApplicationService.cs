@@ -2,7 +2,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.Orchestration;
 
 namespace Osm.Pipeline.Application;
 
@@ -12,27 +14,32 @@ public sealed record FullExportApplicationInput(
     ModuleFilterOverrides ModuleFilter,
     SqlOptionsOverrides Sql,
     CacheOptionsOverrides Cache,
-    TighteningOverrides? TighteningOverrides = null);
+    TighteningOverrides? TighteningOverrides = null,
+    SchemaApplyOverrides? ApplyOverrides = null);
 
 public sealed record FullExportApplicationResult(
     BuildSsdtApplicationResult Build,
     CaptureProfileApplicationResult Profile,
-    ExtractModelApplicationResult Extraction);
+    ExtractModelApplicationResult Extraction,
+    SchemaApplyResult Apply);
 
 public sealed class FullExportApplicationService : PipelineApplicationServiceBase, IApplicationService<FullExportApplicationInput, FullExportApplicationResult>
 {
     private readonly IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult> _profileService;
     private readonly IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult> _extractService;
     private readonly IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult> _buildService;
+    private readonly SchemaApplyOrchestrator _schemaApplyOrchestrator;
 
     public FullExportApplicationService(
         IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult> profileService,
         IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult> extractService,
-        IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult> buildService)
+        IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult> buildService,
+        SchemaApplyOrchestrator schemaApplyOrchestrator)
     {
         _profileService = profileService ?? throw new ArgumentNullException(nameof(profileService));
         _extractService = extractService ?? throw new ArgumentNullException(nameof(extractService));
         _buildService = buildService ?? throw new ArgumentNullException(nameof(buildService));
+        _schemaApplyOrchestrator = schemaApplyOrchestrator ?? throw new ArgumentNullException(nameof(schemaApplyOrchestrator));
     }
 
     public async Task<Result<FullExportApplicationResult>> RunAsync(
@@ -132,7 +139,19 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             return Result<FullExportApplicationResult>.Failure(buildResult.Errors);
         }
 
-        return new FullExportApplicationResult(buildResult.Value, profile, extraction);
+        var applyOverrides = input.ApplyOverrides ?? overrides.Apply ?? SchemaApplyOverrides.Empty;
+        var applyOptions = ResolveSchemaApplyOptions(configurationContext, input.Sql, applyOverrides);
+
+        var applyResult = await _schemaApplyOrchestrator
+            .ExecuteAsync(buildResult.Value.PipelineResult, applyOptions, log: null, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (applyResult.IsFailure)
+        {
+            return Result<FullExportApplicationResult>.Failure(applyResult.Errors);
+        }
+
+        return new FullExportApplicationResult(buildResult.Value, profile, extraction, applyResult.Value);
     }
 
     private static string? ResolveModelPath(
@@ -151,5 +170,74 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         }
 
         return extraction.OutputPath;
+    }
+
+    private static SchemaApplyOptions ResolveSchemaApplyOptions(
+        CliConfigurationContext configurationContext,
+        SqlOptionsOverrides sqlOverrides,
+        SchemaApplyOverrides applyOverrides)
+    {
+        if (configurationContext is null)
+        {
+            throw new ArgumentNullException(nameof(configurationContext));
+        }
+
+        if (sqlOverrides is null)
+        {
+            throw new ArgumentNullException(nameof(sqlOverrides));
+        }
+
+        applyOverrides ??= SchemaApplyOverrides.Empty;
+
+        var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
+        var sqlConfiguration = configuration.Sql ?? SqlConfiguration.Empty;
+
+        var connectionString = applyOverrides.ConnectionString
+            ?? sqlOverrides.ConnectionString
+            ?? sqlConfiguration.ConnectionString;
+
+        var commandTimeout = applyOverrides.CommandTimeoutSeconds
+            ?? sqlOverrides.CommandTimeoutSeconds
+            ?? sqlConfiguration.CommandTimeoutSeconds;
+
+        var authenticationConfiguration = sqlConfiguration.Authentication ?? SqlAuthenticationConfiguration.Empty;
+        var authenticationMethod = applyOverrides.AuthenticationMethod
+            ?? sqlOverrides.AuthenticationMethod
+            ?? authenticationConfiguration.Method;
+        var trustServerCertificate = applyOverrides.TrustServerCertificate
+            ?? sqlOverrides.TrustServerCertificate
+            ?? authenticationConfiguration.TrustServerCertificate;
+        var applicationName = applyOverrides.ApplicationName
+            ?? sqlOverrides.ApplicationName
+            ?? authenticationConfiguration.ApplicationName;
+        var accessToken = applyOverrides.AccessToken
+            ?? sqlOverrides.AccessToken
+            ?? authenticationConfiguration.AccessToken;
+
+        var enabled = applyOverrides.Enabled;
+        enabled ??= !string.IsNullOrWhiteSpace(connectionString);
+
+        if (!enabled.Value || string.IsNullOrWhiteSpace(connectionString))
+        {
+            return SchemaApplyOptions.Disabled;
+        }
+
+        var safeScript = applyOverrides.ApplySafeScript ?? true;
+        var staticSeeds = applyOverrides.ApplyStaticSeeds ?? true;
+
+        var authentication = new SqlAuthenticationSettings(
+            authenticationMethod,
+            trustServerCertificate,
+            applicationName,
+            accessToken);
+
+        return new SchemaApplyOptions(
+            Enabled: true,
+            ConnectionString: connectionString,
+            Authentication: authentication,
+            CommandTimeoutSeconds: commandTimeout,
+            ApplySafeScript: safeScript,
+            ApplyStaticSeeds: staticSeeds,
+            StaticSeedSynchronizationMode.NonDestructive);
     }
 }

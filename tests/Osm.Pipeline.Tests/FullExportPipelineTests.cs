@@ -39,7 +39,8 @@ public sealed class FullExportPipelineTests
     {
         var dispatcher = new StubCommandDispatcher();
         var schemaApplier = new FakeSchemaDataApplier();
-        var pipeline = new FullExportPipeline(dispatcher, schemaApplier, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, captureResult) = CreateCaptureArtifacts();
@@ -87,7 +88,8 @@ public sealed class FullExportPipelineTests
                 ExecutedBatchCount: 3,
                 Duration: TimeSpan.FromMilliseconds(125)))
         };
-        var pipeline = new FullExportPipeline(dispatcher, schemaApplier, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, captureResult) = CreateCaptureArtifacts();
@@ -129,7 +131,8 @@ public sealed class FullExportPipelineTests
     {
         var dispatcher = new StubCommandDispatcher();
         var schemaApplier = new FakeSchemaDataApplier();
-        var pipeline = new FullExportPipeline(dispatcher, schemaApplier, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
 
         var (extractRequest, extractBase) = CreateExtractionArtifacts();
         var extractionResult = new ModelExtractionResult(
@@ -212,7 +215,8 @@ public sealed class FullExportPipelineTests
     {
         var dispatcher = new StubCommandDispatcher();
         var schemaApplier = new FakeSchemaDataApplier();
-        var pipeline = new FullExportPipeline(dispatcher, schemaApplier, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, _) = CreateCaptureArtifacts();

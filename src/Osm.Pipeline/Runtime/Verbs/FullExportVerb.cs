@@ -69,7 +69,8 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             options.ModuleFilter,
             options.Sql,
             options.Cache,
-            options.Tightening);
+            options.Tightening,
+            overrides.Apply);
 
         var applicationResult = await _applicationService
             .RunAsync(input, cancellationToken)
@@ -191,6 +192,10 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             builder["profile.profilerProvider"] = application.Profile.ProfilerProvider;
             builder["extract.outputPath"] = application.Extraction.OutputPath;
             builder["extract.extractedAtUtc"] = application.Extraction.ExtractionResult.ExtractedAtUtc.ToString("O", CultureInfo.InvariantCulture);
+            builder["apply.attempted"] = application.Apply.Attempted.ToString(CultureInfo.InvariantCulture);
+            builder["apply.safeScriptApplied"] = application.Apply.SafeScriptApplied.ToString(CultureInfo.InvariantCulture);
+            builder["apply.staticSeedsApplied"] = application.Apply.StaticSeedsApplied.ToString(CultureInfo.InvariantCulture);
+            builder["apply.pendingRemediationCount"] = application.Apply.PendingRemediationCount.ToString(CultureInfo.InvariantCulture);
         }
 
         return builder.ToImmutable();
