@@ -135,7 +135,7 @@ public sealed class FullExportApplicationServiceTests
             ModelPath: "model.json",
             ProfilePath: "profile.json",
             ProfilerProvider: "fixture",
-            ModuleFilter: new CaptureProfileModuleSummary(false, Array.Empty<string>(), includeSystemModules: true, includeInactiveModules: true),
+            ModuleFilter: new CaptureProfileModuleSummary(false, Array.Empty<string>(), IncludeSystemModules: true, IncludeInactiveModules: true),
             SupplementalModels: new CaptureProfileSupplementalSummary(false, Array.Empty<string>()),
             Snapshot: new CaptureProfileSnapshotSummary(0, 0, 0, 0, 0),
             Insights: Array.Empty<CaptureProfileInsight>(),
@@ -147,7 +147,7 @@ public sealed class FullExportApplicationServiceTests
             ProfilePath: "profile.json",
             ManifestPath: "manifest.json",
             Insights: ImmutableArray<ProfilingInsight>.Empty,
-            ExecutionLog: new PipelineExecutionLog(Array.Empty<PipelineExecutionLogEntry>()),
+            ExecutionLog: PipelineExecutionLog.Empty,
             Warnings: ImmutableArray<string>.Empty,
             MultiEnvironmentReport: null);
     }
@@ -181,12 +181,21 @@ public sealed class FullExportApplicationServiceTests
             SsdtCoverageSummary.CreateComplete(0, 0, 0),
             SsdtPredicateCoverage.Empty,
             Array.Empty<string>());
+        var opportunities = new Opportunities.OpportunitiesReport(
+            ImmutableArray<Opportunities.Opportunity>.Empty,
+            ImmutableDictionary<Opportunities.OpportunityDisposition, int>.Empty,
+            ImmutableDictionary<Opportunities.OpportunityCategory, int>.Empty,
+            ImmutableDictionary<Opportunities.OpportunityType, int>.Empty,
+            ImmutableDictionary<RiskLevel, int>.Empty,
+            DateTimeOffset.UtcNow);
+        var validations = ValidationReport.Empty(DateTimeOffset.UtcNow);
+
         var pipelineResult = new BuildSsdtPipelineResult(
             profileSnapshot,
             ImmutableArray<ProfilingInsight>.Empty,
             decisionReport,
-            Opportunities.OpportunitiesReport.Empty,
-            ValidationReport.Empty,
+            opportunities,
+            validations,
             manifest,
             ImmutableDictionary<string, ModuleManifestRollup>.Empty,
             ImmutableArray<PipelineInsight>.Empty,
@@ -202,7 +211,9 @@ public sealed class FullExportApplicationServiceTests
             TelemetryPackagePaths: ImmutableArray<string>.Empty,
             SsdtSqlValidationSummary.Empty,
             EvidenceCache: null,
-            ExecutionLog: new PipelineExecutionLog(Array.Empty<PipelineExecutionLogEntry>()),
+            ExecutionLog: PipelineExecutionLog.Empty,
+            StaticSeedTopologicalOrderApplied: false,
+            DynamicInsertTopologicalOrderApplied: false,
             Warnings: ImmutableArray<string>.Empty,
             MultiEnvironmentReport: null);
 
@@ -260,12 +271,13 @@ public sealed class FullExportApplicationServiceTests
 
     private sealed class StubSchemaDataApplier : ISchemaDataApplier
     {
-        public Task<Result<SchemaApplyOutcome>> ApplyAsync(SchemaApplyRequest request, CancellationToken cancellationToken = default)
-            => Task.FromResult(Result<SchemaApplyOutcome>.Success(new SchemaApplyOutcome(
+        public Task<Result<SchemaDataApplyOutcome>> ApplyAsync(
+            SchemaDataApplyRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<SchemaDataApplyOutcome>.Success(new SchemaDataApplyOutcome(
                 ImmutableArray<string>.Empty,
                 ImmutableArray<string>.Empty,
-                ImmutableArray<string>.Empty,
-                ImmutableArray<string>.Empty,
+                ExecutedBatchCount: 0,
                 TimeSpan.Zero)));
     }
 

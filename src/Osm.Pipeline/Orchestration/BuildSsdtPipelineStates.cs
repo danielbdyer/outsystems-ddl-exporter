@@ -83,7 +83,8 @@ public record StaticSeedsGenerated(
     OpportunityArtifacts OpportunityArtifacts,
     SsdtSqlValidationSummary SqlValidation,
     ImmutableArray<string> StaticSeedScriptPaths,
-    ImmutableArray<StaticEntityTableData> StaticSeedData)
+    ImmutableArray<StaticEntityTableData> StaticSeedData,
+    bool StaticSeedTopologicalOrderApplied)
     : SqlValidated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation);
 
 public record DynamicInsertsGenerated(
@@ -102,8 +103,10 @@ public record DynamicInsertsGenerated(
     SsdtSqlValidationSummary SqlValidation,
     ImmutableArray<string> StaticSeedScriptPaths,
     ImmutableArray<StaticEntityTableData> StaticSeedData,
-    ImmutableArray<string> DynamicInsertScriptPaths)
-    : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation, StaticSeedScriptPaths, StaticSeedData);
+    ImmutableArray<string> DynamicInsertScriptPaths,
+    bool StaticSeedTopologicalOrderApplied,
+    bool DynamicInsertTopologicalOrderApplied)
+    : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation, StaticSeedScriptPaths, StaticSeedData, StaticSeedTopologicalOrderApplied);
 
 public record TelemetryPackaged(
     BuildSsdtPipelineRequest Request,
@@ -122,5 +125,7 @@ public record TelemetryPackaged(
     ImmutableArray<string> StaticSeedScriptPaths,
     ImmutableArray<StaticEntityTableData> StaticSeedData,
     ImmutableArray<string> DynamicInsertScriptPaths,
+    bool StaticSeedTopologicalOrderApplied,
+    bool DynamicInsertTopologicalOrderApplied,
     ImmutableArray<string> TelemetryPackagePaths)
-    : DynamicInsertsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths);
+    : DynamicInsertsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, StaticSeedTopologicalOrderApplied, DynamicInsertTopologicalOrderApplied);

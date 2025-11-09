@@ -54,7 +54,8 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                 state.OpportunityArtifacts,
                 state.SqlValidation,
                 ImmutableArray<string>.Empty,
-                ImmutableArray<StaticEntityTableData>.Empty));
+                ImmutableArray<StaticEntityTableData>.Empty,
+                StaticSeedTopologicalOrderApplied: false));
         }
 
         if (state.Request.StaticDataProvider is null)
@@ -73,6 +74,8 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         }
 
         var deterministicData = StaticEntitySeedDeterminizer.Normalize(staticDataResult.Value);
+        var orderedData = StaticEntityDependencySorter.SortByForeignKeys(deterministicData, model);
+        var topologicalOrderingApplied = model is not null && !orderedData.IsDefaultOrEmpty;
         var seedOptions = state.Request.Scope.TighteningOptions.Emission.StaticSeeds;
         var seedsRoot = state.Request.SeedOutputDirectoryHint;
         if (string.IsNullOrWhiteSpace(seedsRoot))
@@ -85,17 +88,19 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
 
         if (seedOptions.GroupByModule)
         {
-            var grouped = deterministicData
-                .GroupBy(table => table.Definition.Module, StringComparer.OrdinalIgnoreCase)
-                .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
+            var modules = orderedData
+                .Select(table => table.Definition.Module)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 
             var usedModuleNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var group in grouped)
+            foreach (var moduleName in modules)
             {
                 var sanitizedModule = state.Request.Scope.SmoOptions.SanitizeModuleNames
-                    ? ModuleNameSanitizer.Sanitize(group.Key)
-                    : group.Key;
+                    ? ModuleNameSanitizer.Sanitize(moduleName)
+                    : moduleName;
 
                 var moduleDirectoryName = sanitizedModule;
                 if (!usedModuleNames.Add(moduleDirectoryName))
@@ -110,9 +115,9 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                     {
                         state.Log.Record(
                             "staticData.seed.moduleNameRemapped",
-                            $"Sanitized module name '{sanitizedModule}' for module '{group.Key}' collided with another module. Remapped to '{moduleDirectoryName}'.",
+                            $"Sanitized module name '{sanitizedModule}' for module '{moduleName}' collided with another module. Remapped to '{moduleDirectoryName}'.",
                             new PipelineLogMetadataBuilder()
-                                .WithValue("module.originalName", group.Key)
+                                .WithValue("module.originalName", moduleName)
                                 .WithValue("module.sanitizedName", sanitizedModule)
                                 .WithValue("module.disambiguatedName", moduleDirectoryName)
                                 .Build());
@@ -122,14 +127,13 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                 var moduleDirectory = Path.Combine(seedsRoot!, moduleDirectoryName);
                 Directory.CreateDirectory(moduleDirectory);
 
-                var moduleTables = group
-                    .OrderBy(table => table.Definition.LogicalName, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(table => table.Definition.EffectiveName, StringComparer.OrdinalIgnoreCase)
+                var moduleTables = orderedData
+                    .Where(table => string.Equals(table.Definition.Module, moduleName, StringComparison.OrdinalIgnoreCase))
                     .ToArray();
 
                 var modulePath = Path.Combine(moduleDirectory, "StaticEntities.seed.sql");
                 await _seedGenerator
-                    .WriteAsync(modulePath, moduleTables, seedOptions.SynchronizationMode, cancellationToken)
+                    .WriteAsync(modulePath, moduleTables, seedOptions.SynchronizationMode, model, cancellationToken)
                     .ConfigureAwait(false);
                 seedPathBuilder.Add(modulePath);
             }
@@ -138,7 +142,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
             {
                 var masterPath = Path.Combine(seedsRoot!, "StaticEntities.seed.sql");
                 await _seedGenerator
-                    .WriteAsync(masterPath, deterministicData, seedOptions.SynchronizationMode, cancellationToken)
+                    .WriteAsync(masterPath, orderedData, seedOptions.SynchronizationMode, model, cancellationToken)
                     .ConfigureAwait(false);
                 seedPathBuilder.Add(masterPath);
             }
@@ -147,7 +151,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         {
             var seedPath = Path.Combine(seedsRoot!, "StaticEntities.seed.sql");
             await _seedGenerator
-                .WriteAsync(seedPath, deterministicData, seedOptions.SynchronizationMode, cancellationToken)
+                .WriteAsync(seedPath, orderedData, seedOptions.SynchronizationMode, model, cancellationToken)
                 .ConfigureAwait(false);
             seedPathBuilder.Add(seedPath);
         }
@@ -178,6 +182,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
             state.OpportunityArtifacts,
             state.SqlValidation,
             seedPaths,
-            deterministicData));
+            orderedData,
+            topologicalOrderingApplied));
     }
 }

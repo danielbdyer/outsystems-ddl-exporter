@@ -195,6 +195,7 @@ public sealed record FullExportRunManifest(
                 artifacts["staticSeedRoot"] = staticSeedRoot;
             }
         }
+        artifacts["staticSeedOrdering"] = pipelineResult.StaticSeedTopologicalOrderApplied ? "topological" : "alphabetical";
 
         if (!pipelineResult.DynamicInsertScriptPaths.IsDefaultOrEmpty)
         {
@@ -205,6 +206,7 @@ public sealed record FullExportRunManifest(
                 artifacts["dynamicInsertRoot"] = dynamicInsertRoot;
             }
         }
+        artifacts["dynamicInsertOrdering"] = pipelineResult.DynamicInsertTopologicalOrderApplied ? "topological" : "alphabetical";
 
         if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty)
         {

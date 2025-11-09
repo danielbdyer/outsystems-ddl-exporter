@@ -138,6 +138,89 @@ public class StaticEntitySeedScriptGeneratorTests
     }
 
     [Fact]
+    public void Generate_OrdersTablesUsingForeignKeyDependencies()
+    {
+        var parentDefinition = new StaticEntitySeedTableDefinition(
+            Module: "Sample",
+            LogicalName: "Parent",
+            Schema: "dbo",
+            PhysicalName: "OSUSR_SAMPLE_PARENT",
+            EffectiveName: "OSUSR_SAMPLE_PARENT",
+            Columns: ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
+                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+
+        var childDefinition = new StaticEntitySeedTableDefinition(
+            Module: "Sample",
+            LogicalName: "Child",
+            Schema: "dbo",
+            PhysicalName: "OSUSR_SAMPLE_CHILD",
+            EffectiveName: "OSUSR_SAMPLE_CHILD",
+            Columns: ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "Identifier", null, null, null, IsPrimaryKey: false, IsIdentity: false),
+                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+
+        var tables = ImmutableArray.Create(
+            StaticEntityTableData.Create(childDefinition, ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, 1, "Child" }))),
+            StaticEntityTableData.Create(parentDefinition, ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, "Parent" }))));
+
+        var parentEntity = CreateEntity("Sample", "Parent", "OSUSR_SAMPLE_PARENT", "dbo",
+            CreateAttribute("Id", "ID", isIdentifier: true),
+            CreateAttribute("Name", "NAME"));
+
+        var childRelationship = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_CHILD_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_PARENT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[]
+                    {
+                        RelationshipActualConstraintColumn.Create("PARENTID", "ParentId", "ID", "Id", 0)
+                    })
+            }).Value;
+
+        var childEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Child"),
+            new TableName("OSUSR_SAMPLE_CHILD"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true),
+                CreateAttribute("ParentId", "PARENTID"),
+                CreateAttribute("Name", "NAME")
+            },
+            relationships: new[] { childRelationship }).Value;
+
+        var module = ModuleModel.Create(new ModuleName("Sample"), isSystemModule: false, isActive: true, entities: new[] { parentEntity, childEntity }).Value;
+        var model = CreateModel(module);
+        var generator = CreateGenerator();
+
+        var script = generator.Generate(tables, StaticSeedSynchronizationMode.NonDestructive, model);
+
+        var parentIndex = script.IndexOf("-- Entity: Parent", StringComparison.Ordinal);
+        var childIndex = script.IndexOf("-- Entity: Child", StringComparison.Ordinal);
+
+        Assert.True(parentIndex >= 0, "Parent entity block was not found in generated script.");
+        Assert.True(childIndex >= 0, "Child entity block was not found in generated script.");
+        Assert.True(parentIndex < childIndex, "Parent entity should be scripted before child entity when honoring foreign key dependencies.");
+    }
+
+    [Fact]
     public void DefinitionBuilder_UsesEmissionSnapshotFiltering()
     {
         var identifier = CreateAttribute("Id", "ID", isIdentifier: true);

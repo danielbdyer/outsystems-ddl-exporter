@@ -1,8 +1,11 @@
+using System;
 using System.Collections.Immutable;
 using System.Linq;
 using Osm.Emission;
 using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
+using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 using Xunit;
 
 namespace Osm.Emission.Tests;
@@ -103,6 +106,87 @@ public sealed class DynamicEntityInsertGeneratorTests
         Assert.Equal("Beta", scripts[1].Definition.Module);
     }
 
+    [Fact]
+    public void GenerateScripts_OrdersTablesByForeignKeyDependencies()
+    {
+        var parentDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Parent",
+            "dbo",
+            "OSUSR_SAMPLE_PARENT",
+            "OSUSR_SAMPLE_PARENT",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false)));
+
+        var childDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Child",
+            "dbo",
+            "OSUSR_SAMPLE_CHILD",
+            "OSUSR_SAMPLE_CHILD",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "Identifier", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
+
+        var dataset = new DynamicEntityDataset(ImmutableArray.Create(
+            new StaticEntityTableData(childDefinition, ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, 1 }))),
+            new StaticEntityTableData(parentDefinition, ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1 })))));
+
+        var parentEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { CreateAttribute("Id", "ID", isIdentifier: true) }).Value;
+
+        var relationship = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_CHILD_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_PARENT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("PARENTID", "ParentId", "ID", "Id", 0) })
+            }).Value;
+
+        var childEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Child"),
+            new TableName("OSUSR_SAMPLE_CHILD"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true),
+                CreateAttribute("ParentId", "PARENTID")
+            },
+            relationships: new[] { relationship }).Value;
+
+        var module = ModuleModel.Create(new ModuleName("Sample"), isSystemModule: false, isActive: true, entities: new[] { parentEntity, childEntity }).Value;
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var generator = new DynamicEntityInsertGenerator(Formatter);
+        var scripts = generator.GenerateScripts(dataset, ImmutableArray<StaticEntityTableData>.Empty, model: model);
+
+        Assert.Equal(2, scripts.Length);
+        Assert.Equal("Parent", scripts[0].Definition.LogicalName);
+        Assert.Equal("Child", scripts[1].Definition.LogicalName);
+    }
+
     private static StaticEntitySeedTableDefinition CreateDefinition(
         string module,
         string schema,
@@ -139,5 +223,20 @@ public sealed class DynamicEntityInsertGeneratorTests
             physicalName,
             logicalName,
             columns);
+    }
+
+    private static AttributeModel CreateAttribute(string logicalName, string columnName, bool isIdentifier = false)
+    {
+        return AttributeModel.Create(
+            new AttributeName(logicalName),
+            new ColumnName(columnName),
+            dataType: "INT",
+            isMandatory: isIdentifier,
+            isIdentifier: isIdentifier,
+            isAutoNumber: false,
+            isActive: true,
+            reality: new AttributeReality(null, null, null, null, IsPresentButInactive: false),
+            metadata: AttributeMetadata.Empty,
+            onDisk: AttributeOnDiskMetadata.Empty).Value;
     }
 }

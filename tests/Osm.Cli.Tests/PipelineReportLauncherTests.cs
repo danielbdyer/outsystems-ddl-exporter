@@ -276,6 +276,8 @@ public class PipelineReportLauncherTests
             sqlSummary,
             null,
             PipelineExecutionLog.Empty,
+            StaticSeedTopologicalOrderApplied: false,
+            DynamicInsertTopologicalOrderApplied: false,
             ImmutableArray<string>.Empty,
             MultiEnvironmentProfileReport.Empty);
 

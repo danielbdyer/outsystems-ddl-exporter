@@ -27,6 +27,12 @@ public sealed class StaticEntitySeedScriptGenerator
     public string Generate(
         IReadOnlyList<StaticEntityTableData> tables,
         StaticSeedSynchronizationMode synchronizationMode)
+        => Generate(tables, synchronizationMode, model: null);
+
+    public string Generate(
+        IReadOnlyList<StaticEntityTableData> tables,
+        StaticSeedSynchronizationMode synchronizationMode,
+        OsmModel? model)
     {
         if (tables is null)
         {
@@ -38,11 +44,11 @@ public sealed class StaticEntitySeedScriptGenerator
             return _templateService.ApplyBlocks("-- No static entities were discovered in the supplied model." + Environment.NewLine);
         }
 
-        var ordered = tables
-            .OrderBy(t => t.Definition.Module, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(t => t.Definition.LogicalName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(t => t.Definition.EffectiveName, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var ordered = StaticEntityDependencySorter.SortByForeignKeys(tables, model);
+        if (ordered.IsDefaultOrEmpty)
+        {
+            return _templateService.ApplyBlocks("-- No static entities were discovered in the supplied model." + Environment.NewLine);
+        }
 
         var builder = new StringBuilder();
         for (var i = 0; i < ordered.Length; i++)
@@ -58,10 +64,18 @@ public sealed class StaticEntitySeedScriptGenerator
         return _templateService.ApplyBlocks(builder.ToString());
     }
 
+    public Task WriteAsync(
+        string path,
+        IReadOnlyList<StaticEntityTableData> tables,
+        StaticSeedSynchronizationMode synchronizationMode,
+        CancellationToken cancellationToken = default)
+        => WriteAsync(path, tables, synchronizationMode, model: null, cancellationToken);
+
     public async Task WriteAsync(
         string path,
         IReadOnlyList<StaticEntityTableData> tables,
         StaticSeedSynchronizationMode synchronizationMode,
+        OsmModel? model,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -69,7 +83,7 @@ public sealed class StaticEntitySeedScriptGenerator
             throw new ArgumentException("Seed output path must be provided.", nameof(path));
         }
 
-        var script = Generate(tables, synchronizationMode);
+        var script = Generate(tables, synchronizationMode, model);
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? Directory.GetCurrentDirectory());
         await File.WriteAllTextAsync(path, script, Utf8NoBom, cancellationToken).ConfigureAwait(false);
     }
