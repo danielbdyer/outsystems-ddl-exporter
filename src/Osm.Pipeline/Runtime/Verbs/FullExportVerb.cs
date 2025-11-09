@@ -183,7 +183,28 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
         {
             var uatRoot = Path.Combine(uatContext.Artifacts.Root, "uat-users");
             artifacts.Add(new PipelineArtifact("uat-users-root", uatRoot));
-            artifacts.Add(new PipelineArtifact("uat-users-map", uatContext.UserMapPath, "text/csv"));
+            if (!string.IsNullOrWhiteSpace(uatContext.UserMapPath))
+            {
+                artifacts.Add(new PipelineArtifact("uat-users-map", uatContext.UserMapPath, "text/csv"));
+            }
+
+            var defaultMapPath = uatContext.Artifacts.GetDefaultUserMapPath();
+            if (!string.IsNullOrWhiteSpace(defaultMapPath))
+            {
+                artifacts.Add(new PipelineArtifact("uat-users-map-default", defaultMapPath, "text/csv"));
+            }
+
+            var templatePath = Path.Combine(uatRoot, "00_user_map.template.csv");
+            artifacts.Add(new PipelineArtifact("uat-users-map-template", templatePath, "text/csv"));
+
+            var previewPath = Path.Combine(uatRoot, "01_preview.csv");
+            artifacts.Add(new PipelineArtifact("uat-users-preview", previewPath, "text/csv"));
+
+            var scriptPath = Path.Combine(uatRoot, "02_apply_user_remap.sql");
+            artifacts.Add(new PipelineArtifact("uat-users-script", scriptPath, "application/sql"));
+
+            var catalogPath = Path.Combine(uatRoot, "03_catalog.txt");
+            artifacts.Add(new PipelineArtifact("uat-users-catalog", catalogPath, "text/plain"));
         }
 
         if (!string.IsNullOrWhiteSpace(build.OutputDirectory))
@@ -234,9 +255,47 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             builder["uatUsers.enabled"] = application.UatUsers.Executed ? "true" : "false";
             if (application.UatUsers.Executed && application.UatUsers.Context is { } uatContext)
             {
+                var uatRoot = Path.Combine(uatContext.Artifacts.Root, "uat-users");
                 builder["uatUsers.allowedCount"] = uatContext.AllowedUserIds.Count.ToString(CultureInfo.InvariantCulture);
                 builder["uatUsers.orphanCount"] = uatContext.OrphanUserIds.Count.ToString(CultureInfo.InvariantCulture);
                 builder["uatUsers.userMapPath"] = uatContext.UserMapPath;
+                builder["uatUsers.artifactRoot"] = uatRoot;
+                builder["uatUsers.userMapTemplatePath"] = Path.Combine(uatRoot, "00_user_map.template.csv");
+                builder["uatUsers.previewPath"] = Path.Combine(uatRoot, "01_preview.csv");
+                builder["uatUsers.applyScriptPath"] = Path.Combine(uatRoot, "02_apply_user_remap.sql");
+                builder["uatUsers.catalogPath"] = Path.Combine(uatRoot, "03_catalog.txt");
+                var defaultMapPath = uatContext.Artifacts.GetDefaultUserMapPath();
+                if (!string.IsNullOrWhiteSpace(defaultMapPath))
+                {
+                    builder["uatUsers.defaultUserMapPath"] = defaultMapPath;
+                }
+                if (!string.IsNullOrWhiteSpace(uatContext.AllowedUsersSqlPath))
+                {
+                    builder["uatUsers.allowedUsersSqlPath"] = uatContext.AllowedUsersSqlPath;
+                }
+                if (!string.IsNullOrWhiteSpace(uatContext.AllowedUserIdsPath))
+                {
+                    builder["uatUsers.allowedUserIdsPath"] = uatContext.AllowedUserIdsPath;
+                }
+                if (!string.IsNullOrWhiteSpace(uatContext.SnapshotPath))
+                {
+                    builder["uatUsers.snapshotPath"] = uatContext.SnapshotPath;
+                }
+                builder["uatUsers.userSchema"] = uatContext.UserSchema;
+                builder["uatUsers.userTable"] = uatContext.UserTable;
+                builder["uatUsers.userIdColumn"] = uatContext.UserIdColumn;
+                if (uatContext.IncludeColumns is { Count: > 0 } includeColumns)
+                {
+                    builder["uatUsers.includeColumns"] = string.Join(",", includeColumns
+                        .OrderBy(static column => column, StringComparer.OrdinalIgnoreCase));
+                }
+                if (!string.IsNullOrWhiteSpace(uatContext.UserEntityIdentifier))
+                {
+                    builder["uatUsers.userEntityIdentifier"] = uatContext.UserEntityIdentifier;
+                }
+                builder["uatUsers.sourceFingerprint"] = uatContext.SourceFingerprint;
+                builder["uatUsers.fromLiveMetadata"] = uatContext.FromLiveMetadata
+                    .ToString(CultureInfo.InvariantCulture);
             }
             var staticSeedRoot = FullExportRunManifest.ResolveStaticSeedRoot(buildPipeline);
             if (!string.IsNullOrWhiteSpace(staticSeedRoot))

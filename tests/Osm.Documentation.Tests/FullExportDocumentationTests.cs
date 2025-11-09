@@ -85,4 +85,28 @@ public class FullExportDocumentationTests
             "## 10.");
         Assert.Contains("Full Export Artifact Contract", ssdtSection, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Readme_quickstart_documents_full_export_uat_users_bundle()
+    {
+        var readme = DocumentationFile.Read("readme.md");
+        var quickstart = DocumentationFile.ReadSection(readme, "## 0. TL;DR Quickstart", "## 1.");
+
+        Assert.Contains("--enable-uat-users", quickstart, StringComparison.Ordinal);
+        Assert.Contains("00_user_map.template.csv", quickstart, StringComparison.Ordinal);
+        Assert.Contains("01_preview.csv", quickstart, StringComparison.Ordinal);
+        Assert.Contains("02_apply_user_remap.sql", quickstart, StringComparison.Ordinal);
+        Assert.Contains("03_catalog.txt", quickstart, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UatUsersVerbDocs_call_out_full_export_manifest_expectations()
+    {
+        var doc = DocumentationFile.Read(Path.Combine("docs", "verbs", "uat-users.md"));
+
+        Assert.Contains("--enable-uat-users", doc, StringComparison.Ordinal);
+        Assert.Contains("Stages[].Name == \"uat-users\"", doc, StringComparison.Ordinal);
+        Assert.Contains("uat-users-preview", doc, StringComparison.Ordinal);
+        Assert.Contains("uat-users-catalog", doc, StringComparison.Ordinal);
+    }
 }

@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime.Verbs;
+using Osm.Pipeline.UatUsers;
 
 namespace Osm.Pipeline.Runtime;
 
@@ -81,8 +83,18 @@ public sealed record FullExportRunManifest(
         var extractionStage = CreateExtractionStage(result.ApplicationResult.Extraction);
         var profileStage = CreateProfileStage(result.ApplicationResult.Profile);
         var buildStage = CreateBuildStage(result.ApplicationResult.Build);
+        var stagesBuilder = ImmutableArray.CreateBuilder<FullExportStageManifest>();
+        stagesBuilder.Add(extractionStage);
+        stagesBuilder.Add(profileStage);
+        stagesBuilder.Add(buildStage);
 
-        var stages = ImmutableArray.Create(extractionStage, profileStage, buildStage);
+        var uatUsersStage = CreateUatUsersStage(result.ApplicationResult.UatUsers);
+        if (uatUsersStage is not null)
+        {
+            stagesBuilder.Add(uatUsersStage);
+        }
+
+        var stages = stagesBuilder.ToImmutable();
         var warnings = stages
             .SelectMany(static stage => stage.Warnings)
             .Where(static warning => !string.IsNullOrWhiteSpace(warning))
@@ -97,6 +109,70 @@ public sealed record FullExportRunManifest(
             staticSeedArtifactsBuilder.ToImmutable(),
             includeStaticSeedsInDynamic,
             warnings);
+    }
+
+    private static FullExportStageManifest? CreateUatUsersStage(UatUsersApplicationResult result)
+    {
+        if (result is null)
+        {
+            throw new ArgumentNullException(nameof(result));
+        }
+
+        if (!result.Executed || result.Context is null)
+        {
+            return null;
+        }
+
+        var context = result.Context;
+        var artifacts = ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var uatRoot = Path.Combine(context.Artifacts.Root, "uat-users");
+
+        artifacts["enabled"] = "true";
+        artifacts["artifactRoot"] = Path.GetFullPath(uatRoot);
+        artifacts["allowedCount"] = context.AllowedUserIds.Count.ToString(CultureInfo.InvariantCulture);
+        artifacts["orphanCount"] = context.OrphanUserIds.Count.ToString(CultureInfo.InvariantCulture);
+        artifacts["userSchema"] = context.UserSchema;
+        artifacts["userTable"] = context.UserTable;
+        artifacts["userIdColumn"] = context.UserIdColumn;
+        artifacts["sourceFingerprint"] = context.SourceFingerprint;
+        artifacts["fromLiveMetadata"] = context.FromLiveMetadata.ToString(CultureInfo.InvariantCulture);
+
+        AddPathIfPresent(artifacts, "userMapPath", context.UserMapPath);
+        var defaultMapPath = context.Artifacts.GetDefaultUserMapPath();
+        AddPathIfPresent(artifacts, "defaultUserMapPath", defaultMapPath);
+        AddPathIfPresent(artifacts, "userMapTemplatePath", Path.Combine(uatRoot, "00_user_map.template.csv"));
+        AddPathIfPresent(artifacts, "previewPath", Path.Combine(uatRoot, "01_preview.csv"));
+        AddPathIfPresent(artifacts, "applyScriptPath", Path.Combine(uatRoot, "02_apply_user_remap.sql"));
+        AddPathIfPresent(artifacts, "catalogPath", Path.Combine(uatRoot, "03_catalog.txt"));
+        AddPathIfPresent(artifacts, "allowedUsersSqlPath", context.AllowedUsersSqlPath);
+        AddPathIfPresent(artifacts, "allowedUserIdsPath", context.AllowedUserIdsPath);
+        AddPathIfPresent(artifacts, "snapshotPath", context.SnapshotPath);
+
+        if (context.IncludeColumns is { Count: > 0 } includeColumns)
+        {
+            var ordered = includeColumns
+                .OrderBy(static column => column, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            artifacts["includeColumns"] = string.Join(",", ordered);
+        }
+
+        if (!string.IsNullOrWhiteSpace(context.UserEntityIdentifier))
+        {
+            artifacts["userEntityIdentifier"] = context.UserEntityIdentifier;
+        }
+
+        var warnings = result.Warnings
+            .Where(static warning => !string.IsNullOrWhiteSpace(warning))
+            .Select(static warning => warning!)
+            .ToImmutableArray();
+
+        return new FullExportStageManifest(
+            Name: "uat-users",
+            StartedAtUtc: null,
+            CompletedAtUtc: null,
+            Duration: null,
+            Warnings: warnings,
+            Artifacts: artifacts.ToImmutable());
     }
 
     private static FullExportStageManifest CreateExtractionStage(ExtractModelApplicationResult result)
