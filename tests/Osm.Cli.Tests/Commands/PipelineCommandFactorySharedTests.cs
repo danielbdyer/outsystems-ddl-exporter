@@ -7,6 +7,7 @@ using System.CommandLine.Parsing;
 using System.CommandLine.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands;
 using Osm.Cli.Commands.Binders;
@@ -102,6 +103,120 @@ public class PipelineCommandFactorySharedTests
                     Assert.Equal("config.json", typed.ConfigurationPath);
                     Assert.Equal("extracted.json", typed.Overrides.OutputPath);
                     Assert.True(typed.Overrides.OnlyActiveAttributes);
+                })
+        };
+
+        yield return new object[]
+        {
+            new PipelineCommandCase(
+                CommandName: "full-export",
+                SharedArgs: string.Join(
+                    ' ',
+                    "--config config.json",
+                    "--modules ModuleA",
+                    "--include-system-modules",
+                    "--include-inactive-modules",
+                    "--allow-missing-primary-key Module::*",
+                    "--allow-missing-schema Module::*",
+                    "--cache-root ./cache",
+                    "--refresh-cache",
+                    "--connection-string Server=Sql01;Database=Osm;Trusted_Connection=True;",
+                    "--command-timeout 120",
+                    "--sampling-threshold 5000",
+                    "--sampling-size 250",
+                    "--sql-authentication ActiveDirectoryPassword",
+                    "--sql-trust-server-certificate false",
+                    "--sql-application-name OsmCli",
+                    "--sql-access-token TOKEN",
+                    "--profiling-connection-string Perf::Server02",
+                    "--model model.json",
+                    "--profile profile.json",
+                    "--build-out ./build",
+                    "--profiler-provider fixture",
+                    "--static-data static.json",
+                    "--rename-table Module=Override",
+                    "--max-degree-of-parallelism 4",
+                    "--build-sql-metadata-out build-metadata.json",
+                    "--profile-out ./profiles",
+                    "--profile-sql-metadata-out profile-metadata.json",
+                    "--extract-out extracted.json",
+                    "--only-active-attributes",
+                    "--mock-advanced-sql manifest.json",
+                    "--extract-sql-metadata-out extract-metadata.json",
+                    "--remediation-generate-pre-scripts false",
+                    "--remediation-max-rows-default-backfill 250",
+                    "--remediation-sentinel-numeric 999",
+                    "--remediation-sentinel-text [NULL]",
+                    "--remediation-sentinel-date 2000-01-01",
+                    "--use-profile-mock-folder",
+                    "--profile-mock-folder mocks"),
+                FactoryType: typeof(FullExportCommandFactory),
+                VerbName: FullExportVerb.VerbName,
+                OptionsType: typeof(FullExportVerbOptions),
+                ConfigureServices: (services, verb) =>
+                {
+                    services.AddSingleton<CliGlobalOptions>();
+                    services.AddSingleton<ModuleFilterOptionBinder>();
+                    services.AddSingleton<CacheOptionBinder>();
+                    services.AddSingleton<SqlOptionBinder>();
+                    services.AddSingleton<TighteningOptionBinder>();
+                    services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
+                    services.AddSingleton<FullExportCommandFactory>();
+                },
+                AssertOptions: options =>
+                {
+                    var typed = Assert.IsType<FullExportVerbOptions>(options);
+                    Assert.Equal("config.json", typed.ConfigurationPath);
+
+                    Assert.Equal(new[] { "ModuleA" }, typed.ModuleFilter.Modules);
+                    Assert.True(typed.ModuleFilter.IncludeSystemModules);
+                    Assert.True(typed.ModuleFilter.IncludeInactiveModules);
+                    Assert.Equal(new[] { "Module::*" }, typed.ModuleFilter.AllowMissingPrimaryKey);
+                    Assert.Equal(new[] { "Module::*" }, typed.ModuleFilter.AllowMissingSchema);
+
+                    Assert.Equal("./cache", typed.Cache.Root);
+                    Assert.True(typed.Cache.Refresh);
+
+                    Assert.Equal("Server=Sql01;Database=Osm;Trusted_Connection=True;", typed.Sql.ConnectionString);
+                    Assert.Equal(120, typed.Sql.CommandTimeoutSeconds);
+                    Assert.Equal(5000, typed.Sql.SamplingThreshold);
+                    Assert.Equal(250, typed.Sql.SamplingSize);
+                    Assert.Equal(SqlAuthenticationMethod.ActiveDirectoryPassword, typed.Sql.AuthenticationMethod);
+                    Assert.Equal(false, typed.Sql.TrustServerCertificate);
+                    Assert.Equal("OsmCli", typed.Sql.ApplicationName);
+                    Assert.Equal("TOKEN", typed.Sql.AccessToken);
+                    Assert.Equal(new[] { "Perf::Server02" }, typed.Sql.ProfilingConnectionStrings);
+
+                    Assert.NotNull(typed.Tightening);
+                    Assert.False(typed.Tightening!.RemediationGeneratePreScripts);
+                    Assert.Equal(250, typed.Tightening.RemediationMaxRowsDefaultBackfill);
+                    Assert.True(typed.Tightening.MockingUseProfileMockFolder);
+                    Assert.Equal("mocks", typed.Tightening.MockingProfileMockFolder);
+                    Assert.Equal("999", typed.Tightening.RemediationSentinelNumeric);
+                    Assert.Equal("[NULL]", typed.Tightening.RemediationSentinelText);
+                    Assert.Equal("2000-01-01", typed.Tightening.RemediationSentinelDate);
+
+                    Assert.Equal("model.json", typed.Overrides.Build.ModelPath);
+                    Assert.Equal("profile.json", typed.Overrides.Build.ProfilePath);
+                    Assert.Equal("./build", typed.Overrides.Build.OutputDirectory);
+                    Assert.Equal("fixture", typed.Overrides.Build.ProfilerProvider);
+                    Assert.Equal("static.json", typed.Overrides.Build.StaticDataPath);
+                    Assert.Equal("Module=Override", typed.Overrides.Build.RenameOverrides);
+                    Assert.Equal(4, typed.Overrides.Build.MaxDegreeOfParallelism);
+                    Assert.Equal("build-metadata.json", typed.Overrides.Build.SqlMetadataOutputPath);
+
+                    Assert.Equal("model.json", typed.Overrides.Profile.ModelPath);
+                    Assert.Equal("./profiles", typed.Overrides.Profile.OutputDirectory);
+                    Assert.Equal("fixture", typed.Overrides.Profile.ProfilerProvider);
+                    Assert.Equal("profile.json", typed.Overrides.Profile.ProfilePath);
+                    Assert.Equal("profile-metadata.json", typed.Overrides.Profile.SqlMetadataOutputPath);
+
+                    Assert.Equal(new[] { "ModuleA" }, typed.Overrides.Extract.Modules);
+                    Assert.True(typed.Overrides.Extract.IncludeSystemModules);
+                    Assert.True(typed.Overrides.Extract.OnlyActiveAttributes);
+                    Assert.Equal("extracted.json", typed.Overrides.Extract.OutputPath);
+                    Assert.Equal("manifest.json", typed.Overrides.Extract.MockAdvancedSqlManifest);
+                    Assert.Equal("extract-metadata.json", typed.Overrides.Extract.SqlMetadataOutputPath);
                 })
         };
     }

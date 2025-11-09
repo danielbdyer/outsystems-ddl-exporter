@@ -124,6 +124,115 @@ public sealed class FullExportPipelineTests
         Assert.Contains(result.Value.ExecutionLog.Entries, entry => entry.Step == "fullExport.apply.completed");
     }
 
+    [Fact]
+    public async Task HandleAsync_records_stage_telemetry_and_artifacts()
+    {
+        var dispatcher = new StubCommandDispatcher();
+        var schemaApplier = new FakeSchemaDataApplier();
+        var pipeline = new FullExportPipeline(dispatcher, schemaApplier, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+
+        var (extractRequest, extractBase) = CreateExtractionArtifacts();
+        var extractionResult = new ModelExtractionResult(
+            extractBase.Model,
+            extractBase.JsonPayload,
+            extractBase.ExtractedAtUtc,
+            new[] { "Stale metadata snapshot." },
+            extractBase.Metadata);
+
+        var (captureRequest, captureBase) = CreateCaptureArtifacts();
+        var captureResult = new CaptureProfilePipelineResult(
+            captureBase.Profile,
+            captureBase.Manifest,
+            captureBase.ProfilePath,
+            captureBase.ManifestPath,
+            captureBase.Insights,
+            captureBase.ExecutionLog,
+            ImmutableArray.Create("Profiler fell back to cached evidence."),
+            captureBase.MultiEnvironmentReport);
+
+        var (buildRequest, buildResult) = CreateBuildArtifacts();
+
+        dispatcher.Register<ExtractModelPipelineRequest, ModelExtractionResult>((request, _) =>
+        {
+            Assert.Equal(extractRequest, request);
+            return Task.FromResult(Result<ModelExtractionResult>.Success(extractionResult));
+        });
+        dispatcher.Register<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>((request, _) =>
+        {
+            Assert.Equal(captureRequest, request);
+            return Task.FromResult(Result<CaptureProfilePipelineResult>.Success(captureResult));
+        });
+        dispatcher.Register<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>((request, _) =>
+        {
+            Assert.Equal(buildRequest, request);
+            return Task.FromResult(Result<BuildSsdtPipelineResult>.Success(buildResult));
+        });
+
+        var request = new FullExportPipelineRequest(extractRequest, captureRequest, buildRequest, SchemaApplyOptions.Disabled);
+        var outcome = await pipeline.HandleAsync(request);
+
+        Assert.True(outcome.IsSuccess);
+        var result = outcome.Value;
+        Assert.False(result.Apply.Attempted);
+        Assert.Equal(buildResult.SafeScriptPath, result.Apply.SafeScriptPath);
+        Assert.Equal(buildResult.RemediationScriptPath, result.Apply.RemediationScriptPath);
+        Assert.Equal(2, result.Apply.PendingRemediationCount);
+        Assert.Equal(new[] { SafeScriptPath, SeedScriptPath }, result.Apply.SkippedScripts);
+
+        var entries = result.ExecutionLog.Entries;
+        Assert.Contains(entries, entry => entry.Step == "fullExport.started");
+        Assert.Contains(entries, entry => entry.Step == "fullExport.completed");
+
+        var extractEntry = Assert.Single(entries.Where(entry => entry.Step == "fullExport.extract.completed"));
+        Assert.Equal("1", extractEntry.Metadata["counts.warnings"]);
+        Assert.True(extractEntry.Metadata.ContainsKey("timestamps.extractedAtUtc"));
+
+        var profileEntry = Assert.Single(entries.Where(entry => entry.Step == "fullExport.profile.completed"));
+        Assert.Equal("1", profileEntry.Metadata["counts.warnings"]);
+        Assert.Equal(captureResult.ProfilePath, profileEntry.Metadata["paths.profile.path"]);
+
+        var buildEntry = Assert.Single(entries.Where(entry => entry.Step == "fullExport.build.completed"));
+        Assert.Equal(request.Build.OutputDirectory, buildEntry.Metadata["paths.paths.output"]);
+        Assert.Equal(buildResult.SafeScriptPath, buildEntry.Metadata["paths.paths.safeScript"]);
+        Assert.Equal(buildResult.RemediationScriptPath, buildEntry.Metadata["paths.paths.remediationScript"]);
+        Assert.Equal(buildResult.Opportunities.TotalCount.ToString(), buildEntry.Metadata["counts.opportunities.total"]);
+
+        var remediationEntry = Assert.Single(entries.Where(entry => entry.Step == "fullExport.apply.remediationPending"));
+        Assert.Equal("2", remediationEntry.Metadata["counts.contradictions.pending"]);
+        Assert.Equal(buildResult.RemediationScriptPath, remediationEntry.Metadata["paths.paths.remediationScript"]);
+
+        var skippedEntry = Assert.Single(entries.Where(entry => entry.Step == "fullExport.apply.skipped"));
+        Assert.Equal("false", skippedEntry.Metadata["flags.apply.enabled"]);
+        Assert.Equal(buildResult.SafeScriptPath, skippedEntry.Metadata["paths.paths.safeScript"]);
+        Assert.Equal(buildResult.RemediationScriptPath, skippedEntry.Metadata["paths.paths.remediationScript"]);
+    }
+
+    [Fact]
+    public async Task HandleAsync_propagates_stage_errors()
+    {
+        var dispatcher = new StubCommandDispatcher();
+        var schemaApplier = new FakeSchemaDataApplier();
+        var pipeline = new FullExportPipeline(dispatcher, schemaApplier, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+
+        var (extractRequest, extractResult) = CreateExtractionArtifacts();
+        var (captureRequest, _) = CreateCaptureArtifacts();
+        var (buildRequest, _) = CreateBuildArtifacts();
+
+        dispatcher.Register<ExtractModelPipelineRequest, ModelExtractionResult>((_, _) =>
+            Task.FromResult(Result<ModelExtractionResult>.Success(extractResult)));
+
+        var failureErrors = ImmutableArray.Create(ValidationError.Create("pipeline.profile.failure", "Profiling failed."));
+        dispatcher.Register<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>((_, _) =>
+            Task.FromResult(Result<CaptureProfilePipelineResult>.Failure(failureErrors)));
+
+        var request = new FullExportPipelineRequest(extractRequest, captureRequest, buildRequest, SchemaApplyOptions.Disabled);
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(failureErrors, result.Errors);
+        Assert.Null(schemaApplier.LastRequest);
+    }
+
     private static (ExtractModelPipelineRequest Request, ModelExtractionResult Result) CreateExtractionArtifacts()
     {
         var commandResult = ModelExtractionCommand.Create(Array.Empty<string>(), includeSystemModules: true, includeInactiveModules: false, onlyActiveAttributes: true);
