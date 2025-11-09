@@ -189,7 +189,12 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         var snapshot = ProfileSnapshot.Create(new[] { profile }, Array.Empty<UniqueCandidateProfile>(), Array.Empty<CompositeUniqueCandidateProfile>(), new[] { fkReality }).Value;
         var identity = ColumnIdentity.From(sourceEntity, sourceAttribute);
 
-        var decision = ForeignKeyDecision.Create(coordinate, true, ImmutableArray<string>.Empty);
+        var decision = ForeignKeyDecision.Create(
+            coordinate,
+            createConstraint: true,
+            rationales: ImmutableArray.Create(
+                TighteningRationales.ForeignKeyEnforced,
+                TighteningRationales.PolicyEnableCreation));
         var decisions = PolicyDecisionSet.Create(
             ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
             ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty.Add(coordinate, decision),
@@ -203,12 +208,16 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         var findings = analyzer.Analyze(model, snapshot, decisions);
         var report = findings.Opportunities;
 
-        Assert.Equal(1, report.TotalCount);
-        var opportunity = Assert.Single(report.Opportunities);
-        Assert.Equal(OpportunityType.ForeignKey, opportunity.Type);
-        Assert.Equal(OpportunityDisposition.ReadyToApply, opportunity.Disposition);
-        Assert.Equal(RiskLevel.Low, opportunity.Risk.Level);
-        Assert.Contains("FOREIGN KEY", opportunity.Statements[0]);
+        Assert.Equal(0, report.TotalCount);
+        Assert.Empty(report.Opportunities);
+
+        var validations = findings.Validations;
+        Assert.Equal(1, validations.TotalCount);
+        var validation = Assert.Single(validations.Validations);
+        Assert.Equal(OpportunityType.ForeignKey, validation.Type);
+        Assert.Equal("Validated: Foreign key constraint is already being created to enforce referential integrity.", validation.Summary);
+        Assert.Equal("FK_OSUSR_ORD_ORDER_CUSTOMERID_OSUSR_CUS_CUSTOMER", validation.ConstraintName);
+        Assert.Contains(TighteningRationales.PolicyEnableCreation, validation.Rationales);
     }
 
     [Fact]

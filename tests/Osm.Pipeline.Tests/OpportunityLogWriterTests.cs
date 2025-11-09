@@ -266,7 +266,7 @@ public sealed class OpportunityLogWriterTests
         var foreignKeyValidation = new Osm.Validation.Tightening.Validations.ValidationFinding(
             Opportunities.OpportunityType.ForeignKey,
             "FOREIGN KEY",
-            "Foreign key constraint can be safely created based upon profiling evidence.",
+            "Validated: Foreign key constraint is already being created to enforce referential integrity.",
             ImmutableArray.Create(
                 "HasConstraint=true",
                 "HasOrphans=False (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",

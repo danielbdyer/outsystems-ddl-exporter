@@ -212,8 +212,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 
     private static OpportunityCategory ClassifyForeignKeyOpportunity(
         ForeignKeyDecision decision,
-        ImmutableArray<string> rationales,
-        bool hasPhysicalConstraint)
+        ImmutableArray<string> rationales)
     {
         // Contradiction: Orphaned rows detected
         if (ContainsAny(rationales, TighteningRationales.DataHasOrphans))
@@ -221,16 +220,10 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             return OpportunityCategory.Contradiction;
         }
 
-        // Validation: Already has FK constraint that profiling confirms
-        if (hasPhysicalConstraint && decision.CreateConstraint)
-        {
-            return OpportunityCategory.Validation;
-        }
-
-        // Recommendation: New FK constraint we could safely apply
+        // Validation: Constraint already exists or will be created by the tightening run
         if (decision.CreateConstraint)
         {
-            return OpportunityCategory.Recommendation;
+            return OpportunityCategory.Validation;
         }
 
         return OpportunityCategory.Unknown;
@@ -523,7 +516,6 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
     {
         var statements = BuildForeignKeyStatements(entry.Entity, entry.Attribute, targetEntity);
         var evidence = BuildForeignKeyEvidence(fkReality);
-        var hasPhysicalConstraint = fkReality?.Reference.HasDatabaseConstraint ?? entry.Attribute.Reference.HasDatabaseConstraint;
         var hasOrphans = fkReality?.HasOrphan ?? false;
 
         var disposition = hasOrphans
@@ -539,16 +531,16 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         var columns = ImmutableArray.Create(BuildColumnInsight(entry, null, null, fkReality));
         var rationales = decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales;
 
-        var category = ClassifyForeignKeyOpportunity(decision, rationales, hasPhysicalConstraint);
+        var category = ClassifyForeignKeyOpportunity(decision, rationales);
 
         var summary = category switch
         {
             OpportunityCategory.Contradiction =>
                 "DATA CONTRADICTION: Profiling found orphaned rows that violate referential integrity. Manual remediation required.",
             OpportunityCategory.Validation =>
-                "Foreign key constraint can be safely created based upon profiling evidence.",
+                "Validated: Foreign key constraint is already being created to enforce referential integrity.",
             OpportunityCategory.Recommendation when disposition == OpportunityDisposition.ReadyToApply =>
-                "Recommendation: Create foreign key constraint to enforce referential integrity.",
+                "Recommendation: Generated foreign key constraint will enforce referential integrity when applied.",
             _ => "Create foreign key constraint."
         };
 
