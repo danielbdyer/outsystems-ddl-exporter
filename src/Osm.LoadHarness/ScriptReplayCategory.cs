@@ -4,5 +4,6 @@ public enum ScriptReplayCategory
 {
     Safe,
     Remediation,
-    StaticSeed
+    StaticSeed,
+    Dynamic
 }

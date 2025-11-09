@@ -191,6 +191,17 @@ ORDER BY s.avg_fragmentation_in_percent DESC";
             }
         }
 
+        if (!options.DynamicInsertScriptPaths.IsDefaultOrEmpty)
+        {
+            foreach (var dynamic in options.DynamicInsertScriptPaths)
+            {
+                if (!string.IsNullOrWhiteSpace(dynamic))
+                {
+                    list.Add((ScriptReplayCategory.Dynamic, dynamic));
+                }
+            }
+        }
+
         return list;
     }
 

@@ -9,6 +9,7 @@ public sealed record LoadHarnessOptions(
     string? SafeScriptPath,
     string? RemediationScriptPath,
     ImmutableArray<string> StaticSeedScriptPaths,
+    ImmutableArray<string> DynamicInsertScriptPaths,
     string ReportOutputPath,
     int? CommandTimeoutSeconds)
 {
@@ -17,6 +18,7 @@ public sealed record LoadHarnessOptions(
         string? safeScriptPath,
         string? remediationScriptPath,
         IEnumerable<string>? staticSeedScriptPaths,
+        IEnumerable<string>? dynamicInsertScriptPaths,
         string? reportOutputPath,
         int? commandTimeoutSeconds)
     {
@@ -29,6 +31,10 @@ public sealed record LoadHarnessOptions(
             ? ImmutableArray<string>.Empty
             : ImmutableArray.CreateRange(staticSeedScriptPaths);
 
+        var dynamic = dynamicInsertScriptPaths is null
+            ? ImmutableArray<string>.Empty
+            : ImmutableArray.CreateRange(dynamicInsertScriptPaths);
+
         var reportPath = string.IsNullOrWhiteSpace(reportOutputPath)
             ? "load-harness.report.json"
             : reportOutputPath;
@@ -38,6 +44,7 @@ public sealed record LoadHarnessOptions(
             NormalizePath(safeScriptPath),
             NormalizePath(remediationScriptPath),
             NormalizePaths(seeds),
+            NormalizePaths(dynamic),
             reportPath,
             commandTimeoutSeconds);
     }

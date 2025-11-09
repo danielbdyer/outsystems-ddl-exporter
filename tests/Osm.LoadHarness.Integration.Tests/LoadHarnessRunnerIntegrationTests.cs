@@ -26,6 +26,7 @@ public sealed class LoadHarnessRunnerIntegrationTests : IClassFixture<SqlServerF
         using var temp = new TempDirectory();
         var safeScriptPath = _fileSystem.Path.Combine(temp.Path, "safe.sql");
         var staticSeedPath = _fileSystem.Path.Combine(temp.Path, "static-seed.sql");
+        var dynamicInsertPath = _fileSystem.Path.Combine(temp.Path, "dynamic-insert.sql");
         var reportPath = _fileSystem.Path.Combine(temp.Path, "harness-report.json");
 
         await _fileSystem.File.WriteAllTextAsync(safeScriptPath, @"IF OBJECT_ID('dbo.LoadHarness', 'U') IS NOT NULL
@@ -46,11 +47,16 @@ GO
 UPDATE dbo.LoadHarness SET Payload = Payload + N'-updated';
 GO");
 
+        await _fileSystem.File.WriteAllTextAsync(dynamicInsertPath, @"INSERT INTO dbo.LoadHarness (Payload)
+VALUES (N'delta'), (N'epsilon');
+GO");
+
         var options = LoadHarnessOptions.Create(
             _fixture.DatabaseConnectionString,
             safeScriptPath,
             remediationScriptPath: null,
             staticSeedScriptPaths: new[] { staticSeedPath },
+            dynamicInsertScriptPaths: new[] { dynamicInsertPath },
             reportOutputPath: reportPath,
             commandTimeoutSeconds: 60);
 
@@ -58,7 +64,8 @@ GO");
         var report = await runner.RunAsync(options).ConfigureAwait(false);
 
         report.TotalDuration.Should().BeGreaterThan(TimeSpan.Zero);
-        report.Scripts.Should().HaveCount(2);
+        report.Scripts.Should().HaveCount(3);
+        report.Scripts.Should().ContainSingle(s => s.Category == ScriptReplayCategory.Dynamic);
         foreach (var script in report.Scripts)
         {
             script.BatchCount.Should().BeGreaterThan(0);

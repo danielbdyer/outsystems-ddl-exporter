@@ -18,6 +18,11 @@ var staticSeedOption = new Option<string[]>(
     description: "Paths to static seed scripts to replay.")
 { AllowMultipleArgumentsPerToken = true };
 
+var dynamicInsertOption = new Option<string[]>(
+    name: "--dynamic-insert",
+    description: "Paths to dynamic insert scripts to replay.")
+{ AllowMultipleArgumentsPerToken = true };
+
 var reportOption = new Option<string?>("--report-out", () => "load-harness.report.json", "Output path for the JSON report.");
 var timeoutOption = new Option<int?>("--command-timeout", "Command timeout (seconds) for batch execution.");
 
@@ -27,6 +32,7 @@ var rootCommand = new RootCommand("Replay full-export scripts against a staging 
     safeOption,
     remediationOption,
     staticSeedOption,
+    dynamicInsertOption,
     reportOption,
     timeoutOption
 };
@@ -37,6 +43,7 @@ rootCommand.SetHandler(async context =>
     var safe = context.ParseResult.GetValueForOption(safeOption);
     var remediation = context.ParseResult.GetValueForOption(remediationOption);
     var staticSeeds = context.ParseResult.GetValueForOption(staticSeedOption) ?? Array.Empty<string>();
+    var dynamicInserts = context.ParseResult.GetValueForOption(dynamicInsertOption) ?? Array.Empty<string>();
     var reportOut = context.ParseResult.GetValueForOption(reportOption);
     var timeout = context.ParseResult.GetValueForOption(timeoutOption);
 
@@ -52,7 +59,7 @@ rootCommand.SetHandler(async context =>
     });
 
     var fileSystem = new FileSystem();
-    var options = LoadHarnessOptions.Create(connection, safe, remediation, staticSeeds, reportOut, timeout);
+    var options = LoadHarnessOptions.Create(connection, safe, remediation, staticSeeds, dynamicInserts, reportOut, timeout);
 
     var runner = new LoadHarnessRunner(fileSystem, TimeProvider.System, loggerFactory.CreateLogger<LoadHarnessRunner>());
     var report = await runner.RunAsync(options, context.GetCancellationToken()).ConfigureAwait(false);
