@@ -278,7 +278,9 @@ public sealed class FullExportApplicationServiceTests
                 ImmutableArray<string>.Empty,
                 ImmutableArray<string>.Empty,
                 ExecutedBatchCount: 0,
-                TimeSpan.Zero)));
+                TimeSpan.Zero,
+                MaxBatchSizeBytes: 0,
+                StreamingEnabled: true)));
     }
 
     private sealed class StubModelJsonDeserializer : IModelJsonDeserializer

@@ -1,9 +1,9 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data.Common;
 using System.IO;
 using System.IO.Abstractions;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,7 +25,9 @@ public sealed record SchemaDataApplyOutcome(
     ImmutableArray<string> AppliedScripts,
     ImmutableArray<string> AppliedSeedScripts,
     int ExecutedBatchCount,
-    TimeSpan Duration);
+    TimeSpan Duration,
+    long MaxBatchSizeBytes,
+    bool StreamingEnabled);
 
 public interface ISchemaDataApplier
 {
@@ -74,6 +76,7 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
 
         var startTimestamp = _timeProvider.GetTimestamp();
         var executedBatches = 0;
+        var maxBatchBytes = 0L;
 
         try
         {
@@ -85,24 +88,34 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
 
             foreach (var path in scriptPaths)
             {
-                var batches = await LoadBatchesAsync(path, cancellationToken).ConfigureAwait(false);
-                executedBatches += await ExecuteBatchesAsync(
+                var result = await ExecuteBatchesAsync(
                         connection,
-                        batches,
+                        LoadBatchesAsync(path, cancellationToken),
                         request.CommandTimeoutSeconds,
                         cancellationToken)
                     .ConfigureAwait(false);
+
+                executedBatches += result.ExecutedCount;
+                if (result.MaxBatchBytes > maxBatchBytes)
+                {
+                    maxBatchBytes = result.MaxBatchBytes;
+                }
             }
 
             foreach (var path in seedPaths)
             {
-                var batches = await LoadBatchesAsync(path, cancellationToken).ConfigureAwait(false);
-                executedBatches += await ExecuteBatchesAsync(
+                var result = await ExecuteBatchesAsync(
                         connection,
-                        batches,
+                        LoadBatchesAsync(path, cancellationToken),
                         request.CommandTimeoutSeconds,
                         cancellationToken)
                     .ConfigureAwait(false);
+
+                executedBatches += result.ExecutedCount;
+                if (result.MaxBatchBytes > maxBatchBytes)
+                {
+                    maxBatchBytes = result.MaxBatchBytes;
+                }
             }
         }
         catch (OperationCanceledException)
@@ -118,7 +131,13 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
         }
 
         var duration = _timeProvider.GetElapsedTime(startTimestamp);
-        return new SchemaDataApplyOutcome(scriptPaths, seedPaths, executedBatches, duration);
+        return new SchemaDataApplyOutcome(
+            scriptPaths,
+            seedPaths,
+            executedBatches,
+            duration,
+            maxBatchBytes,
+            StreamingEnabled: true);
     }
 
     private ImmutableArray<string> NormalizePaths(ImmutableArray<string> paths)
@@ -151,7 +170,9 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
         return await factory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<IReadOnlyList<string>> LoadBatchesAsync(string path, CancellationToken cancellationToken)
+    private async IAsyncEnumerable<string> LoadBatchesAsync(
+        string path,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!_fileSystem.File.Exists(path))
         {
@@ -161,27 +182,23 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
         await using var stream = _fileSystem.File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
 
-        var content = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
-        return SplitBatches(content);
-    }
-
-    private static IReadOnlyList<string> SplitBatches(string script)
-    {
-        var batches = new List<string>();
-        if (string.IsNullOrWhiteSpace(script))
-        {
-            return batches;
-        }
-
-        using var reader = new StringReader(script);
         var builder = new StringBuilder();
-        string? line;
 
-        while ((line = reader.ReadLine()) is not null)
+        while (true)
         {
-            if (line.Trim().Equals("GO", StringComparison.OrdinalIgnoreCase))
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (line is null)
             {
-                AppendBatch(builder, batches);
+                break;
+            }
+
+            if (line.AsSpan().Trim().Equals("GO", StringComparison.OrdinalIgnoreCase))
+            {
+                var batch = ConsumeBatch(builder);
+                if (batch is not null)
+                {
+                    yield return batch;
+                }
             }
             else
             {
@@ -189,43 +206,46 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
             }
         }
 
-        AppendBatch(builder, batches);
-        return batches;
+        var finalBatch = ConsumeBatch(builder);
+        if (finalBatch is not null)
+        {
+            yield return finalBatch;
+        }
     }
 
-    private static void AppendBatch(StringBuilder builder, ICollection<string> batches)
+    private static string? ConsumeBatch(StringBuilder builder)
     {
         if (builder.Length == 0)
         {
-            return;
+            return null;
         }
 
-        var batch = builder.ToString().Trim();
+        var batch = builder.ToString();
         builder.Clear();
 
-        if (!string.IsNullOrWhiteSpace(batch))
-        {
-            batches.Add(batch);
-        }
+        return string.IsNullOrWhiteSpace(batch) ? null : batch;
     }
 
-    private static async Task<int> ExecuteBatchesAsync(
+    private static async Task<BatchExecutionMetrics> ExecuteBatchesAsync(
         DbConnection connection,
-        IReadOnlyList<string> batches,
+        IAsyncEnumerable<string> batches,
         int? commandTimeoutSeconds,
         CancellationToken cancellationToken)
     {
-        if (batches.Count == 0)
-        {
-            return 0;
-        }
-
         var executed = 0;
-        foreach (var batch in batches)
+        var maxBatchBytes = 0L;
+
+        await foreach (var batch in batches.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             if (string.IsNullOrWhiteSpace(batch))
             {
                 continue;
+            }
+
+            var batchBytes = Encoding.UTF8.GetByteCount(batch);
+            if (batchBytes > maxBatchBytes)
+            {
+                maxBatchBytes = batchBytes;
             }
 
             await using var command = connection.CreateCommand();
@@ -240,6 +260,8 @@ public sealed class SchemaDataApplier : ISchemaDataApplier
             executed++;
         }
 
-        return executed;
+        return new BatchExecutionMetrics(executed, maxBatchBytes);
     }
+
+    private readonly record struct BatchExecutionMetrics(int ExecutedCount, long MaxBatchBytes);
 }
