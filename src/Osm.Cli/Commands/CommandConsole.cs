@@ -273,6 +273,34 @@ internal static class CommandConsole
         WriteLine(console, $"Manifest written to {pipelineResult.ManifestPath}");
     }
 
+    public static void EmitOutputRootSummary(
+        IConsole console,
+        string? resolvedRoot,
+        string resolvedModelPath,
+        string? resolvedProfileDirectory,
+        string? resolvedBuildDirectory)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (string.IsNullOrWhiteSpace(resolvedRoot))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(resolvedModelPath))
+        {
+            throw new ArgumentNullException(nameof(resolvedModelPath));
+        }
+
+        WriteLine(console, $"Output root: {resolvedRoot}");
+        WriteLine(console, $"  Model JSON: {FormatPath(resolvedModelPath)}");
+        WriteLine(console, $"  Profiling artifacts: {FormatPath(resolvedProfileDirectory)}");
+        WriteLine(console, $"  SSDT artifacts: {FormatPath(resolvedBuildDirectory)}");
+    }
+
     public static void EmitExtractModelSummary(
         IConsole console,
         ExtractModelApplicationResult applicationResult,

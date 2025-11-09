@@ -26,6 +26,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
     private readonly Option<string?> _profilerProviderOption = new("--profiler-provider", "Profiler provider to use (fixture or sql).");
     private readonly Option<string?> _staticDataOption = new("--static-data", "Path to static data fixture.");
     private readonly Option<string?> _buildOutputOption = new("--build-out", () => "out", "Output directory for SSDT artifacts.");
+    private readonly Option<string?> _outputRootOption = new("--out-root", "Root directory for pipeline outputs.");
     private readonly Option<string?> _renameOption = new("--rename-table", "Rename tables using source=Override syntax.");
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
     private readonly Option<string?> _buildSqlMetadataOption = new("--build-sql-metadata-out", "Path to write SQL metadata diagnostics for SSDT emission (JSON).");
@@ -68,6 +69,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
             _profilerProviderOption,
             _staticDataOption,
             _buildOutputOption,
+            _outputRootOption,
             _renameOption,
             _openReportOption,
             _buildSqlMetadataOption,
@@ -101,11 +103,16 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         var cache = _cacheOptionBinder.Bind(parseResult);
         var sqlOverrides = _sqlOptionBinder.Bind(parseResult);
         var tightening = _tighteningBinder.Bind(parseResult);
+        var outputRoot = parseResult.GetValueForOption(_outputRootOption);
+
+        var buildOutputDirectory = ResolveOutputPath(outputRoot, parseResult.GetValueForOption(_buildOutputOption));
+        var profileOutputDirectory = ResolveOutputPath(outputRoot, parseResult.GetValueForOption(_profileOutputOption));
+        var extractOutputPath = ResolveOutputPath(outputRoot, parseResult.GetValueForOption(_extractOutputOption));
 
         var buildOverrides = new BuildSsdtOverrides(
             parseResult.GetValueForOption(_modelOption),
             parseResult.GetValueForOption(_profileOption),
-            parseResult.GetValueForOption(_buildOutputOption),
+            buildOutputDirectory,
             parseResult.GetValueForOption(_profilerProviderOption),
             parseResult.GetValueForOption(_staticDataOption),
             parseResult.GetValueForOption(_renameOption),
@@ -114,7 +121,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
 
         var profileOverrides = new CaptureProfileOverrides(
             parseResult.GetValueForOption(_modelOption),
-            parseResult.GetValueForOption(_profileOutputOption),
+            profileOutputDirectory,
             parseResult.GetValueForOption(_profilerProviderOption),
             parseResult.GetValueForOption(_profileOption),
             parseResult.GetValueForOption(_profileSqlMetadataOption));
@@ -126,7 +133,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
             extractModules,
             moduleFilter.IncludeSystemModules,
             onlyActive,
-            parseResult.GetValueForOption(_extractOutputOption),
+            extractOutputPath,
             parseResult.GetValueForOption(_mockSqlOption),
             parseResult.GetValueForOption(_extractSqlMetadataOption));
 
@@ -160,10 +167,25 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
 
         var extractionOutput = extractResult.OutputPath ?? "model.extracted.json";
         var resolvedExtractionPath = Path.GetFullPath(extractionOutput);
+        var outputRoot = context.ParseResult.GetValueForOption(_outputRootOption);
+        var resolvedOutputRoot = string.IsNullOrWhiteSpace(outputRoot) ? null : Path.GetFullPath(outputRoot);
+        var resolvedProfileDirectory = string.IsNullOrWhiteSpace(profileResult.OutputDirectory)
+            ? null
+            : Path.GetFullPath(profileResult.OutputDirectory);
+        var resolvedBuildDirectory = string.IsNullOrWhiteSpace(buildResult.OutputDirectory)
+            ? null
+            : Path.GetFullPath(buildResult.OutputDirectory);
         var openReport = context.ParseResult.GetValueForOption(_openReportOption);
 
         CommandConsole.WriteLine(context.Console, string.Empty);
         CommandConsole.WriteLine(context.Console, "Full export pipeline summary:");
+        CommandConsole.WriteLine(context.Console, string.Empty);
+        CommandConsole.EmitOutputRootSummary(
+            context.Console,
+            resolvedOutputRoot,
+            resolvedExtractionPath,
+            resolvedProfileDirectory,
+            resolvedBuildDirectory);
         CommandConsole.WriteLine(context.Console, string.Empty);
         CommandConsole.WriteLine(context.Console, "Model extraction:");
         CommandConsole.EmitExtractModelSummary(context.Console, extractResult, resolvedExtractionPath);
@@ -201,5 +223,25 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         }
 
         return null;
+    }
+
+    private static string? ResolveOutputPath(string? root, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return path;
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return path;
+        }
+
+        if (Path.IsPathRooted(path))
+        {
+            return path;
+        }
+
+        return Path.Combine(root, path);
     }
 }

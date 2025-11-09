@@ -61,22 +61,24 @@
 
    The command evaluates NOT NULL/UNIQUE/FK decisions, materializes SMO tables, emits SSDT-ready per-table files to `./out/Modules/...`, and records a structured summary in `./out/policy-decisions.json` alongside the `manifest.json` snapshot.
 
-   ```bash
-   dotnet run --project src/Osm.Cli \
-     full-export \
-     --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
-     --profile-out ./out/profiles \
-     --build-out ./out/full-export \
-     --modules "AppCore,ExtBilling,Ops"
-   ```
+  ```bash
+  dotnet run --project src/Osm.Cli \
+    full-export \
+    --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
+    --out-root ./out/full-export \
+    --profile-out profiles \
+    --build-out ssdt \
+    --modules "AppCore,ExtBilling,Ops"
+  ```
 
    The `full-export` verb chains model extraction, profiling, and SSDT emission in one run, streaming each stage’s summary so operators can monitor progress without losing visibility into intermediate artifacts. Treat this orchestrator as a first-class workflow: preserve its real-time reporting and continue to watch for performance and usability improvements as new features land. It reuses the same module filters, SQL overrides, cache switches, and tightening feature flags that power the individual `extract-model`, `profile`, and `build-ssdt` verbs, so a single invocation projects those overrides across every stage without repeating arguments. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L57-L112】
 
    **Prerequisites**
 
    * Provide a model source via `--mock-advanced-sql` (fixture manifest) or the SQL connection options (`--connection-string`, authentication toggles) so the extractor can hydrate the OutSystems payload before profiling. The same module filter switches (`--modules`, `--include-system-modules`, `--only-active-attributes`) narrow what flows into the combined run. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L64-L123】
-   * Point profiling at a destination with `--profile-out` and choose a provider (`--profiler-provider` or `--use-profile-mock-folder`/`--profile-mock-folder`) so evidence collection mirrors the standalone `profile` verb. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L24-L42】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L29-L55】
-   * Declare an SSDT output root with `--build-out` (plus rename/static-data overrides) to land the emission artifacts alongside the manifest and telemetry bundle generated during the run. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L24-L42】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L36-L53】
+  * Set `--out-root` to centralize artifacts and keep per-stage paths (model JSON, profile directory, SSDT output) grouped together; relative overrides such as `--profile-out` or `--build-out` are resolved beneath that root unless you supply absolute paths. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L20-L210】
+  * Point profiling at a destination with `--profile-out` and choose a provider (`--profiler-provider` or `--use-profile-mock-folder`/`--profile-mock-folder`) so evidence collection mirrors the standalone `profile` verb. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L20-L50】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L29-L55】
+  * Declare an SSDT output directory with `--build-out` (plus rename/static-data overrides) to land the emission artifacts alongside the manifest and telemetry bundle generated during the run. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L20-L50】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L36-L53】
 
    **Feature flags carried into the pipeline**
 
