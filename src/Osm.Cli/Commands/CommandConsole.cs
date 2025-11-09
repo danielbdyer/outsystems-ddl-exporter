@@ -273,6 +273,54 @@ internal static class CommandConsole
         WriteLine(console, $"Manifest written to {pipelineResult.ManifestPath}");
     }
 
+    public static void EmitSchemaApplySummary(IConsole console, SchemaApplyResult applyResult)
+    {
+        if (console is null)
+        {
+            throw new ArgumentNullException(nameof(console));
+        }
+
+        if (applyResult is null)
+        {
+            throw new ArgumentNullException(nameof(applyResult));
+        }
+
+        if (!applyResult.Attempted)
+        {
+            WriteLine(console, "  Schema apply skipped.");
+        }
+        else
+        {
+            WriteLine(console, $"  Safe script applied: {(applyResult.SafeScriptApplied ? "yes" : "no")} ({applyResult.SafeScriptPath ?? "<none>"})");
+
+            var appliedSeedCount = applyResult.AppliedSeedScripts.IsDefaultOrEmpty ? 0 : applyResult.AppliedSeedScripts.Length;
+            var totalSeedCount = applyResult.StaticSeedScriptPaths.IsDefaultOrEmpty ? 0 : applyResult.StaticSeedScriptPaths.Length;
+            WriteLine(console, $"  Static seeds applied: {(applyResult.StaticSeedsApplied ? "yes" : "no")} ({appliedSeedCount}/{totalSeedCount})");
+            WriteLine(console, $"  Duration: {applyResult.Duration.TotalSeconds:F2}s");
+        }
+
+        WriteLine(console, $"  Pending remediation count: {applyResult.PendingRemediationCount}");
+        WriteLine(console, $"  Remediation script: {applyResult.RemediationScriptPath ?? "<none>"}");
+
+        if (!applyResult.SkippedScripts.IsDefaultOrEmpty && applyResult.SkippedScripts.Length > 0)
+        {
+            WriteLine(console, "  Skipped scripts:");
+            foreach (var skipped in applyResult.SkippedScripts)
+            {
+                WriteLine(console, $"    - {skipped}");
+            }
+        }
+
+        if (!applyResult.Warnings.IsDefaultOrEmpty && applyResult.Warnings.Length > 0)
+        {
+            WriteLine(console, "  Warnings:");
+            foreach (var warning in applyResult.Warnings)
+            {
+                WriteErrorLine(console, $"    [warning] {warning}");
+            }
+        }
+    }
+
     public static void EmitExtractModelSummary(
         IConsole console,
         ExtractModelApplicationResult applicationResult,

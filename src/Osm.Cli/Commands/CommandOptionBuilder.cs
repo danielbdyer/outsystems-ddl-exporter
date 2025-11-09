@@ -18,6 +18,9 @@ internal static class CommandOptionBuilder
     public static Command AddTighteningOptions(Command command, TighteningOptionBinder binder)
         => AddOptions(command, binder);
 
+    public static Command AddSchemaApplyOptions(Command command, SchemaApplyOptionBinder binder)
+        => AddOptions(command, binder);
+
     private static Command AddOptions(Command command, ICommandOptionSource optionSource)
     {
         if (command is null)

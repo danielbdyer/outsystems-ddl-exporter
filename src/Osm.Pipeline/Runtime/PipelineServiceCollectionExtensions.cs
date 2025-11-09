@@ -137,6 +137,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<BuildSsdtStaticSeedStep>();
         services.AddSingleton<BuildSsdtTelemetryPackagingStep>();
         services.AddSingleton<ISchemaDataApplier, SchemaDataApplier>();
+        services.AddSingleton<SchemaApplyOrchestrator>();
 
         services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();
         services.AddSingleton<ICommandHandler<DmmComparePipelineRequest, DmmComparePipelineResult>, DmmComparePipeline>();

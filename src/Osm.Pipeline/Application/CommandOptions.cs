@@ -82,13 +82,29 @@ public sealed record ExtractModelOverrides(
     string? MockAdvancedSqlManifest,
     string? SqlMetadataOutputPath);
 
+public sealed record SchemaApplyOverrides(
+    bool? Enabled,
+    string? ConnectionString,
+    int? CommandTimeoutSeconds,
+    SqlAuthenticationMethod? AuthenticationMethod,
+    bool? TrustServerCertificate,
+    string? ApplicationName,
+    string? AccessToken,
+    bool? ApplySafeScript,
+    bool? ApplyStaticSeeds)
+{
+    public static SchemaApplyOverrides Empty { get; } = new(null, null, null, null, null, null, null, null, null);
+}
+
 public sealed record FullExportOverrides(
     BuildSsdtOverrides Build,
     CaptureProfileOverrides Profile,
-    ExtractModelOverrides Extract)
+    ExtractModelOverrides Extract,
+    SchemaApplyOverrides? Apply)
 {
     public static FullExportOverrides Empty { get; } = new(
         new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
         new CaptureProfileOverrides(null, null, null, null, null),
-        new ExtractModelOverrides(null, null, null, null, null, null));
+        new ExtractModelOverrides(null, null, null, null, null, null),
+        null);
 }
