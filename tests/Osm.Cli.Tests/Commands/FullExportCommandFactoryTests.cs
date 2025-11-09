@@ -266,6 +266,7 @@ public class FullExportCommandFactoryTests
             "PRINT 'safe';",
             remediationScriptPath,
             "PRINT 'remediation';",
+            Path.Combine(outputDirectory, "OutSystemsModel.sqlproj"),
             staticSeedPaths,
             ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,

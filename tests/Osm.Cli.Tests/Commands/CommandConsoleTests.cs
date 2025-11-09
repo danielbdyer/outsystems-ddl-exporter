@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.CommandLine.IO;
+using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -642,6 +643,7 @@ public class CommandConsoleTests
             string.Empty,
             "remediation.sql",
             string.Empty,
+            Path.Combine("/tmp/output", "OutSystemsModel.sqlproj"),
             ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,

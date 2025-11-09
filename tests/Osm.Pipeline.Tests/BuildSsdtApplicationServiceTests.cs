@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -141,6 +142,7 @@ public sealed class BuildSsdtApplicationServiceTests
             "-- safe script\nGO\n",
             "suggestions/needs-remediation.sql",
             "-- remediation script\nGO\n",
+            Path.Combine("output", "OutSystemsModel.sqlproj"),
             ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,

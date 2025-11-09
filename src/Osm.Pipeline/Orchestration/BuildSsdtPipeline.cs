@@ -18,6 +18,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
     private readonly BuildSsdtEvidenceCacheStep _evidenceCacheStep;
     private readonly BuildSsdtPolicyDecisionStep _policyStep;
     private readonly BuildSsdtEmissionStep _emissionStep;
+    private readonly BuildSsdtSqlProjectStep _sqlProjectStep;
     private readonly BuildSsdtSqlValidationStep _sqlValidationStep;
     private readonly BuildSsdtStaticSeedStep _staticSeedStep;
     private readonly BuildSsdtDynamicInsertStep _dynamicInsertStep;
@@ -29,6 +30,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         BuildSsdtEvidenceCacheStep evidenceCacheStep,
         BuildSsdtPolicyDecisionStep policyStep,
         BuildSsdtEmissionStep emissionStep,
+        BuildSsdtSqlProjectStep sqlProjectStep,
         BuildSsdtSqlValidationStep sqlValidationStep,
         BuildSsdtStaticSeedStep staticSeedStep,
         BuildSsdtDynamicInsertStep dynamicInsertStep,
@@ -39,6 +41,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         _evidenceCacheStep = evidenceCacheStep ?? throw new ArgumentNullException(nameof(evidenceCacheStep));
         _policyStep = policyStep ?? throw new ArgumentNullException(nameof(policyStep));
         _emissionStep = emissionStep ?? throw new ArgumentNullException(nameof(emissionStep));
+        _sqlProjectStep = sqlProjectStep ?? throw new ArgumentNullException(nameof(sqlProjectStep));
         _sqlValidationStep = sqlValidationStep ?? throw new ArgumentNullException(nameof(sqlValidationStep));
         _staticSeedStep = staticSeedStep ?? throw new ArgumentNullException(nameof(staticSeedStep));
         _dynamicInsertStep = dynamicInsertStep ?? throw new ArgumentNullException(nameof(dynamicInsertStep));
@@ -76,6 +79,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             .BindAsync((bootstrap, token) => _evidenceCacheStep.ExecuteAsync(bootstrap, token), cancellationToken)
             .BindAsync((evidence, token) => _policyStep.ExecuteAsync(evidence, token), cancellationToken)
             .BindAsync((decisions, token) => _emissionStep.ExecuteAsync(decisions, token), cancellationToken)
+            .BindAsync((emission, token) => _sqlProjectStep.ExecuteAsync(emission, token), cancellationToken)
             .BindAsync((emission, token) => _sqlValidationStep.ExecuteAsync(emission, token), cancellationToken)
             .BindAsync((validation, token) => _staticSeedStep.ExecuteAsync(validation, token), cancellationToken)
             .BindAsync((seeds, token) => _dynamicInsertStep.ExecuteAsync(seeds, token), cancellationToken)
@@ -112,6 +116,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                     finalState.TelemetryPackagePaths.IsDefaultOrEmpty
                         ? "<none>"
                         : string.Join(";", finalState.TelemetryPackagePaths))
+                .WithPath("outputs.sqlproj", finalState.SqlProjectPath)
                 .WithPath("cache.directory", finalState.EvidenceCache?.CacheDirectory)
                 .Build());
 
@@ -133,6 +138,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.OpportunityArtifacts.SafeScript,
             finalState.OpportunityArtifacts.RemediationScriptPath,
             finalState.OpportunityArtifacts.RemediationScript,
+            finalState.SqlProjectPath,
             finalState.StaticSeedScriptPaths,
             finalState.DynamicInsertScriptPaths,
             finalState.TelemetryPackagePaths,

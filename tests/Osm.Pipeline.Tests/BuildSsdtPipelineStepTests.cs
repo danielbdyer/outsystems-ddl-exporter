@@ -192,8 +192,10 @@ public class BuildSsdtPipelineStepTests
             new EmissionFingerprintCalculator(),
             new OpportunityLogWriter());
         var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var sqlProjectStep = new BuildSsdtSqlProjectStep();
+        var projectState = (await sqlProjectStep.ExecuteAsync(emissionState)).Value;
         var validationStep = new BuildSsdtSqlValidationStep();
-        var validatedState = (await validationStep.ExecuteAsync(emissionState)).Value;
+        var validatedState = (await validationStep.ExecuteAsync(projectState)).Value;
         var step = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
 
         var result = await step.ExecuteAsync(validatedState);
@@ -284,6 +286,7 @@ public class BuildSsdtPipelineStepTests
             manifest,
             decisionLogPath,
             opportunityArtifacts,
+            Path.Combine(output.Path, "OutSystemsModel.sqlproj"),
             SsdtSqlValidationSummary.Empty);
 
         var step = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
@@ -364,8 +367,10 @@ public class BuildSsdtPipelineStepTests
             new EmissionFingerprintCalculator(),
             new OpportunityLogWriter());
         var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var sqlProjectStep = new BuildSsdtSqlProjectStep();
+        var projectState = (await sqlProjectStep.ExecuteAsync(emissionState)).Value;
         var validationStep = new BuildSsdtSqlValidationStep();
-        var validatedState = (await validationStep.ExecuteAsync(emissionState)).Value;
+        var validatedState = (await validationStep.ExecuteAsync(projectState)).Value;
         var step = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
 
         var result = await step.ExecuteAsync(validatedState);
@@ -398,8 +403,10 @@ public class BuildSsdtPipelineStepTests
             new EmissionFingerprintCalculator(),
             new OpportunityLogWriter());
         var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var sqlProjectStep = new BuildSsdtSqlProjectStep();
+        var projectState = (await sqlProjectStep.ExecuteAsync(emissionState)).Value;
         var validationStep = new BuildSsdtSqlValidationStep();
-        var validatedState = (await validationStep.ExecuteAsync(emissionState)).Value;
+        var validatedState = (await validationStep.ExecuteAsync(projectState)).Value;
         var step = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
 
         var result = await step.ExecuteAsync(validatedState);
@@ -443,8 +450,10 @@ public class BuildSsdtPipelineStepTests
             new EmissionFingerprintCalculator(),
             new OpportunityLogWriter());
         var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var sqlProjectStep = new BuildSsdtSqlProjectStep();
+        var projectState = (await sqlProjectStep.ExecuteAsync(emissionState)).Value;
         var validationStep = new BuildSsdtSqlValidationStep();
-        var validatedState = (await validationStep.ExecuteAsync(emissionState)).Value;
+        var validatedState = (await validationStep.ExecuteAsync(projectState)).Value;
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
         var seedState = (await staticSeedStep.ExecuteAsync(validatedState)).Value;
 
@@ -515,9 +524,13 @@ public class BuildSsdtPipelineStepTests
             new EmissionFingerprintCalculator(),
             new OpportunityLogWriter());
         var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var sqlProjectStep = new BuildSsdtSqlProjectStep();
+        var projectStateResult = await sqlProjectStep.ExecuteAsync(emissionState);
+        Assert.True(projectStateResult.IsSuccess);
+        var projectState = projectStateResult.Value;
         var step = new BuildSsdtSqlValidationStep();
 
-        var result = await step.ExecuteAsync(emissionState);
+        var result = await step.ExecuteAsync(projectState);
 
         Assert.True(result.IsSuccess);
         var validated = result.Value;
@@ -554,9 +567,13 @@ public class BuildSsdtPipelineStepTests
         var firstTable = emissionState.Manifest.Tables[0];
         var artifactPath = Path.Combine(request.OutputDirectory, firstTable.TableFile.Replace('/', Path.DirectorySeparatorChar));
         await File.WriteAllTextAsync(artifactPath, "CREATE TABLE ???");
+        var sqlProjectStep = new BuildSsdtSqlProjectStep();
+        var projectStateResult = await sqlProjectStep.ExecuteAsync(emissionState);
+        Assert.True(projectStateResult.IsSuccess);
+        var projectState = projectStateResult.Value;
         var step = new BuildSsdtSqlValidationStep();
 
-        var result = await step.ExecuteAsync(emissionState);
+        var result = await step.ExecuteAsync(projectState);
 
         Assert.True(result.IsFailure);
         var log = emissionState.Log.Build();
@@ -599,6 +616,7 @@ public class BuildSsdtPipelineStepTests
             staticDataProvider,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             SqlMetadataLog: null);
     }
 
@@ -653,6 +671,7 @@ public class BuildSsdtPipelineStepTests
             StaticDataProvider: new ForeignKeyStaticEntityDataProvider(),
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             SqlMetadataLog: null);
     }
 

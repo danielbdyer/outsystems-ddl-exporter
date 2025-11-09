@@ -184,6 +184,7 @@ public class SchemaApplyOrchestratorTests
             "PRINT 'safe';",
             Path.Combine(Path.GetTempPath(), "remediation.sql"),
             "PRINT 'remediation';",
+            Path.Combine(Path.GetTempPath(), "OutSystemsModel.sqlproj"),
             ImmutableArray.Create(seedScriptPath),
             ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,

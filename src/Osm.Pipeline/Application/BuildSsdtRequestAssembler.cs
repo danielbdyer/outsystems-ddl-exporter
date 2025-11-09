@@ -23,7 +23,8 @@ public sealed record BuildSsdtRequestAssembly(
     BuildSsdtPipelineRequest Request,
     string ProfilerProvider,
     string? ProfilePath,
-    string OutputDirectory);
+    string OutputDirectory,
+    string SqlProjectPath);
 
 public sealed record BuildSsdtRequestAssemblerContext(
     CliConfiguration Configuration,
@@ -97,6 +98,8 @@ public sealed class BuildSsdtRequestAssembler
             InlineModel: context.InlineModel,
             ModelWarnings: context.ModelWarnings);
 
+        var sqlProjectPath = Path.Combine(context.OutputDirectory, "OutSystemsModel.sqlproj");
+
         var request = new BuildSsdtPipelineRequest(
             scope,
             context.OutputDirectory,
@@ -106,9 +109,10 @@ public sealed class BuildSsdtRequestAssembler
             context.StaticDataProvider,
             Path.Combine(context.OutputDirectory, "Seeds"),
             Path.Combine(context.OutputDirectory, "DynamicData"),
+            sqlProjectPath,
             context.SqlMetadataLog);
 
-        return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory);
+        return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory, sqlProjectPath);
     }
 
     private static string ComputeSha256(string value)

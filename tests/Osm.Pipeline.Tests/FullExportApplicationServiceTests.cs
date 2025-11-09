@@ -206,6 +206,7 @@ public sealed class FullExportApplicationServiceTests
             SafeScript: string.Empty,
             RemediationScriptPath: "remediation.sql",
             RemediationScript: string.Empty,
+            SqlProjectPath: "project.sqlproj",
             StaticSeedScriptPaths: ImmutableArray<string>.Empty,
             DynamicInsertScriptPaths: ImmutableArray<string>.Empty,
             TelemetryPackagePaths: ImmutableArray<string>.Empty,

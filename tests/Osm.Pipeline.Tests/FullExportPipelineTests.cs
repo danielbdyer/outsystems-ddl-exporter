@@ -293,6 +293,7 @@ public sealed class FullExportPipelineTests
             StaticDataProvider: null,
             SeedOutputDirectoryHint: Path.Combine(outputDirectory, "Seeds"),
             DynamicDataOutputDirectoryHint: Path.Combine(outputDirectory, "DynamicData"),
+            SqlProjectPathHint: Path.Combine(outputDirectory, "OutSystemsModel.sqlproj"),
             SqlMetadataLog: null);
 
         var manifest = new SsdtManifest(
@@ -350,6 +351,7 @@ public sealed class FullExportPipelineTests
             "PRINT 'safe';",
             RemediationScriptPath,
             "PRINT 'remediation';",
+            Path.Combine(outputDirectory, "OutSystemsModel.sqlproj"),
             ImmutableArray.Create(SeedScriptPath),
             ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,

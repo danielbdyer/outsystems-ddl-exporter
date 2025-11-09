@@ -185,6 +185,7 @@ public sealed record FullExportRunManifest(
         AddPathIfPresent(artifacts, "validations", pipelineResult.ValidationsPath);
         AddPathIfPresent(artifacts, "safeScript", pipelineResult.SafeScriptPath);
         AddPathIfPresent(artifacts, "remediationScript", pipelineResult.RemediationScriptPath);
+        AddPathIfPresent(artifacts, "sqlProject", pipelineResult.SqlProjectPath);
 
         if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty)
         {

@@ -260,6 +260,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             request.SqlMetadataLog);
 
         var profilerResult = _profilerFactory.Create(profilerRequest, model);
