@@ -18,6 +18,7 @@ using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
+using Osm.Pipeline.UatUsers;
 using Osm.Validation.Profiling;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
@@ -40,7 +41,8 @@ public sealed class FullExportPipelineTests
         var dispatcher = new StubCommandDispatcher();
         var schemaApplier = new FakeSchemaDataApplier();
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var uatRunner = new RecordingUatUsersRunner();
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, captureResult) = CreateCaptureArtifacts();
@@ -92,7 +94,8 @@ public sealed class FullExportPipelineTests
                 StaticSeedValidation: StaticSeedValidationSummary.NotAttempted))
         };
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var uatRunner = new RecordingUatUsersRunner();
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, captureResult) = CreateCaptureArtifacts();
@@ -135,7 +138,8 @@ public sealed class FullExportPipelineTests
         var dispatcher = new StubCommandDispatcher();
         var schemaApplier = new FakeSchemaDataApplier();
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var uatRunner = new RecordingUatUsersRunner();
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
 
         var (extractRequest, extractBase) = CreateExtractionArtifacts();
         var extractionResult = new ModelExtractionResult(
@@ -219,7 +223,8 @@ public sealed class FullExportPipelineTests
         var dispatcher = new StubCommandDispatcher();
         var schemaApplier = new FakeSchemaDataApplier();
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var uatRunner = new RecordingUatUsersRunner();
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, _) = CreateCaptureArtifacts();
@@ -238,6 +243,144 @@ public sealed class FullExportPipelineTests
         Assert.True(result.IsFailure);
         Assert.Equal(failureErrors, result.Errors);
         Assert.Null(schemaApplier.LastRequest);
+    }
+
+    [Fact]
+    public async Task HandleAsync_runs_uat_users_when_enabled()
+    {
+        var dispatcher = new StubCommandDispatcher();
+        var schemaApplier = new FakeSchemaDataApplier();
+        var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
+        var uatRunner = new RecordingUatUsersRunner
+        {
+            Result = Result<UatUsersApplicationResult>.Success(new UatUsersApplicationResult(
+                Executed: true,
+                Context: null,
+                Warnings: ImmutableArray<string>.Empty))
+        };
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+
+        var (extractRequest, extractResult) = CreateExtractionArtifacts();
+        var (captureRequest, captureResult) = CreateCaptureArtifacts();
+        var (buildRequest, buildResult) = CreateBuildArtifacts();
+
+        dispatcher.Register<ExtractModelPipelineRequest, ModelExtractionResult>((_, _) => Task.FromResult(Result<ModelExtractionResult>.Success(extractResult)));
+        dispatcher.Register<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>((_, _) => Task.FromResult(Result<CaptureProfilePipelineResult>.Success(captureResult)));
+        dispatcher.Register<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>((_, _) => Task.FromResult(Result<BuildSsdtPipelineResult>.Success(buildResult)));
+
+        var applyOptions = SchemaApplyOptions.Disabled;
+        var uatOptions = new UatUsersPipelineOptions(
+            Enabled: true,
+            ConnectionString: "Server=Test;",
+            UserSchema: "dbo",
+            UserTable: "User",
+            UserIdColumn: "Id",
+            IncludeColumns: Array.Empty<string>(),
+            UserMapPath: null,
+            AllowedUsersSqlPath: "allowed.sql",
+            AllowedUserIdsPath: null,
+            SnapshotPath: null,
+            UserEntityIdentifier: null);
+        var request = new FullExportPipelineRequest(extractRequest, captureRequest, buildRequest, applyOptions, uatOptions);
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.UatUsers.Executed);
+        Assert.NotNull(uatRunner.LastRequest);
+        Assert.Equal(buildRequest.OutputDirectory, uatRunner.LastRequest!.OutputDirectory);
+        var entries = result.Value.ExecutionLog.Entries;
+        Assert.Contains(entries, entry => entry.Step == "fullExport.uatUsers.completed");
+    }
+
+    [Fact]
+    public async Task HandleAsync_returns_failure_when_uat_users_fails()
+    {
+        var dispatcher = new StubCommandDispatcher();
+        var schemaApplier = new FakeSchemaDataApplier();
+        var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
+        var failure = ValidationError.Create("pipeline.uatUsers.failure", "uat-users failed");
+        var uatRunner = new RecordingUatUsersRunner
+        {
+            Result = Result<UatUsersApplicationResult>.Failure(failure)
+        };
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+
+        var (extractRequest, extractResult) = CreateExtractionArtifacts();
+        var (captureRequest, captureResult) = CreateCaptureArtifacts();
+        var (buildRequest, buildResult) = CreateBuildArtifacts();
+
+        dispatcher.Register<ExtractModelPipelineRequest, ModelExtractionResult>((_, _) => Task.FromResult(Result<ModelExtractionResult>.Success(extractResult)));
+        dispatcher.Register<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>((_, _) => Task.FromResult(Result<CaptureProfilePipelineResult>.Success(captureResult)));
+        dispatcher.Register<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>((_, _) => Task.FromResult(Result<BuildSsdtPipelineResult>.Success(buildResult)));
+
+        var request = new FullExportPipelineRequest(
+            extractRequest,
+            captureRequest,
+            buildRequest,
+            SchemaApplyOptions.Disabled,
+            new UatUsersPipelineOptions(
+                Enabled: true,
+                ConnectionString: "Server=Test;",
+                UserSchema: "dbo",
+                UserTable: "User",
+                UserIdColumn: "Id",
+                IncludeColumns: Array.Empty<string>(),
+                UserMapPath: null,
+                AllowedUsersSqlPath: "allowed.sql",
+                AllowedUserIdsPath: null,
+                SnapshotPath: null,
+                UserEntityIdentifier: null));
+
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(failure, Assert.Single(result.Errors));
+        Assert.Contains(result.Errors, error => error == failure);
+        Assert.NotNull(uatRunner.LastRequest);
+    }
+
+    [Fact]
+    public async Task HandleAsync_skips_uat_users_when_disabled()
+    {
+        var dispatcher = new StubCommandDispatcher();
+        var schemaApplier = new FakeSchemaDataApplier();
+        var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
+        var uatRunner = new RecordingUatUsersRunner();
+        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+
+        var (extractRequest, extractResult) = CreateExtractionArtifacts();
+        var (captureRequest, captureResult) = CreateCaptureArtifacts();
+        var (buildRequest, buildResult) = CreateBuildArtifacts();
+
+        dispatcher.Register<ExtractModelPipelineRequest, ModelExtractionResult>((_, _) => Task.FromResult(Result<ModelExtractionResult>.Success(extractResult)));
+        dispatcher.Register<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>((_, _) => Task.FromResult(Result<CaptureProfilePipelineResult>.Success(captureResult)));
+        dispatcher.Register<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>((_, _) => Task.FromResult(Result<BuildSsdtPipelineResult>.Success(buildResult)));
+
+        var request = new FullExportPipelineRequest(
+            extractRequest,
+            captureRequest,
+            buildRequest,
+            SchemaApplyOptions.Disabled,
+            new UatUsersPipelineOptions(
+                Enabled: false,
+                ConnectionString: null,
+                UserSchema: null,
+                UserTable: null,
+                UserIdColumn: null,
+                IncludeColumns: null,
+                UserMapPath: null,
+                AllowedUsersSqlPath: null,
+                AllowedUserIdsPath: null,
+                SnapshotPath: null,
+                UserEntityIdentifier: null));
+
+        var result = await pipeline.HandleAsync(request);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(result.Value.UatUsers.Executed);
+        Assert.Null(uatRunner.LastRequest);
+        var entries = result.Value.ExecutionLog.Entries;
+        Assert.Contains(entries, entry => entry.Step == "fullExport.uatUsers.skipped");
     }
 
     private static (ExtractModelPipelineRequest Request, ModelExtractionResult Result) CreateExtractionArtifacts()
@@ -472,6 +615,22 @@ public sealed class FullExportPipelineTests
             }
 
             return Result<TResponse>.Success((TResponse)result.Value);
+        }
+    }
+
+    private sealed class RecordingUatUsersRunner : IUatUsersPipelineRunner
+    {
+        public Result<UatUsersApplicationResult> Result { get; set; }
+            = Result<UatUsersApplicationResult>.Success(UatUsersApplicationResult.Disabled);
+
+        public UatUsersPipelineRequest? LastRequest { get; private set; }
+
+        public Task<Result<UatUsersApplicationResult>> RunAsync(
+            UatUsersPipelineRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return Task.FromResult(Result);
         }
     }
 

@@ -13,6 +13,7 @@ using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
+using Osm.Pipeline.UatUsers;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
@@ -162,7 +163,8 @@ public sealed class FullExportRunManifestTests
             capture,
             extraction,
             schemaApply,
-            SchemaApplyOptions.Disabled);
+            SchemaApplyOptions.Disabled,
+            UatUsersApplicationResult.Disabled);
         var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, "config/full-export.json");
         var verbResult = new FullExportVerbResult(configurationContext, applicationResult);
 

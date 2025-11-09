@@ -179,6 +179,13 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             }
         }
 
+        if (application.UatUsers.Executed && application.UatUsers.Context is { } uatContext)
+        {
+            var uatRoot = Path.Combine(uatContext.Artifacts.Root, "uat-users");
+            artifacts.Add(new PipelineArtifact("uat-users-root", uatRoot));
+            artifacts.Add(new PipelineArtifact("uat-users-map", uatContext.UserMapPath, "text/csv"));
+        }
+
         if (!string.IsNullOrWhiteSpace(build.OutputDirectory))
         {
             artifacts.Add(new PipelineArtifact("manifest", Path.Combine(build.OutputDirectory, "manifest.json"), "application/json"));
@@ -223,6 +230,13 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             if (!string.IsNullOrWhiteSpace(buildPipeline.SqlProjectPath))
             {
                 builder["build.sqlProjectPath"] = buildPipeline.SqlProjectPath;
+            }
+            builder["uatUsers.enabled"] = application.UatUsers.Executed ? "true" : "false";
+            if (application.UatUsers.Executed && application.UatUsers.Context is { } uatContext)
+            {
+                builder["uatUsers.allowedCount"] = uatContext.AllowedUserIds.Count.ToString(CultureInfo.InvariantCulture);
+                builder["uatUsers.orphanCount"] = uatContext.OrphanUserIds.Count.ToString(CultureInfo.InvariantCulture);
+                builder["uatUsers.userMapPath"] = uatContext.UserMapPath;
             }
             var staticSeedRoot = FullExportRunManifest.ResolveStaticSeedRoot(buildPipeline);
             if (!string.IsNullOrWhiteSpace(staticSeedRoot))

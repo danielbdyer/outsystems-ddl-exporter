@@ -18,6 +18,7 @@ using Osm.Domain.Profiling;
 using Osm.Emission;
 using Osm.LoadHarness;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.UatUsers;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
@@ -303,7 +304,13 @@ public class FullExportCommandFactoryTests
             Authentication: authentication,
             CommandTimeoutSeconds: null);
 
-        return new FullExportApplicationResult(build, capture, extraction, apply, applyOptions);
+        return new FullExportApplicationResult(
+            build,
+            capture,
+            extraction,
+            apply,
+            applyOptions,
+            UatUsersApplicationResult.Disabled);
     }
 
     private static ExtractModelApplicationResult CreateExtractionApplicationResult(string modelPath)
