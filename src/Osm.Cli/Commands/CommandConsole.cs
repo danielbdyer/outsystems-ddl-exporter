@@ -460,6 +460,10 @@ internal static class CommandConsole
         WriteLine(console, "SSDT Emission Summary:");
         WriteLine(console, $"  Tables: {pipelineResult.Manifest.Tables.Count} emitted to {applicationResult.OutputDirectory}");
         WriteLine(console, $"  Manifest: {Path.Combine(applicationResult.OutputDirectory, "manifest.json")}");
+        if (!string.IsNullOrWhiteSpace(pipelineResult.SqlProjectPath))
+        {
+            WriteLine(console, $"  SQL project: {pipelineResult.SqlProjectPath}");
+        }
 
         var seedPaths = pipelineResult.StaticSeedScriptPaths;
         var seedCount = seedPaths.IsDefaultOrEmpty ? 0 : seedPaths.Length;

@@ -182,7 +182,8 @@ public sealed class FullExportRunManifestTests
             new("static-seed", moduleSeedPath, "application/sql"),
             new("static-seed", masterSeedPath, "application/sql"),
             new("manifest", Path.Combine(dynamicRoot, "manifest.json"), "application/json"),
-            new("full-export-manifest", manifestPath, "application/json")
+            new("full-export-manifest", manifestPath, "application/json"),
+            new("ssdt-project", build.PipelineResult.SqlProjectPath, "application/xml")
         };
 
         foreach (var insertPath in build.PipelineResult.DynamicInsertScriptPaths)
@@ -210,6 +211,11 @@ public sealed class FullExportRunManifestTests
         var expectedDynamicRoot = Path.GetFullPath(Path.Combine(dynamicRoot, "DynamicData", "ModuleA"));
         Assert.Equal(expectedDynamicRoot, Path.GetFullPath(stageDynamicRoot!));
         Assert.Equal(expectedDynamicRoot, Path.GetFullPath(FullExportRunManifest.ResolveDynamicInsertRoot(build.PipelineResult)!));
+
+        Assert.True(buildStage.Artifacts.TryGetValue("sqlProject", out var stageSqlProject));
+        Assert.Equal(
+            Path.GetFullPath(build.PipelineResult.SqlProjectPath),
+            Path.GetFullPath(stageSqlProject!));
 
         Assert.True(buildStage.Artifacts.TryGetValue("staticSeedOrdering", out var seedOrdering));
         Assert.Equal("alphabetical", seedOrdering);
@@ -353,6 +359,7 @@ public sealed class FullExportRunManifestTests
             "PRINT 'safe';",
             remediationScriptPath,
             "PRINT 'remediation';",
+            Path.Combine(outputDirectory, "OutSystemsModel.sqlproj"),
             staticSeedPaths,
             ImmutableArray.Create(dynamicInsertPath),
             ImmutableArray<string>.Empty,

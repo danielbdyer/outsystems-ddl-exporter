@@ -134,6 +134,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<BuildSsdtEvidenceCacheStep>();
         services.AddSingleton<BuildSsdtPolicyDecisionStep>();
         services.AddSingleton<BuildSsdtEmissionStep>();
+        services.AddSingleton<BuildSsdtSqlProjectStep>();
         services.AddSingleton<BuildSsdtSqlValidationStep>();
         services.AddSingleton<BuildSsdtStaticSeedStep>();
         services.AddSingleton<BuildSsdtDynamicInsertStep>();

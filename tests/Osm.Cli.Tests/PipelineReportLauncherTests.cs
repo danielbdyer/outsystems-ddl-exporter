@@ -270,6 +270,7 @@ public class PipelineReportLauncherTests
             string.Empty,
             remediationPath,
             string.Empty,
+            Path.Combine(output.Path, "OutSystemsModel.sqlproj"),
             seedPaths,
             ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,

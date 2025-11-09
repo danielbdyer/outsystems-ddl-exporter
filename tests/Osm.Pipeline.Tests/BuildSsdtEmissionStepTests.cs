@@ -235,6 +235,7 @@ public sealed class BuildSsdtEmissionStepTests
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             SqlMetadataLog: null);
     }
 

@@ -10,6 +10,10 @@ is replayed after the initial schema deployment.
   `build.outputDirectory` metadata field). This directory continues to contain the
   manifest, decision log, validation report, and opportunity scripts that describe the
   schema tightening results.
+* A synthesized SQL Server Database project (`OutSystemsModel.sqlproj`) is written to
+  the same root. It includes the emitted `Modules/` hierarchy and references the
+  `Seeds/` directory as post-deployment content so SSDT imports pick up both the DDL and
+  seed scripts.
 * **Static seed artifacts** are emitted beneath a dedicated seed root. The pipeline
   calculates this common directory and surfaces it through the
   `build.staticSeedRoot` metadata value so that orchestration tools can stage the seed
@@ -38,6 +42,7 @@ entries:
 | `build.staticSeedRoot` | Absolute path to the seed directory calculated from the emitted seed scripts. |
 | `build.staticSeedsInDynamicManifest` | Indicates whether seed artifacts are mirrored into the dynamic manifest list. |
 | `build.dynamicInsertRoot` | Directory containing dynamic replay scripts (one per entity) generated from live data. |
+| `build.sqlProjectPath` | Full path to the synthesized `.sqlproj` that references the emitted modules and seed scripts. |
 
 The CLI `SSDT Emission Summary` explicitly labels the seed artifacts and prints the
 manifest semantics block so operators can validate the directory split without
@@ -50,17 +55,20 @@ SSDT output while still applying the full export bundle on first-run deployments
 
 ### 1. Land static seed MERGE scripts in Post-Deployment
 
-1. In your SSDT project, create a `Seeds/` folder under **Post-Deployment** and copy the
+1. Open the emitted `OutSystemsModel.sqlproj` in SSDT (or copy its contents into an
+   existing project). The project already references the generated `Modules/` tree and
+   treats `Seeds/` as post-deployment content.
+2. In your SSDT project, create a `Seeds/` folder under **Post-Deployment** and copy the
    generated seed scripts from `build.staticSeedRoot`. The directory contains
    module-level `*.seed.sql` files plus any master aggregates emitted by the pipeline.
-2. Edit `Script.PostDeployment.sql` and reference each seed script with SQLCMD includes:
+3. Edit `Script.PostDeployment.sql` and reference each seed script with SQLCMD includes:
 
    ```sql
    :r .\Seeds\AppCore\StaticEntities.seed.sql
    :r .\Seeds\MasterSeed.aggregate.sql
    ```
 
-3. Because the scripts are written with `MERGE` and idempotent guards, they may be
+4. Because the scripts are written with `MERGE` and idempotent guards, they may be
    executed during every publish. SSDT treats the includes as part of the post-deploy
    batch, guaranteeing the static catalog stays synchronized with the seed manifest.
 

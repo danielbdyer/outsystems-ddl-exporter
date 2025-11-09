@@ -85,6 +85,7 @@ public sealed class SsdtMatrixTests
             StaticDataProvider: staticDataProvider,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             SqlMetadataLog: null);
 
         var pipeline = CreatePipeline();
@@ -130,6 +131,7 @@ public sealed class SsdtMatrixTests
             new PolicyDecisionLogWriter(),
             new EmissionFingerprintCalculator(),
             new OpportunityLogWriter());
+        var sqlProjectStep = new BuildSsdtSqlProjectStep();
         var sqlValidationStep = new BuildSsdtSqlValidationStep(new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
         var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
@@ -141,6 +143,7 @@ public sealed class SsdtMatrixTests
             evidenceCacheStep,
             policyStep,
             emissionStep,
+            sqlProjectStep,
             sqlValidationStep,
             staticSeedStep,
             dynamicInsertStep,

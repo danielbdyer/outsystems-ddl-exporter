@@ -7,7 +7,7 @@ using Osm.Domain.Abstractions;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<EmissionReady, SqlValidated>
+public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<SqlProjectSynthesized, SqlValidated>
 {
     private readonly ISsdtSqlValidator _validator;
 
@@ -22,7 +22,7 @@ public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<EmissionReady, S
     }
 
     public async Task<Result<SqlValidated>> ExecuteAsync(
-        EmissionReady state,
+        SqlProjectSynthesized state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -62,10 +62,11 @@ public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<EmissionReady, S
             manifest,
             state.DecisionLogPath,
             state.OpportunityArtifacts,
+            state.SqlProjectPath,
             summary));
     }
 
-    private static void RecordSummary(EmissionReady state, SsdtSqlValidationSummary summary)
+    private static void RecordSummary(SqlProjectSynthesized state, SsdtSqlValidationSummary summary)
     {
         state.Log.Record(
             "ssdt.sql.validation.completed",
@@ -77,7 +78,7 @@ public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<EmissionReady, S
                 .Build());
     }
 
-    private static void RecordGroupedErrors(EmissionReady state, SsdtSqlValidationSummary summary)
+    private static void RecordGroupedErrors(SqlProjectSynthesized state, SsdtSqlValidationSummary summary)
     {
         var groups = summary.Issues
             .SelectMany(issue => issue.Errors.Select(error => new { issue.Path, Error = error }))

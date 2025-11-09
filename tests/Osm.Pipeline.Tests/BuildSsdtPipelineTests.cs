@@ -45,6 +45,7 @@ public class BuildSsdtPipelineTests
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             SqlMetadataLog: null);
 
         var pipeline = CreatePipeline();
@@ -69,6 +70,7 @@ public class BuildSsdtPipelineTests
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             SqlMetadataLog: null);
 
         var pipeline = CreatePipeline();
@@ -111,6 +113,7 @@ public class BuildSsdtPipelineTests
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             SqlMetadataLog: null);
 
         var pipeline = CreatePipeline(bootstrapper);
@@ -152,6 +155,7 @@ public class BuildSsdtPipelineTests
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             SqlMetadataLog: null);
 
         var pipeline = CreatePipeline(bootstrapper);
@@ -191,7 +195,8 @@ public class BuildSsdtPipelineTests
             DynamicDataset: DynamicEntityDataset.Empty,
             new EmptyStaticEntityDataProvider(),
             Path.Combine(output.Path, "Seeds"),
-            Path.Combine(output.Path, "DynamicData"));
+            Path.Combine(output.Path, "DynamicData"),
+            SqlProjectPathHint: Path.Combine(output.Path, "OutSystemsModel.sqlproj"));
 
         var pipeline = CreatePipeline();
         var result = await pipeline.HandleAsync(request);
@@ -216,6 +221,12 @@ public class BuildSsdtPipelineTests
         Assert.True(value.ExecutionLog.Entries.Count > 0);
         Assert.Contains(value.ExecutionLog.Entries, entry => entry.Step == "pipeline.completed");
 
+        Assert.False(string.IsNullOrWhiteSpace(value.SqlProjectPath));
+        Assert.True(File.Exists(value.SqlProjectPath));
+        var projectContent = await File.ReadAllTextAsync(value.SqlProjectPath);
+        Assert.Contains("Modules\\AppCore\\dbo.Customer.sql", projectContent, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Seeds\\**\\*.sql", projectContent, StringComparison.OrdinalIgnoreCase);
+
         var steps = value.ExecutionLog.Entries.Select(entry => entry.Step).ToArray();
         Assert.Contains("request.received", steps);
         Assert.Contains("model.ingested", steps);
@@ -226,6 +237,7 @@ public class BuildSsdtPipelineTests
         Assert.Contains("policy.decisions.synthesized", steps);
         Assert.Contains("smo.model.created", steps);
         Assert.Contains("ssdt.emission.completed", steps);
+        Assert.Contains("ssdt.sqlproj.generated", steps);
         Assert.Contains("ssdt.sql.validation.completed", steps);
         Assert.Contains("policy.log.persisted", steps);
         Assert.Contains("staticData.seed.generated", steps);
@@ -295,6 +307,7 @@ public class BuildSsdtPipelineTests
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             SqlMetadataLog: null);
 
         var issue = SsdtSqlValidationIssue.Create(
@@ -357,6 +370,7 @@ public class BuildSsdtPipelineTests
             new PolicyDecisionLogWriter(),
             new EmissionFingerprintCalculator(),
             new OpportunityLogWriter());
+        var sqlProjectStep = new BuildSsdtSqlProjectStep();
         var validationStep = new BuildSsdtSqlValidationStep(sqlValidator ?? new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
         var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
@@ -368,6 +382,7 @@ public class BuildSsdtPipelineTests
             evidenceCacheStep,
             policyStep,
             emissionStep,
+            sqlProjectStep,
             validationStep,
             staticSeedStep,
             dynamicInsertStep,

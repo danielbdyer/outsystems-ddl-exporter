@@ -25,6 +25,7 @@ public sealed record BuildSsdtPipelineResult(
     string SafeScript,
     string RemediationScriptPath,
     string RemediationScript,
+    string SqlProjectPath,
     ImmutableArray<string> StaticSeedScriptPaths,
     ImmutableArray<string> DynamicInsertScriptPaths,
     ImmutableArray<string> TelemetryPackagePaths,

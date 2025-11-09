@@ -163,6 +163,11 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(buildPipeline.SqlProjectPath))
+        {
+            artifacts.Add(new PipelineArtifact("ssdt-project", buildPipeline.SqlProjectPath, "application/xml"));
+        }
+
         if (!buildPipeline.TelemetryPackagePaths.IsDefaultOrEmpty)
         {
             foreach (var packagePath in buildPipeline.TelemetryPackagePaths)
@@ -209,17 +214,22 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
         {
             var result = outcome.Value;
             var application = result.ApplicationResult;
+            var buildPipeline = application.Build.PipelineResult;
             builder["configPath"] = result.Configuration.ConfigPath;
             builder["build.outputDirectory"] = application.Build.OutputDirectory;
             builder["build.modelPath"] = application.Build.ModelPath;
             builder["build.profilePath"] = application.Build.ProfilePath;
             builder["build.profilerProvider"] = application.Build.ProfilerProvider;
-            var staticSeedRoot = FullExportRunManifest.ResolveStaticSeedRoot(application.Build.PipelineResult);
+            if (!string.IsNullOrWhiteSpace(buildPipeline.SqlProjectPath))
+            {
+                builder["build.sqlProjectPath"] = buildPipeline.SqlProjectPath;
+            }
+            var staticSeedRoot = FullExportRunManifest.ResolveStaticSeedRoot(buildPipeline);
             if (!string.IsNullOrWhiteSpace(staticSeedRoot))
             {
                 builder["build.staticSeedRoot"] = staticSeedRoot;
             }
-            var dynamicInsertRoot = FullExportRunManifest.ResolveDynamicInsertRoot(application.Build.PipelineResult);
+            var dynamicInsertRoot = FullExportRunManifest.ResolveDynamicInsertRoot(buildPipeline);
             if (!string.IsNullOrWhiteSpace(dynamicInsertRoot))
             {
                 builder["build.dynamicInsertRoot"] = dynamicInsertRoot;

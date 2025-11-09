@@ -35,6 +35,7 @@ public class CliIntegrationTests
         Assert.Contains("SSDT build summary:", buildStdout);
         Assert.Contains($"Output: {output.Path}", buildStdout);
         Assert.Contains($"Manifest: {Path.Combine(output.Path, "manifest.json")}", buildStdout);
+        Assert.Contains($"SQL project: {Path.Combine(output.Path, "OutSystemsModel.sqlproj")}", buildStdout);
         var buildSummaryIndex = buildStdout.IndexOf("SSDT build summary:", StringComparison.Ordinal);
         var buildDetailsIndex = buildStdout.IndexOf("SSDT Emission Summary:", StringComparison.Ordinal);
         Assert.InRange(buildSummaryIndex, 0, int.MaxValue);

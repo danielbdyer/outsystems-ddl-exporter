@@ -133,6 +133,7 @@ public class BuildSsdtCommandFactoryTests
         Assert.Contains("Tables: 1 emitted to output", output);
         Assert.Contains("Manifest: ", output);
         Assert.Contains("manifest.json", output);
+        Assert.Contains($"SQL project: {Path.Combine("output", "OutSystemsModel.sqlproj")}", output);
         Assert.Contains("Tightening Statistics:", output);
         Assert.Contains("Columns: 1/2 confirmed NOT NULL", output);
         Assert.Contains("Unique indexes: 1/1 confirmed UNIQUE", output);
@@ -525,6 +526,7 @@ public class BuildSsdtCommandFactoryTests
                 string.Empty,
                 "suggestions/needs-remediation.sql",
                 string.Empty,
+                Path.Combine("output", "OutSystemsModel.sqlproj"),
                 ImmutableArray<string>.Empty,
                 ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,

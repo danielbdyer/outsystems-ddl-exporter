@@ -247,6 +247,7 @@ public sealed class DataProfilerFactoryTests
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null,
             SqlMetadataLog: null);
     }
 

@@ -17,4 +17,5 @@ public sealed record BuildSsdtPipelineRequest(
     IStaticEntityDataProvider? StaticDataProvider,
     string? SeedOutputDirectoryHint,
     string? DynamicDataOutputDirectoryHint,
+    string? SqlProjectPathHint,
     SqlMetadataLog? SqlMetadataLog = null) : ICommand<BuildSsdtPipelineResult>;

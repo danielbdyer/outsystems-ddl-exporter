@@ -94,6 +94,7 @@ public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<DynamicInse
             state.Manifest,
             state.DecisionLogPath,
             state.OpportunityArtifacts,
+            state.SqlProjectPath,
             state.SqlValidation,
             state.StaticSeedScriptPaths,
             state.StaticSeedData,
