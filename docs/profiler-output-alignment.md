@@ -12,6 +12,9 @@ These notes document the core concerns the CLI must surface for both single-envi
   - Preserve probe diagnostics so duplicate detections and coverage warnings are distinguishable.
 - **Foreign key integrity**
   - Call out orphaned relationships, `NO CHECK` definitions, and probe failures with severity summaries to guide corrective action order.
+  - Explain in the digest whether the evidence indicates trusted enforcement (`WITH CHECK` FKs or zero-orphan profiles) or actionable gaps (constraints missing/disabled) so operators know when the finding is informational versus blocking DDL.
+  - Include the constraint trust state (trusted, `NO CHECK`, or missing) alongside orphan counts so operators instantly see whether remediation ends with `CHECK CONSTRAINT` or with creating the FK.【F:src/Osm.Cli/Commands/CommandConsole.cs†L506-L520】
+  - Pair every blocking entry with a remediation hint that mirrors the opportunity log: confirm the sampled rows, repair or backfill the parent keys, and re-profile to graduate the relationship into the recommendation or validation buckets.【F:src/Osm.Pipeline/Orchestration/OpportunityLogWriter.cs†L332-L349】【F:src/Osm.Validation/Tightening/PolicyDecisionSummaryFormatter.cs†L359-L386】
 - **Evidence hygiene**
   - Retain overflow hints for each table so operators know additional rows exist beyond the default console window.
 

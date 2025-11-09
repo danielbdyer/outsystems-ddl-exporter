@@ -94,6 +94,7 @@
       "Summary": "Validated: Foreign key constraint is already being created to enforce referential integrity.",
       "Evidence": [
         "HasConstraint=true",
+        "ConstraintTrust=Trusted (WITH CHECK)",
         "HasOrphans=False (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
         "OrphanCount=0"
       ],

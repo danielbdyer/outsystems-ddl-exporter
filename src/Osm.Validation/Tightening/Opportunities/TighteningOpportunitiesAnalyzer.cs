@@ -613,6 +613,12 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 
         builder.Add(
             $"HasConstraint={fkReality.Reference.HasDatabaseConstraint}");
+        var trustState = fkReality.Reference.HasDatabaseConstraint
+            ? fkReality.IsNoCheck
+                ? "Untrusted (NO CHECK)"
+                : "Trusted (WITH CHECK)"
+            : "Missing";
+        builder.Add($"ConstraintTrust={trustState}");
         builder.Add(
             $"HasOrphans={fkReality.HasOrphan} (Outcome={fkReality.ProbeStatus.Outcome}, Sample={fkReality.ProbeStatus.SampleSize.ToString(CultureInfo.InvariantCulture)}, Captured={fkReality.ProbeStatus.CapturedAtUtc:O})");
         builder.Add(

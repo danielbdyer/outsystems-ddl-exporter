@@ -489,17 +489,25 @@ internal static class CommandConsole
             }
 
             var details = new List<(IssueSeverity Severity, string Detail)>();
+            var hasConstraint = fk.Reference.HasDatabaseConstraint;
+            var orphanCount = Math.Max(fk.OrphanCount, 0);
 
             if (fk.HasOrphan)
             {
+                var enforcementContext = hasConstraint
+                    ? fk.IsNoCheck
+                        ? "constraint exists but is marked WITH NOCHECK (untrusted)"
+                        : "constraint exists and should block these rows"
+                    : "no database constraint currently prevents orphan inserts";
                 var orphanDetail = string.Format(
                     CultureInfo.InvariantCulture,
-                    "Orphaned rows detected ({0:N0})",
-                    Math.Max(fk.OrphanCount, 0));
+                    "Orphaned rows detected ({0:N0}) – {1}",
+                    orphanCount,
+                    enforcementContext);
                 details.Add((IssueSeverity.Critical, orphanDetail));
             }
 
-            if (fk.IsNoCheck)
+            if (fk.IsNoCheck && !fk.HasOrphan)
             {
                 details.Add((IssueSeverity.Warning, "Constraint defined as NO CHECK"));
             }

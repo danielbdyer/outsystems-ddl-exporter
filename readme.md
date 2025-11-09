@@ -838,6 +838,25 @@ When resolving inputs, the CLI honours the following order: CLI flag ➝ environ
 
 ## 14. Troubleshooting & Gotchas
 
+### Interpreting foreign key orphan findings
+
+The profiler flags a **foreign key orphan** when a referencing column contains values that have no matching parent row in the profiled evidence set. The console highlights these as `FK orphans` with sample values and includes them in the `FOREIGN KEY CONTRADICTIONS` section of the remediation log so you immediately see why the policy refuses to create or trust that relationship.【F:src/Osm.Validation/Tightening/PolicyDecisionSummaryFormatter.cs†L289-L315】【F:src/Osm.Pipeline/Orchestration/OpportunityLogWriter.cs†L332-L349】
+
+Whether an orphan warning represents an action item depends on the target database state:
+
+* **Existing FK enforced with `WITH CHECK`.** The constraint already prevents orphaned data. Profiling will report an orphan count of zero and the findings appear under `FOREIGN KEY VALIDATIONS` as confirmation—no remediation is required.【F:src/Osm.Pipeline/Orchestration/OpportunityLogWriter.cs†L273-L349】
+* **FK missing or disabled (`WITH NOCHECK`).** The profiler can see orphaned rows because nothing in the database is stopping them. The tightening engine therefore treats the relationship as unsafe and withholds DDL until the data is cleaned. Expect to see `orphaned rows detected` language in the summary and `foreign key orphans` listed in the CLI issue table.【F:src/Osm.Validation/Tightening/ForeignKeyEvaluator.cs†L173-L176】【F:src/Osm.Cli/Commands/CommandConsole.cs†L495-L659】
+
+To remediate:
+
+1. **Confirm the sample.** Use the `Foreign key orphan samples` emitted by the CLI to query the offending child rows and verify that they truly lack parents.【F:src/Osm.Cli/Commands/CommandConsole.cs†L657-L666】
+2. **Repair the data.** Either delete the orphaned children or update them to reference a valid parent key so profiling no longer observes a mismatch.【F:src/Osm.Pipeline/Orchestration/OpportunityLogWriter.cs†L332-L337】
+3. **Re-run profiling.** Once the orphan count returns to zero, rerun `build-ssdt`; the relationship will move into the recommendation/validation buckets and the FK constraint can be emitted safely.【F:src/Osm.Validation/Tightening/PolicyDecisionSummaryFormatter.cs†L359-L386】
+
+When anomalies persist, the CLI now spells out whether the database is missing the constraint entirely, has it disabled with `WITH NOCHECK`, or should have blocked the sample so you know if remediation must end with `CHECK CONSTRAINT` or a fresh FK creation.【F:src/Osm.Cli/Commands/CommandConsole.cs†L506-L520】 The remediation script echoes that state with a "Foreign key state" banner and enumerated cleanup steps before any SQL suggestions, keeping operators focused on validating samples, repairing data, and re-running profiling before they re-enable enforcement.【F:src/Osm.Pipeline/Orchestration/OpportunityLogWriter.cs†L213-L258】【F:tests/Fixtures/opportunities/needs-remediation.sql†L48-L65】
+
+If the orphans are intentional (for example, a soft-deleted parent that should not block reporting), consider modelling the relationship as optional in OutSystems or adding a policy exclusion so the CLI documents the exception without attempting enforcement.【F:src/Osm.Validation/Tightening/TighteningPolicyMatrix.cs†L330-L369】
+
 * **“Mandatory” vs DB `NOT NULL`**: OutSystems `isMandatory` is logical; our policy upgrades to `NOT NULL` only with evidence (or Aggressive + pre-fix).
 * **Index ASC/DESC**: OutSystems model doesn’t expose per-column sort direction; DDL omits direction (default ASC).
 * **Cross-catalog FKs**: metamodel can show logical refs that DB can’t enforce; policy won’t create FK when catalogs/schemas differ (or when orphans exist).
