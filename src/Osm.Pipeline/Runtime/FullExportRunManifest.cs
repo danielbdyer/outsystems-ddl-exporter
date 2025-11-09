@@ -13,14 +13,22 @@ public sealed record FullExportRunManifest(
     DateTimeOffset GeneratedAtUtc,
     string? ConfigurationPath,
     ImmutableArray<FullExportStageManifest> Stages,
-    ImmutableArray<FullExportManifestArtifact> Artifacts,
+    ImmutableArray<FullExportManifestArtifact> DynamicArtifacts,
+    ImmutableArray<FullExportManifestArtifact> StaticSeedArtifacts,
+    bool StaticSeedArtifactsIncludedInDynamic,
     ImmutableArray<string> Warnings)
 {
+    private const string StaticSeedArtifactName = "static-seed";
+
+    public const bool DefaultIncludeStaticSeedArtifactsInDynamic = true;
+
     public static FullExportRunManifest Empty => new(
         DateTimeOffset.MinValue,
         null,
         ImmutableArray<FullExportStageManifest>.Empty,
         ImmutableArray<FullExportManifestArtifact>.Empty,
+        ImmutableArray<FullExportManifestArtifact>.Empty,
+        DefaultIncludeStaticSeedArtifactsInDynamic,
         ImmutableArray<string>.Empty);
 
     internal static FullExportRunManifest Create(
@@ -43,10 +51,31 @@ public sealed record FullExportRunManifest(
             throw new ArgumentNullException(nameof(timeProvider));
         }
 
-        var artifactArray = artifacts
-            .Where(static artifact => artifact is not null)
-            .Select(static artifact => new FullExportManifestArtifact(artifact.Name, artifact.Path, artifact.ContentType))
-            .ToImmutableArray();
+        var includeStaticSeedsInDynamic = DefaultIncludeStaticSeedArtifactsInDynamic;
+        var dynamicArtifactsBuilder = ImmutableArray.CreateBuilder<FullExportManifestArtifact>();
+        var staticSeedArtifactsBuilder = ImmutableArray.CreateBuilder<FullExportManifestArtifact>();
+
+        foreach (var artifact in artifacts)
+        {
+            if (artifact is null)
+            {
+                continue;
+            }
+
+            var manifestArtifact = new FullExportManifestArtifact(artifact.Name, artifact.Path, artifact.ContentType);
+            if (IsStaticSeedArtifact(artifact))
+            {
+                staticSeedArtifactsBuilder.Add(manifestArtifact);
+                if (includeStaticSeedsInDynamic)
+                {
+                    dynamicArtifactsBuilder.Add(manifestArtifact);
+                }
+            }
+            else
+            {
+                dynamicArtifactsBuilder.Add(manifestArtifact);
+            }
+        }
 
         var extractionStage = CreateExtractionStage(result.ApplicationResult.Extraction);
         var profileStage = CreateProfileStage(result.ApplicationResult.Profile);
@@ -63,7 +92,9 @@ public sealed record FullExportRunManifest(
             timeProvider.GetUtcNow(),
             result.Configuration.ConfigPath,
             stages,
-            artifactArray,
+            dynamicArtifactsBuilder.ToImmutable(),
+            staticSeedArtifactsBuilder.ToImmutable(),
+            includeStaticSeedsInDynamic,
             warnings);
     }
 
@@ -157,6 +188,11 @@ public sealed record FullExportRunManifest(
         if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty)
         {
             artifacts["staticSeedScripts"] = string.Join(";", pipelineResult.StaticSeedScriptPaths);
+            var staticSeedRoot = ResolveStaticSeedRoot(pipelineResult);
+            if (!string.IsNullOrWhiteSpace(staticSeedRoot))
+            {
+                artifacts["staticSeedRoot"] = staticSeedRoot;
+            }
         }
 
         if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty)
@@ -241,6 +277,89 @@ public sealed record FullExportRunManifest(
         var completed = ordered.Last().TimestampUtc;
         var duration = completed >= started ? completed - started : (TimeSpan?)null;
         return new StageTiming(started, completed, duration);
+    }
+
+    public static string? ResolveStaticSeedRoot(BuildSsdtPipelineResult pipelineResult)
+    {
+        if (pipelineResult is null)
+        {
+            throw new ArgumentNullException(nameof(pipelineResult));
+        }
+
+        if (pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var directories = pipelineResult.StaticSeedScriptPaths
+            .Where(static path => !string.IsNullOrWhiteSpace(path))
+            .Select(static path => Path.GetDirectoryName(path))
+            .Where(static directory => !string.IsNullOrWhiteSpace(directory))
+            .Select(static directory => NormalizeDirectory(directory!))
+            .ToArray();
+
+        if (directories.Length == 0)
+        {
+            return null;
+        }
+
+        var common = FindCommonDirectoryPrefix(directories);
+        return string.IsNullOrWhiteSpace(common) ? directories[0] : common;
+    }
+
+    private static bool IsStaticSeedArtifact(PipelineArtifact artifact)
+    {
+        return artifact is not null
+            && !string.IsNullOrWhiteSpace(artifact.Name)
+            && string.Equals(artifact.Name, StaticSeedArtifactName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeDirectory(string directory)
+    {
+        var fullPath = Path.GetFullPath(directory);
+        if (!fullPath.EndsWith(Path.DirectorySeparatorChar))
+        {
+            fullPath += Path.DirectorySeparatorChar;
+        }
+
+        return fullPath;
+    }
+
+    private static string FindCommonDirectoryPrefix(string[] directories)
+    {
+        if (directories.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var prefix = directories[0];
+        for (var i = 1; i < directories.Length && prefix.Length > 0; i++)
+        {
+            var comparison = directories[i];
+            var limit = Math.Min(prefix.Length, comparison.Length);
+            var index = 0;
+            while (index < limit && char.ToUpperInvariant(prefix[index]) == char.ToUpperInvariant(comparison[index]))
+            {
+                index++;
+            }
+
+            prefix = prefix[..index];
+        }
+
+        if (prefix.Length == 0)
+        {
+            var root = Path.GetPathRoot(directories[0]);
+            return string.IsNullOrEmpty(root) ? string.Empty : root;
+        }
+
+        var lastSeparator = prefix.LastIndexOf(Path.DirectorySeparatorChar);
+        if (lastSeparator <= 0)
+        {
+            var root = Path.GetPathRoot(prefix);
+            return string.IsNullOrEmpty(root) ? prefix.TrimEnd(Path.DirectorySeparatorChar) : root;
+        }
+
+        return prefix[..lastSeparator];
     }
 
     internal sealed record StageTiming(

@@ -203,6 +203,14 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             builder["build.modelPath"] = application.Build.ModelPath;
             builder["build.profilePath"] = application.Build.ProfilePath;
             builder["build.profilerProvider"] = application.Build.ProfilerProvider;
+            var staticSeedRoot = FullExportRunManifest.ResolveStaticSeedRoot(application.Build.PipelineResult);
+            if (!string.IsNullOrWhiteSpace(staticSeedRoot))
+            {
+                builder["build.staticSeedRoot"] = staticSeedRoot;
+            }
+            builder["build.staticSeedsInDynamicManifest"] = FullExportRunManifest
+                .DefaultIncludeStaticSeedArtifactsInDynamic
+                .ToString(CultureInfo.InvariantCulture);
             builder["profile.outputDirectory"] = application.Profile.OutputDirectory;
             builder["profile.profilerProvider"] = application.Profile.ProfilerProvider;
             builder["extract.outputPath"] = application.Extraction.OutputPath;
