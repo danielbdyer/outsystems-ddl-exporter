@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -28,9 +29,16 @@ public sealed record FullExportVerbResult(
 public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExportVerbResult>
 {
     public const string VerbName = "full-export";
+    public const string RunManifestFileName = "full-export.manifest.json";
+
+    private static readonly JsonSerializerOptions ManifestSerializerOptions = new()
+    {
+        WriteIndented = true
+    };
 
     private readonly ICliConfigurationService _configurationService;
     private readonly IApplicationService<FullExportApplicationInput, FullExportApplicationResult> _applicationService;
+    private readonly TimeProvider _timeProvider;
 
     public FullExportVerb(
         ICliConfigurationService configurationService,
@@ -40,6 +48,7 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
     {
         _configurationService = configurationService ?? throw new ArgumentNullException(nameof(configurationService));
         _applicationService = applicationService ?? throw new ArgumentNullException(nameof(applicationService));
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public override string Name => VerbName;
@@ -165,6 +174,12 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             artifacts.Add(new PipelineArtifact("evidence-manifest", Path.Combine(cache.CacheDirectory, "manifest.json"), "application/json"));
         }
 
+        var manifestArtifact = PersistRunManifest(result, artifacts);
+        if (manifestArtifact is not null)
+        {
+            artifacts.Add(manifestArtifact);
+        }
+
         return artifacts;
     }
 
@@ -199,5 +214,57 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
         }
 
         return builder.ToImmutable();
+    }
+
+    private PipelineArtifact? PersistRunManifest(FullExportVerbResult result, List<PipelineArtifact> artifacts)
+    {
+        if (result is null)
+        {
+            throw new ArgumentNullException(nameof(result));
+        }
+
+        if (artifacts is null)
+        {
+            throw new ArgumentNullException(nameof(artifacts));
+        }
+
+        var buildOutput = result.ApplicationResult.Build.OutputDirectory;
+        var manifestPath = ResolveManifestPath(buildOutput);
+        var manifestArtifact = new PipelineArtifact("full-export-manifest", manifestPath, "application/json");
+
+        var artifactSnapshot = new List<PipelineArtifact>(artifacts.Count + 1);
+        artifactSnapshot.AddRange(artifacts);
+        artifactSnapshot.Add(manifestArtifact);
+
+        var manifest = FullExportRunManifest.Create(result, artifactSnapshot, _timeProvider);
+
+        var directory = Path.GetDirectoryName(manifestPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory!);
+        }
+
+        using (var stream = new FileStream(
+                   manifestPath,
+                   FileMode.Create,
+                   FileAccess.Write,
+                   FileShare.None,
+                   bufferSize: 4096,
+                   FileOptions.Asynchronous | FileOptions.SequentialScan))
+        {
+            JsonSerializer.Serialize(stream, manifest, ManifestSerializerOptions);
+        }
+
+        return manifestArtifact;
+    }
+
+    private static string ResolveManifestPath(string? buildOutput)
+    {
+        if (!string.IsNullOrWhiteSpace(buildOutput))
+        {
+            return Path.Combine(buildOutput, RunManifestFileName);
+        }
+
+        return Path.Combine(Environment.CurrentDirectory, RunManifestFileName);
     }
 }
