@@ -178,9 +178,11 @@ public sealed class SchemaApplyOrchestrator
         var value = outcome.Value;
         var metadata = new PipelineLogMetadataBuilder()
             .WithFlag("apply.enabled", true)
+            .WithFlag("apply.streaming", value.StreamingEnabled)
             .WithCount("scripts.applied", value.AppliedScripts.Length)
             .WithCount("seeds.applied", value.AppliedSeedScripts.Length)
             .WithCount("batches.executed", value.ExecutedBatchCount)
+            .WithCount("batches.maxBytes", value.MaxBatchSizeBytes)
             .WithMetric("duration.ms", value.Duration.TotalMilliseconds)
             .WithPath("paths.safeScript", safeScriptPath)
             .WithPath("paths.remediationScript", remediationPath)

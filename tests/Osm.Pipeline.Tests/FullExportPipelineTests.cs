@@ -86,7 +86,9 @@ public sealed class FullExportPipelineTests
                 ImmutableArray.Create(SafeScriptPath),
                 ImmutableArray.Create(SeedScriptPath),
                 ExecutedBatchCount: 3,
-                Duration: TimeSpan.FromMilliseconds(125)))
+                Duration: TimeSpan.FromMilliseconds(125),
+                MaxBatchSizeBytes: 4096,
+                StreamingEnabled: true))
         };
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
         var pipeline = new FullExportPipeline(dispatcher, orchestrator, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
@@ -479,7 +481,9 @@ public sealed class FullExportPipelineTests
                 ImmutableArray<string>.Empty,
                 ImmutableArray<string>.Empty,
                 ExecutedBatchCount: 0,
-                Duration: TimeSpan.Zero));
+                Duration: TimeSpan.Zero,
+                MaxBatchSizeBytes: 0,
+                StreamingEnabled: true));
 
         public Task<Result<SchemaDataApplyOutcome>> ApplyAsync(
             SchemaDataApplyRequest request,
