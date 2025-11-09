@@ -63,6 +63,30 @@ public sealed class DynamicEntityInsertGeneratorTests
     }
 
     [Fact]
+    public void GenerateScripts_BatchesLargeDatasetsWithoutRepeatedEnumeration()
+    {
+        var definition = CreateDefinition("App", "dbo", "LARGE", "LargeEntities", isIdentity: false);
+        const int rowCount = 2345;
+        const int batchSize = 500;
+
+        var rows = Enumerable.Range(1, rowCount)
+            .Select(i => StaticEntityRow.Create(new object?[] { i, $"Name-{i}" }))
+            .ToImmutableArray();
+        var dataset = new DynamicEntityDataset(ImmutableArray.Create(new StaticEntityTableData(definition, rows)));
+
+        var generator = new DynamicEntityInsertGenerator(Formatter);
+        var options = new DynamicEntityInsertGenerationOptions(batchSize);
+
+        var scripts = generator.GenerateScripts(dataset, ImmutableArray<StaticEntityTableData>.Empty, options);
+
+        Assert.Single(scripts);
+        var script = scripts[0].Script;
+        var batchCount = script.Split("PRINT 'Applying batch", System.StringSplitOptions.RemoveEmptyEntries).Length - 1;
+        var expectedBatches = (int)System.Math.Ceiling(rowCount / (double)batchSize);
+        Assert.Equal(expectedBatches, batchCount);
+    }
+
+    [Fact]
     public void GenerateScripts_SortsTablesByModuleAndName()
     {
         var alpha = CreateDefinition("Alpha", "dbo", "ONE", "One", isIdentity: false);
@@ -110,9 +134,9 @@ public sealed class DynamicEntityInsertGeneratorTests
 
         return new StaticEntitySeedTableDefinition(
             module,
+            logicalName,
             schema,
             physicalName,
-            logicalName,
             logicalName,
             columns);
     }

@@ -320,7 +320,15 @@ public sealed class DynamicEntityInsertGenerator
         for (var i = 0; i < rows.Length; i += batchSize)
         {
             var length = Math.Min(batchSize, rows.Length - i);
-            yield return rows.Skip(i).Take(length).ToImmutableArray();
+            var span = rows.AsSpan(i, length);
+            var builder = ImmutableArray.CreateBuilder<StaticEntityRow>(length);
+
+            for (var j = 0; j < span.Length; j++)
+            {
+                builder.Add(span[j]);
+            }
+
+            yield return builder.MoveToImmutable();
         }
     }
 
