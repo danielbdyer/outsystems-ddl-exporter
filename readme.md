@@ -70,7 +70,19 @@
      --modules "AppCore,ExtBilling,Ops"
    ```
 
-   The `full-export` verb chains model extraction, profiling, and SSDT emission in one run, streaming each stage’s summary so operators can monitor progress without losing visibility into intermediate artifacts. Treat this orchestrator as a first-class workflow: preserve its real-time reporting and continue to watch for performance and usability improvements as new features land.
+   The `full-export` verb chains model extraction, profiling, and SSDT emission in one run, streaming each stage’s summary so operators can monitor progress without losing visibility into intermediate artifacts. Treat this orchestrator as a first-class workflow: preserve its real-time reporting and continue to watch for performance and usability improvements as new features land. It reuses the same module filters, SQL overrides, cache switches, and tightening feature flags that power the individual `extract-model`, `profile`, and `build-ssdt` verbs, so a single invocation projects those overrides across every stage without repeating arguments. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L57-L112】
+
+   **Prerequisites**
+
+   * Provide a model source via `--mock-advanced-sql` (fixture manifest) or the SQL connection options (`--connection-string`, authentication toggles) so the extractor can hydrate the OutSystems payload before profiling. The same module filter switches (`--modules`, `--include-system-modules`, `--only-active-attributes`) narrow what flows into the combined run. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L64-L123】
+   * Point profiling at a destination with `--profile-out` and choose a provider (`--profiler-provider` or `--use-profile-mock-folder`/`--profile-mock-folder`) so evidence collection mirrors the standalone `profile` verb. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L24-L42】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L29-L55】
+   * Declare an SSDT output root with `--build-out` (plus rename/static-data overrides) to land the emission artifacts alongside the manifest and telemetry bundle generated during the run. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L24-L42】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L36-L53】
+
+   **Feature flags carried into the pipeline**
+
+   * Evidence cache management (`--cache-root`, `--refresh-cache`) and SQL fan-out (`--profiling-connection-string`) flow unchanged to the application service so repeated runs can short-circuit expensive calls while preserving audit trails. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L96-L113】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L8-L33】
+   * Tightening and remediation knobs (`--remediation-*`, `--use-profile-mock-folder`, `--profile-mock-folder`) emit the same policy overrides used by `build-ssdt`, ensuring the orchestrator records toggle provenance once per execution and surfaces it in the manifest/decision report. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L96-L113】【F:src/Osm.Pipeline/Application/CommandOptions.cs†L15-L28】
+   * The pipeline’s execution log now captures extraction, profiling, emission, and schema-apply metadata in a single telemetry stream, keeping downstream automation aware of emitted artifacts (`model.json`, profile manifest, safe/remediation scripts, telemetry zips) without rehydrating intermediate command output. 【F:src/Osm.Pipeline/Orchestration/FullExportPipeline.cs†L93-L211】
 
    The emitted manifest mirrors the fixtures we keep under `tests/Fixtures/emission/edge-case` (and the rename variant under `tests/Fixtures/emission/edge-case-rename`), so you can diff your live runs against the curated baselines.
 3. **(Optional) Verify DMM parity** using the same model/profile inputs:

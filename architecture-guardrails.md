@@ -22,8 +22,9 @@
 - Provide adapters that translate feature-flag combinations into SMO scripting options so both per-artifact and concatenated outputs originate from the same object graph.
 
 ## 6. Pipelineability and Observability
-- Design orchestrators to return structured telemetry (counts of tightened columns, skipped foreign keys, remediation prerequisites). Surface that telemetry both in console output and as JSON artifacts for downstream pipelines. 【F:readme.md†L320-L378】
+- Design orchestrators to return structured telemetry (counts of tightened columns, skipped foreign keys, remediation prerequisites). Surface that telemetry both in console output and as JSON artifacts for downstream pipelines. 【F:readme.md†L38-L86】【F:src/Osm.Pipeline/Orchestration/FullExportPipeline.cs†L89-L211】
 - Ensure all file emissions (Tables, Indexes, ForeignKeys, concatenated constraints) are idempotent and overwrite-safe, enabling repeated dry runs in CI without manual cleanup.
+- Keep the `full-export` pipeline’s execution log authoritative: it should stitch together extraction, profiling, emission, and schema-apply metadata so the manifest/telemetry bundle lists every artifact (model JSON, profile manifest, safe/remediation scripts, telemetry zips) introduced by new features. Any schema or telemetry changes must be reflected in `notes/design-contracts.md` before shipping so consuming teams stay in sync. 【F:src/Osm.Pipeline/Orchestration/FullExportPipeline.cs†L89-L211】【F:notes/design-contracts.md†L1-L74】
 
 ## 7. Scalability to 200+ Entities
 - Favor streaming/iterator patterns when reading large models and writing DDL to prevent high memory pressure when dealing with 100+ entities and 100+ static entities. 【F:readme.md†L6-L12】
