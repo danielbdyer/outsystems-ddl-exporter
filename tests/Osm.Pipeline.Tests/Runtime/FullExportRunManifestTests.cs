@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Data.Common;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Emission;
@@ -15,6 +18,7 @@ using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Pipeline.UatUsers;
 using Osm.Pipeline.SqlExtraction;
+using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
 using Osm.Validation.Tightening.Validations;
@@ -233,6 +237,157 @@ public sealed class FullExportRunManifestTests
         Assert.All(staticSeedPaths.Select(Path.GetFullPath), path => Assert.Contains(path, staticFiles));
     }
 
+    [Fact]
+    public void Create_IncludesUatUsersArtifactsAndStage()
+    {
+        using var tempDir = new TempDirectory();
+        var dynamicRoot = Path.Combine(tempDir.Path, "Dynamic");
+        Directory.CreateDirectory(dynamicRoot);
+
+        var modelPath = Path.Combine(tempDir.Path, "model.json");
+        File.WriteAllText(modelPath, "{}");
+        var profilePath = Path.Combine(tempDir.Path, "profile.json");
+        File.WriteAllText(profilePath, "{}");
+        var safeScriptPath = Path.Combine(dynamicRoot, "Safe.sql");
+        File.WriteAllText(safeScriptPath, "PRINT 'safe';");
+        var remediationScriptPath = Path.Combine(dynamicRoot, "Remediation.sql");
+        File.WriteAllText(remediationScriptPath, "PRINT 'remediation';");
+
+        var staticSeedRoot = Path.Combine(dynamicRoot, "Seeds");
+        Directory.CreateDirectory(staticSeedRoot);
+        var moduleSeedPath = Path.Combine(staticSeedRoot, "Module", "Static.seed.sql");
+        Directory.CreateDirectory(Path.GetDirectoryName(moduleSeedPath)!);
+        File.WriteAllText(moduleSeedPath, "PRINT 'seed';");
+        var masterSeedPath = Path.Combine(staticSeedRoot, "Master.seed.sql");
+        File.WriteAllText(masterSeedPath, "PRINT 'master';");
+        var staticSeedPaths = ImmutableArray.Create(moduleSeedPath, masterSeedPath);
+
+        var extraction = CreateExtractionApplicationResult(modelPath);
+        var capture = CreateCaptureApplicationResult(profilePath, modelPath, Path.Combine(tempDir.Path, "Profiles"));
+        var build = CreateBuildApplicationResult(dynamicRoot, modelPath, profilePath, safeScriptPath, remediationScriptPath, staticSeedPaths);
+
+        var schemaApply = new SchemaApplyResult(
+            Attempted: false,
+            SafeScriptApplied: false,
+            StaticSeedsApplied: false,
+            AppliedScripts: ImmutableArray<string>.Empty,
+            AppliedSeedScripts: ImmutableArray<string>.Empty,
+            SkippedScripts: ImmutableArray<string>.Empty,
+            Warnings: ImmutableArray<string>.Empty,
+            PendingRemediationCount: 0,
+            SafeScriptPath: safeScriptPath,
+            RemediationScriptPath: remediationScriptPath,
+            StaticSeedScriptPaths: staticSeedPaths,
+            Duration: TimeSpan.Zero,
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.NonDestructive,
+            StaticSeedValidation: StaticSeedValidationSummary.NotAttempted);
+
+        var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, "config/full-export.json");
+
+        var artifacts = new UatUsersArtifacts(dynamicRoot);
+        var userMapPath = Path.Combine(tempDir.Path, "mappings", "uat_user_map.csv");
+        Directory.CreateDirectory(Path.GetDirectoryName(userMapPath)!);
+        File.WriteAllText(userMapPath, "SourceUserId,TargetUserId,Rationale\n100,200,approved");
+        var allowedUsersSqlPath = Path.Combine(tempDir.Path, "dbo.User.sql");
+        File.WriteAllText(allowedUsersSqlPath, "SELECT 1");
+        var snapshotPath = Path.Combine(tempDir.Path, "uat-users.snapshot.json");
+        File.WriteAllText(snapshotPath, "{}");
+
+        var uatContext = new UatUsersContext(
+            new StubSchemaGraph(),
+            artifacts,
+            new ThrowingConnectionFactory(),
+            "dbo",
+            "User",
+            "Id",
+            includeColumns: new[] { "CreatedBy", "UpdatedBy" },
+            userMapPath,
+            allowedUsersSqlPath,
+            allowedUserIdsPath: null,
+            snapshotPath,
+            userEntityIdentifier: "OSUSR_USER",
+            fromLiveMetadata: false,
+            sourceFingerprint: "uat/db");
+
+        uatContext.SetAllowedUserIds(new[] { UserIdentifier.FromString("200") });
+        uatContext.SetOrphanUserIds(new[] { UserIdentifier.FromString("100") });
+        uatContext.SetUserMap(new[]
+        {
+            new UserMappingEntry(UserIdentifier.FromString("100"), UserIdentifier.FromString("200"), "approved")
+        });
+
+        var uatRoot = Path.Combine(artifacts.Root, "uat-users");
+        File.WriteAllText(Path.Combine(uatRoot, "00_user_map.template.csv"), "SourceUserId,TargetUserId,Rationale\n100,,");
+        File.WriteAllText(Path.Combine(uatRoot, "01_preview.csv"), "TableName,ColumnName,OldUserId,NewUserId,RowCount");
+        File.WriteAllText(Path.Combine(uatRoot, "02_apply_user_remap.sql"), "PRINT 'remap';");
+        File.WriteAllText(Path.Combine(uatRoot, "03_catalog.txt"), "dbo.Table.Column -- FK_Table_User");
+        File.WriteAllText(artifacts.GetDefaultUserMapPath(), "SourceUserId,TargetUserId,Rationale\n100,200,approved");
+
+        var uatUsersResult = new UatUsersApplicationResult(true, uatContext, ImmutableArray<string>.Empty);
+
+        var applicationResult = new FullExportApplicationResult(
+            build,
+            capture,
+            extraction,
+            schemaApply,
+            SchemaApplyOptions.Disabled,
+            uatUsersResult);
+
+        var verbResult = new FullExportVerbResult(configurationContext, applicationResult);
+
+        var manifestPath = Path.Combine(dynamicRoot, FullExportVerb.RunManifestFileName);
+        File.WriteAllText(manifestPath, "{}");
+
+        var artifactList = new List<PipelineArtifact>
+        {
+            new("model-json", extraction.OutputPath, "application/json"),
+            new("profile", capture.PipelineResult.ProfilePath, "application/json"),
+            new("profile-manifest", capture.PipelineResult.ManifestPath, "application/json"),
+            new("decision-log", build.PipelineResult.DecisionLogPath, "application/json"),
+            new("opportunities", build.PipelineResult.OpportunitiesPath, "application/json"),
+            new("validations", build.PipelineResult.ValidationsPath, "application/json"),
+            new("opportunity-safe", safeScriptPath, "application/sql"),
+            new("opportunity-remediation", remediationScriptPath, "application/sql"),
+            new("manifest", Path.Combine(dynamicRoot, "manifest.json"), "application/json"),
+            new("full-export-manifest", manifestPath, "application/json"),
+            new("uat-users-root", uatRoot),
+            new("uat-users-map", userMapPath, "text/csv"),
+            new("uat-users-map-default", artifacts.GetDefaultUserMapPath(), "text/csv"),
+            new("uat-users-map-template", Path.Combine(uatRoot, "00_user_map.template.csv"), "text/csv"),
+            new("uat-users-preview", Path.Combine(uatRoot, "01_preview.csv"), "text/csv"),
+            new("uat-users-script", Path.Combine(uatRoot, "02_apply_user_remap.sql"), "application/sql"),
+            new("uat-users-catalog", Path.Combine(uatRoot, "03_catalog.txt"), "text/plain")
+        };
+
+        foreach (var insertPath in build.PipelineResult.DynamicInsertScriptPaths)
+        {
+            artifactList.Add(new PipelineArtifact("dynamic-insert", insertPath, "application/sql"));
+        }
+
+        foreach (var seedPath in staticSeedPaths)
+        {
+            artifactList.Add(new PipelineArtifact("static-seed", seedPath, "application/sql"));
+        }
+
+        var manifest = FullExportRunManifest.Create(verbResult, artifactList, TimeProvider.System);
+
+        var uatStage = Assert.Single(manifest.Stages, stage => stage.Name == "uat-users");
+        Assert.Equal("true", uatStage.Artifacts["enabled"]);
+        Assert.Equal(Path.GetFullPath(uatRoot), Path.GetFullPath(uatStage.Artifacts["artifactRoot"]!));
+        Assert.Equal("1", uatStage.Artifacts["allowedCount"]);
+        Assert.Equal("1", uatStage.Artifacts["orphanCount"]);
+        Assert.Equal("dbo", uatStage.Artifacts["userSchema"]);
+        Assert.Equal("User", uatStage.Artifacts["userTable"]);
+        Assert.Equal("Id", uatStage.Artifacts["userIdColumn"]);
+        Assert.Equal("CreatedBy,UpdatedBy", uatStage.Artifacts["includeColumns"]);
+        Assert.Equal(Path.GetFullPath(userMapPath), Path.GetFullPath(uatStage.Artifacts["userMapPath"]!));
+        Assert.Equal(Path.GetFullPath(artifacts.GetDefaultUserMapPath()), Path.GetFullPath(uatStage.Artifacts["defaultUserMapPath"]!));
+        Assert.Equal(Path.GetFullPath(Path.Combine(uatRoot, "01_preview.csv")), Path.GetFullPath(uatStage.Artifacts["previewPath"]!));
+        Assert.Contains(manifest.DynamicArtifacts, artifact => artifact.Name == "uat-users-preview");
+        Assert.Contains(manifest.DynamicArtifacts, artifact => artifact.Name == "uat-users-script");
+        Assert.Contains(manifest.DynamicArtifacts, artifact => artifact.Name == "uat-users-catalog");
+    }
+
     private static ExtractModelApplicationResult CreateExtractionApplicationResult(string modelPath)
     {
         var extractionResult = new ModelExtractionResult(
@@ -410,5 +565,17 @@ public sealed class FullExportRunManifestTests
             TriggerJson: Array.Empty<OutsystemsTriggerJsonRow>(),
             ModuleJson: Array.Empty<OutsystemsModuleJsonRow>(),
             DatabaseName: databaseName);
+    }
+
+    private sealed class StubSchemaGraph : IUserSchemaGraph
+    {
+        public Task<IReadOnlyList<ForeignKeyDefinition>> GetForeignKeysAsync(CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<ForeignKeyDefinition>>(Array.Empty<ForeignKeyDefinition>());
+    }
+
+    private sealed class ThrowingConnectionFactory : IDbConnectionFactory
+    {
+        public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Connection factory should not be invoked in this test.");
     }
 }

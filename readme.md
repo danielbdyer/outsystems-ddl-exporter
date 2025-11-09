@@ -92,6 +92,31 @@
    * Append `--run-load-harness` to immediately replay the generated safe/remediation/static seed scripts against a staging database. The CLI streams batch timings, lock contention, wait stat deltas, and index fragmentation to the console and persists a JSON report (configure with `--load-harness-report-out`, `--load-harness-connection-string`, and `--load-harness-command-timeout`). For ad-hoc replays use `tools/FullExportLoadHarness`, which exposes the same harness runner. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L34-L201】【F:tools/FullExportLoadHarness/Program.cs†L1-L63】
 
    The emitted manifest mirrors the fixtures we keep under `tests/Fixtures/emission/edge-case` (and the rename variant under `tests/Fixtures/emission/edge-case-rename`), so you can diff your live runs against the curated baselines.
+
+   **QA → UAT dataset (one-shot)**
+
+   When the QA catalog needs to seed UAT with a vetted user remap, enable the embedded `uat-users` pipeline so the `full-export` run captures both SSDT output and the remediation bundle:
+
+   ```bash
+   dotnet run --project src/Osm.Cli \
+     full-export \
+     --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
+     --profile-out ./out/profiles \
+     --build-out ./out/full-export \
+     --enable-uat-users \
+     --uat-conn "Server=uat;Database=UAT;TrustServerCertificate=True" \
+     --user-ddl ./extracts/dbo.User.sql \
+     --user-map ./inputs/uat_user_map.csv
+   ```
+
+   The run produces a `uat-users` block in `full-export.manifest.json` (`Stages[].Name == "uat-users"`) plus a dedicated artifact root at `<build-out>/uat-users`. Expect to see:
+
+   * `00_user_map.template.csv` – orphan list captured from QA. Copy the template to `00_user_map.csv` (or supply `--user-map`) and fill in the `TargetUserId` values the UAT rollout should adopt.
+   * `01_preview.csv` – per-table preview of `OldUserId → NewUserId` row counts so QA can validate remap coverage before shipping.
+   * `02_apply_user_remap.sql` – idempotent script that stages the mapping, guards `NULL` values, and reports a per-column summary.
+   * `03_catalog.txt` – normalized `<schema>.<table>.<column> -- <foreign key>` catalog for audit trails.
+
+   These artifacts travel alongside the SSDT manifest, safe/remediation scripts, and telemetry bundle, giving operations a single payload for QA-to-UAT promotions.
 3. **(Optional) Verify DMM parity** using the same model/profile inputs:
 
    ```bash

@@ -32,6 +32,30 @@ uat-users
   [--out <dir>]                     # Default: ./_artifacts
 ```
 
+## Full Export Walkthrough (QA → UAT)
+
+The `full-export` verb can emit the UAT remap bundle alongside SSDT artifacts when `--enable-uat-users` is supplied. This keeps the QA→UAT promotion in a single deterministic run:
+
+```bash
+dotnet run --project src/Osm.Cli \
+  full-export \
+  --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
+  --profile-out ./out/profiles \
+  --build-out ./out/full-export \
+  --enable-uat-users \
+  --uat-conn "Server=uat;Database=UAT;TrustServerCertificate=True" \
+  --user-ddl ./extracts/dbo.User.sql \
+  --user-map ./inputs/uat_user_map.csv
+```
+
+Key expectations:
+
+* `full-export.manifest.json` now carries a `uat-users` stage (`Stages[].Name == "uat-users"`) with metadata such as `artifactRoot`, `allowedCount`, and `defaultUserMapPath` so automation can discover the bundle without scraping console output.
+* The manifest’s `DynamicArtifacts` array lists the published files (`uat-users-preview`, `uat-users-script`, `uat-users-catalog`, `uat-users-map-template`, and both map variants) so CI/CD can archive the run.
+* The metadata block exposes `uatUsers.*` keys (`enabled`, `artifactRoot`, `applyScriptPath`, `previewPath`, `catalogPath`, `allowedUsersSqlPath`, etc.) to record provenance for postmortems and guardrails.
+
+Pointing `--user-ddl` at the QA `dbo.User` export hydrates the allowed user list; pass `--user-ids` for ad-hoc scenarios. If the primary map lives outside `<build-out>/uat-users`, include `--user-map` so the pipeline synchronizes the custom CSV into the canonical location.
+
 ## Primary Artifacts (written to `<out>/uat-users`)
 
 | File | Description |
@@ -42,6 +66,8 @@ uat-users
 | `03_catalog.txt` | Ordered list of `<schema>.<table>.<column> -- <foreign key name>` entries comprising the catalog. |
 
 ## Workflow
+
+When operating through `full-export`, the steps below remain the same—the orchestrator simply runs them as part of the combined pipeline and records the artifact paths in the manifest:
 
 1. **Discover and analyze**
    ```bash
