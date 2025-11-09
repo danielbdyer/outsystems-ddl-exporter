@@ -614,6 +614,7 @@ public class CommandConsoleTests
             string.Empty,
             ImmutableArray<string>.Empty,
             ImmutableArray<string>.Empty,
+            ImmutableArray<string>.Empty,
             SsdtSqlValidationSummary.Empty,
             null,
             PipelineExecutionLog.Empty,

@@ -339,8 +339,11 @@ public class BuildSsdtPipelineStepTests
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
         var seedState = (await staticSeedStep.ExecuteAsync(validatedState)).Value;
 
+        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
+        var dynamicState = (await dynamicInsertStep.ExecuteAsync(seedState)).Value;
+
         var step = new BuildSsdtTelemetryPackagingStep();
-        var result = await step.ExecuteAsync(seedState);
+        var result = await step.ExecuteAsync(dynamicState);
 
         Assert.True(result.IsSuccess);
         var packaged = result.Value;
@@ -483,8 +486,11 @@ public class BuildSsdtPipelineStepTests
             outputDirectory,
             "fixture",
             cacheOptions,
+            DynamicDataset: DynamicEntityDataset.Empty,
             staticDataProvider,
-            SeedOutputDirectoryHint: null);
+            SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
+            SqlMetadataLog: null);
     }
 
     private static IDataProfilerFactory CreateProfilerFactory()

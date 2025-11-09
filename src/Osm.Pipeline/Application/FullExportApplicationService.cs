@@ -128,7 +128,8 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             moduleFilter,
             input.Sql,
             input.Cache,
-            input.TighteningOverrides);
+            input.TighteningOverrides,
+            extraction.ExtractionResult.Dataset);
 
         var buildResult = await _buildService
             .RunAsync(buildInput, cancellationToken)

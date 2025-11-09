@@ -10,6 +10,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
+using Osm.Emission;
 using Osm.Json;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Profiling;
@@ -255,8 +256,10 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             request.OutputDirectory,
             request.ProfilerProvider,
             EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
             request.SqlMetadataLog);
 
         var profilerResult = _profilerFactory.Create(profilerRequest, model);

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
+using Osm.Emission;
 using Osm.Json;
 using Osm.Pipeline.Sql;
 
@@ -130,7 +131,8 @@ public sealed class SqlModelExtractionService : ISqlModelExtractionService
             payload,
             metadata.ExportedAtUtc,
             outcome.Warnings,
-            metadata.Snapshot);
+            metadata.Snapshot,
+            DynamicEntityDataset.Empty);
 
         _logger.LogInformation(
             "Model extraction finished in {TotalDurationMs} ms (metadata: {MetadataMs} ms, deserialize: {DeserializeMs} ms).",
@@ -149,13 +151,15 @@ public sealed class ModelExtractionResult
         ModelJsonPayload jsonPayload,
         DateTimeOffset extractedAtUtc,
         IReadOnlyList<string> warnings,
-        OutsystemsMetadataSnapshot metadata)
+        OutsystemsMetadataSnapshot metadata,
+        DynamicEntityDataset? dataset = null)
     {
         Model = model ?? throw new ArgumentNullException(nameof(model));
         JsonPayload = jsonPayload ?? throw new ArgumentNullException(nameof(jsonPayload));
         ExtractedAtUtc = extractedAtUtc;
         Warnings = warnings ?? throw new ArgumentNullException(nameof(warnings));
         Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
+        Dataset = dataset ?? DynamicEntityDataset.Empty;
     }
 
     public OsmModel Model { get; }
@@ -167,6 +171,8 @@ public sealed class ModelExtractionResult
     public IReadOnlyList<string> Warnings { get; }
 
     public OutsystemsMetadataSnapshot Metadata { get; }
+
+    public DynamicEntityDataset Dataset { get; }
 }
 
 public sealed class ModelJsonPayload

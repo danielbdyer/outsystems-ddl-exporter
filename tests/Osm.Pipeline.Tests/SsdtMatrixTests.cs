@@ -81,8 +81,11 @@ public sealed class SsdtMatrixTests
             output.Path,
             "fixture",
             EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
             StaticDataProvider: staticDataProvider,
-            SeedOutputDirectoryHint: null);
+            SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
+            SqlMetadataLog: null);
 
         var pipeline = CreatePipeline();
         var result = await pipeline.HandleAsync(request);
@@ -129,6 +132,7 @@ public sealed class SsdtMatrixTests
             new OpportunityLogWriter());
         var sqlValidationStep = new BuildSsdtSqlValidationStep(new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
+        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
         var telemetryPackagingStep = new BuildSsdtTelemetryPackagingStep();
 
         return new BuildSsdtPipeline(
@@ -139,6 +143,7 @@ public sealed class SsdtMatrixTests
             emissionStep,
             sqlValidationStep,
             staticSeedStep,
+            dynamicInsertStep,
             telemetryPackagingStep);
     }
 

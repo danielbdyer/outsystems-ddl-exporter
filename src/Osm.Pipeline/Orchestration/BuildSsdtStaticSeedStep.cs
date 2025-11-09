@@ -53,7 +53,8 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                 state.DecisionLogPath,
                 state.OpportunityArtifacts,
                 state.SqlValidation,
-                ImmutableArray<string>.Empty));
+                ImmutableArray<string>.Empty,
+                ImmutableArray<StaticEntityTableData>.Empty));
         }
 
         if (state.Request.StaticDataProvider is null)
@@ -176,6 +177,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
             state.DecisionLogPath,
             state.OpportunityArtifacts,
             state.SqlValidation,
-                seedPaths));
+            seedPaths,
+            deterministicData));
     }
 }

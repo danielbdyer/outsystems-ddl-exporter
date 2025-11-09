@@ -527,6 +527,7 @@ public class BuildSsdtCommandFactoryTests
                 string.Empty,
                 ImmutableArray<string>.Empty,
                 ImmutableArray<string>.Empty,
+                ImmutableArray<string>.Empty,
                 sqlValidation,
                 null,
                 PipelineExecutionLog.Empty,

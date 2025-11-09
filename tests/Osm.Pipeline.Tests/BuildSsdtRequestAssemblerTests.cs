@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
@@ -137,9 +138,11 @@ public sealed class BuildSsdtRequestAssemblerTests
         ModuleFilterOptions? moduleFilter = null,
         string modelPath = "model.json",
         string outputDirectory = "out",
+        DynamicEntityDataset? dynamicDataset = null,
         IStaticEntityDataProvider? staticDataProvider = null)
     {
         var filter = moduleFilter ?? ModuleFilterOptions.IncludeAll;
+        dynamicDataset ??= DynamicEntityDataset.Empty;
         return new BuildSsdtRequestAssemblerContext(
             configuration,
             overrides,
@@ -150,6 +153,7 @@ public sealed class BuildSsdtRequestAssemblerTests
             SmoBuildOptions.FromEmission(configuration.Tightening.Emission),
             modelPath,
             outputDirectory,
+            dynamicDataset,
             staticDataProvider,
             new CacheOptionsOverrides(null, null),
             "config.json",

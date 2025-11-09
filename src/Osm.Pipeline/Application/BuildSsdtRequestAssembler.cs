@@ -8,6 +8,7 @@ using System.Text;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Pipeline;
 using Osm.Pipeline.Configuration;
@@ -34,6 +35,7 @@ public sealed record BuildSsdtRequestAssemblerContext(
     SmoBuildOptions SmoOptions,
     string ModelPath,
     string OutputDirectory,
+    DynamicEntityDataset DynamicDataset,
     IStaticEntityDataProvider? StaticDataProvider,
     CacheOptionsOverrides CacheOverrides,
     string? ConfigPath,
@@ -100,8 +102,10 @@ public sealed class BuildSsdtRequestAssembler
             context.OutputDirectory,
             profilerProvider,
             cacheOptions,
+            context.DynamicDataset,
             context.StaticDataProvider,
             Path.Combine(context.OutputDirectory, "Seeds"),
+            Path.Combine(context.OutputDirectory, "DynamicData"),
             context.SqlMetadataLog);
 
         return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory);

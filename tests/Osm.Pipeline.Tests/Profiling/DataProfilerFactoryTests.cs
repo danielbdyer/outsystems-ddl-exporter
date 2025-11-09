@@ -6,6 +6,7 @@ using System.Reflection;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using Osm.Emission;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
@@ -242,8 +243,10 @@ public sealed class DataProfilerFactoryTests
             OutputDirectory: "out",
             ProfilerProvider: provider,
             EvidenceCache: null,
+            DynamicDataset: DynamicEntityDataset.Empty,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
             SqlMetadataLog: null);
     }
 

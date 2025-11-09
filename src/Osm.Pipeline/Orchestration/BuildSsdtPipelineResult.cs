@@ -26,6 +26,7 @@ public sealed record BuildSsdtPipelineResult(
     string RemediationScriptPath,
     string RemediationScript,
     ImmutableArray<string> StaticSeedScriptPaths,
+    ImmutableArray<string> DynamicInsertScriptPaths,
     ImmutableArray<string> TelemetryPackagePaths,
     SsdtSqlValidationSummary SqlValidation,
     EvidenceCacheResult? EvidenceCache,
