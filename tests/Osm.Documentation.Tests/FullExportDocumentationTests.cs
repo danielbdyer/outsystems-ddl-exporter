@@ -1,0 +1,87 @@
+using System;
+using System.IO;
+using System.Text;
+
+public static class DocumentationFile
+{
+    private static readonly string RepoRoot = Path.GetFullPath(Path.Combine(
+        AppContext.BaseDirectory,
+        "..",
+        "..",
+        "..",
+        "..",
+        ".."));
+
+    public static string Read(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            throw new ArgumentException("Path must be provided.", nameof(relativePath));
+        }
+
+        var path = Path.GetFullPath(Path.Combine(RepoRoot, relativePath));
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"Documentation file not found: {path}");
+        }
+
+        return File.ReadAllText(path, Encoding.UTF8);
+    }
+
+    public static string ReadSection(string content, string heading, string? nextHeading = null)
+    {
+        if (content is null)
+        {
+            throw new ArgumentNullException(nameof(content));
+        }
+
+        if (string.IsNullOrWhiteSpace(heading))
+        {
+            throw new ArgumentException("Heading must be provided.", nameof(heading));
+        }
+
+        var start = content.IndexOf(heading, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+        {
+            return string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(nextHeading))
+        {
+            return content[start..];
+        }
+
+        var end = content.IndexOf(nextHeading, start, StringComparison.OrdinalIgnoreCase);
+        return end > start ? content[start..end] : content[start..];
+    }
+}
+
+public class FullExportDocumentationTests
+{
+    [Fact]
+    public void FullExportContract_spells_out_ssdt_playbook()
+    {
+        var doc = DocumentationFile.Read(Path.Combine("docs", "full-export-artifact-contract.md"));
+
+        Assert.Contains("build.staticSeedRoot", doc, StringComparison.Ordinal);
+        Assert.Contains("build.dynamicInsertRoot", doc, StringComparison.Ordinal);
+        Assert.Contains("Script.PostDeployment.sql", doc, StringComparison.Ordinal);
+        Assert.Contains("DynamicData", doc, StringComparison.Ordinal);
+        Assert.Contains("tests/Fixtures/emission/edge-case", doc, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Readme_links_contract_from_cli_summary_and_ssdt_section()
+    {
+        var readme = DocumentationFile.Read("readme.md");
+
+        var cliSegment = DocumentationFile.ReadSection(readme, "SSDT Emission Summary", "---");
+        Assert.Contains("Full Export Artifact Contract", cliSegment, StringComparison.Ordinal);
+
+        var ssdtSection = DocumentationFile.ReadSection(
+            readme,
+            "## 9. Per-Table DDL Emitter (SSDT-Ready Output)",
+            "## 10.");
+        Assert.Contains("Full Export Artifact Contract", ssdtSection, StringComparison.Ordinal);
+    }
+}

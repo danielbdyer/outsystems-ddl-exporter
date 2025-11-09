@@ -85,6 +85,8 @@
    * The pipeline’s execution log now captures extraction, profiling, emission, and schema-apply metadata in a single telemetry stream, keeping downstream automation aware of emitted artifacts (`model.json`, profile manifest, safe/remediation scripts, telemetry zips) without rehydrating intermediate command output. 【F:src/Osm.Pipeline/Orchestration/FullExportPipeline.cs†L93-L211】
    * Each run emits `full-export.manifest.json` alongside the SSDT output root. The JSON aggregates stage timings, warning lists, and normalized artifact paths so CI pipelines can discover outputs without scraping logs. For example, `jq -r '.Stages[] | select(.Name=="build-ssdt").Artifacts.safeScript' full-export.manifest.json` resolves the safe script, while `.Artifacts[] | select(.Name=="full-export-manifest").Path` yields the manifest path for archival.
 
+   The CLI ends with an `SSDT Emission Summary` that surfaces `build.staticSeedRoot` and `build.dynamicInsertRoot`. Follow the [Full Export Artifact Contract](docs/full-export-artifact-contract.md#ssdt-integration-playbook) to import the static seeds into SSDT and schedule dynamic inserts inside your deployment pipeline.
+
    **Operational telemetry**
 
    * Append `--run-load-harness` to immediately replay the generated safe/remediation/static seed scripts against a staging database. The CLI streams batch timings, lock contention, wait stat deltas, and index fragmentation to the console and persists a JSON report (configure with `--load-harness-report-out`, `--load-harness-connection-string`, and `--load-harness-command-timeout`). For ad-hoc replays use `tools/FullExportLoadHarness`, which exposes the same harness runner. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L34-L201】【F:tools/FullExportLoadHarness/Program.cs†L1-L63】
@@ -565,6 +567,8 @@ out/
 **SSDT import**
 Create a Database Project → Add items from `Tables/`. Inline foreign keys, indexes, and defaults ship inside each table file. Use `EmitBareTableOnly` when you prefer to add constraints/indexes manually.
 Optional remediation batches (if enabled) continue to land under `PreRemediation/`.
+
+Need a step-by-step walkthrough for wiring seeds and dynamic data into SSDT? See the [Full Export Artifact Contract](docs/full-export-artifact-contract.md#ssdt-integration-playbook) for the curated playbook and fixture validation drill.
 
 ---
 
