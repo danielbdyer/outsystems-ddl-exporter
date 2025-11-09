@@ -85,6 +85,10 @@
    * The pipeline’s execution log now captures extraction, profiling, emission, and schema-apply metadata in a single telemetry stream, keeping downstream automation aware of emitted artifacts (`model.json`, profile manifest, safe/remediation scripts, telemetry zips) without rehydrating intermediate command output. 【F:src/Osm.Pipeline/Orchestration/FullExportPipeline.cs†L93-L211】
    * Each run emits `full-export.manifest.json` alongside the SSDT output root. The JSON aggregates stage timings, warning lists, and normalized artifact paths so CI pipelines can discover outputs without scraping logs. For example, `jq -r '.Stages[] | select(.Name=="build-ssdt").Artifacts.safeScript' full-export.manifest.json` resolves the safe script, while `.Artifacts[] | select(.Name=="full-export-manifest").Path` yields the manifest path for archival.
 
+   **Operational telemetry**
+
+   * Append `--run-load-harness` to immediately replay the generated safe/remediation/static seed scripts against a staging database. The CLI streams batch timings, lock contention, wait stat deltas, and index fragmentation to the console and persists a JSON report (configure with `--load-harness-report-out`, `--load-harness-connection-string`, and `--load-harness-command-timeout`). For ad-hoc replays use `tools/FullExportLoadHarness`, which exposes the same harness runner. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L34-L201】【F:tools/FullExportLoadHarness/Program.cs†L1-L63】
+
    The emitted manifest mirrors the fixtures we keep under `tests/Fixtures/emission/edge-case` (and the rename variant under `tests/Fixtures/emission/edge-case-rename`), so you can diff your live runs against the curated baselines.
 3. **(Optional) Verify DMM parity** using the same model/profile inputs:
 
