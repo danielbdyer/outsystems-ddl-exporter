@@ -212,6 +212,54 @@ public sealed class CliConfigurationLoaderTests
         Assert.Contains("ColumnsJson", optionalColumns["ForeignKeyColumnsJson"]);
     }
 
+    [Fact]
+    public async Task LoadAsync_ReadsUatUsersConfiguration()
+    {
+        using var directory = new TempDirectory();
+        var configPath = Path.Combine(directory.Path, "appsettings.json");
+
+        var config = new
+        {
+            uatUsers = new
+            {
+                model = "model.json",
+                connectionString = "Server=.;Database=UAT;",
+                fromLiveMetadata = true,
+                schema = "app",
+                table = "dbo.Users",
+                idColumn = "UserId",
+                includeColumns = new[] { "CreatedBy", "UpdatedBy" },
+                output = "out",
+                userMap = "map.csv",
+                allowedUsersSql = "allowed.sql",
+                allowedUserIds = "allowed.csv",
+                snapshot = "snapshot.json",
+                entityId = "UserEntity"
+            }
+        };
+
+        await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
+
+        var loader = new CliConfigurationLoader();
+        var result = await loader.LoadAsync(configPath);
+
+        Assert.True(result.IsSuccess);
+        var uatUsers = result.Value.UatUsers;
+        Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "model.json")), uatUsers.ModelPath);
+        Assert.Equal("Server=.;Database=UAT;", uatUsers.ConnectionString);
+        Assert.True(uatUsers.FromLiveMetadata);
+        Assert.Equal("app", uatUsers.UserSchema);
+        Assert.Equal("dbo.Users", uatUsers.UserTable);
+        Assert.Equal("UserId", uatUsers.UserIdColumn);
+        Assert.Equal(new[] { "CreatedBy", "UpdatedBy" }, uatUsers.IncludeColumns);
+        Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "out")), uatUsers.OutputRoot);
+        Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "map.csv")), uatUsers.UserMapPath);
+        Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "allowed.sql")), uatUsers.AllowedUsersSqlPath);
+        Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "allowed.csv")), uatUsers.AllowedUserIdsPath);
+        Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "snapshot.json")), uatUsers.SnapshotPath);
+        Assert.Equal("UserEntity", uatUsers.UserEntityIdentifier);
+    }
+
     private static string CreateLegacyTighteningJson()
     {
         return JsonSerializer.Serialize(new

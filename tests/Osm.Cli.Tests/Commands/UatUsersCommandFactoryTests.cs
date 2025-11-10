@@ -9,7 +9,9 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli;
 using Osm.Cli.Commands;
+using Osm.Pipeline.Configuration;
 using Xunit;
+using Tests.Support;
 
 namespace Osm.Cli.Tests.Commands;
 
@@ -20,11 +22,7 @@ public class UatUsersCommandFactoryTests
     {
         var executor = new FakeUatUsersCommand();
 
-        var services = new ServiceCollection();
-        services.AddSingleton<IUatUsersCommand>(executor);
-        services.AddSingleton<UatUsersCommandFactory>();
-
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = CreateServiceProvider(executor);
         var factory = provider.GetRequiredService<UatUsersCommandFactory>();
         var command = factory.Create();
         Assert.NotNull(command.Handler);
@@ -49,6 +47,8 @@ public class UatUsersCommandFactoryTests
         Assert.Equal(Path.GetFullPath("ddl.sql"), options.AllowedUsersSqlPath);
         Assert.Equal(Path.GetFullPath("snap.json"), options.SnapshotPath);
         Assert.Equal("Identifier", options.UserEntityIdentifier);
+        Assert.False(options.Origins.ModelPathFromConfiguration);
+        Assert.False(options.Origins.ConnectionStringFromConfiguration);
     }
 
     [Theory]
@@ -80,11 +80,7 @@ public class UatUsersCommandFactoryTests
     {
         var executor = new FakeUatUsersCommand();
 
-        var services = new ServiceCollection();
-        services.AddSingleton<IUatUsersCommand>(executor);
-        services.AddSingleton<UatUsersCommandFactory>();
-
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = CreateServiceProvider(executor, configuration);
         var factory = provider.GetRequiredService<UatUsersCommandFactory>();
         var command = factory.Create();
         var root = new RootCommand { command };
@@ -95,6 +91,66 @@ public class UatUsersCommandFactoryTests
         return (executor.LastOptions!, exitCode);
     }
 
+    [Fact]
+    public async Task Invoke_UsesConfigurationDefaults_WhenOptionsOmitted()
+    {
+        using var temp = new TempDirectory();
+        var modelPath = Path.Combine(temp.Path, "model.json");
+        var outputRoot = Path.Combine(temp.Path, "artifacts");
+        var userMapPath = Path.Combine(temp.Path, "map.csv");
+        var allowedSqlPath = Path.Combine(temp.Path, "allowed.sql");
+        var allowedIdsPath = Path.Combine(temp.Path, "allowed.csv");
+        var snapshotPath = Path.Combine(temp.Path, "snapshot.json");
+
+        var configuration = CliConfiguration.Empty with
+        {
+            UatUsers = new UatUsersConfiguration(
+                ModelPath: modelPath,
+                ConnectionString: "Server=.;Database=UAT;",
+                FromLiveMetadata: false,
+                UserSchema: "app",
+                UserTable: "dbo.Users",
+                UserIdColumn: "UserId",
+                IncludeColumns: new[] { "CreatedBy", "UpdatedBy" },
+                OutputRoot: outputRoot,
+                UserMapPath: userMapPath,
+                AllowedUsersSqlPath: allowedSqlPath,
+                AllowedUserIdsPath: allowedIdsPath,
+                SnapshotPath: snapshotPath,
+                UserEntityIdentifier: "UserEntity")
+        };
+
+        var (options, exitCode) = await InvokeAsync("uat-users", configuration);
+
+        Assert.Equal(5, exitCode);
+        Assert.Equal(Path.GetFullPath(modelPath), options.ModelPath);
+        Assert.Equal("Server=.;Database=UAT;", options.UatConnectionString);
+        Assert.False(options.FromLiveMetadata);
+        Assert.Equal("dbo", options.UserSchema);
+        Assert.Equal("Users", options.UserTable);
+        Assert.Equal("UserId", options.UserIdColumn);
+        Assert.Equal(new[] { "CreatedBy", "UpdatedBy" }, options.IncludeColumns);
+        Assert.Equal(Path.GetFullPath(outputRoot), options.OutputDirectory);
+        Assert.Equal(Path.GetFullPath(userMapPath), options.UserMapPath);
+        Assert.Equal(Path.GetFullPath(allowedSqlPath), options.AllowedUsersSqlPath);
+        Assert.Equal(Path.GetFullPath(allowedIdsPath), options.AllowedUserIdsPath);
+        Assert.Equal(Path.GetFullPath(snapshotPath), options.SnapshotPath);
+        Assert.Equal("UserEntity", options.UserEntityIdentifier);
+
+        Assert.True(options.Origins.ModelPathFromConfiguration);
+        Assert.True(options.Origins.ConnectionStringFromConfiguration);
+        Assert.True(options.Origins.UserTableFromConfiguration);
+        Assert.True(options.Origins.UserSchemaFromConfiguration);
+        Assert.True(options.Origins.UserIdColumnFromConfiguration);
+        Assert.True(options.Origins.IncludeColumnsFromConfiguration);
+        Assert.True(options.Origins.OutputDirectoryFromConfiguration);
+        Assert.True(options.Origins.UserMapPathFromConfiguration);
+        Assert.True(options.Origins.AllowedUsersSqlPathFromConfiguration);
+        Assert.True(options.Origins.AllowedUserIdsPathFromConfiguration);
+        Assert.True(options.Origins.SnapshotPathFromConfiguration);
+        Assert.True(options.Origins.UserEntityIdentifierFromConfiguration);
+    }
+
     private sealed class FakeUatUsersCommand : IUatUsersCommand
     {
         public UatUsersOptions? LastOptions { get; private set; }
@@ -103,6 +159,32 @@ public class UatUsersCommandFactoryTests
         {
             LastOptions = options;
             return Task.FromResult(5);
+        }
+    }
+
+    private static ServiceProvider CreateServiceProvider(FakeUatUsersCommand executor, CliConfiguration? configuration = null)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IUatUsersCommand>(executor);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ICliConfigurationService>(new StubConfigurationService(configuration ?? CliConfiguration.Empty));
+        services.AddSingleton<UatUsersCommandFactory>();
+        return services.BuildServiceProvider();
+    }
+
+    private sealed class StubConfigurationService : ICliConfigurationService
+    {
+        private readonly CliConfiguration _configuration;
+
+        public StubConfigurationService(CliConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
+        public Task<Osm.Domain.Abstractions.Result<CliConfigurationContext>> LoadAsync(string? overrideConfigPath, CancellationToken cancellationToken = default)
+        {
+            var context = new CliConfigurationContext(_configuration, overrideConfigPath);
+            return Task.FromResult(Osm.Domain.Abstractions.Result<CliConfigurationContext>.Success(context));
         }
     }
 }

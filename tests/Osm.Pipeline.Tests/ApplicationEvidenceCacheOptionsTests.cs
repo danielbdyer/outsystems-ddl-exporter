@@ -270,7 +270,8 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             SqlConfiguration.Empty,
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
-            SupplementalModelConfiguration.Empty);
+            SupplementalModelConfiguration.Empty,
+            UatUsersConfiguration.Empty);
     }
 
     private static BuildSsdtApplicationService CreateBuildService(RecordingDispatcher dispatcher)

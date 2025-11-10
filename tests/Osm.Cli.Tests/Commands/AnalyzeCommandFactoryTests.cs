@@ -72,7 +72,8 @@ public sealed class AnalyzeCommandFactoryTests
                 SqlConfiguration.Empty,
                 ModuleFilterConfiguration.Empty,
                 TypeMappingConfiguration.Empty,
-                SupplementalModelConfiguration.Empty);
+                SupplementalModelConfiguration.Empty,
+                UatUsersConfiguration.Empty);
             return Task.FromResult(Result<CliConfigurationContext>.Success(new CliConfigurationContext(configuration, overrideConfigPath)));
         }
     }

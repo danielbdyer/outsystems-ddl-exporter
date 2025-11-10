@@ -91,7 +91,8 @@ public sealed class PipelineApplicationServiceBaseTests
             SqlConfiguration.Empty,
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
-            SupplementalModelConfiguration.Empty);
+            SupplementalModelConfiguration.Empty,
+            UatUsersConfiguration.Empty);
 
         var pathCanonicalizer = new ForwardSlashPathCanonicalizer();
         var metadataBuilder = new CacheMetadataBuilder(pathCanonicalizer);

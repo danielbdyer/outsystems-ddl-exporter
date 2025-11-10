@@ -40,7 +40,8 @@ public sealed class PipelineRequestContextBuilderTests
                 new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase),
                 new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase)),
             TypeMappingConfiguration.Empty,
-            new SupplementalModelConfiguration(IncludeUsers: true, Paths: new[] { "users.json" }));
+            new SupplementalModelConfiguration(IncludeUsers: true, Paths: new[] { "users.json" }),
+            UatUsersConfiguration.Empty);
 
         var configurationContext = new CliConfigurationContext(configuration, "cli.config.json");
         var moduleFilterOverrides = new ModuleFilterOverrides(

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -149,6 +150,11 @@ public sealed class CliConfigurationLoader
         if (TryReadSupplementalModels(root, baseDirectory, out var supplementalModels))
         {
             configuration = configuration with { SupplementalModels = supplementalModels };
+        }
+
+        if (TryReadUatUsers(root, baseDirectory, out var uatUsers))
+        {
+            configuration = configuration with { UatUsers = uatUsers };
         }
 
         return configuration;
@@ -320,5 +326,170 @@ public sealed class CliConfigurationLoader
 
         configuration = new SupplementalModelConfiguration(includeUsers, paths);
         return true;
+    }
+
+    private static bool TryReadUatUsers(JsonElement root, string baseDirectory, out UatUsersConfiguration configuration)
+    {
+        configuration = UatUsersConfiguration.Empty;
+        if (!root.TryGetProperty("uatUsers", out var element) || element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        string? modelPath = null;
+        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "model", baseDirectory, out var resolvedModel))
+        {
+            modelPath = resolvedModel;
+        }
+
+        string? outputRoot = null;
+        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "output", baseDirectory, out var resolvedOutput))
+        {
+            outputRoot = resolvedOutput;
+        }
+
+        string? userMapPath = null;
+        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "userMap", baseDirectory, out var resolvedUserMap))
+        {
+            userMapPath = resolvedUserMap;
+        }
+
+        string? allowedUsersSql = null;
+        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "allowedUsersSql", baseDirectory, out var resolvedAllowedSql))
+        {
+            allowedUsersSql = resolvedAllowedSql;
+        }
+
+        string? allowedUserIds = null;
+        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "allowedUserIds", baseDirectory, out var resolvedAllowedIds))
+        {
+            allowedUserIds = resolvedAllowedIds;
+        }
+
+        string? snapshotPath = null;
+        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "snapshot", baseDirectory, out var resolvedSnapshot))
+        {
+            snapshotPath = resolvedSnapshot;
+        }
+
+        string? connectionString = null;
+        if (element.TryGetProperty("connectionString", out var connectionElement) && connectionElement.ValueKind == JsonValueKind.String)
+        {
+            var value = connectionElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                connectionString = value;
+            }
+        }
+
+        bool? fromLive = null;
+        if (element.TryGetProperty("fromLiveMetadata", out var fromLiveElement)
+            && ConfigurationJsonHelpers.TryParseBoolean(fromLiveElement, out var parsedFromLive))
+        {
+            fromLive = parsedFromLive;
+        }
+
+        string? schema = null;
+        if (element.TryGetProperty("schema", out var schemaElement) && schemaElement.ValueKind == JsonValueKind.String)
+        {
+            var value = schemaElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                schema = value;
+            }
+        }
+
+        string? table = null;
+        if (element.TryGetProperty("table", out var tableElement) && tableElement.ValueKind == JsonValueKind.String)
+        {
+            var value = tableElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                table = value;
+            }
+        }
+
+        string? idColumn = null;
+        if (element.TryGetProperty("idColumn", out var idElement) && idElement.ValueKind == JsonValueKind.String)
+        {
+            var value = idElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                idColumn = value;
+            }
+        }
+
+        string? entityId = null;
+        if (element.TryGetProperty("entityId", out var entityElement) && entityElement.ValueKind == JsonValueKind.String)
+        {
+            var value = entityElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                entityId = value;
+            }
+        }
+
+        var includeColumns = Array.Empty<string>();
+        if (element.TryGetProperty("includeColumns", out var includeElement))
+        {
+            includeColumns = ParseIncludeColumns(includeElement);
+        }
+
+        configuration = new UatUsersConfiguration(
+            ModelPath: modelPath,
+            ConnectionString: connectionString,
+            FromLiveMetadata: fromLive,
+            UserSchema: schema,
+            UserTable: table,
+            UserIdColumn: idColumn,
+            IncludeColumns: includeColumns,
+            OutputRoot: outputRoot,
+            UserMapPath: userMapPath,
+            AllowedUsersSqlPath: allowedUsersSql,
+            AllowedUserIdsPath: allowedUserIds,
+            SnapshotPath: snapshotPath,
+            UserEntityIdentifier: entityId);
+        return true;
+    }
+
+    private static string[] ParseIncludeColumns(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            var value = element.GetString();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return Array.Empty<string>();
+            }
+
+            return value
+                .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(static part => !string.IsNullOrWhiteSpace(part))
+                .ToArray();
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var values = new List<string>();
+        foreach (var child in element.EnumerateArray())
+        {
+            if (child.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            var value = child.GetString();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            values.Add(value);
+        }
+
+        return values.ToArray();
     }
 }

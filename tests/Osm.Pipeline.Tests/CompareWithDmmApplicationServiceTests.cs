@@ -97,7 +97,8 @@ public sealed class CompareWithDmmApplicationServiceTests
             SqlConfiguration.Empty,
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
-            SupplementalModelConfiguration.Empty);
+            SupplementalModelConfiguration.Empty,
+            UatUsersConfiguration.Empty);
 
         var context = new CliConfigurationContext(configuration, "config.json");
         var overrides = new CompareWithDmmOverrides(null, null, null, outputDirectory, MaxDegreeOfParallelism: null);
@@ -141,7 +142,8 @@ public sealed class CompareWithDmmApplicationServiceTests
             SqlConfiguration.Empty,
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
-            SupplementalModelConfiguration.Empty);
+            SupplementalModelConfiguration.Empty,
+            UatUsersConfiguration.Empty);
 
         return new CliConfigurationContext(configuration, "config.json");
     }

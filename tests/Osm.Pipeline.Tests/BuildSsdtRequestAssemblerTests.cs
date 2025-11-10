@@ -174,7 +174,8 @@ public sealed class BuildSsdtRequestAssemblerTests
             SqlConfiguration.Empty,
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
-            SupplementalModelConfiguration.Empty);
+            SupplementalModelConfiguration.Empty,
+            UatUsersConfiguration.Empty);
     }
 
     private sealed class StubStaticEntityDataProvider : IStaticEntityDataProvider

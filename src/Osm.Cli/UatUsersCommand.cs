@@ -43,6 +43,79 @@ public sealed class UatUsersCommand : IUatUsersCommand
 
         try
         {
+            var configurationFields = new List<string>();
+            if (options.Origins.ModelPathFromConfiguration)
+            {
+                configurationFields.Add("ModelPath");
+            }
+
+            if (options.Origins.ConnectionStringFromConfiguration)
+            {
+                configurationFields.Add("UatConnectionString");
+            }
+
+            if (options.Origins.FromLiveMetadataFromConfiguration)
+            {
+                configurationFields.Add("FromLiveMetadata");
+            }
+
+            if (options.Origins.UserSchemaFromConfiguration)
+            {
+                configurationFields.Add("UserSchema");
+            }
+
+            if (options.Origins.UserTableFromConfiguration)
+            {
+                configurationFields.Add("UserTable");
+            }
+
+            if (options.Origins.UserIdColumnFromConfiguration)
+            {
+                configurationFields.Add("UserIdColumn");
+            }
+
+            if (options.Origins.IncludeColumnsFromConfiguration)
+            {
+                configurationFields.Add("IncludeColumns");
+            }
+
+            if (options.Origins.OutputDirectoryFromConfiguration)
+            {
+                configurationFields.Add("OutputDirectory");
+            }
+
+            if (options.Origins.UserMapPathFromConfiguration)
+            {
+                configurationFields.Add("UserMapPath");
+            }
+
+            if (options.Origins.AllowedUsersSqlPathFromConfiguration)
+            {
+                configurationFields.Add("AllowedUsersSqlPath");
+            }
+
+            if (options.Origins.AllowedUserIdsPathFromConfiguration)
+            {
+                configurationFields.Add("AllowedUserIdsPath");
+            }
+
+            if (options.Origins.SnapshotPathFromConfiguration)
+            {
+                configurationFields.Add("SnapshotPath");
+            }
+
+            if (options.Origins.UserEntityIdentifierFromConfiguration)
+            {
+                configurationFields.Add("UserEntityIdentifier");
+            }
+
+            if (configurationFields.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Configuration defaults applied for: {Fields}.",
+                    string.Join(", ", configurationFields));
+            }
+
             _logger.LogInformation(
                 "Executing uat-users command. OutputRoot={OutputRoot}, FromLiveMetadata={FromLive}, Snapshot={SnapshotPath}.",
                 options.OutputDirectory,

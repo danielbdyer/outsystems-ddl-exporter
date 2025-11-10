@@ -16,7 +16,8 @@ public sealed record CliConfiguration(
     SqlConfiguration Sql,
     ModuleFilterConfiguration ModuleFilter,
     TypeMappingConfiguration TypeMapping,
-    SupplementalModelConfiguration SupplementalModels)
+    SupplementalModelConfiguration SupplementalModels,
+    UatUsersConfiguration UatUsers)
 {
     public static CliConfiguration Empty { get; } = new(
         TighteningOptions.Default,
@@ -28,7 +29,8 @@ public sealed record CliConfiguration(
         SqlConfiguration.Empty,
         ModuleFilterConfiguration.Empty,
         TypeMappingConfiguration.Empty,
-        SupplementalModelConfiguration.Empty);
+        SupplementalModelConfiguration.Empty,
+        UatUsersConfiguration.Empty);
 }
 
 public sealed record CacheConfiguration(string? Root, bool? Refresh, int? TimeToLiveSeconds)
@@ -126,4 +128,36 @@ public sealed record SupplementalModelConfiguration(
 {
     public static SupplementalModelConfiguration Empty { get; }
         = new SupplementalModelConfiguration(true, Array.Empty<string>());
+}
+
+public sealed record UatUsersConfiguration(
+    string? ModelPath,
+    string? ConnectionString,
+    bool? FromLiveMetadata,
+    string? UserSchema,
+    string? UserTable,
+    string? UserIdColumn,
+    IReadOnlyList<string> IncludeColumns,
+    string? OutputRoot,
+    string? UserMapPath,
+    string? AllowedUsersSqlPath,
+    string? AllowedUserIdsPath,
+    string? SnapshotPath,
+    string? UserEntityIdentifier)
+{
+    public static UatUsersConfiguration Empty { get; }
+        = new(
+            ModelPath: null,
+            ConnectionString: null,
+            FromLiveMetadata: null,
+            UserSchema: null,
+            UserTable: null,
+            UserIdColumn: null,
+            IncludeColumns: Array.Empty<string>(),
+            OutputRoot: null,
+            UserMapPath: null,
+            AllowedUsersSqlPath: null,
+            AllowedUserIdsPath: null,
+            SnapshotPath: null,
+            UserEntityIdentifier: null);
 }

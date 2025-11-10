@@ -170,7 +170,8 @@ public sealed class ModelResolutionServiceTests
             SqlConfiguration.Empty,
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
-            SupplementalModelConfiguration.Empty);
+            SupplementalModelConfiguration.Empty,
+            UatUsersConfiguration.Empty);
     }
 
     private static ModelExtractionResult CreateExtractionResult()
