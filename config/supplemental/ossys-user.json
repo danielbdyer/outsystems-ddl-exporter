@@ -55,7 +55,7 @@
               "precision": null,
               "scale": null,
               "default": null,
-              "isMandatory": true,
+              "isMandatory": false,
               "isIdentifier": false,
               "isAutoNumber": false,
               "isActive": true,
@@ -69,7 +69,7 @@
               "physical_isPresentButInactive": 0,
               "meta": "Login name of the user.",
               "onDisk": {
-                "isNullable": false,
+                "isNullable": true,
                 "sqlType": "nvarchar",
                 "maxLength": 250,
                 "collation": "Latin1_General_CI_AI"
@@ -84,7 +84,7 @@
               "precision": null,
               "scale": null,
               "default": null,
-              "isMandatory": true,
+              "isMandatory": false,
               "isIdentifier": false,
               "isAutoNumber": false,
               "isActive": true,
@@ -98,7 +98,7 @@
               "physical_isPresentButInactive": 0,
               "meta": "Email contact of the user.",
               "onDisk": {
-                "isNullable": false,
+                "isNullable": true,
                 "sqlType": "nvarchar",
                 "maxLength": 250,
                 "collation": "Latin1_General_CI_AI"
@@ -324,60 +324,6 @@
                 {
                   "attribute": "Id",
                   "physicalColumn": "ID",
-                  "ordinal": 1,
-                  "isIncluded": false,
-                  "direction": "Ascending"
-                }
-              ]
-            },
-            {
-              "name": "UQ_ossys_User_Username",
-              "isUnique": true,
-              "isPrimary": false,
-              "isPlatformAuto": 0,
-              "kind": "UIX",
-              "isDisabled": false,
-              "isPadded": false,
-              "fill_factor": null,
-              "ignoreDupKey": false,
-              "allowRowLocks": true,
-              "allowPageLocks": true,
-              "noRecompute": false,
-              "filterDefinition": null,
-              "dataSpace": null,
-              "partitionColumns": [],
-              "dataCompression": [],
-              "columns": [
-                {
-                  "attribute": "Username",
-                  "physicalColumn": "USERNAME",
-                  "ordinal": 1,
-                  "isIncluded": false,
-                  "direction": "Ascending"
-                }
-              ]
-            },
-            {
-              "name": "UQ_ossys_User_Email",
-              "isUnique": true,
-              "isPrimary": false,
-              "isPlatformAuto": 0,
-              "kind": "UIX",
-              "isDisabled": false,
-              "isPadded": false,
-              "fill_factor": null,
-              "ignoreDupKey": false,
-              "allowRowLocks": true,
-              "allowPageLocks": true,
-              "noRecompute": false,
-              "filterDefinition": null,
-              "dataSpace": null,
-              "partitionColumns": [],
-              "dataCompression": [],
-              "columns": [
-                {
-                  "attribute": "EMail",
-                  "physicalColumn": "EMAIL",
                   "ordinal": 1,
                   "isIncluded": false,
                   "direction": "Ascending"
