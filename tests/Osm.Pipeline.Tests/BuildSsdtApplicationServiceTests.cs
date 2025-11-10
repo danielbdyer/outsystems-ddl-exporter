@@ -54,7 +54,8 @@ public sealed class BuildSsdtApplicationServiceTests
             SqlConfiguration.Empty,
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
-            SupplementalModelConfiguration.Empty);
+            SupplementalModelConfiguration.Empty,
+            UatUsersConfiguration.Empty);
         var context = new CliConfigurationContext(configuration, "config.json");
         var input = new BuildSsdtApplicationInput(context, overrides, moduleFilterOverrides, sqlOverrides, cacheOverrides);
 

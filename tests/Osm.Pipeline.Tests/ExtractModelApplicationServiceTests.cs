@@ -140,7 +140,8 @@ public class ExtractModelApplicationServiceTests
                 new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase),
                 new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase)),
             TypeMappingConfiguration.Empty,
-            SupplementalModelConfiguration.Empty);
+            SupplementalModelConfiguration.Empty,
+            UatUsersConfiguration.Empty);
     }
 
     private sealed class RecordingDispatcher : ICommandDispatcher

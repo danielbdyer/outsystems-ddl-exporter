@@ -20,7 +20,8 @@ public sealed class UatUsersOptions
         string? allowedUsersSqlPath,
         string? allowedUserIdsPath,
         string? snapshotPath,
-        string? userEntityIdentifier)
+        string? userEntityIdentifier,
+        UatUsersOptionOrigins? origins = null)
     {
         ModelPath = string.IsNullOrWhiteSpace(modelPath) ? null : Path.GetFullPath(modelPath.Trim());
         UatConnectionString = string.IsNullOrWhiteSpace(uatConnectionString) ? null : uatConnectionString.Trim();
@@ -47,6 +48,7 @@ public sealed class UatUsersOptions
 
         SnapshotPath = string.IsNullOrWhiteSpace(snapshotPath) ? null : Path.GetFullPath(snapshotPath.Trim());
         UserEntityIdentifier = string.IsNullOrWhiteSpace(userEntityIdentifier) ? null : userEntityIdentifier.Trim();
+        Origins = origins ?? UatUsersOptionOrigins.None;
     }
 
     public string? ModelPath { get; }
@@ -74,6 +76,8 @@ public sealed class UatUsersOptions
     public string? SnapshotPath { get; }
 
     public string? UserEntityIdentifier { get; }
+
+    public UatUsersOptionOrigins Origins { get; }
 
     private static ImmutableArray<string> NormalizeIncludeColumns(IEnumerable<string>? includeColumns)
     {

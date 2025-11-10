@@ -301,7 +301,8 @@ public sealed class ModuleFilterConsistencyTests
                 new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase),
                 validationOverrides ?? new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase)),
             TypeMappingConfiguration.Empty,
-            SupplementalModelConfiguration.Empty);
+            SupplementalModelConfiguration.Empty,
+            UatUsersConfiguration.Empty);
     }
 
     private static BuildSsdtApplicationService CreateBuildService(RecordingDispatcher dispatcher)
