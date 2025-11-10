@@ -9,6 +9,7 @@ using Osm.Domain.Model;
 using Osm.Emission;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
@@ -244,6 +245,7 @@ public sealed class DataProfilerFactoryTests
             ProfilerProvider: provider,
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,

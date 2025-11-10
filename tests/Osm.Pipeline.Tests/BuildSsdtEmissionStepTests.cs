@@ -11,6 +11,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Emission;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Configuration;
@@ -232,6 +233,7 @@ public sealed class BuildSsdtEmissionStepTests
             "fixture",
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,

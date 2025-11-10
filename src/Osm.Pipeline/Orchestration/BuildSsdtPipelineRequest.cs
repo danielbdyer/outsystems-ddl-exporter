@@ -5,6 +5,7 @@ using Osm.Smo;
 using Osm.Validation.Tightening;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Sql;
+using Osm.Pipeline.DynamicData;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -14,6 +15,7 @@ public sealed record BuildSsdtPipelineRequest(
     string ProfilerProvider,
     EvidenceCachePipelineOptions? EvidenceCache,
     DynamicEntityDataset DynamicDataset,
+    DynamicDatasetSource DynamicDatasetSource,
     IStaticEntityDataProvider? StaticDataProvider,
     string? SeedOutputDirectoryHint,
     string? DynamicDataOutputDirectoryHint,

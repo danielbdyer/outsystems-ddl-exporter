@@ -9,7 +9,9 @@ using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
 using Osm.Validation.Tightening;
@@ -139,7 +141,9 @@ public sealed class BuildSsdtRequestAssemblerTests
         string modelPath = "model.json",
         string outputDirectory = "out",
         DynamicEntityDataset? dynamicDataset = null,
-        IStaticEntityDataProvider? staticDataProvider = null)
+        DynamicDatasetSource datasetSource = DynamicDatasetSource.None,
+        IStaticEntityDataProvider? staticDataProvider = null,
+        SqlMetadataLog? sqlMetadataLog = null)
     {
         var filter = moduleFilter ?? ModuleFilterOptions.IncludeAll;
         dynamicDataset ??= DynamicEntityDataset.Empty;
@@ -154,10 +158,13 @@ public sealed class BuildSsdtRequestAssemblerTests
             modelPath,
             outputDirectory,
             dynamicDataset,
+            datasetSource,
             staticDataProvider,
             new CacheOptionsOverrides(null, null),
             "config.json",
-            null);
+            sqlMetadataLog,
+            null,
+            ImmutableArray<string>.Empty);
     }
 
     private static CliConfiguration CreateConfiguration(

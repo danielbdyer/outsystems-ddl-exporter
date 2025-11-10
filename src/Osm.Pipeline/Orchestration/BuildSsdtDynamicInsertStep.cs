@@ -10,6 +10,7 @@ using Osm.Domain.Abstractions;
 using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Smo;
+using Osm.Pipeline.DynamicData;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -34,11 +35,24 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
         }
 
         var dataset = state.Request.DynamicDataset ?? DynamicEntityDataset.Empty;
+        var datasetSource = state.Request.DynamicDatasetSource;
+        var tableCount = dataset.Tables.IsDefaultOrEmpty ? 0 : dataset.Tables.Length;
+        var totalRows = dataset.Tables.IsDefaultOrEmpty ? 0 : dataset.Tables.Sum(static table => table.Rows.Length);
+
+        state.Log.Record(
+            "dynamicData.dataset.summary",
+            BuildDatasetSummaryMessage(datasetSource, tableCount, totalRows, dataset.IsEmpty),
+            new PipelineLogMetadataBuilder()
+                .WithValue("dataset.source", datasetSource.ToString())
+                .WithCount("tables", tableCount)
+                .WithCount("rows", totalRows)
+                .Build());
+
         if (dataset.IsEmpty)
         {
             state.Log.Record(
                 "dynamicData.insert.skipped",
-                "No dynamic dataset was provided; INSERT scripts were not generated.");
+                "Dynamic dataset did not contain rows. INSERT scripts were not generated.");
 
             return Result<DynamicInsertsGenerated>.Success(new DynamicInsertsGenerated(
                 state.Request,
@@ -174,5 +188,27 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
             scriptPaths.ToImmutable(),
             state.StaticSeedTopologicalOrderApplied,
             DynamicInsertTopologicalOrderApplied: dynamicOrderApplied));
+    }
+
+    private static string BuildDatasetSummaryMessage(
+        DynamicDatasetSource source,
+        int tableCount,
+        int totalRows,
+        bool isEmpty)
+    {
+        var sourceDescription = source switch
+        {
+            DynamicDatasetSource.UserProvided => "user-provided",
+            DynamicDatasetSource.Extraction => "extraction",
+            DynamicDatasetSource.SqlProvider => "SQL provider",
+            _ => "unspecified"
+        };
+
+        if (isEmpty)
+        {
+            return $"Dynamic dataset ({sourceDescription}) did not yield any rows.";
+        }
+
+        return $"Dynamic dataset ({sourceDescription}) contains {totalRows} row(s) across {tableCount} table(s).";
     }
 }
