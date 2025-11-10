@@ -10,7 +10,10 @@ using Osm.Domain.Configuration;
 using Osm.Pipeline;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
+using Osm.Emission;
 using Osm.Pipeline.Mediation;
+using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
 using Osm.Validation.Tightening;
@@ -281,13 +284,17 @@ public sealed class ApplicationEvidenceCacheOptionsTests
         var outputDirectoryResolver = new OutputDirectoryResolver();
         var namingOverridesBinder = new NamingOverridesBinder();
         var staticDataProviderFactory = new StaticDataProviderFactory();
+        var modelIngestionService = new StubModelIngestionService();
+        var dynamicEntityDataProvider = new StubDynamicEntityDataProvider();
         return new BuildSsdtApplicationService(
             dispatcher,
             assembler,
             modelResolution,
             outputDirectoryResolver,
             namingOverridesBinder,
-            staticDataProviderFactory);
+            staticDataProviderFactory,
+            modelIngestionService,
+            dynamicEntityDataProvider);
     }
 
     private sealed class RecordingDispatcher : ICommandDispatcher
@@ -334,6 +341,28 @@ public sealed class ApplicationEvidenceCacheOptionsTests
 
             var result = new ModelResolutionResult(path!, false, ImmutableArray<string>.Empty);
             return Task.FromResult(Result<ModelResolutionResult>.Success(result));
+        }
+    }
+
+    private sealed class StubModelIngestionService : IModelIngestionService
+    {
+        public Task<Result<Osm.Domain.Model.OsmModel>> LoadFromFileAsync(
+            string path,
+            ICollection<string>? warnings = null,
+            CancellationToken cancellationToken = default,
+            ModelIngestionOptions? options = null)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    private sealed class StubDynamicEntityDataProvider : IDynamicEntityDataProvider
+    {
+        public Task<Result<DynamicEntityDataset>> ExtractAsync(
+            SqlDynamicEntityExtractionRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result<DynamicEntityDataset>.Success(DynamicEntityDataset.Empty));
         }
     }
 

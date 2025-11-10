@@ -12,6 +12,7 @@ using Osm.Domain.Model;
 using Osm.Domain.Profiling;
 using Osm.Emission;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
@@ -433,6 +434,7 @@ public sealed class FullExportPipelineTests
             "fixture",
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: Path.Combine(outputDirectory, "Seeds"),
             DynamicDataOutputDirectoryHint: Path.Combine(outputDirectory, "DynamicData"),

@@ -13,6 +13,7 @@ using Osm.Emission;
 using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
 using Osm.Json;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
@@ -42,6 +43,7 @@ public class BuildSsdtPipelineTests
             ProfilerProvider: "fixture",
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
@@ -67,6 +69,7 @@ public class BuildSsdtPipelineTests
             ProfilerProvider: "fixture",
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
@@ -110,6 +113,7 @@ public class BuildSsdtPipelineTests
             "fixture",
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
@@ -152,6 +156,7 @@ public class BuildSsdtPipelineTests
             "sql",
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
@@ -193,6 +198,7 @@ public class BuildSsdtPipelineTests
                 ConfigPath: null,
                 Metadata: new Dictionary<string, string?>()),
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             new EmptyStaticEntityDataProvider(),
             Path.Combine(output.Path, "Seeds"),
             Path.Combine(output.Path, "DynamicData"),
@@ -304,6 +310,7 @@ public class BuildSsdtPipelineTests
             "fixture",
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,

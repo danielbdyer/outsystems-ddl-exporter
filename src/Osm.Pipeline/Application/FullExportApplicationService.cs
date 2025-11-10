@@ -199,7 +199,8 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             input.Sql,
             input.Cache,
             input.TighteningOverrides,
-            extraction.ExtractionResult.Dataset);
+            extraction.ExtractionResult.Dataset,
+            EnableDynamicSqlExtraction: true);
 
         var buildResult = await _buildService
             .RunAsync(buildInput, cancellationToken)

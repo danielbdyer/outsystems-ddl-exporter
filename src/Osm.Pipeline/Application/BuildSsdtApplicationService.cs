@@ -6,8 +6,11 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Emission;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.Sql;
 using Osm.Smo;
 using Osm.Validation.Tightening;
 
@@ -20,7 +23,8 @@ public sealed record BuildSsdtApplicationInput(
     SqlOptionsOverrides Sql,
     CacheOptionsOverrides Cache,
     TighteningOverrides? TighteningOverrides = null,
-    DynamicEntityDataset? DynamicDataset = null);
+    DynamicEntityDataset? DynamicDataset = null,
+    bool EnableDynamicSqlExtraction = false);
 
 public sealed record BuildSsdtApplicationResult(
     BuildSsdtPipelineResult PipelineResult,
@@ -39,6 +43,8 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
     private readonly IOutputDirectoryResolver _outputDirectoryResolver;
     private readonly INamingOverridesBinder _namingOverridesBinder;
     private readonly IStaticDataProviderFactory _staticDataProviderFactory;
+    private readonly IModelIngestionService _modelIngestionService;
+    private readonly IDynamicEntityDataProvider _dynamicDataProvider;
 
     public BuildSsdtApplicationService(
         ICommandDispatcher dispatcher,
@@ -46,7 +52,9 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
         IModelResolutionService modelResolutionService,
         IOutputDirectoryResolver outputDirectoryResolver,
         INamingOverridesBinder namingOverridesBinder,
-        IStaticDataProviderFactory staticDataProviderFactory)
+        IStaticDataProviderFactory staticDataProviderFactory,
+        IModelIngestionService modelIngestionService,
+        IDynamicEntityDataProvider dynamicDataProvider)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _assembler = assembler ?? throw new ArgumentNullException(nameof(assembler));
@@ -54,6 +62,8 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
         _outputDirectoryResolver = outputDirectoryResolver ?? throw new ArgumentNullException(nameof(outputDirectoryResolver));
         _namingOverridesBinder = namingOverridesBinder ?? throw new ArgumentNullException(nameof(namingOverridesBinder));
         _staticDataProviderFactory = staticDataProviderFactory ?? throw new ArgumentNullException(nameof(staticDataProviderFactory));
+        _modelIngestionService = modelIngestionService ?? throw new ArgumentNullException(nameof(modelIngestionService));
+        _dynamicDataProvider = dynamicDataProvider ?? throw new ArgumentNullException(nameof(dynamicDataProvider));
     }
 
     public async Task<Result<BuildSsdtApplicationResult>> RunAsync(BuildSsdtApplicationInput input, CancellationToken cancellationToken = default)
@@ -76,7 +86,12 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
         }
 
         var context = contextResult.Value;
+        var dynamicDatasetSource = DynamicDatasetSource.None;
         var dynamicDataset = input.DynamicDataset ?? DynamicEntityDataset.Empty;
+        if (!dynamicDataset.IsEmpty)
+        {
+            dynamicDatasetSource = DynamicDatasetSource.UserProvided;
+        }
         var outputDirectory = _outputDirectoryResolver.Resolve(input.Overrides);
 
         var modelResolutionResult = await _modelResolutionService.ResolveModelAsync(
@@ -97,6 +112,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
         if (dynamicDataset.IsEmpty && modelResolution.Extraction is { } extractionResult && !extractionResult.Dataset.IsEmpty)
         {
             dynamicDataset = extractionResult.Dataset;
+            dynamicDatasetSource = DynamicDatasetSource.Extraction;
         }
         var staticDataProviderResult = _staticDataProviderFactory.Create(input.Overrides, context.SqlOptions, context.Tightening);
         staticDataProviderResult = await EnsureSuccessOrFlushAsync(staticDataProviderResult, context, cancellationToken).ConfigureAwait(false);
@@ -122,6 +138,53 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             smoOptions = smoOptions with { ModuleParallelism = moduleParallelism };
         }
 
+        if (dynamicDataset.IsEmpty &&
+            input.EnableDynamicSqlExtraction &&
+            !string.IsNullOrWhiteSpace(context.SqlOptions.ConnectionString))
+        {
+            var modelForDynamicData = modelResolution.Extraction?.Model;
+            if (modelForDynamicData is null)
+            {
+                var modelLoadResult = await _modelIngestionService
+                    .LoadFromFileAsync(modelResolution.ModelPath, warnings: null, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+                modelLoadResult = await EnsureSuccessOrFlushAsync(modelLoadResult, context, cancellationToken).ConfigureAwait(false);
+                if (modelLoadResult.IsFailure)
+                {
+                    return Result<BuildSsdtApplicationResult>.Failure(modelLoadResult.Errors);
+                }
+
+                modelForDynamicData = modelLoadResult.Value;
+            }
+
+            var authentication = context.SqlOptions.Authentication;
+            var connectionOptions = new SqlConnectionOptions(
+                authentication.Method,
+                authentication.TrustServerCertificate,
+                authentication.ApplicationName,
+                authentication.AccessToken);
+
+            var extractionRequest = new SqlDynamicEntityExtractionRequest(
+                context.SqlOptions.ConnectionString!,
+                connectionOptions,
+                modelForDynamicData!,
+                context.ModuleFilter,
+                namingOverrides,
+                context.SqlOptions.CommandTimeoutSeconds);
+
+            var dynamicDatasetResult = await _dynamicDataProvider
+                .ExtractAsync(extractionRequest, cancellationToken)
+                .ConfigureAwait(false);
+            dynamicDatasetResult = await EnsureSuccessOrFlushAsync(dynamicDatasetResult, context, cancellationToken).ConfigureAwait(false);
+            if (dynamicDatasetResult.IsFailure)
+            {
+                return Result<BuildSsdtApplicationResult>.Failure(dynamicDatasetResult.Errors);
+            }
+
+            dynamicDataset = dynamicDatasetResult.Value;
+            dynamicDatasetSource = DynamicDatasetSource.SqlProvider;
+        }
+
         var assemblyResult = _assembler.Assemble(new BuildSsdtRequestAssemblerContext(
             context.Configuration,
             input.Overrides,
@@ -133,6 +196,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             modelResolution.ModelPath,
             outputDirectory,
             dynamicDataset,
+            dynamicDatasetSource,
             staticDataProviderResult.Value,
             context.CacheOverrides,
             context.ConfigPath,

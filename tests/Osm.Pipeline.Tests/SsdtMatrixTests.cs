@@ -13,6 +13,7 @@ using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.SqlExtraction;
@@ -82,6 +83,7 @@ public sealed class SsdtMatrixTests
             "fixture",
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: staticDataProvider,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,

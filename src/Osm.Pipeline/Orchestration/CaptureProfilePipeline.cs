@@ -13,6 +13,7 @@ using Osm.Domain.Profiling;
 using Osm.Emission;
 using Osm.Json;
 using Osm.Pipeline.Mediation;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Smo;
@@ -257,6 +258,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             request.ProfilerProvider,
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: null,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,

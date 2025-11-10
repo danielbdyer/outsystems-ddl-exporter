@@ -16,6 +16,7 @@ using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
@@ -613,6 +614,7 @@ public class BuildSsdtPipelineStepTests
             "fixture",
             cacheOptions,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             staticDataProvider,
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,
@@ -668,6 +670,7 @@ public class BuildSsdtPipelineStepTests
             "fixture",
             EvidenceCache: null,
             DynamicDataset: DynamicEntityDataset.Empty,
+            DynamicDatasetSource: DynamicDatasetSource.None,
             StaticDataProvider: new ForeignKeyStaticEntityDataProvider(),
             SeedOutputDirectoryHint: null,
             DynamicDataOutputDirectoryHint: null,

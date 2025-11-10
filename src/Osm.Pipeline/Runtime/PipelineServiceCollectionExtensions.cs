@@ -7,6 +7,7 @@ using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.ModelIngestion;
@@ -130,6 +131,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IOutputDirectoryResolver, OutputDirectoryResolver>();
         services.AddSingleton<INamingOverridesBinder, NamingOverridesBinder>();
         services.AddSingleton<IStaticDataProviderFactory, StaticDataProviderFactory>();
+        services.AddSingleton<IDynamicEntityDataProvider, SqlDynamicEntityDataProvider>();
         services.AddSingleton<IPipelineBootstrapper, PipelineBootstrapper>();
         services.AddSingleton<BuildSsdtBootstrapStep>();
         services.AddSingleton<BuildSsdtEvidenceCacheStep>();
