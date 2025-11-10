@@ -210,6 +210,11 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
                 probeDescription,
                 status.SampleSize,
                 status.CapturedAtUtc),
+            ProfilingProbeOutcome.AmbiguousMapping => string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} was skipped because the referenced entity could not be resolved unambiguously at {1:O}. Profiling evidence is unavailable.",
+                probeDescription,
+                status.CapturedAtUtc),
             _ => null
         };
 

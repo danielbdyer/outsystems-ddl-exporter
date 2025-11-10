@@ -162,7 +162,7 @@ public sealed class MultiEnvironmentConstraintConsensus
             // Count environments where NOT NULL is safe (NullCount == 0 and successful probe)
             var safeEnvironments = columns.Count(item =>
                 item.Column.NullCount == 0 &&
-                item.Column.NullCountStatus.Outcome == ProfilingProbeOutcome.Succeeded);
+                item.Column.NullCountStatus.Outcome is ProfilingProbeOutcome.Succeeded or ProfilingProbeOutcome.TrustedConstraint);
 
             var presentEnvironmentSet = columns
                 .Select(item => item.Environment)
@@ -241,7 +241,7 @@ public sealed class MultiEnvironmentConstraintConsensus
 
             var safeEnvironments = uniques.Count(item =>
                 !item.Unique.HasDuplicate &&
-                item.Unique.ProbeStatus.Outcome == ProfilingProbeOutcome.Succeeded);
+                item.Unique.ProbeStatus.Outcome is ProfilingProbeOutcome.Succeeded or ProfilingProbeOutcome.TrustedConstraint);
 
             var presentEnvironmentSet = uniques
                 .Select(item => item.Environment)
@@ -407,7 +407,7 @@ public sealed class MultiEnvironmentConstraintConsensus
             var safeEnvironments = foreignKeys.Count(item =>
                 !item.ForeignKey.HasOrphan &&
                 !item.ForeignKey.IsNoCheck &&
-                item.ForeignKey.ProbeStatus.Outcome == ProfilingProbeOutcome.Succeeded);
+                item.ForeignKey.ProbeStatus.Outcome is ProfilingProbeOutcome.Succeeded or ProfilingProbeOutcome.TrustedConstraint);
 
             var presentEnvironmentSet = foreignKeys
                 .Select(item => item.Environment)

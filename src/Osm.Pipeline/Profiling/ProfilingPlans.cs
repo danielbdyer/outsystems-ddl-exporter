@@ -22,7 +22,13 @@ internal sealed record TableProfilingPlan(
 
 internal sealed record UniqueCandidatePlan(string Key, ImmutableArray<string> Columns);
 
-internal sealed record ForeignKeyPlan(string Key, string Column, string TargetSchema, string TargetTable, string TargetColumn);
+internal sealed record ForeignKeyPlan(
+    string Key,
+    string Column,
+    string TargetSchema,
+    string TargetTable,
+    string TargetColumn,
+    bool HasDatabaseConstraint);
 
 internal sealed record TableProfilingResults(
     IReadOnlyDictionary<string, long> NullCounts,
@@ -33,6 +39,7 @@ internal sealed record TableProfilingResults(
     IReadOnlyDictionary<string, ProfilingProbeStatus> ForeignKeyStatuses,
     IReadOnlyDictionary<string, bool> ForeignKeyIsNoCheck,
     IReadOnlyDictionary<string, ProfilingProbeStatus> ForeignKeyNoCheckStatuses,
+    IReadOnlyDictionary<string, bool> ForeignKeyTrustedConstraints,
     IReadOnlyDictionary<string, NullRowSample> NullRowSamples,
     IReadOnlyDictionary<string, ForeignKeyOrphanSample> ForeignKeyOrphanSamples)
 {
@@ -45,6 +52,7 @@ internal sealed record TableProfilingResults(
         ImmutableDictionary<string, ProfilingProbeStatus>.Empty,
         ImmutableDictionary<string, bool>.Empty,
         ImmutableDictionary<string, ProfilingProbeStatus>.Empty,
+        ImmutableDictionary<string, bool>.Empty,
         ImmutableDictionary<string, NullRowSample>.Empty,
         ImmutableDictionary<string, ForeignKeyOrphanSample>.Empty);
 }

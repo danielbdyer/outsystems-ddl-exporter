@@ -11,7 +11,7 @@ namespace Osm.Pipeline.Profiling;
 internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
 {
     private readonly OsmModel _model;
-    private readonly EntityProfilingLookup _entityLookup;
+    private readonly ForeignKeyMappingResolver _foreignKeyResolver;
 
     public ProfilingPlanBuilder(OsmModel model)
         : this(model, NamingOverrideOptions.Empty)
@@ -19,14 +19,14 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
     }
 
     public ProfilingPlanBuilder(OsmModel model, NamingOverrideOptions namingOverrides)
-        : this(model, EntityProfilingLookup.Create(model, namingOverrides))
+        : this(model, new ForeignKeyMappingResolver(model, namingOverrides))
     {
     }
 
-    internal ProfilingPlanBuilder(OsmModel model, EntityProfilingLookup entityLookup)
+    internal ProfilingPlanBuilder(OsmModel model, ForeignKeyMappingResolver foreignKeyResolver)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
-        _entityLookup = entityLookup ?? throw new ArgumentNullException(nameof(entityLookup));
+        _foreignKeyResolver = foreignKeyResolver ?? throw new ArgumentNullException(nameof(foreignKeyResolver));
     }
 
     public Dictionary<(string Schema, string Table), TableProfilingPlan> BuildPlans(
@@ -48,103 +48,110 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
         var builders = new Dictionary<(string Schema, string Table), TableProfilingPlanAccumulator>(TableKeyComparer.Instance);
         var mappingLookup = BuildMappingLookup(tableNameMappings);
 
-        foreach (var entity in _model.Modules.SelectMany(static module => module.Entities))
+        foreach (var module in _model.Modules)
         {
-            var schema = entity.Schema.Value;
-            var table = entity.PhysicalName.Value;
-            var key = (schema, table);
-
-            // Resolve table name using mappings if available
-            var (resolvedSchema, resolvedTable) = ResolveTableName(schema, table, metadata, mappingLookup);
-
-            if (!builders.TryGetValue(key, out var accumulator))
+            foreach (var entity in module.Entities)
             {
-                accumulator = new TableProfilingPlanAccumulator(schema, table);
-                builders[key] = accumulator;
-            }
+                var schema = entity.Schema.Value;
+                var table = entity.PhysicalName.Value;
+                var key = (schema, table);
 
-            accumulator.SetResolvedTable(resolvedSchema, resolvedTable);
+                // Resolve table name using mappings if available
+                var (resolvedSchema, resolvedTable) = ResolveTableName(schema, table, metadata, mappingLookup);
 
-            // In lenient mode, check if the table has any columns in metadata before processing
-            if (allowMissingTables)
-            {
-                var hasAnyColumn = entity.Attributes.Any(attr =>
-                    metadata.ContainsKey((resolvedSchema, resolvedTable, attr.ColumnName.Value)));
-
-                if (!hasAnyColumn)
+                if (!builders.TryGetValue(key, out var accumulator))
                 {
-                    // Skip this table entirely - it doesn't exist in this environment
-                    continue;
-                }
-            }
-
-            foreach (var attribute in entity.Attributes)
-            {
-                var columnName = attribute.ColumnName.Value;
-                var metadataKey = (resolvedSchema, resolvedTable, columnName);
-                if (metadata.ContainsKey(metadataKey))
-                {
-                    accumulator.AddColumn(columnName);
-
-                    // Track primary key columns from metadata
-                    if (metadata.TryGetValue(metadataKey, out var columnMetadata) && columnMetadata.IsPrimaryKey)
-                    {
-                        accumulator.AddPrimaryKeyColumn(columnName);
-                    }
+                    accumulator = new TableProfilingPlanAccumulator(schema, table);
+                    builders[key] = accumulator;
                 }
 
-                if (attribute.Reference.IsReference && attribute.Reference.TargetEntity is not null)
-                {
-                    var targetName = attribute.Reference.TargetEntity.Value;
-                    if (_entityLookup.TryGet(targetName, out var targetEntry) &&
-                        targetEntry.PreferredIdentifier is { } targetIdentifier)
-                    {
-                        var targetEntity = targetEntry.Entity;
+                accumulator.SetResolvedTable(resolvedSchema, resolvedTable);
 
-                        // In lenient mode, only add FK if target table exists in metadata
-                        // In strict mode, always add FK (including to system tables like ossys_User)
-                        var targetSchema = targetEntity.Schema.Value;
-                        var targetTable = targetEntity.PhysicalName.Value;
-                        var targetHasColumns = !allowMissingTables ||
-                            metadata.Keys.Any(k => k.Schema == targetSchema && k.Table == targetTable);
-
-                        if (targetHasColumns)
-                        {
-                            accumulator.AddForeignKey(
-                                columnName,
-                                targetEntity.Schema.Value,
-                                targetEntity.PhysicalName.Value,
-                                targetIdentifier.ColumnName.Value);
-                        }
-                    }
-                }
-            }
-
-            foreach (var index in entity.Indexes.Where(static idx => idx.IsUnique))
-            {
-                var orderedColumns = index.Columns
-                    .OrderBy(static column => column.Ordinal)
-                    .Select(static column => column.Column.Value)
-                    .ToArray();
-
-                if (orderedColumns.Length == 0)
-                {
-                    continue;
-                }
-
-                // In lenient mode, only add unique constraint if all columns exist in metadata
+                // In lenient mode, check if the table has any columns in metadata before processing
                 if (allowMissingTables)
                 {
-                    var allColumnsExist = orderedColumns.All(col =>
-                        metadata.ContainsKey((schema, table, col)));
+                    var hasAnyColumn = entity.Attributes.Any(attr =>
+                        metadata.ContainsKey((resolvedSchema, resolvedTable, attr.ColumnName.Value)));
 
-                    if (!allColumnsExist)
+                    if (!hasAnyColumn)
                     {
+                        // Skip this table entirely - it doesn't exist in this environment
                         continue;
                     }
                 }
 
-                accumulator.AddUniqueCandidate(orderedColumns);
+                foreach (var attribute in entity.Attributes)
+                {
+                    var columnName = attribute.ColumnName.Value;
+                    var metadataKey = (resolvedSchema, resolvedTable, columnName);
+                    if (metadata.ContainsKey(metadataKey))
+                    {
+                        accumulator.AddColumn(columnName);
+
+                        // Track primary key columns from metadata
+                        if (metadata.TryGetValue(metadataKey, out var columnMetadata) && columnMetadata.IsPrimaryKey)
+                        {
+                            accumulator.AddPrimaryKeyColumn(columnName);
+                        }
+                    }
+
+                    if (!attribute.Reference.IsReference)
+                    {
+                        continue;
+                    }
+
+                    var resolution = _foreignKeyResolver.Resolve(module, entity, attribute);
+                    if (resolution.Kind != ForeignKeyResolutionKind.Resolved || resolution.TargetEntity is null || resolution.TargetAttribute is null)
+                    {
+                        continue;
+                    }
+
+                    var targetEntity = resolution.TargetEntity;
+
+                    // In lenient mode, only add FK if target table exists in metadata
+                    // In strict mode, always add FK (including to system tables like ossys_User)
+                    var targetSchema = targetEntity.Schema.Value;
+                    var targetTable = targetEntity.PhysicalName.Value;
+                    var targetHasColumns = !allowMissingTables ||
+                        metadata.Keys.Any(k => k.Schema == targetSchema && k.Table == targetTable);
+
+                    if (targetHasColumns)
+                    {
+                        accumulator.AddForeignKey(
+                            columnName,
+                            targetEntity.Schema.Value,
+                            targetEntity.PhysicalName.Value,
+                            resolution.TargetAttribute.ColumnName.Value,
+                            resolution.HasDatabaseConstraint);
+                    }
+                }
+
+                foreach (var index in entity.Indexes.Where(static idx => idx.IsUnique))
+                {
+                    var orderedColumns = index.Columns
+                        .OrderBy(static column => column.Ordinal)
+                        .Select(static column => column.Column.Value)
+                        .ToArray();
+
+                    if (orderedColumns.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    // In lenient mode, only add unique constraint if all columns exist in metadata
+                    if (allowMissingTables)
+                    {
+                        var allColumnsExist = orderedColumns.All(col =>
+                            metadata.ContainsKey((schema, table, col)));
+
+                        if (!allColumnsExist)
+                        {
+                            continue;
+                        }
+                    }
+
+                    accumulator.AddUniqueCandidate(orderedColumns);
+                }
             }
         }
 
@@ -301,7 +308,12 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             }
         }
 
-        public void AddForeignKey(string column, string targetSchema, string targetTable, string targetColumn)
+        public void AddForeignKey(
+            string column,
+            string targetSchema,
+            string targetTable,
+            string targetColumn,
+            bool hasDatabaseConstraint)
         {
             if (string.IsNullOrWhiteSpace(column) ||
                 string.IsNullOrWhiteSpace(targetSchema) ||
@@ -314,7 +326,7 @@ internal sealed class ProfilingPlanBuilder : IProfilingPlanBuilder
             var key = BuildForeignKeyKey(column, targetSchema, targetTable, targetColumn);
             if (_foreignKeyKeys.Add(key))
             {
-                _foreignKeys.Add(new ForeignKeyPlan(key, column, targetSchema, targetTable, targetColumn));
+                _foreignKeys.Add(new ForeignKeyPlan(key, column, targetSchema, targetTable, targetColumn, hasDatabaseConstraint));
             }
         }
 

@@ -13,7 +13,8 @@ internal sealed record MandatorySignal()
             return SignalEvaluation.Create(Code, Description, result: false);
         }
 
-        if (context.ColumnProfile is not { } profile || profile.NullCountStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+        if (context.ColumnProfile is not { } profile ||
+            profile.NullCountStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint)
         {
             return SignalEvaluation.Create(
                 Code,

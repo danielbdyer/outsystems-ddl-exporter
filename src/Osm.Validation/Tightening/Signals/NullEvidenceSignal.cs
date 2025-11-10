@@ -14,7 +14,7 @@ internal sealed record NullEvidenceSignal()
             return SignalEvaluation.Create(Code, Description, result: false);
         }
 
-        if (profile.NullCountStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+        if (profile.NullCountStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint)
         {
             return SignalEvaluation.Create(
                 Code,

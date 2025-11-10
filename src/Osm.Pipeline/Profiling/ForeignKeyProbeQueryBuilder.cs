@@ -10,26 +10,31 @@ namespace Osm.Pipeline.Profiling;
 
 internal sealed class ForeignKeyProbeQueryBuilder
 {
-    public void ConfigureRealityCommand(DbCommand command, TableProfilingPlan plan, bool useSampling, int sampleSize)
+    public void ConfigureRealityCommand(
+        DbCommand command,
+        TableProfilingPlan plan,
+        ImmutableArray<ForeignKeyPlan> candidates,
+        bool useSampling,
+        int sampleSize)
     {
         if (command is null)
         {
             throw new ArgumentNullException(nameof(command));
         }
 
-        if (plan.ForeignKeys.IsDefaultOrEmpty)
+        if (candidates.IsDefaultOrEmpty)
         {
             throw new ArgumentException("Profiling plan does not contain any foreign key candidates.", nameof(plan));
         }
 
-        var sourceColumns = plan.ForeignKeys
+        var sourceColumns = candidates
             .Select(static fk => fk.Column)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(SqlIdentifierFormatter.Quote)
             .ToArray();
 
         command.Parameters.Clear();
-        command.CommandText = BuildRealityCommandText(plan.TargetSchema, plan.TargetTable, sourceColumns, plan.ForeignKeys, useSampling, command);
+        command.CommandText = BuildRealityCommandText(plan.TargetSchema, plan.TargetTable, sourceColumns, candidates, useSampling, command);
 
         if (useSampling)
         {
