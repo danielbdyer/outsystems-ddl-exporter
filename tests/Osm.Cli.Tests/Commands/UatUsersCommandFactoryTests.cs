@@ -76,7 +76,9 @@ public class UatUsersCommandFactoryTests
         Assert.Equal(new[] { "Name", "EMail" }, options.IncludeColumns);
     }
 
-    private static async Task<(UatUsersOptions Options, int ExitCode)> InvokeAsync(string commandLine)
+    private static async Task<(UatUsersOptions Options, int ExitCode)> InvokeAsync(
+        string commandLine,
+        CliConfiguration? configuration = null)
     {
         var executor = new FakeUatUsersCommand();
 

@@ -180,6 +180,78 @@ public sealed class FullExportApplicationServiceTests
     }
 
     [Fact]
+    public async Task RunAsync_SkipsSchemaApplyWithoutExplicitConnection()
+    {
+        var model = CreateModel();
+        var extractionResult = CreateExtractionApplicationResult(model);
+        var profileResult = new CaptureProfileApplicationResult(
+            CreateCaptureProfilePipelineResult(),
+            OutputDirectory: "profiles",
+            ModelPath: "model.json",
+            ProfilerProvider: "fixture",
+            FixtureProfilePath: null);
+        var buildResult = CreateBuildResult("model.json");
+
+        var profileService = new StubProfileService(Result<CaptureProfileApplicationResult>.Success(profileResult));
+        var extractService = new StubExtractService(Result<ExtractModelApplicationResult>.Success(extractionResult));
+        var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
+        var schemaDataApplier = new RecordingSchemaDataApplier();
+        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(schemaDataApplier);
+        var modelDeserializer = new StubModelJsonDeserializer(model);
+        var uatRunner = new RecordingUatUsersRunner();
+        var schemaGraphFactory = new RecordingSchemaGraphFactory();
+
+        var configuration = CliConfiguration.Empty with
+        {
+            Sql = CliConfiguration.Empty.Sql with
+            {
+                ConnectionString = "Server=Source;Database=Outsystems;"
+            }
+        };
+
+        var service = new FullExportApplicationService(
+            profileService,
+            extractService,
+            buildService,
+            schemaApplyOrchestrator,
+            modelDeserializer,
+            uatRunner,
+            schemaGraphFactory);
+
+        var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
+        var overrides = new FullExportOverrides(
+            Build: new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
+            Profile: new CaptureProfileOverrides(null, null, null, null, null),
+            Extract: new ExtractModelOverrides(null, null, null, null, null, null),
+            Apply: null,
+            ReuseModelPath: false,
+            UatUsers: UatUsersOverrides.Disabled);
+        var input = new FullExportApplicationInput(
+            configurationContext,
+            overrides,
+            new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
+            new SqlOptionsOverrides(
+                ConnectionString: "Server=Source;Database=Outsystems;",
+                CommandTimeoutSeconds: null,
+                SamplingThreshold: null,
+                SamplingSize: null,
+                AuthenticationMethod: null,
+                TrustServerCertificate: null,
+                ApplicationName: null,
+                AccessToken: null,
+                ProfilingConnectionStrings: null),
+            new CacheOptionsOverrides(null, null));
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(schemaDataApplier.LastRequest);
+        Assert.False(result.Value.Apply.Attempted);
+        Assert.False(result.Value.ApplyOptions.Enabled);
+        Assert.Null(result.Value.ApplyOptions.ConnectionString);
+    }
+
+    [Fact]
     public async Task RunAsync_ReturnsFailureWhenUatUsersPipelineFails()
     {
         var model = CreateModel();
@@ -645,6 +717,27 @@ public sealed class FullExportApplicationServiceTests
             }
 
             return Result<ModelSchemaGraph>.Success(new ModelSchemaGraph(extraction.Model));
+        }
+    }
+
+    private sealed class RecordingSchemaDataApplier : ISchemaDataApplier
+    {
+        public SchemaDataApplyRequest? LastRequest { get; private set; }
+
+        public Task<Result<SchemaDataApplyOutcome>> ApplyAsync(
+            SchemaDataApplyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+
+            return Task.FromResult(Result<SchemaDataApplyOutcome>.Success(new SchemaDataApplyOutcome(
+                ImmutableArray<string>.Empty,
+                ImmutableArray<string>.Empty,
+                ExecutedBatchCount: 0,
+                TimeSpan.Zero,
+                MaxBatchSizeBytes: 0,
+                StreamingEnabled: true,
+                StaticSeedValidation: StaticSeedValidationSummary.NotAttempted)));
         }
     }
 

@@ -436,9 +436,9 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
         var sqlConfiguration = configuration.Sql ?? SqlConfiguration.Empty;
 
-        var connectionString = applyOverrides.ConnectionString
-            ?? sqlOverrides.ConnectionString
-            ?? sqlConfiguration.ConnectionString;
+        var connectionString = string.IsNullOrWhiteSpace(applyOverrides.ConnectionString)
+            ? null
+            : applyOverrides.ConnectionString!.Trim();
 
         var commandTimeout = applyOverrides.CommandTimeoutSeconds
             ?? sqlOverrides.CommandTimeoutSeconds
