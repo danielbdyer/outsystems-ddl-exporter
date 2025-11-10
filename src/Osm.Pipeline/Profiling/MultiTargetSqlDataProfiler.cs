@@ -635,11 +635,16 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
         }
 
         // Aggregate probe statuses: use the worst outcome for conservative constraint application
-        // Priority: Unknown > Cancelled > FallbackTimeout > Succeeded
+        // Priority: Unknown > AmbiguousMapping > Cancelled > FallbackTimeout > Succeeded/TrustedConstraint
         // Unknown is worst because we have no information about the data
         if (first.Outcome == ProfilingProbeOutcome.Unknown || second.Outcome == ProfilingProbeOutcome.Unknown)
         {
             return first.Outcome == ProfilingProbeOutcome.Unknown ? first : second;
+        }
+
+        if (first.Outcome == ProfilingProbeOutcome.AmbiguousMapping || second.Outcome == ProfilingProbeOutcome.AmbiguousMapping)
+        {
+            return first.Outcome == ProfilingProbeOutcome.AmbiguousMapping ? first : second;
         }
 
         if (first.Outcome == ProfilingProbeOutcome.Cancelled || second.Outcome == ProfilingProbeOutcome.Cancelled)
@@ -650,6 +655,11 @@ public sealed class MultiTargetSqlDataProfiler : IDataProfiler, IMultiEnvironmen
         if (first.Outcome == ProfilingProbeOutcome.FallbackTimeout || second.Outcome == ProfilingProbeOutcome.FallbackTimeout)
         {
             return first.Outcome == ProfilingProbeOutcome.FallbackTimeout ? first : second;
+        }
+
+        if (first.Outcome == ProfilingProbeOutcome.TrustedConstraint || second.Outcome == ProfilingProbeOutcome.TrustedConstraint)
+        {
+            return first.Outcome == ProfilingProbeOutcome.TrustedConstraint ? first : second;
         }
 
         // Both succeeded - return first (they're equivalent)

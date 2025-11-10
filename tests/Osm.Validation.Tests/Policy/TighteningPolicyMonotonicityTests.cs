@@ -116,7 +116,7 @@ public sealed class TighteningPolicyMonotonicityTests
     private static ProfileSnapshot ApplyForeignKeyOrphanState(ProfileSnapshot snapshot, int foreignKeyIndex, bool hasOrphan)
     {
         var original = snapshot.ForeignKeys[foreignKeyIndex];
-        var status = original.ProbeStatus.Outcome == ProfilingProbeOutcome.Succeeded
+        var status = original.ProbeStatus.Outcome is ProfilingProbeOutcome.Succeeded or ProfilingProbeOutcome.TrustedConstraint
             ? original.ProbeStatus
             : ProfilingProbeStatus.CreateSucceeded(original.ProbeStatus.CapturedAtUtc, original.ProbeStatus.SampleSize);
 
@@ -155,7 +155,7 @@ public sealed class TighteningPolicyMonotonicityTests
         var builder = ImmutableArray.CreateBuilder<int>(BaseSnapshot.Columns.Length);
         for (var i = 0; i < BaseSnapshot.Columns.Length; i++)
         {
-            if (BaseSnapshot.Columns[i].NullCountStatus.Outcome == ProfilingProbeOutcome.Succeeded)
+            if (BaseSnapshot.Columns[i].NullCountStatus.Outcome is ProfilingProbeOutcome.Succeeded or ProfilingProbeOutcome.TrustedConstraint)
             {
                 builder.Add(i);
             }

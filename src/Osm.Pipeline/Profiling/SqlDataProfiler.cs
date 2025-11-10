@@ -24,7 +24,7 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly OsmModel _model;
     private readonly SqlProfilerOptions _options;
-    private readonly EntityProfilingLookup _entityLookup;
+    private readonly ForeignKeyMappingResolver _foreignKeyResolver;
     private readonly ITableMetadataLoader _metadataLoader;
     private readonly IProfilingPlanBuilder _planBuilder;
     private readonly IProfilingQueryExecutor _queryExecutor;
@@ -59,9 +59,9 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _metadataLog = metadataLog;
-        _entityLookup = EntityProfilingLookup.Create(_model, _options.NamingOverrides);
+        _foreignKeyResolver = new ForeignKeyMappingResolver(_model, _options.NamingOverrides);
         _metadataLoader = metadataLoader ?? new TableMetadataLoader(_options, _metadataLog);
-        _planBuilder = planBuilder ?? new ProfilingPlanBuilder(_model, _entityLookup);
+        _planBuilder = planBuilder ?? new ProfilingPlanBuilder(_model, _foreignKeyResolver);
         _queryExecutor = queryExecutor ?? new ProfilingQueryExecutor(_connectionFactory, _options, _metadataLog);
     }
 
@@ -153,167 +153,209 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
             var compositeProfiles = new List<CompositeUniqueCandidateProfile>();
             var foreignKeys = new List<ForeignKeyReality>();
 
-            foreach (var entity in _model.Modules.SelectMany(static module => module.Entities))
+            foreach (var module in _model.Modules)
             {
-                var schema = entity.Schema.Value;
-                var table = entity.PhysicalName.Value;
-                var tableKey = (schema, table);
-                rowCounts.TryGetValue(tableKey, out var tableRowCount);
-                var tableResults = resultsLookup.TryGetValue(tableKey, out var computed)
-                    ? computed
-                    : TableProfilingResults.Empty;
-
-                foreach (var attribute in entity.Attributes)
+                foreach (var entity in module.Entities)
                 {
-                    var columnName = attribute.ColumnName.Value;
-                    var columnKey = (schema, table, columnName);
-                    if (!metadata.TryGetValue(columnKey, out var meta))
+                    var schema = entity.Schema.Value;
+                    var table = entity.PhysicalName.Value;
+                    var tableKey = (schema, table);
+                    rowCounts.TryGetValue(tableKey, out var tableRowCount);
+                    var tableResults = resultsLookup.TryGetValue(tableKey, out var computed)
+                        ? computed
+                        : TableProfilingResults.Empty;
+
+                    foreach (var attribute in entity.Attributes)
                     {
-                        continue;
-                    }
-
-                    var nullCount = tableResults.NullCounts.TryGetValue(columnName, out var value) ? value : 0L;
-                    var nullStatus = tableResults.NullCountStatuses.TryGetValue(columnName, out var status)
-                        ? status
-                        : ProfilingProbeStatus.Unknown;
-                    var nullRowSample = tableResults.NullRowSamples.TryGetValue(columnName, out var sample)
-                        ? sample
-                        : null;
-
-                    var columnProfileResult = ColumnProfile.Create(
-                        SchemaName.Create(schema).Value,
-                        TableName.Create(table).Value,
-                        ColumnName.Create(columnName).Value,
-                        meta.IsNullable,
-                        meta.IsComputed,
-                        meta.IsPrimaryKey,
-                        IsSingleColumnUnique(entity, columnName),
-                        meta.DefaultDefinition,
-                        tableRowCount,
-                        nullCount,
-                        nullStatus,
-                        nullRowSample);
-
-                    if (columnProfileResult.IsSuccess)
-                    {
-                        columnProfiles.Add(columnProfileResult.Value);
-                    }
-                }
-
-                foreach (var index in entity.Indexes.Where(static idx => idx.IsUnique))
-                {
-                    var orderedColumns = index.Columns
-                        .OrderBy(static column => column.Ordinal)
-                        .Select(static column => column.Column.Value)
-                        .ToArray();
-
-                    if (orderedColumns.Length == 0)
-                    {
-                        continue;
-                    }
-
-                    var candidateKey = ProfilingPlanBuilder.BuildUniqueKey(orderedColumns);
-                    var hasDuplicates = tableResults.UniqueDuplicates.TryGetValue(candidateKey, out var duplicate) && duplicate;
-                    var uniqueStatus = tableResults.UniqueDuplicateStatuses.TryGetValue(candidateKey, out var uniqueProbe)
-                        ? uniqueProbe
-                        : ProfilingProbeStatus.Unknown;
-
-                    if (orderedColumns.Length == 1)
-                    {
-                        var profileResult = UniqueCandidateProfile.Create(
-                            SchemaName.Create(schema).Value,
-                            TableName.Create(table).Value,
-                            ColumnName.Create(orderedColumns[0]).Value,
-                            hasDuplicates,
-                            uniqueStatus);
-
-                        if (profileResult.IsSuccess)
+                        var columnName = attribute.ColumnName.Value;
+                        var columnKey = (schema, table, columnName);
+                        if (!metadata.TryGetValue(columnKey, out var meta))
                         {
-                            uniqueProfiles.Add(profileResult.Value);
+                            continue;
                         }
-                    }
-                    else
-                    {
-                        var columns = orderedColumns
-                            .Select(name => ColumnName.Create(name).Value)
-                            .ToImmutableArray();
-                        var profileResult = CompositeUniqueCandidateProfile.Create(
-                            SchemaName.Create(schema).Value,
-                            TableName.Create(table).Value,
-                            columns,
-                            hasDuplicates);
 
-                        if (profileResult.IsSuccess)
-                        {
-                            compositeProfiles.Add(profileResult.Value);
-                        }
-                    }
-                }
-
-                foreach (var attribute in entity.Attributes)
-                {
-                    if (!attribute.Reference.IsReference || attribute.Reference.TargetEntity is null)
-                    {
-                        continue;
-                    }
-
-                    var targetName = attribute.Reference.TargetEntity.Value;
-                    if (!_entityLookup.TryGet(targetName, out var targetEntry))
-                    {
-                        continue;
-                    }
-
-                    if (targetEntry.PreferredIdentifier is not { } targetIdentifier)
-                    {
-                        continue;
-                    }
-
-                    var targetEntity = targetEntry.Entity;
-
-                    var foreignKeyKey = ProfilingPlanBuilder.BuildForeignKeyKey(
-                        attribute.ColumnName.Value,
-                        targetEntity.Schema.Value,
-                        targetEntity.PhysicalName.Value,
-                        targetIdentifier.ColumnName.Value);
-
-                    var orphanCount = tableResults.ForeignKeyOrphanCounts.TryGetValue(foreignKeyKey, out var count)
-                        ? count
-                        : 0L;
-                    var hasOrphans = orphanCount > 0;
-                    var isNoCheck = tableResults.ForeignKeyIsNoCheck.TryGetValue(foreignKeyKey, out var noCheck) && noCheck;
-                    var foreignKeyStatus = tableResults.ForeignKeyStatuses.TryGetValue(foreignKeyKey, out var fkStatus)
-                        ? fkStatus
-                        : tableResults.ForeignKeyNoCheckStatuses.TryGetValue(foreignKeyKey, out var noCheckStatus)
-                            ? noCheckStatus
+                        var nullCount = tableResults.NullCounts.TryGetValue(columnName, out var value) ? value : 0L;
+                        var nullStatus = tableResults.NullCountStatuses.TryGetValue(columnName, out var status)
+                            ? status
                             : ProfilingProbeStatus.Unknown;
-                    var orphanSample = tableResults.ForeignKeyOrphanSamples.TryGetValue(foreignKeyKey, out var sample)
-                        ? sample
-                        : null;
+                        var nullRowSample = tableResults.NullRowSamples.TryGetValue(columnName, out var sample)
+                            ? sample
+                            : null;
 
-                    var referenceResult = ForeignKeyReference.Create(
-                        SchemaName.Create(schema).Value,
-                        TableName.Create(table).Value,
-                        ColumnName.Create(attribute.ColumnName.Value).Value,
-                        SchemaName.Create(targetEntity.Schema.Value).Value,
-                        TableName.Create(targetEntity.PhysicalName.Value).Value,
-                        ColumnName.Create(targetIdentifier.ColumnName.Value).Value,
-                        attribute.Reference.HasDatabaseConstraint);
+                        var columnProfileResult = ColumnProfile.Create(
+                            SchemaName.Create(schema).Value,
+                            TableName.Create(table).Value,
+                            ColumnName.Create(columnName).Value,
+                            meta.IsNullable,
+                            meta.IsComputed,
+                            meta.IsPrimaryKey,
+                            IsSingleColumnUnique(entity, columnName),
+                            meta.DefaultDefinition,
+                            tableRowCount,
+                            nullCount,
+                            nullStatus,
+                            nullRowSample);
 
-                    if (referenceResult.IsFailure)
-                    {
-                        continue;
+                        if (columnProfileResult.IsSuccess)
+                        {
+                            columnProfiles.Add(columnProfileResult.Value);
+                        }
                     }
 
-                    var realityResult = ForeignKeyReality.Create(
-                        referenceResult.Value,
-                        hasOrphans,
-                        orphanCount,
-                        isNoCheck,
-                        foreignKeyStatus,
-                        orphanSample);
-                    if (realityResult.IsSuccess)
+                    foreach (var index in entity.Indexes.Where(static idx => idx.IsUnique))
                     {
-                        foreignKeys.Add(realityResult.Value);
+                        var orderedColumns = index.Columns
+                            .OrderBy(static column => column.Ordinal)
+                            .Select(static column => column.Column.Value)
+                            .ToArray();
+
+                        if (orderedColumns.Length == 0)
+                        {
+                            continue;
+                        }
+
+                        var candidateKey = ProfilingPlanBuilder.BuildUniqueKey(orderedColumns);
+                        var hasDuplicates = tableResults.UniqueDuplicates.TryGetValue(candidateKey, out var duplicate) && duplicate;
+                        var uniqueStatus = tableResults.UniqueDuplicateStatuses.TryGetValue(candidateKey, out var uniqueProbe)
+                            ? uniqueProbe
+                            : ProfilingProbeStatus.Unknown;
+
+                        if (orderedColumns.Length == 1)
+                        {
+                            var profileResult = UniqueCandidateProfile.Create(
+                                SchemaName.Create(schema).Value,
+                                TableName.Create(table).Value,
+                                ColumnName.Create(orderedColumns[0]).Value,
+                                hasDuplicates,
+                                uniqueStatus);
+
+                            if (profileResult.IsSuccess)
+                            {
+                                uniqueProfiles.Add(profileResult.Value);
+                            }
+                        }
+                        else
+                        {
+                            var columns = orderedColumns
+                                .Select(name => ColumnName.Create(name).Value)
+                                .ToImmutableArray();
+                            var profileResult = CompositeUniqueCandidateProfile.Create(
+                                SchemaName.Create(schema).Value,
+                                TableName.Create(table).Value,
+                                columns,
+                                hasDuplicates);
+
+                            if (profileResult.IsSuccess)
+                            {
+                                compositeProfiles.Add(profileResult.Value);
+                            }
+                        }
+                    }
+
+                    foreach (var attribute in entity.Attributes)
+                    {
+                        if (!attribute.Reference.IsReference)
+                        {
+                            continue;
+                        }
+
+                        var resolution = _foreignKeyResolver.Resolve(module, entity, attribute);
+                        if (resolution.Kind == ForeignKeyResolutionKind.Ambiguous)
+                        {
+                            _metadataLog?.RecordRequest(
+                                "profiling.foreignKey.ambiguous",
+                                new
+                                {
+                                    Module = module.Name.Value,
+                                    Entity = entity.LogicalName.Value,
+                                    Attribute = attribute.LogicalName.Value,
+                                    Target = attribute.Reference.TargetEntity?.Value,
+                                    Physical = attribute.Reference.TargetPhysicalName?.Value,
+                                    Candidates = resolution.Candidates
+                                        .Select(candidate => new
+                                        {
+                                            Module = candidate.Module.Value,
+                                            Schema = candidate.Schema.Value,
+                                            Table = candidate.PhysicalName.Value
+                                        })
+                                        .ToArray()
+                                });
+                            continue;
+                        }
+
+                        if (resolution.Kind != ForeignKeyResolutionKind.Resolved || resolution.TargetEntity is null || resolution.TargetAttribute is null)
+                        {
+                            if (resolution.Kind == ForeignKeyResolutionKind.Missing)
+                            {
+                                _metadataLog?.RecordRequest(
+                                    "profiling.foreignKey.unresolved",
+                                    new
+                                    {
+                                        Module = module.Name.Value,
+                                        Entity = entity.LogicalName.Value,
+                                        Attribute = attribute.LogicalName.Value,
+                                        Target = attribute.Reference.TargetEntity?.Value,
+                                        Physical = attribute.Reference.TargetPhysicalName?.Value
+                                    });
+                            }
+
+                            continue;
+                        }
+
+                        var targetEntity = resolution.TargetEntity;
+                        var targetIdentifier = resolution.TargetAttribute;
+
+                        var foreignKeyKey = ProfilingPlanBuilder.BuildForeignKeyKey(
+                            attribute.ColumnName.Value,
+                            targetEntity.Schema.Value,
+                            targetEntity.PhysicalName.Value,
+                            targetIdentifier.ColumnName.Value);
+
+                        var orphanCount = tableResults.ForeignKeyOrphanCounts.TryGetValue(foreignKeyKey, out var count)
+                            ? count
+                            : 0L;
+                        var hasOrphans = orphanCount > 0;
+                        var isNoCheck = tableResults.ForeignKeyIsNoCheck.TryGetValue(foreignKeyKey, out var noCheck) && noCheck;
+                        var foreignKeyStatus = tableResults.ForeignKeyStatuses.TryGetValue(foreignKeyKey, out var fkStatus)
+                            ? fkStatus
+                            : tableResults.ForeignKeyNoCheckStatuses.TryGetValue(foreignKeyKey, out var noCheckStatus)
+                                ? noCheckStatus
+                                : ProfilingProbeStatus.Unknown;
+                        var isTrustedConstraint = tableResults.ForeignKeyTrustedConstraints.TryGetValue(foreignKeyKey, out var trusted) && trusted;
+                        if (isTrustedConstraint)
+                        {
+                            foreignKeyStatus = foreignKeyStatus with { Outcome = ProfilingProbeOutcome.TrustedConstraint };
+                        }
+
+                        var orphanSample = tableResults.ForeignKeyOrphanSamples.TryGetValue(foreignKeyKey, out var sample)
+                            ? sample
+                            : null;
+
+                        var referenceResult = ForeignKeyReference.Create(
+                            SchemaName.Create(schema).Value,
+                            TableName.Create(table).Value,
+                            ColumnName.Create(attribute.ColumnName.Value).Value,
+                            SchemaName.Create(targetEntity.Schema.Value).Value,
+                            TableName.Create(targetEntity.PhysicalName.Value).Value,
+                            ColumnName.Create(targetIdentifier.ColumnName.Value).Value,
+                            resolution.HasDatabaseConstraint);
+
+                        if (referenceResult.IsFailure)
+                        {
+                            continue;
+                        }
+
+                        var realityResult = ForeignKeyReality.Create(
+                            referenceResult.Value,
+                            hasOrphans,
+                            orphanCount,
+                            isNoCheck,
+                            foreignKeyStatus,
+                            orphanSample);
+                        if (realityResult.IsSuccess)
+                        {
+                            foreignKeys.Add(realityResult.Value);
+                        }
                     }
                 }
             }

@@ -78,7 +78,7 @@ public sealed record MultiEnvironmentProfileReport(
         var primaryUniqueViolations = BuildUniqueViolationLookup(primarySnapshot.Snapshot);
         var primaryCompositeViolations = BuildCompositeViolationLookup(primarySnapshot.Snapshot);
         var primaryForeignKeyOrphans = BuildForeignKeyLookup(primarySnapshot.Snapshot, static fk => fk.HasOrphan);
-        var primaryForeignKeyProbeUnknown = BuildForeignKeyLookup(primarySnapshot.Snapshot, static fk => fk.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded);
+        var primaryForeignKeyProbeUnknown = BuildForeignKeyLookup(primarySnapshot.Snapshot, static fk => fk.ProbeStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint);
         var primaryNotNullViolations = BuildNotNullViolationLookup(primarySnapshot.Snapshot);
 
         var builder = ImmutableArray.CreateBuilder<MultiEnvironmentFinding>();
@@ -156,7 +156,7 @@ public sealed record MultiEnvironmentProfileReport(
             {
                 affectedObjects = snapshot is null
                     ? ImmutableArray<string>.Empty
-                    : IdentifyForeignKeyIssues(snapshot.Snapshot, primaryForeignKeyProbeUnknown, static fk => fk.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded, "Probe");
+                    : IdentifyForeignKeyIssues(snapshot.Snapshot, primaryForeignKeyProbeUnknown, static fk => fk.ProbeStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint, "Probe");
 
                 builder.Add(new MultiEnvironmentFinding(
                     code: "profiling.multiEnvironment.foreignKey.evidence",
@@ -515,12 +515,12 @@ public sealed record ProfilingEnvironmentSummary(
         var foreignKeys = profile.ForeignKeys;
 
         var columnsWithNulls = columns.Count(static column => column.NullCount > 0);
-        var columnsWithUnknownNullStatus = columns.Count(static column => column.NullCountStatus.Outcome != ProfilingProbeOutcome.Succeeded);
+        var columnsWithUnknownNullStatus = columns.Count(static column => column.NullCountStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint);
         var uniqueViolations = uniqueCandidates.Count(static candidate => candidate.HasDuplicate)
             + compositeCandidates.Count(static candidate => candidate.HasDuplicate);
-        var uniqueProbeUnknown = uniqueCandidates.Count(static candidate => candidate.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded);
+        var uniqueProbeUnknown = uniqueCandidates.Count(static candidate => candidate.ProbeStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint);
         var foreignKeyOrphans = foreignKeys.Count(static fk => fk.HasOrphan);
-        var foreignKeyProbeUnknown = foreignKeys.Count(static fk => fk.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded);
+        var foreignKeyProbeUnknown = foreignKeys.Count(static fk => fk.ProbeStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint);
         var foreignKeyNoCheck = foreignKeys.Count(static fk => fk.IsNoCheck);
 
         return new ProfilingEnvironmentSummary(

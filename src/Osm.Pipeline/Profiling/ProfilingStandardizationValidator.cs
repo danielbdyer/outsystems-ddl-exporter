@@ -129,7 +129,7 @@ public sealed class ProfilingStandardizationValidator
             }
 
             // Warn if probe failed or timed out
-            if (column.NullCountStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+            if (column.NullCountStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint)
             {
                 issues.Add(new ValidationIssue(
                     ValidationIssueSeverity.Warning,
@@ -157,7 +157,7 @@ public sealed class ProfilingStandardizationValidator
     {
         foreach (var candidate in snapshot.UniqueCandidates)
         {
-            if (candidate.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+            if (candidate.ProbeStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint)
             {
                 issues.Add(new ValidationIssue(
                     ValidationIssueSeverity.Warning,
@@ -206,7 +206,7 @@ public sealed class ProfilingStandardizationValidator
     {
         foreach (var fk in snapshot.ForeignKeys)
         {
-            if (fk.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+            if (fk.ProbeStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint)
             {
                 var reference = fk.Reference;
                 issues.Add(new ValidationIssue(

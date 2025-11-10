@@ -7,7 +7,9 @@ public enum ProfilingProbeOutcome
     Unknown = 0,
     Succeeded,
     FallbackTimeout,
-    Cancelled
+    Cancelled,
+    TrustedConstraint,
+    AmbiguousMapping
 }
 
 public sealed record ProfilingProbeStatus(
