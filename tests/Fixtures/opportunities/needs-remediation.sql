@@ -75,7 +75,7 @@ GO
 -- Evidence: ConstraintTrust=Missing
 -- Evidence: HasOrphans=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)
 -- Evidence: OrphanCount=3
--- Evidence: OrphanSample=(101) -> 'MissingCustomer'
+-- Evidence: OrphanSample=(101) -> 'MissingCustomer', (202) -> 'LegacyCustomer'
 ALTER TABLE [dbo].[OSUSR_ABC_ORDER] WITH CHECK ADD CONSTRAINT [FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[OSUSR_DEF_CUSTOMER] ([Id]);
 GO
 ALTER TABLE [dbo].[OSUSR_ABC_ORDER] CHECK CONSTRAINT [FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER];

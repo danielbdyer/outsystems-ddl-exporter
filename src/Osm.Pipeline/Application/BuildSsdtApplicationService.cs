@@ -185,6 +185,11 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             dynamicDatasetSource = DynamicDatasetSource.SqlProvider;
         }
 
+        if (!dynamicDataset.IsEmpty && dynamicDatasetSource == DynamicDatasetSource.None && input.EnableDynamicSqlExtraction)
+        {
+            dynamicDatasetSource = DynamicDatasetSource.SqlProvider;
+        }
+
         var assemblyResult = _assembler.Assemble(new BuildSsdtRequestAssemblerContext(
             context.Configuration,
             input.Overrides,

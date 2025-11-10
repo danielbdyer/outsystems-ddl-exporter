@@ -130,9 +130,10 @@ public sealed class ProfilingInfrastructureTests
             "WITH Source AS (",
             "    SELECT [CUSTOMER_ID]",
             "    FROM [dbo].[ORDERS] WITH (NOLOCK))",
-            "SELECT CandidateId, HasOrphans",
+            "SELECT CandidateId, OrphanCount",
             "FROM (",
-            "    SELECT @fk0 AS CandidateId, CASE WHEN EXISTS (SELECT 1 FROM Source AS source LEFT JOIN [dbo].[CUSTOMER] AS target WITH (NOLOCK) ON source.[CUSTOMER_ID] = target.[ID] WHERE source.[CUSTOMER_ID] IS NOT NULL AND target.[ID] IS NULL) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasOrphans",
+            "    SELECT @fk0 AS CandidateId, COUNT_BIG(*) AS OrphanCount",
+            "    FROM Source AS source LEFT JOIN [dbo].[CUSTOMER] AS target WITH (NOLOCK) ON source.[CUSTOMER_ID] = target.[ID] WHERE source.[CUSTOMER_ID] IS NOT NULL AND target.[ID] IS NULL",
             ") AS results;"
         }) + Environment.NewLine;
 

@@ -69,6 +69,8 @@ public sealed record OpportunityColumn(
     bool? HasDuplicates,
     ProfilingProbeStatus? UniqueProbeStatus,
     bool? HasOrphans,
+    long? OrphanCount,
+    OpportunityOrphanSample? OrphanSample,
     bool? HasDatabaseConstraint,
     string? DeleteRule)
 {

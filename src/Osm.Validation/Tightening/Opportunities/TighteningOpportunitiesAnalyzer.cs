@@ -195,6 +195,11 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             return OpportunityCategory.Contradiction;
         }
 
+        if (decision.RequiresRemediation)
+        {
+            return OpportunityCategory.Contradiction;
+        }
+
         // Validation: Already has unique constraint that profiling confirms
         if (hasPhysicalUniqueConstraint && decision.EnforceUnique)
         {
@@ -202,7 +207,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         }
 
         // Recommendation: New unique index we could safely apply
-        if (decision.EnforceUnique && !decision.RequiresRemediation)
+        if (decision.EnforceUnique)
         {
             return OpportunityCategory.Recommendation;
         }
@@ -479,6 +484,10 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             uniqueProfile?.HasDuplicate,
             uniqueProfile?.ProbeStatus,
             fkReality?.HasOrphan,
+            fkReality?.OrphanCount,
+            fkReality?.OrphanSample is { } sample
+                ? OpportunityOrphanSample.FromDomain(sample)
+                : null,
             fkReality?.Reference.HasDatabaseConstraint ?? entry.Attribute.Reference.HasDatabaseConstraint,
             entry.Attribute.Reference.DeleteRuleCode);
     }
@@ -503,6 +512,8 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             profile?.NullCountStatus,
             uniqueProfile?.HasDuplicate,
             uniqueProbe,
+            null,
+            null,
             null,
             attribute.Reference.HasDatabaseConstraint,
             attribute.Reference.DeleteRuleCode);

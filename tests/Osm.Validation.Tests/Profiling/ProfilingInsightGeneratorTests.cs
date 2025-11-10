@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using Osm.Domain.Profiling;
@@ -138,6 +139,55 @@ public sealed class ProfilingInsightGeneratorTests
         Assert.Contains("Orphaned", insight.Message, System.StringComparison.OrdinalIgnoreCase);
         Assert.NotNull(insight.Coordinate);
         Assert.Equal(DefaultTable.Value, insight.Coordinate!.Table.Value);
+    }
+
+    [Fact]
+    public void Generate_includes_orphan_sample_details_in_message()
+    {
+        var reference = ForeignKeyReference
+            .Create(
+                DefaultSchema,
+                DefaultTable,
+                DefaultColumn,
+                SchemaName.Create("dbo").Value,
+                TableName.Create("Parent").Value,
+                ColumnName.Create("Id").Value,
+                hasDatabaseConstraint: false)
+            .Value;
+
+        var sample = ForeignKeyOrphanSample.Create(
+            ImmutableArray.Create("Id"),
+            "CustomerId",
+            ImmutableArray.Create(
+                new ForeignKeyOrphanIdentifier(ImmutableArray.Create<object?>(101), "Missing"),
+                new ForeignKeyOrphanIdentifier(ImmutableArray.Create<object?>(202), "Legacy")),
+            totalOrphans: 5);
+
+        var reality = ForeignKeyReality
+            .Create(
+                reference,
+                hasOrphan: true,
+                orphanCount: 5,
+                isNoCheck: false,
+                ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 50),
+                sample)
+            .Value;
+
+        var snapshot = ProfileSnapshot
+            .Create(
+                Enumerable.Empty<ColumnProfile>(),
+                Enumerable.Empty<UniqueCandidateProfile>(),
+                Enumerable.Empty<CompositeUniqueCandidateProfile>(),
+                new[] { reality })
+            .Value;
+
+        var generator = new ProfilingInsightGenerator();
+
+        var insight = Assert.Single(generator.Generate(snapshot), i => i.Category == ProfilingInsightCategory.ForeignKey);
+        Assert.Equal(ProfilingInsightSeverity.Warning, insight.Severity);
+        Assert.Contains("showing 2 of 5 orphan rows", insight.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("(101)", insight.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("(202)", insight.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]

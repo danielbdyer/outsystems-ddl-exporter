@@ -116,6 +116,8 @@ public sealed class OpportunityLogWriterTests
                     null,
                     null,
                     null,
+                    null,
+                    null,
                     false,
                     null)),
             schema: "dbo",
@@ -154,11 +156,25 @@ public sealed class OpportunityLogWriterTests
                     true,
                     probeStatus,
                     null,
+                    null,
+                    null,
                     false,
                     null)),
             schema: "dbo",
             table: "OSUSR_ABC_ORDER",
             constraintName: "IX_OSUSR_ABC_ORDER_OrderNumber");
+
+        var orphanSample = ForeignKeyOrphanSample.Create(
+            ImmutableArray.Create("Id"),
+            "CustomerId",
+            ImmutableArray.Create(
+                new ForeignKeyOrphanIdentifier(
+                    ImmutableArray.Create<object?>(101),
+                    "MissingCustomer"),
+                new ForeignKeyOrphanIdentifier(
+                    ImmutableArray.Create<object?>(202),
+                    "LegacyCustomer")),
+            3);
 
         var foreignKeyOpportunity = Opportunities.Opportunity.Create(
             Opportunities.OpportunityType.ForeignKey,
@@ -170,7 +186,7 @@ public sealed class OpportunityLogWriterTests
                 "ConstraintTrust=Missing",
                 "HasOrphans=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
                 "OrphanCount=3",
-                "OrphanSample=(101) -> 'MissingCustomer'"),
+                "OrphanSample=(101) -> 'MissingCustomer', (202) -> 'LegacyCustomer'"),
             column: new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_ABC_ORDER"), new ColumnName("CUSTOMERID")),
             disposition: Opportunities.OpportunityDisposition.NeedsRemediation,
             category: Opportunities.OpportunityCategory.Contradiction,
@@ -197,6 +213,8 @@ public sealed class OpportunityLogWriterTests
                     null,
                     null,
                     true,
+                    3,
+                    Opportunities.OpportunityOrphanSample.FromDomain(orphanSample),
                     false,
                     null)),
             schema: "dbo",
@@ -261,6 +279,8 @@ public sealed class OpportunityLogWriterTests
                     false,
                     null,
                     null,
+                    null,
+                    null,
                     true,
                     null)));
 
@@ -297,6 +317,8 @@ public sealed class OpportunityLogWriterTests
                     null,
                     null,
                     false,
+                    0,
+                    null,
                     true,
                     "R")));
 

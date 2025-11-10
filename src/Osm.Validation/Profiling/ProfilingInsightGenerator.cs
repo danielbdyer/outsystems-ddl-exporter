@@ -35,6 +35,8 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
         ImmutableArray<ColumnProfile> columns,
         ImmutableArray<ProfilingInsight>.Builder builder)
     {
+        var notNullCandidates = new Dictionary<(SchemaName Schema, TableName Table), List<ColumnProfile>>();
+
         foreach (var column in columns)
         {
             var coordinateResult = ProfilingInsightCoordinate.Create(column.Schema, column.Table, column.Column);
@@ -62,7 +64,21 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
 
                 continue;
             }
+
+            if (ShouldRecommendNotNull(column))
+            {
+                var key = (column.Schema, column.Table);
+                if (!notNullCandidates.TryGetValue(key, out var list))
+                {
+                    list = new List<ColumnProfile>();
+                    notNullCandidates[key] = list;
+                }
+
+                list.Add(column);
+            }
         }
+
+        EmitNullabilityRecommendations(builder, notNullCandidates);
     }
 
     private static void EvaluateDuplicateInsights(
@@ -159,8 +175,7 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
                 continue;
             }
 
-            var message =
-                $"Orphaned rows detected for {fromCoordinate} referencing {toCoordinate}; remediate before enabling enforcement.";
+            var message = BuildOrphanInsightMessage(foreignKey, fromCoordinate, toCoordinate);
 
             var insightResult = ProfilingInsight.Create(
                 ProfilingInsightSeverity.Warning,
@@ -213,6 +228,146 @@ public sealed class ProfilingInsightGenerator : IProfilingInsightGenerator
         {
             builder.Add(insightResult.Value);
         }
+    }
+
+    private static bool ShouldRecommendNotNull(ColumnProfile column)
+    {
+        if (column is null)
+        {
+            return false;
+        }
+
+        if (!column.IsNullablePhysical || column.IsPrimaryKey || column.IsUniqueKey)
+        {
+            return false;
+        }
+
+        if (column.NullCountStatus.Outcome is ProfilingProbeOutcome.FallbackTimeout or ProfilingProbeOutcome.Cancelled)
+        {
+            return false;
+        }
+
+        return column.NullCount == 0 && column.RowCount > 0;
+    }
+
+    private static void EmitNullabilityRecommendations(
+        ImmutableArray<ProfilingInsight>.Builder builder,
+        IDictionary<(SchemaName Schema, TableName Table), List<ColumnProfile>> candidates)
+    {
+        foreach (var ((schema, table), columns) in candidates)
+        {
+            if (columns is null || columns.Count == 0)
+            {
+                continue;
+            }
+
+            var orderedColumns = columns
+                .OrderBy(static c => c.Column.Value, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            ProfilingInsightCoordinate? coordinate;
+            var coordinateResult = orderedColumns.Count == 1
+                ? ProfilingInsightCoordinate.Create(schema, table, orderedColumns[0].Column)
+                : ProfilingInsightCoordinate.Create(schema, table);
+
+            coordinate = coordinateResult.IsSuccess ? coordinateResult.Value : null;
+
+            var message = BuildNullabilityRecommendationMessage(schema, table, orderedColumns);
+
+            var insightResult = ProfilingInsight.Create(
+                ProfilingInsightSeverity.Recommendation,
+                ProfilingInsightCategory.Nullability,
+                message,
+                coordinate);
+
+            if (insightResult.IsSuccess)
+            {
+                builder.Add(insightResult.Value);
+            }
+        }
+    }
+
+    private static string BuildNullabilityRecommendationMessage(
+        SchemaName schema,
+        TableName table,
+        IReadOnlyList<ColumnProfile> columns)
+    {
+        if (columns.Count == 1)
+        {
+            var column = columns[0];
+            var coordinateText = FormatCoordinate(schema, table, column.Column);
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "Column {0} contains 0 NULL values across {1:N0} rows; tighten to NOT NULL.",
+                coordinateText,
+                column.RowCount);
+        }
+
+        var columnList = string.Join(
+            ", ",
+            columns.Select(static c => c.Column.Value));
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "{0}.{1} has {2} columns with 0 NULL values: {3}. Tighten to NOT NULL.",
+            schema.Value,
+            table.Value,
+            columns.Count,
+            columnList);
+    }
+
+    private static string BuildOrphanInsightMessage(
+        ForeignKeyReality foreignKey,
+        string fromCoordinate,
+        string toCoordinate)
+    {
+        var summary = FormatOrphanSummary(foreignKey);
+        var samples = FormatOrphanSamples(foreignKey.OrphanSample);
+
+        var message = string.Format(
+            CultureInfo.InvariantCulture,
+            "Orphaned rows detected for {0} referencing {1}; {2}.",
+            fromCoordinate,
+            toCoordinate,
+            summary);
+
+        if (!string.IsNullOrWhiteSpace(samples))
+        {
+            message += $" Sample rows: {samples}";
+        }
+
+        return message;
+    }
+
+    private static string FormatOrphanSummary(ForeignKeyReality foreignKey)
+    {
+        if (foreignKey.OrphanSample is { SampleRows.Length: > 0 } sample)
+        {
+            var suffix = sample.IsTruncated ? ", truncated" : string.Empty;
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "showing {0} of {1:N0} orphan rows{2}",
+                sample.SampleRows.Length,
+                sample.TotalOrphans,
+                suffix);
+        }
+
+        var orphanCount = Math.Max(foreignKey.OrphanCount, 0);
+        return string.Format(CultureInfo.InvariantCulture, "{0:N0} orphan rows detected", orphanCount);
+    }
+
+    private static string FormatOrphanSamples(ForeignKeyOrphanSample? sample)
+    {
+        if (sample is not { SampleRows.Length: > 0 })
+        {
+            return string.Empty;
+        }
+
+        return string.Join(
+            "; ",
+            sample.SampleRows
+                .Select(static row => row.ToString())
+                .Where(static s => !string.IsNullOrWhiteSpace(s)));
     }
 
     private static string FormatCoordinate(SchemaName schema, TableName table, ColumnName? column)
