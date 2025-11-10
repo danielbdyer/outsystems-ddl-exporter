@@ -69,6 +69,8 @@
           "HasDuplicates": false,
           "UniqueProbeStatus": null,
           "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
           "HasDatabaseConstraint": true,
           "DeleteRule": null,
           "Coordinate": {
@@ -158,6 +160,8 @@
           "HasDuplicates": null,
           "UniqueProbeStatus": null,
           "HasOrphans": false,
+          "OrphanCount": 0,
+          "OrphanSample": null,
           "HasDatabaseConstraint": true,
           "DeleteRule": "R",
           "Coordinate": {

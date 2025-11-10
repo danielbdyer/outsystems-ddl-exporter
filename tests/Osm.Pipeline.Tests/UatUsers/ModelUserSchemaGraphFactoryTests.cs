@@ -20,7 +20,7 @@ public sealed class ModelUserSchemaGraphFactoryTests
     public async Task Create_UsesDatasetJsonWhenAvailable()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
-        var jsonPath = FixtureFile.GetPath(Path.Combine("model", "model.edge-case.json"));
+        var jsonPath = FixtureFile.GetPath("model.edge-case.json");
         var json = File.ReadAllText(jsonPath);
         var dataset = CreateDataset(json);
         var extraction = CreateExtraction(model, dataset);

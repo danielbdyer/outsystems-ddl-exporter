@@ -66,6 +66,8 @@ public sealed class BuildSsdtApplicationServiceTests
             moduleFilterOverrides,
             sqlOverrides,
             cacheOverrides,
+            TighteningOverrides: null,
+            DynamicDataset: null,
             EnableDynamicSqlExtraction: true);
 
         var dispatcher = new RecordingDispatcher();
@@ -88,6 +90,8 @@ public sealed class BuildSsdtApplicationServiceTests
             staticDataFactory,
             modelIngestion,
             dynamicDataProvider);
+
+        Assert.True(input.EnableDynamicSqlExtraction);
 
         var result = await service.RunAsync(input, CancellationToken.None);
 
@@ -145,7 +149,13 @@ public sealed class BuildSsdtApplicationServiceTests
             SupplementalModelConfiguration.Empty,
             UatUsersConfiguration.Empty);
         var context = new CliConfigurationContext(configuration, "config.json");
-        var input = new BuildSsdtApplicationInput(context, overrides, moduleFilterOverrides, sqlOverrides, cacheOverrides);
+        var input = new BuildSsdtApplicationInput(
+            context,
+            overrides,
+            moduleFilterOverrides,
+            sqlOverrides,
+            cacheOverrides,
+            EnableDynamicSqlExtraction: true);
 
         var dispatcher = new RecordingDispatcher();
         dispatcher.SetResult(Result<BuildSsdtPipelineResult>.Success(CreatePipelineResult()));
@@ -181,10 +191,10 @@ public sealed class BuildSsdtApplicationServiceTests
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(dispatcher.Request);
-        Assert.Equal(DynamicDatasetSource.SqlProvider, dispatcher.Request!.DynamicDatasetSource);
-        Assert.False(dispatcher.Request.DynamicDataset.IsEmpty);
-        Assert.Same(dynamicDataset, dispatcher.Request.DynamicDataset);
         Assert.NotNull(dynamicProvider.LastRequest);
+        Assert.Same(dynamicDataset, dispatcher.Request!.DynamicDataset);
+        Assert.False(dispatcher.Request.DynamicDataset.IsEmpty);
+        Assert.Equal(DynamicDatasetSource.SqlProvider, dispatcher.Request.DynamicDatasetSource);
         Assert.Equal(model, dynamicProvider.LastRequest!.Model);
         Assert.Equal(sqlOverrides.ConnectionString, dynamicProvider.LastRequest.ConnectionString);
         Assert.Equal(modelPath, ingestion.LastPath);
