@@ -40,7 +40,7 @@ namespace Osm.Cli.Tests.Commands;
 public class FullExportCommandFactoryTests
 {
     [Fact]
-    public async Task Invoke_RunLoadHarnessUsesResolvedApplyConnectionStringWhenNotOverridden()
+    public async Task Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing()
     {
         const string connectionString = "Server=Test;";
         using var tempDir = new TempDirectory();
@@ -86,9 +86,11 @@ public class FullExportCommandFactoryTests
         var exitCode = await parser.InvokeAsync(args, console);
 
         Assert.Equal(0, exitCode);
-        Assert.NotNull(loadHarnessRunner.LastOptions);
-        Assert.Equal(connectionString, loadHarnessRunner.LastOptions!.ConnectionString);
-        Assert.Equal(string.Empty, console.Error.ToString());
+        Assert.Null(loadHarnessRunner.LastOptions);
+        Assert.Contains(
+            "Load harness skipped (no connection string provided via CLI or configuration).",
+            console.Error.ToString(),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
