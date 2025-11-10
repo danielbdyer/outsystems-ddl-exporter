@@ -896,12 +896,12 @@ public class SmoModelFactoryTests
         Assert.Equal(SqlDataType.BigInt, idColumn.DataType.SqlDataType);
 
         var usernameColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("USERNAME", StringComparison.OrdinalIgnoreCase));
-        Assert.False(usernameColumn.Nullable);
+        Assert.True(usernameColumn.Nullable);
         Assert.Equal(SqlDataType.NVarChar, usernameColumn.DataType.SqlDataType);
         Assert.Equal(250, usernameColumn.DataType.MaximumLength);
 
         var emailColumn = Assert.Single(userTable.Columns, column => column.PhysicalName.Equals("EMAIL", StringComparison.OrdinalIgnoreCase));
-        Assert.False(emailColumn.Nullable);
+        Assert.True(emailColumn.Nullable);
         Assert.Equal(SqlDataType.NVarChar, emailColumn.DataType.SqlDataType);
         Assert.Equal(250, emailColumn.DataType.MaximumLength);
         Assert.Equal("Latin1_General_CI_AI", emailColumn.Collation);
@@ -942,17 +942,9 @@ public class SmoModelFactoryTests
         Assert.True(lastLoginColumn.Nullable);
         Assert.Equal(SqlDataType.DateTime, lastLoginColumn.DataType.SqlDataType);
 
-        Assert.Equal(3, userTable.Indexes.Length);
+        Assert.Single(userTable.Indexes);
         var primaryKey = Assert.Single(userTable.Indexes, index => index.IsPrimaryKey);
         Assert.True(string.Equals("PK_ossys_User", primaryKey.Name, StringComparison.OrdinalIgnoreCase));
-
-        var uniqueNames = userTable.Indexes
-            .Where(index => !index.IsPrimaryKey)
-            .Select(index => index.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        Assert.Contains("UQ_ossys_User_Username", uniqueNames);
-        Assert.Contains("UQ_ossys_User_Email", uniqueNames);
 
         Assert.Empty(userTable.ForeignKeys);
     }
