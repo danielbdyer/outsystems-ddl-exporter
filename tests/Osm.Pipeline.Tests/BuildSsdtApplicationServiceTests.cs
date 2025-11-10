@@ -60,7 +60,13 @@ public sealed class BuildSsdtApplicationServiceTests
             SupplementalModelConfiguration.Empty,
             UatUsersConfiguration.Empty);
         var context = new CliConfigurationContext(configuration, "config.json");
-        var input = new BuildSsdtApplicationInput(context, overrides, moduleFilterOverrides, sqlOverrides, cacheOverrides);
+        var input = new BuildSsdtApplicationInput(
+            context,
+            overrides,
+            moduleFilterOverrides,
+            sqlOverrides,
+            cacheOverrides,
+            EnableDynamicSqlExtraction: true);
 
         var dispatcher = new RecordingDispatcher();
         dispatcher.SetResult(Result<BuildSsdtPipelineResult>.Success(CreatePipelineResult()));
@@ -182,6 +188,89 @@ public sealed class BuildSsdtApplicationServiceTests
         Assert.Equal(model, dynamicProvider.LastRequest!.Model);
         Assert.Equal(sqlOverrides.ConnectionString, dynamicProvider.LastRequest.ConnectionString);
         Assert.Equal(modelPath, ingestion.LastPath);
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotUseSqlDynamicDataProvider_WhenExtractionDisabled()
+    {
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var overrides = new BuildSsdtOverrides(
+            ModelPath: modelPath,
+            ProfilePath: FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json")),
+            OutputDirectory: Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")),
+            ProfilerProvider: "fixture",
+            StaticDataPath: null,
+            RenameOverrides: null,
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null);
+
+        var moduleFilterOverrides = new ModuleFilterOverrides(
+            Array.Empty<string>(),
+            IncludeSystemModules: null,
+            IncludeInactiveModules: null,
+            AllowMissingPrimaryKey: Array.Empty<string>(),
+            AllowMissingSchema: Array.Empty<string>());
+
+        var sqlOverrides = new SqlOptionsOverrides(
+            ConnectionString: "Server=(localdb)\\MSSQLLocalDB;Database=Fake;Integrated Security=true;",
+            CommandTimeoutSeconds: null,
+            SamplingThreshold: null,
+            SamplingSize: null,
+            AuthenticationMethod: null,
+            TrustServerCertificate: null,
+            ApplicationName: null,
+            AccessToken: null,
+            ProfilingConnectionStrings: null);
+
+        var cacheOverrides = new CacheOptionsOverrides(null, null);
+        var configuration = new CliConfiguration(
+            TighteningOptions.Default,
+            ModelPath: null,
+            ProfilePath: null,
+            DmmPath: null,
+            CacheConfiguration.Empty,
+            new ProfilerConfiguration("fixture", null, null),
+            SqlConfiguration.Empty,
+            ModuleFilterConfiguration.Empty,
+            TypeMappingConfiguration.Empty,
+            SupplementalModelConfiguration.Empty,
+            UatUsersConfiguration.Empty);
+        var context = new CliConfigurationContext(configuration, "config.json");
+        var input = new BuildSsdtApplicationInput(context, overrides, moduleFilterOverrides, sqlOverrides, cacheOverrides);
+
+        var dispatcher = new RecordingDispatcher();
+        dispatcher.SetResult(Result<BuildSsdtPipelineResult>.Success(CreatePipelineResult()));
+        var assembler = new BuildSsdtRequestAssembler();
+        var modelResolution = new StubModelResolutionService { ModelPathOverride = modelPath };
+        var outputResolver = new TestOutputDirectoryResolver();
+        var namingBinder = new TestNamingOverridesBinder();
+        var staticDataProvider = new TestStaticEntityDataProvider();
+        var staticDataFactory = new TestStaticDataProviderFactory(staticDataProvider);
+        var model = ModelFixtures.LoadModel("model.edge-case.json");
+        var ingestion = new TestModelIngestionService
+        {
+            Loader = _ => Result<Osm.Domain.Model.OsmModel>.Success(model)
+        };
+
+        var dynamicProvider = new TestDynamicEntityDataProvider();
+
+        var service = new BuildSsdtApplicationService(
+            dispatcher,
+            assembler,
+            modelResolution,
+            outputResolver,
+            namingBinder,
+            staticDataFactory,
+            ingestion,
+            dynamicProvider);
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(dispatcher.Request);
+        Assert.True(dispatcher.Request!.DynamicDataset.IsEmpty);
+        Assert.Equal(DynamicDatasetSource.None, dispatcher.Request.DynamicDatasetSource);
+        Assert.Null(dynamicProvider.LastRequest);
     }
 
     private static DynamicEntityDataset CreateDynamicDataset()

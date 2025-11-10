@@ -23,7 +23,8 @@ public sealed record BuildSsdtApplicationInput(
     SqlOptionsOverrides Sql,
     CacheOptionsOverrides Cache,
     TighteningOverrides? TighteningOverrides = null,
-    DynamicEntityDataset? DynamicDataset = null);
+    DynamicEntityDataset? DynamicDataset = null,
+    bool EnableDynamicSqlExtraction = false);
 
 public sealed record BuildSsdtApplicationResult(
     BuildSsdtPipelineResult PipelineResult,
@@ -137,7 +138,9 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             smoOptions = smoOptions with { ModuleParallelism = moduleParallelism };
         }
 
-        if (dynamicDataset.IsEmpty && !string.IsNullOrWhiteSpace(context.SqlOptions.ConnectionString))
+        if (dynamicDataset.IsEmpty &&
+            input.EnableDynamicSqlExtraction &&
+            !string.IsNullOrWhiteSpace(context.SqlOptions.ConnectionString))
         {
             var modelForDynamicData = modelResolution.Extraction?.Model;
             if (modelForDynamicData is null)
