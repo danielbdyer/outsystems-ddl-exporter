@@ -81,24 +81,28 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
 
         var duplicateStatuses = BuildStatusDictionary(duplicateFlags.Value.Keys, duplicateFlags.Status);
 
+        var metadata = await LoadForeignKeyMetadataAsync(connection, plan, cancellationToken).ConfigureAwait(false);
+
         var foreignKeyFallback = (
             Orphans: BuildConservativeForeignKeyResults(plan),
-            IsNoCheck: BuildConservativeForeignKeyNoCheckResults(plan));
+            IsNoCheck: metadata,
+            Trusted: BuildTrustedConstraintLookup(plan, metadata));
 
         var foreignKeyReality = await _probePolicy.ExecuteAsync(
-            ct => ComputeForeignKeyRealityAsync(connection, plan, shouldSample, samplingParameter, ct),
+            ct => ComputeForeignKeyRealityAsync(connection, plan, metadata, shouldSample, samplingParameter, ct),
             foreignKeyFallback,
             sampleSize,
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
-        var foreignKeyStatuses = BuildStatusDictionary(foreignKeyReality.Value.Orphans.Keys, foreignKeyReality.Status);
-        var foreignKeyNoCheckStatuses = BuildStatusDictionary(foreignKeyReality.Value.IsNoCheck.Keys, foreignKeyReality.Status);
+        var foreignKeyStatuses = BuildForeignKeyStatusDictionary(plan, foreignKeyReality.Status, foreignKeyReality.Value.Trusted);
+        var foreignKeyNoCheckStatuses = BuildForeignKeyStatusDictionary(plan, foreignKeyReality.Status, foreignKeyReality.Value.Trusted);
 
         var foreignKeySamples = await ComputeForeignKeyOrphanSamplesAsync(
             connection,
             plan,
             foreignKeyReality.Value.Orphans,
+            foreignKeyReality.Value.Trusted,
             shouldSample,
             samplingParameter,
             cancellationToken).ConfigureAwait(false);
@@ -112,6 +116,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             foreignKeyStatuses,
             foreignKeyReality.Value.IsNoCheck,
             foreignKeyNoCheckStatuses,
+            foreignKeyReality.Value.Trusted,
             nullRowSamples,
             foreignKeySamples);
     }
@@ -236,31 +241,56 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         return dictionary;
     }
 
-    private async Task<(IReadOnlyDictionary<string, long> Orphans, IReadOnlyDictionary<string, bool> IsNoCheck)> ComputeForeignKeyRealityAsync(
+    private async Task<(
+        IReadOnlyDictionary<string, long> Orphans,
+        IReadOnlyDictionary<string, bool> IsNoCheck,
+        IReadOnlyDictionary<string, bool> Trusted)> ComputeForeignKeyRealityAsync(
         DbConnection connection,
         TableProfilingPlan plan,
+        IReadOnlyDictionary<string, bool> metadata,
         bool useSampling,
         int samplingParameter,
         CancellationToken cancellationToken)
     {
         if (plan.ForeignKeys.IsDefaultOrEmpty)
         {
-            return (ImmutableDictionary<string, long>.Empty, ImmutableDictionary<string, bool>.Empty);
+            return (
+                ImmutableDictionary<string, long>.Empty,
+                metadata,
+                ImmutableDictionary<string, bool>.Empty);
         }
 
-        await using var command = connection.CreateCommand();
-        _foreignKeyProbeQueryBuilder.ConfigureRealityCommand(command, plan, useSampling, samplingParameter);
-
-        ApplyCommandTimeout(command);
+        var trustedKeys = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var probeCandidates = ImmutableArray.CreateBuilder<ForeignKeyPlan>();
+        foreach (var candidate in plan.ForeignKeys)
+        {
+            var isNoCheck = metadata.TryGetValue(candidate.Key, out var noCheck) && noCheck;
+            if (candidate.HasDatabaseConstraint && !isNoCheck)
+            {
+                trustedKeys[candidate.Key] = true;
+            }
+            else
+            {
+                probeCandidates.Add(candidate);
+            }
+        }
 
         var results = ImmutableDictionary.CreateBuilder<string, long>(StringComparer.OrdinalIgnoreCase);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        if (probeCandidates.Count > 0)
         {
-            var key = reader.GetString(0);
-            var orphanCount = !reader.IsDBNull(1) ? reader.GetInt64(1) : 0L;
-            results[key] = orphanCount;
+            await using var command = connection.CreateCommand();
+            _foreignKeyProbeQueryBuilder.ConfigureRealityCommand(command, plan, probeCandidates.ToImmutable(), useSampling, samplingParameter);
+
+            ApplyCommandTimeout(command);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var key = reader.GetString(0);
+                var orphanCount = !reader.IsDBNull(1) ? reader.GetInt64(1) : 0L;
+                results[key] = orphanCount;
+            }
         }
 
         foreach (var candidate in plan.ForeignKeys)
@@ -272,7 +302,6 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         }
 
         var dictionary = results.ToImmutable();
-        var metadata = await LoadForeignKeyMetadataAsync(connection, plan, cancellationToken).ConfigureAwait(false);
 
         _metadataLog?.RecordRequest(
             "sql.foreignKeyReality",
@@ -290,7 +319,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
                     .ToArray()
             });
 
-        return (dictionary, metadata);
+        return (dictionary, metadata, trustedKeys.ToImmutable());
     }
 
     private async Task<IReadOnlyDictionary<string, bool>> LoadForeignKeyMetadataAsync(
@@ -350,6 +379,31 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         foreach (var key in keys)
         {
             builder[key] = status;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static IReadOnlyDictionary<string, ProfilingProbeStatus> BuildForeignKeyStatusDictionary(
+        TableProfilingPlan plan,
+        ProfilingProbeStatus status,
+        IReadOnlyDictionary<string, bool> trustedLookup)
+    {
+        if (status is null || plan.ForeignKeys.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<string, ProfilingProbeStatus>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, ProfilingProbeStatus>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in plan.ForeignKeys)
+        {
+            var outcome = status.Outcome;
+            if (trustedLookup.TryGetValue(candidate.Key, out var isTrusted) && isTrusted)
+            {
+                outcome = ProfilingProbeOutcome.TrustedConstraint;
+            }
+
+            builder[candidate.Key] = status with { Outcome = outcome };
         }
 
         return builder.ToImmutable();
@@ -440,6 +494,25 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         return builder.ToImmutable();
     }
 
+    private static IReadOnlyDictionary<string, bool> BuildTrustedConstraintLookup(
+        TableProfilingPlan plan,
+        IReadOnlyDictionary<string, bool> metadata)
+    {
+        if (plan.ForeignKeys.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<string, bool>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in plan.ForeignKeys)
+        {
+            var isNoCheck = metadata.TryGetValue(candidate.Key, out var value) && value;
+            builder[candidate.Key] = candidate.HasDatabaseConstraint && !isNoCheck;
+        }
+
+        return builder.ToImmutable();
+    }
+
     private async Task<IReadOnlyDictionary<string, NullRowSample>> ComputeNullRowSamplesAsync(
         DbConnection connection,
         TableProfilingPlan plan,
@@ -500,6 +573,7 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         DbConnection connection,
         TableProfilingPlan plan,
         IReadOnlyDictionary<string, long> orphanCounts,
+        IReadOnlyDictionary<string, bool> trustedLookup,
         bool useSampling,
         int samplingParameter,
         CancellationToken cancellationToken)
@@ -515,6 +589,12 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
         {
             if (!orphanCounts.TryGetValue(candidate.Key, out var orphanCount) || orphanCount <= 0)
             {
+                continue;
+            }
+
+            if (trustedLookup.TryGetValue(candidate.Key, out var isTrusted) && isTrusted)
+            {
+                results[candidate.Key] = ForeignKeyOrphanSample.Empty(candidate.Column);
                 continue;
             }
 

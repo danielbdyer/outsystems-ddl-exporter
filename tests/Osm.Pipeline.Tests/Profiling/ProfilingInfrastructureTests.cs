@@ -119,11 +119,11 @@ public sealed class ProfilingInfrastructureTests
             100,
             ImmutableArray.Create("CUSTOMER_ID"),
             ImmutableArray<UniqueCandidatePlan>.Empty,
-            ImmutableArray.Create(new ForeignKeyPlan("fk", "CUSTOMER_ID", "dbo", "CUSTOMER", "ID")),
+            ImmutableArray.Create(new ForeignKeyPlan("fk", "CUSTOMER_ID", "dbo", "CUSTOMER", "ID", true)),
             ImmutableArray<string>.Empty);
 
         var builder = new ForeignKeyProbeQueryBuilder();
-        builder.ConfigureRealityCommand(command, plan, useSampling: false, sampleSize: 0);
+        builder.ConfigureRealityCommand(command, plan, plan.ForeignKeys, useSampling: false, sampleSize: 0);
 
         var expected = string.Join(Environment.NewLine, new[]
         {
@@ -263,6 +263,37 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;
         Assert.Equal(10, result.Status.SampleSize);
     }
 
+    [Fact]
+    public async Task ProfilingQueryExecutor_ShouldMarkTrustedConstraintsAndSkipOrphanProbeAsync()
+    {
+        var key = ProfilingPlanBuilder.BuildForeignKeyKey("CUSTOMERID", "dbo", "CUSTOMER", "ID");
+        var plan = new TableProfilingPlan(
+            "dbo",
+            "ORDERS",
+            100,
+            ImmutableArray<string>.Empty,
+            ImmutableArray<UniqueCandidatePlan>.Empty,
+            ImmutableArray.Create(new ForeignKeyPlan(key, "CUSTOMERID", "dbo", "CUSTOMER", "ID", true)),
+            ImmutableArray<string>.Empty);
+
+        var metadataRows = new[]
+        {
+            new object?[] { "CUSTOMERID", "dbo", "CUSTOMER", "ID", false, false }
+        };
+
+        var connection = RecordingDbConnection.WithResultSets(new FakeCommandDefinition(metadataRows));
+        var factory = new SingleConnectionFactory(connection);
+        var executor = new ProfilingQueryExecutor(factory, SqlProfilerOptions.Default);
+
+        var results = await executor.ExecuteAsync(plan, CancellationToken.None);
+
+        Assert.True(results.ForeignKeyTrustedConstraints.TryGetValue(key, out var trusted) && trusted);
+        Assert.True(results.ForeignKeyStatuses.TryGetValue(key, out var status));
+        Assert.Equal(ProfilingProbeOutcome.TrustedConstraint, status.Outcome);
+        Assert.True(results.ForeignKeyOrphanCounts.TryGetValue(key, out var orphanCount));
+        Assert.Equal(0L, orphanCount);
+    }
+
     private sealed class StaticTimeProvider : TimeProvider
     {
         private readonly DateTimeOffset _now;
@@ -283,5 +314,20 @@ WHERE parentSchema.name = @SchemaName AND parentTable.name = @TableName;
         }
 
         public override int ErrorCode => -2;
+    }
+
+    private sealed class SingleConnectionFactory : IDbConnectionFactory
+    {
+        private readonly RecordingDbConnection _connection;
+
+        public SingleConnectionFactory(RecordingDbConnection connection)
+        {
+            _connection = connection;
+        }
+
+        public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<DbConnection>(_connection);
+        }
     }
 }

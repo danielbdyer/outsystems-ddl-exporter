@@ -65,6 +65,7 @@ public sealed class SqlDataProfilerOrchestrationTests
             new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, NullRowSample>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, ForeignKeyOrphanSample>(System.StringComparer.OrdinalIgnoreCase));
 
@@ -123,7 +124,7 @@ public sealed class SqlDataProfilerOrchestrationTests
             10,
             ImmutableArray.Create("ID", "PARENTID"),
             ImmutableArray<UniqueCandidatePlan>.Empty,
-            ImmutableArray.Create(new ForeignKeyPlan(foreignKeyKey, "PARENTID", "dbo", "OSUSR_P_PARENT", "ID")),
+            ImmutableArray.Create(new ForeignKeyPlan(foreignKeyKey, "PARENTID", "dbo", "OSUSR_P_PARENT", "ID", true)),
             ImmutableArray<string>.Empty);
 
         var probeStatus = ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 10);
@@ -155,6 +156,10 @@ public sealed class SqlDataProfilerOrchestrationTests
             new Dictionary<string, ProfilingProbeStatus>(System.StringComparer.OrdinalIgnoreCase)
             {
                 [foreignKeyKey] = probeStatus
+            },
+            new Dictionary<string, bool>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                [foreignKeyKey] = false
             },
             new Dictionary<string, NullRowSample>(System.StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, ForeignKeyOrphanSample>(System.StringComparer.OrdinalIgnoreCase));

@@ -746,7 +746,7 @@ internal static class CommandConsole
         var columnsWithNulls = snapshot.Columns.Count(static column => column.NullCount > 0);
         var notNullViolations = snapshot.Columns.Count(static column => !column.IsNullablePhysical && column.NullCount > 0);
         var columnProbeIssues = snapshot.Columns
-            .Where(static column => column.NullCountStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+            .Where(static column => column.NullCountStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint)
             .ToList();
 
         var uniqueIssues = BuildUniqueIssues(snapshot);
@@ -923,7 +923,7 @@ internal static class CommandConsole
                 details.Add("Duplicate values detected");
             }
 
-            if (candidate.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+            if (candidate.ProbeStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint)
             {
                 var probeSeverity = MapProbeSeverity(candidate.ProbeStatus);
                 severity = MaxSeverity(severity, probeSeverity);
@@ -1002,7 +1002,7 @@ internal static class CommandConsole
                 details.Add((IssueSeverity.Warning, "Constraint defined as NO CHECK"));
             }
 
-            if (fk.ProbeStatus.Outcome != ProfilingProbeOutcome.Succeeded)
+            if (fk.ProbeStatus.Outcome is not ProfilingProbeOutcome.Succeeded and not ProfilingProbeOutcome.TrustedConstraint)
             {
                 var probeSeverity = MapProbeSeverity(fk.ProbeStatus);
                 details.Add((probeSeverity, GetProbeIssueDetail(fk.ProbeStatus)));
@@ -1030,6 +1030,8 @@ internal static class CommandConsole
         {
             ProfilingProbeOutcome.FallbackTimeout => IssueSeverity.Warning,
             ProfilingProbeOutcome.Cancelled => IssueSeverity.Warning,
+            ProfilingProbeOutcome.AmbiguousMapping => IssueSeverity.Warning,
+            ProfilingProbeOutcome.TrustedConstraint => IssueSeverity.Info,
             ProfilingProbeOutcome.Unknown => IssueSeverity.Info,
             _ => IssueSeverity.Info
         };
@@ -1246,8 +1248,10 @@ internal static class CommandConsole
         return status.Outcome switch
         {
             ProfilingProbeOutcome.Succeeded => $"OK (sample {sample})",
+            ProfilingProbeOutcome.TrustedConstraint => "Trusted (constraint)",
             ProfilingProbeOutcome.FallbackTimeout => $"Timeout (sample {sample})",
             ProfilingProbeOutcome.Cancelled => $"Cancelled (sample {sample})",
+            ProfilingProbeOutcome.AmbiguousMapping => "Ambiguous mapping",
             _ => $"Unknown (sample {sample})"
         };
     }
@@ -1257,6 +1261,8 @@ internal static class CommandConsole
         {
             ProfilingProbeOutcome.FallbackTimeout => "Sampling timed out before completion",
             ProfilingProbeOutcome.Cancelled => "Sampling cancelled before completion",
+            ProfilingProbeOutcome.TrustedConstraint => "Constraint enforced by database",
+            ProfilingProbeOutcome.AmbiguousMapping => "Unable to resolve referenced entity unambiguously",
             ProfilingProbeOutcome.Unknown => "Sampling outcome unknown",
             _ => "Probe completed successfully"
         };
