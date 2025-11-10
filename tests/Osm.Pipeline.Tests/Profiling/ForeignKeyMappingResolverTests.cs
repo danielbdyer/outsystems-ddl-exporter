@@ -153,6 +153,91 @@ public sealed class ForeignKeyMappingResolverTests
         Assert.Same(betaCustomer, resolution.TargetEntity);
     }
 
+    [Fact]
+    public void Resolve_ShouldHonorRelationshipPhysicalNameAndCaseInsensitiveAttributeMatch()
+    {
+        var expectedCategory = EntityModel.Create(
+            ModuleName.Create("Catalog").Value,
+            EntityName.Create("Category").Value,
+            TableName.Create("OSUSR_bo3_Category1").Value,
+            SchemaName.Create("dbo").Value,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[]
+            {
+                CreateIdentifierAttribute("Id", "ID"),
+                CreateAttribute("Name", "NAME")
+            }).Value;
+
+        var legacyCategory = EntityModel.Create(
+            ModuleName.Create("Legacy").Value,
+            EntityName.Create("Category").Value,
+            TableName.Create("OSUSR_rtj_Category").Value,
+            SchemaName.Create("dbo").Value,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[]
+            {
+                CreateIdentifierAttribute("Id", "ID"),
+                CreateAttribute("Name", "NAME")
+            }).Value;
+
+        var relationship = RelationshipModel.Create(
+            AttributeName.Create("ParentCategoryId").Value,
+            expectedCategory.LogicalName,
+            TableName.Create(expectedCategory.PhysicalName.Value).Value,
+            deleteRuleCode: "Ignore",
+            hasDatabaseConstraint: false).Value;
+
+        var categoryHierarchy = EntityModel.Create(
+            expectedCategory.Module,
+            EntityName.Create("CategoryHierarchy").Value,
+            TableName.Create("OSUSR_CAT_HIERARCHY").Value,
+            SchemaName.Create("dbo").Value,
+            catalog: null,
+            isStatic: false,
+            isExternal: false,
+            isActive: true,
+            new[]
+            {
+                CreateIdentifierAttribute("Id", "ID"),
+                AttributeModel.Create(
+                    AttributeName.Create("PARENTCATEGORYID").Value,
+                    ColumnName.Create("PARENTCATEGORYID").Value,
+                    "INT",
+                    isMandatory: false,
+                    isIdentifier: false,
+                    isAutoNumber: false,
+                    isActive: true,
+                    reference: AttributeReference.Create(
+                        true,
+                        targetEntityId: null,
+                        expectedCategory.LogicalName,
+                        TableName.Create(legacyCategory.PhysicalName.Value).Value,
+                        deleteRuleCode: null,
+                        hasDatabaseConstraint: false).Value).Value
+            },
+            relationships: new[] { relationship }).Value;
+
+        var catalogModule = CreateModule(expectedCategory, categoryHierarchy);
+        var legacyModule = CreateModule(legacyCategory);
+        var model = CreateModel(catalogModule, legacyModule);
+        var resolver = new ForeignKeyMappingResolver(model, NamingOverrideOptions.Empty);
+
+        var parentAttribute = categoryHierarchy.Attributes.First(attribute => !attribute.IsIdentifier);
+        var resolution = resolver.Resolve(catalogModule, categoryHierarchy, parentAttribute);
+
+        Assert.Equal(ForeignKeyResolutionKind.Resolved, resolution.Kind);
+        Assert.Same(expectedCategory, resolution.TargetEntity);
+        Assert.Equal(
+            expectedCategory.Attributes.First(attribute => attribute.IsIdentifier),
+            resolution.TargetAttribute);
+    }
+
     private static EntityModel CreateCustomerEntity(string moduleName, string physicalName)
     {
         var module = ModuleName.Create(moduleName).Value;

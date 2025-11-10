@@ -108,7 +108,7 @@ internal sealed class ForeignKeyMappingResolver
         }
 
         var relationship = entity.Relationships
-            .FirstOrDefault(r => string.Equals(r.ViaAttribute.Value, attribute.LogicalName.Value, StringComparison.Ordinal));
+            .FirstOrDefault(r => string.Equals(r.ViaAttribute.Value, attribute.LogicalName.Value, StringComparison.OrdinalIgnoreCase));
 
         var hasDatabaseConstraint = attribute.Reference.HasDatabaseConstraint || relationship?.HasDatabaseConstraint == true;
 
@@ -117,7 +117,7 @@ internal sealed class ForeignKeyMappingResolver
         var physicalName = attribute.Reference.TargetPhysicalName?.Value;
         if (relationship?.TargetPhysicalName is { } relPhysical)
         {
-            physicalName ??= relPhysical.Value;
+            physicalName = relPhysical.Value;
         }
 
         var actualConstraintEntities = ResolveFromActualConstraints(relationship);
