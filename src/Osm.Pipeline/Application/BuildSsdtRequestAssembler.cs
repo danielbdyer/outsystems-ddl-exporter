@@ -88,6 +88,7 @@ public sealed class BuildSsdtRequestAssembler
         }
 
         var supplementalOptions = ResolveSupplementalOptions(context.Configuration.SupplementalModels);
+        var dynamicInsertMode = ResolveDynamicInsertMode(context.Configuration.DynamicData, context.Overrides.DynamicInsertMode);
         var scope = new ModelExecutionScope(
             context.ModelPath,
             context.ModuleFilter,
@@ -113,6 +114,7 @@ public sealed class BuildSsdtRequestAssembler
             Path.Combine(context.OutputDirectory, "Seeds"),
             Path.Combine(context.OutputDirectory, "DynamicData"),
             sqlProjectPath,
+            dynamicInsertMode,
             context.SqlMetadataLog);
 
         return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory, sqlProjectPath);
@@ -182,5 +184,22 @@ public sealed class BuildSsdtRequestAssembler
         var includeUsers = configuration.IncludeUsers ?? true;
         var paths = configuration.Paths ?? Array.Empty<string>();
         return new SupplementalModelOptions(includeUsers, paths.ToArray());
+    }
+
+    private static DynamicInsertOutputMode ResolveDynamicInsertMode(
+        DynamicDataConfiguration configuration,
+        DynamicInsertOutputMode? overrideValue)
+    {
+        if (overrideValue.HasValue)
+        {
+            return overrideValue.Value;
+        }
+
+        if (configuration is not null && configuration.InsertMode.HasValue)
+        {
+            return configuration.InsertMode.Value;
+        }
+
+        return DynamicInsertOutputMode.PerEntity;
     }
 }

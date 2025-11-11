@@ -58,6 +58,7 @@ public sealed class BuildSsdtApplicationServiceTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
         var context = new CliConfigurationContext(configuration, "config.json");
         var input = new BuildSsdtApplicationInput(
@@ -147,6 +148,7 @@ public sealed class BuildSsdtApplicationServiceTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
         var context = new CliConfigurationContext(configuration, "config.json");
         var input = new BuildSsdtApplicationInput(
@@ -244,6 +246,7 @@ public sealed class BuildSsdtApplicationServiceTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
         var context = new CliConfigurationContext(configuration, "config.json");
         var input = new BuildSsdtApplicationInput(context, overrides, moduleFilterOverrides, sqlOverrides, cacheOverrides);
@@ -375,6 +378,7 @@ public sealed class BuildSsdtApplicationServiceTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             MultiEnvironmentProfileReport.Empty);
     }

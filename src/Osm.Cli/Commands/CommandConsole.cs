@@ -489,6 +489,7 @@ internal static class CommandConsole
 
         var dynamicPaths = pipelineResult.DynamicInsertScriptPaths;
         var dynamicCount = dynamicPaths.IsDefaultOrEmpty ? 0 : dynamicPaths.Length;
+        var dynamicRoot = FullExportRunManifest.ResolveDynamicInsertRoot(pipelineResult);
         if (dynamicCount > 0)
         {
             WriteLine(console, $"  Dynamic INSERT scripts: {dynamicCount} file(s)");
@@ -507,6 +508,8 @@ internal static class CommandConsole
             WriteLine(console, "  Dynamic INSERT scripts: none");
         }
 
+        WriteLine(console, $"  Dynamic insert mode: {pipelineResult.DynamicInsertOutputMode}");
+
         if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty && pipelineResult.TelemetryPackagePaths.Length > 0)
         {
             WriteLine(console, $"  Telemetry packages: {pipelineResult.TelemetryPackagePaths.Length} file(s)");
@@ -523,7 +526,7 @@ internal static class CommandConsole
 
         WriteLine(console, string.Empty);
         WriteLine(console, "Manifest semantics:");
-        WriteLine(console, $"  Dynamic artifact root: {applicationResult.OutputDirectory}");
+        WriteLine(console, $"  Dynamic artifact root: {dynamicRoot ?? "<none>"}");
         WriteLine(console, $"  Static seed root: {seedRoot ?? "<none>"}");
         WriteLine(console, $"  Seeds mirrored in dynamic manifest: {(FullExportRunManifest.DefaultIncludeStaticSeedArtifactsInDynamic ? "yes" : "no")}");
 

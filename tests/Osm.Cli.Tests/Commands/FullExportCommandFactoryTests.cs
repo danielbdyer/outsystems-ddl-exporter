@@ -18,6 +18,7 @@ using Osm.Domain.Profiling;
 using Osm.Emission;
 using Osm.LoadHarness;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.UatUsers;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
@@ -453,6 +454,7 @@ public class FullExportCommandFactoryTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             null);
 

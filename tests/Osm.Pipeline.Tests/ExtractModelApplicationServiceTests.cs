@@ -141,6 +141,7 @@ public class ExtractModelApplicationServiceTests
                 new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase)),
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
     }
 

@@ -18,6 +18,7 @@ using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Evidence;
 using Osm.Pipeline.Orchestration;
@@ -536,6 +537,7 @@ public class BuildSsdtCommandFactoryTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             MultiEnvironmentProfileReport.Empty);
 

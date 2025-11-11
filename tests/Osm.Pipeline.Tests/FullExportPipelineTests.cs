@@ -505,6 +505,7 @@ public sealed class FullExportPipelineTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             null);
 

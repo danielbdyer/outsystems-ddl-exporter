@@ -44,6 +44,7 @@ entries:
 | `build.staticSeedRoot` | Absolute path to the seed directory calculated from the emitted seed scripts. |
 | `build.staticSeedsInDynamicManifest` | Indicates whether seed artifacts are mirrored into the dynamic manifest list. |
 | `build.dynamicInsertRoot` | Directory containing dynamic replay scripts (one per entity) generated from live data. |
+| `build.dynamicInsertMode` | Emission mode used for dynamic inserts (`PerEntity` or `SingleFile`). |
 | `build.sqlProjectPath` | Full path to the synthesized `.sqlproj` that references the emitted modules and seed scripts. |
 
 The CLI `SSDT Emission Summary` explicitly labels the seed artifacts and prints the
@@ -83,11 +84,21 @@ jq -r '.Metadata["build.staticSeedRoot"]' out/full-export/full-export.manifest.j
 
 ### 2. Stage dynamic inserts for deployment pipelines
 
-Dynamic insert scripts are generated beneath `build.dynamicInsertRoot`, defaulting to
-`<build-out>/DynamicData/<Module>/<Entity>.dynamic.sql`. These files replay the full
-entity dataset—including rows that also appear in the static seed catalog—so operators
-can hydrate environments with a single set of scripts when desired. They are not
-imported into SSDT; instead, schedule them as a deployment pipeline step:
+Dynamic insert scripts are generated beneath `build.dynamicInsertRoot`. The exporter
+supports two emission modes:
+
+* **PerEntity (default)** – one file per entity under
+  `<build-out>/DynamicData/<Module>/<Entity>.dynamic.sql`. Use this when you want
+  granular visibility or need to parallelize execution.
+* **SingleFile** – a consolidated `DynamicData.all.dynamic.sql` in the `DynamicData/`
+  root. The file concatenates the per-entity batches in topological order (preserving
+  the original `PRINT`/`GO` batching) so operators can run a single replay script.
+  Enable this via `--dynamic-insert-mode single-file` (CLI) or `dynamicData.insertMode`
+  in configuration.
+
+Regardless of the mode, the scripts replay the full entity dataset—including rows that
+also appear in the static seed catalog—so lower environments can be hydrated quickly.
+They are not imported into SSDT; instead, schedule them as a deployment pipeline step:
 
 1. After the dacpac publish, execute the dynamic scripts via `sqlcmd`, `SqlPackage` post
    scripts, or a runbook. A simple example:
@@ -113,6 +124,8 @@ The `full-export.manifest.json` file provides stable keys for orchestration:
 * `Stages[].Artifacts.dynamicInsertRoot` → base directory for dynamic inserts.
 * `Stages[].Artifacts.staticSeedOrdering` / `dynamicInsertOrdering` → whether a
   topological order was applied before writing the scripts.
+* `Stages[].Artifacts.dynamicInsertMode` → confirms whether the run emitted per-entity
+  files or the consolidated single-file script.
 
 Keep both directories in the deployment artifact so subsequent runs can diff contents
 against previous releases or rerun seeds in disaster recovery scenarios.
@@ -137,8 +150,13 @@ Use the repository’s edge-case fixtures to validate an SSDT project end-to-end
    `tests/Fixtures/emission/edge-case/Modules/...` if you prefer the checked-in
    baseline). Add the `Seeds/` hierarchy from the run output to `Post-Deployment` and
    include it via `Script.PostDeployment.sql`.
-3. Publish the SSDT project to a scratch database, then execute any dynamic insert
-   scripts under `DynamicData/`. Use the load harness to replay them locally:
+3. Publish the SSDT project to a scratch database, then execute either the per-entity
+   scripts or the consolidated `DynamicData.all.dynamic.sql` (depending on the mode).
+   Each batch uses `WITH (TABLOCK, CHECK_CONSTRAINTS)` and is written in foreign-key
+   order, so you can run the scripts with constraints already enforced. If your
+   deployment policy requires staging without constraints, publish the base tables,
+   apply the dynamic data, and then re-run the publish with constraint emission
+   enabled. Use the load harness to rehearse timings locally:
 
    ```bash
    dotnet run --project tools/FullExportLoadHarness \
@@ -148,6 +166,10 @@ Use the repository’s edge-case fixtures to validate an SSDT project end-to-end
      --dynamic-insert-root "$(jq -r '.Stages[] | select(.Name=="build-ssdt").Artifacts.dynamicInsertRoot' \
        out/full-export.edge-case/full-export.manifest.json)"
    ```
+
+Regardless of mode, the recommended flow is: publish the DACPAC (which runs static
+seeds via post-deployment), execute the dynamic data replay, and only fall back to a
+constraint-free publish if corporate policy requires it.
 
 4. Compare the deployed schema against the fixture manifest (`tests/Fixtures/emission/edge-case/manifest.json`)
    to confirm the SSDT project and seed scripts align with the documented contract.

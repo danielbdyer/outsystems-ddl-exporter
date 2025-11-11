@@ -13,6 +13,7 @@ using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Json;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
@@ -604,6 +605,7 @@ public sealed class FullExportApplicationServiceTests
             ExecutionLog: PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             Warnings: ImmutableArray<string>.Empty,
             MultiEnvironmentReport: null);
 

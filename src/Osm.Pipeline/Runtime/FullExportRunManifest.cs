@@ -283,6 +283,7 @@ public sealed record FullExportRunManifest(
                 artifacts["dynamicInsertRoot"] = dynamicInsertRoot;
             }
         }
+        artifacts["dynamicInsertMode"] = pipelineResult.DynamicInsertOutputMode.ToString();
         artifacts["dynamicInsertOrdering"] = pipelineResult.DynamicInsertTopologicalOrderApplied ? "topological" : "alphabetical";
 
         if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
+using Osm.Pipeline.DynamicData;
 using Osm.Smo;
 
 namespace Osm.Pipeline.Configuration;
@@ -17,6 +18,7 @@ public sealed record CliConfiguration(
     ModuleFilterConfiguration ModuleFilter,
     TypeMappingConfiguration TypeMapping,
     SupplementalModelConfiguration SupplementalModels,
+    DynamicDataConfiguration DynamicData,
     UatUsersConfiguration UatUsers)
 {
     public static CliConfiguration Empty { get; } = new(
@@ -30,7 +32,13 @@ public sealed record CliConfiguration(
         ModuleFilterConfiguration.Empty,
         TypeMappingConfiguration.Empty,
         SupplementalModelConfiguration.Empty,
+        DynamicDataConfiguration.Empty,
         UatUsersConfiguration.Empty);
+}
+
+public sealed record DynamicDataConfiguration(DynamicInsertOutputMode? InsertMode)
+{
+    public static DynamicDataConfiguration Empty { get; } = new((DynamicInsertOutputMode?)null);
 }
 
 public sealed record CacheConfiguration(string? Root, bool? Refresh, int? TimeToLiveSeconds)

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Osm.Emission;
 using Osm.Emission.Seeds;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Evidence;
 using Osm.Validation.Tightening;
 using OpportunitiesReport = Osm.Validation.Tightening.Opportunities.OpportunitiesReport;
@@ -123,6 +124,7 @@ public record DynamicInsertsGenerated(
     ImmutableArray<string> StaticSeedScriptPaths,
     ImmutableArray<StaticEntityTableData> StaticSeedData,
     ImmutableArray<string> DynamicInsertScriptPaths,
+    DynamicInsertOutputMode DynamicInsertOutputMode,
     bool StaticSeedTopologicalOrderApplied,
     bool DynamicInsertTopologicalOrderApplied)
     : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, StaticSeedTopologicalOrderApplied);
@@ -145,7 +147,8 @@ public record TelemetryPackaged(
     ImmutableArray<string> StaticSeedScriptPaths,
     ImmutableArray<StaticEntityTableData> StaticSeedData,
     ImmutableArray<string> DynamicInsertScriptPaths,
+    DynamicInsertOutputMode DynamicInsertOutputMode,
     bool StaticSeedTopologicalOrderApplied,
     bool DynamicInsertTopologicalOrderApplied,
     ImmutableArray<string> TelemetryPackagePaths)
-    : DynamicInsertsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, StaticSeedTopologicalOrderApplied, DynamicInsertTopologicalOrderApplied);
+    : DynamicInsertsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, DynamicInsertOutputMode, StaticSeedTopologicalOrderApplied, DynamicInsertTopologicalOrderApplied);
