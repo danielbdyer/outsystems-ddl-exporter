@@ -9,7 +9,9 @@ is replayed after the initial schema deployment.
 * **Dynamic artifacts** are emitted beneath the SSDT output directory (the
   `build.outputDirectory` metadata field). This directory continues to contain the
   manifest, decision log, validation report, and opportunity scripts that describe the
-  schema tightening results.
+  schema tightening results. It also houses per-entity INSERT scripts that now include
+  the full dataset for each entity, not just the rows absent from the static seed
+  catalog.
 * A synthesized SQL Server Database project (`OutSystemsModel.sqlproj`) is written to
   the same root. It includes the emitted `Modules/` hierarchy and references the
   `Seeds/` directory as post-deployment content so SSDT imports pick up both the DDL and
@@ -82,9 +84,10 @@ jq -r '.Metadata["build.staticSeedRoot"]' out/full-export/full-export.manifest.j
 ### 2. Stage dynamic inserts for deployment pipelines
 
 Dynamic insert scripts are generated beneath `build.dynamicInsertRoot`, defaulting to
-`<build-out>/DynamicData/<Module>/<Entity>.dynamic.sql`. These files replay data that
-fell outside the static catalog. They are not imported into SSDT; instead, schedule them
-as a deployment pipeline step:
+`<build-out>/DynamicData/<Module>/<Entity>.dynamic.sql`. These files replay the full
+entity dataset—including rows that also appear in the static seed catalog—so operators
+can hydrate environments with a single set of scripts when desired. They are not
+imported into SSDT; instead, schedule them as a deployment pipeline step:
 
 1. After the dacpac publish, execute the dynamic scripts via `sqlcmd`, `SqlPackage` post
    scripts, or a runbook. A simple example:

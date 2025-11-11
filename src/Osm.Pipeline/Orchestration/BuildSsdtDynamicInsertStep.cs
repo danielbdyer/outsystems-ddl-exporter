@@ -85,7 +85,7 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
         {
             state.Log.Record(
                 "dynamicData.insert.skipped",
-                "Dynamic dataset did not contain rows outside of the static seed catalog. No INSERT scripts emitted.");
+                "Dynamic dataset did not contain any unique rows after deduplication. No INSERT scripts emitted.");
 
             return Result<DynamicInsertsGenerated>.Success(new DynamicInsertsGenerated(
                 state.Request,
