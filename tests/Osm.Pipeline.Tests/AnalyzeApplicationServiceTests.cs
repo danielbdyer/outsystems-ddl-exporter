@@ -61,6 +61,7 @@ public sealed class AnalyzeApplicationServiceTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
 
         return new CliConfigurationContext(configuration, null);

@@ -504,6 +504,61 @@ public class BuildSsdtPipelineStepTests
     }
 
     [Fact]
+    public async Task DynamicInsertStep_emits_single_file_when_requested()
+    {
+        using var output = new TempDirectory();
+        var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
+        var evidenceState = new EvidencePrepared(
+            bootstrapState.Request,
+            bootstrapState.Log,
+            bootstrapState.Bootstrap,
+            EvidenceCache: null);
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
+        var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
+        var emissionStep = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
+        var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var sqlProjectStep = new BuildSsdtSqlProjectStep();
+        var projectState = (await sqlProjectStep.ExecuteAsync(emissionState)).Value;
+        var validationStep = new BuildSsdtSqlValidationStep();
+        var validatedState = (await validationStep.ExecuteAsync(projectState)).Value;
+        var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
+        var seedState = (await staticSeedStep.ExecuteAsync(validatedState)).Value;
+
+        var dataset = CreateDynamicDataset();
+        var singleFileSeedState = seedState with
+        {
+            Request = seedState.Request with
+            {
+                DynamicDataset = dataset,
+                DynamicDatasetSource = DynamicDatasetSource.UserProvided,
+                DynamicInsertOutputMode = DynamicInsertOutputMode.SingleFile
+            }
+        };
+
+        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
+        var dynamicStateResult = await dynamicInsertStep.ExecuteAsync(singleFileSeedState);
+
+        Assert.True(dynamicStateResult.IsSuccess);
+        var dynamicState = dynamicStateResult.Value;
+        Assert.Equal(DynamicInsertOutputMode.SingleFile, dynamicState.DynamicInsertOutputMode);
+        var scriptPath = Assert.Single(dynamicState.DynamicInsertScriptPaths);
+        Assert.Equal("DynamicData.all.dynamic.sql", Path.GetFileName(scriptPath));
+        Assert.True(File.Exists(scriptPath));
+
+        var content = await File.ReadAllTextAsync(scriptPath);
+        Assert.Contains("-- Consolidated dynamic entity INSERT replay script", content);
+        Assert.Contains("INSERT INTO", content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task SqlValidationStep_records_summary_for_valid_scripts()
     {
         using var output = new TempDirectory();
@@ -620,6 +675,34 @@ public class BuildSsdtPipelineStepTests
             DynamicDataOutputDirectoryHint: null,
             SqlProjectPathHint: null,
             SqlMetadataLog: null);
+    }
+
+    private static DynamicEntityDataset CreateDynamicDataset()
+    {
+        var columns = ImmutableArray.Create(new StaticEntitySeedColumn(
+            LogicalName: "Identifier",
+            ColumnName: "ID",
+            EmissionName: "ID",
+            DataType: "int",
+            Length: null,
+            Precision: null,
+            Scale: null,
+            IsPrimaryKey: true,
+            IsIdentity: true));
+
+        var definition = new StaticEntitySeedTableDefinition(
+            Module: "Core",
+            LogicalName: "User",
+            Schema: "dbo",
+            PhysicalName: "OSUSR_CORE_USER",
+            EffectiveName: "OSUSR_CORE_USER",
+            Columns: columns);
+
+        var rows = ImmutableArray.Create(
+            StaticEntityRow.Create(new object?[] { 1 }),
+            StaticEntityRow.Create(new object?[] { 2 }));
+        var table = StaticEntityTableData.Create(definition, rows);
+        return DynamicEntityDataset.Create(new[] { table });
     }
 
     private static IDataProfilerFactory CreateProfilerFactory()

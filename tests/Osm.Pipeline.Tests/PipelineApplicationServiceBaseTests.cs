@@ -92,6 +92,7 @@ public sealed class PipelineApplicationServiceBaseTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
 
         var pathCanonicalizer = new ForwardSlashPathCanonicalizer();

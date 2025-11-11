@@ -72,6 +72,7 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 state.StaticSeedScriptPaths,
                 state.StaticSeedData,
                 ImmutableArray<string>.Empty,
+                state.Request.DynamicInsertOutputMode,
                 state.StaticSeedTopologicalOrderApplied,
                 DynamicInsertTopologicalOrderApplied: false));
         }
@@ -105,6 +106,7 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 state.StaticSeedScriptPaths,
                 state.StaticSeedData,
                 ImmutableArray<string>.Empty,
+                state.Request.DynamicInsertOutputMode,
                 state.StaticSeedTopologicalOrderApplied,
                 DynamicInsertTopologicalOrderApplied: dynamicOrderApplied));
         }
@@ -117,46 +119,18 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
 
         Directory.CreateDirectory(outputRoot!);
 
-        var sanitizeModules = state.Request.Scope.SmoOptions.SanitizeModuleNames;
-        var recordedModules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var scriptPaths = ImmutableArray.CreateBuilder<string>(scripts.Length);
-
-        foreach (var script in scripts)
+        ImmutableArray<string> scriptPaths = state.Request.DynamicInsertOutputMode switch
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var moduleName = script.Definition.Module ?? "<unknown>";
-            var directoryName = sanitizeModules ? ModuleNameSanitizer.Sanitize(moduleName) : moduleName;
-            if (!recordedModules.Add(directoryName))
-            {
-                var suffix = 2;
-                var baseName = directoryName;
-                while (!recordedModules.Add(directoryName = $"{baseName}_{suffix}"))
-                {
-                    suffix++;
-                }
-
-                if (sanitizeModules)
-                {
-                    state.Log.Record(
-                        "dynamicData.insert.moduleNameRemapped",
-                        $"Sanitized module name '{baseName}' for '{moduleName}' collided with another module. Remapped to '{directoryName}'.",
-                        new PipelineLogMetadataBuilder()
-                            .WithValue("module.originalName", moduleName)
-                            .WithValue("module.sanitizedName", baseName)
-                            .WithValue("module.disambiguatedName", directoryName)
-                            .Build());
-                }
-            }
-
-            var moduleDirectory = Path.Combine(outputRoot!, directoryName);
-            Directory.CreateDirectory(moduleDirectory);
-
-            var fileName = $"{script.Definition.PhysicalName}.dynamic.sql";
-            var filePath = Path.Combine(moduleDirectory, fileName);
-            await File.WriteAllTextAsync(filePath, script.Script, Utf8NoBom, cancellationToken).ConfigureAwait(false);
-            scriptPaths.Add(filePath);
-        }
+            DynamicInsertOutputMode.PerEntity => await WritePerEntityScriptsAsync(
+                outputRoot!,
+                scripts,
+                state.Request.Scope.SmoOptions.SanitizeModuleNames,
+                state.Log,
+                cancellationToken).ConfigureAwait(false),
+            DynamicInsertOutputMode.SingleFile => ImmutableArray.Create(
+                await WriteSingleFileScriptAsync(outputRoot!, scripts, cancellationToken).ConfigureAwait(false)),
+            _ => throw new InvalidOperationException($"Unsupported dynamic insert output mode: {state.Request.DynamicInsertOutputMode}.")
+        };
 
         state.Log.Record(
             "dynamicData.insert.generated",
@@ -164,7 +138,8 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
             new PipelineLogMetadataBuilder()
                 .WithValue(
                     "outputs.dynamicInsertPaths",
-                    scriptPaths.Count == 0 ? string.Empty : string.Join(";", scriptPaths))
+                    scriptPaths.IsDefaultOrEmpty || scriptPaths.Length == 0 ? string.Empty : string.Join(";", scriptPaths))
+                .WithValue("outputs.dynamicInsertMode", state.Request.DynamicInsertOutputMode.ToString())
                 .WithCount("tables", scripts.Length)
                 .Build());
 
@@ -185,9 +160,86 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
             state.SqlValidation,
             state.StaticSeedScriptPaths,
             state.StaticSeedData,
-            scriptPaths.ToImmutable(),
+            scriptPaths,
+            state.Request.DynamicInsertOutputMode,
             state.StaticSeedTopologicalOrderApplied,
             DynamicInsertTopologicalOrderApplied: dynamicOrderApplied));
+    }
+
+    private static async Task<ImmutableArray<string>> WritePerEntityScriptsAsync(
+        string outputRoot,
+        ImmutableArray<DynamicEntityInsertScript> scripts,
+        bool sanitizeModules,
+        PipelineExecutionLogBuilder log,
+        CancellationToken cancellationToken)
+    {
+        var recordedModules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var scriptPaths = ImmutableArray.CreateBuilder<string>(scripts.Length);
+
+        foreach (var script in scripts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var moduleName = script.Definition.Module ?? "<unknown>";
+            var directoryName = sanitizeModules ? ModuleNameSanitizer.Sanitize(moduleName) : moduleName;
+            if (!recordedModules.Add(directoryName))
+            {
+                var suffix = 2;
+                var baseName = directoryName;
+                while (!recordedModules.Add(directoryName = $"{baseName}_{suffix}"))
+                {
+                    suffix++;
+                }
+
+                if (sanitizeModules)
+                {
+                    log.Record(
+                        "dynamicData.insert.moduleNameRemapped",
+                        $"Sanitized module name '{baseName}' for '{moduleName}' collided with another module. Remapped to '{directoryName}'.",
+                        new PipelineLogMetadataBuilder()
+                            .WithValue("module.originalName", moduleName)
+                            .WithValue("module.sanitizedName", baseName)
+                            .WithValue("module.disambiguatedName", directoryName)
+                            .Build());
+                }
+            }
+
+            var moduleDirectory = Path.Combine(outputRoot, directoryName);
+            Directory.CreateDirectory(moduleDirectory);
+
+            var fileName = $"{script.Definition.PhysicalName}.dynamic.sql";
+            var filePath = Path.Combine(moduleDirectory, fileName);
+            await File.WriteAllTextAsync(filePath, script.Script, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+            scriptPaths.Add(filePath);
+        }
+
+        return scriptPaths.MoveToImmutable();
+    }
+
+    private static async Task<string> WriteSingleFileScriptAsync(
+        string outputRoot,
+        ImmutableArray<DynamicEntityInsertScript> scripts,
+        CancellationToken cancellationToken)
+    {
+        var filePath = Path.Combine(outputRoot, "DynamicData.all.dynamic.sql");
+        var builder = new StringBuilder();
+
+        builder.AppendLine("--------------------------------------------------------------------------------");
+        builder.AppendLine("-- Consolidated dynamic entity INSERT replay script");
+        builder.AppendLine($"-- Tables: {scripts.Length}");
+        builder.AppendLine("--------------------------------------------------------------------------------");
+        builder.AppendLine();
+
+        foreach (var script in scripts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            builder.AppendLine(script.Script.TrimEnd());
+            builder.AppendLine();
+        }
+
+        await File.WriteAllTextAsync(filePath, builder.ToString(), Utf8NoBom, cancellationToken).ConfigureAwait(false);
+        return filePath;
     }
 
     private static string BuildDatasetSummaryMessage(

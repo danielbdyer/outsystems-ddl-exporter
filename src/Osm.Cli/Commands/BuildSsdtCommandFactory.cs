@@ -1,10 +1,12 @@
 using System;
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.CommandLine.Parsing;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 
@@ -27,6 +29,10 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
     private readonly Option<string?> _sqlMetadataOption = new("--sql-metadata-out", "Path to write SQL metadata diagnostics (JSON).");
     private readonly Option<bool> _extractModelOption = new("--extract-model", "Run extract-model before emission and use the inline payload.");
+    private readonly Option<DynamicInsertOutputMode> _dynamicInsertModeOption = new(
+        "--dynamic-insert-mode",
+        () => DynamicInsertOutputMode.PerEntity,
+        "Dynamic insert emission mode: per-entity files (default) or single-file.");
 
     public BuildSsdtCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -59,7 +65,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             _openReportOption,
             _globalOptions.MaxDegreeOfParallelism,
             _sqlMetadataOption,
-            _extractModelOption
+            _extractModelOption,
+            _dynamicInsertModeOption
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
@@ -83,6 +90,12 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
         var sqlOverrides = _sqlOptionBinder.Bind(parseResult);
         var tightening = _tighteningBinder.Bind(parseResult);
 
+        DynamicInsertOutputMode? dynamicInsertModeOverride = null;
+        if (parseResult.HasOption(_dynamicInsertModeOption))
+        {
+            dynamicInsertModeOverride = parseResult.GetValueForOption(_dynamicInsertModeOption);
+        }
+
         var overrides = new BuildSsdtOverrides(
             parseResult.GetValueForOption(_modelOption),
             parseResult.GetValueForOption(_profileOption),
@@ -92,7 +105,8 @@ internal sealed class BuildSsdtCommandFactory : PipelineCommandFactory<BuildSsdt
             parseResult.GetValueForOption(_renameOption),
             parseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
             parseResult.GetValueForOption(_sqlMetadataOption),
-            parseResult.GetValueForOption(_extractModelOption));
+            parseResult.GetValueForOption(_extractModelOption),
+            dynamicInsertModeOverride);
 
         return new BuildSsdtVerbOptions
         {

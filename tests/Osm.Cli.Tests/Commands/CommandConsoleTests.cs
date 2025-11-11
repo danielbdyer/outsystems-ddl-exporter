@@ -14,6 +14,7 @@ using Osm.Domain.ValueObjects;
 using Osm.Domain.Configuration;
 using Osm.Emission;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Validation.Tightening;
@@ -653,6 +654,7 @@ public class CommandConsoleTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             MultiEnvironmentProfileReport.Empty);
 
@@ -677,6 +679,7 @@ public class CommandConsoleTests
         Assert.Contains("Validations: validations.json", output);
         Assert.Contains("Safe script: safe.sql (3 ready)", output);
         Assert.Contains("Remediation script: remediation.sql (⚠️ 2 contradictions)", output);
+        Assert.Contains("Dynamic insert mode: PerEntity", output);
         Assert.Contains("Tightening: Columns 1/2, Unique 1/1, Foreign Keys 1/1", output);
     }
 

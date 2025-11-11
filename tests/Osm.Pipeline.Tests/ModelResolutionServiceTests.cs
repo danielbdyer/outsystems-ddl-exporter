@@ -171,6 +171,7 @@ public sealed class ModelResolutionServiceTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
     }
 

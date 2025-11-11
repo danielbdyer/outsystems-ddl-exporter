@@ -111,6 +111,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
                     finalState.DynamicInsertScriptPaths.IsDefaultOrEmpty
                         ? "<none>"
                         : string.Join(";", finalState.DynamicInsertScriptPaths))
+                .WithValue("outputs.dynamicInsertMode", finalState.DynamicInsertOutputMode.ToString())
                 .WithValue(
                     "outputs.telemetryPackages",
                     finalState.TelemetryPackagePaths.IsDefaultOrEmpty
@@ -147,6 +148,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.Log.Build(),
             finalState.StaticSeedTopologicalOrderApplied,
             finalState.DynamicInsertTopologicalOrderApplied,
+            finalState.DynamicInsertOutputMode,
             finalState.Bootstrap.Warnings,
             finalState.Bootstrap.MultiEnvironmentReport);
     }

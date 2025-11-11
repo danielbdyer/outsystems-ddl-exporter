@@ -305,6 +305,7 @@ public sealed class ModuleFilterConsistencyTests
                 validationOverrides ?? new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase)),
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
     }
 

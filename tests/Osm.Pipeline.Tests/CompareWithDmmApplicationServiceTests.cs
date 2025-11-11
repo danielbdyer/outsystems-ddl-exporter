@@ -98,6 +98,7 @@ public sealed class CompareWithDmmApplicationServiceTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
 
         var context = new CliConfigurationContext(configuration, "config.json");
@@ -143,6 +144,7 @@ public sealed class CompareWithDmmApplicationServiceTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
 
         return new CliConfigurationContext(configuration, "config.json");

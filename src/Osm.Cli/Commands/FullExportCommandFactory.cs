@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
 using Osm.LoadHarness;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 
@@ -36,6 +37,10 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
     private readonly Option<string?> _renameOption = new("--rename-table", "Rename tables using source=Override syntax.");
     private readonly Option<bool> _openReportOption = new("--open-report", "Generate and open an HTML report for this run.");
     private readonly Option<string?> _buildSqlMetadataOption = new("--build-sql-metadata-out", "Path to write SQL metadata diagnostics for SSDT emission (JSON).");
+    private readonly Option<DynamicInsertOutputMode> _dynamicInsertModeOption = new(
+        "--dynamic-insert-mode",
+        () => DynamicInsertOutputMode.PerEntity,
+        "Dynamic insert emission mode: per-entity files (default) or single-file.");
 
     private readonly Option<bool> _runLoadHarnessOption = new("--run-load-harness", () => false, "Replay generated scripts against a staging database and capture telemetry.");
     private readonly Option<string?> _loadHarnessConnectionOption = new("--load-harness-connection-string", "Connection string override for the load harness (defaults to apply connection string).");
@@ -91,6 +96,7 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
             _renameOption,
             _openReportOption,
             _buildSqlMetadataOption,
+            _dynamicInsertModeOption,
             _runLoadHarnessOption,
             _loadHarnessConnectionOption,
             _loadHarnessReportOption,
@@ -153,6 +159,12 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
         var uatUsersOverrides = _uatUsersBinder.Bind(parseResult);
 
         var modelPath = parseResult.GetValueForOption(_modelOption);
+        DynamicInsertOutputMode? dynamicInsertModeOverride = null;
+        if (parseResult.HasOption(_dynamicInsertModeOption))
+        {
+            dynamicInsertModeOverride = parseResult.GetValueForOption(_dynamicInsertModeOption);
+        }
+
         var buildOverrides = new BuildSsdtOverrides(
             modelPath,
             parseResult.GetValueForOption(_profileOption),
@@ -161,7 +173,8 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
             parseResult.GetValueForOption(_staticDataOption),
             parseResult.GetValueForOption(_renameOption),
             parseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
-            parseResult.GetValueForOption(_buildSqlMetadataOption));
+            parseResult.GetValueForOption(_buildSqlMetadataOption),
+            DynamicInsertMode: dynamicInsertModeOverride);
 
         var profileOverrides = new CaptureProfileOverrides(
             modelPath,

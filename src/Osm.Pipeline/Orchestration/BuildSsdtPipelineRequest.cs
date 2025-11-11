@@ -20,4 +20,5 @@ public sealed record BuildSsdtPipelineRequest(
     string? SeedOutputDirectoryHint,
     string? DynamicDataOutputDirectoryHint,
     string? SqlProjectPathHint,
+    DynamicInsertOutputMode DynamicInsertOutputMode = DynamicInsertOutputMode.PerEntity,
     SqlMetadataLog? SqlMetadataLog = null) : ICommand<BuildSsdtPipelineResult>;

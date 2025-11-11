@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
+using Osm.Pipeline.DynamicData;
 
 namespace Osm.Pipeline.Configuration;
 
@@ -33,6 +34,7 @@ public sealed class CliConfigurationService : ICliConfigurationService
     private const string EnvSqlTrustServerCertificate = "OSM_CLI_SQL_TRUST_SERVER_CERTIFICATE";
     private const string EnvSqlApplicationName = "OSM_CLI_SQL_APPLICATION_NAME";
     private const string EnvSqlProfilingConnectionStrings = "OSM_CLI_PROFILING_CONNECTION_STRINGS";
+    private const string EnvDynamicInsertMode = "OSM_CLI_DYNAMIC_INSERT_MODE";
 
     public CliConfigurationService()
         : this(new CliConfigurationLoader())
@@ -250,6 +252,15 @@ public sealed class CliConfigurationService : ICliConfigurationService
 
         sql = sql with { Authentication = authentication };
         result = result with { Sql = sql };
+
+        var dynamicData = result.DynamicData;
+        var dynamicModeRaw = Environment.GetEnvironmentVariable(EnvDynamicInsertMode);
+        if (!string.IsNullOrWhiteSpace(dynamicModeRaw) && Enum.TryParse(dynamicModeRaw, true, out DynamicInsertOutputMode parsedMode))
+        {
+            dynamicData = dynamicData with { InsertMode = parsedMode };
+        }
+
+        result = result with { DynamicData = dynamicData };
 
         return result;
     }

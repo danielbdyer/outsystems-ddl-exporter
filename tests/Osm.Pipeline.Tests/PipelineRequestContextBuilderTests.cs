@@ -41,6 +41,7 @@ public sealed class PipelineRequestContextBuilderTests
                 new Dictionary<string, ModuleValidationOverrideConfiguration>(StringComparer.OrdinalIgnoreCase)),
             TypeMappingConfiguration.Empty,
             new SupplementalModelConfiguration(IncludeUsers: true, Paths: new[] { "users.json" }),
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
 
         var configurationContext = new CliConfigurationContext(configuration, "cli.config.json");

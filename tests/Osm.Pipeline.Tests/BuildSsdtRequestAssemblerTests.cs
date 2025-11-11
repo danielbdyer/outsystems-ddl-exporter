@@ -182,6 +182,7 @@ public sealed class BuildSsdtRequestAssemblerTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
     }
 

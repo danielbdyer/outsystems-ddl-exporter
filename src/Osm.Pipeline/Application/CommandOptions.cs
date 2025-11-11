@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.ModelIngestion;
 
 namespace Osm.Pipeline.Application;
@@ -54,7 +55,8 @@ public sealed record BuildSsdtOverrides(
     string? RenameOverrides,
     int? MaxDegreeOfParallelism,
     string? SqlMetadataOutputPath,
-    bool ExtractModelInline = false);
+    bool ExtractModelInline = false,
+    DynamicInsertOutputMode? DynamicInsertMode = null);
 
 public sealed record CaptureProfileOverrides(
     string? ModelPath,

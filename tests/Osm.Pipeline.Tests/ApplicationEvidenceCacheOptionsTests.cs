@@ -274,6 +274,7 @@ public sealed class ApplicationEvidenceCacheOptionsTests
             ModuleFilterConfiguration.Empty,
             TypeMappingConfiguration.Empty,
             SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty,
             UatUsersConfiguration.Empty);
     }
 

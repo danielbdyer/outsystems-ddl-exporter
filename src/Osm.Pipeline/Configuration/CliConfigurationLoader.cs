@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Json.Configuration;
+using Osm.Pipeline.DynamicData;
 using Osm.Smo;
 
 namespace Osm.Pipeline.Configuration;
@@ -152,6 +153,15 @@ public sealed class CliConfigurationLoader
             configuration = configuration with { SupplementalModels = supplementalModels };
         }
 
+        if (TryReadDynamicData(root, out var dynamicData, out var dynamicDataError))
+        {
+            configuration = configuration with { DynamicData = dynamicData };
+        }
+        else if (dynamicDataError is not null)
+        {
+            return Result<CliConfiguration>.Failure(dynamicDataError.Value);
+        }
+
         if (TryReadUatUsers(root, baseDirectory, out var uatUsers))
         {
             configuration = configuration with { UatUsers = uatUsers };
@@ -225,6 +235,44 @@ public sealed class CliConfigurationLoader
         }
 
         profiler = new ProfilerConfiguration(provider, profilePath, mockFolder);
+        return true;
+    }
+
+    private static bool TryReadDynamicData(
+        JsonElement root,
+        out DynamicDataConfiguration configuration,
+        out ValidationError? error)
+    {
+        configuration = DynamicDataConfiguration.Empty;
+        error = null;
+
+        if (!root.TryGetProperty("dynamicData", out var element) || element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        DynamicInsertOutputMode? insertMode = null;
+        if (element.TryGetProperty("insertMode", out var modeElement) && modeElement.ValueKind == JsonValueKind.String)
+        {
+            var raw = modeElement.GetString();
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                if (Enum.TryParse(raw, ignoreCase: true, out DynamicInsertOutputMode parsed))
+                {
+                    insertMode = parsed;
+                }
+                else
+                {
+                    var supported = string.Join(", ", Enum.GetNames(typeof(DynamicInsertOutputMode)));
+                    error = ValidationError.Create(
+                        "cli.config.dynamicData.insertMode.invalid",
+                        $"Unrecognized dynamic insert mode '{raw}'. Supported values: {supported}.");
+                    return false;
+                }
+            }
+        }
+
+        configuration = new DynamicDataConfiguration(insertMode);
         return true;
     }
 

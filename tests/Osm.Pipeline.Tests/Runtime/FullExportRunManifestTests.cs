@@ -12,6 +12,7 @@ using Osm.Domain.Profiling;
 using Osm.Emission;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Runtime;
@@ -227,6 +228,8 @@ public sealed class FullExportRunManifestTests
         Assert.Equal("alphabetical", seedOrdering);
         Assert.True(buildStage.Artifacts.TryGetValue("dynamicInsertOrdering", out var insertOrdering));
         Assert.Equal("alphabetical", insertOrdering);
+        Assert.True(buildStage.Artifacts.TryGetValue("dynamicInsertMode", out var insertMode));
+        Assert.Equal("PerEntity", insertMode);
 
         var dynamicFiles = Directory.GetFiles(dynamicRoot, "*", SearchOption.AllDirectories);
         Assert.DoesNotContain(dynamicFiles, path => Path.GetFullPath(path).StartsWith(seedRootFullPath, StringComparison.OrdinalIgnoreCase));
@@ -525,6 +528,7 @@ public sealed class FullExportRunManifestTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             null);
 

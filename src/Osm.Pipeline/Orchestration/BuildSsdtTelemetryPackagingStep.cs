@@ -99,6 +99,7 @@ public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<DynamicInse
             state.StaticSeedScriptPaths,
             state.StaticSeedData,
             state.DynamicInsertScriptPaths,
+            state.DynamicInsertOutputMode,
             state.StaticSeedTopologicalOrderApplied,
             state.DynamicInsertTopologicalOrderApplied,
             packagePaths);
