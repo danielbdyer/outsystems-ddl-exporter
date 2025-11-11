@@ -85,7 +85,6 @@ public sealed class DynamicEntityInsertGenerator
             return ImmutableArray<DynamicEntityInsertScript>.Empty;
         }
 
-        var staticIndex = BuildStaticIndex(staticSeedCatalog);
         var orderedTables = StaticEntityDependencySorter.SortByForeignKeys(dataset.Tables, model);
         if (orderedTables.IsDefaultOrEmpty)
         {
@@ -96,7 +95,7 @@ public sealed class DynamicEntityInsertGenerator
 
         foreach (var table in orderedTables)
         {
-            var filteredRows = FilterRows(table, staticIndex);
+            var filteredRows = FilterRows(table);
             if (filteredRows.Length == 0)
             {
                 continue;
@@ -113,16 +112,14 @@ public sealed class DynamicEntityInsertGenerator
             scripts.Add(new DynamicEntityInsertScript(normalizedTable.Definition, script));
         }
 
-        return scripts.ToImmutable();
+        var materialized = scripts.ToImmutable();
+        return ApplyDependencyOrdering(materialized, model);
     }
 
     private static ImmutableArray<StaticEntityRow> FilterRows(
-        StaticEntityTableData table,
-        Dictionary<TableKey, HashSet<string>> staticIndex)
+        StaticEntityTableData table)
     {
         var definition = table.Definition;
-        var key = CreateTableKey(definition);
-        staticIndex.TryGetValue(key, out var staticRows);
 
         var primaryIndices = GetPrimaryIndices(definition);
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -136,11 +133,6 @@ public sealed class DynamicEntityInsertGenerator
                 continue;
             }
 
-            if (staticRows is not null && staticRows.Contains(hash))
-            {
-                continue;
-            }
-
             if (seen.Add(hash))
             {
                 builder.Add(row);
@@ -148,37 +140,6 @@ public sealed class DynamicEntityInsertGenerator
         }
 
         return builder.ToImmutable();
-    }
-
-    private static Dictionary<TableKey, HashSet<string>> BuildStaticIndex(ImmutableArray<StaticEntityTableData> tables)
-    {
-        var index = new Dictionary<TableKey, HashSet<string>>(TableKeyComparer.Instance);
-        if (tables.IsDefaultOrEmpty)
-        {
-            return index;
-        }
-
-        foreach (var table in tables)
-        {
-            var key = CreateTableKey(table.Definition);
-            if (!index.TryGetValue(key, out var rows))
-            {
-                rows = new HashSet<string>(StringComparer.Ordinal);
-                index[key] = rows;
-            }
-
-            var primaryIndices = GetPrimaryIndices(table.Definition);
-            foreach (var row in table.Rows)
-            {
-                var hash = ComputeRowKey(row, primaryIndices);
-                if (hash is not null)
-                {
-                    rows.Add(hash);
-                }
-            }
-        }
-
-        return index;
     }
 
     private static int[] GetPrimaryIndices(StaticEntitySeedTableDefinition definition)
@@ -234,6 +195,80 @@ public sealed class DynamicEntityInsertGenerator
 
         return builder.ToString();
     }
+
+    private static ImmutableArray<DynamicEntityInsertScript> ApplyDependencyOrdering(
+        ImmutableArray<DynamicEntityInsertScript> scripts,
+        OsmModel? model)
+    {
+        if (scripts.IsDefaultOrEmpty || scripts.Length <= 1 || model is null)
+        {
+            return scripts;
+        }
+
+        var orderedDefinitions = StaticEntityDependencySorter.SortByForeignKeys(
+            scripts.Select(script => new StaticEntityTableData(script.Definition, ImmutableArray<StaticEntityRow>.Empty)).ToImmutableArray(),
+            model);
+
+        if (orderedDefinitions.IsDefaultOrEmpty || orderedDefinitions.Length != scripts.Length)
+        {
+            return scripts;
+        }
+
+        var lookup = new Dictionary<TableKey, DynamicEntityInsertScript>(TableKeyComparer.Instance);
+        foreach (var script in scripts)
+        {
+            lookup[CreateTableKey(script.Definition)] = script;
+        }
+
+        var orderedScripts = ImmutableArray.CreateBuilder<DynamicEntityInsertScript>(scripts.Length);
+        foreach (var definition in orderedDefinitions)
+        {
+            var key = CreateTableKey(definition.Definition);
+            if (!lookup.TryGetValue(key, out var script))
+            {
+                return scripts;
+            }
+
+            orderedScripts.Add(script);
+        }
+
+        return orderedScripts.MoveToImmutable();
+    }
+
+    private sealed record TableKey(string Module, string Schema, string Table);
+
+    private sealed class TableKeyComparer : IEqualityComparer<TableKey>
+    {
+        public static TableKeyComparer Instance { get; } = new();
+
+        public bool Equals(TableKey? x, TableKey? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null)
+            {
+                return false;
+            }
+
+            return string.Equals(x.Module, y.Module, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.Schema, y.Schema, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.Table, y.Table, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int GetHashCode(TableKey obj)
+        {
+            return HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Module ?? string.Empty),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Schema ?? string.Empty),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Table ?? string.Empty));
+        }
+    }
+
+    private static TableKey CreateTableKey(StaticEntitySeedTableDefinition definition)
+        => new(definition.Module ?? string.Empty, definition.Schema ?? string.Empty, definition.PhysicalName ?? string.Empty);
 
     private string BuildScript(
         StaticEntitySeedTableDefinition definition,
@@ -333,38 +368,4 @@ public sealed class DynamicEntityInsertGenerator
         }
     }
 
-    private sealed record TableKey(string Module, string Schema, string Table);
-
-    private sealed class TableKeyComparer : IEqualityComparer<TableKey>
-    {
-        public static TableKeyComparer Instance { get; } = new();
-
-        public bool Equals(TableKey? x, TableKey? y)
-        {
-            if (ReferenceEquals(x, y))
-            {
-                return true;
-            }
-
-            if (x is null || y is null)
-            {
-                return false;
-            }
-
-            return string.Equals(x.Module, y.Module, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(x.Schema, y.Schema, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(x.Table, y.Table, StringComparison.OrdinalIgnoreCase);
-        }
-
-        public int GetHashCode(TableKey obj)
-        {
-            return HashCode.Combine(
-                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Module ?? string.Empty),
-                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Schema ?? string.Empty),
-                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Table ?? string.Empty));
-        }
-    }
-
-    private static TableKey CreateTableKey(StaticEntitySeedTableDefinition definition)
-        => new(definition.Module ?? string.Empty, definition.Schema ?? string.Empty, definition.PhysicalName ?? string.Empty);
 }

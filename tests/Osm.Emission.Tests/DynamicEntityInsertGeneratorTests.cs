@@ -15,7 +15,7 @@ public sealed class DynamicEntityInsertGeneratorTests
     private static readonly SqlLiteralFormatter Formatter = new();
 
     [Fact]
-    public void GenerateScripts_DeduplicatesStaticSeedRowsAndSorts()
+    public void GenerateScripts_IncludesStaticSeedRowsAndSorts()
     {
         var definition = CreateDefinition("App", "dbo", "ENTITIES", "Entities", isIdentity: false);
         var datasetRows = ImmutableArray.Create(
@@ -35,11 +35,12 @@ public sealed class DynamicEntityInsertGeneratorTests
         Assert.Single(scripts);
         var script = scripts[0];
         Assert.Contains("INSERT INTO [dbo].[Entities] WITH (TABLOCK, CHECK_CONSTRAINTS)", script.Script, System.StringComparison.Ordinal);
-        var firstIndex = script.Script.IndexOf("(2, N'Beta')", System.StringComparison.Ordinal);
-        var secondIndex = script.Script.IndexOf("(3, N'Gamma')", System.StringComparison.Ordinal);
-        Assert.True(firstIndex >= 0, "Expected first batch row for key 2.");
-        Assert.True(secondIndex > firstIndex, "Expected rows ordered by primary key after deduplication.");
-        Assert.DoesNotContain("Alpha", script.Script);
+        var alphaIndex = script.Script.IndexOf("(1, N'Alpha')", System.StringComparison.Ordinal);
+        var betaIndex = script.Script.IndexOf("(2, N'Beta')", System.StringComparison.Ordinal);
+        var gammaIndex = script.Script.IndexOf("(3, N'Gamma')", System.StringComparison.Ordinal);
+        Assert.True(alphaIndex >= 0, "Expected batch row for key 1.");
+        Assert.True(betaIndex > alphaIndex, "Expected rows ordered by primary key after deduplication.");
+        Assert.True(gammaIndex > betaIndex, "Expected rows ordered by primary key after deduplication.");
     }
 
     [Fact]
