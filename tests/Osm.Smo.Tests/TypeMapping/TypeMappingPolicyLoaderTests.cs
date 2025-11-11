@@ -41,7 +41,7 @@ public sealed class TypeMappingPolicyLoaderTests
         };
 
         var policy = TypeMappingPolicyLoader.Load(stream, defaultOverride: null, overrides);
-        var attribute = CreateAttribute("Text", length: 12);
+        var attribute = CreateAttribute("Text", length: null);
 
         var result = policy.Resolve(attribute);
 

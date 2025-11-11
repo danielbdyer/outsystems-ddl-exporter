@@ -36,7 +36,7 @@ public class TighteningOptionsTests
     {
         var options = TighteningOptions.Create(
             PolicyOptions.Create(TighteningMode.Aggressive, 0.5).Value,
-            ForeignKeyOptions.Create(true, true, false).Value,
+            ForeignKeyOptions.Create(true, true, false, allowNoCheckCreation: true).Value,
             UniquenessOptions.Create(true, false).Value,
             RemediationOptions.Create(true, RemediationSentinelOptions.Create("0", "", "1900-01-01").Value, 10).Value,
             EmissionOptions.Create(true, true, false, true, false, 1).Value,
@@ -46,6 +46,7 @@ public class TighteningOptionsTests
         Assert.Equal(TighteningMode.Aggressive, options.Value.Policy.Mode);
         Assert.Equal("0", options.Value.Remediation.Sentinels.Numeric);
         Assert.False(options.Value.ForeignKeys.TreatMissingDeleteRuleAsIgnore);
+        Assert.True(options.Value.ForeignKeys.AllowNoCheckCreation);
     }
 
     [Fact]

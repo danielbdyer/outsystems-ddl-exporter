@@ -21,6 +21,7 @@ internal static class SmoForeignKeyBuilder
         var relationshipsByAttribute = emitter.RelationshipsByAttribute;
         var attributesByLogicalName = emitter.AttributesByLogicalName;
         var processedConstraints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var allowNoCheckCreation = emitter.Decisions.Toggles.ForeignKeyAllowNoCheckCreation.Value;
 
         foreach (var attribute in context.EmittableAttributes)
         {
@@ -34,6 +35,8 @@ internal static class SmoForeignKeyBuilder
             {
                 continue;
             }
+
+            var applyNoCheck = decision.ScriptWithNoCheck && allowNoCheckCreation;
 
             if (!emitter.TryResolveReference(attribute, out var targetEntity))
             {
@@ -84,7 +87,7 @@ internal static class SmoForeignKeyBuilder
                         referencedColumnNames,
                         targetEntity.Entity.LogicalName.Value,
                         match.DeleteAction,
-                        match.IsNoCheck));
+                        match.IsNoCheck || applyNoCheck));
                 }
 
                 continue;
@@ -98,7 +101,8 @@ internal static class SmoForeignKeyBuilder
                 coordinate,
                 emitter.ForeignKeyReality,
                 emitter.Format,
-                emitter.MapDeleteRule);
+                emitter.MapDeleteRule,
+                applyNoCheck);
 
             builder.Add(fallbackDefinition);
         }

@@ -62,7 +62,8 @@ public sealed class ForeignKeyEvaluatorTests
         var evaluator = new ForeignKeyEvaluator(
             options.ForeignKeys,
             new Dictionary<ColumnCoordinate, ForeignKeyReality> { [coordinate] = fkReality },
-            foreignKeyTargets);
+            foreignKeyTargets,
+            options.Policy.Mode);
 
         var decision = evaluator.Evaluate(sourceEntity, referenceAttribute, coordinate);
 
@@ -126,7 +127,8 @@ public sealed class ForeignKeyEvaluatorTests
         var evaluator = new ForeignKeyEvaluator(
             creationEnabled,
             new Dictionary<ColumnCoordinate, ForeignKeyReality> { [coordinate] = fkReality },
-            foreignKeyTargets);
+            foreignKeyTargets,
+            options.Policy.Mode);
 
         var decision = evaluator.Evaluate(sourceEntity, referenceAttribute, coordinate);
 
@@ -186,17 +188,69 @@ public sealed class ForeignKeyEvaluatorTests
             enableCreation: true,
             allowCrossSchema: options.ForeignKeys.AllowCrossSchema,
             allowCrossCatalog: options.ForeignKeys.AllowCrossCatalog,
-            treatMissingDeleteRuleAsIgnore: true).Value;
+            treatMissingDeleteRuleAsIgnore: true,
+            allowNoCheckCreation: options.ForeignKeys.AllowNoCheckCreation).Value;
 
         var evaluator = new ForeignKeyEvaluator(
             treatMissingAsIgnore,
             new Dictionary<ColumnCoordinate, ForeignKeyReality> { [coordinate] = fkReality },
-            foreignKeyTargets);
+            foreignKeyTargets,
+            options.Policy.Mode);
 
         var decision = evaluator.Evaluate(sourceEntity, referenceAttribute, coordinate);
 
         Assert.True(decision.CreateConstraint);
         Assert.Contains(TighteningRationales.DeleteRuleIgnore, decision.Rationales);
         Assert.Contains(TighteningRationales.PolicyEnableCreation, decision.Rationales);
+    }
+
+    [Fact]
+    public void CautiousMode_WithOrphans_ScriptsWithNoCheck()
+    {
+        var options = TighteningPolicyTestHelper.CreateOptions(TighteningMode.Cautious);
+        var coordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_CAT_CATEGORY"), new ColumnName("PARENT_ID"));
+        var targetCoordinate = new ColumnCoordinate(new SchemaName("dbo"), new TableName("OSUSR_CAT_CATEGORY"), new ColumnName("ID"));
+
+        var categoryEntity = TighteningEvaluatorTestHelper.CreateEntity(
+            "Catalog",
+            "Category",
+            "OSUSR_CAT_CATEGORY",
+            new[]
+            {
+                TighteningEvaluatorTestHelper.CreateAttribute("Id", "ID", isIdentifier: true),
+                TighteningEvaluatorTestHelper.CreateAttribute(
+                    "ParentCategoryId",
+                    "PARENT_ID",
+                    isReference: true,
+                    deleteRule: "Ignore",
+                    hasDatabaseConstraint: false,
+                    targetEntity: new EntityName("Category"),
+                    targetPhysical: new TableName("OSUSR_CAT_CATEGORY"))
+            });
+
+        var module = TighteningEvaluatorTestHelper.CreateModule("Catalog", categoryEntity);
+        var model = TighteningEvaluatorTestHelper.CreateModel(module);
+        var foreignKeyTargets = TighteningEvaluatorTestHelper.CreateForeignKeyTargetIndex(
+            model,
+            new Dictionary<EntityName, EntityModel> { [categoryEntity.LogicalName] = categoryEntity });
+
+        var fkReality = TighteningEvaluatorTestHelper.CreateForeignKeyReality(
+            coordinate,
+            targetCoordinate,
+            hasConstraint: false,
+            hasOrphan: true);
+
+        var evaluator = new ForeignKeyEvaluator(
+            options.ForeignKeys,
+            new Dictionary<ColumnCoordinate, ForeignKeyReality> { [coordinate] = fkReality },
+            foreignKeyTargets,
+            options.Policy.Mode);
+
+        var decision = evaluator.Evaluate(categoryEntity, categoryEntity.Attributes[1], coordinate);
+
+        Assert.True(decision.CreateConstraint);
+        Assert.True(decision.ScriptWithNoCheck);
+        Assert.Contains(TighteningRationales.DataHasOrphans, decision.Rationales);
+        Assert.Contains(TighteningRationales.ForeignKeyNoCheckRecommended, decision.Rationales);
     }
 }

@@ -277,6 +277,12 @@ public static class PolicyDecisionSummaryFormatter
 
         var message =
             $"{FormatCount(created.Length, "foreign key constraint", "foreign key constraints")} were scripted because database or policy conditions allowed enforcement.";
+        var noCheckCount = created.Count(static fk => fk.ScriptWithNoCheck);
+        if (noCheckCount > 0)
+        {
+            message += $" {FormatCount(noCheckCount, "constraint", "constraints")} will be emitted WITH NOCHECK until remediation completes.";
+        }
+
         return new SummaryEntry(created.Length, 80, message);
     }
 

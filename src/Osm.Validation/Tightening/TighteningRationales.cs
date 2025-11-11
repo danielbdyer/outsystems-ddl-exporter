@@ -19,6 +19,7 @@ public static class TighteningRationales
     public const string CrossSchema = "CROSS_SCHEMA";
     public const string CrossCatalog = "CROSS_CATALOG";
     public const string ForeignKeyCreationDisabled = "FK_CREATION_DISABLED";
+    public const string ForeignKeyNoCheckRecommended = "FK_WITH_NOCHECK";
     public const string ProfileMissing = "PROFILE_MISSING";
     public const string RemediateBeforeTighten = "REMEDIATE_BEFORE_TIGHTEN";
     public const string UniqueDuplicatesPresent = "UNIQUE_DUPLICATES_PRESENT";

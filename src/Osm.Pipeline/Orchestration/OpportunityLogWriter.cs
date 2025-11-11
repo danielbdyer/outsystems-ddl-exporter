@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Validation.Tightening.Opportunities;
 using Osm.Validation.Tightening.Validations;
+using TighteningRationales = Osm.Validation.Tightening.TighteningRationales;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -259,6 +260,13 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
         var hasNoCheckEvidence = opportunity.Evidence.Any(static evidence =>
             evidence.StartsWith("ConstraintTrust=", StringComparison.Ordinal)
             && evidence.Contains("NO CHECK", StringComparison.Ordinal));
+        var requiresNoCheck = opportunity.Rationales.Contains(
+            TighteningRationales.ForeignKeyNoCheckRecommended, StringComparer.Ordinal);
+
+        if (requiresNoCheck)
+        {
+            builder.AppendLine("-- Model expects this relationship; constraint will be emitted WITH NOCHECK until remediation completes.");
+        }
 
         if (opportunity.Category == OpportunityCategory.Contradiction && hasOrphans)
         {
@@ -286,6 +294,11 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
                     ? "--   4. Run ALTER TABLE ... WITH CHECK CHECK CONSTRAINT after cleanup to re-trust the FK."
                     : "--   4. Re-enable the constraint (WITH CHECK) after remediation to keep enforcement active.";
                 builder.AppendLine(trustMessage);
+            }
+
+            if (requiresNoCheck)
+            {
+                builder.AppendLine("--   5. Keep the generated WITH NOCHECK constraint only as a stop-gap; remove the waiver once data is clean.");
             }
 
             builder.AppendLine("--");

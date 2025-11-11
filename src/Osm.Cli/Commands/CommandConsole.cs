@@ -2360,6 +2360,32 @@ internal static class CommandConsole
                 }
             }
         }
+
+        var fkNoCheck = report.ForeignKeys
+            .Where(fk => fk.CreateConstraint && fk.ScriptWithNoCheck)
+            .ToArray();
+        if (fkNoCheck.Length > 0)
+        {
+            WriteLine(console, string.Empty);
+            WriteLine(console, $"Foreign key constraints emitted WITH NOCHECK: {fkNoCheck.Length}");
+
+            var samples = fkNoCheck
+                .Take(MaxSamples)
+                .Select(fk => $"{fk.Column.Schema}.{fk.Column.Table}.{fk.Column.Column}")
+                .ToArray();
+
+            foreach (var sample in samples)
+            {
+                WriteLine(console, $"  - {sample}");
+            }
+
+            if (fkNoCheck.Length > MaxSamples)
+            {
+                WriteLine(console, $"  ... and {fkNoCheck.Length - MaxSamples} more");
+            }
+
+            WriteLine(console, "  Toggle foreignKeys.allowNoCheckCreation to control whether the clause is emitted automatically.");
+        }
     }
 
     private static string FormatRationale(string rationale)
@@ -2379,6 +2405,7 @@ internal static class CommandConsole
             TighteningRationales.CrossSchema => "Cross-schema reference not supported",
             TighteningRationales.CrossCatalog => "Cross-catalog reference not supported",
             TighteningRationales.ForeignKeyCreationDisabled => "Foreign key creation disabled by policy",
+            TighteningRationales.ForeignKeyNoCheckRecommended => "Emitting WITH NOCHECK until remediation completes",
             _ => rationale
         };
     }

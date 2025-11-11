@@ -27,12 +27,27 @@ public sealed class ChangeRiskClassifierTests
     [Fact]
     public void ForForeignKey_WhenOrphansDetected_ReturnsHighRisk()
     {
-        var decision = ForeignKeyDecision.Create(Column, createConstraint: false, ImmutableArray<string>.Empty);
+        var decision = ForeignKeyDecision.Create(Column, createConstraint: false, scriptWithNoCheck: false, ImmutableArray<string>.Empty);
 
         var risk = ChangeRiskClassifier.ForForeignKey(
             decision,
             hasOrphan: true,
             ignoreRule: false,
+            crossSchemaBlocked: false,
+            crossCatalogBlocked: false);
+
+        Assert.Equal(RiskLevel.High, risk.Level);
+    }
+
+    [Fact]
+    public void ForForeignKey_WhenScriptedWithNoCheck_ReturnsHighRisk()
+    {
+        var decision = ForeignKeyDecision.Create(Column, createConstraint: true, scriptWithNoCheck: true, ImmutableArray<string>.Empty);
+
+        var risk = ChangeRiskClassifier.ForForeignKey(
+            decision,
+            hasOrphan: false,
+            ignoreRule: true,
             crossSchemaBlocked: false,
             crossCatalogBlocked: false);
 

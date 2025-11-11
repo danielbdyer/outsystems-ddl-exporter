@@ -36,7 +36,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             throw new ArgumentNullException(nameof(decisions));
         }
 
-        var context = OpportunityAnalysisContext.Create(model, profile);
+        var context = OpportunityAnalysisContext.Create(model, profile, decisions);
         var accumulator = new OpportunityAccumulator();
 
         foreach (var opportunity in AnalyzeNullability(decisions.Nullability.Values, context))
@@ -137,7 +137,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
                 continue;
             }
 
-            yield return CreateForeignKeyOpportunity(decision, entry, targetEntity, fkReality);
+            yield return CreateForeignKeyOpportunity(decision, entry, targetEntity, fkReality, context.AllowNoCheckCreation);
         }
     }
 
@@ -221,6 +221,11 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
     {
         // Contradiction: Orphaned rows detected
         if (ContainsAny(rationales, TighteningRationales.DataHasOrphans))
+        {
+            return OpportunityCategory.Contradiction;
+        }
+
+        if (ContainsAny(rationales, TighteningRationales.ForeignKeyNoCheckRecommended))
         {
             return OpportunityCategory.Contradiction;
         }
@@ -523,18 +528,24 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         ForeignKeyDecision decision,
         EntityAttributeIndex.EntityAttributeIndexEntry entry,
         EntityModel targetEntity,
-        ForeignKeyReality? fkReality)
+        ForeignKeyReality? fkReality,
+        bool allowNoCheckCreation)
     {
-        var statements = BuildForeignKeyStatements(entry.Entity, entry.Attribute, targetEntity);
+        var statements = BuildForeignKeyStatements(
+            entry.Entity,
+            entry.Attribute,
+            targetEntity,
+            decision.ScriptWithNoCheck,
+            allowNoCheckCreation);
         var evidence = BuildForeignKeyEvidence(fkReality);
         var hasOrphans = fkReality?.HasOrphan ?? false;
-
-        var disposition = hasOrphans
+        var requiresRemediation = hasOrphans || decision.ScriptWithNoCheck;
+        var disposition = requiresRemediation
             ? OpportunityDisposition.NeedsRemediation
             : OpportunityDisposition.ReadyToApply;
 
         var evidenceSummary = new OpportunityEvidenceSummary(
-            RequiresRemediation: hasOrphans,
+            RequiresRemediation: requiresRemediation,
             EvidenceAvailable: fkReality is not null,
             DataClean: fkReality is null ? null : !fkReality.HasOrphan,
             HasDuplicates: null,
@@ -546,6 +557,8 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 
         var summary = category switch
         {
+            OpportunityCategory.Contradiction when decision.ScriptWithNoCheck =>
+                "DATA CONTRADICTION: Model expects this relationship. Constraint will be scripted WITH NOCHECK so remediation can proceed without blocking deployments.",
             OpportunityCategory.Contradiction =>
                 "DATA CONTRADICTION: Profiling found orphaned rows that violate referential integrity. Manual remediation required.",
             OpportunityCategory.Validation =>
@@ -556,7 +569,9 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         };
 
         var risk = category == OpportunityCategory.Contradiction
-            ? ChangeRisk.High("Orphaned rows detected - remediation required before constraint creation.")
+            ? (decision.ScriptWithNoCheck
+                ? ChangeRisk.High("Constraint will be emitted WITH NOCHECK until remediation completes.")
+                : ChangeRisk.High("Orphaned rows detected - remediation required before constraint creation."))
             : ChangeRisk.Low("Foreign key creation is safe to apply.");
 
         return Opportunity.Create(
@@ -577,7 +592,12 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             constraintName: BuildForeignKeyName(entry.Entity, entry.Attribute, targetEntity));
     }
 
-    private static ImmutableArray<string> BuildForeignKeyStatements(EntityModel sourceEntity, AttributeModel attribute, EntityModel targetEntity)
+    private static ImmutableArray<string> BuildForeignKeyStatements(
+        EntityModel sourceEntity,
+        AttributeModel attribute,
+        EntityModel targetEntity,
+        bool scriptWithNoCheck,
+        bool allowNoCheckCreation)
     {
         var fkName = BuildForeignKeyName(sourceEntity, attribute, targetEntity);
         var sourceTable = Qualify(sourceEntity.Schema.Value, sourceEntity.PhysicalName.Value);
@@ -585,9 +605,30 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
         var sourceColumn = Quote(attribute.ColumnName.Value);
         var targetColumns = ResolveTargetColumns(targetEntity);
 
-        var builder = ImmutableArray.CreateBuilder<string>(2);
-        builder.Add($"ALTER TABLE {sourceTable} WITH CHECK ADD CONSTRAINT {Quote(fkName)} FOREIGN KEY ({sourceColumn}) REFERENCES {targetTable} ({targetColumns});");
-        builder.Add($"ALTER TABLE {sourceTable} CHECK CONSTRAINT {Quote(fkName)};");
+        var builder = ImmutableArray.CreateBuilder<string>();
+
+        if (scriptWithNoCheck)
+        {
+            if (!allowNoCheckCreation)
+            {
+                builder.Add("-- Enable foreignKeys.allowNoCheckCreation to emit WITH NOCHECK automatically or adjust the statement manually.");
+            }
+
+            builder.Add("-- Constraint will be emitted WITH NOCHECK so remediation can occur without blocking deployments.");
+        }
+
+        var enforcementClause = scriptWithNoCheck && allowNoCheckCreation ? "WITH NOCHECK" : "WITH CHECK";
+        builder.Add($"ALTER TABLE {sourceTable} {enforcementClause} ADD CONSTRAINT {Quote(fkName)} FOREIGN KEY ({sourceColumn}) REFERENCES {targetTable} ({targetColumns});");
+
+        if (scriptWithNoCheck && allowNoCheckCreation)
+        {
+            builder.Add($"-- After remediation run: ALTER TABLE {sourceTable} WITH CHECK CHECK CONSTRAINT {Quote(fkName)};");
+        }
+        else
+        {
+            builder.Add($"ALTER TABLE {sourceTable} CHECK CONSTRAINT {Quote(fkName)};");
+        }
+
         return builder.ToImmutable();
     }
 
@@ -738,7 +779,8 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             UniqueCandidateLookup uniqueProfiles,
             CompositeUniqueProfileLookup compositeUniqueProfiles,
             ForeignKeyRealityLookup foreignKeys,
-            UniqueIndexLookup uniqueIndexes)
+            UniqueIndexLookup uniqueIndexes,
+            bool allowNoCheckCreation)
         {
             Attributes = attributes;
             Entities = entities;
@@ -747,6 +789,7 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
             CompositeUniqueProfiles = compositeUniqueProfiles;
             ForeignKeys = foreignKeys;
             UniqueIndexes = uniqueIndexes;
+            AllowNoCheckCreation = allowNoCheckCreation;
         }
 
         public AttributeLookup Attributes { get; }
@@ -763,8 +806,15 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
 
         public UniqueIndexLookup UniqueIndexes { get; }
 
-        public static OpportunityAnalysisContext Create(OsmModel model, ProfileSnapshot profile)
+        public bool AllowNoCheckCreation { get; }
+
+        public static OpportunityAnalysisContext Create(OsmModel model, ProfileSnapshot profile, PolicyDecisionSet decisions)
         {
+            if (decisions is null)
+            {
+                throw new ArgumentNullException(nameof(decisions));
+            }
+
             return new OpportunityAnalysisContext(
                 AttributeLookup.Create(model),
                 EntityLookup.Create(model),
@@ -772,7 +822,8 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
                 UniqueCandidateLookup.Create(profile),
                 CompositeUniqueProfileLookup.Create(profile),
                 ForeignKeyRealityLookup.Create(profile),
-                UniqueIndexLookup.Create(model));
+                UniqueIndexLookup.Create(model),
+                decisions.Toggles.ForeignKeyAllowNoCheckCreation.Value);
         }
     }
 

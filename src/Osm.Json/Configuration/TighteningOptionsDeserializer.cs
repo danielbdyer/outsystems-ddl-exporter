@@ -129,7 +129,8 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
             document.ForeignKeys.EnableCreation,
             document.ForeignKeys.AllowCrossSchema,
             document.ForeignKeys.AllowCrossCatalog,
-            document.ForeignKeys.TreatMissingDeleteRuleAsIgnore);
+            document.ForeignKeys.TreatMissingDeleteRuleAsIgnore,
+            document.ForeignKeys.AllowNoCheckCreation);
 
         if (foreignKeyResult.IsFailure)
         {
@@ -373,6 +374,9 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
 
         [JsonPropertyName("treatMissingDeleteRuleAsIgnore")]
         public bool TreatMissingDeleteRuleAsIgnore { get; init; }
+
+        [JsonPropertyName("allowNoCheckCreation")]
+        public bool AllowNoCheckCreation { get; init; }
     }
 
     private sealed record UniquenessDocument

@@ -109,6 +109,7 @@ public class PolicyCommandFactoryTests
             new ForeignKeyDecisionReport(
                 foreignCoordinate,
                 false,
+                false,
                 ImmutableArray.Create("DATA_HAS_ORPHANS")));
 
         var diagnostics = ImmutableArray.Create(

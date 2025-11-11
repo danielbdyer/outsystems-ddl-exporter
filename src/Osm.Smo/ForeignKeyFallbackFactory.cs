@@ -18,7 +18,8 @@ internal static class ForeignKeyFallbackFactory
         ColumnCoordinate coordinate,
         IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality,
         SmoFormatOptions format,
-        Func<string?, ForeignKeyAction> deleteRuleMapper)
+        Func<string?, ForeignKeyAction> deleteRuleMapper,
+        bool scriptWithNoCheck)
     {
         if (ownerContext is null)
         {
@@ -61,7 +62,8 @@ internal static class ForeignKeyFallbackFactory
         var friendlyReferencedColumns = ForeignKeyColumnNormalizer.Normalize(referencedColumns, referencedContext.AttributeLookup);
         var name = ForeignKeyNameFactory.CreateFallbackName(ownerContext, referencedContext, attribute, format);
         var deleteAction = deleteRuleMapper(attribute.Reference.DeleteRuleCode);
-        var isNoCheck = foreignKeyReality.TryGetValue(coordinate, out var reality) && reality.IsNoCheck;
+        var isNoCheck = scriptWithNoCheck ||
+            (foreignKeyReality.TryGetValue(coordinate, out var reality) && reality.IsNoCheck);
 
         return new SmoForeignKeyDefinition(
             name,

@@ -98,4 +98,16 @@ public class TighteningOptionsDeserializerTests
         Assert.True(result.IsSuccess);
         Assert.True(result.Value.Policy.AllowCautiousNullabilityRelaxation);
     }
+
+    [Fact]
+    public void Deserialize_Should_Enable_NoCheck_Flag_When_Configured()
+    {
+        const string json = "{ \"policy\": { \"mode\": \"EvidenceGated\", \"nullBudget\": 0.0 }, \"foreignKeys\": { \"enableCreation\": true, \"allowCrossSchema\": false, \"allowCrossCatalog\": false, \"allowNoCheckCreation\": true }, \"uniqueness\": { \"enforceSingleColumnUnique\": true, \"enforceMultiColumnUnique\": true }, \"remediation\": { \"generatePreScripts\": true, \"sentinels\": { \"numeric\": \"0\", \"text\": \"\", \"date\": \"1900-01-01\" }, \"maxRowsDefaultBackfill\": 10 }, \"emission\": { \"perTableFiles\": true, \"includePlatformAutoIndexes\": false, \"sanitizeModuleNames\": true, \"emitBareTableOnly\": false }, \"mocking\": { \"useProfileMockFolder\": false, \"profileMockFolder\": null } }";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+
+        var result = _deserializer.Deserialize(stream);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.ForeignKeys.AllowNoCheckCreation);
+    }
 }

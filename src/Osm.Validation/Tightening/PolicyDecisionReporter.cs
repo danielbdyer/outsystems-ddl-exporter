@@ -215,6 +215,8 @@ public sealed record PolicyDecisionReport(
 
     public int ForeignKeysCreatedCount => ForeignKeys.Count(static f => f.CreateConstraint);
 
+    public int ForeignKeysScriptedWithNoCheckCount => ForeignKeys.Count(static f => f.CreateConstraint && f.ScriptWithNoCheck);
+
     public int ModuleCount => ModuleRollups.Count;
 }
 
@@ -302,10 +304,15 @@ public sealed record ColumnDecisionReport(
 public sealed record ForeignKeyDecisionReport(
     ColumnCoordinate Column,
     bool CreateConstraint,
+    bool ScriptWithNoCheck,
     ImmutableArray<string> Rationales)
 {
     public static ForeignKeyDecisionReport From(ForeignKeyDecision decision)
-        => new(decision.Column, decision.CreateConstraint, decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales);
+        => new(
+            decision.Column,
+            decision.CreateConstraint,
+            decision.ScriptWithNoCheck,
+            decision.Rationales.IsDefault ? ImmutableArray<string>.Empty : decision.Rationales);
 }
 
 public sealed record UniqueIndexDecisionReport(

@@ -35,6 +35,7 @@ public sealed class PolicyDecisionLogWriterTests
         var foreignKeyDecision = ForeignKeyDecision.Create(
             columnCoordinate,
             createConstraint: true,
+            scriptWithNoCheck: false,
             ImmutableArray.Create("profile-clean"));
 
         var uniqueDecision = UniqueIndexDecision.Create(

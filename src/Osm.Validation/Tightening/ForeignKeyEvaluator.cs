@@ -14,15 +14,18 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
     private readonly ForeignKeyOptions _options;
     private readonly IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> _foreignKeys;
     private readonly ForeignKeyTargetIndex _targetIndex;
+    private readonly TighteningMode _mode;
 
     public ForeignKeyEvaluator(
         ForeignKeyOptions options,
         IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeys,
-        ForeignKeyTargetIndex targetIndex)
+        ForeignKeyTargetIndex targetIndex,
+        TighteningMode mode)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _foreignKeys = foreignKeys ?? throw new ArgumentNullException(nameof(foreignKeys));
         _targetIndex = targetIndex ?? throw new ArgumentNullException(nameof(targetIndex));
+        _mode = mode;
     }
 
     public ForeignKeyDecision Evaluate(EntityModel entity, AttributeModel attribute, ColumnCoordinate coordinate)
@@ -91,11 +94,12 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
 
         var rationales = new SortedSet<string>(StringComparer.Ordinal);
         var createConstraint = false;
+        var scriptWithNoCheck = false;
 
         if (!attribute.Reference.IsReference)
         {
             return new ForeignKeyEvaluation(
-                ForeignKeyDecision.Create(coordinate, createConstraint, rationales.ToImmutableArray()),
+                ForeignKeyDecision.Create(coordinate, createConstraint, scriptWithNoCheck, rationales.ToImmutableArray()),
                 HasOrphan: false,
                 IgnoreRule: false,
                 CrossSchemaBlocked: false,
@@ -151,9 +155,19 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
             {
                 rationales.Add(TighteningRationales.CrossCatalog);
             }
+
+            if (!hasConstraint && createConstraint == false && _mode == TighteningMode.Cautious && _options.EnableCreation)
+            {
+                if (!crossSchemaBlocked && !crossCatalogBlocked && (hasOrphan || ignoreRule))
+                {
+                    createConstraint = true;
+                    scriptWithNoCheck = true;
+                    rationales.Add(TighteningRationales.ForeignKeyNoCheckRecommended);
+                }
+            }
         }
 
-        var decision = ForeignKeyDecision.Create(coordinate, createConstraint, rationales.ToImmutableArray());
+        var decision = ForeignKeyDecision.Create(coordinate, createConstraint, scriptWithNoCheck, rationales.ToImmutableArray());
 
         return new ForeignKeyEvaluation(
             decision,
@@ -164,10 +178,15 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
     }
 
     private static bool ShouldCreateOpportunity(ForeignKeyEvaluation evaluation)
-        => !evaluation.Decision.CreateConstraint;
+        => !evaluation.Decision.CreateConstraint || evaluation.Decision.ScriptWithNoCheck;
 
     private static string BuildForeignKeySummary(ForeignKeyEvaluation evaluation)
     {
+        if (evaluation.Decision.ScriptWithNoCheck)
+        {
+            return "Foreign key constraint will be scripted WITH NOCHECK to honor the model while remediation occurs.";
+        }
+
         if (evaluation.HasOrphan)
         {
             return "Foreign key constraint was not created. Resolve orphaned rows before enforcement can proceed.";

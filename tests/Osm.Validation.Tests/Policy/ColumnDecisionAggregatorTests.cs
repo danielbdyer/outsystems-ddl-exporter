@@ -144,7 +144,7 @@ public sealed class ColumnDecisionAggregatorTests
                 uniqueEvidence.SingleColumnDuplicates,
                 uniqueEvidence.CompositeClean,
                 uniqueEvidence.CompositeDuplicates),
-            new ForeignKeyEvaluator(options.ForeignKeys, foreignKeyReality, foreignKeyTargets)
+            new ForeignKeyEvaluator(options.ForeignKeys, foreignKeyReality, foreignKeyTargets, options.Policy.Mode)
         };
 
     private static EntityModel GetEntity(OsmModel model, string logicalName)

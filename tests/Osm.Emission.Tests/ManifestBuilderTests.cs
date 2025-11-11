@@ -64,7 +64,7 @@ public class ManifestBuilderTests
 
         var columns = ImmutableArray.Create(new ColumnDecisionReport(columnCoordinate, true, false, ImmutableArray<string>.Empty));
         var uniqueIndexes = ImmutableArray.Create(new UniqueIndexDecisionReport(indexCoordinate, true, false, ImmutableArray<string>.Empty));
-        var foreignKeys = ImmutableArray.Create(new ForeignKeyDecisionReport(columnCoordinate, true, ImmutableArray<string>.Empty));
+        var foreignKeys = ImmutableArray.Create(new ForeignKeyDecisionReport(columnCoordinate, true, false, ImmutableArray<string>.Empty));
 
         var columnRationales = ImmutableDictionary<string, int>.Empty.Add("Evidence", 1);
         var uniqueRationales = ImmutableDictionary<string, int>.Empty;
