@@ -101,6 +101,14 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var moduleFilter = input.ModuleFilter;
         var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
 
+        var moduleFilterOptionsResult = ModuleFilterResolver.Resolve(configuration, moduleFilter);
+        if (moduleFilterOptionsResult.IsFailure)
+        {
+            return Result<FullExportApplicationResult>.Failure(moduleFilterOptionsResult.Errors);
+        }
+
+        var moduleFilterOptions = moduleFilterOptionsResult.Value;
+
         if ((extractOverrides.Modules is null || extractOverrides.Modules.Count == 0) && moduleFilter.Modules.Count > 0)
         {
             extractOverrides = extractOverrides with { Modules = moduleFilter.Modules };
@@ -116,26 +124,35 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             extractOverrides = extractOverrides with { OnlyActiveAttributes = !moduleFilter.IncludeInactiveModules.Value };
         }
 
-        var includeSystemModules = moduleFilter.IncludeSystemModules
-            ?? configuration.ModuleFilter.IncludeSystemModules
-            ?? true;
-        var includeInactiveModules = moduleFilter.IncludeInactiveModules
-            ?? configuration.ModuleFilter.IncludeInactiveModules
-            ?? true;
+        var includeSystemModules = moduleFilterOptions.IncludeSystemModules;
+        var includeInactiveModules = moduleFilterOptions.IncludeInactiveModules;
 
         Result<ExtractModelApplicationResult> extractResult;
 
-        if (overrides.ReuseModelPath)
+        var reusePathCandidate = ResolveReuseModelPath(buildOverrides, profileOverrides, configuration);
+        var shouldReuseModelPath = overrides.ReuseModelPath;
+
+        if (!shouldReuseModelPath
+            && !string.IsNullOrWhiteSpace(configuration.ModelPath)
+            && string.Equals(reusePathCandidate, configuration.ModelPath, StringComparison.OrdinalIgnoreCase))
         {
-            var reusePath = ResolveReuseModelPath(buildOverrides, profileOverrides, configuration);
-            if (string.IsNullOrWhiteSpace(reusePath))
+            shouldReuseModelPath = true;
+        }
+
+        if (shouldReuseModelPath)
+        {
+            if (string.IsNullOrWhiteSpace(reusePathCandidate))
             {
                 return ValidationError.Create(
                     "pipeline.fullExport.model.reuse.missing",
                     "Model reuse was requested but no model path was provided. Supply --model or configure model.path.");
             }
 
-            extractResult = CreateReuseExtractionResult(reusePath!, includeSystemModules, includeInactiveModules);
+            extractResult = CreateReuseExtractionResult(
+                reusePathCandidate!,
+                includeSystemModules,
+                includeInactiveModules,
+                moduleFilterOptions.ValidationOverrides);
         }
         else
         {
@@ -271,7 +288,8 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
     private Result<ExtractModelApplicationResult> CreateReuseExtractionResult(
         string modelPath,
         bool includeSystemModules,
-        bool includeInactiveModules)
+        bool includeInactiveModules,
+        ModuleValidationOverrides validationOverrides)
     {
         if (string.IsNullOrWhiteSpace(modelPath))
         {
@@ -289,9 +307,11 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         {
             using var stream = File.Open(modelPath, FileMode.Open, FileAccess.Read, FileShare.Read);
             var warnings = new List<string>();
-            var options = ModelJsonDeserializerOptions.Default
-                .WithAllowDuplicateAttributeLogicalNames(true)
-                .WithAllowDuplicateAttributeColumnNames(true);
+            var options = new ModelJsonDeserializerOptions(
+                validationOverrides,
+                missingSchemaFallback: null,
+                allowDuplicateAttributeLogicalNames: true,
+                allowDuplicateAttributeColumnNames: true);
             var modelResult = _modelDeserializer.Deserialize(stream, warnings, options);
             if (modelResult.IsFailure)
             {

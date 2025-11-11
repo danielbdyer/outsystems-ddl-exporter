@@ -145,8 +145,16 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             var modelForDynamicData = modelResolution.Extraction?.Model;
             if (modelForDynamicData is null)
             {
+                var ingestionOptions = new ModelIngestionOptions(
+                    context.ModuleFilter.ValidationOverrides,
+                    MissingSchemaFallback: null);
+
                 var modelLoadResult = await _modelIngestionService
-                    .LoadFromFileAsync(modelResolution.ModelPath, warnings: null, cancellationToken: cancellationToken)
+                    .LoadFromFileAsync(
+                        modelResolution.ModelPath,
+                        warnings: null,
+                        cancellationToken: cancellationToken,
+                        options: ingestionOptions)
                     .ConfigureAwait(false);
                 modelLoadResult = await EnsureSuccessOrFlushAsync(modelLoadResult, context, cancellationToken).ConfigureAwait(false);
                 if (modelLoadResult.IsFailure)
