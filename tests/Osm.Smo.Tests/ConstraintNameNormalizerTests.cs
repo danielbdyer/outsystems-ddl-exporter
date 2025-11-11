@@ -40,8 +40,8 @@ public class ConstraintNameNormalizerTests
             SmoFormatOptions.Default,
             referencedEntity: parentEntity);
 
-        // Assert: Should produce FK_Project_State_StateId, not FK_Project_ProjectStatus_StateId
-        Assert.Equal("FK_Project_State_StateId", normalized);
+        // Assert: Should produce OSFRK_Project_State_StateId, not OSFRK_Project_ProjectStatus_StateId
+        Assert.Equal("OSFRK_Project_State_StateId", normalized);
     }
 
     [Fact]

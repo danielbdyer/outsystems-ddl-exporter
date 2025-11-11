@@ -68,6 +68,7 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
                 f.Column.Table.Value,
                 f.Column.Column.Value,
                 f.CreateConstraint,
+                f.ScriptWithNoCheck,
                 f.Rationales.ToArray(),
                 report.ColumnModules.TryGetValue(f.Column.ToString(), out var foreignKeyModule) ? foreignKeyModule : string.Empty)).ToArray(),
             report.Diagnostics.Select(static d => new PolicyDecisionLogDiagnostic(
@@ -149,6 +150,7 @@ public sealed class PolicyDecisionLogWriter : IPolicyDecisionLogWriter
         string Table,
         string Column,
         bool CreateConstraint,
+        bool ScriptWithNoCheck,
         IReadOnlyList<string> Rationales,
         string Module);
 

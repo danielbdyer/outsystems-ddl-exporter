@@ -11,7 +11,8 @@
     "enableCreation": true,
     "allowCrossSchema": false,
     "allowCrossCatalog": false,
-    "treatMissingDeleteRuleAsIgnore": false
+    "treatMissingDeleteRuleAsIgnore": false,
+    "allowNoCheckCreation": false
   },
   "uniqueness": {
     "enforceSingleColumnUnique": true,

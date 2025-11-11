@@ -837,6 +837,7 @@ internal sealed class PolicyCommandFactory : ICommandFactory
                 .Select(entry => new ForeignKeyDecisionReport(
                     new ColumnCoordinate(new SchemaName(entry.Schema ?? string.Empty), new TableName(entry.Table ?? string.Empty), new ColumnName(entry.Column ?? string.Empty)),
                     entry.CreateConstraint,
+                    entry.ScriptWithNoCheck,
                     entry.Rationales is null ? ImmutableArray<string>.Empty : entry.Rationales.ToImmutableArray()))
                 .ToImmutableArray();
 
@@ -1171,6 +1172,7 @@ internal sealed class PolicyCommandFactory : ICommandFactory
         string? Table,
         string? Column,
         bool CreateConstraint,
+        bool ScriptWithNoCheck,
         IReadOnlyList<string>? Rationales,
         string? Module);
 

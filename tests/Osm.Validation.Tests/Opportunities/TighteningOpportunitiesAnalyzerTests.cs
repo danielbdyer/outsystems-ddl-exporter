@@ -192,6 +192,7 @@ public sealed class TighteningOpportunitiesAnalyzerTests
         var decision = ForeignKeyDecision.Create(
             coordinate,
             createConstraint: true,
+            scriptWithNoCheck: false,
             rationales: ImmutableArray.Create(
                 TighteningRationales.ForeignKeyEnforced,
                 TighteningRationales.PolicyEnableCreation));

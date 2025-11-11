@@ -50,7 +50,8 @@ public sealed record TighteningOptions
             enableCreation: true,
             allowCrossSchema: false,
             allowCrossCatalog: false,
-            treatMissingDeleteRuleAsIgnore: false).Value,
+            treatMissingDeleteRuleAsIgnore: false,
+            allowNoCheckCreation: false).Value,
         UniquenessOptions.Create(enforceSingleColumnUnique: true, enforceMultiColumnUnique: true).Value,
         RemediationOptions.Create(
             generatePreScripts: true,
@@ -158,12 +159,14 @@ public sealed record ForeignKeyOptions
         bool enableCreation,
         bool allowCrossSchema,
         bool allowCrossCatalog,
-        bool treatMissingDeleteRuleAsIgnore)
+        bool treatMissingDeleteRuleAsIgnore,
+        bool allowNoCheckCreation)
     {
         EnableCreation = enableCreation;
         AllowCrossSchema = allowCrossSchema;
         AllowCrossCatalog = allowCrossCatalog;
         TreatMissingDeleteRuleAsIgnore = treatMissingDeleteRuleAsIgnore;
+        AllowNoCheckCreation = allowNoCheckCreation;
     }
 
     public bool EnableCreation { get; }
@@ -174,17 +177,21 @@ public sealed record ForeignKeyOptions
 
     public bool TreatMissingDeleteRuleAsIgnore { get; }
 
+    public bool AllowNoCheckCreation { get; }
+
     public static Result<ForeignKeyOptions> Create(
         bool enableCreation,
         bool allowCrossSchema,
         bool allowCrossCatalog,
-        bool treatMissingDeleteRuleAsIgnore = false)
+        bool treatMissingDeleteRuleAsIgnore = false,
+        bool allowNoCheckCreation = false)
     {
         return new ForeignKeyOptions(
             enableCreation,
             allowCrossSchema,
             allowCrossCatalog,
-            treatMissingDeleteRuleAsIgnore);
+            treatMissingDeleteRuleAsIgnore,
+            allowNoCheckCreation);
     }
 }
 

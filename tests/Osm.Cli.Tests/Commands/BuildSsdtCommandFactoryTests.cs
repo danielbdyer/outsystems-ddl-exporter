@@ -445,6 +445,7 @@ public class BuildSsdtCommandFactoryTests
                 new ForeignKeyDecisionReport(
                     new ColumnCoordinate(new SchemaName("dbo"), new TableName("Orders"), new ColumnName("CustomerId")),
                     true,
+                    false,
                     ImmutableArray<string>.Empty));
 
             var report = new PolicyDecisionReport(

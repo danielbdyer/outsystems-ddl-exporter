@@ -442,7 +442,8 @@ public sealed class TighteningPolicyMatrixTests
         var evaluator = new ForeignKeyEvaluator(
             setup.Options,
             setup.RealityMap,
-            setup.TargetIndex);
+            setup.TargetIndex,
+            TighteningMode.Aggressive);
 
         var decision = evaluator.Evaluate(setup.Source, setup.Attribute, setup.Coordinate);
 
@@ -498,7 +499,8 @@ public sealed class TighteningPolicyMatrixTests
         var options = ForeignKeyOptions.Create(
             definition.EnableCreation,
             definition.AllowCrossSchema,
-            definition.AllowCrossCatalog).Value;
+            definition.AllowCrossCatalog,
+            allowNoCheckCreation: false).Value;
 
         var reality = TighteningEvaluatorTestHelper.CreateForeignKeyReality(
             coordinate,

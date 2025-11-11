@@ -79,6 +79,11 @@ public static class ChangeRiskClassifier
             return ChangeRisk.Moderate("Enable policy or provide evidence before enforcing the foreign key.");
         }
 
+        if (decision.ScriptWithNoCheck)
+        {
+            return ChangeRisk.High("Foreign key will be emitted WITH NOCHECK to reflect the model; remediate data before re-trusting the constraint.");
+        }
+
         return ChangeRisk.Low("Constraint creation is safe based on policy evaluation.");
     }
 

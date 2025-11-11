@@ -747,7 +747,7 @@ public class SmoModelFactoryTests
             productEntity.Schema,
             productEntity.PhysicalName,
             ColumnName.Create("CATEGORYID").Value);
-        var foreignKeyDecision = ForeignKeyDecision.Create(fkCoordinate, createConstraint: true, ImmutableArray<string>.Empty);
+        var foreignKeyDecision = ForeignKeyDecision.Create(fkCoordinate, createConstraint: true, scriptWithNoCheck: false, ImmutableArray<string>.Empty);
         var foreignKeyIdentity = ColumnIdentity.From(
             productEntity,
             productEntity.Attributes.Single(a => a.ColumnName.Value.Equals("CATEGORYID", StringComparison.OrdinalIgnoreCase)));
@@ -828,7 +828,7 @@ public class SmoModelFactoryTests
         var model = OsmModel.Create(DateTime.UtcNow, new[] { auditModule }).Value;
 
         var columnCoordinate = new ColumnCoordinate(schema, table, userIdAttribute.ColumnName);
-        var fkDecision = ForeignKeyDecision.Create(columnCoordinate, createConstraint: true, ImmutableArray<string>.Empty);
+        var fkDecision = ForeignKeyDecision.Create(columnCoordinate, createConstraint: true, scriptWithNoCheck: false, ImmutableArray<string>.Empty);
         var columnIdentity = ColumnIdentity.From(auditEntity, userIdAttribute);
 
         var decisions = PolicyDecisionSet.Create(
