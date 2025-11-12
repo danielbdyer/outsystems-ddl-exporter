@@ -188,6 +188,76 @@ public sealed class DynamicEntityInsertGeneratorTests
         Assert.Equal("Child", scripts[1].Definition.LogicalName);
     }
 
+    [Fact]
+    public void GenerateScripts_EmitsSelfReferencingParentsBeforeChildren()
+    {
+        var definition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Hierarchy",
+            "dbo",
+            "OSUSR_SAMPLE_HIERARCHY",
+            "OSUSR_SAMPLE_HIERARCHY",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "INT", null, null, null, IsPrimaryKey: true, IsIdentity: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "INT", null, null, null, IsPrimaryKey: false, IsIdentity: false),
+                new StaticEntitySeedColumn("Name", "NAME", "Name", "NVARCHAR", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+
+        var rows = ImmutableArray.Create(
+            StaticEntityRow.Create(new object?[] { 5, 10, "Child" }),
+            StaticEntityRow.Create(new object?[] { 10, null, "Root" }));
+
+        var dataset = new DynamicEntityDataset(ImmutableArray.Create(new StaticEntityTableData(definition, rows)));
+
+        var relationship = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Hierarchy"),
+            new TableName("OSUSR_SAMPLE_HIERARCHY"),
+            deleteRuleCode: "Ignore",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_HIERARCHY_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_HIERARCHY",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("PARENTID", "ParentId", "ID", "Id", 0) })
+            }).Value;
+
+        var entity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Hierarchy"),
+            new TableName("OSUSR_SAMPLE_HIERARCHY"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true),
+                CreateAttribute("ParentId", "PARENTID"),
+                CreateAttribute("Name", "NAME")
+            },
+            relationships: new[] { relationship }).Value;
+
+        var module = ModuleModel.Create(new ModuleName("Sample"), isSystemModule: false, isActive: true, entities: new[] { entity }).Value;
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var generator = new DynamicEntityInsertGenerator(Formatter);
+        var scripts = generator.GenerateScripts(dataset, ImmutableArray<StaticEntityTableData>.Empty, model: model);
+
+        Assert.Single(scripts);
+        var script = scripts[0].Script;
+        var rootIndex = script.IndexOf("(10, NULL, N'Root')", StringComparison.Ordinal);
+        var childIndex = script.IndexOf("(5, 10, N'Child')", StringComparison.Ordinal);
+
+        Assert.True(rootIndex >= 0, "Expected script to include the root row.");
+        Assert.True(childIndex >= 0, "Expected script to include the child row.");
+        Assert.True(rootIndex < childIndex, "Expected parent row to precede child row for self-referencing hierarchy.");
+    }
+
     private static StaticEntitySeedTableDefinition CreateDefinition(
         string module,
         string schema,
