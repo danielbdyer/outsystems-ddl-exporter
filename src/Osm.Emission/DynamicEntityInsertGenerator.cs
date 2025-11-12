@@ -101,7 +101,7 @@ public sealed class DynamicEntityInsertGenerator
                 continue;
             }
 
-            var normalized = StaticEntitySeedDeterminizer.Normalize(new[] { new StaticEntityTableData(table.Definition, filteredRows) });
+            var normalized = EntitySeedDeterminizer.Normalize(new[] { new StaticEntityTableData(table.Definition, filteredRows) });
             if (normalized.IsDefaultOrEmpty)
             {
                 continue;

@@ -62,7 +62,7 @@ public class EmissionPipelineTests
         var generator = CreateSeedGenerator();
         var seedsRoot = Path.Combine(output.Path, "Seeds");
         Directory.CreateDirectory(seedsRoot);
-        var deterministicSeeds = StaticEntitySeedDeterminizer.Normalize(seedResult.Value);
+        var deterministicSeeds = EntitySeedDeterminizer.Normalize(seedResult.Value);
         var seedGroups = deterministicSeeds
             .GroupBy(data => data.Definition.Module, StringComparer.OrdinalIgnoreCase)
             .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
@@ -177,7 +177,7 @@ public class EmissionPipelineTests
             var generator = CreateSeedGenerator();
             var seedsRoot = Path.Combine(output.Path, "Seeds");
             Directory.CreateDirectory(seedsRoot);
-            var deterministicSeeds = StaticEntitySeedDeterminizer.Normalize(seedResult.Value);
+            var deterministicSeeds = EntitySeedDeterminizer.Normalize(seedResult.Value);
             var seedGroups = deterministicSeeds
                 .GroupBy(data => data.Definition.Module, StringComparer.OrdinalIgnoreCase)
                 .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);

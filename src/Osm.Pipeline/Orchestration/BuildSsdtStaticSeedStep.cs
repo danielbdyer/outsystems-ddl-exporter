@@ -74,7 +74,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
             return Result<StaticSeedsGenerated>.Failure(staticDataResult.Errors);
         }
 
-        var deterministicData = StaticEntitySeedDeterminizer.Normalize(staticDataResult.Value);
+        var deterministicData = EntitySeedDeterminizer.Normalize(staticDataResult.Value);
         var orderedData = EntityDependencySorter.SortByForeignKeys(deterministicData, model);
         var topologicalOrderingApplied = model is not null && !orderedData.IsDefaultOrEmpty;
         var seedOptions = state.Request.Scope.TighteningOptions.Emission.StaticSeeds;
