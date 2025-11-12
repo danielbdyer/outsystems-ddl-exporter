@@ -5,7 +5,7 @@ using System.Globalization;
 
 namespace Osm.Emission.Seeds;
 
-public static class StaticEntitySeedDeterminizer
+public static class EntitySeedDeterminizer
 {
     public static ImmutableArray<StaticEntityTableData> Normalize(IReadOnlyList<StaticEntityTableData> tables)
     {
