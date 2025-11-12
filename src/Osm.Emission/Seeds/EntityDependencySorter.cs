@@ -6,7 +6,7 @@ using Osm.Domain.Model;
 
 namespace Osm.Emission.Seeds;
 
-public static class StaticEntityDependencySorter
+public static class EntityDependencySorter
 {
     public static ImmutableArray<StaticEntityTableData> SortByForeignKeys(
         IReadOnlyList<StaticEntityTableData> tables,

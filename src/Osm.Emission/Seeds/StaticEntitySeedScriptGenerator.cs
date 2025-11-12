@@ -44,7 +44,7 @@ public sealed class StaticEntitySeedScriptGenerator
             return _templateService.ApplyBlocks("-- No static entities were discovered in the supplied model." + Environment.NewLine);
         }
 
-        var ordered = StaticEntityDependencySorter.SortByForeignKeys(tables, model);
+        var ordered = EntityDependencySorter.SortByForeignKeys(tables, model);
         if (ordered.IsDefaultOrEmpty)
         {
             return _templateService.ApplyBlocks("-- No static entities were discovered in the supplied model." + Environment.NewLine);

@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Osm.Emission.Tests;
 
-public sealed class StaticEntityDependencySorterTests
+public sealed class EntityDependencySorterTests
 {
     [Fact]
     public void SortByForeignKeys_ParentsPrecedeChildren()
@@ -82,7 +82,7 @@ public sealed class StaticEntityDependencySorterTests
         var module = ModuleModel.Create(new ModuleName("Sample"), isSystemModule: false, isActive: true, entities: new[] { parentEntity, childEntity }).Value;
         var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
 
-        var ordered = StaticEntityDependencySorter.SortByForeignKeys(tables, model);
+        var ordered = EntityDependencySorter.SortByForeignKeys(tables, model);
 
         Assert.Collection(
             ordered,

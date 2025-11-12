@@ -85,7 +85,7 @@ public sealed class DynamicEntityInsertGenerator
             return ImmutableArray<DynamicEntityInsertScript>.Empty;
         }
 
-        var orderedTables = StaticEntityDependencySorter.SortByForeignKeys(dataset.Tables, model);
+        var orderedTables = EntityDependencySorter.SortByForeignKeys(dataset.Tables, model);
         if (orderedTables.IsDefaultOrEmpty)
         {
             return ImmutableArray<DynamicEntityInsertScript>.Empty;
@@ -205,7 +205,7 @@ public sealed class DynamicEntityInsertGenerator
             return scripts;
         }
 
-        var orderedDefinitions = StaticEntityDependencySorter.SortByForeignKeys(
+        var orderedDefinitions = EntityDependencySorter.SortByForeignKeys(
             scripts.Select(script => new StaticEntityTableData(script.Definition, ImmutableArray<StaticEntityRow>.Empty)).ToImmutableArray(),
             model);
 
