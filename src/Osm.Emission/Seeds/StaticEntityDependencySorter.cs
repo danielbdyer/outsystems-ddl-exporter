@@ -99,8 +99,6 @@ public static class StaticEntityDependencySorter
                     continue;
                 }
 
-                var sourceEdges = edges[sourceKey];
-
                 foreach (var relationship in entity.Relationships)
                 {
                     if (relationship.ActualConstraints.IsDefaultOrEmpty)
@@ -138,9 +136,11 @@ public static class StaticEntityDependencySorter
                             continue;
                         }
 
-                        if (sourceEdges.Add(targetKey))
+                        var dependents = edges[targetKey];
+
+                        if (dependents.Add(sourceKey))
                         {
-                            indegree[targetKey] = indegree[targetKey] + 1;
+                            indegree[sourceKey] = indegree[sourceKey] + 1;
                         }
                     }
                 }
