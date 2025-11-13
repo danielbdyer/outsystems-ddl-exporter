@@ -57,6 +57,7 @@ public sealed class FullExportApplicationServiceTests
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
         var uatRunner = new RecordingUatUsersRunner();
         var schemaGraphFactory = new RecordingSchemaGraphFactory();
+        var coordinator = new FullExportCoordinator(schemaGraphFactory);
 
         var service = new FullExportApplicationService(
             profileService,
@@ -65,7 +66,7 @@ public sealed class FullExportApplicationServiceTests
             schemaApplyOrchestrator,
             modelDeserializer,
             uatRunner,
-            schemaGraphFactory);
+            coordinator);
 
             var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
             var overrides = new FullExportOverrides(
@@ -132,6 +133,7 @@ public sealed class FullExportApplicationServiceTests
         {
             GraphToReturn = new ModelSchemaGraph(model)
         };
+        var coordinator = new FullExportCoordinator(schemaGraphFactory);
 
         var service = new FullExportApplicationService(
             profileService,
@@ -140,7 +142,7 @@ public sealed class FullExportApplicationServiceTests
             schemaApplyOrchestrator,
             modelDeserializer,
             uatRunner,
-            schemaGraphFactory);
+            coordinator);
 
         var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
         var overrides = new FullExportOverrides(
@@ -201,6 +203,7 @@ public sealed class FullExportApplicationServiceTests
         var modelDeserializer = new StubModelJsonDeserializer(model);
         var uatRunner = new RecordingUatUsersRunner();
         var schemaGraphFactory = new RecordingSchemaGraphFactory();
+        var coordinator = new FullExportCoordinator(schemaGraphFactory);
 
         var configuration = CliConfiguration.Empty with
         {
@@ -217,7 +220,7 @@ public sealed class FullExportApplicationServiceTests
             schemaApplyOrchestrator,
             modelDeserializer,
             uatRunner,
-            schemaGraphFactory);
+            coordinator);
 
         var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
         var overrides = new FullExportOverrides(
@@ -287,7 +290,7 @@ public sealed class FullExportApplicationServiceTests
             schemaApplyOrchestrator,
             modelDeserializer,
             uatRunner,
-            schemaGraphFactory);
+            coordinator);
 
         var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
         var overrides = new FullExportOverrides(
@@ -347,6 +350,7 @@ public sealed class FullExportApplicationServiceTests
             ShouldFail = true,
             FailureErrors = ImmutableArray.Create(ValidationError.Create("uatUsers.schemaGraph.error", "graph failed"))
         };
+        var coordinator = new FullExportCoordinator(schemaGraphFactory);
 
         var service = new FullExportApplicationService(
             profileService,
@@ -355,7 +359,7 @@ public sealed class FullExportApplicationServiceTests
             schemaApplyOrchestrator,
             modelDeserializer,
             uatRunner,
-            schemaGraphFactory);
+            coordinator);
 
         var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
         var overrides = new FullExportOverrides(
@@ -412,6 +416,7 @@ public sealed class FullExportApplicationServiceTests
         var modelDeserializer = new StubModelJsonDeserializer(model);
         var uatRunner = new RecordingUatUsersRunner();
         var schemaGraphFactory = new RecordingSchemaGraphFactory();
+        var coordinator = new FullExportCoordinator(schemaGraphFactory);
 
         var service = new FullExportApplicationService(
             profileService,
@@ -420,7 +425,7 @@ public sealed class FullExportApplicationServiceTests
             schemaApplyOrchestrator,
             modelDeserializer,
             uatRunner,
-            schemaGraphFactory);
+            coordinator);
 
         var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
         var overrides = new FullExportOverrides(
