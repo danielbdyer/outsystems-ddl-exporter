@@ -8,7 +8,7 @@ namespace Osm.Emission.Seeds;
 
 public static class EntityDependencySorter
 {
-    public static ImmutableArray<StaticEntityTableData> SortByForeignKeys(
+    public static EntityDependencyOrderingResult SortByForeignKeys(
         IReadOnlyList<StaticEntityTableData> tables,
         OsmModel? model)
     {
@@ -19,16 +19,36 @@ public static class EntityDependencySorter
 
         if (tables.Count == 0)
         {
-            return ImmutableArray<StaticEntityTableData>.Empty;
+            return EntityDependencyOrderingResult.Empty(model is not null);
         }
 
         var materialized = tables
             .Where(static table => table is not null)
             .ToImmutableArray();
 
-        if (materialized.IsDefaultOrEmpty || model is null)
+        var alphabetical = SortAlphabetically(materialized);
+        if (materialized.IsDefaultOrEmpty)
         {
-            return SortAlphabetically(materialized);
+            return new EntityDependencyOrderingResult(
+                alphabetical,
+                NodeCount: 0,
+                EdgeCount: 0,
+                MissingEdgeCount: 0,
+                ModelAvailable: model is not null,
+                CycleDetected: false,
+                AlphabeticalFallbackApplied: false);
+        }
+
+        if (model is null)
+        {
+            return new EntityDependencyOrderingResult(
+                alphabetical,
+                materialized.Length,
+                EdgeCount: 0,
+                MissingEdgeCount: 0,
+                ModelAvailable: false,
+                CycleDetected: false,
+                AlphabeticalFallbackApplied: false);
         }
 
         var comparer = new TableKeyComparer();
@@ -43,11 +63,6 @@ public static class EntityDependencySorter
             }
         }
 
-        if (nodes.Count <= 1)
-        {
-            return SortAlphabetically(materialized);
-        }
-
         var edges = nodes.Keys.ToDictionary(
             static key => key,
             _ => new HashSet<TableKey>(comparer),
@@ -55,38 +70,62 @@ public static class EntityDependencySorter
 
         var indegree = nodes.Keys.ToDictionary(static key => key, _ => 0, comparer);
 
-        BuildDependencyGraph(model, nodes, edges, indegree, comparer);
+        var graphStats = BuildDependencyGraph(model, nodes, edges, indegree, comparer);
+
+        if (nodes.Count <= 1)
+        {
+            return new EntityDependencyOrderingResult(
+                alphabetical,
+                nodes.Count,
+                graphStats.EdgeCount,
+                graphStats.MissingEdgeCount,
+                ModelAvailable: true,
+                CycleDetected: false,
+                AlphabeticalFallbackApplied: false);
+        }
 
         var ordered = TopologicalSort(nodes, edges, indegree, comparer);
-        if (ordered.Length == nodes.Count)
+        var cycleDetected = ordered.Length != nodes.Count;
+        var fallbackApplied = false;
+
+        if (cycleDetected)
         {
-            return ordered;
+            // Cycles detected. Append remaining nodes using the alphabetical fallback
+            var remainingKeys = nodes.Keys
+                .Where(key => ordered.All(table => !TableKey.Equals(table.Definition, key)))
+                .ToArray();
+
+            if (remainingKeys.Length > 0)
+            {
+                var fallback = SortAlphabetically(remainingKeys.Select(key => nodes[key]).ToImmutableArray());
+                ordered = ordered.AddRange(fallback);
+                fallbackApplied = true;
+            }
         }
 
-        // Cycles detected. Append remaining nodes using the alphabetical fallback
-        var remainingKeys = nodes.Keys
-            .Where(key => ordered.All(table => !TableKey.Equals(table.Definition, key)))
-            .ToArray();
-
-        if (remainingKeys.Length == 0)
-        {
-            return ordered;
-        }
-
-        var fallback = SortAlphabetically(remainingKeys.Select(key => nodes[key]).ToImmutableArray());
-        return ordered.AddRange(fallback);
+        return new EntityDependencyOrderingResult(
+            ordered,
+            nodes.Count,
+            graphStats.EdgeCount,
+            graphStats.MissingEdgeCount,
+            ModelAvailable: true,
+            CycleDetected: cycleDetected,
+            AlphabeticalFallbackApplied: fallbackApplied);
     }
 
-    private static void BuildDependencyGraph(
+    private static DependencyGraphStatistics BuildDependencyGraph(
         OsmModel model,
         IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
         IDictionary<TableKey, HashSet<TableKey>> edges,
         IDictionary<TableKey, int> indegree,
         TableKeyComparer comparer)
     {
+        var edgeCount = 0;
+        var missingEdgeCount = 0;
+
         if (model.Modules.IsDefaultOrEmpty)
         {
-            return;
+            return new DependencyGraphStatistics(edgeCount, missingEdgeCount);
         }
 
         foreach (var module in model.Modules)
@@ -120,6 +159,7 @@ public static class EntityDependencySorter
                         var targetKey = TableKey.From(referencedSchema, constraint.ReferencedTable.Trim());
                         if (!nodes.ContainsKey(targetKey))
                         {
+                            missingEdgeCount++;
                             continue;
                         }
 
@@ -141,11 +181,14 @@ public static class EntityDependencySorter
                         if (dependents.Add(sourceKey))
                         {
                             indegree[sourceKey] = indegree[sourceKey] + 1;
+                            edgeCount++;
                         }
                     }
                 }
             }
         }
+
+        return new DependencyGraphStatistics(edgeCount, missingEdgeCount);
     }
 
     private static ImmutableArray<StaticEntityTableData> TopologicalSort(
@@ -154,7 +197,8 @@ public static class EntityDependencySorter
         IDictionary<TableKey, int> indegree,
         TableKeyComparer comparer)
     {
-        var result = ImmutableArray.CreateBuilder<StaticEntityTableData>(nodes.Count);
+        var result = ImmutableArray.CreateBuilder<StaticEntityTableData>();
+        result.Capacity = nodes.Count;
         var ready = nodes.Keys
             .Where(key => indegree.TryGetValue(key, out var degree) && degree == 0)
             .OrderBy(key => nodes[key], new StaticEntityTableComparer())
@@ -182,7 +226,7 @@ public static class EntityDependencySorter
             }
         }
 
-        return result.MoveToImmutable();
+        return result.ToImmutable();
     }
 
     private static void InsertSorted(
@@ -308,4 +352,30 @@ public static class EntityDependencySorter
                 StringComparison.OrdinalIgnoreCase);
         }
     }
+    public sealed record EntityDependencyOrderingResult(
+        ImmutableArray<StaticEntityTableData> Tables,
+        int NodeCount,
+        int EdgeCount,
+        int MissingEdgeCount,
+        bool ModelAvailable,
+        bool CycleDetected,
+        bool AlphabeticalFallbackApplied)
+    {
+        public static EntityDependencyOrderingResult Empty(bool modelAvailable)
+            => new(
+                ImmutableArray<StaticEntityTableData>.Empty,
+                NodeCount: 0,
+                EdgeCount: 0,
+                MissingEdgeCount: 0,
+                ModelAvailable: modelAvailable,
+                CycleDetected: false,
+                AlphabeticalFallbackApplied: false);
+
+        public bool TopologicalOrderingAttempted => ModelAvailable && NodeCount > 1 && EdgeCount > 0;
+
+        public bool TopologicalOrderingApplied =>
+            TopologicalOrderingAttempted && !CycleDetected && !AlphabeticalFallbackApplied;
+    }
+
+    private sealed record DependencyGraphStatistics(int EdgeCount, int MissingEdgeCount);
 }
