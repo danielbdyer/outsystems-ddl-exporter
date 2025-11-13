@@ -165,7 +165,7 @@ Use the repository’s edge-case fixtures to validate an SSDT project end-to-end
    include it via `Script.PostDeployment.sql`.
 3. Publish the SSDT project to a scratch database, then execute either the per-entity
    scripts or the consolidated `DynamicData.all.dynamic.sql` (depending on the mode).
-   Each batch uses `WITH (TABLOCK, CHECK_CONSTRAINTS)` and is written in foreign-key
+   Each batch uses `WITH (TABLOCK)` and is written in foreign-key
    order, so you can run the scripts with constraints already enforced. If your
    deployment policy requires staging without constraints, publish the base tables,
    apply the dynamic data, and then re-run the publish with constraint emission
