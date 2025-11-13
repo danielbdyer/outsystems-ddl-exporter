@@ -33,7 +33,8 @@ public sealed record FullExportApplicationResult(
     ExtractModelApplicationResult Extraction,
     SchemaApplyResult Apply,
     SchemaApplyOptions ApplyOptions,
-    UatUsersApplicationResult UatUsers);
+    UatUsersApplicationResult UatUsers,
+    string? UatUsersSkipReason = null);
 
 public sealed class FullExportApplicationService : PipelineApplicationServiceBase, IApplicationService<FullExportApplicationInput, FullExportApplicationResult>
 {
@@ -238,7 +239,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var applyStage = new Func<BuildSsdtApplicationResult, CancellationToken, Task<Result<SchemaApplyResult>>>(
             (build, ct) => _schemaApplyOrchestrator.ExecuteAsync(build.PipelineResult, applyOptions, log: null, ct));
 
-        var uatUsersOverrides = ResolveUatUsersOverrides(overrides.UatUsers, uatUsersConfiguration);
+        var (uatUsersOverrides, uatUsersSkipReason) = ResolveUatUsersOverrides(overrides.UatUsers, uatUsersConfiguration);
         Func<ExtractModelApplicationResult, BuildSsdtApplicationResult, ModelUserSchemaGraph, CancellationToken, Task<Result<UatUsersApplicationResult>>>? uatStage = null;
         if (uatUsersOverrides.Enabled)
         {
@@ -287,10 +288,11 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             outcome.Extraction,
             outcome.Apply,
             outcome.ApplyOptions,
-            outcome.UatUsers);
+            outcome.UatUsers,
+            uatUsersSkipReason);
     }
 
-    private static UatUsersOverrides ResolveUatUsersOverrides(
+    private static (UatUsersOverrides Overrides, string? SkipReason) ResolveUatUsersOverrides(
         UatUsersOverrides? overrides,
         UatUsersConfiguration configuration)
     {
@@ -300,7 +302,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
 
         if (!cliEnabled && !configurationEnabled)
         {
-            return UatUsersOverrides.Disabled;
+            return (UatUsersOverrides.Disabled, "disabled");
         }
 
         var connectionString = ResolveString(overrides?.ConnectionString, configuration.ConnectionString);
@@ -310,7 +312,10 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         if (string.IsNullOrWhiteSpace(connectionString)
             || (string.IsNullOrWhiteSpace(allowedUsersSqlPath) && string.IsNullOrWhiteSpace(allowedUserIdsPath)))
         {
-            return UatUsersOverrides.Disabled;
+            var reason = string.IsNullOrWhiteSpace(connectionString)
+                ? "missing-connection-string"
+                : "missing-user-source";
+            return (UatUsersOverrides.Disabled, reason);
         }
 
         var includeColumns = ResolveIncludeColumns(overrides?.IncludeColumns, configuration.IncludeColumns);
@@ -318,7 +323,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var userTable = ResolveString(overrides?.UserTable, configuration.UserTable) ?? "User";
         var userIdColumn = ResolveString(overrides?.UserIdColumn, configuration.UserIdColumn) ?? "Id";
 
-        return new UatUsersOverrides(
+        return (new UatUsersOverrides(
             Enabled: true,
             ConnectionString: connectionString,
             UserSchema: userSchema,
@@ -329,7 +334,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             AllowedUsersSqlPath: allowedUsersSqlPath,
             AllowedUserIdsPath: allowedUserIdsPath,
             SnapshotPath: ResolveString(overrides?.SnapshotPath, configuration.SnapshotPath),
-            UserEntityIdentifier: ResolveString(overrides?.UserEntityIdentifier, configuration.UserEntityIdentifier));
+            UserEntityIdentifier: ResolveString(overrides?.UserEntityIdentifier, configuration.UserEntityIdentifier)), null);
     }
 
     private static IReadOnlyList<string> ResolveIncludeColumns(

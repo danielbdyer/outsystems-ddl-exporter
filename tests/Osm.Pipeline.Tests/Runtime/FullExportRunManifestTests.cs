@@ -245,6 +245,17 @@ public sealed class FullExportRunManifestTests
         Assert.True(dynamicInsertStage.Artifacts.TryGetValue("scripts", out var insertScripts));
         Assert.Equal(string.Join(";", build.PipelineResult.DynamicInsertScriptPaths), insertScripts);
 
+        var applyStage = Assert.Single(manifest.Stages, stage => stage.Name == "schema-apply");
+        Assert.Equal("false", applyStage.Artifacts["enabled"]);
+        Assert.Equal("false", applyStage.Artifacts["attempted"]);
+        Assert.Equal(
+            Path.GetFullPath(safeScriptPath),
+            Path.GetFullPath(applyStage.Artifacts["safeScriptPath"]!));
+
+        var uatStage = Assert.Single(manifest.Stages, stage => stage.Name == "uat-users");
+        Assert.Equal("false", uatStage.Artifacts["enabled"]);
+        Assert.Equal("disabled", uatStage.Artifacts["reason"]);
+
         var dynamicFiles = Directory.GetFiles(dynamicRoot, "*", SearchOption.AllDirectories);
         Assert.DoesNotContain(dynamicFiles, path => Path.GetFullPath(path).StartsWith(seedRootFullPath, StringComparison.OrdinalIgnoreCase));
 
@@ -390,6 +401,7 @@ public sealed class FullExportRunManifestTests
 
         var uatStage = Assert.Single(manifest.Stages, stage => stage.Name == "uat-users");
         Assert.Equal("true", uatStage.Artifacts["enabled"]);
+        Assert.False(uatStage.Artifacts.ContainsKey("reason"));
         Assert.Equal(Path.GetFullPath(uatRoot), Path.GetFullPath(uatStage.Artifacts["artifactRoot"]!));
         Assert.Equal("1", uatStage.Artifacts["allowedCount"]);
         Assert.Equal("1", uatStage.Artifacts["orphanCount"]);
@@ -403,6 +415,251 @@ public sealed class FullExportRunManifestTests
         Assert.Contains(manifest.DynamicArtifacts, artifact => artifact.Name == "uat-users-preview");
         Assert.Contains(manifest.DynamicArtifacts, artifact => artifact.Name == "uat-users-script");
         Assert.Contains(manifest.DynamicArtifacts, artifact => artifact.Name == "uat-users-catalog");
+    }
+
+    [Fact]
+    public void Create_RecordsSchemaApplyArtifactsWhenAttempted()
+    {
+        using var tempDir = new TempDirectory();
+        var dynamicRoot = Path.Combine(tempDir.Path, "Dynamic");
+        Directory.CreateDirectory(dynamicRoot);
+
+        var modelPath = Path.Combine(tempDir.Path, "model.json");
+        File.WriteAllText(modelPath, "{}");
+        var profilePath = Path.Combine(tempDir.Path, "profile.json");
+        File.WriteAllText(profilePath, "{}");
+        var safeScriptPath = Path.Combine(dynamicRoot, "Safe.sql");
+        File.WriteAllText(safeScriptPath, "PRINT 'safe';");
+        var remediationScriptPath = Path.Combine(dynamicRoot, "Remediation.sql");
+        File.WriteAllText(remediationScriptPath, "PRINT 'remediation';");
+
+        var staticSeedPath = Path.Combine(dynamicRoot, "Seeds", "Module.seed.sql");
+        Directory.CreateDirectory(Path.GetDirectoryName(staticSeedPath)!);
+        File.WriteAllText(staticSeedPath, "PRINT 'seed';");
+        var staticSeedPaths = ImmutableArray.Create(staticSeedPath);
+
+        var extraction = CreateExtractionApplicationResult(modelPath);
+        var capture = CreateCaptureApplicationResult(profilePath, modelPath, Path.Combine(tempDir.Path, "Profiles"));
+        var build = CreateBuildApplicationResult(dynamicRoot, modelPath, profilePath, safeScriptPath, remediationScriptPath, staticSeedPaths);
+
+        var schemaApply = new SchemaApplyResult(
+            Attempted: true,
+            SafeScriptApplied: true,
+            StaticSeedsApplied: true,
+            AppliedScripts: ImmutableArray.Create(safeScriptPath),
+            AppliedSeedScripts: staticSeedPaths,
+            SkippedScripts: ImmutableArray<string>.Empty,
+            Warnings: ImmutableArray.Create("seed drift warning"),
+            PendingRemediationCount: 1,
+            SafeScriptPath: safeScriptPath,
+            RemediationScriptPath: remediationScriptPath,
+            StaticSeedScriptPaths: staticSeedPaths,
+            Duration: TimeSpan.FromSeconds(5),
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.Authoritative,
+            StaticSeedValidation: StaticSeedValidationSummary.Success);
+
+        var applyOptions = new SchemaApplyOptions(
+            Enabled: true,
+            ConnectionString: "Server=.;Database=Test;",
+            Authentication: new SqlAuthenticationSettings(null, null, "osm-test", null),
+            CommandTimeoutSeconds: 30);
+
+        var applicationResult = new FullExportApplicationResult(
+            build,
+            capture,
+            extraction,
+            schemaApply,
+            applyOptions,
+            UatUsersApplicationResult.Disabled,
+            "disabled");
+
+        var verbResult = new FullExportVerbResult(
+            new CliConfigurationContext(CliConfiguration.Empty, "config/full-export.json"),
+            applicationResult);
+
+        var manifestPath = Path.Combine(dynamicRoot, FullExportVerb.RunManifestFileName);
+        File.WriteAllText(manifestPath, "{}");
+
+        var artifactList = new List<PipelineArtifact>
+        {
+            new("model-json", extraction.OutputPath, "application/json"),
+            new("profile", capture.PipelineResult.ProfilePath, "application/json"),
+            new("profile-manifest", capture.PipelineResult.ManifestPath, "application/json"),
+            new("opportunity-safe", safeScriptPath, "application/sql"),
+            new("opportunity-remediation", remediationScriptPath, "application/sql"),
+            new("manifest", Path.Combine(dynamicRoot, "manifest.json"), "application/json"),
+            new("full-export-manifest", manifestPath, "application/json")
+        };
+
+        foreach (var insertPath in build.PipelineResult.DynamicInsertScriptPaths)
+        {
+            artifactList.Add(new PipelineArtifact("dynamic-insert", insertPath, "application/sql"));
+        }
+
+        foreach (var seedPath in staticSeedPaths)
+        {
+            artifactList.Add(new PipelineArtifact("static-seed", seedPath, "application/sql"));
+        }
+
+        var manifest = FullExportRunManifest.Create(verbResult, artifactList, TimeProvider.System);
+
+        var schemaStage = Assert.Single(manifest.Stages, stage => stage.Name == "schema-apply");
+        Assert.Equal("true", schemaStage.Artifacts["enabled"]);
+        Assert.Equal("true", schemaStage.Artifacts["attempted"]);
+        Assert.Equal("1", schemaStage.Artifacts["appliedScriptCount"]);
+        Assert.Equal("1", schemaStage.Artifacts["appliedSeedScriptCount"]);
+        Assert.Equal("Authoritative", schemaStage.Artifacts["staticSeedMode"]);
+        Assert.Contains("seed drift warning", schemaStage.Warnings);
+    }
+
+    [Fact]
+    public void Create_SchemaApplyStageCapturesValidationFailure()
+    {
+        using var tempDir = new TempDirectory();
+        var dynamicRoot = Path.Combine(tempDir.Path, "Dynamic");
+        Directory.CreateDirectory(dynamicRoot);
+
+        var modelPath = Path.Combine(tempDir.Path, "model.json");
+        File.WriteAllText(modelPath, "{}");
+        var profilePath = Path.Combine(tempDir.Path, "profile.json");
+        File.WriteAllText(profilePath, "{}");
+        var safeScriptPath = Path.Combine(dynamicRoot, "Safe.sql");
+        File.WriteAllText(safeScriptPath, "PRINT 'safe';");
+        var remediationScriptPath = Path.Combine(dynamicRoot, "Remediation.sql");
+        File.WriteAllText(remediationScriptPath, "PRINT 'remediation';");
+
+        var staticSeedPath = Path.Combine(dynamicRoot, "Seeds", "Module.seed.sql");
+        Directory.CreateDirectory(Path.GetDirectoryName(staticSeedPath)!);
+        File.WriteAllText(staticSeedPath, "PRINT 'seed';");
+        var staticSeedPaths = ImmutableArray.Create(staticSeedPath);
+
+        var extraction = CreateExtractionApplicationResult(modelPath);
+        var capture = CreateCaptureApplicationResult(profilePath, modelPath, Path.Combine(tempDir.Path, "Profiles"));
+        var build = CreateBuildApplicationResult(dynamicRoot, modelPath, profilePath, safeScriptPath, remediationScriptPath, staticSeedPaths);
+
+        var schemaApply = new SchemaApplyResult(
+            Attempted: true,
+            SafeScriptApplied: false,
+            StaticSeedsApplied: false,
+            AppliedScripts: ImmutableArray<string>.Empty,
+            AppliedSeedScripts: ImmutableArray<string>.Empty,
+            SkippedScripts: staticSeedPaths,
+            Warnings: ImmutableArray.Create("Static seed validation failed."),
+            PendingRemediationCount: 0,
+            SafeScriptPath: safeScriptPath,
+            RemediationScriptPath: remediationScriptPath,
+            StaticSeedScriptPaths: staticSeedPaths,
+            Duration: TimeSpan.FromSeconds(2),
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.NonDestructive,
+            StaticSeedValidation: StaticSeedValidationSummary.Failure("seed validation failed"));
+
+        var applicationResult = new FullExportApplicationResult(
+            build,
+            capture,
+            extraction,
+            schemaApply,
+            SchemaApplyOptions.Disabled,
+            UatUsersApplicationResult.Disabled,
+            "disabled");
+
+        var verbResult = new FullExportVerbResult(
+            new CliConfigurationContext(CliConfiguration.Empty, "config/full-export.json"),
+            applicationResult);
+
+        var manifestPath = Path.Combine(dynamicRoot, FullExportVerb.RunManifestFileName);
+        File.WriteAllText(manifestPath, "{}");
+
+        var artifactList = new List<PipelineArtifact>
+        {
+            new("model-json", extraction.OutputPath, "application/json"),
+            new("profile", capture.PipelineResult.ProfilePath, "application/json"),
+            new("profile-manifest", capture.PipelineResult.ManifestPath, "application/json"),
+            new("manifest", Path.Combine(dynamicRoot, "manifest.json"), "application/json"),
+            new("full-export-manifest", manifestPath, "application/json"),
+            new("opportunity-safe", safeScriptPath, "application/sql")
+        };
+
+        var manifest = FullExportRunManifest.Create(verbResult, artifactList, TimeProvider.System);
+
+        var schemaStage = Assert.Single(manifest.Stages, stage => stage.Name == "schema-apply");
+        Assert.Equal("false", schemaStage.Artifacts["safeScriptApplied"]);
+        Assert.Equal("False", schemaStage.Artifacts["staticSeedsApplied"]);
+        Assert.Equal("1", schemaStage.Artifacts["skippedScriptCount"]);
+        Assert.Equal("True", schemaStage.Artifacts["staticSeedValidationFailed"]);
+        Assert.Contains("seed validation failed", schemaStage.Artifacts["staticSeedValidationFailure"]);
+        Assert.Contains("Static seed validation failed.", schemaStage.Warnings);
+    }
+
+    [Fact]
+    public void Create_RecordsUatUsersSkipReasonWhenDisabled()
+    {
+        using var tempDir = new TempDirectory();
+        var dynamicRoot = Path.Combine(tempDir.Path, "Dynamic");
+        Directory.CreateDirectory(dynamicRoot);
+
+        var modelPath = Path.Combine(tempDir.Path, "model.json");
+        File.WriteAllText(modelPath, "{}");
+        var profilePath = Path.Combine(tempDir.Path, "profile.json");
+        File.WriteAllText(profilePath, "{}");
+        var safeScriptPath = Path.Combine(dynamicRoot, "Safe.sql");
+        File.WriteAllText(safeScriptPath, "PRINT 'safe';");
+        var remediationScriptPath = Path.Combine(dynamicRoot, "Remediation.sql");
+        File.WriteAllText(remediationScriptPath, "PRINT 'remediation';");
+
+        var staticSeedPath = Path.Combine(dynamicRoot, "Seeds", "Module.seed.sql");
+        Directory.CreateDirectory(Path.GetDirectoryName(staticSeedPath)!);
+        File.WriteAllText(staticSeedPath, "PRINT 'seed';");
+        var staticSeedPaths = ImmutableArray.Create(staticSeedPath);
+
+        var extraction = CreateExtractionApplicationResult(modelPath);
+        var capture = CreateCaptureApplicationResult(profilePath, modelPath, Path.Combine(tempDir.Path, "Profiles"));
+        var build = CreateBuildApplicationResult(dynamicRoot, modelPath, profilePath, safeScriptPath, remediationScriptPath, staticSeedPaths);
+
+        var schemaApply = new SchemaApplyResult(
+            Attempted: false,
+            SafeScriptApplied: false,
+            StaticSeedsApplied: false,
+            AppliedScripts: ImmutableArray<string>.Empty,
+            AppliedSeedScripts: ImmutableArray<string>.Empty,
+            SkippedScripts: ImmutableArray<string>.Empty,
+            Warnings: ImmutableArray<string>.Empty,
+            PendingRemediationCount: 0,
+            SafeScriptPath: safeScriptPath,
+            RemediationScriptPath: remediationScriptPath,
+            StaticSeedScriptPaths: staticSeedPaths,
+            Duration: TimeSpan.Zero,
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.NonDestructive,
+            StaticSeedValidation: StaticSeedValidationSummary.NotAttempted);
+
+        var applicationResult = new FullExportApplicationResult(
+            build,
+            capture,
+            extraction,
+            schemaApply,
+            SchemaApplyOptions.Disabled,
+            UatUsersApplicationResult.Disabled,
+            "missing-connection-string");
+
+        var verbResult = new FullExportVerbResult(
+            new CliConfigurationContext(CliConfiguration.Empty, "config/full-export.json"),
+            applicationResult);
+
+        var manifestPath = Path.Combine(dynamicRoot, FullExportVerb.RunManifestFileName);
+        File.WriteAllText(manifestPath, "{}");
+
+        var artifactList = new List<PipelineArtifact>
+        {
+            new("model-json", extraction.OutputPath, "application/json"),
+            new("profile", capture.PipelineResult.ProfilePath, "application/json"),
+            new("profile-manifest", capture.PipelineResult.ManifestPath, "application/json"),
+            new("full-export-manifest", manifestPath, "application/json")
+        };
+
+        var manifest = FullExportRunManifest.Create(verbResult, artifactList, TimeProvider.System);
+
+        var uatStage = Assert.Single(manifest.Stages, stage => stage.Name == "uat-users");
+        Assert.Equal("false", uatStage.Artifacts["enabled"]);
+        Assert.Equal("missing-connection-string", uatStage.Artifacts["reason"]);
     }
 
     private static ExtractModelApplicationResult CreateExtractionApplicationResult(string modelPath)

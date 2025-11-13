@@ -83,10 +83,12 @@ public sealed record FullExportRunManifest(
         var extractionStage = CreateExtractionStage(result.ApplicationResult.Extraction);
         var profileStage = CreateProfileStage(result.ApplicationResult.Profile);
         var buildStage = CreateBuildStage(result.ApplicationResult.Build);
+        var schemaApplyStage = CreateSchemaApplyStage(result.ApplicationResult);
         var stagesBuilder = ImmutableArray.CreateBuilder<FullExportStageManifest>();
         stagesBuilder.Add(extractionStage);
         stagesBuilder.Add(profileStage);
         stagesBuilder.Add(buildStage);
+        stagesBuilder.Add(schemaApplyStage);
 
         var staticSeedStage = CreateStaticSeedStage(result.ApplicationResult.Build);
         if (staticSeedStage is not null)
@@ -100,11 +102,8 @@ public sealed record FullExportRunManifest(
             stagesBuilder.Add(dynamicInsertStage);
         }
 
-        var uatUsersStage = CreateUatUsersStage(result.ApplicationResult.UatUsers);
-        if (uatUsersStage is not null)
-        {
-            stagesBuilder.Add(uatUsersStage);
-        }
+        var uatUsersStage = CreateUatUsersStage(result.ApplicationResult);
+        stagesBuilder.Add(uatUsersStage);
 
         var stages = stagesBuilder.ToImmutable();
         var warnings = stages
@@ -123,57 +122,147 @@ public sealed record FullExportRunManifest(
             warnings);
     }
 
-    private static FullExportStageManifest? CreateUatUsersStage(UatUsersApplicationResult result)
+    private static FullExportStageManifest CreateSchemaApplyStage(FullExportApplicationResult result)
     {
         if (result is null)
         {
             throw new ArgumentNullException(nameof(result));
         }
 
-        if (!result.Executed || result.Context is null)
-        {
-            return null;
-        }
-
-        var context = result.Context;
+        var applyResult = result.Apply ?? throw new ArgumentNullException(nameof(result.Apply));
+        var applyOptions = result.ApplyOptions ?? SchemaApplyOptions.Disabled;
         var artifacts = ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.OrdinalIgnoreCase);
-        var uatRoot = Path.Combine(context.Artifacts.Root, "uat-users");
 
-        artifacts["enabled"] = "true";
-        artifacts["artifactRoot"] = Path.GetFullPath(uatRoot);
-        artifacts["allowedCount"] = context.AllowedUserIds.Count.ToString(CultureInfo.InvariantCulture);
-        artifacts["orphanCount"] = context.OrphanUserIds.Count.ToString(CultureInfo.InvariantCulture);
-        artifacts["userSchema"] = context.UserSchema;
-        artifacts["userTable"] = context.UserTable;
-        artifacts["userIdColumn"] = context.UserIdColumn;
-        artifacts["sourceFingerprint"] = context.SourceFingerprint;
-        artifacts["fromLiveMetadata"] = context.FromLiveMetadata.ToString(CultureInfo.InvariantCulture);
+        artifacts["enabled"] = applyOptions.Enabled.ToString(CultureInfo.InvariantCulture);
+        artifacts["attempted"] = applyResult.Attempted.ToString(CultureInfo.InvariantCulture);
+        artifacts["safeScriptApplied"] = applyResult.SafeScriptApplied.ToString(CultureInfo.InvariantCulture);
+        artifacts["staticSeedsApplied"] = applyResult.StaticSeedsApplied.ToString(CultureInfo.InvariantCulture);
+        artifacts["pendingRemediationCount"] = applyResult.PendingRemediationCount
+            .ToString(CultureInfo.InvariantCulture);
+        artifacts["staticSeedMode"] = applyResult.StaticSeedSynchronizationMode.ToString();
+        artifacts["staticSeedValidationAttempted"] = applyResult.StaticSeedValidation.Attempted
+            .ToString(CultureInfo.InvariantCulture);
+        artifacts["staticSeedValidationFailed"] = applyResult.StaticSeedValidation.Failed
+            .ToString(CultureInfo.InvariantCulture);
 
-        AddPathIfPresent(artifacts, "userMapPath", context.UserMapPath);
-        var defaultMapPath = context.Artifacts.GetDefaultUserMapPath();
-        AddPathIfPresent(artifacts, "defaultUserMapPath", defaultMapPath);
-        AddPathIfPresent(artifacts, "userMapTemplatePath", Path.Combine(uatRoot, "00_user_map.template.csv"));
-        AddPathIfPresent(artifacts, "previewPath", Path.Combine(uatRoot, "01_preview.csv"));
-        AddPathIfPresent(artifacts, "applyScriptPath", Path.Combine(uatRoot, "02_apply_user_remap.sql"));
-        AddPathIfPresent(artifacts, "catalogPath", Path.Combine(uatRoot, "03_catalog.txt"));
-        AddPathIfPresent(artifacts, "allowedUsersSqlPath", context.AllowedUsersSqlPath);
-        AddPathIfPresent(artifacts, "allowedUserIdsPath", context.AllowedUserIdsPath);
-        AddPathIfPresent(artifacts, "snapshotPath", context.SnapshotPath);
-
-        if (context.IncludeColumns is { Count: > 0 } includeColumns)
+        if (!string.IsNullOrWhiteSpace(applyResult.StaticSeedValidation.FailureReason))
         {
-            var ordered = includeColumns
-                .OrderBy(static column => column, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            artifacts["includeColumns"] = string.Join(",", ordered);
+            artifacts["staticSeedValidationFailure"] = applyResult.StaticSeedValidation.FailureReason;
         }
 
-        if (!string.IsNullOrWhiteSpace(context.UserEntityIdentifier))
+        var appliedScriptCount = applyResult.AppliedScripts.IsDefaultOrEmpty
+            ? 0
+            : applyResult.AppliedScripts.Length;
+        artifacts["appliedScriptCount"] = appliedScriptCount.ToString(CultureInfo.InvariantCulture);
+        if (appliedScriptCount > 0)
         {
-            artifacts["userEntityIdentifier"] = context.UserEntityIdentifier;
+            artifacts["appliedScripts"] = string.Join(";", applyResult.AppliedScripts);
         }
 
-        var warnings = result.Warnings
+        var appliedSeedCount = applyResult.AppliedSeedScripts.IsDefaultOrEmpty
+            ? 0
+            : applyResult.AppliedSeedScripts.Length;
+        artifacts["appliedSeedScriptCount"] = appliedSeedCount.ToString(CultureInfo.InvariantCulture);
+        if (appliedSeedCount > 0)
+        {
+            artifacts["appliedSeedScripts"] = string.Join(";", applyResult.AppliedSeedScripts);
+        }
+
+        var skippedCount = applyResult.SkippedScripts.IsDefaultOrEmpty ? 0 : applyResult.SkippedScripts.Length;
+        artifacts["skippedScriptCount"] = skippedCount.ToString(CultureInfo.InvariantCulture);
+        if (skippedCount > 0)
+        {
+            artifacts["skippedScripts"] = string.Join(";", applyResult.SkippedScripts);
+        }
+
+        var staticSeedCount = applyResult.StaticSeedScriptPaths.IsDefaultOrEmpty
+            ? 0
+            : applyResult.StaticSeedScriptPaths.Length;
+        artifacts["staticSeedScriptCount"] = staticSeedCount.ToString(CultureInfo.InvariantCulture);
+        if (staticSeedCount > 0)
+        {
+            artifacts["staticSeedScripts"] = string.Join(";", applyResult.StaticSeedScriptPaths);
+        }
+
+        AddPathIfPresent(artifacts, "safeScriptPath", applyResult.SafeScriptPath);
+        AddPathIfPresent(artifacts, "remediationScriptPath", applyResult.RemediationScriptPath);
+
+        var warnings = applyResult.Warnings
+            .Where(static warning => !string.IsNullOrWhiteSpace(warning))
+            .Select(static warning => warning!)
+            .ToImmutableArray();
+
+        return new FullExportStageManifest(
+            Name: "schema-apply",
+            StartedAtUtc: null,
+            CompletedAtUtc: null,
+            Duration: applyResult.Duration,
+            Warnings: warnings,
+            Artifacts: artifacts.ToImmutable());
+    }
+
+    private static FullExportStageManifest CreateUatUsersStage(FullExportApplicationResult result)
+    {
+        if (result is null)
+        {
+            throw new ArgumentNullException(nameof(result));
+        }
+
+        var uatResult = result.UatUsers ?? throw new ArgumentNullException(nameof(result.UatUsers));
+        var artifacts = ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var context = uatResult.Context;
+        var enabled = uatResult.Executed && context is not null;
+
+        artifacts["enabled"] = enabled.ToString(CultureInfo.InvariantCulture);
+
+        if (!enabled)
+        {
+            var reason = result.UatUsersSkipReason;
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                reason = uatResult.Executed ? "missing-context" : "disabled";
+            }
+
+            artifacts["reason"] = reason;
+        }
+        else
+        {
+            var uatRoot = Path.Combine(context.Artifacts.Root, "uat-users");
+            artifacts["artifactRoot"] = Path.GetFullPath(uatRoot);
+            artifacts["allowedCount"] = context.AllowedUserIds.Count.ToString(CultureInfo.InvariantCulture);
+            artifacts["orphanCount"] = context.OrphanUserIds.Count.ToString(CultureInfo.InvariantCulture);
+            artifacts["userSchema"] = context.UserSchema;
+            artifacts["userTable"] = context.UserTable;
+            artifacts["userIdColumn"] = context.UserIdColumn;
+            artifacts["sourceFingerprint"] = context.SourceFingerprint;
+            artifacts["fromLiveMetadata"] = context.FromLiveMetadata.ToString(CultureInfo.InvariantCulture);
+
+            AddPathIfPresent(artifacts, "userMapPath", context.UserMapPath);
+            var defaultMapPath = context.Artifacts.GetDefaultUserMapPath();
+            AddPathIfPresent(artifacts, "defaultUserMapPath", defaultMapPath);
+            AddPathIfPresent(artifacts, "userMapTemplatePath", Path.Combine(uatRoot, "00_user_map.template.csv"));
+            AddPathIfPresent(artifacts, "previewPath", Path.Combine(uatRoot, "01_preview.csv"));
+            AddPathIfPresent(artifacts, "applyScriptPath", Path.Combine(uatRoot, "02_apply_user_remap.sql"));
+            AddPathIfPresent(artifacts, "catalogPath", Path.Combine(uatRoot, "03_catalog.txt"));
+            AddPathIfPresent(artifacts, "allowedUsersSqlPath", context.AllowedUsersSqlPath);
+            AddPathIfPresent(artifacts, "allowedUserIdsPath", context.AllowedUserIdsPath);
+            AddPathIfPresent(artifacts, "snapshotPath", context.SnapshotPath);
+
+            if (context.IncludeColumns is { Count: > 0 } includeColumns)
+            {
+                var ordered = includeColumns
+                    .OrderBy(static column => column, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                artifacts["includeColumns"] = string.Join(",", ordered);
+            }
+
+            if (!string.IsNullOrWhiteSpace(context.UserEntityIdentifier))
+            {
+                artifacts["userEntityIdentifier"] = context.UserEntityIdentifier;
+            }
+        }
+
+        var warnings = uatResult.Warnings
             .Where(static warning => !string.IsNullOrWhiteSpace(warning))
             .Select(static warning => warning!)
             .ToImmutableArray();
