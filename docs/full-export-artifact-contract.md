@@ -39,12 +39,20 @@ payloads independently:
 
 * `build-ssdt` — aggregate SSDT emission status plus manifest, decision log, safe /
   remediation scripts, and telemetry references.
+* `schema-apply` — surfaces `enabled`, `attempted`, `safeScriptApplied`,
+  `staticSeedsApplied`, `pendingRemediationCount`, and the resolved safe /
+  remediation / static-seed script paths so operators can audit the deployment
+  stage without replaying console output.
 * `static-seed` — exposes seed emission metadata with `root`, `ordering`,
   `scriptCount`, and `scripts` entries that capture the resolved directory, ordering
   mode, total script count, and absolute paths.
 * `dynamic-insert` — exposes the live data replay bundle with `root`, `mode`,
   `ordering`, `scriptCount`, and `scripts` entries so deployments can run or skip
-  those payloads without touching the SSDT stage. 【F:src/Osm.Pipeline/Runtime/FullExportRunManifest.cs†L12-L420】
+  those payloads without touching the SSDT stage.
+* `uat-users` — emitted regardless of whether the UAT pipeline runs. The stage
+  records `enabled` plus a `reason` when disabled (for example,
+  `missing-connection-string`), allowing automation to differentiate between an
+  intentional skip and a pipeline failure. 【F:src/Osm.Pipeline/Runtime/FullExportRunManifest.cs†L12-L470】
 
 ## Metadata and CLI Summary
 
@@ -58,10 +66,14 @@ entries:
 | `build.dynamicInsertRoot` | Directory containing dynamic replay scripts (one per entity) generated from live data. |
 | `build.dynamicInsertMode` | Emission mode used for dynamic inserts (`PerEntity` or `SingleFile`). |
 | `build.sqlProjectPath` | Full path to the synthesized `.sqlproj` that references the emitted modules and seed scripts. |
+| `apply.enabled` | Mirrors the `schema-apply` stage flag so CI metadata can report whether an apply connection was configured. |
+| `uatUsers.reason` | Captures the skip reason from the `uat-users` stage when the remapping pipeline is disabled. |
 
 The CLI `SSDT Emission Summary` explicitly labels the seed artifacts and prints the
 manifest semantics block so operators can validate the directory split without
-inspecting the manifest JSON directly. 【F:src/Osm.Pipeline/Runtime/Verbs/FullExportVerb.cs†L196-L212】【F:src/Osm.Cli/Commands/CommandConsole.cs†L394-L429】
+inspecting the manifest JSON directly. Metadata emitted for `apply.*` and
+`uatUsers.*` keys now flows from the manifest stages to ensure telemetry matches
+the persisted run manifest. 【F:src/Osm.Pipeline/Runtime/Verbs/FullExportVerb.cs†L196-L340】【F:src/Osm.Cli/Commands/CommandConsole.cs†L394-L429】
 
 Downstream tooling can rely on these fields to stage seed scripts independently of the
 SSDT output while still applying the full export bundle on first-run deployments.

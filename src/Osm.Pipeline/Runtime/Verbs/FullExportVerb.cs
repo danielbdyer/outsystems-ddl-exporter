@@ -39,6 +39,7 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
     private readonly ICliConfigurationService _configurationService;
     private readonly IApplicationService<FullExportApplicationInput, FullExportApplicationResult> _applicationService;
     private readonly TimeProvider _timeProvider;
+    private FullExportRunManifest? _lastRunManifest;
 
     public FullExportVerb(
         ICliConfigurationService configurationService,
@@ -255,7 +256,50 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             {
                 builder["build.sqlProjectPath"] = buildPipeline.SqlProjectPath;
             }
-            builder["uatUsers.enabled"] = application.UatUsers.Executed ? "true" : "false";
+            var manifest = _lastRunManifest;
+            _lastRunManifest = null;
+
+            var applyArtifacts = manifest?.Stages
+                .FirstOrDefault(static stage => string.Equals(stage.Name, "schema-apply", StringComparison.OrdinalIgnoreCase))
+                ?.Artifacts;
+
+            var uatStageArtifacts = manifest?.Stages
+                .FirstOrDefault(static stage => string.Equals(stage.Name, "uat-users", StringComparison.OrdinalIgnoreCase))
+                ?.Artifacts;
+
+            if (applyArtifacts is not null)
+            {
+                CopyArtifact(applyArtifacts, "enabled", "apply.enabled");
+                CopyArtifact(applyArtifacts, "attempted", "apply.attempted");
+                CopyArtifact(applyArtifacts, "safeScriptApplied", "apply.safeScriptApplied");
+                CopyArtifact(applyArtifacts, "staticSeedsApplied", "apply.staticSeedsApplied");
+                CopyArtifact(applyArtifacts, "pendingRemediationCount", "apply.pendingRemediationCount");
+            }
+            else
+            {
+                builder["apply.enabled"] = application.ApplyOptions.Enabled
+                    .ToString(CultureInfo.InvariantCulture);
+                builder["apply.attempted"] = application.Apply.Attempted.ToString(CultureInfo.InvariantCulture);
+                builder["apply.safeScriptApplied"] = application.Apply.SafeScriptApplied.ToString(CultureInfo.InvariantCulture);
+                builder["apply.staticSeedsApplied"] = application.Apply.StaticSeedsApplied.ToString(CultureInfo.InvariantCulture);
+                builder["apply.pendingRemediationCount"] = application.Apply.PendingRemediationCount
+                    .ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (uatStageArtifacts is not null)
+            {
+                CopyArtifact(uatStageArtifacts, "enabled", "uatUsers.enabled");
+                CopyArtifact(uatStageArtifacts, "reason", "uatUsers.reason");
+            }
+            else
+            {
+                builder["uatUsers.enabled"] = application.UatUsers.Executed ? "true" : "false";
+                if (!string.IsNullOrWhiteSpace(application.UatUsersSkipReason))
+                {
+                    builder["uatUsers.reason"] = application.UatUsersSkipReason;
+                }
+            }
+
             if (application.UatUsers.Executed && application.UatUsers.Context is { } uatContext)
             {
                 var uatRoot = Path.Combine(uatContext.Artifacts.Root, "uat-users");
@@ -317,10 +361,16 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             builder["profile.profilerProvider"] = application.Profile.ProfilerProvider;
             builder["extract.outputPath"] = application.Extraction.OutputPath;
             builder["extract.extractedAtUtc"] = application.Extraction.ExtractionResult.ExtractedAtUtc.ToString("O", CultureInfo.InvariantCulture);
-            builder["apply.attempted"] = application.Apply.Attempted.ToString(CultureInfo.InvariantCulture);
-            builder["apply.safeScriptApplied"] = application.Apply.SafeScriptApplied.ToString(CultureInfo.InvariantCulture);
-            builder["apply.staticSeedsApplied"] = application.Apply.StaticSeedsApplied.ToString(CultureInfo.InvariantCulture);
-            builder["apply.pendingRemediationCount"] = application.Apply.PendingRemediationCount.ToString(CultureInfo.InvariantCulture);
+            void CopyArtifact(
+                ImmutableDictionary<string, string?> artifacts,
+                string sourceKey,
+                string targetKey)
+            {
+                if (artifacts.TryGetValue(sourceKey, out var value) && !string.IsNullOrWhiteSpace(value))
+                {
+                    builder[targetKey] = value;
+                }
+            }
         }
 
         return builder.ToImmutable();
@@ -347,6 +397,7 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
         artifactSnapshot.Add(manifestArtifact);
 
         var manifest = FullExportRunManifest.Create(result, artifactSnapshot, _timeProvider);
+        _lastRunManifest = manifest;
 
         var directory = Path.GetDirectoryName(manifestPath);
         if (!string.IsNullOrWhiteSpace(directory))
