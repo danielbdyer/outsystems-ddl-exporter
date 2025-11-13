@@ -732,7 +732,7 @@ public sealed class DynamicEntityInsertGenerator
         {
             var batchRows = batches[batchIndex];
             builder.AppendLine($"PRINT 'Applying batch {batchIndex + 1} for {targetIdentifier} ({batchRows.Length} rows)';");
-            builder.AppendLine($"INSERT INTO {targetIdentifier} WITH (TABLOCK, CHECK_CONSTRAINTS)");
+            builder.AppendLine($"INSERT INTO {targetIdentifier} WITH (TABLOCK)");
             builder.Append("    (");
             builder.Append(string.Join(", ", columnNames));
             builder.AppendLine(")");

@@ -34,7 +34,7 @@ public sealed class DynamicEntityInsertGeneratorTests
 
         Assert.Single(scripts);
         var script = scripts[0];
-        Assert.Contains("INSERT INTO [dbo].[Entities] WITH (TABLOCK, CHECK_CONSTRAINTS)", script.Script, System.StringComparison.Ordinal);
+        Assert.Contains("INSERT INTO [dbo].[Entities] WITH (TABLOCK)", script.Script, System.StringComparison.Ordinal);
         var alphaIndex = script.Script.IndexOf("(1, N'Alpha')", System.StringComparison.Ordinal);
         var betaIndex = script.Script.IndexOf("(2, N'Beta')", System.StringComparison.Ordinal);
         var gammaIndex = script.Script.IndexOf("(3, N'Gamma')", System.StringComparison.Ordinal);
