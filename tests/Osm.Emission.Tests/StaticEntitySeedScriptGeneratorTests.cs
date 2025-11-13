@@ -22,9 +22,9 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_TEST_STATUS",
             EffectiveName: "OSUSR_TEST_STATUS",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false),
-                new StaticEntitySeedColumn("IsActive", "ISACTIVE", "IsActive", "Boolean", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("IsActive", "ISACTIVE", "IsActive", "Boolean", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var rows = ImmutableArray.Create(
             StaticEntityRow.Create(new object?[] { 1, "Active", true }),
@@ -51,7 +51,7 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_DEF_CITY",
             EffectiveName: "City",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: true)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: true, IsNullable: false)));
 
         var rows = ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1 }));
         var data = ImmutableArray.Create(StaticEntityTableData.Create(definition, rows));
@@ -74,8 +74,8 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_TEST_STATUS",
             EffectiveName: "OSUSR_TEST_STATUS",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var rows = ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, "Active" }));
         var data = ImmutableArray.Create(StaticEntityTableData.Create(definition, rows));
@@ -96,8 +96,8 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_TEST_STATUS",
             EffectiveName: "OSUSR_TEST_STATUS",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var rows = ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, "Active" }));
         var data = ImmutableArray.Create(StaticEntityTableData.Create(definition, rows));
@@ -123,7 +123,7 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_TEST_STATUS",
             EffectiveName: "OSUSR_TEST_STATUS",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
 
         var data = ImmutableArray.Create(StaticEntityTableData.Create(definition, Array.Empty<StaticEntityRow>()));
         var generator = CreateGenerator();
@@ -147,8 +147,8 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_SAMPLE_PARENT",
             EffectiveName: "OSUSR_SAMPLE_PARENT",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var childDefinition = new StaticEntitySeedTableDefinition(
             Module: "Sample",
@@ -157,9 +157,9 @@ public class StaticEntitySeedScriptGeneratorTests
             PhysicalName: "OSUSR_SAMPLE_CHILD",
             EffectiveName: "OSUSR_SAMPLE_CHILD",
             Columns: ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "Identifier", null, null, null, IsPrimaryKey: false, IsIdentity: false),
-                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "Identifier", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var tables = ImmutableArray.Create(
             StaticEntityTableData.Create(childDefinition, ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, 1, "Child" }))),
@@ -261,6 +261,26 @@ public class StaticEntitySeedScriptGeneratorTests
                 .Where(attribute => !(attribute.OnDisk.IsComputed ?? false))
                 .Select(attribute => attribute.LogicalName.Value),
             definition.Columns.Select(column => column.EmissionName));
+    }
+
+    [Fact]
+    public void StaticEntitySeedColumn_NormalizeValue_ConvertsSingleSpaceToNullWhenNullable()
+    {
+        var column = new StaticEntitySeedColumn(
+            "Name",
+            "NAME",
+            "Name",
+            "Text",
+            50,
+            null,
+            null,
+            IsPrimaryKey: false,
+            IsIdentity: false,
+            IsNullable: true);
+
+        Assert.Null(column.NormalizeValue(" "));
+        Assert.Equal("  ", column.NormalizeValue("  "));
+        Assert.Equal("Sample", column.NormalizeValue("Sample"));
     }
 
     private static StaticEntitySeedScriptGenerator CreateGenerator()

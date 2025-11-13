@@ -207,6 +207,7 @@ public class BuildSsdtPipelineStepTests
         Assert.All(state.StaticSeedScriptPaths, path => Assert.True(File.Exists(path)));
         var log = state.Log.Build();
         Assert.Contains(log.Entries, entry => entry.Step == "staticData.seed.generated");
+        Assert.Contains(log.Entries, entry => entry.Step == "staticData.seed.preflight");
     }
 
     [Fact]
@@ -312,6 +313,8 @@ public class BuildSsdtPipelineStepTests
         Assert.True(
             script.IndexOf("-- Entity: Parent", StringComparison.Ordinal) <
             script.IndexOf("-- Entity: Child", StringComparison.Ordinal));
+        var log = seeds.Log.Build();
+        Assert.Contains(log.Entries, entry => entry.Step == "staticData.seed.preflight");
     }
 
     [Fact]
@@ -688,7 +691,8 @@ public class BuildSsdtPipelineStepTests
             Precision: null,
             Scale: null,
             IsPrimaryKey: true,
-            IsIdentity: true));
+            IsIdentity: true,
+            IsNullable: false));
 
         var definition = new StaticEntitySeedTableDefinition(
             Module: "Core",

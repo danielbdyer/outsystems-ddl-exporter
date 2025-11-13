@@ -117,7 +117,7 @@ public sealed class DynamicEntityInsertGeneratorTests
             "OSUSR_SAMPLE_PARENT",
             "OSUSR_SAMPLE_PARENT",
             ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
 
         var childDefinition = new StaticEntitySeedTableDefinition(
             "Sample",
@@ -126,8 +126,8 @@ public sealed class DynamicEntityInsertGeneratorTests
             "OSUSR_SAMPLE_CHILD",
             "OSUSR_SAMPLE_CHILD",
             ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "Identifier", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "Identifier", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var dataset = new DynamicEntityDataset(ImmutableArray.Create(
             new StaticEntityTableData(childDefinition, ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, 1 }))),
@@ -198,9 +198,9 @@ public sealed class DynamicEntityInsertGeneratorTests
             "OSUSR_SAMPLE_HIERARCHY",
             "OSUSR_SAMPLE_HIERARCHY",
             ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "INT", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "INT", null, null, null, IsPrimaryKey: false, IsIdentity: false),
-                new StaticEntitySeedColumn("Name", "NAME", "Name", "NVARCHAR", 50, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "INT", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "INT", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("Name", "NAME", "Name", "NVARCHAR", 50, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var rows = ImmutableArray.Create(
             StaticEntityRow.Create(new object?[] { 5, 10, "Child" }),
@@ -275,7 +275,8 @@ public sealed class DynamicEntityInsertGeneratorTests
                 Precision: null,
                 Scale: null,
                 IsPrimaryKey: true,
-                IsIdentity: isIdentity),
+                IsIdentity: isIdentity,
+                IsNullable: false),
             new StaticEntitySeedColumn(
                 LogicalName: "Name",
                 ColumnName: "Name",
@@ -285,7 +286,7 @@ public sealed class DynamicEntityInsertGeneratorTests
                 Precision: null,
                 Scale: null,
                 IsPrimaryKey: false,
-                IsIdentity: false));
+                IsIdentity: false, IsNullable: false));
 
         return new StaticEntitySeedTableDefinition(
             module,

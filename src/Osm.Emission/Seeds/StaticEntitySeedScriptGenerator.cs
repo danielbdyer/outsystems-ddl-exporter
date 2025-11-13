@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
@@ -172,7 +173,8 @@ public static class StaticEntitySeedDefinitionBuilder
                     attribute.Precision,
                     attribute.Scale,
                     primaryColumns.Contains(physicalName),
-                    attribute.OnDisk.IsIdentity ?? attribute.IsAutoNumber);
+                    attribute.OnDisk.IsIdentity ?? attribute.IsAutoNumber,
+                    IsNullable: !attribute.IsMandatory);
             })
             .ToImmutableArray();
 
@@ -220,13 +222,24 @@ public sealed record StaticEntitySeedColumn(
     int? Precision,
     int? Scale,
     bool IsPrimaryKey,
-    bool IsIdentity)
+    bool IsIdentity,
+    bool IsNullable)
 {
     public string EffectiveColumnName => string.IsNullOrWhiteSpace(EmissionName)
         ? ColumnName
         : EmissionName;
 
     public string TargetColumnName => EffectiveColumnName;
+
+    public object? NormalizeValue(object? value)
+    {
+        if (IsNullable && value is string { Length: 1 } s && string.Equals(s, " ", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return value;
+    }
 }
 
 public sealed record StaticEntityRow(ImmutableArray<object?> Values)

@@ -252,7 +252,9 @@ OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
                 var values = new object?[definition.Columns.Length];
                 for (var i = 0; i < definition.Columns.Length; i++)
                 {
-                    values[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                    var column = definition.Columns[i];
+                    var rawValue = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                    values[i] = column.NormalizeValue(rawValue);
                 }
 
                 rows.Add(StaticEntityRow.Create(values));
@@ -335,7 +337,8 @@ OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
                     attribute.Precision,
                     attribute.Scale,
                     primaryColumns.Contains(physicalName),
-                    attribute.OnDisk.IsIdentity ?? attribute.IsAutoNumber);
+                    attribute.OnDisk.IsIdentity ?? attribute.IsAutoNumber,
+                    IsNullable: !attribute.IsMandatory);
             })
             .ToImmutableArray();
 
