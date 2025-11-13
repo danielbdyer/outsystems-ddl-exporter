@@ -402,16 +402,16 @@ public sealed class CliConfigurationLoader
             userMapPath = resolvedUserMap;
         }
 
-        string? allowedUsersSql = null;
-        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "allowedUsersSql", baseDirectory, out var resolvedAllowedSql))
+        string? uatInventoryPath = null;
+        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "uatUserInventory", baseDirectory, out var resolvedUatInventory))
         {
-            allowedUsersSql = resolvedAllowedSql;
+            uatInventoryPath = resolvedUatInventory;
         }
 
-        string? allowedUserIds = null;
-        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "allowedUserIds", baseDirectory, out var resolvedAllowedIds))
+        string? qaInventoryPath = null;
+        if (ConfigurationJsonHelpers.TryReadPathProperty(element, "qaInventory", baseDirectory, out var resolvedQaInventory))
         {
-            allowedUserIds = resolvedAllowedIds;
+            qaInventoryPath = resolvedQaInventory;
         }
 
         string? snapshotPath = null;
@@ -493,8 +493,8 @@ public sealed class CliConfigurationLoader
             IncludeColumns: includeColumns,
             OutputRoot: outputRoot,
             UserMapPath: userMapPath,
-            AllowedUsersSqlPath: allowedUsersSql,
-            AllowedUserIdsPath: allowedUserIds,
+            UatUserInventoryPath: uatInventoryPath,
+            QaUserInventoryPath: qaInventoryPath,
             SnapshotPath: snapshotPath,
             UserEntityIdentifier: entityId);
         return true;

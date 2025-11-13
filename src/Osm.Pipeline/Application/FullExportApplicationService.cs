@@ -304,11 +304,12 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         }
 
         var connectionString = ResolveString(overrides?.ConnectionString, configuration.ConnectionString);
-        var allowedUsersSqlPath = ResolveString(overrides?.AllowedUsersSqlPath, configuration.AllowedUsersSqlPath);
-        var allowedUserIdsPath = ResolveString(overrides?.AllowedUserIdsPath, configuration.AllowedUserIdsPath);
+        var uatInventoryPath = ResolveString(overrides?.UatUserInventoryPath, configuration.UatUserInventoryPath);
+        var qaInventoryPath = ResolveString(overrides?.QaUserInventoryPath, configuration.QaUserInventoryPath);
 
         if (string.IsNullOrWhiteSpace(connectionString)
-            || (string.IsNullOrWhiteSpace(allowedUsersSqlPath) && string.IsNullOrWhiteSpace(allowedUserIdsPath)))
+            || string.IsNullOrWhiteSpace(uatInventoryPath)
+            || string.IsNullOrWhiteSpace(qaInventoryPath))
         {
             return UatUsersOverrides.Disabled;
         }
@@ -326,8 +327,8 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             UserIdColumn: userIdColumn,
             IncludeColumns: includeColumns,
             UserMapPath: ResolveString(overrides?.UserMapPath, configuration.UserMapPath),
-            AllowedUsersSqlPath: allowedUsersSqlPath,
-            AllowedUserIdsPath: allowedUserIdsPath,
+            UatUserInventoryPath: uatInventoryPath,
+            QaUserInventoryPath: qaInventoryPath,
             SnapshotPath: ResolveString(overrides?.SnapshotPath, configuration.SnapshotPath),
             UserEntityIdentifier: ResolveString(overrides?.UserEntityIdentifier, configuration.UserEntityIdentifier));
     }
@@ -371,8 +372,12 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             return false;
         }
 
-        return !string.IsNullOrWhiteSpace(configuration.AllowedUsersSqlPath)
-            || !string.IsNullOrWhiteSpace(configuration.AllowedUserIdsPath);
+        if (string.IsNullOrWhiteSpace(configuration.QaUserInventoryPath))
+        {
+            return false;
+        }
+
+        return !string.IsNullOrWhiteSpace(configuration.UatUserInventoryPath);
     }
 
     private Result<ExtractModelApplicationResult> CreateReuseExtractionResult(

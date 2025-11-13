@@ -17,8 +17,8 @@ public sealed class UatUsersOptions
         IEnumerable<string>? includeColumns,
         string outputDirectory,
         string? userMapPath,
-        string? allowedUsersSqlPath,
-        string? allowedUserIdsPath,
+        string uatUserInventoryPath,
+        string qaUserInventoryPath,
         string? snapshotPath,
         string? userEntityIdentifier,
         UatUsersOptionOrigins? origins = null)
@@ -34,17 +34,20 @@ public sealed class UatUsersOptions
             ? Path.GetFullPath("./_artifacts")
             : Path.GetFullPath(outputDirectory);
         UserMapPath = string.IsNullOrWhiteSpace(userMapPath) ? null : Path.GetFullPath(userMapPath.Trim());
-        AllowedUsersSqlPath = string.IsNullOrWhiteSpace(allowedUsersSqlPath)
-            ? null
-            : Path.GetFullPath(allowedUsersSqlPath.Trim());
-        AllowedUserIdsPath = string.IsNullOrWhiteSpace(allowedUserIdsPath)
-            ? null
-            : Path.GetFullPath(allowedUserIdsPath.Trim());
 
-        if (AllowedUsersSqlPath is null && AllowedUserIdsPath is null)
+        if (string.IsNullOrWhiteSpace(uatUserInventoryPath))
         {
-            throw new ArgumentException("Either --user-ddl or --user-ids must be provided.");
+            throw new ArgumentException("--uat-user-inventory must be provided.", nameof(uatUserInventoryPath));
         }
+
+        UatUserInventoryPath = Path.GetFullPath(uatUserInventoryPath.Trim());
+
+        if (string.IsNullOrWhiteSpace(qaUserInventoryPath))
+        {
+            throw new ArgumentException("--qa-user-inventory must be provided.", nameof(qaUserInventoryPath));
+        }
+
+        QaUserInventoryPath = Path.GetFullPath(qaUserInventoryPath.Trim());
 
         SnapshotPath = string.IsNullOrWhiteSpace(snapshotPath) ? null : Path.GetFullPath(snapshotPath.Trim());
         UserEntityIdentifier = string.IsNullOrWhiteSpace(userEntityIdentifier) ? null : userEntityIdentifier.Trim();
@@ -69,9 +72,9 @@ public sealed class UatUsersOptions
 
     public string? UserMapPath { get; }
 
-    public string? AllowedUsersSqlPath { get; }
+    public string UatUserInventoryPath { get; }
 
-    public string? AllowedUserIdsPath { get; }
+    public string QaUserInventoryPath { get; }
 
     public string? SnapshotPath { get; }
 

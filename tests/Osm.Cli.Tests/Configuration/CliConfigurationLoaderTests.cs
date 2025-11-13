@@ -231,8 +231,8 @@ public sealed class CliConfigurationLoaderTests
                 includeColumns = new[] { "CreatedBy", "UpdatedBy" },
                 output = "out",
                 userMap = "map.csv",
-                allowedUsersSql = "allowed.sql",
-                allowedUserIds = "allowed.csv",
+                uatInventory = "uat.csv",
+                qaInventory = "qa.csv",
                 snapshot = "snapshot.json",
                 entityId = "UserEntity"
             }
@@ -254,8 +254,8 @@ public sealed class CliConfigurationLoaderTests
         Assert.Equal(new[] { "CreatedBy", "UpdatedBy" }, uatUsers.IncludeColumns);
         Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "out")), uatUsers.OutputRoot);
         Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "map.csv")), uatUsers.UserMapPath);
-        Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "allowed.sql")), uatUsers.AllowedUsersSqlPath);
-        Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "allowed.csv")), uatUsers.AllowedUserIdsPath);
+        Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "uat.csv")), uatUsers.UatUserInventoryPath);
+        Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "qa.csv")), uatUsers.QaUserInventoryPath);
         Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "snapshot.json")), uatUsers.SnapshotPath);
         Assert.Equal("UserEntity", uatUsers.UserEntityIdentifier);
     }

@@ -160,8 +160,8 @@ public sealed class FullExportApplicationServiceTests
                 UserIdColumn: "Id",
                 IncludeColumns: Array.Empty<string>(),
                 UserMapPath: null,
-                AllowedUsersSqlPath: "allowed.sql",
-                AllowedUserIdsPath: null,
+                UatUserInventoryPath: "uat.csv",
+                QaUserInventoryPath: "qa.csv",
                 SnapshotPath: null,
                 UserEntityIdentifier: null));
         var input = new FullExportApplicationInput(
@@ -235,8 +235,8 @@ public sealed class FullExportApplicationServiceTests
                 IncludeColumns: new[] { "CreatedBy" },
                 OutputRoot: "./out",
                 UserMapPath: "configured-map.csv",
-                AllowedUsersSqlPath: "configured-allowed.sql",
-                AllowedUserIdsPath: null,
+                UatUserInventoryPath: "configured-uat.csv",
+                QaUserInventoryPath: "configured-qa.csv",
                 SnapshotPath: "configured-snapshot.json",
                 UserEntityIdentifier: "UserEntity")
         };
@@ -245,7 +245,10 @@ public sealed class FullExportApplicationServiceTests
         var overrides = new FullExportOverrides(
             Build: new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
             Profile: new CaptureProfileOverrides(null, null, null, null, null),
-            Extract: new ExtractModelOverrides(null, null, null, null, null, null));
+            Extract: new ExtractModelOverrides(null, null, null, null, null, null),
+            Apply: null,
+            ReuseModelPath: false,
+            UatUsers: null);
         var input = new FullExportApplicationInput(
             configurationContext,
             overrides,
@@ -265,8 +268,7 @@ public sealed class FullExportApplicationServiceTests
         Assert.Equal("UserId", request.Overrides.UserIdColumn);
         Assert.Equal(new[] { "CreatedBy" }, request.Overrides.IncludeColumns);
         Assert.Equal("configured-map.csv", request.Overrides.UserMapPath);
-        Assert.Equal("configured-allowed.sql", request.Overrides.AllowedUsersSqlPath);
-        Assert.Null(request.Overrides.AllowedUserIdsPath);
+        Assert.Equal("configured-uat.csv", request.Overrides.UatUserInventoryPath);
         Assert.Equal("configured-snapshot.json", request.Overrides.SnapshotPath);
         Assert.Equal("UserEntity", request.Overrides.UserEntityIdentifier);
     }
@@ -323,8 +325,8 @@ public sealed class FullExportApplicationServiceTests
                 IncludeColumns: new[] { "CfgCreated" },
                 OutputRoot: "./out",
                 UserMapPath: "cfg-map.csv",
-                AllowedUsersSqlPath: "cfg-allowed.sql",
-                AllowedUserIdsPath: null,
+                UatUserInventoryPath: "cfg-uat.csv",
+                QaUserInventoryPath: "cfg-qa.csv",
                 SnapshotPath: "cfg-snapshot.json",
                 UserEntityIdentifier: "cfg-entity")
         };
@@ -344,8 +346,8 @@ public sealed class FullExportApplicationServiceTests
                 UserIdColumn: null,
                 IncludeColumns: new[] { "CliColumn" },
                 UserMapPath: "cli-map.csv",
-                AllowedUsersSqlPath: null,
-                AllowedUserIdsPath: "cli-ids.csv",
+                UatUserInventoryPath: "cli-uat.csv",
+                QaUserInventoryPath: null,
                 SnapshotPath: "cli-snapshot.json",
                 UserEntityIdentifier: null));
 
@@ -368,8 +370,8 @@ public sealed class FullExportApplicationServiceTests
         Assert.Equal("CfgId", request.Overrides.UserIdColumn);
         Assert.Equal(new[] { "CliColumn" }, request.Overrides.IncludeColumns);
         Assert.Equal("cli-map.csv", request.Overrides.UserMapPath);
-        Assert.Equal("cfg-allowed.sql", request.Overrides.AllowedUsersSqlPath);
-        Assert.Equal("cli-ids.csv", request.Overrides.AllowedUserIdsPath);
+        Assert.Equal("cli-uat.csv", request.Overrides.UatUserInventoryPath);
+        Assert.Equal("cfg-qa.csv", request.Overrides.QaUserInventoryPath);
         Assert.Equal("cli-snapshot.json", request.Overrides.SnapshotPath);
         Assert.Equal("cfg-entity", request.Overrides.UserEntityIdentifier);
     }
@@ -676,8 +678,8 @@ public sealed class FullExportApplicationServiceTests
                 UserIdColumn: "Id",
                 IncludeColumns: Array.Empty<string>(),
                 UserMapPath: null,
-                AllowedUsersSqlPath: "allowed.sql",
-                AllowedUserIdsPath: null,
+                UatUserInventoryPath: "uat.csv",
+                QaUserInventoryPath: "qa.csv",
                 SnapshotPath: null,
                 UserEntityIdentifier: null));
         var input = new FullExportApplicationInput(
@@ -745,8 +747,8 @@ public sealed class FullExportApplicationServiceTests
                 UserIdColumn: "Id",
                 IncludeColumns: Array.Empty<string>(),
                 UserMapPath: null,
-                AllowedUsersSqlPath: "allowed.sql",
-                AllowedUserIdsPath: null,
+                UatUserInventoryPath: "uat.csv",
+                QaUserInventoryPath: "qa.csv",
                 SnapshotPath: null,
                 UserEntityIdentifier: null));
         var input = new FullExportApplicationInput(

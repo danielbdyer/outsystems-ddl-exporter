@@ -142,6 +142,7 @@
 - **Before coding.** Run `notes/run-checklist.md` to ensure environment parity; failures (e.g., current `SqlModelExtractionService` build errors) must be documented.
 - **Before refactors.** Verify each flow’s invariants via unit/integration tests; add regression coverage when touching guarded surfaces.
 - **Before release.** Review telemetry to confirm guardrails remain intact—no tightening decisions without evidence, no emission without traceability.
+- **Before running `uat-users`.** Capture the complete QA `dbo.User` inventory as a CSV that mirrors `ossys_User` (`Id, Username, EMail, Name, External_Id, Is_Active, Creation_Date, Last_Login`) and point the CLI at it via `--qa-user-inventory`. Provide the matching UAT roster via `--uat-user-inventory` (same schema) so the validator can cross-check the QA discovery set, orphan analysis, and approved targets. The pipeline will fail fast when identifiers are missing, duplicated, or out-of-scope, protecting operators from emitting partial remediation bundles.
 
 ## 13. Living Document Expectations
 

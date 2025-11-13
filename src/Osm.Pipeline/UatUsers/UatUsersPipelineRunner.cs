@@ -71,12 +71,18 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 "A UAT connection string must be supplied when uat-users is enabled."));
         }
 
-        if (string.IsNullOrWhiteSpace(request.Overrides.AllowedUsersSqlPath) &&
-            string.IsNullOrWhiteSpace(request.Overrides.AllowedUserIdsPath))
+        if (string.IsNullOrWhiteSpace(request.Overrides.QaUserInventoryPath))
         {
             return Result<UatUsersApplicationResult>.Failure(ValidationError.Create(
-                "pipeline.fullExport.uatUsers.allowedUsers.missing",
-                "Provide either a dbo.User export (--user-ddl) or an identifier list (--user-ids)."));
+                "pipeline.fullExport.uatUsers.qaInventory.missing",
+                "Provide a QA user inventory CSV via --qa-user-inventory."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Overrides.UatUserInventoryPath))
+        {
+            return Result<UatUsersApplicationResult>.Failure(ValidationError.Create(
+                "pipeline.fullExport.uatUsers.uatInventory.missing",
+                "Provide a UAT user inventory CSV via --uat-user-inventory."));
         }
 
         try
@@ -120,8 +126,8 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 userIdColumn,
                 includeColumns,
                 userMapPath,
-                request.Overrides.AllowedUsersSqlPath,
-                request.Overrides.AllowedUserIdsPath,
+                request.Overrides.UatUserInventoryPath!,
+                request.Overrides.QaUserInventoryPath!,
                 request.Overrides.SnapshotPath,
                 request.Overrides.UserEntityIdentifier,
                 fromLiveMetadata: false,

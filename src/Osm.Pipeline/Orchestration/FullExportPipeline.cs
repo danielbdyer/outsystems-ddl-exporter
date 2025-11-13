@@ -59,8 +59,8 @@ public sealed record UatUsersPipelineOptions(
     string? UserIdColumn,
     IReadOnlyList<string>? IncludeColumns,
     string? UserMapPath,
-    string? AllowedUsersSqlPath,
-    string? AllowedUserIdsPath,
+    string? UatUserInventoryPath,
+    string? QaUserInventoryPath,
     string? SnapshotPath,
     string? UserEntityIdentifier);
 
@@ -227,8 +227,8 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
                     request.UatUsers.UserIdColumn,
                     request.UatUsers.IncludeColumns ?? Array.Empty<string>(),
                     request.UatUsers.UserMapPath,
-                    request.UatUsers.AllowedUsersSqlPath,
-                    request.UatUsers.AllowedUserIdsPath,
+                    request.UatUsers.UatUserInventoryPath,
+                    request.UatUsers.QaUserInventoryPath,
                     request.UatUsers.SnapshotPath,
                     request.UatUsers.UserEntityIdentifier);
 

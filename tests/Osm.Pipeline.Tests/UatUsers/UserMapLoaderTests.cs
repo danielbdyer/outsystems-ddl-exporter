@@ -7,7 +7,7 @@ namespace Osm.Pipeline.Tests.UatUsers;
 public sealed class UserMapLoaderTests
 {
     [Fact]
-    public void ParsesCsvAndDeduplicates()
+    public void Load_ParsesCsv()
     {
         var directory = Path.Combine(Path.GetTempPath(), "uat-users-tests", "maps");
         Directory.CreateDirectory(directory);
@@ -16,7 +16,6 @@ public sealed class UserMapLoaderTests
         {
             "SourceUserId,TargetUserId,Rationale",
             "100,200,Primary",
-            "100,300,Duplicate should be ignored",
             "200,400,",
             "400,,Pending",
             "",
@@ -54,5 +53,22 @@ public sealed class UserMapLoaderTests
                 Assert.Null(entry.TargetUserId);
                 Assert.Equal("Pending", entry.Rationale);
             });
+    }
+
+    [Fact]
+    public void Load_ThrowsOnDuplicateSourceUserIds()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "uat-users-tests", "maps");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "map-duplicates.csv");
+        File.WriteAllLines(path, new[]
+        {
+            "SourceUserId,TargetUserId",
+            "100,200",
+            "100,300"
+        });
+
+        var exception = Assert.Throws<InvalidDataException>(() => UserMapLoader.Load(path));
+        Assert.Contains("Duplicate SourceUserId", exception.Message);
     }
 }

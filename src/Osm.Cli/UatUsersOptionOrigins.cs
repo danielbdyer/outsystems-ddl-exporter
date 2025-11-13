@@ -10,8 +10,8 @@ public sealed record UatUsersOptionOrigins(
     bool IncludeColumnsFromConfiguration,
     bool OutputDirectoryFromConfiguration,
     bool UserMapPathFromConfiguration,
-    bool AllowedUsersSqlPathFromConfiguration,
-    bool AllowedUserIdsPathFromConfiguration,
+    bool UatUserInventoryPathFromConfiguration,
+    bool QaUserInventoryPathFromConfiguration,
     bool SnapshotPathFromConfiguration,
     bool UserEntityIdentifierFromConfiguration)
 {
@@ -25,8 +25,8 @@ public sealed record UatUsersOptionOrigins(
         IncludeColumnsFromConfiguration: false,
         OutputDirectoryFromConfiguration: false,
         UserMapPathFromConfiguration: false,
-        AllowedUsersSqlPathFromConfiguration: false,
-        AllowedUserIdsPathFromConfiguration: false,
+        UatUserInventoryPathFromConfiguration: false,
+        QaUserInventoryPathFromConfiguration: false,
         SnapshotPathFromConfiguration: false,
         UserEntityIdentifierFromConfiguration: false);
 }

@@ -148,8 +148,8 @@ public sealed record UatUsersConfiguration(
     IReadOnlyList<string> IncludeColumns,
     string? OutputRoot,
     string? UserMapPath,
-    string? AllowedUsersSqlPath,
-    string? AllowedUserIdsPath,
+    string? UatUserInventoryPath,
+    string? QaUserInventoryPath,
     string? SnapshotPath,
     string? UserEntityIdentifier)
 {
@@ -164,8 +164,8 @@ public sealed record UatUsersConfiguration(
             IncludeColumns: Array.Empty<string>(),
             OutputRoot: null,
             UserMapPath: null,
-            AllowedUsersSqlPath: null,
-            AllowedUserIdsPath: null,
+            UatUserInventoryPath: null,
+            QaUserInventoryPath: null,
             SnapshotPath: null,
             UserEntityIdentifier: null);
 }

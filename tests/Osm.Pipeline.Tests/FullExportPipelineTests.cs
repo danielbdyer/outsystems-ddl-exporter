@@ -282,8 +282,8 @@ public sealed class FullExportPipelineTests
             UserIdColumn: "Id",
             IncludeColumns: Array.Empty<string>(),
             UserMapPath: null,
-            AllowedUsersSqlPath: "allowed.sql",
-            AllowedUserIdsPath: null,
+            UatUserInventoryPath: "uat.csv",
+            QaUserInventoryPath: "qa.csv",
             SnapshotPath: null,
             UserEntityIdentifier: null);
         var request = new FullExportPipelineRequest(extractRequest, captureRequest, buildRequest, applyOptions, uatOptions);
@@ -333,8 +333,8 @@ public sealed class FullExportPipelineTests
                 UserIdColumn: "Id",
                 IncludeColumns: Array.Empty<string>(),
                 UserMapPath: null,
-                AllowedUsersSqlPath: "allowed.sql",
-                AllowedUserIdsPath: null,
+                UatUserInventoryPath: "uat.csv",
+                QaUserInventoryPath: "qa.csv",
                 SnapshotPath: null,
                 UserEntityIdentifier: null));
 
@@ -376,8 +376,8 @@ public sealed class FullExportPipelineTests
                 UserIdColumn: null,
                 IncludeColumns: null,
                 UserMapPath: null,
-                AllowedUsersSqlPath: null,
-                AllowedUserIdsPath: null,
+                UatUserInventoryPath: null,
+                QaUserInventoryPath: null,
                 SnapshotPath: null,
                 UserEntityIdentifier: null));
 

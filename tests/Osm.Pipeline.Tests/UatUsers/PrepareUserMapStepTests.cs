@@ -76,8 +76,10 @@ public sealed class PrepareUserMapStepTests
     {
         var artifacts = new UatUsersArtifacts(root);
         var connectionFactory = new ThrowingConnectionFactory();
-        var allowedPath = Path.Combine(root, "users.csv");
-        File.WriteAllText(allowedPath, "Id\n1\n");
+        var uatInventoryPath = Path.Combine(root, "uat.csv");
+        File.WriteAllText(uatInventoryPath, "Id,Username\n1,uat\n");
+        var qaInventoryPath = Path.Combine(root, "qa.csv");
+        File.WriteAllText(qaInventoryPath, "Id,Username\n1,qa\n");
 
         return new UatUsersContext(
             new StubSchemaGraph(),
@@ -88,8 +90,8 @@ public sealed class PrepareUserMapStepTests
             "Id",
             includeColumns: null,
             Path.Combine(root, "map.csv"),
-            allowedUsersSqlPath: null,
-            allowedUserIdsPath: allowedPath,
+            uatInventoryPath,
+            qaInventoryPath,
             snapshotPath: null,
             userEntityIdentifier: null,
             fromLiveMetadata: false,

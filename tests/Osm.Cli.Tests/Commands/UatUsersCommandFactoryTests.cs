@@ -2,6 +2,7 @@ using System;
 using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Parsing;
+using System.CommandLine.IO;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -30,7 +31,7 @@ public class UatUsersCommandFactoryTests
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
-        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-schema dbo --user-table dbo.Users --user-id-column UserId --include-columns Name --include-columns EMail --out artifacts --user-map map.csv --user-ddl ddl.sql --snapshot snap.json --user-entity-id Identifier";
+        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-schema dbo --user-table dbo.Users --user-id-column UserId --include-columns Name --include-columns EMail --out artifacts --user-map map.csv --uat-user-inventory uat.csv --qa-user-inventory qa.csv --snapshot snap.json --user-entity-id Identifier";
         var exitCode = await parser.InvokeAsync(args);
 
         Assert.Equal(5, exitCode);
@@ -44,7 +45,8 @@ public class UatUsersCommandFactoryTests
         Assert.Equal(new[] { "Name", "EMail" }, options.IncludeColumns);
         Assert.Equal(Path.GetFullPath("artifacts"), options.OutputDirectory);
         Assert.Equal(Path.GetFullPath("map.csv"), options.UserMapPath);
-        Assert.Equal(Path.GetFullPath("ddl.sql"), options.AllowedUsersSqlPath);
+        Assert.Equal(Path.GetFullPath("uat.csv"), options.UatUserInventoryPath);
+        Assert.Equal(Path.GetFullPath("qa.csv"), options.QaUserInventoryPath);
         Assert.Equal(Path.GetFullPath("snap.json"), options.SnapshotPath);
         Assert.Equal("Identifier", options.UserEntityIdentifier);
         Assert.False(options.Origins.ModelPathFromConfiguration);
@@ -58,7 +60,7 @@ public class UatUsersCommandFactoryTests
     [InlineData("\"[custom schema].User\"", "custom schema", "User")]
     public async Task Invoke_NormalizesBracketedUserTableInput(string userTableArgument, string expectedSchema, string expectedTable)
     {
-        var command = $"uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-ddl ddl.sql --user-table {userTableArgument}";
+        var command = $"uat-users --model model.json --uat-conn Server=.;Database=UAT; --uat-user-inventory uat.csv --qa-user-inventory qa.csv --user-table {userTableArgument}";
         var (options, exitCode) = await InvokeAsync(command);
 
         Assert.Equal(5, exitCode);
@@ -69,7 +71,7 @@ public class UatUsersCommandFactoryTests
     [Fact]
     public async Task Invoke_DeduplicatesIncludeColumnsIgnoringCase()
     {
-        var command = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-ddl ddl.sql --include-columns Name --include-columns name --include-columns EMail --include-columns EMAIL";
+        var command = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --uat-user-inventory uat.csv --qa-user-inventory qa.csv --include-columns Name --include-columns name --include-columns EMail --include-columns EMAIL";
         var (options, exitCode) = await InvokeAsync(command);
 
         Assert.Equal(5, exitCode);
@@ -77,14 +79,53 @@ public class UatUsersCommandFactoryTests
     }
 
     [Fact]
-    public async Task Invoke_AllowsCsvViaUserDdlOption()
+    public async Task Invoke_AcceptsUatInventoryCsv()
     {
-        var command = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-ddl allowed.csv";
+        var command = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --uat-user-inventory allowed.csv --qa-user-inventory qa.csv";
         var (options, exitCode) = await InvokeAsync(command);
 
         Assert.Equal(5, exitCode);
-        Assert.Equal(Path.GetFullPath("allowed.csv"), options.AllowedUsersSqlPath);
-        Assert.Null(options.AllowedUserIdsPath);
+        Assert.Equal(Path.GetFullPath("allowed.csv"), options.UatUserInventoryPath);
+    }
+
+    [Fact]
+    public async Task Invoke_RequiresQaInventory()
+    {
+        var executor = new FakeUatUsersCommand();
+
+        await using var provider = CreateServiceProvider(executor);
+        var factory = provider.GetRequiredService<UatUsersCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --uat-user-inventory allowed.csv";
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("--qa-user-inventory is required", console.Error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Null(executor.LastOptions);
+    }
+
+    [Fact]
+    public async Task Invoke_RequiresUatInventory()
+    {
+        var executor = new FakeUatUsersCommand();
+
+        await using var provider = CreateServiceProvider(executor);
+        var factory = provider.GetRequiredService<UatUsersCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --qa-user-inventory qa.csv";
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("--uat-user-inventory is required", console.Error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Null(executor.LastOptions);
     }
 
     private static async Task<(UatUsersOptions Options, int ExitCode)> InvokeAsync(
@@ -111,9 +152,9 @@ public class UatUsersCommandFactoryTests
         var modelPath = Path.Combine(temp.Path, "model.json");
         var outputRoot = Path.Combine(temp.Path, "artifacts");
         var userMapPath = Path.Combine(temp.Path, "map.csv");
-        var allowedSqlPath = Path.Combine(temp.Path, "allowed.sql");
-        var allowedIdsPath = Path.Combine(temp.Path, "allowed.csv");
+        var uatInventoryPath = Path.Combine(temp.Path, "uat.csv");
         var snapshotPath = Path.Combine(temp.Path, "snapshot.json");
+        var qaInventoryPath = Path.Combine(temp.Path, "qa.csv");
 
         var configuration = CliConfiguration.Empty with
         {
@@ -127,8 +168,8 @@ public class UatUsersCommandFactoryTests
                 IncludeColumns: new[] { "CreatedBy", "UpdatedBy" },
                 OutputRoot: outputRoot,
                 UserMapPath: userMapPath,
-                AllowedUsersSqlPath: allowedSqlPath,
-                AllowedUserIdsPath: allowedIdsPath,
+                UatUserInventoryPath: uatInventoryPath,
+                QaUserInventoryPath: qaInventoryPath,
                 SnapshotPath: snapshotPath,
                 UserEntityIdentifier: "UserEntity")
         };
@@ -145,8 +186,8 @@ public class UatUsersCommandFactoryTests
         Assert.Equal(new[] { "CreatedBy", "UpdatedBy" }, options.IncludeColumns);
         Assert.Equal(Path.GetFullPath(outputRoot), options.OutputDirectory);
         Assert.Equal(Path.GetFullPath(userMapPath), options.UserMapPath);
-        Assert.Equal(Path.GetFullPath(allowedSqlPath), options.AllowedUsersSqlPath);
-        Assert.Equal(Path.GetFullPath(allowedIdsPath), options.AllowedUserIdsPath);
+        Assert.Equal(Path.GetFullPath(uatInventoryPath), options.UatUserInventoryPath);
+        Assert.Equal(Path.GetFullPath(qaInventoryPath), options.QaUserInventoryPath);
         Assert.Equal(Path.GetFullPath(snapshotPath), options.SnapshotPath);
         Assert.Equal("UserEntity", options.UserEntityIdentifier);
 
@@ -158,8 +199,8 @@ public class UatUsersCommandFactoryTests
         Assert.True(options.Origins.IncludeColumnsFromConfiguration);
         Assert.True(options.Origins.OutputDirectoryFromConfiguration);
         Assert.True(options.Origins.UserMapPathFromConfiguration);
-        Assert.True(options.Origins.AllowedUsersSqlPathFromConfiguration);
-        Assert.True(options.Origins.AllowedUserIdsPathFromConfiguration);
+        Assert.True(options.Origins.UatUserInventoryPathFromConfiguration);
+        Assert.True(options.Origins.QaUserInventoryPathFromConfiguration);
         Assert.True(options.Origins.SnapshotPathFromConfiguration);
         Assert.True(options.Origins.UserEntityIdentifierFromConfiguration);
     }

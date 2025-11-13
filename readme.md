@@ -105,11 +105,12 @@
      --build-out ./out/full-export \
      --enable-uat-users \
      --uat-conn "Server=uat;Database=UAT;TrustServerCertificate=True" \
-    --user-ddl ./extracts/dbo.User.sql \
+    --uat-user-inventory ./extracts/uat_users.csv \
+    --qa-user-inventory ./extracts/qa_users.csv \
     --user-map ./inputs/uat_user_map.csv
   ```
 
-  The `--user-ddl` flag now auto-detects CSV exports as well as SQL scripts, so pointing it at `./extracts/dbo.User.csv` works identically when the seed set was captured via a spreadsheet export.
+  Provide the full QA and UAT `ossys_User` exports via `--qa-user-inventory` and `--uat-user-inventory`. Both loaders expect the same CSV schema (`Id,Username,EMail,Name,External_Id,Is_Active,Creation_Date,Last_Login`) so Service Center exports can be reused without editing.
 
   The run produces a `uat-users` block in `full-export.manifest.json` (`Stages[].Name == "uat-users"`) plus a dedicated artifact root at `<build-out>/uat-users`. Expect to see:
 

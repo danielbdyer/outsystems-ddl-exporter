@@ -36,10 +36,10 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
     };
     private readonly Option<string?> _outputOption = new("--out", () => "./_artifacts", "Root directory for artifacts.");
     private readonly Option<string?> _userMapOption = new("--user-map", "Path to a CSV containing SourceUserId,TargetUserId mappings.");
-    private readonly Option<string?> _userDdlOption = new(
-        "--user-ddl",
-        "SQL seed script or CSV export of dbo.User containing allowed user identifiers (auto-detected).");
-    private readonly Option<string?> _userIdsOption = new("--user-ids", "Optional CSV or text file containing one allowed user identifier per row.");
+    private readonly Option<string?> _uatInventoryOption = new(
+        "--uat-user-inventory",
+        "CSV export of the UAT ossys_User table (Id, Username, EMail, Name, External_Id, Is_Active, Creation_Date, Last_Login).");
+    private readonly Option<string?> _qaInventoryOption = new("--qa-user-inventory", "CSV export of the QA dbo.User table (Id, Username, EMail, Name, External_Id, Is_Active, Creation_Date, Last_Login).");
     private readonly Option<string?> _snapshotOption = new("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
     private readonly Option<string?> _userEntityIdOption = new("--user-entity-id", "Optional override identifier for the user entity (accepts btGUID*GUID, physical name, or numeric id).");
 
@@ -66,8 +66,8 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             _includeColumnsOption,
             _outputOption,
             _userMapOption,
-            _userDdlOption,
-            _userIdsOption,
+            _uatInventoryOption,
+            _qaInventoryOption,
             _snapshotOption,
             _userEntityIdOption
         };
@@ -120,8 +120,8 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
 
         var (outputDirectory, outputFromConfig) = ResolveStringOption(parseResult, _outputOption, configuration.OutputRoot, "./_artifacts");
         var (userMapPath, userMapFromConfig) = ResolveStringOption(parseResult, _userMapOption, configuration.UserMapPath, null);
-        var (allowedUsersSql, allowedUsersSqlFromConfig) = ResolveStringOption(parseResult, _userDdlOption, configuration.AllowedUsersSqlPath, null);
-        var (allowedUserIds, allowedUserIdsFromConfig) = ResolveStringOption(parseResult, _userIdsOption, configuration.AllowedUserIdsPath, null);
+        var (uatInventoryPath, uatInventoryFromConfig) = ResolveStringOption(parseResult, _uatInventoryOption, configuration.UatUserInventoryPath, null);
+        var (qaInventoryPath, qaInventoryFromConfig) = ResolveStringOption(parseResult, _qaInventoryOption, configuration.QaUserInventoryPath, null);
         var (snapshotPath, snapshotFromConfig) = ResolveStringOption(parseResult, _snapshotOption, configuration.SnapshotPath, null);
         var (userEntityId, entityIdFromConfig) = ResolveStringOption(parseResult, _userEntityIdOption, configuration.UserEntityIdentifier, null);
 
@@ -139,12 +139,10 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             }
         }
 
-        var allowedDdl = allowedUsersSql;
-        var allowedIds = allowedUserIds;
-        if (string.IsNullOrWhiteSpace(allowedDdl) && string.IsNullOrWhiteSpace(allowedIds))
+        if (string.IsNullOrWhiteSpace(uatInventoryPath))
         {
             context.ExitCode = 1;
-            CommandConsole.WriteErrorLine(context.Console, "Either --user-ddl or --user-ids must be supplied.");
+            CommandConsole.WriteErrorLine(context.Console, "--uat-user-inventory is required.");
             return;
         }
 
@@ -162,6 +160,13 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(qaInventoryPath))
+        {
+            context.ExitCode = 1;
+            CommandConsole.WriteErrorLine(context.Console, "--qa-user-inventory is required.");
+            return;
+        }
+
         var options = new UatUsersOptions(
             modelPath,
             connectionString,
@@ -172,8 +177,8 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             includeColumns,
             outputDirectory ?? "./_artifacts",
             userMapPath,
-            allowedDdl,
-            allowedIds,
+            uatInventoryPath,
+            qaInventoryPath,
             snapshotPath,
             userEntityId,
             new UatUsersOptionOrigins(
@@ -186,8 +191,8 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
                 IncludeColumnsFromConfiguration: includeColumnsFromConfig,
                 OutputDirectoryFromConfiguration: outputFromConfig,
                 UserMapPathFromConfiguration: userMapFromConfig,
-                AllowedUsersSqlPathFromConfiguration: allowedUsersSqlFromConfig,
-                AllowedUserIdsPathFromConfiguration: allowedUserIdsFromConfig,
+                UatUserInventoryPathFromConfiguration: uatInventoryFromConfig,
+                QaUserInventoryPathFromConfiguration: qaInventoryFromConfig,
                 SnapshotPathFromConfiguration: snapshotFromConfig,
                 UserEntityIdentifierFromConfiguration: entityIdFromConfig));
 

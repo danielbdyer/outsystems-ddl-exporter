@@ -592,7 +592,8 @@ The following catalog enumerates every `record`-based data object in the solutio
 <details>
 <summary><code>Osm.Pipeline.UatUsers</code> (7)</summary>
 
-* `internal sealed record AllowedUserLoadResult( IReadOnlyCollection<UserIdentifier> UserIds, int SqlRowCount, int ListRowCount);`
+* `public sealed record UserInventoryRecord( UserIdentifier UserId, string? Username, string? Email, string? Name, string? ExternalId, string? IsActive, string? CreationDate, string? LastLogin);`
+* `public sealed record UserInventoryLoadResult( IReadOnlyDictionary<UserIdentifier, UserInventoryRecord> Records, int RowCount);`
 * `internal sealed record PipelineStepRegistration<TContext>( IPipelineStep<TContext> Step, Func<TContext, bool>? Predicate);`
 * `public readonly record struct UserFkColumn( string SchemaName, string TableName, string ColumnName, string ForeignKeyName);`
 * `public readonly record struct UserMappingEntry(UserIdentifier SourceUserId, UserIdentifier? TargetUserId, string? Rationale);`

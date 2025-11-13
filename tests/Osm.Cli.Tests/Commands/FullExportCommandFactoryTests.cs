@@ -143,8 +143,10 @@ public class FullExportCommandFactoryTests
             "SourceId,TargetId",
             "--user-map",
             "map.csv",
-            "--user-ddl",
-            "allowed.sql",
+            "--uat-user-inventory",
+            "uat.csv",
+            "--qa-user-inventory",
+            "qa.csv",
             "--snapshot",
             "snapshot.json",
             "--user-entity-id",
@@ -163,8 +165,8 @@ public class FullExportCommandFactoryTests
         Assert.Equal("PersonId", overrides.UserIdColumn);
         Assert.Equal(new[] { "SourceId", "TargetId" }, overrides.IncludeColumns);
         Assert.Equal("map.csv", overrides.UserMapPath);
-        Assert.Equal("allowed.sql", overrides.AllowedUsersSqlPath);
-        Assert.Null(overrides.AllowedUserIdsPath);
+        Assert.Equal("uat.csv", overrides.UatUserInventoryPath);
+        Assert.Equal("qa.csv", overrides.QaUserInventoryPath);
         Assert.Equal("snapshot.json", overrides.SnapshotPath);
         Assert.Equal("Users::Entity", overrides.UserEntityIdentifier);
     }
@@ -207,8 +209,10 @@ public class FullExportCommandFactoryTests
             ' ',
             "full-export",
             "--enable-uat-users",
-            "--user-ddl",
-            "allowed.sql");
+            "--uat-user-inventory",
+            "allowed.csv",
+            "--qa-user-inventory",
+            "qa.csv");
 
         var exitCode = await parser.InvokeAsync(args, console);
 
@@ -218,7 +222,7 @@ public class FullExportCommandFactoryTests
     }
 
     [Fact]
-    public async Task Invoke_WhenUatUsersEnabledRequiresAllowedUsersSource()
+    public async Task Invoke_WhenUatUsersEnabledRequiresUatInventory()
     {
         using var tempDir = new TempDirectory();
 
@@ -256,12 +260,64 @@ public class FullExportCommandFactoryTests
             "full-export",
             "--enable-uat-users",
             "--uat-conn",
-            "Server=Uat;");
+            "Server=Uat;",
+            "--qa-user-inventory",
+            "qa.csv");
 
         var exitCode = await parser.InvokeAsync(args, console);
 
         Assert.Equal(1, exitCode);
-        Assert.Contains("Either --user-ddl or --user-ids must be supplied", console.Error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("--uat-user-inventory must be supplied", console.Error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Null(fakeVerb.LastOptions);
+    }
+
+    [Fact]
+    public async Task Invoke_WhenUatUsersEnabledRequiresQaInventory()
+    {
+        using var tempDir = new TempDirectory();
+
+        var configuration = CliConfiguration.Empty;
+        var applicationResult = CreateFullExportApplicationResult(tempDir.Path, "Server=Test;");
+        var verbResult = new FullExportVerbResult(
+            new CliConfigurationContext(configuration, "config.json"),
+            applicationResult);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(new StubConfigurationService());
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
+        services.AddSingleton<ILoadHarnessRunner, FakeLoadHarnessRunner>();
+        services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
+        var fakeVerb = new FakeFullExportVerb(verbResult);
+        services.AddSingleton<IVerbRegistry>(_ => new FakeVerbRegistry(fakeVerb));
+        services.AddSingleton<FullExportCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<FullExportCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = string.Join(
+            ' ',
+            "full-export",
+            "--enable-uat-users",
+            "--uat-conn",
+            "Server=Uat;",
+            "--uat-user-inventory",
+            "allowed.csv");
+
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("--qa-user-inventory must be supplied", console.Error.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.Null(fakeVerb.LastOptions);
     }
 

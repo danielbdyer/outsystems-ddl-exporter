@@ -108,8 +108,8 @@ public sealed record UatUsersOverrides(
     string? UserIdColumn,
     IReadOnlyList<string> IncludeColumns,
     string? UserMapPath,
-    string? AllowedUsersSqlPath,
-    string? AllowedUserIdsPath,
+    string? UatUserInventoryPath,
+    string? QaUserInventoryPath,
     string? SnapshotPath,
     string? UserEntityIdentifier)
 {

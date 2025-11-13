@@ -15,6 +15,8 @@ public sealed class UatUsersContext
     private IReadOnlyList<UserIdentifier> _allowedUserIds = Array.Empty<UserIdentifier>();
     private readonly HashSet<UserIdentifier> _orphanUserIdSet = new();
     private IReadOnlyList<UserIdentifier> _orphanUserIds = Array.Empty<UserIdentifier>();
+    private IReadOnlyDictionary<UserIdentifier, UserInventoryRecord> _qaUserInventory
+        = ImmutableSortedDictionary<UserIdentifier, UserInventoryRecord>.Empty;
     private IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> _foreignKeyValueCounts
         = ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>.Empty;
 
@@ -27,8 +29,8 @@ public sealed class UatUsersContext
         string userIdColumn,
         IReadOnlyCollection<string>? includeColumns,
         string userMapPath,
-        string? allowedUsersSqlPath,
-        string? allowedUserIdsPath,
+        string uatUserInventoryPath,
+        string qaUserInventoryPath,
         string? snapshotPath,
         string? userEntityIdentifier,
         bool fromLiveMetadata,
@@ -69,18 +71,19 @@ public sealed class UatUsersContext
         IncludeColumns = includeColumns is null || includeColumns.Count == 0
             ? null
             : includeColumns.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
-        UserMapPath = Path.GetFullPath(userMapPath);
-        if (string.IsNullOrWhiteSpace(allowedUsersSqlPath) && string.IsNullOrWhiteSpace(allowedUserIdsPath))
+        if (string.IsNullOrWhiteSpace(uatUserInventoryPath))
         {
-            throw new ArgumentException("At least one allowed user source must be provided.");
+            throw new ArgumentException("UAT user inventory path must be provided.", nameof(uatUserInventoryPath));
         }
 
-        AllowedUsersSqlPath = string.IsNullOrWhiteSpace(allowedUsersSqlPath)
-            ? null
-            : Path.GetFullPath(allowedUsersSqlPath);
-        AllowedUserIdsPath = string.IsNullOrWhiteSpace(allowedUserIdsPath)
-            ? null
-            : Path.GetFullPath(allowedUserIdsPath);
+        if (string.IsNullOrWhiteSpace(qaUserInventoryPath))
+        {
+            throw new ArgumentException("QA user inventory path must be provided.", nameof(qaUserInventoryPath));
+        }
+
+        UserMapPath = Path.GetFullPath(userMapPath);
+        UatUserInventoryPath = Path.GetFullPath(uatUserInventoryPath);
+        QaUserInventoryPath = Path.GetFullPath(qaUserInventoryPath);
         SnapshotPath = string.IsNullOrWhiteSpace(snapshotPath) ? null : Path.GetFullPath(snapshotPath);
         UserEntityIdentifier = string.IsNullOrWhiteSpace(userEntityIdentifier) ? null : userEntityIdentifier.Trim();
         FromLiveMetadata = fromLiveMetadata;
@@ -103,9 +106,9 @@ public sealed class UatUsersContext
 
     public string UserMapPath { get; }
 
-    public string? AllowedUsersSqlPath { get; }
+    public string UatUserInventoryPath { get; }
 
-    public string? AllowedUserIdsPath { get; }
+    public string QaUserInventoryPath { get; }
 
     public string? SnapshotPath { get; }
 
@@ -122,6 +125,13 @@ public sealed class UatUsersContext
     public IReadOnlyCollection<UserIdentifier> AllowedUserIds => _allowedUserIds;
 
     public IReadOnlyCollection<UserIdentifier> OrphanUserIds => _orphanUserIds;
+
+    public IReadOnlyDictionary<UserIdentifier, UserInventoryRecord> QaUserInventory => _qaUserInventory;
+
+    public bool TryGetQaUser(UserIdentifier userId, out UserInventoryRecord record)
+    {
+        return _qaUserInventory.TryGetValue(userId, out record!);
+    }
 
     public IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> ForeignKeyValueCounts => _foreignKeyValueCounts;
 
@@ -177,6 +187,21 @@ public sealed class UatUsersContext
         }
 
         _orphanUserIds = ordered.ToList();
+    }
+
+    public void SetQaUserInventory(IReadOnlyDictionary<UserIdentifier, UserInventoryRecord> inventory)
+    {
+        if (inventory is null)
+        {
+            throw new ArgumentNullException(nameof(inventory));
+        }
+
+        _qaUserInventory = inventory switch
+        {
+            ImmutableSortedDictionary<UserIdentifier, UserInventoryRecord> sorted => sorted,
+            ImmutableDictionary<UserIdentifier, UserInventoryRecord> immutable => immutable,
+            _ => ImmutableSortedDictionary.CreateRange(inventory)
+        };
     }
 
     public void SetForeignKeyValueCounts(IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> counts)

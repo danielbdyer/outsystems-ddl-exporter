@@ -305,8 +305,10 @@ public sealed class FullExportRunManifestTests
         var userMapPath = Path.Combine(tempDir.Path, "mappings", "uat_user_map.csv");
         Directory.CreateDirectory(Path.GetDirectoryName(userMapPath)!);
         File.WriteAllText(userMapPath, "SourceUserId,TargetUserId,Rationale\n100,200,approved");
-        var allowedUsersSqlPath = Path.Combine(tempDir.Path, "dbo.User.sql");
-        File.WriteAllText(allowedUsersSqlPath, "SELECT 1");
+        var uatInventoryPath = Path.Combine(tempDir.Path, "uat.csv");
+        File.WriteAllText(uatInventoryPath, "Id,Username\n100,uat\n200,uat\n");
+        var qaInventoryPath = Path.Combine(tempDir.Path, "qa.csv");
+        File.WriteAllText(qaInventoryPath, "Id,Username\n100,qa\n200,qa\n");
         var snapshotPath = Path.Combine(tempDir.Path, "uat-users.snapshot.json");
         File.WriteAllText(snapshotPath, "{}");
 
@@ -319,8 +321,8 @@ public sealed class FullExportRunManifestTests
             "Id",
             includeColumns: new[] { "CreatedBy", "UpdatedBy" },
             userMapPath,
-            allowedUsersSqlPath,
-            allowedUserIdsPath: null,
+            uatInventoryPath,
+            qaInventoryPath,
             snapshotPath,
             userEntityIdentifier: "OSUSR_USER",
             fromLiveMetadata: false,
@@ -400,6 +402,8 @@ public sealed class FullExportRunManifestTests
         Assert.Equal(Path.GetFullPath(userMapPath), Path.GetFullPath(uatStage.Artifacts["userMapPath"]!));
         Assert.Equal(Path.GetFullPath(artifacts.GetDefaultUserMapPath()), Path.GetFullPath(uatStage.Artifacts["defaultUserMapPath"]!));
         Assert.Equal(Path.GetFullPath(Path.Combine(uatRoot, "01_preview.csv")), Path.GetFullPath(uatStage.Artifacts["previewPath"]!));
+        Assert.Equal(Path.GetFullPath(uatInventoryPath), Path.GetFullPath(uatStage.Artifacts["uatUserInventoryPath"]!));
+        Assert.Equal(Path.GetFullPath(qaInventoryPath), Path.GetFullPath(uatStage.Artifacts["qaUserInventoryPath"]!));
         Assert.Contains(manifest.DynamicArtifacts, artifact => artifact.Name == "uat-users-preview");
         Assert.Contains(manifest.DynamicArtifacts, artifact => artifact.Name == "uat-users-script");
         Assert.Contains(manifest.DynamicArtifacts, artifact => artifact.Name == "uat-users-catalog");
