@@ -49,11 +49,6 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 configurationFields.Add("ModelPath");
             }
 
-            if (options.Origins.ConnectionStringFromConfiguration)
-            {
-                configurationFields.Add("UatConnectionString");
-            }
-
             if (options.Origins.FromLiveMetadataFromConfiguration)
             {
                 configurationFields.Add("FromLiveMetadata");
@@ -133,14 +128,14 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 options.UatUserInventoryPath,
                 options.QaUserInventoryPath);
 
-            if (string.IsNullOrWhiteSpace(options.UatConnectionString))
+            var sqlOptions = new SqlConnectionOptions(null, null, "osm-uat-users", null);
+            if (string.IsNullOrWhiteSpace(options.ConnectionString))
             {
-                _logger.LogError("--uat-conn must be supplied.");
+                _logger.LogError("--connection-string must be supplied or configured for uat-users.");
                 return 1;
             }
 
-            var sqlOptions = new SqlConnectionOptions(null, null, "osm-uat-users", null);
-            var connectionFactory = new SqlConnectionFactory(options.UatConnectionString!, sqlOptions);
+            var connectionFactory = new SqlConnectionFactory(options.ConnectionString!, sqlOptions);
 
             IUserSchemaGraph schemaGraph;
             if (options.FromLiveMetadata)
@@ -172,7 +167,7 @@ public sealed class UatUsersCommand : IUatUsersCommand
 
             var artifacts = new UatUsersArtifacts(options.OutputDirectory);
             string userMapPath = options.UserMapPath ?? artifacts.GetDefaultUserMapPath();
-            var sourceFingerprint = BuildSourceFingerprint(options.UatConnectionString!);
+            var sourceFingerprint = BuildSourceFingerprint(options.ConnectionString!);
             _logger.LogInformation(
                 "Resolved artifacts root to {ArtifactsRoot}; user map path is {UserMapPath}; source fingerprint is {SourceFingerprint}.",
                 Path.Combine(artifacts.Root, "uat-users"),

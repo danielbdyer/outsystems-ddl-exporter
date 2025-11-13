@@ -101,6 +101,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var extractOverrides = overrides.Extract ?? FullExportOverrides.Empty.Extract;
         var moduleFilter = input.ModuleFilter;
         var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
+        var resolvedSqlConnectionString = ResolveString(input.Sql.ConnectionString, configuration.Sql?.ConnectionString);
         var uatUsersConfiguration = input.UatUsersConfiguration
             ?? configuration.UatUsers
             ?? UatUsersConfiguration.Empty;
@@ -255,6 +256,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
                     uatUsersOverrides,
                     extraction.ExtractionResult,
                     build.OutputDirectory,
+                    resolvedSqlConnectionString,
                     schemaGraph);
 
                 return _uatUsersRunner.RunAsync(uatUsersRequest, ct);
@@ -303,12 +305,10 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             return UatUsersOverrides.Disabled;
         }
 
-        var connectionString = ResolveString(overrides?.ConnectionString, configuration.ConnectionString);
         var uatInventoryPath = ResolveString(overrides?.UatUserInventoryPath, configuration.UatUserInventoryPath);
         var qaInventoryPath = ResolveString(overrides?.QaUserInventoryPath, configuration.QaUserInventoryPath);
 
-        if (string.IsNullOrWhiteSpace(connectionString)
-            || string.IsNullOrWhiteSpace(uatInventoryPath)
+        if (string.IsNullOrWhiteSpace(uatInventoryPath)
             || string.IsNullOrWhiteSpace(qaInventoryPath))
         {
             return UatUsersOverrides.Disabled;
@@ -321,7 +321,6 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
 
         return new UatUsersOverrides(
             Enabled: true,
-            ConnectionString: connectionString,
             UserSchema: userSchema,
             UserTable: userTable,
             UserIdColumn: userIdColumn,
@@ -363,11 +362,6 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
     private static bool ShouldEnableFromConfiguration(UatUsersConfiguration configuration)
     {
         if (configuration is null)
-        {
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(configuration.ConnectionString))
         {
             return false;
         }

@@ -420,16 +420,6 @@ public sealed class CliConfigurationLoader
             snapshotPath = resolvedSnapshot;
         }
 
-        string? connectionString = null;
-        if (element.TryGetProperty("connectionString", out var connectionElement) && connectionElement.ValueKind == JsonValueKind.String)
-        {
-            var value = connectionElement.GetString();
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                connectionString = value;
-            }
-        }
-
         bool? fromLive = null;
         if (element.TryGetProperty("fromLiveMetadata", out var fromLiveElement)
             && ConfigurationJsonHelpers.TryParseBoolean(fromLiveElement, out var parsedFromLive))
@@ -485,7 +475,6 @@ public sealed class CliConfigurationLoader
 
         configuration = new UatUsersConfiguration(
             ModelPath: modelPath,
-            ConnectionString: connectionString,
             FromLiveMetadata: fromLive,
             UserSchema: schema,
             UserTable: table,
