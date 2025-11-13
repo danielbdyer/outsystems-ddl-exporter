@@ -73,6 +73,10 @@ public sealed class UatUsersCommand : IUatUsersCommand
             {
                 configurationFields.Add("IncludeColumns");
             }
+            if (options.Origins.ConnectionStringFromConfiguration)
+            {
+                configurationFields.Add("ConnectionString");
+            }
 
             if (options.Origins.OutputDirectoryFromConfiguration)
             {
@@ -122,6 +126,10 @@ public sealed class UatUsersCommand : IUatUsersCommand
             if (options.Origins.FallbackTargetsFromConfiguration)
             {
                 configurationFields.Add("FallbackTargets");
+            }
+            if (options.Origins.IdempotentEmissionFromConfiguration)
+            {
+                configurationFields.Add("IdempotentEmission");
             }
 
             if (configurationFields.Count > 0)
@@ -192,7 +200,7 @@ public sealed class UatUsersCommand : IUatUsersCommand
                     options.ModelPath ?? "<unspecified>");
             }
 
-            var artifacts = new UatUsersArtifacts(options.OutputDirectory);
+            var artifacts = new UatUsersArtifacts(options.OutputDirectory, options.IdempotentEmission);
             string userMapPath = options.UserMapPath ?? artifacts.GetDefaultUserMapPath();
             var sourceFingerprint = BuildSourceFingerprint(options.ConnectionString!);
             _logger.LogInformation(
@@ -219,7 +227,8 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 options.MatchingAttribute,
                 options.MatchingRegexPattern,
                 options.FallbackMode,
-                options.FallbackTargets);
+                options.FallbackTargets,
+                options.IdempotentEmission);
 
             var pipeline = new UatUsersPipeline(_loggerFactory);
             _logger.LogInformation("Invoking uat-users pipeline.");

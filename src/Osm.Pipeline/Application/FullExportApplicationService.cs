@@ -322,6 +322,9 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var matchingAttribute = ResolveString(overrides?.MatchingAttribute, configuration.MatchingAttribute);
         var matchingRegex = ResolveString(overrides?.MatchingRegexPattern, configuration.MatchingRegexPattern);
         var fallbackAssignment = overrides?.FallbackAssignment ?? configuration.FallbackAssignment;
+        var idempotentEmission = overrides?.IdempotentEmission
+            ?? configuration.IdempotentEmission
+            ?? false;
         IReadOnlyList<UserIdentifier> fallbackTargets;
         if (overrides?.FallbackTargets is { Count: > 0 } overrideTargets)
         {
@@ -349,7 +352,8 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             MatchingAttribute: matchingAttribute,
             MatchingRegexPattern: matchingRegex,
             FallbackAssignment: fallbackAssignment,
-            FallbackTargets: fallbackTargets);
+            FallbackTargets: fallbackTargets,
+            IdempotentEmission: idempotentEmission);
     }
 
     private static IReadOnlyList<string> ResolveIncludeColumns(

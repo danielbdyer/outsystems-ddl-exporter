@@ -528,6 +528,13 @@ public sealed class CliConfigurationLoader
             fallbackTargets = ParseFallbackTargets(fallbackTargetsElement);
         }
 
+        bool? idempotentEmission = null;
+        if (element.TryGetProperty("idempotentEmission", out var idempotentEmissionElement)
+            && ConfigurationJsonHelpers.TryParseBoolean(idempotentEmissionElement, out var parsedIdempotentEmission))
+        {
+            idempotentEmission = parsedIdempotentEmission;
+        }
+
         configuration = new UatUsersConfiguration(
             ModelPath: modelPath,
             FromLiveMetadata: fromLive,
@@ -545,7 +552,8 @@ public sealed class CliConfigurationLoader
             MatchingAttribute: matchingAttribute,
             MatchingRegexPattern: matchingRegex,
             FallbackAssignment: fallbackMode,
-            FallbackTargets: fallbackTargets);
+            FallbackTargets: fallbackTargets,
+            IdempotentEmission: idempotentEmission);
         return true;
     }
 

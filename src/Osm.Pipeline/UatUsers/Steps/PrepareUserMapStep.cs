@@ -51,7 +51,7 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
         var merged = MergeMappings(context.OrphanUserIds, existing, automatic);
         context.SetUserMap(merged);
 
-        WriteUserMap(mapPath, merged);
+        WriteUserMap(mapPath, merged, context.IdempotentEmission);
         _logger.LogInformation(
             "Primary user map written to {MapPath} with {EntryCount} entries.",
             mapPath,
@@ -60,7 +60,7 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
         var defaultPath = context.Artifacts.GetDefaultUserMapPath();
         if (!string.Equals(defaultPath, mapPath, StringComparison.OrdinalIgnoreCase))
         {
-            WriteUserMap(defaultPath, merged);
+            WriteUserMap(defaultPath, merged, context.IdempotentEmission);
             _logger.LogInformation(
                 "Synchronized user map copy written to {DefaultPath}.",
                 defaultPath);
@@ -155,47 +155,44 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
         return false;
     }
 
-    private static void WriteUserMap(string path, IReadOnlyList<UserMappingEntry> entries)
+    private static void WriteUserMap(string path, IReadOnlyList<UserMappingEntry> entries, bool idempotentEmission)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
             return;
         }
 
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        using var writer = new StreamWriter(path, false, Encoding.UTF8);
-        WriteRow(writer, "SourceUserId", "TargetUserId", "Rationale");
+        var builder = new StringBuilder();
+        WriteRow(builder, "SourceUserId", "TargetUserId", "Rationale");
         foreach (var entry in entries)
         {
             var target = entry.TargetUserId.HasValue
                 ? entry.TargetUserId.Value.ToString()
                 : string.Empty;
             var rationale = entry.Rationale ?? string.Empty;
-            WriteRow(writer,
+            WriteRow(
+                builder,
                 entry.SourceUserId.ToString(),
                 target,
                 rationale);
         }
+
+        IdempotentFileWriter.WriteAllText(path, builder.ToString(), idempotentEmission);
     }
 
-    private static void WriteRow(TextWriter writer, params string[] cells)
+    private static void WriteRow(StringBuilder builder, params string[] cells)
     {
         for (var i = 0; i < cells.Length; i++)
         {
             if (i > 0)
             {
-                writer.Write(',');
+                builder.Append(',');
             }
 
-            writer.Write(EscapeCell(cells[i]));
+            builder.Append(EscapeCell(cells[i]));
         }
 
-        writer.WriteLine();
+        builder.AppendLine();
     }
 
     private static string EscapeCell(string? value)

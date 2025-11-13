@@ -156,7 +156,8 @@ public sealed record UatUsersConfiguration(
     string? MatchingAttribute,
     string? MatchingRegexPattern,
     UserFallbackAssignmentMode? FallbackAssignment,
-    IReadOnlyList<string> FallbackTargets)
+    IReadOnlyList<string> FallbackTargets,
+    bool? IdempotentEmission)
 {
     public static UatUsersConfiguration Empty { get; }
         = new(
@@ -176,5 +177,6 @@ public sealed record UatUsersConfiguration(
             MatchingAttribute: null,
             MatchingRegexPattern: null,
             FallbackAssignment: null,
-            FallbackTargets: Array.Empty<string>());
+            FallbackTargets: Array.Empty<string>(),
+            IdempotentEmission: null);
 }

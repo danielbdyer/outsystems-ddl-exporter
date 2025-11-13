@@ -43,7 +43,8 @@ public sealed class UatUsersContext
         string? matchingAttribute = null,
         string? matchingRegexPattern = null,
         UserFallbackAssignmentMode fallbackAssignment = UserFallbackAssignmentMode.Ignore,
-        IEnumerable<UserIdentifier>? fallbackTargets = null)
+        IEnumerable<UserIdentifier>? fallbackTargets = null,
+        bool idempotentEmission = false)
     {
         SchemaGraph = schemaGraph ?? throw new ArgumentNullException(nameof(schemaGraph));
         Artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
@@ -106,6 +107,7 @@ public sealed class UatUsersContext
             : fallbackTargets
                 .Distinct()
                 .ToImmutableArray();
+        IdempotentEmission = idempotentEmission;
     }
 
     public IUserSchemaGraph SchemaGraph { get; }
@@ -285,5 +287,7 @@ public sealed class UatUsersContext
     public UserFallbackAssignmentMode FallbackAssignment { get; }
 
     public ImmutableArray<UserIdentifier> FallbackTargets { get; }
+
+    public bool IdempotentEmission { get; }
 
 }

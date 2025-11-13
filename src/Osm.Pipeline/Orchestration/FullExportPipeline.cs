@@ -66,7 +66,8 @@ public sealed record UatUsersPipelineOptions(
     string? MatchingAttribute = null,
     string? MatchingRegexPattern = null,
     UserFallbackAssignmentMode? FallbackAssignment = null,
-    IReadOnlyList<string>? FallbackTargets = null);
+    IReadOnlyList<string>? FallbackTargets = null,
+    bool IdempotentEmission = false);
 
 public sealed record FullExportPipelineRequest(
     ExtractModelPipelineRequest ExtractModel,
@@ -245,7 +246,8 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
                     request.UatUsers.MatchingAttribute,
                     request.UatUsers.MatchingRegexPattern,
                     request.UatUsers.FallbackAssignment,
-                    ConvertFallbackTargets(request.UatUsers.FallbackTargets));
+                    ConvertFallbackTargets(request.UatUsers.FallbackTargets),
+                    request.UatUsers.IdempotentEmission);
 
                 var runnerRequest = new UatUsersPipelineRequest(
                     overrides,

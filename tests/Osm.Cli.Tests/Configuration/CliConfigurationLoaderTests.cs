@@ -243,7 +243,8 @@ public sealed class CliConfigurationLoaderTests
                 matchAttribute = "Username",
                 matchRegex = "^qa_(?<target>.*)$",
                 fallbackMode = "SingleTarget",
-                fallbackTargets = new[] { "400" }
+                fallbackTargets = new[] { "400" },
+                idempotentEmission = true
             }
         };
 
@@ -271,6 +272,7 @@ public sealed class CliConfigurationLoaderTests
         Assert.Equal("^qa_(?<target>.*)$", uatUsers.MatchingRegexPattern);
         Assert.Equal(UserFallbackAssignmentMode.SingleTarget, uatUsers.FallbackAssignment);
         Assert.Equal(new[] { "400" }, uatUsers.FallbackTargets);
+        Assert.True(uatUsers.IdempotentEmission);
     }
 
     private static string CreateLegacyTighteningJson()

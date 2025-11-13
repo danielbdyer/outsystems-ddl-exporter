@@ -82,7 +82,7 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
 
         try
         {
-            var artifacts = new UatUsersArtifacts(request.OutputDirectory);
+            var artifacts = new UatUsersArtifacts(request.OutputDirectory, request.Overrides.IdempotentEmission);
             var userMapPath = string.IsNullOrWhiteSpace(request.Overrides.UserMapPath)
                 ? artifacts.GetDefaultUserMapPath()
                 : request.Overrides.UserMapPath!;
@@ -135,7 +135,8 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 matchingAttribute: request.Overrides.MatchingAttribute,
                 matchingRegexPattern: request.Overrides.MatchingRegexPattern,
                 fallbackAssignment: fallbackAssignment,
-                fallbackTargets: fallbackTargets);
+                fallbackTargets: fallbackTargets,
+                idempotentEmission: request.Overrides.IdempotentEmission);
 
             var pipeline = new UatUsersPipeline(_loggerFactory);
             _logger.LogInformation(

@@ -168,6 +168,50 @@ public class FullExportCommandFactoryTests
         Assert.Equal("qa.csv", overrides.QaUserInventoryPath);
         Assert.Equal("snapshot.json", overrides.SnapshotPath);
         Assert.Equal("Users::Entity", overrides.UserEntityIdentifier);
+        Assert.False(overrides.IdempotentEmission);
+    }
+
+    [Fact]
+    public async Task Invoke_BindsUatUsersIdempotentFlag()
+    {
+        using var tempDir = new TempDirectory();
+
+        var loadHarnessRunner = new FakeLoadHarnessRunner();
+        var configuration = CliConfiguration.Empty;
+        var applicationResult = CreateFullExportApplicationResult(tempDir.Path, "Server=Test;");
+        var verbResult = new FullExportVerbResult(
+            new CliConfigurationContext(configuration, "config.json"),
+            applicationResult);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(new StubConfigurationService());
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
+        services.AddSingleton<ILoadHarnessRunner>(loadHarnessRunner);
+        services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
+        var fakeVerb = new FakeFullExportVerb(verbResult);
+        services.AddSingleton<IVerbRegistry>(_ => new FakeVerbRegistry(fakeVerb));
+        services.AddSingleton<FullExportCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<FullExportCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+
+        var args = "full-export --connection-string Server=QA; --enable-uat-users --uat-user-inventory uat.csv --qa-user-inventory qa.csv --uat-users-idempotent-emission";
+
+        var exitCode = await parser.InvokeAsync(args);
+
+        Assert.Equal(0, exitCode);
+        var overrides = fakeVerb.LastOptions!.Overrides.UatUsers;
+        Assert.True(overrides!.IdempotentEmission);
     }
 
     [Fact]

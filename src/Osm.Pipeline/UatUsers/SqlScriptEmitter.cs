@@ -129,7 +129,10 @@ public static class SqlScriptEmitter
 
     private static void AppendHeader(StringBuilder builder, UatUsersContext context)
     {
-        builder.AppendLine($"-- uat-users remap script generated {DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)}");
+        var generatedAt = context.IdempotentEmission
+            ? "(idempotent emission: timestamp omitted)"
+            : DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        builder.AppendLine($"-- uat-users remap script generated {generatedAt}");
         builder.AppendLine($"-- Inputs hash: {ComputeInputsHash(context)}");
         builder.AppendLine($"-- Catalog length: {context.UserFkCatalog.Count}");
         builder.AppendLine($"-- Source fingerprint: {context.SourceFingerprint}");

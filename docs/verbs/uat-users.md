@@ -14,6 +14,7 @@ The `uat-users` verb discovers every foreign-key column that references `dbo.[Us
 * **Guarded apply script** – `02_apply_user_remap.sql` creates `#UserRemap` and `#Changes` temp tables, validates target existence, protects `NULL` values, and emits a summary. Updates only occur when `SourceUserId <> TargetUserId`, making the script idempotent and rerunnable.
 * **SQL-friendly configuration parsing** – The CLI accepts `[schema].[table]` and quoted identifiers for `--user-table`, trimming duplicates from `--include-columns` so catalogs stay deterministic even when operators repeat column names.
 * **Flexible identifier handling** – Allowed-user parsing and artifacts support numeric, `UNIQUEIDENTIFIER`, or free-form textual identifiers; the generated SQL automatically selects `INT`, `UNIQUEIDENTIFIER`, or `NVARCHAR` temporary table columns to match the observed inputs.
+* **Optional idempotent emission** – Provide `--idempotent-emission` (or `--uat-users-idempotent-emission` when running through `full-export`) to skip rewriting artifacts whose contents have not changed, keeping timestamps and downstream automation stable.
 
 ## CLI Contract
 
@@ -37,6 +38,7 @@ uat-users
   [--match-fallback-mode <mode>]    # ignore (default), single, or round-robin
   [--match-fallback-target <id>]    # Approved fallback UserIds (repeat or comma-delimit values)
   [--out <dir>]                     # Default: ./_artifacts
+  [--idempotent-emission]           # Only rewrite artifacts when their contents change
 ```
 
 ## Required Inventories & CSV Schema
@@ -69,7 +71,7 @@ Example:
 ```bash
 dotnet run --project src/Osm.Cli -- uat-users \
   --model ./_artifacts/model.json \
-  --uat-conn "Server=uat;Database=UAT;Trusted_Connection=True" \
+  --connection-string "Server=uat;Database=UAT;Trusted_Connection=True" \
   --uat-user-inventory ./extracts/uat_users.csv \
   --qa-user-inventory ./extracts/qa_users.csv \
   --match-strategy exact-attribute \

@@ -180,6 +180,7 @@ public sealed class FullExportApplicationServiceTests
         Assert.Equal(buildResult.OutputDirectory, request.OutputDirectory);
         Assert.Same(schemaGraphFactory.GraphToReturn, request.SchemaGraph);
         Assert.Same(extractionResult.ExtractionResult, schemaGraphFactory.LastExtraction);
+        Assert.False(request.Overrides.IdempotentEmission);
     }
 
     [Fact]
@@ -251,7 +252,8 @@ public sealed class FullExportApplicationServiceTests
                 MatchingAttribute: "Email",
                 MatchingRegexPattern: null,
                 FallbackAssignment: UserFallbackAssignmentMode.Ignore,
-                FallbackTargets: Array.Empty<string>())
+                FallbackTargets: Array.Empty<string>(),
+                IdempotentEmission: true)
         };
 
         var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
@@ -284,6 +286,7 @@ public sealed class FullExportApplicationServiceTests
         Assert.Equal("configured-uat.csv", request.Overrides.UatUserInventoryPath);
         Assert.Equal("configured-snapshot.json", request.Overrides.SnapshotPath);
         Assert.Equal("UserEntity", request.Overrides.UserEntityIdentifier);
+        Assert.True(request.Overrides.IdempotentEmission);
     }
 
     [Fact]
@@ -345,7 +348,8 @@ public sealed class FullExportApplicationServiceTests
                 MatchingAttribute: "Email",
                 MatchingRegexPattern: null,
                 FallbackAssignment: UserFallbackAssignmentMode.Ignore,
-                FallbackTargets: Array.Empty<string>())
+                FallbackTargets: Array.Empty<string>(),
+                IdempotentEmission: null)
         };
 
         var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
@@ -390,6 +394,7 @@ public sealed class FullExportApplicationServiceTests
         Assert.Equal("cfg-qa.csv", request.Overrides.QaUserInventoryPath);
         Assert.Equal("cli-snapshot.json", request.Overrides.SnapshotPath);
         Assert.Equal("cfg-entity", request.Overrides.UserEntityIdentifier);
+        Assert.False(request.Overrides.IdempotentEmission);
     }
 
     [Fact]
