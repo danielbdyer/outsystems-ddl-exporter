@@ -664,7 +664,8 @@ public sealed class FullExportRunManifestTests
             outputDirectory,
             modelPath,
             true,
-            ImmutableArray<string>.Empty);
+            ImmutableArray<string>.Empty,
+            DynamicEntityExtractionTelemetry.Empty);
     }
 
     private static OutsystemsMetadataSnapshot CreateMetadataSnapshot(string databaseName)

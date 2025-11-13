@@ -124,8 +124,6 @@ public class BuildSsdtCommandFactoryTests
         Assert.Contains("Decision log: decision.log", output);
         Assert.Contains("Opportunities: opportunities.json", output);
         Assert.Contains("Safe script: suggestions/safe-to-apply.sql", output);
-        var telemetryPath = Path.Combine("output", "DynamicData", "dynamic-data.telemetry.json");
-        Assert.Contains($"Dynamic data telemetry: {telemetryPath}", output);
         Assert.Contains("Remediation script: suggestions/needs-remediation.sql", output);
         Assert.Contains("Tightening: Columns 1/2, Unique 1/1, Foreign Keys 1/1", output);
         var summaryIndex = output.IndexOf("SSDT build summary:", StringComparison.Ordinal);
@@ -518,8 +516,6 @@ public class BuildSsdtCommandFactoryTests
                 manifest.Tables.Count,
                 Array.Empty<SsdtSqlValidationIssue>());
 
-            var telemetryPath = Path.Combine("output", "DynamicData", "dynamic-data.telemetry.json");
-
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
                 ProfilingInsights,
@@ -539,16 +535,15 @@ public class BuildSsdtCommandFactoryTests
                 Path.Combine("output", "OutSystemsModel.sqlproj"),
                 ImmutableArray<string>.Empty,
                 ImmutableArray<string>.Empty,
-                DynamicDataTelemetryPath: telemetryPath,
-                ImmutableArray<string>.Empty,
-                sqlValidation,
-                null,
-            PipelineExecutionLog.Empty,
+                TelemetryPackagePaths: ImmutableArray<string>.Empty,
+                SqlValidation: sqlValidation,
+                EvidenceCache: null,
+            ExecutionLog: PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
-            ImmutableArray<string>.Empty,
-            MultiEnvironmentProfileReport.Empty);
+            Warnings: ImmutableArray<string>.Empty,
+            MultiEnvironmentReport: MultiEnvironmentProfileReport.Empty);
 
             return new BuildSsdtApplicationResult(
                 pipelineResult,
@@ -557,7 +552,8 @@ public class BuildSsdtCommandFactoryTests
                 "output",
                 "model.json",
                 false,
-                ImmutableArray<string>.Empty);
+                ImmutableArray<string>.Empty,
+                DynamicEntityExtractionTelemetry.Empty);
         }
     }
 

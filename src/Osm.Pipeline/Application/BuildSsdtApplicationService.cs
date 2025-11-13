@@ -33,7 +33,8 @@ public sealed record BuildSsdtApplicationResult(
     string OutputDirectory,
     string ModelPath,
     bool ModelWasExtracted,
-    ImmutableArray<string> ModelExtractionWarnings);
+    ImmutableArray<string> ModelExtractionWarnings,
+    DynamicEntityExtractionTelemetry DynamicDataTelemetry);
 
 public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase, IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>
 {
@@ -88,6 +89,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
         var context = contextResult.Value;
         var dynamicDatasetSource = DynamicDatasetSource.None;
         var dynamicDataset = input.DynamicDataset ?? DynamicEntityDataset.Empty;
+        var dynamicDataTelemetry = DynamicEntityExtractionTelemetry.Empty;
         if (!dynamicDataset.IsEmpty)
         {
             dynamicDatasetSource = DynamicDatasetSource.UserProvided;
@@ -113,6 +115,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
         {
             dynamicDataset = extractionResult.Dataset;
             dynamicDatasetSource = DynamicDatasetSource.Extraction;
+            dynamicDataTelemetry = DynamicEntityExtractionTelemetry.Empty;
         }
         var staticDataProviderResult = _staticDataProviderFactory.Create(input.Overrides, context.SqlOptions, context.Tightening);
         staticDataProviderResult = await EnsureSuccessOrFlushAsync(staticDataProviderResult, context, cancellationToken).ConfigureAwait(false);
@@ -189,7 +192,9 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
                 return Result<BuildSsdtApplicationResult>.Failure(dynamicDatasetResult.Errors);
             }
 
-            dynamicDataset = dynamicDatasetResult.Value;
+            var extractionOutcome = dynamicDatasetResult.Value;
+            dynamicDataset = extractionOutcome.Dataset;
+            dynamicDataTelemetry = extractionOutcome.Telemetry;
             dynamicDatasetSource = DynamicDatasetSource.SqlProvider;
         }
 
@@ -242,6 +247,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             assembly.OutputDirectory,
             modelResolution.ModelPath,
             modelResolution.WasExtracted,
-            modelResolution.Warnings);
+            modelResolution.Warnings,
+            dynamicDataTelemetry);
     }
 }

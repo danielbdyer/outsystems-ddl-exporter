@@ -665,7 +665,8 @@ public class CommandConsoleTests
             "/tmp/output",
             "model.json",
             false,
-            ImmutableArray<string>.Empty);
+            ImmutableArray<string>.Empty,
+            DynamicEntityExtractionTelemetry.Empty);
 
         CommandConsole.EmitBuildSsdtSummary(console, applicationResult, pipelineResult);
 

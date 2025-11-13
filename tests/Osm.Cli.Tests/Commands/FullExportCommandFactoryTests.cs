@@ -22,6 +22,7 @@ using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.UatUsers;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.Profiling;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
@@ -482,8 +483,6 @@ public class FullExportCommandFactoryTests
         var validationsPath = Path.Combine(outputDirectory, "validations.json");
         File.WriteAllText(validationsPath, "{}");
 
-        var telemetryPath = Path.Combine(outputDirectory, "DynamicData", "dynamic-data.telemetry.json");
-
         var pipelineResult = new BuildSsdtPipelineResult(
             ProfileFixtures.LoadSnapshot(Path.Combine("profiling", "profile.edge-case.json")),
             ImmutableArray<ProfilingInsight>.Empty,
@@ -503,16 +502,15 @@ public class FullExportCommandFactoryTests
             Path.Combine(outputDirectory, "OutSystemsModel.sqlproj"),
             staticSeedPaths,
             ImmutableArray<string>.Empty,
-            DynamicDataTelemetryPath: telemetryPath,
-            ImmutableArray<string>.Empty,
-            SsdtSqlValidationSummary.Empty,
-            null,
-            PipelineExecutionLog.Empty,
+            TelemetryPackagePaths: ImmutableArray<string>.Empty,
+            SqlValidation: SsdtSqlValidationSummary.Empty,
+            EvidenceCache: null,
+            ExecutionLog: PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
-            ImmutableArray<string>.Empty,
-            null);
+            Warnings: ImmutableArray<string>.Empty,
+            MultiEnvironmentReport: MultiEnvironmentProfileReport.Empty);
 
         return new BuildSsdtApplicationResult(
             pipelineResult,
@@ -521,7 +519,8 @@ public class FullExportCommandFactoryTests
             outputDirectory,
             modelPath,
             true,
-            ImmutableArray<string>.Empty);
+            ImmutableArray<string>.Empty,
+            DynamicEntityExtractionTelemetry.Empty);
     }
 
     private static OutsystemsMetadataSnapshot CreateMetadataSnapshot(string databaseName)
