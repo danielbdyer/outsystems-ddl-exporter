@@ -29,10 +29,10 @@ public sealed class SqlLiteralFormatter
             decimal dec => dec.ToString(CultureInfo.InvariantCulture),
             double d => d.ToString("G17", CultureInfo.InvariantCulture),
             float f => f.ToString("G9", CultureInfo.InvariantCulture),
-            DateOnly date => $"'{date:yyyy-MM-dd}'",
-            TimeOnly time => $"'{time:HH:mm:ss.fffffff}'",
-            DateTime dt => $"'{dt:yyyy-MM-ddTHH:mm:ss.fffffff}'",
-            DateTimeOffset dto => $"'{dto:yyyy-MM-ddTHH:mm:ss.fffffffK}'",
+            DateOnly date => FormatDate(date),
+            TimeOnly time => FormatTime(time),
+            DateTime dt => FormatDateTime(dt),
+            DateTimeOffset dto => FormatDateTimeOffset(dto),
             TimeSpan ts => $"'{ts:c}'",
             Guid g => $"'{g:D}'",
             byte[] bytes => FormatBinary(bytes),
@@ -69,4 +69,16 @@ public sealed class SqlLiteralFormatter
 
         return builder.ToString();
     }
+
+    private static string FormatDate(DateOnly value)
+        => FormattableString.Invariant($"CAST('{value:yyyy-MM-dd}' AS date)");
+
+    private static string FormatTime(TimeOnly value)
+        => FormattableString.Invariant($"CAST('{value:HH:mm:ss.fffffff}' AS time(7))");
+
+    private static string FormatDateTime(DateTime value)
+        => FormattableString.Invariant($"CAST('{value:yyyy-MM-dd HH:mm:ss.fffffff}' AS datetime2(7))");
+
+    private static string FormatDateTimeOffset(DateTimeOffset value)
+        => FormattableString.Invariant($"CAST('{value:yyyy-MM-dd HH:mm:ss.fffffffK}' AS datetimeoffset(7))");
 }

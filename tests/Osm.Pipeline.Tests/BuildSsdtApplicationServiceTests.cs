@@ -297,7 +297,8 @@ public sealed class BuildSsdtApplicationServiceTests
             Precision: null,
             Scale: null,
             IsPrimaryKey: true,
-            IsIdentity: true));
+            IsIdentity: true,
+            IsNullable: false));
 
         var definition = new StaticEntitySeedTableDefinition(
             Module: "Core",

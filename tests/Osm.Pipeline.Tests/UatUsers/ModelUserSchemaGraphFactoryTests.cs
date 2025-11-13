@@ -70,7 +70,8 @@ public sealed class ModelUserSchemaGraphFactoryTests
                     null,
                     null,
                     IsPrimaryKey: false,
-                    IsIdentity: false)));
+                    IsIdentity: false,
+                    IsNullable: false)));
 
         var row = StaticEntityRow.Create(new object?[] { json });
         var table = new StaticEntityTableData(definition, ImmutableArray.Create(row));
@@ -95,7 +96,8 @@ public sealed class ModelUserSchemaGraphFactoryTests
                     null,
                     null,
                     IsPrimaryKey: false,
-                    IsIdentity: false)));
+                    IsIdentity: false,
+                    IsNullable: false)));
 
         var row = StaticEntityRow.Create(new object?[] { 42 });
         var table = new StaticEntityTableData(definition, ImmutableArray.Create(row));

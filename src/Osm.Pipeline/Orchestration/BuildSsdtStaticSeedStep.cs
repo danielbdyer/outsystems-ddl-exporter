@@ -78,6 +78,8 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         var ordering = EntityDependencySorter.SortByForeignKeys(deterministicData, model);
         var orderedData = ordering.Tables;
         var topologicalOrderingApplied = ordering.TopologicalOrderingApplied;
+        var preflight = StaticSeedForeignKeyPreflight.Analyze(orderedData, model);
+        LogForeignKeyPreflight(state.Log, preflight);
         var seedOptions = state.Request.Scope.TighteningOptions.Emission.StaticSeeds;
         var seedsRoot = state.Request.SeedOutputDirectoryHint;
         if (string.IsNullOrWhiteSpace(seedsRoot))
@@ -216,4 +218,58 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
 
         return directoryName;
     }
+
+    private static void LogForeignKeyPreflight(
+        PipelineExecutionLogBuilder log,
+        StaticSeedForeignKeyPreflightResult result)
+    {
+        if (log is null)
+        {
+            throw new ArgumentNullException(nameof(log));
+        }
+
+        if (result is null)
+        {
+            throw new ArgumentNullException(nameof(result));
+        }
+
+        var metadataBuilder = new PipelineLogMetadataBuilder()
+            .WithCount("foreignKeys.orphans", result.MissingParents.Length)
+            .WithCount("foreignKeys.orderingViolations", result.OrderingViolations.Length);
+
+        if (!result.MissingParents.IsDefaultOrEmpty)
+        {
+            metadataBuilder.WithValue("foreignKeys.orphans.sample", FormatIssues(result.MissingParents));
+        }
+
+        if (!result.OrderingViolations.IsDefaultOrEmpty)
+        {
+            metadataBuilder.WithValue("foreignKeys.ordering.sample", FormatIssues(result.OrderingViolations));
+        }
+
+        log.Record(
+            "staticData.seed.preflight",
+            result.HasFindings
+                ? "Static seed FK preflight detected anomalies."
+                : "Static seed FK preflight completed without anomalies.",
+            metadataBuilder.Build());
+    }
+
+    private static string FormatIssues(ImmutableArray<StaticSeedForeignKeyIssue> issues)
+    {
+        if (issues.IsDefaultOrEmpty)
+        {
+            return string.Empty;
+        }
+
+        return string.Join(
+            ";",
+            issues
+                .Take(5)
+                .Select(issue => FormattableString.Invariant(
+                    $"{issue.ChildSchema}.{issue.ChildTable}->{issue.ReferencedSchema}.{issue.ReferencedTable}({FormatConstraintName(issue.ConstraintName)})")));
+    }
+
+    private static string FormatConstraintName(string constraintName)
+        => string.IsNullOrWhiteSpace(constraintName) ? "unnamed" : constraintName;
 }
