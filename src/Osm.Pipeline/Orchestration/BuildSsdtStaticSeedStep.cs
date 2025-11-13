@@ -75,8 +75,9 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         }
 
         var deterministicData = EntitySeedDeterminizer.Normalize(staticDataResult.Value);
-        var orderedData = EntityDependencySorter.SortByForeignKeys(deterministicData, model);
-        var topologicalOrderingApplied = model is not null && !orderedData.IsDefaultOrEmpty;
+        var ordering = EntityDependencySorter.SortByForeignKeys(deterministicData, model);
+        var orderedData = ordering.Tables;
+        var topologicalOrderingApplied = ordering.TopologicalOrderingApplied;
         var seedOptions = state.Request.Scope.TighteningOptions.Emission.StaticSeeds;
         var seedsRoot = state.Request.SeedOutputDirectoryHint;
         if (string.IsNullOrWhiteSpace(seedsRoot))
@@ -103,27 +104,12 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                     ? ModuleNameSanitizer.Sanitize(moduleName)
                     : moduleName;
 
-                var moduleDirectoryName = sanitizedModule;
-                if (!usedModuleNames.Add(moduleDirectoryName))
-                {
-                    var suffix = 2;
-                    while (!usedModuleNames.Add(moduleDirectoryName = $"{sanitizedModule}_{suffix}"))
-                    {
-                        suffix++;
-                    }
-
-                    if (state.Request.Scope.SmoOptions.SanitizeModuleNames)
-                    {
-                        state.Log.Record(
-                            "staticData.seed.moduleNameRemapped",
-                            $"Sanitized module name '{sanitizedModule}' for module '{moduleName}' collided with another module. Remapped to '{moduleDirectoryName}'.",
-                            new PipelineLogMetadataBuilder()
-                                .WithValue("module.originalName", moduleName)
-                                .WithValue("module.sanitizedName", sanitizedModule)
-                                .WithValue("module.disambiguatedName", moduleDirectoryName)
-                                .Build());
-                    }
-                }
+                var moduleDirectoryName = ResolveModuleDirectoryName(
+                    moduleName,
+                    sanitizedModule,
+                    usedModuleNames,
+                    state.Log,
+                    "staticData.seed.moduleNameRemapped");
 
                 var moduleDirectory = Path.Combine(seedsRoot!, moduleDirectoryName);
                 Directory.CreateDirectory(moduleDirectory);
@@ -166,6 +152,12 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                     "outputs.seedPaths",
                     seedPaths.IsDefaultOrEmpty ? string.Empty : string.Join(";", seedPaths))
                 .WithCount("tables", seedDefinitions.Length)
+                .WithCount("ordering.nodes", ordering.NodeCount)
+                .WithCount("ordering.edges", ordering.EdgeCount)
+                .WithCount("ordering.missingEdges", ordering.MissingEdgeCount)
+                .WithValue("ordering.cycleDetected", ordering.CycleDetected ? "true" : "false")
+                .WithValue("ordering.fallbackApplied", ordering.AlphabeticalFallbackApplied ? "true" : "false")
+                .WithValue("ordering.mode", ordering.TopologicalOrderingApplied ? "topological" : "alphabetical")
                 .Build());
 
         return Result<StaticSeedsGenerated>.Success(new StaticSeedsGenerated(
@@ -186,5 +178,42 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
             seedPaths,
             orderedData,
             topologicalOrderingApplied));
+    }
+
+    private static string ResolveModuleDirectoryName(
+        string moduleName,
+        string sanitizedModule,
+        ISet<string> usedModuleNames,
+        PipelineExecutionLogBuilder log,
+        string logStep)
+    {
+        var candidate = sanitizedModule;
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            candidate = moduleName;
+        }
+
+        var directoryName = candidate;
+        if (usedModuleNames.Add(directoryName))
+        {
+            return directoryName;
+        }
+
+        var suffix = 2;
+        while (!usedModuleNames.Add(directoryName = $"{candidate}_{suffix}"))
+        {
+            suffix++;
+        }
+
+        log.Record(
+            logStep,
+            $"Module '{moduleName}' collided with another module directory. Remapped to '{directoryName}'.",
+            new PipelineLogMetadataBuilder()
+                .WithValue("module.originalName", moduleName)
+                .WithValue("module.sanitizedName", candidate)
+                .WithValue("module.disambiguatedName", directoryName)
+                .Build());
+
+        return directoryName;
     }
 }
