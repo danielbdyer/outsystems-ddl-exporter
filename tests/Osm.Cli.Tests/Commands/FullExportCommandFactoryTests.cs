@@ -69,6 +69,7 @@ public class FullExportCommandFactoryTests
         services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<SchemaApplyOptionBinder>();
         services.AddSingleton<UatUsersOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<ILoadHarnessRunner>(loadHarnessRunner);
         services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
         var fakeVerb = new FakeFullExportVerb(verbResult);
@@ -115,6 +116,7 @@ public class FullExportCommandFactoryTests
         services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<SchemaApplyOptionBinder>();
         services.AddSingleton<UatUsersOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<ILoadHarnessRunner>(loadHarnessRunner);
         services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
         var fakeVerb = new FakeFullExportVerb(verbResult);
@@ -187,6 +189,7 @@ public class FullExportCommandFactoryTests
         services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<SchemaApplyOptionBinder>();
         services.AddSingleton<UatUsersOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<ILoadHarnessRunner, FakeLoadHarnessRunner>();
         services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
         var fakeVerb = new FakeFullExportVerb(verbResult);
@@ -234,6 +237,7 @@ public class FullExportCommandFactoryTests
         services.AddSingleton<TighteningOptionBinder>();
         services.AddSingleton<SchemaApplyOptionBinder>();
         services.AddSingleton<UatUsersOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<ILoadHarnessRunner, FakeLoadHarnessRunner>();
         services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
         var fakeVerb = new FakeFullExportVerb(verbResult);

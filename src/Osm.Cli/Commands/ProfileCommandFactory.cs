@@ -3,7 +3,7 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
-using Osm.Cli.Commands.Binders;
+using Osm.Cli.Commands.Options;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
@@ -12,48 +12,27 @@ namespace Osm.Cli.Commands;
 
 internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerbOptions, ProfileVerbResult>
 {
-    private readonly CliGlobalOptions _globalOptions;
-    private readonly ModuleFilterOptionBinder _moduleFilterBinder;
-    private readonly SqlOptionBinder _sqlOptionBinder;
-    private readonly TighteningOptionBinder _tighteningBinder;
-
-    private readonly Option<string?> _modelOption = new("--model", "Path to the model JSON file.");
-    private readonly Option<string?> _profileOption = new("--profile", "Path to the profiling fixture when using the fixture provider.");
-    private readonly Option<string?> _profilerProviderOption = new("--profiler-provider", "Profiler provider to use (fixture or sql).");
-    private readonly Option<string?> _outputOption = new("--out", () => "profiles", "Directory to write profiling artifacts.");
-    private readonly Option<string?> _sqlMetadataOption = new("--sql-metadata-out", "Path to write SQL metadata diagnostics (JSON).");
+    private readonly VerbOptionDeclaration<CaptureProfileOverrides> _verbOptions;
 
     public ProfileCommandFactory(
         IServiceScopeFactory scopeFactory,
-        CliGlobalOptions globalOptions,
-        ModuleFilterOptionBinder moduleFilterBinder,
-        SqlOptionBinder sqlOptionBinder,
-        TighteningOptionBinder tighteningOptionBinder)
+        VerbOptionRegistry optionRegistry)
         : base(scopeFactory)
     {
-        _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
-        _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
-        _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
-        _tighteningBinder = tighteningOptionBinder ?? throw new ArgumentNullException(nameof(tighteningOptionBinder));
+        if (optionRegistry is null)
+        {
+            throw new ArgumentNullException(nameof(optionRegistry));
+        }
+
+        _verbOptions = optionRegistry.Profile;
     }
 
     protected override string VerbName => ProfileVerb.VerbName;
 
     protected override Command CreateCommandCore()
     {
-        var command = new Command("profile", "Capture and persist a profiling snapshot.")
-        {
-            _modelOption,
-            _profileOption,
-            _profilerProviderOption,
-            _outputOption,
-            _sqlMetadataOption
-        };
-
-        command.AddGlobalOption(_globalOptions.ConfigPath);
-        CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
-        CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
-        CommandOptionBuilder.AddTighteningOptions(command, _tighteningBinder);
+        var command = new Command("profile", "Capture and persist a profiling snapshot.");
+        _verbOptions.Configure(command);
         return command;
     }
 
@@ -64,25 +43,25 @@ internal sealed class ProfileCommandFactory : PipelineCommandFactory<ProfileVerb
             throw new ArgumentNullException(nameof(context));
         }
 
-        var parseResult = context.ParseResult;
-        var moduleFilter = _moduleFilterBinder.Bind(parseResult);
-        var sqlOverrides = _sqlOptionBinder.Bind(parseResult);
-        var tightening = _tighteningBinder.Bind(parseResult);
+        var bound = _verbOptions.Bind(context.ParseResult);
 
-        var overrides = new CaptureProfileOverrides(
-            parseResult.GetValueForOption(_modelOption),
-            parseResult.GetValueForOption(_outputOption),
-            parseResult.GetValueForOption(_profilerProviderOption),
-            parseResult.GetValueForOption(_profileOption),
-            parseResult.GetValueForOption(_sqlMetadataOption));
+        if (bound.ModuleFilter is null)
+        {
+            throw new InvalidOperationException("Module filter overrides missing.");
+        }
+
+        if (bound.Sql is null)
+        {
+            throw new InvalidOperationException("SQL overrides missing.");
+        }
 
         return new ProfileVerbOptions
         {
-            ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
-            Overrides = overrides,
-            ModuleFilter = moduleFilter,
-            Sql = sqlOverrides,
-            Tightening = tightening
+            ConfigurationPath = bound.ConfigurationPath,
+            Overrides = bound.Overrides,
+            ModuleFilter = bound.ModuleFilter,
+            Sql = bound.Sql,
+            Tightening = bound.Tightening
         };
     }
 

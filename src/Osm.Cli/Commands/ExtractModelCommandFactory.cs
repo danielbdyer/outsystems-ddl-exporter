@@ -6,7 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
-using Osm.Cli.Commands.Binders;
+using Osm.Cli.Commands.Options;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
@@ -15,44 +15,27 @@ namespace Osm.Cli.Commands;
 
 internal sealed class ExtractModelCommandFactory : PipelineCommandFactory<ExtractModelVerbOptions, ExtractModelVerbResult>
 {
-    private readonly CliGlobalOptions _globalOptions;
-    private readonly ModuleFilterOptionBinder _moduleFilterBinder;
-    private readonly SqlOptionBinder _sqlOptionBinder;
-
-    private readonly Option<bool> _onlyActiveAttributesOption = new("--only-active-attributes", "Extract only active attributes.");
-    private readonly Option<bool> _includeInactiveAttributesOption = new("--include-inactive-attributes", "Include inactive attributes when extracting.");
-    private readonly Option<string?> _outputOption = new("--out", () => "model.extracted.json", "Output path for extracted model JSON.");
-    private readonly Option<string?> _mockSqlOption = new("--mock-advanced-sql", "Path to advanced SQL manifest fixture.");
-    private readonly Option<string?> _sqlMetadataOption = new("--sql-metadata-out", "Path to write SQL metadata diagnostics (JSON).");
+    private readonly VerbOptionDeclaration<ExtractModelOverrides> _verbOptions;
 
     public ExtractModelCommandFactory(
         IServiceScopeFactory scopeFactory,
-        CliGlobalOptions globalOptions,
-        ModuleFilterOptionBinder moduleFilterBinder,
-        SqlOptionBinder sqlOptionBinder)
+        VerbOptionRegistry optionRegistry)
         : base(scopeFactory)
     {
-        _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
-        _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
-        _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
+        if (optionRegistry is null)
+        {
+            throw new ArgumentNullException(nameof(optionRegistry));
+        }
+
+        _verbOptions = optionRegistry.ExtractModel;
     }
 
     protected override string VerbName => ExtractModelVerb.VerbName;
 
     protected override Command CreateCommandCore()
     {
-        var command = new Command("extract-model", "Extract the OutSystems model using Advanced SQL.")
-        {
-            _onlyActiveAttributesOption,
-            _includeInactiveAttributesOption,
-            _outputOption,
-            _mockSqlOption,
-            _sqlMetadataOption
-        };
-
-        command.AddGlobalOption(_globalOptions.ConfigPath);
-        CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
-        CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
+        var command = new Command("extract-model", "Extract the OutSystems model using Advanced SQL.");
+        _verbOptions.Configure(command);
         return command;
     }
 
@@ -63,26 +46,19 @@ internal sealed class ExtractModelCommandFactory : PipelineCommandFactory<Extrac
             throw new ArgumentNullException(nameof(context));
         }
 
-        var parseResult = context.ParseResult;
-        var moduleFilter = _moduleFilterBinder.Bind(parseResult);
-        IReadOnlyList<string>? moduleOverride = moduleFilter.Modules.Count > 0 ? moduleFilter.Modules : null;
-        var includeSystemOverride = moduleFilter.IncludeSystemModules;
-        var onlyActiveOverride = ResolveOnlyActiveOverride(parseResult);
+        var bound = _verbOptions.Bind(context.ParseResult);
 
-        var overrides = new ExtractModelOverrides(
-            moduleOverride,
-            includeSystemOverride,
-            onlyActiveOverride,
-            parseResult.GetValueForOption(_outputOption),
-            parseResult.GetValueForOption(_mockSqlOption),
-            parseResult.GetValueForOption(_sqlMetadataOption));
+        if (bound.Sql is null)
+        {
+            throw new InvalidOperationException("SQL overrides missing.");
+        }
 
         return new ExtractModelVerbOptions
         {
-            ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
-            Overrides = overrides,
-            Sql = _sqlOptionBinder.Bind(parseResult),
-            SqlMetadataOutputPath = overrides.SqlMetadataOutputPath
+            ConfigurationPath = bound.ConfigurationPath,
+            Overrides = bound.Overrides,
+            Sql = bound.Sql,
+            SqlMetadataOutputPath = bound.Overrides.SqlMetadataOutputPath
         };
     }
 
@@ -90,21 +66,6 @@ internal sealed class ExtractModelCommandFactory : PipelineCommandFactory<Extrac
     {
         await EmitResultsAsync(context, payload).ConfigureAwait(false);
         return 0;
-    }
-
-    private bool? ResolveOnlyActiveOverride(ParseResult parseResult)
-    {
-        if (parseResult.HasOption(_onlyActiveAttributesOption))
-        {
-            return true;
-        }
-
-        if (parseResult.HasOption(_includeInactiveAttributesOption))
-        {
-            return false;
-        }
-
-        return null;
     }
 
     private async Task EmitResultsAsync(InvocationContext context, ExtractModelVerbResult verbResult)

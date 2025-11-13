@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Osm.Cli;
 using Osm.Cli.Commands;
 using Osm.Cli.Commands.Binders;
+using Osm.Cli.Commands.Options;
 using Osm.LoadHarness;
 using Osm.Pipeline.Runtime;
 
@@ -21,6 +22,10 @@ hostBuilder.Services.AddSingleton<SqlOptionBinder>();
 hostBuilder.Services.AddSingleton<TighteningOptionBinder>();
 hostBuilder.Services.AddSingleton<SchemaApplyOptionBinder>();
 hostBuilder.Services.AddSingleton<UatUsersOptionBinder>();
+hostBuilder.Services.AddSingleton<IVerbOptionExtension>(new OpenReportVerbExtension(BuildSsdtVerb.VerbName));
+hostBuilder.Services.AddSingleton<IVerbOptionExtension>(new OpenReportVerbExtension(FullExportVerb.VerbName));
+hostBuilder.Services.AddSingleton<IVerbOptionExtension, FullExportLoadHarnessExtension>();
+hostBuilder.Services.AddSingleton<VerbOptionRegistry>();
 hostBuilder.Services.AddSingleton<ILoadHarnessRunner, LoadHarnessRunner>();
 hostBuilder.Services.AddSingleton<LoadHarnessReportWriter>();
 hostBuilder.Services.AddSingleton<ICommandFactory, BuildSsdtCommandFactory>();

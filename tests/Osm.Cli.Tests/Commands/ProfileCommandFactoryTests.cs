@@ -38,6 +38,7 @@ public class ProfileCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<ProfileCommandFactory>();
 
@@ -102,6 +103,7 @@ public class ProfileCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<ProfileCommandFactory>();
 
@@ -138,6 +140,7 @@ public class ProfileCommandFactoryTests
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<ProfileCommandFactory>();
 

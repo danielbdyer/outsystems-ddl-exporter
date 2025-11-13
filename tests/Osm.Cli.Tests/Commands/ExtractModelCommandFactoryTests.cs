@@ -38,6 +38,7 @@ public class ExtractModelCommandFactoryTests
         services.AddSingleton<CliGlobalOptions>();
         services.AddSingleton<ModuleFilterOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<ExtractModelCommandFactory>();
 

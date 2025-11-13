@@ -3,7 +3,7 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
-using Osm.Cli.Commands.Binders;
+using Osm.Cli.Commands.Options;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
@@ -12,51 +12,27 @@ namespace Osm.Cli.Commands;
 
 internal sealed class DmmCompareCommandFactory : PipelineCommandFactory<DmmCompareVerbOptions, DmmCompareVerbResult>
 {
-    private readonly CliGlobalOptions _globalOptions;
-    private readonly ModuleFilterOptionBinder _moduleFilterBinder;
-    private readonly CacheOptionBinder _cacheOptionBinder;
-    private readonly SqlOptionBinder _sqlOptionBinder;
-    private readonly TighteningOptionBinder _tighteningBinder;
-
-    private readonly Option<string?> _modelOption = new("--model", "Path to the model JSON file.");
-    private readonly Option<string?> _profileOption = new("--profile", "Path to the profiling snapshot.");
-    private readonly Option<string?> _dmmOption = new("--dmm", "Path to the baseline DMM script.");
-    private readonly Option<string?> _outputOption = new("--out", () => "out", "Output directory for comparison artifacts.");
+    private readonly VerbOptionDeclaration<CompareWithDmmOverrides> _verbOptions;
 
     public DmmCompareCommandFactory(
         IServiceScopeFactory scopeFactory,
-        CliGlobalOptions globalOptions,
-        ModuleFilterOptionBinder moduleFilterBinder,
-        CacheOptionBinder cacheOptionBinder,
-        SqlOptionBinder sqlOptionBinder,
-        TighteningOptionBinder tighteningOptionBinder)
+        VerbOptionRegistry optionRegistry)
         : base(scopeFactory)
     {
-        _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
-        _moduleFilterBinder = moduleFilterBinder ?? throw new ArgumentNullException(nameof(moduleFilterBinder));
-        _cacheOptionBinder = cacheOptionBinder ?? throw new ArgumentNullException(nameof(cacheOptionBinder));
-        _sqlOptionBinder = sqlOptionBinder ?? throw new ArgumentNullException(nameof(sqlOptionBinder));
-        _tighteningBinder = tighteningOptionBinder ?? throw new ArgumentNullException(nameof(tighteningOptionBinder));
+        if (optionRegistry is null)
+        {
+            throw new ArgumentNullException(nameof(optionRegistry));
+        }
+
+        _verbOptions = optionRegistry.DmmCompare;
     }
 
     protected override string VerbName => DmmCompareVerb.VerbName;
 
     protected override Command CreateCommandCore()
     {
-        var command = new Command("dmm-compare", "Compare the emitted SSDT artifacts with a DMM baseline.")
-        {
-            _modelOption,
-            _profileOption,
-            _dmmOption,
-            _outputOption,
-            _globalOptions.MaxDegreeOfParallelism
-        };
-
-        command.AddGlobalOption(_globalOptions.ConfigPath);
-        CommandOptionBuilder.AddModuleFilterOptions(command, _moduleFilterBinder);
-        CommandOptionBuilder.AddCacheOptions(command, _cacheOptionBinder);
-        CommandOptionBuilder.AddSqlOptions(command, _sqlOptionBinder);
-        CommandOptionBuilder.AddTighteningOptions(command, _tighteningBinder);
+        var command = new Command("dmm-compare", "Compare the emitted SSDT artifacts with a DMM baseline.");
+        _verbOptions.Configure(command);
         return command;
     }
 
@@ -67,27 +43,26 @@ internal sealed class DmmCompareCommandFactory : PipelineCommandFactory<DmmCompa
             throw new ArgumentNullException(nameof(context));
         }
 
-        var parseResult = context.ParseResult;
-        var moduleFilter = _moduleFilterBinder.Bind(parseResult);
-        var cache = _cacheOptionBinder.Bind(parseResult);
-        var sqlOverrides = _sqlOptionBinder.Bind(parseResult);
-        var tightening = _tighteningBinder.Bind(parseResult);
+        var bound = _verbOptions.Bind(context.ParseResult);
 
-        var overrides = new CompareWithDmmOverrides(
-            parseResult.GetValueForOption(_modelOption),
-            parseResult.GetValueForOption(_profileOption),
-            parseResult.GetValueForOption(_dmmOption),
-            parseResult.GetValueForOption(_outputOption),
-            parseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism));
+        if (bound.ModuleFilter is null)
+        {
+            throw new InvalidOperationException("Module filter overrides missing.");
+        }
+
+        if (bound.Sql is null)
+        {
+            throw new InvalidOperationException("SQL overrides missing.");
+        }
 
         return new DmmCompareVerbOptions
         {
-            ConfigurationPath = parseResult.GetValueForOption(_globalOptions.ConfigPath),
-            Overrides = overrides,
-            ModuleFilter = moduleFilter,
-            Sql = sqlOverrides,
-            Cache = cache,
-            Tightening = tightening
+            ConfigurationPath = bound.ConfigurationPath,
+            Overrides = bound.Overrides,
+            ModuleFilter = bound.ModuleFilter,
+            Sql = bound.Sql,
+            Cache = bound.Cache,
+            Tightening = bound.Tightening
         };
     }
 
