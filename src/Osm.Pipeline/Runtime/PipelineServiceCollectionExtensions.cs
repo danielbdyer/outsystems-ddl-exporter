@@ -145,6 +145,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<ISchemaDataApplier, SchemaDataApplier>();
         services.AddSingleton<SchemaApplyOrchestrator>();
         services.AddSingleton<IModelUserSchemaGraphFactory, ModelUserSchemaGraphFactory>();
+        services.AddSingleton<FullExportCoordinator>();
         services.AddSingleton<IUatUsersPipelineRunner, UatUsersPipelineRunner>();
 
         services.AddSingleton<ICommandHandler<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>, BuildSsdtPipeline>();

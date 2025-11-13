@@ -43,7 +43,7 @@ public sealed class FullExportPipelineTests
         var schemaApplier = new FakeSchemaDataApplier();
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
         var uatRunner = new RecordingUatUsersRunner();
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var pipeline = CreatePipeline(dispatcher, orchestrator, uatRunner);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, captureResult) = CreateCaptureArtifacts();
@@ -96,7 +96,7 @@ public sealed class FullExportPipelineTests
         };
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
         var uatRunner = new RecordingUatUsersRunner();
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var pipeline = CreatePipeline(dispatcher, orchestrator, uatRunner);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, captureResult) = CreateCaptureArtifacts();
@@ -140,7 +140,7 @@ public sealed class FullExportPipelineTests
         var schemaApplier = new FakeSchemaDataApplier();
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
         var uatRunner = new RecordingUatUsersRunner();
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var pipeline = CreatePipeline(dispatcher, orchestrator, uatRunner);
 
         var (extractRequest, extractBase) = CreateExtractionArtifacts();
         var extractionResult = new ModelExtractionResult(
@@ -225,7 +225,7 @@ public sealed class FullExportPipelineTests
         var schemaApplier = new FakeSchemaDataApplier();
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
         var uatRunner = new RecordingUatUsersRunner();
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var pipeline = CreatePipeline(dispatcher, orchestrator, uatRunner);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, _) = CreateCaptureArtifacts();
@@ -259,7 +259,11 @@ public sealed class FullExportPipelineTests
                 Context: null,
                 Warnings: ImmutableArray<string>.Empty))
         };
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var schemaGraphFactory = new RecordingSchemaGraphFactory
+        {
+            GraphToReturn = new ModelSchemaGraph(extractResult.Model)
+        };
+        var pipeline = CreatePipeline(dispatcher, orchestrator, uatRunner, schemaGraphFactory);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, captureResult) = CreateCaptureArtifacts();
@@ -289,6 +293,8 @@ public sealed class FullExportPipelineTests
         Assert.True(result.Value.UatUsers.Executed);
         Assert.NotNull(uatRunner.LastRequest);
         Assert.Equal(buildRequest.OutputDirectory, uatRunner.LastRequest!.OutputDirectory);
+        Assert.Same(schemaGraphFactory.GraphToReturn, uatRunner.LastRequest!.SchemaGraph);
+        Assert.Same(extractResult, schemaGraphFactory.LastExtraction);
         var entries = result.Value.ExecutionLog.Entries;
         Assert.Contains(entries, entry => entry.Step == "fullExport.uatUsers.completed");
     }
@@ -304,7 +310,7 @@ public sealed class FullExportPipelineTests
         {
             Result = Result<UatUsersApplicationResult>.Failure(failure)
         };
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var pipeline = CreatePipeline(dispatcher, orchestrator, uatRunner);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, captureResult) = CreateCaptureArtifacts();
@@ -347,7 +353,7 @@ public sealed class FullExportPipelineTests
         var schemaApplier = new FakeSchemaDataApplier();
         var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
         var uatRunner = new RecordingUatUsersRunner();
-        var pipeline = new FullExportPipeline(dispatcher, orchestrator, uatRunner, TimeProvider.System, NullLogger<FullExportPipeline>.Instance);
+        var pipeline = CreatePipeline(dispatcher, orchestrator, uatRunner);
 
         var (extractRequest, extractResult) = CreateExtractionArtifacts();
         var (captureRequest, captureResult) = CreateCaptureArtifacts();
@@ -574,6 +580,35 @@ public sealed class FullExportPipelineTests
             TriggerJson: Array.Empty<OutsystemsTriggerJsonRow>(),
             ModuleJson: Array.Empty<OutsystemsModuleJsonRow>(),
             DatabaseName: databaseName);
+    }
+
+    private static FullExportPipeline CreatePipeline(
+        StubCommandDispatcher dispatcher,
+        SchemaApplyOrchestrator orchestrator,
+        IUatUsersPipelineRunner uatRunner,
+        IModelUserSchemaGraphFactory? schemaGraphFactory = null)
+    {
+        var coordinator = new FullExportCoordinator(schemaGraphFactory ?? new ModelUserSchemaGraphFactory());
+        return new FullExportPipeline(
+            dispatcher,
+            orchestrator,
+            uatRunner,
+            coordinator,
+            TimeProvider.System,
+            NullLogger<FullExportPipeline>.Instance);
+    }
+
+    private sealed class RecordingSchemaGraphFactory : IModelUserSchemaGraphFactory
+    {
+        public ModelExtractionResult? LastExtraction { get; private set; }
+
+        public ModelSchemaGraph? GraphToReturn { get; set; }
+
+        public Result<ModelSchemaGraph> Create(ModelExtractionResult extraction)
+        {
+            LastExtraction = extraction;
+            return Result<ModelSchemaGraph>.Success(GraphToReturn ?? new ModelSchemaGraph(extraction.Model));
+        }
     }
 
     private sealed class StubCommandDispatcher : ICommandDispatcher

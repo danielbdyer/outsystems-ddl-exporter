@@ -42,7 +42,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
     private readonly SchemaApplyOrchestrator _schemaApplyOrchestrator;
     private readonly IModelJsonDeserializer _modelDeserializer;
     private readonly IUatUsersPipelineRunner _uatUsersRunner;
-    private readonly IModelUserSchemaGraphFactory _schemaGraphFactory;
+    private readonly FullExportCoordinator _coordinator;
     private static readonly OutsystemsMetadataSnapshot PlaceholderMetadataSnapshot = new(
         Array.Empty<OutsystemsModuleRow>(),
         Array.Empty<OutsystemsEntityRow>(),
@@ -76,7 +76,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         SchemaApplyOrchestrator schemaApplyOrchestrator,
         IModelJsonDeserializer modelDeserializer,
         IUatUsersPipelineRunner uatUsersRunner,
-        IModelUserSchemaGraphFactory schemaGraphFactory)
+        FullExportCoordinator coordinator)
     {
         _profileService = profileService ?? throw new ArgumentNullException(nameof(profileService));
         _extractService = extractService ?? throw new ArgumentNullException(nameof(extractService));
@@ -84,7 +84,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         _schemaApplyOrchestrator = schemaApplyOrchestrator ?? throw new ArgumentNullException(nameof(schemaApplyOrchestrator));
         _modelDeserializer = modelDeserializer ?? throw new ArgumentNullException(nameof(modelDeserializer));
         _uatUsersRunner = uatUsersRunner ?? throw new ArgumentNullException(nameof(uatUsersRunner));
-        _schemaGraphFactory = schemaGraphFactory ?? throw new ArgumentNullException(nameof(schemaGraphFactory));
+        _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
     }
 
     public async Task<Result<FullExportApplicationResult>> RunAsync(
@@ -127,8 +127,6 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var includeSystemModules = moduleFilterOptions.IncludeSystemModules;
         var includeInactiveModules = moduleFilterOptions.IncludeInactiveModules;
 
-        Result<ExtractModelApplicationResult> extractResult;
-
         var reusePathCandidate = ResolveReuseModelPath(buildOverrides, profileOverrides, configuration);
         var shouldReuseModelPath = overrides.ReuseModelPath;
 
@@ -139,6 +137,11 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             shouldReuseModelPath = true;
         }
 
+        var extractInput = shouldReuseModelPath
+            ? null
+            : new ExtractModelApplicationInput(configurationContext, extractOverrides, input.Sql);
+
+        Func<CancellationToken, Task<Result<ExtractModelApplicationResult>>> extractStage;
         if (shouldReuseModelPath)
         {
             if (string.IsNullOrWhiteSpace(reusePathCandidate))
@@ -148,141 +151,139 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
                     "Model reuse was requested but no model path was provided. Supply --model or configure model.path.");
             }
 
-            extractResult = CreateReuseExtractionResult(
+            extractStage = _ => Task.FromResult(CreateReuseExtractionResult(
                 reusePathCandidate!,
                 includeSystemModules,
                 includeInactiveModules,
-                moduleFilterOptions.ValidationOverrides);
+                moduleFilterOptions.ValidationOverrides));
         }
         else
         {
-            var extractInput = new ExtractModelApplicationInput(configurationContext, extractOverrides, input.Sql);
-            extractResult = await _extractService
-                .RunAsync(extractInput, cancellationToken)
-                .ConfigureAwait(false);
+            extractStage = cancellationToken1 => _extractService
+                .RunAsync(extractInput!, cancellationToken1);
         }
 
-        if (extractResult.IsFailure)
-        {
-            return Result<FullExportApplicationResult>.Failure(extractResult.Errors);
-        }
+        var profileOverridesLocal = profileOverrides;
+        var buildOverridesLocal = buildOverrides;
+        string? resolvedModelPath = null;
+        string? profileSnapshotPath = null;
 
-        var extraction = extractResult.Value;
-        var resolvedModelPath = ResolveModelPath(buildOverrides, profileOverrides, extraction);
+        var profileStage = new Func<ExtractModelApplicationResult, CancellationToken, Task<Result<CaptureProfileApplicationResult>>>(
+            async (extraction, ct) =>
+            {
+                resolvedModelPath = ResolveModelPath(buildOverridesLocal, profileOverridesLocal, extraction);
+                if (string.IsNullOrWhiteSpace(profileOverridesLocal.ModelPath) && !string.IsNullOrWhiteSpace(resolvedModelPath))
+                {
+                    profileOverridesLocal = profileOverridesLocal with { ModelPath = resolvedModelPath };
+                }
 
-        if (string.IsNullOrWhiteSpace(profileOverrides.ModelPath) && !string.IsNullOrWhiteSpace(resolvedModelPath))
-        {
-            profileOverrides = profileOverrides with { ModelPath = resolvedModelPath };
-        }
+                var profileInput = new CaptureProfileApplicationInput(
+                    configurationContext,
+                    profileOverridesLocal,
+                    moduleFilter,
+                    input.Sql,
+                    input.TighteningOverrides);
 
-        var profileInput = new CaptureProfileApplicationInput(
-            configurationContext,
-            profileOverrides,
-            moduleFilter,
-            input.Sql,
-            input.TighteningOverrides);
+                var profileResult = await _profileService
+                    .RunAsync(profileInput, ct)
+                    .ConfigureAwait(false);
 
-        var profileResult = await _profileService
-            .RunAsync(profileInput, cancellationToken)
-            .ConfigureAwait(false);
+                if (profileResult.IsSuccess)
+                {
+                    var profileValue = profileResult.Value;
+                    profileSnapshotPath = profileValue.PipelineResult?.ProfilePath;
 
-        if (profileResult.IsFailure)
-        {
-            return Result<FullExportApplicationResult>.Failure(profileResult.Errors);
-        }
+                    if (string.IsNullOrWhiteSpace(buildOverridesLocal.ModelPath) && !string.IsNullOrWhiteSpace(resolvedModelPath))
+                    {
+                        buildOverridesLocal = buildOverridesLocal with { ModelPath = resolvedModelPath };
+                    }
 
-        var profile = profileResult.Value;
-        var profileSnapshotPath = profile.PipelineResult?.ProfilePath;
+                    if (string.IsNullOrWhiteSpace(buildOverridesLocal.ProfilePath) && !string.IsNullOrWhiteSpace(profileSnapshotPath))
+                    {
+                        buildOverridesLocal = buildOverridesLocal with { ProfilePath = profileSnapshotPath };
+                    }
 
-        if (string.IsNullOrWhiteSpace(buildOverrides.ModelPath) && !string.IsNullOrWhiteSpace(resolvedModelPath))
-        {
-            buildOverrides = buildOverrides with { ModelPath = resolvedModelPath };
-        }
+                    if (string.IsNullOrWhiteSpace(buildOverridesLocal.ProfilerProvider) && !string.IsNullOrWhiteSpace(profileValue.ProfilerProvider))
+                    {
+                        buildOverridesLocal = buildOverridesLocal with { ProfilerProvider = profileValue.ProfilerProvider };
+                    }
+                }
 
-        if (string.IsNullOrWhiteSpace(buildOverrides.ProfilePath) && !string.IsNullOrWhiteSpace(profileSnapshotPath))
-        {
-            buildOverrides = buildOverrides with { ProfilePath = profileSnapshotPath };
-        }
+                return profileResult;
+            });
 
-        if (string.IsNullOrWhiteSpace(buildOverrides.ProfilerProvider) && !string.IsNullOrWhiteSpace(profile.ProfilerProvider))
-        {
-            buildOverrides = buildOverrides with { ProfilerProvider = profile.ProfilerProvider };
-        }
+        var buildStage = new Func<ExtractModelApplicationResult, CaptureProfileApplicationResult, CancellationToken, Task<Result<BuildSsdtApplicationResult>>>(
+            (extraction, profile, ct) =>
+            {
+                var buildInput = new BuildSsdtApplicationInput(
+                    configurationContext,
+                    buildOverridesLocal,
+                    moduleFilter,
+                    input.Sql,
+                    input.Cache,
+                    input.TighteningOverrides,
+                    extraction.ExtractionResult.Dataset,
+                    EnableDynamicSqlExtraction: true);
 
-        var buildInput = new BuildSsdtApplicationInput(
-            configurationContext,
-            buildOverrides,
-            moduleFilter,
-            input.Sql,
-            input.Cache,
-            input.TighteningOverrides,
-            extraction.ExtractionResult.Dataset,
-            EnableDynamicSqlExtraction: true);
-
-        var buildResult = await _buildService
-            .RunAsync(buildInput, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (buildResult.IsFailure)
-        {
-            return Result<FullExportApplicationResult>.Failure(buildResult.Errors);
-        }
+                return _buildService.RunAsync(buildInput, ct);
+            });
 
         var applyOverrides = input.ApplyOverrides ?? overrides.Apply ?? SchemaApplyOverrides.Empty;
         var applyOptions = ResolveSchemaApplyOptions(configurationContext, input.Sql, applyOverrides);
 
-        var applyResult = await _schemaApplyOrchestrator
-            .ExecuteAsync(buildResult.Value.PipelineResult, applyOptions, log: null, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (applyResult.IsFailure)
-        {
-            return Result<FullExportApplicationResult>.Failure(applyResult.Errors);
-        }
+        var applyStage = new Func<BuildSsdtApplicationResult, CancellationToken, Task<Result<SchemaApplyResult>>>(
+            (build, ct) => _schemaApplyOrchestrator.ExecuteAsync(build.PipelineResult, applyOptions, log: null, ct));
 
         var uatUsersOverrides = overrides.UatUsers ?? FullExportOverrides.Empty.UatUsers;
-        var uatUsersOutcome = UatUsersApplicationResult.Disabled;
-
+        Func<ExtractModelApplicationResult, BuildSsdtApplicationResult, ModelUserSchemaGraph, CancellationToken, Task<Result<UatUsersApplicationResult>>>? uatStage = null;
         if (uatUsersOverrides.Enabled)
         {
-            if (string.IsNullOrWhiteSpace(buildResult.Value.OutputDirectory))
+            uatStage = (extraction, build, schemaGraph, ct) =>
             {
-                return Result<FullExportApplicationResult>.Failure(ValidationError.Create(
-                    "pipeline.fullExport.uatUsers.outputDirectory.missing",
-                    "Build output directory is required to emit uat-users artifacts."));
-            }
+                if (string.IsNullOrWhiteSpace(build.OutputDirectory))
+                {
+                    return Task.FromResult(Result<UatUsersApplicationResult>.Failure(ValidationError.Create(
+                        "pipeline.fullExport.uatUsers.outputDirectory.missing",
+                        "Build output directory is required to emit uat-users artifacts.")));
+                }
 
-            var schemaGraphResult = _schemaGraphFactory.Create(extraction.ExtractionResult);
-            if (schemaGraphResult.IsFailure)
-            {
-                return Result<FullExportApplicationResult>.Failure(schemaGraphResult.Errors);
-            }
+                var uatUsersRequest = new UatUsersPipelineRequest(
+                    uatUsersOverrides,
+                    extraction.ExtractionResult,
+                    build.OutputDirectory,
+                    schemaGraph);
 
-            var uatUsersRequest = new UatUsersPipelineRequest(
-                uatUsersOverrides,
-                extraction.ExtractionResult,
-                buildResult.Value.OutputDirectory,
-                schemaGraphResult.Value);
-
-            var uatUsersResult = await _uatUsersRunner
-                .RunAsync(uatUsersRequest, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (uatUsersResult.IsFailure)
-            {
-                return Result<FullExportApplicationResult>.Failure(uatUsersResult.Errors);
-            }
-
-            uatUsersOutcome = uatUsersResult.Value;
+                return _uatUsersRunner.RunAsync(uatUsersRequest, ct);
+            };
         }
 
-        return new FullExportApplicationResult(
-            buildResult.Value,
-            profile,
-            extraction,
-            applyResult.Value,
+        var coordinatorRequest = new FullExportCoordinatorRequest<ExtractModelApplicationResult, CaptureProfileApplicationResult, BuildSsdtApplicationResult>(
+            extractStage,
+            profileStage,
+            buildStage,
+            applyStage,
             applyOptions,
-            uatUsersOutcome);
+            extraction => extraction.ExtractionResult,
+            uatStage);
+
+        var coordinatorResult = await _coordinator
+            .ExecuteAsync(coordinatorRequest, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (coordinatorResult.IsFailure)
+        {
+            return Result<FullExportApplicationResult>.Failure(coordinatorResult.Errors);
+        }
+
+        var outcome = coordinatorResult.Value;
+
+        return new FullExportApplicationResult(
+            outcome.Build,
+            outcome.Profile,
+            outcome.Extraction,
+            outcome.Apply,
+            outcome.ApplyOptions,
+            outcome.UatUsers);
     }
 
     private Result<ExtractModelApplicationResult> CreateReuseExtractionResult(
