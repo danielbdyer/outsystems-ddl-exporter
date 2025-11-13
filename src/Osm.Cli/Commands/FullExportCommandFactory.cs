@@ -62,13 +62,6 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
                 return;
             }
 
-            var connectionString = result.GetValueForOption(uatBinder.UatConnectionOption);
-            if (string.IsNullOrWhiteSpace(connectionString))
-            {
-                result.ErrorMessage = "--uat-conn is required when --enable-uat-users is specified.";
-                return;
-            }
-
             var qaInventory = result.GetValueForOption(uatBinder.QaInventoryOption);
             if (string.IsNullOrWhiteSpace(qaInventory))
             {

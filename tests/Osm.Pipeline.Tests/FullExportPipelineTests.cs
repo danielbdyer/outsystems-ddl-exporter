@@ -276,7 +276,6 @@ public sealed class FullExportPipelineTests
         var applyOptions = SchemaApplyOptions.Disabled;
         var uatOptions = new UatUsersPipelineOptions(
             Enabled: true,
-            ConnectionString: "Server=Test;",
             UserSchema: "dbo",
             UserTable: "User",
             UserIdColumn: "Id",
@@ -327,7 +326,6 @@ public sealed class FullExportPipelineTests
             SchemaApplyOptions.Disabled,
             new UatUsersPipelineOptions(
                 Enabled: true,
-                ConnectionString: "Server=Test;",
                 UserSchema: "dbo",
                 UserTable: "User",
                 UserIdColumn: "Id",
@@ -370,7 +368,6 @@ public sealed class FullExportPipelineTests
             SchemaApplyOptions.Disabled,
             new UatUsersPipelineOptions(
                 Enabled: false,
-                ConnectionString: null,
                 UserSchema: null,
                 UserTable: null,
                 UserIdColumn: null,
@@ -536,7 +533,7 @@ public sealed class FullExportPipelineTests
     private static ResolvedSqlOptions CreateSqlOptions()
     {
         return new ResolvedSqlOptions(
-            ConnectionString: null,
+            ConnectionString: "Server=Test;",
             CommandTimeoutSeconds: null,
             Sampling: new SqlSamplingSettings(null, null),
             Authentication: new SqlAuthenticationSettings(null, null, null, null),

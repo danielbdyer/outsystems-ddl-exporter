@@ -31,16 +31,16 @@ public class UatUsersCommandFactoryTests
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
-        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-schema dbo --user-table dbo.Users --user-id-column UserId --include-columns Name --include-columns EMail --out artifacts --user-map map.csv --uat-user-inventory uat.csv --qa-user-inventory qa.csv --snapshot snap.json --user-entity-id Identifier";
+        var args = "uat-users --model model.json --connection-string Server=.;Database=QA; --user-schema dbo --user-table dbo.Users --user-id-column UserId --include-columns Name --include-columns EMail --out artifacts --user-map map.csv --uat-user-inventory uat.csv --qa-user-inventory qa.csv --snapshot snap.json --user-entity-id Identifier";
         var exitCode = await parser.InvokeAsync(args);
 
         Assert.Equal(5, exitCode);
         var options = executor.LastOptions!;
         Assert.Equal(Path.GetFullPath("model.json"), options.ModelPath);
-        Assert.Equal("Server=.;Database=UAT;", options.UatConnectionString);
+        Assert.Equal("Server=.;Database=QA;", options.ConnectionString);
         Assert.False(options.FromLiveMetadata);
         Assert.Equal("dbo", options.UserSchema);
-        Assert.Equal("Users", options.UserTable);
+        Assert.Equal("User", options.UserTable);
         Assert.Equal("UserId", options.UserIdColumn);
         Assert.Equal(new[] { "Name", "EMail" }, options.IncludeColumns);
         Assert.Equal(Path.GetFullPath("artifacts"), options.OutputDirectory);
@@ -50,7 +50,6 @@ public class UatUsersCommandFactoryTests
         Assert.Equal(Path.GetFullPath("snap.json"), options.SnapshotPath);
         Assert.Equal("Identifier", options.UserEntityIdentifier);
         Assert.False(options.Origins.ModelPathFromConfiguration);
-        Assert.False(options.Origins.ConnectionStringFromConfiguration);
     }
 
     [Theory]
@@ -60,7 +59,7 @@ public class UatUsersCommandFactoryTests
     [InlineData("\"[custom schema].User\"", "custom schema", "User")]
     public async Task Invoke_NormalizesBracketedUserTableInput(string userTableArgument, string expectedSchema, string expectedTable)
     {
-        var command = $"uat-users --model model.json --uat-conn Server=.;Database=UAT; --uat-user-inventory uat.csv --qa-user-inventory qa.csv --user-table {userTableArgument}";
+        var command = $"uat-users --model model.json --connection-string Server=.;Database=QA; --uat-user-inventory uat.csv --qa-user-inventory qa.csv --user-table {userTableArgument}";
         var (options, exitCode) = await InvokeAsync(command);
 
         Assert.Equal(5, exitCode);
@@ -71,7 +70,7 @@ public class UatUsersCommandFactoryTests
     [Fact]
     public async Task Invoke_DeduplicatesIncludeColumnsIgnoringCase()
     {
-        var command = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --uat-user-inventory uat.csv --qa-user-inventory qa.csv --include-columns Name --include-columns name --include-columns EMail --include-columns EMAIL";
+        var command = "uat-users --model model.json --connection-string Server=.;Database=QA; --uat-user-inventory uat.csv --qa-user-inventory qa.csv --include-columns Name --include-columns name --include-columns EMail --include-columns EMAIL";
         var (options, exitCode) = await InvokeAsync(command);
 
         Assert.Equal(5, exitCode);
@@ -81,7 +80,7 @@ public class UatUsersCommandFactoryTests
     [Fact]
     public async Task Invoke_AcceptsUatInventoryCsv()
     {
-        var command = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --uat-user-inventory allowed.csv --qa-user-inventory qa.csv";
+        var command = "uat-users --model model.json --connection-string Server=.;Database=QA; --uat-user-inventory allowed.csv --qa-user-inventory qa.csv";
         var (options, exitCode) = await InvokeAsync(command);
 
         Assert.Equal(5, exitCode);
@@ -100,7 +99,7 @@ public class UatUsersCommandFactoryTests
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
         var console = new TestConsole();
 
-        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --uat-user-inventory allowed.csv";
+        var args = "uat-users --model model.json --connection-string Server=.;Database=QA; --uat-user-inventory allowed.csv";
         var exitCode = await parser.InvokeAsync(args, console);
 
         Assert.Equal(1, exitCode);
@@ -120,7 +119,7 @@ public class UatUsersCommandFactoryTests
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
         var console = new TestConsole();
 
-        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --qa-user-inventory qa.csv";
+        var args = "uat-users --model model.json --connection-string Server=.;Database=QA; --qa-user-inventory qa.csv";
         var exitCode = await parser.InvokeAsync(args, console);
 
         Assert.Equal(1, exitCode);
@@ -156,14 +155,23 @@ public class UatUsersCommandFactoryTests
         var snapshotPath = Path.Combine(temp.Path, "snapshot.json");
         var qaInventoryPath = Path.Combine(temp.Path, "qa.csv");
 
+        var sqlConfiguration = new SqlConfiguration(
+            ConnectionString: "Server=.;Database=QA;",
+            CommandTimeoutSeconds: null,
+            Sampling: SqlSamplingConfiguration.Empty,
+            Authentication: SqlAuthenticationConfiguration.Empty,
+            MetadataContract: MetadataContractConfiguration.Empty,
+            ProfilingConnectionStrings: Array.Empty<string>(),
+            TableNameMappings: Array.Empty<TableNameMappingConfiguration>());
+
         var configuration = CliConfiguration.Empty with
         {
+            Sql = sqlConfiguration,
             UatUsers = new UatUsersConfiguration(
                 ModelPath: modelPath,
-                ConnectionString: "Server=.;Database=UAT;",
                 FromLiveMetadata: false,
-                UserSchema: "app",
-                UserTable: "dbo.Users",
+                UserSchema: "dbo",
+                UserTable: "Users",
                 UserIdColumn: "UserId",
                 IncludeColumns: new[] { "CreatedBy", "UpdatedBy" },
                 OutputRoot: outputRoot,
@@ -178,10 +186,10 @@ public class UatUsersCommandFactoryTests
 
         Assert.Equal(5, exitCode);
         Assert.Equal(Path.GetFullPath(modelPath), options.ModelPath);
-        Assert.Equal("Server=.;Database=UAT;", options.UatConnectionString);
+        Assert.Equal("Server=.;Database=QA;", options.ConnectionString);
         Assert.False(options.FromLiveMetadata);
         Assert.Equal("dbo", options.UserSchema);
-        Assert.Equal("Users", options.UserTable);
+        Assert.Equal("User", options.UserTable);
         Assert.Equal("UserId", options.UserIdColumn);
         Assert.Equal(new[] { "CreatedBy", "UpdatedBy" }, options.IncludeColumns);
         Assert.Equal(Path.GetFullPath(outputRoot), options.OutputDirectory);
@@ -192,7 +200,6 @@ public class UatUsersCommandFactoryTests
         Assert.Equal("UserEntity", options.UserEntityIdentifier);
 
         Assert.True(options.Origins.ModelPathFromConfiguration);
-        Assert.True(options.Origins.ConnectionStringFromConfiguration);
         Assert.True(options.Origins.UserTableFromConfiguration);
         Assert.True(options.Origins.UserSchemaFromConfiguration);
         Assert.True(options.Origins.UserIdColumnFromConfiguration);

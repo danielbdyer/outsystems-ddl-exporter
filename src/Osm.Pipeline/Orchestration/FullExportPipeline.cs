@@ -53,7 +53,6 @@ public sealed record SchemaApplyResult(
 
 public sealed record UatUsersPipelineOptions(
     bool Enabled,
-    string? ConnectionString,
     string? UserSchema,
     string? UserTable,
     string? UserIdColumn,
@@ -70,6 +69,13 @@ public sealed record FullExportPipelineRequest(
     BuildSsdtPipelineRequest Build,
     SchemaApplyOptions ApplyOptions,
     UatUsersPipelineOptions? UatUsers = null) : ICommand<FullExportPipelineResult>;
+
+public sealed record UatUsersPipelineRequest(
+    UatUsersOverrides Overrides,
+    ModelExtractionResult Extraction,
+    string OutputDirectory,
+    string? SourceConnectionString,
+    IUserSchemaGraph? SchemaGraph = null);
 
 public sealed record FullExportPipelineResult(
     ModelExtractionResult Extraction,
@@ -221,7 +227,6 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
             {
                 var overrides = new UatUsersOverrides(
                     request.UatUsers.Enabled,
-                    request.UatUsers.ConnectionString,
                     request.UatUsers.UserSchema,
                     request.UatUsers.UserTable,
                     request.UatUsers.UserIdColumn,
@@ -232,7 +237,12 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
                     request.UatUsers.SnapshotPath,
                     request.UatUsers.UserEntityIdentifier);
 
-                var runnerRequest = new UatUsersPipelineRequest(overrides, extraction, request.Build.OutputDirectory!, schemaGraph);
+                var runnerRequest = new UatUsersPipelineRequest(
+                    overrides,
+                    extraction,
+                    request.Build.OutputDirectory!,
+                    request.ExtractModel.SqlOptions.ConnectionString,
+                    schemaGraph);
                 var uatUsersResult = await _uatUsersRunner
                     .RunAsync(runnerRequest, ct)
                     .ConfigureAwait(false);

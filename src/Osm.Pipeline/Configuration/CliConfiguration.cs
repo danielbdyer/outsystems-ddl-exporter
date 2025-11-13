@@ -140,7 +140,6 @@ public sealed record SupplementalModelConfiguration(
 
 public sealed record UatUsersConfiguration(
     string? ModelPath,
-    string? ConnectionString,
     bool? FromLiveMetadata,
     string? UserSchema,
     string? UserTable,
@@ -156,7 +155,6 @@ public sealed record UatUsersConfiguration(
     public static UatUsersConfiguration Empty { get; }
         = new(
             ModelPath: null,
-            ConnectionString: null,
             FromLiveMetadata: null,
             UserSchema: null,
             UserTable: null,

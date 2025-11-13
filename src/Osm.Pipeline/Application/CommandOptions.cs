@@ -102,7 +102,6 @@ public sealed record SchemaApplyOverrides(
 
 public sealed record UatUsersOverrides(
     bool Enabled,
-    string? ConnectionString,
     string? UserSchema,
     string? UserTable,
     string? UserIdColumn,
@@ -115,7 +114,6 @@ public sealed record UatUsersOverrides(
 {
     public static UatUsersOverrides Disabled { get; } = new(
         false,
-        null,
         null,
         null,
         null,

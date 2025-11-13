@@ -2,7 +2,6 @@ namespace Osm.Cli;
 
 public sealed record UatUsersOptionOrigins(
     bool ModelPathFromConfiguration,
-    bool ConnectionStringFromConfiguration,
     bool FromLiveMetadataFromConfiguration,
     bool UserSchemaFromConfiguration,
     bool UserTableFromConfiguration,
@@ -17,7 +16,6 @@ public sealed record UatUsersOptionOrigins(
 {
     public static UatUsersOptionOrigins None { get; } = new(
         ModelPathFromConfiguration: false,
-        ConnectionStringFromConfiguration: false,
         FromLiveMetadataFromConfiguration: false,
         UserSchemaFromConfiguration: false,
         UserTableFromConfiguration: false,

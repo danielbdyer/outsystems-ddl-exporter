@@ -8,7 +8,7 @@ The `uat-users` verb discovers every foreign-key column that references `dbo.[Us
 * **Attribute-level fallback** – When exported models omit explicit relationships to the Users table, provide `--user-entity-id` (accepts `btGUID*GUID`, numeric IDs, entity names, or physical table names). The command synthesizes catalog entries directly from attribute metadata so remediation can proceed without a fully coherent model.
 * **Inventory-sourced allow-lists** – `--qa-user-inventory` and `--uat-user-inventory` ingest Service Center exports of the `ossys_User` table (schema: `Id,Username,EMail,Name,External_Id,Is_Active,Creation_Date,Last_Login`). The shared loader normalizes whitespace, deduplicates identifiers, enforces the schema declared in `config/supplemental/ossys-user.json`, and captures the entire roster for each environment so QA discoveries, the map template, and UAT targets share deterministic provenance.
 * **Cross-environment map validation** – The `validate-user-map` stage cross-checks the populated map against the QA inventory, the discovered orphan set, and the allowed UAT user inventory from `--uat-user-inventory`. Missing mappings, duplicate `SourceUserId` values, or targets outside the approved UAT roster cause the command to fail before artifacts are emitted.
-* **Live data analysis** – Using the supplied UAT connection, every catalogued column is scanned to collect distinct user identifiers and row counts. Results can be snapshotted to disk via `--snapshot` for repeatable dry runs.
+* **Live data analysis** – Using the supplied connection string, every catalogued column is scanned to collect distinct user identifiers and row counts. Results can be snapshotted to disk via `--snapshot` for repeatable dry runs.
 * **Operator-controlled mappings** – `00_user_map.template.csv` lists every orphan. Populate the corresponding `00_user_map.csv` (or provide `--user-map`) with `SourceUserId,TargetUserId` pairs. Missing mappings are surfaced in both the preview file and the generated SQL comments.
 * **Guarded apply script** – `02_apply_user_remap.sql` creates `#UserRemap` and `#Changes` temp tables, validates target existence, protects `NULL` values, and emits a summary. Updates only occur when `SourceUserId <> TargetUserId`, making the script idempotent and rerunnable.
 * **SQL-friendly configuration parsing** – The CLI accepts `[schema].[table]` and quoted identifiers for `--user-table`, trimming duplicates from `--include-columns` so catalogs stay deterministic even when operators repeat column names.
@@ -20,7 +20,7 @@ The `uat-users` verb discovers every foreign-key column that references `dbo.[Us
 uat-users
   [--model <path>]                  # Required unless --from-live is supplied
   [--from-live]                     # Query metadata from the live UAT database
-  --uat-conn <connection string>    # Required; used for discovery and data analysis
+  --connection-string <connection string>    # Required; used for discovery and data analysis
   --uat-user-inventory <path>       # Required; CSV export of the UAT ossys_User table (Id,Username,EMail,Name,External_Id,Is_Active,Creation_Date,Last_Login)
   --qa-user-inventory <path>        # Required; CSV export of the QA ossys_User table (same schema)
   [--snapshot <path>]               # Optional JSON cache of FK analysis
@@ -30,7 +30,6 @@ uat-users
   [--include-columns <list>]        # Optional allow-list of column names
   [--user-entity-id <identifier>]   # Optional override to synthesize FKs when the model lacks User relationships
   [--user-map <file>]               # Override path for SourceUserId,TargetUserId mappings
-  --qa-user-inventory <path>        # CSV export of the QA dbo.User table (Id,Username,EMail,Name,External_Id,Is_Active,Creation_Date,Last_Login)
   [--out <dir>]                     # Default: ./_artifacts
 ```
 
@@ -54,7 +53,6 @@ dotnet run --project src/Osm.Cli \
   --profile-out ./out/profiles \
   --build-out ./out/full-export \
   --enable-uat-users \
-  --uat-conn "Server=uat;Database=UAT;TrustServerCertificate=True" \
   --uat-user-inventory ./extracts/uat_users.csv \
   --qa-user-inventory ./extracts/qa_users.csv \
   --user-map ./inputs/uat_user_map.csv
@@ -85,7 +83,7 @@ When operating through `full-export`, the steps below remain the same—the orch
    ```bash
    dotnet run --project src/Osm.Cli -- uat-users \
      --model ./_artifacts/model.json \
-     --uat-conn "Server=uat;Database=UAT;Trusted_Connection=True;MultipleActiveResultSets=True" \
+     --connection-string "Server=qa;Database=QA;Trusted_Connection=True;MultipleActiveResultSets=True" \
      --uat-user-inventory ./extracts/uat_users.csv \
      --qa-user-inventory ./extracts/qa_users.csv \
      --out ./_artifacts
