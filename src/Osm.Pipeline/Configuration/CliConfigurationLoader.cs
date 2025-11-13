@@ -9,6 +9,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Json.Configuration;
 using Osm.Pipeline.DynamicData;
+using Osm.Pipeline.UatUsers;
 using Osm.Smo;
 
 namespace Osm.Pipeline.Configuration;
@@ -407,6 +408,10 @@ public sealed class CliConfigurationLoader
         {
             uatInventoryPath = resolvedUatInventory;
         }
+        else if (ConfigurationJsonHelpers.TryReadPathProperty(element, "uatInventory", baseDirectory, out var legacyUatInventory))
+        {
+            uatInventoryPath = legacyUatInventory;
+        }
 
         string? qaInventoryPath = null;
         if (ConfigurationJsonHelpers.TryReadPathProperty(element, "qaInventory", baseDirectory, out var resolvedQaInventory))
@@ -473,6 +478,56 @@ public sealed class CliConfigurationLoader
             includeColumns = ParseIncludeColumns(includeElement);
         }
 
+        UserMatchingStrategy? matchingStrategy = null;
+        if (element.TryGetProperty("matchStrategy", out var matchStrategyElement)
+            && matchStrategyElement.ValueKind == JsonValueKind.String)
+        {
+            var value = matchStrategyElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                matchingStrategy = UserMatchingConfigurationHelper.ParseStrategy(value, UserMatchingStrategy.CaseInsensitiveEmail);
+            }
+        }
+
+        string? matchingAttribute = null;
+        if (element.TryGetProperty("matchAttribute", out var matchAttributeElement)
+            && matchAttributeElement.ValueKind == JsonValueKind.String)
+        {
+            var value = matchAttributeElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                matchingAttribute = value;
+            }
+        }
+
+        string? matchingRegex = null;
+        if (element.TryGetProperty("matchRegex", out var matchRegexElement)
+            && matchRegexElement.ValueKind == JsonValueKind.String)
+        {
+            var value = matchRegexElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                matchingRegex = value;
+            }
+        }
+
+        UserFallbackAssignmentMode? fallbackMode = null;
+        if (element.TryGetProperty("fallbackMode", out var fallbackModeElement)
+            && fallbackModeElement.ValueKind == JsonValueKind.String)
+        {
+            var value = fallbackModeElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                fallbackMode = UserMatchingConfigurationHelper.ParseFallbackMode(value, UserFallbackAssignmentMode.Ignore);
+            }
+        }
+
+        var fallbackTargets = Array.Empty<string>();
+        if (element.TryGetProperty("fallbackTargets", out var fallbackTargetsElement))
+        {
+            fallbackTargets = ParseFallbackTargets(fallbackTargetsElement);
+        }
+
         configuration = new UatUsersConfiguration(
             ModelPath: modelPath,
             FromLiveMetadata: fromLive,
@@ -485,11 +540,57 @@ public sealed class CliConfigurationLoader
             UatUserInventoryPath: uatInventoryPath,
             QaUserInventoryPath: qaInventoryPath,
             SnapshotPath: snapshotPath,
-            UserEntityIdentifier: entityId);
+            UserEntityIdentifier: entityId,
+            MatchingStrategy: matchingStrategy,
+            MatchingAttribute: matchingAttribute,
+            MatchingRegexPattern: matchingRegex,
+            FallbackAssignment: fallbackMode,
+            FallbackTargets: fallbackTargets);
         return true;
     }
 
     private static string[] ParseIncludeColumns(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            var value = element.GetString();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return Array.Empty<string>();
+            }
+
+            return value
+                .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(static part => !string.IsNullOrWhiteSpace(part))
+                .ToArray();
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var values = new List<string>();
+        foreach (var child in element.EnumerateArray())
+        {
+            if (child.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            var value = child.GetString();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            values.Add(value);
+        }
+
+        return values.ToArray();
+    }
+
+    private static string[] ParseFallbackTargets(JsonElement element)
     {
         if (element.ValueKind == JsonValueKind.String)
         {

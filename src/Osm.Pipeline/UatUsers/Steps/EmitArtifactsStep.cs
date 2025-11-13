@@ -41,6 +41,13 @@ public sealed class EmitArtifactsStep : IPipelineStep<UatUsersContext>
             "Apply script emitted to {Path} (Length={Length} characters).",
             Path.Combine(context.Artifacts.Root, "uat-users", "02_apply_user_remap.sql"),
             script.Length);
+
+        var matchingRows = BuildMatchingReportRows(context).ToList();
+        context.Artifacts.WriteCsv("04_matching_report.csv", matchingRows);
+        _logger.LogInformation(
+            "Matching report written to {Path} with {RowCount} rows.",
+            Path.Combine(context.Artifacts.Root, "uat-users", "04_matching_report.csv"),
+            Math.Max(matchingRows.Count - 1, 0));
         return Task.CompletedTask;
     }
 
@@ -93,6 +100,27 @@ public sealed class EmitArtifactsStep : IPipelineStep<UatUsersContext>
                     pair.Value.ToString(CultureInfo.InvariantCulture)
                 };
             }
+        }
+    }
+
+    private static IEnumerable<IReadOnlyList<string>> BuildMatchingReportRows(UatUsersContext context)
+    {
+        yield return new[] { "SourceUserId", "TargetUserId", "Strategy", "Explanation", "UsedFallback" };
+        if (context.MatchingResults is not { Count: > 0 } results)
+        {
+            yield break;
+        }
+
+        foreach (var result in results.OrderBy(static r => r.SourceUserId))
+        {
+            yield return new[]
+            {
+                result.SourceUserId.ToString(),
+                result.TargetUserId?.ToString() ?? string.Empty,
+                result.Strategy,
+                result.Explanation ?? string.Empty,
+                result.UsedFallback ? "True" : "False"
+            };
         }
     }
 }

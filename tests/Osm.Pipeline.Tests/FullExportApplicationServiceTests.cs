@@ -246,7 +246,12 @@ public sealed class FullExportApplicationServiceTests
                 UatUserInventoryPath: "configured-uat.csv",
                 QaUserInventoryPath: "configured-qa.csv",
                 SnapshotPath: "configured-snapshot.json",
-                UserEntityIdentifier: "UserEntity")
+                UserEntityIdentifier: "UserEntity",
+                MatchingStrategy: UserMatchingStrategy.CaseInsensitiveEmail,
+                MatchingAttribute: "Email",
+                MatchingRegexPattern: null,
+                FallbackAssignment: UserFallbackAssignmentMode.Ignore,
+                FallbackTargets: Array.Empty<string>())
         };
 
         var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
@@ -335,7 +340,12 @@ public sealed class FullExportApplicationServiceTests
                 UatUserInventoryPath: "cfg-uat.csv",
                 QaUserInventoryPath: "cfg-qa.csv",
                 SnapshotPath: "cfg-snapshot.json",
-                UserEntityIdentifier: "cfg-entity")
+                UserEntityIdentifier: "cfg-entity",
+                MatchingStrategy: UserMatchingStrategy.CaseInsensitiveEmail,
+                MatchingAttribute: "Email",
+                MatchingRegexPattern: null,
+                FallbackAssignment: UserFallbackAssignmentMode.Ignore,
+                FallbackTargets: Array.Empty<string>())
         };
 
         var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);

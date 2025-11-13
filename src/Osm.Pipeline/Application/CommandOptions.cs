@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.DynamicData;
+using Osm.Pipeline.UatUsers;
 using Osm.Pipeline.ModelIngestion;
 
 namespace Osm.Pipeline.Application;
@@ -110,7 +111,12 @@ public sealed record UatUsersOverrides(
     string? UatUserInventoryPath,
     string? QaUserInventoryPath,
     string? SnapshotPath,
-    string? UserEntityIdentifier)
+    string? UserEntityIdentifier,
+    UserMatchingStrategy? MatchingStrategy = null,
+    string? MatchingAttribute = null,
+    string? MatchingRegexPattern = null,
+    UserFallbackAssignmentMode? FallbackAssignment = null,
+    IReadOnlyList<UserIdentifier>? FallbackTargets = null)
 {
     public static UatUsersOverrides Disabled { get; } = new(
         false,
@@ -122,7 +128,12 @@ public sealed record UatUsersOverrides(
         null,
         null,
         null,
-        null);
+        null,
+        null,
+        null,
+        null,
+        null,
+        Array.Empty<UserIdentifier>());
 }
 
 public sealed record FullExportOverrides(

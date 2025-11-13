@@ -112,12 +112,15 @@
 
   Provide the full QA and UAT `ossys_User` exports via `--qa-user-inventory` and `--uat-user-inventory`. Both loaders expect the same CSV schema (`Id,Username,EMail,Name,External_Id,Is_Active,Creation_Date,Last_Login`) so Service Center exports can be reused without editing.
 
+  Tune automatic matching with the new `--match-*` options. For example, `--match-strategy exact-attribute --match-attribute External_Id --match-fallback-mode round-robin --match-fallback-target 400 --match-fallback-target 401` will auto-resolve QA users that share an `External_Id`, capture the explanation in the matching report, and cycle through vetted fallback IDs when a heuristic cannot find an exact match.
+
   The run produces a `uat-users` block in `full-export.manifest.json` (`Stages[].Name == "uat-users"`) plus a dedicated artifact root at `<build-out>/uat-users`. Expect to see:
 
    * `00_user_map.template.csv` – orphan list captured from QA. Copy the template to `00_user_map.csv` (or supply `--user-map`) and fill in the `TargetUserId` values the UAT rollout should adopt.
    * `01_preview.csv` – per-table preview of `OldUserId → NewUserId` row counts so QA can validate remap coverage before shipping.
    * `02_apply_user_remap.sql` – idempotent script that stages the mapping, guards `NULL` values, and reports a per-column summary.
    * `03_catalog.txt` – normalized `<schema>.<table>.<column> -- <foreign key>` catalog for audit trails.
+   * `04_matching_report.csv` – ledger of `SourceUserId,TargetUserId,Strategy,Explanation,UsedFallback` entries documenting why each orphan was auto-mapped, assigned via fallback, or left for manual review.
 
    These artifacts travel alongside the SSDT manifest, safe/remediation scripts, and telemetry bundle, giving operations a single payload for QA-to-UAT promotions.
 3. **(Optional) Verify DMM parity** using the same model/profile inputs:

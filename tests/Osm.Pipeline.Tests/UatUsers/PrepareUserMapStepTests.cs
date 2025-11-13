@@ -27,6 +27,13 @@ public sealed class PrepareUserMapStepTests
         });
         context.SetOrphanUserIds(new[] { UserIdentifier.FromString("100"), UserIdentifier.FromString("200") });
         context.SetForeignKeyValueCounts(new Dictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>());
+        context.SetAutomaticMappings(new[]
+        {
+            new UserMappingEntry(
+                UserIdentifier.FromString("200"),
+                UserIdentifier.FromString("400"),
+                "auto-match")
+        });
 
         var mapPath = context.UserMapPath;
         File.WriteAllLines(mapPath, new[]
@@ -50,8 +57,8 @@ public sealed class PrepareUserMapStepTests
             entry =>
             {
                 Assert.Equal("200", entry.SourceUserId.Value);
-                Assert.Null(entry.TargetUserId);
-                Assert.Null(entry.Rationale);
+                Assert.Equal("400", entry.TargetUserId?.Value);
+                Assert.Equal("auto-match", entry.Rationale);
             });
 
         var templatePath = Path.Combine(temp.Path, "uat-users", "00_user_map.template.csv");
@@ -68,7 +75,7 @@ public sealed class PrepareUserMapStepTests
         {
             "SourceUserId,TargetUserId,Rationale",
             "100,300,existing",
-            "200,,"
+            "200,400,auto-match"
         }, mapLines);
     }
 

@@ -61,7 +61,12 @@ public sealed record UatUsersPipelineOptions(
     string? UatUserInventoryPath,
     string? QaUserInventoryPath,
     string? SnapshotPath,
-    string? UserEntityIdentifier);
+    string? UserEntityIdentifier,
+    UserMatchingStrategy? MatchingStrategy = null,
+    string? MatchingAttribute = null,
+    string? MatchingRegexPattern = null,
+    UserFallbackAssignmentMode? FallbackAssignment = null,
+    IReadOnlyList<string>? FallbackTargets = null);
 
 public sealed record FullExportPipelineRequest(
     ExtractModelPipelineRequest ExtractModel,
@@ -235,7 +240,12 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
                     request.UatUsers.UatUserInventoryPath,
                     request.UatUsers.QaUserInventoryPath,
                     request.UatUsers.SnapshotPath,
-                    request.UatUsers.UserEntityIdentifier);
+                    request.UatUsers.UserEntityIdentifier,
+                    request.UatUsers.MatchingStrategy,
+                    request.UatUsers.MatchingAttribute,
+                    request.UatUsers.MatchingRegexPattern,
+                    request.UatUsers.FallbackAssignment,
+                    ConvertFallbackTargets(request.UatUsers.FallbackTargets));
 
                 var runnerRequest = new UatUsersPipelineRequest(
                     overrides,
@@ -303,6 +313,13 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
         log.Record("fullExport.completed", "Full export pipeline completed.");
 
         return new FullExportPipelineResult(outcome.Extraction, outcome.Profile, outcome.Build, outcome.Apply, log.Build(), outcome.UatUsers);
+    }
+
+    private static IReadOnlyList<UserIdentifier> ConvertFallbackTargets(IReadOnlyList<string>? targets)
+    {
+        return UserMatchingConfigurationHelper
+            .NormalizeFallbackTargets(targets)
+            .ToArray();
     }
 
     private void LogFailure(

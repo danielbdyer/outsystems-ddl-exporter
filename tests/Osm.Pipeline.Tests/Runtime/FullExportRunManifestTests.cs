@@ -409,6 +409,113 @@ public sealed class FullExportRunManifestTests
         Assert.Contains(manifest.DynamicArtifacts, artifact => artifact.Name == "uat-users-catalog");
     }
 
+    [Fact]
+    public void Create_IncludesUatUsersStageMetadata()
+    {
+        using var tempDir = new TempDirectory();
+        var dynamicRoot = Path.Combine(tempDir.Path, "Dynamic");
+        Directory.CreateDirectory(dynamicRoot);
+        var safeScriptPath = Path.Combine(dynamicRoot, "safe.sql");
+        File.WriteAllText(safeScriptPath, "-- safe");
+        var remediationScriptPath = Path.Combine(dynamicRoot, "remediation.sql");
+        File.WriteAllText(remediationScriptPath, "-- remediation");
+        var staticSeedPaths = ImmutableArray<string>.Empty;
+
+        var modelPath = FixtureFile.GetPath("model.edge-case.json");
+        var profilePath = FixtureFile.GetPath(Path.Combine("profiling", "profile.edge-case.json"));
+        var extraction = CreateExtractionApplicationResult(modelPath);
+        var capture = CreateCaptureApplicationResult(profilePath, modelPath, Path.Combine(tempDir.Path, "Profiles"));
+        var build = CreateBuildApplicationResult(dynamicRoot, modelPath, profilePath, safeScriptPath, remediationScriptPath, staticSeedPaths);
+        var schemaApply = new SchemaApplyResult(
+            Attempted: false,
+            SafeScriptApplied: false,
+            StaticSeedsApplied: false,
+            AppliedScripts: ImmutableArray<string>.Empty,
+            AppliedSeedScripts: ImmutableArray<string>.Empty,
+            SkippedScripts: ImmutableArray<string>.Empty,
+            Warnings: ImmutableArray<string>.Empty,
+            PendingRemediationCount: 0,
+            SafeScriptPath: safeScriptPath,
+            RemediationScriptPath: remediationScriptPath,
+            StaticSeedScriptPaths: staticSeedPaths,
+            Duration: TimeSpan.Zero,
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.NonDestructive,
+            StaticSeedValidation: StaticSeedValidationSummary.NotAttempted);
+
+        var uatOutputRoot = Path.Combine(tempDir.Path, "BuildOut");
+        var uatArtifacts = new UatUsersArtifacts(uatOutputRoot);
+        var uatInventoryPath = Path.Combine(tempDir.Path, "uat.csv");
+        File.WriteAllText(uatInventoryPath, "Id,Username\n1,uat-user\n");
+        var qaInventoryPath = Path.Combine(tempDir.Path, "qa.csv");
+        File.WriteAllText(qaInventoryPath, "Id,Username\n1,qa-user\n");
+        var snapshotPath = Path.Combine(tempDir.Path, "snapshot.json");
+        File.WriteAllText(snapshotPath, "{}");
+
+        var fallbackTargets = new[]
+        {
+            UserIdentifier.FromString("200"),
+            UserIdentifier.FromString("300")
+        };
+
+        var uatContext = new UatUsersContext(
+            new StubSchemaGraph(),
+            uatArtifacts,
+            new ThrowingConnectionFactory(),
+            userSchema: "dbo",
+            userTable: "Users",
+            userIdColumn: "Id",
+            includeColumns: new[] { "CreatedBy" },
+            userMapPath: Path.Combine(uatOutputRoot, "custom-map.csv"),
+            uatUserInventoryPath: uatInventoryPath,
+            qaUserInventoryPath: qaInventoryPath,
+            snapshotPath: snapshotPath,
+            userEntityIdentifier: "UserEntity",
+            fromLiveMetadata: false,
+            sourceFingerprint: "uat/db",
+            matchingStrategy: UserMatchingStrategy.Regex,
+            matchingAttribute: "Username",
+            matchingRegexPattern: "^qa_(?<target>.*)$",
+            fallbackAssignment: UserFallbackAssignmentMode.RoundRobin,
+            fallbackTargets: fallbackTargets);
+
+        uatContext.SetAllowedUserIds(fallbackTargets);
+        var orphan = UserIdentifier.FromString("500");
+        uatContext.SetOrphanUserIds(new[] { orphan });
+        uatContext.SetUserMap(Array.Empty<UserMappingEntry>());
+        uatContext.SetMatchingResults(new[]
+        {
+            UserMatchingResult.Create(orphan, fallbackTargets[0], "Regex", "Regex captured value")
+        });
+
+        var uatResult = new UatUsersApplicationResult(
+            Executed: true,
+            Context: uatContext,
+            Warnings: ImmutableArray.Create("matching warning"));
+
+        var applicationResult = new FullExportApplicationResult(
+            build,
+            capture,
+            extraction,
+            schemaApply,
+            SchemaApplyOptions.Disabled,
+            uatResult);
+        var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, "config/full-export.json");
+        var verbResult = new FullExportVerbResult(configurationContext, applicationResult);
+
+        var manifest = FullExportRunManifest.Create(verbResult, Array.Empty<PipelineArtifact>(), TimeProvider.System);
+        var uatStage = Assert.Single(manifest.Stages, stage => stage.Name == "uat-users");
+
+        Assert.Equal("true", uatStage.Artifacts["enabled"]);
+        Assert.Equal("Regex", uatStage.Artifacts["matchingStrategy"]);
+        Assert.Equal("RoundRobin", uatStage.Artifacts["fallbackMode"]);
+        Assert.Equal("Username", uatStage.Artifacts["matchingAttribute"]);
+        Assert.Equal("^qa_(?<target>.*)$", uatStage.Artifacts["matchingRegex"]);
+        Assert.Equal(string.Join(",", fallbackTargets.Select(target => target.ToString())), uatStage.Artifacts["fallbackTargets"]);
+        Assert.Equal(uatArtifacts.GetDefaultUserMapPath(), uatStage.Artifacts["defaultUserMapPath"]);
+        Assert.Equal(Path.Combine(uatArtifacts.Root, "uat-users", "04_matching_report.csv"), uatStage.Artifacts["matchingReportPath"]);
+        Assert.Contains("matching warning", uatStage.Warnings);
+    }
+
     private static ExtractModelApplicationResult CreateExtractionApplicationResult(string modelPath)
     {
         var extractionResult = new ModelExtractionResult(
