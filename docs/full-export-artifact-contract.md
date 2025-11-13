@@ -32,7 +32,19 @@ is replayed after the initial schema deployment.
 * `StaticSeedArtifactsIncludedInDynamic` is set when the static seed artifacts are
   mirrored into the dynamic list. The current default is `true`, allowing the initial
   run bundle to include the seeds while still giving orchestrators a clearly scoped
-  seed collection for subsequent runs. 【F:src/Osm.Pipeline/Runtime/FullExportRunManifest.cs†L12-L205】
+  seed collection for subsequent runs.
+
+The `Stages` collection mirrors those categories so automation can toggle or audit the
+payloads independently:
+
+* `build-ssdt` — aggregate SSDT emission status plus manifest, decision log, safe /
+  remediation scripts, and telemetry references.
+* `static-seed` — exposes seed emission metadata with `root`, `ordering`,
+  `scriptCount`, and `scripts` entries that capture the resolved directory, ordering
+  mode, total script count, and absolute paths.
+* `dynamic-insert` — exposes the live data replay bundle with `root`, `mode`,
+  `ordering`, `scriptCount`, and `scripts` entries so deployments can run or skip
+  those payloads without touching the SSDT stage. 【F:src/Osm.Pipeline/Runtime/FullExportRunManifest.cs†L12-L420】
 
 ## Metadata and CLI Summary
 
@@ -104,7 +116,7 @@ They are not imported into SSDT; instead, schedule them as a deployment pipeline
    scripts, or a runbook. A simple example:
 
    ```bash
-   for script in "$(jq -r '.Stages[] | select(.Name=="build-ssdt").Artifacts.dynamicInsertScripts' \
+   for script in "$(jq -r '.Stages[] | select(.Name=="dynamic-insert").Artifacts.scripts' \
      out/full-export/full-export.manifest.json | tr ';' '\n')"; do
      sqlcmd -S "$SQLSERVER" -d "$DB" -i "$script"
    done
@@ -121,11 +133,12 @@ The `full-export.manifest.json` file provides stable keys for orchestration:
 
 * `Metadata["build.staticSeedRoot"]` → location for static seeds imported via
   `Script.PostDeployment.sql`.
-* `Stages[].Artifacts.dynamicInsertRoot` → base directory for dynamic inserts.
-* `Stages[].Artifacts.staticSeedOrdering` / `dynamicInsertOrdering` → whether a
-  topological order was applied before writing the scripts.
-* `Stages[].Artifacts.dynamicInsertMode` → confirms whether the run emitted per-entity
-  files or the consolidated single-file script.
+* `Stages[] | select(.Name=="static-seed").Artifacts.root` → base directory for
+  static seeds plus `ordering` / `scriptCount` / `scripts` details for selective
+  deployment.
+* `Stages[] | select(.Name=="dynamic-insert").Artifacts.root` → base directory for
+  dynamic inserts plus the `mode` / `ordering` / `scriptCount` / `scripts` metadata
+  that powers downstream scheduling.
 
 Keep both directories in the deployment artifact so subsequent runs can diff contents
 against previous releases or rerun seeds in disaster recovery scenarios.
@@ -161,9 +174,9 @@ Use the repository’s edge-case fixtures to validate an SSDT project end-to-end
    ```bash
    dotnet run --project tools/FullExportLoadHarness \
      --safe out/full-export.edge-case/SafeScript.sql \
-     --static-seed "$(jq -r '.Stages[] | select(.Name=="build-ssdt").Artifacts.staticSeedScripts' \
+     --static-seed "$(jq -r '.Stages[] | select(.Name=="static-seed").Artifacts.scripts' \
        out/full-export.edge-case/full-export.manifest.json)" \
-     --dynamic-insert-root "$(jq -r '.Stages[] | select(.Name=="build-ssdt").Artifacts.dynamicInsertRoot' \
+     --dynamic-insert-root "$(jq -r '.Stages[] | select(.Name=="dynamic-insert").Artifacts.root' \
        out/full-export.edge-case/full-export.manifest.json)"
    ```
 
