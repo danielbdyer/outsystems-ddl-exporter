@@ -546,6 +546,8 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
 
         var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
         var sqlConfiguration = configuration.Sql ?? SqlConfiguration.Empty;
+        var staticSeedMode = applyOverrides.StaticSeedSynchronizationMode
+            ?? configuration.Tightening.Emission.StaticSeeds.SynchronizationMode;
 
         var connectionString = string.IsNullOrWhiteSpace(applyOverrides.ConnectionString)
             ? null
@@ -593,6 +595,6 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             CommandTimeoutSeconds: commandTimeout,
             ApplySafeScript: safeScript,
             ApplyStaticSeeds: staticSeeds,
-            StaticSeedSynchronizationMode.NonDestructive);
+            StaticSeedSynchronizationMode: staticSeedMode);
     }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.Linq;
+using System.CommandLine.Parsing;
 using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.DynamicData;

@@ -1,8 +1,10 @@
 using System.CommandLine;
 using System.CommandLine.Builder;
+using System.CommandLine.Parsing;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands.Binders;
 using Osm.Cli.Commands.Options;
+using Osm.Cli.Commands;
 using Osm.Pipeline.Runtime.Verbs;
 using Xunit;
 

@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
@@ -447,6 +448,182 @@ public sealed class FullExportApplicationServiceTests
     }
 
     [Fact]
+    public async Task RunAsync_UsesSchemaApplyOverrideSynchronizationMode()
+    {
+        var model = CreateModel();
+        var extractionResult = CreateExtractionApplicationResult(model);
+        var profileResult = new CaptureProfileApplicationResult(
+            CreateCaptureProfilePipelineResult(),
+            OutputDirectory: "profiles",
+            ModelPath: "model.json",
+            ProfilerProvider: "fixture",
+            FixtureProfilePath: null);
+        var buildResult = CreateBuildResult("model.json");
+
+        var profileService = new StubProfileService(Result<CaptureProfileApplicationResult>.Success(profileResult));
+        var extractService = new StubExtractService(Result<ExtractModelApplicationResult>.Success(extractionResult));
+        var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
+        var schemaDataApplier = new RecordingSchemaDataApplier();
+        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(schemaDataApplier);
+        var modelDeserializer = new StubModelJsonDeserializer(model);
+        var uatRunner = new RecordingUatUsersRunner();
+        var schemaGraphFactory = new RecordingSchemaGraphFactory();
+        var coordinator = new FullExportCoordinator(schemaGraphFactory);
+
+        var service = new FullExportApplicationService(
+            profileService,
+            extractService,
+            buildService,
+            schemaApplyOrchestrator,
+            modelDeserializer,
+            uatRunner,
+            coordinator);
+
+        var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
+        var overrides = new FullExportOverrides(
+            Build: new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
+            Profile: new CaptureProfileOverrides(null, null, null, null, null),
+            Extract: new ExtractModelOverrides(null, null, null, null, null, null),
+            Apply: null,
+            ReuseModelPath: false,
+            UatUsers: UatUsersOverrides.Disabled);
+        var applyOverrides = new SchemaApplyOverrides(
+            Enabled: true,
+            ConnectionString: "Server=Target;Database=Apply;Trusted_Connection=True;",
+            CommandTimeoutSeconds: 45,
+            AuthenticationMethod: SqlAuthenticationMethod.SqlPassword,
+            TrustServerCertificate: true,
+            ApplicationName: "OsmApply",
+            AccessToken: null,
+            ApplySafeScript: true,
+            ApplyStaticSeeds: true,
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.Authoritative);
+        var input = new FullExportApplicationInput(
+            configurationContext,
+            overrides,
+            new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new CacheOptionsOverrides(null, null),
+            TighteningOverrides: null,
+            ApplyOverrides: applyOverrides);
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(schemaDataApplier.LastRequest);
+        Assert.Equal(
+            StaticSeedSynchronizationMode.Authoritative,
+            schemaDataApplier.LastRequest!.StaticSeedSynchronizationMode);
+        Assert.Equal(
+            StaticSeedSynchronizationMode.Authoritative,
+            result.Value.ApplyOptions.StaticSeedSynchronizationMode);
+    }
+
+    [Fact]
+    public async Task RunAsync_UsesConfigurationSynchronizationModeWhenOverrideMissing()
+    {
+        var model = CreateModel();
+        var extractionResult = CreateExtractionApplicationResult(model);
+        var profileResult = new CaptureProfileApplicationResult(
+            CreateCaptureProfilePipelineResult(),
+            OutputDirectory: "profiles",
+            ModelPath: "model.json",
+            ProfilerProvider: "fixture",
+            FixtureProfilePath: null);
+        var buildResult = CreateBuildResult("model.json");
+
+        var profileService = new StubProfileService(Result<CaptureProfileApplicationResult>.Success(profileResult));
+        var extractService = new StubExtractService(Result<ExtractModelApplicationResult>.Success(extractionResult));
+        var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
+        var schemaDataApplier = new RecordingSchemaDataApplier();
+        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(schemaDataApplier);
+        var modelDeserializer = new StubModelJsonDeserializer(model);
+        var uatRunner = new RecordingUatUsersRunner();
+        var schemaGraphFactory = new RecordingSchemaGraphFactory();
+        var coordinator = new FullExportCoordinator(schemaGraphFactory);
+
+        var staticSeeds = StaticSeedOptions.Create(
+            groupByModule: true,
+            emitMasterFile: false,
+            StaticSeedSynchronizationMode.ValidateThenApply).Value;
+        var emission = EmissionOptions.Create(
+            perTableFiles: true,
+            includePlatformAutoIndexes: false,
+            sanitizeModuleNames: true,
+            emitBareTableOnly: false,
+            emitTableHeaders: false,
+            moduleParallelism: 1,
+            namingOverrides: TighteningOptions.Default.Emission.NamingOverrides,
+            staticSeeds: staticSeeds).Value;
+        var tightening = TighteningOptions.Create(
+            TighteningOptions.Default.Policy,
+            TighteningOptions.Default.ForeignKeys,
+            TighteningOptions.Default.Uniqueness,
+            TighteningOptions.Default.Remediation,
+            emission,
+            TighteningOptions.Default.Mocking).Value;
+        var empty = CliConfiguration.Empty;
+        var configuration = new CliConfiguration(
+            tightening,
+            empty.ModelPath,
+            empty.ProfilePath,
+            empty.DmmPath,
+            empty.Cache,
+            empty.Profiler,
+            empty.Sql,
+            empty.ModuleFilter,
+            empty.TypeMapping,
+            empty.SupplementalModels,
+            empty.DynamicData,
+            empty.UatUsers);
+
+        var service = new FullExportApplicationService(
+            profileService,
+            extractService,
+            buildService,
+            schemaApplyOrchestrator,
+            modelDeserializer,
+            uatRunner,
+            coordinator);
+
+        var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
+        var overrides = new FullExportOverrides(
+            Build: new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
+            Profile: new CaptureProfileOverrides(null, null, null, null, null),
+            Extract: new ExtractModelOverrides(null, null, null, null, null, null),
+            Apply: new SchemaApplyOverrides(
+                Enabled: true,
+                ConnectionString: "Server=Target;Database=Apply;Trusted_Connection=True;",
+                CommandTimeoutSeconds: null,
+                AuthenticationMethod: SqlAuthenticationMethod.SqlPassword,
+                TrustServerCertificate: true,
+                ApplicationName: null,
+                AccessToken: null,
+                ApplySafeScript: true,
+                ApplyStaticSeeds: true,
+                StaticSeedSynchronizationMode: null),
+            ReuseModelPath: false,
+            UatUsers: UatUsersOverrides.Disabled);
+        var input = new FullExportApplicationInput(
+            configurationContext,
+            overrides,
+            new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new CacheOptionsOverrides(null, null));
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(schemaDataApplier.LastRequest);
+        Assert.Equal(
+            StaticSeedSynchronizationMode.ValidateThenApply,
+            schemaDataApplier.LastRequest!.StaticSeedSynchronizationMode);
+        Assert.Equal(
+            StaticSeedSynchronizationMode.ValidateThenApply,
+            result.Value.ApplyOptions.StaticSeedSynchronizationMode);
+    }
+
+    [Fact]
     public async Task RunAsync_ReturnsFailureWhenUatUsersPipelineFails()
     {
         var model = CreateModel();
@@ -473,6 +650,7 @@ public sealed class FullExportApplicationServiceTests
         {
             GraphToReturn = new ModelSchemaGraph(model)
         };
+        var coordinator = new FullExportCoordinator(schemaGraphFactory);
 
         var service = new FullExportApplicationService(
             profileService,

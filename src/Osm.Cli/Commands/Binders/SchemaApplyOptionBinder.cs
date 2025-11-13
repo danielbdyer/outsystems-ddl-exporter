@@ -4,6 +4,7 @@ using System.CommandLine;
 using System.CommandLine.Binding;
 using System.CommandLine.Parsing;
 using Microsoft.Data.SqlClient;
+using Osm.Domain.Configuration;
 using Osm.Pipeline.Application;
 
 namespace Osm.Cli.Commands.Binders;
@@ -21,6 +22,9 @@ internal sealed class SchemaApplyOptionBinder : BinderBase<SchemaApplyOverrides>
         AccessTokenOption = new Option<string?>("--apply-access-token", "Access token for schema apply connections.");
         ApplySafeScriptOption = CreateTriStateOption("--apply-safe-script", "Apply the generated safe opportunity script.");
         ApplyStaticSeedsOption = CreateTriStateOption("--apply-static-seeds", "Apply generated static seed scripts.");
+        StaticSeedSynchronizationModeOption = new Option<StaticSeedSynchronizationMode?>(
+            "--apply-static-seed-mode",
+            description: "Static seed synchronization mode (NonDestructive, ValidateThenApply, Authoritative).");
     }
 
     public Option<bool?> EnabledOption { get; }
@@ -41,6 +45,8 @@ internal sealed class SchemaApplyOptionBinder : BinderBase<SchemaApplyOverrides>
 
     public Option<bool?> ApplyStaticSeedsOption { get; }
 
+    public Option<StaticSeedSynchronizationMode?> StaticSeedSynchronizationModeOption { get; }
+
     public IEnumerable<Option> Options
     {
         get
@@ -54,6 +60,7 @@ internal sealed class SchemaApplyOptionBinder : BinderBase<SchemaApplyOverrides>
             yield return AccessTokenOption;
             yield return ApplySafeScriptOption;
             yield return ApplyStaticSeedsOption;
+            yield return StaticSeedSynchronizationModeOption;
         }
     }
 
@@ -76,7 +83,8 @@ internal sealed class SchemaApplyOptionBinder : BinderBase<SchemaApplyOverrides>
             parseResult.GetValueForOption(ApplicationNameOption),
             parseResult.GetValueForOption(AccessTokenOption),
             parseResult.GetValueForOption(ApplySafeScriptOption),
-            parseResult.GetValueForOption(ApplyStaticSeedsOption));
+            parseResult.GetValueForOption(ApplyStaticSeedsOption),
+            parseResult.GetValueForOption(StaticSeedSynchronizationModeOption));
     }
 
     private static Option<bool?> CreateTriStateOption(string name, string description)

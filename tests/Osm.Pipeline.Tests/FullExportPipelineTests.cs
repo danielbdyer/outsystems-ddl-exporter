@@ -259,15 +259,15 @@ public sealed class FullExportPipelineTests
                 Context: null,
                 Warnings: ImmutableArray<string>.Empty))
         };
+        var (extractRequest, extractResult) = CreateExtractionArtifacts();
+        var (captureRequest, captureResult) = CreateCaptureArtifacts();
+        var (buildRequest, buildResult) = CreateBuildArtifacts();
+
         var schemaGraphFactory = new RecordingSchemaGraphFactory
         {
             GraphToReturn = new ModelSchemaGraph(extractResult.Model)
         };
         var pipeline = CreatePipeline(dispatcher, orchestrator, uatRunner, schemaGraphFactory);
-
-        var (extractRequest, extractResult) = CreateExtractionArtifacts();
-        var (captureRequest, captureResult) = CreateCaptureArtifacts();
-        var (buildRequest, buildResult) = CreateBuildArtifacts();
 
         dispatcher.Register<ExtractModelPipelineRequest, ModelExtractionResult>((_, _) => Task.FromResult(Result<ModelExtractionResult>.Success(extractResult)));
         dispatcher.Register<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>((_, _) => Task.FromResult(Result<CaptureProfilePipelineResult>.Success(captureResult)));
