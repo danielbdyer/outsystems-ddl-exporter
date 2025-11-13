@@ -77,11 +77,12 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 DynamicInsertTopologicalOrderApplied: false));
         }
 
+        var ordering = EntityDependencySorter.SortByForeignKeys(dataset.Tables, state.Bootstrap.FilteredModel);
         var scripts = _generator.GenerateScripts(
             dataset,
             state.StaticSeedData,
             model: state.Bootstrap.FilteredModel);
-        var dynamicOrderApplied = state.Bootstrap.FilteredModel is not null && !scripts.IsDefaultOrEmpty;
+        var dynamicOrderApplied = ordering.TopologicalOrderingApplied;
         if (scripts.IsDefaultOrEmpty || scripts.Length == 0)
         {
             state.Log.Record(
@@ -141,6 +142,12 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                     scriptPaths.IsDefaultOrEmpty || scriptPaths.Length == 0 ? string.Empty : string.Join(";", scriptPaths))
                 .WithValue("outputs.dynamicInsertMode", state.Request.DynamicInsertOutputMode.ToString())
                 .WithCount("tables", scripts.Length)
+                .WithCount("ordering.nodes", ordering.NodeCount)
+                .WithCount("ordering.edges", ordering.EdgeCount)
+                .WithCount("ordering.missingEdges", ordering.MissingEdgeCount)
+                .WithValue("ordering.cycleDetected", ordering.CycleDetected ? "true" : "false")
+                .WithValue("ordering.fallbackApplied", ordering.AlphabeticalFallbackApplied ? "true" : "false")
+                .WithValue("ordering.mode", ordering.TopologicalOrderingApplied ? "topological" : "alphabetical")
                 .Build());
 
         return Result<DynamicInsertsGenerated>.Success(new DynamicInsertsGenerated(
@@ -181,28 +188,13 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
             cancellationToken.ThrowIfCancellationRequested();
 
             var moduleName = script.Definition.Module ?? "<unknown>";
-            var directoryName = sanitizeModules ? ModuleNameSanitizer.Sanitize(moduleName) : moduleName;
-            if (!recordedModules.Add(directoryName))
-            {
-                var suffix = 2;
-                var baseName = directoryName;
-                while (!recordedModules.Add(directoryName = $"{baseName}_{suffix}"))
-                {
-                    suffix++;
-                }
-
-                if (sanitizeModules)
-                {
-                    log.Record(
-                        "dynamicData.insert.moduleNameRemapped",
-                        $"Sanitized module name '{baseName}' for '{moduleName}' collided with another module. Remapped to '{directoryName}'.",
-                        new PipelineLogMetadataBuilder()
-                            .WithValue("module.originalName", moduleName)
-                            .WithValue("module.sanitizedName", baseName)
-                            .WithValue("module.disambiguatedName", directoryName)
-                            .Build());
-                }
-            }
+            var sanitized = sanitizeModules ? ModuleNameSanitizer.Sanitize(moduleName) : moduleName;
+            var directoryName = ResolveModuleDirectoryName(
+                moduleName,
+                sanitized,
+                recordedModules,
+                log,
+                "dynamicData.insert.moduleNameRemapped");
 
             var moduleDirectory = Path.Combine(outputRoot, directoryName);
             Directory.CreateDirectory(moduleDirectory);
@@ -214,6 +206,38 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
         }
 
         return scriptPaths.MoveToImmutable();
+    }
+
+    private static string ResolveModuleDirectoryName(
+        string moduleName,
+        string? sanitizedName,
+        ISet<string> recordedModules,
+        PipelineExecutionLogBuilder log,
+        string logStep)
+    {
+        var candidate = string.IsNullOrWhiteSpace(sanitizedName) ? moduleName : sanitizedName;
+        var directoryName = candidate;
+        if (recordedModules.Add(directoryName))
+        {
+            return directoryName;
+        }
+
+        var suffix = 2;
+        while (!recordedModules.Add(directoryName = $"{candidate}_{suffix}"))
+        {
+            suffix++;
+        }
+
+        log.Record(
+            logStep,
+            $"Module '{moduleName}' collided with another module directory. Remapped to '{directoryName}'.",
+            new PipelineLogMetadataBuilder()
+                .WithValue("module.originalName", moduleName)
+                .WithValue("module.sanitizedName", candidate)
+                .WithValue("module.disambiguatedName", directoryName)
+                .Build());
+
+        return directoryName;
     }
 
     private static async Task<string> WriteSingleFileScriptAsync(

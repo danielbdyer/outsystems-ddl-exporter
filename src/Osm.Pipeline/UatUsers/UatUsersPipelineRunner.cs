@@ -8,6 +8,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Osm.Domain.Abstractions;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 
@@ -19,12 +20,6 @@ public interface IUatUsersPipelineRunner
         UatUsersPipelineRequest request,
         CancellationToken cancellationToken = default);
 }
-
-public sealed record UatUsersPipelineRequest(
-    UatUsersOverrides Overrides,
-    ModelExtractionResult Extraction,
-    string OutputDirectory,
-    IUserSchemaGraph? SchemaGraph = null);
 
 public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
 {
@@ -64,11 +59,11 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 "Build output directory is required to emit uat-users artifacts."));
         }
 
-        if (string.IsNullOrWhiteSpace(request.Overrides.ConnectionString))
+        if (string.IsNullOrWhiteSpace(request.SourceConnectionString))
         {
             return Result<UatUsersApplicationResult>.Failure(ValidationError.Create(
                 "pipeline.fullExport.uatUsers.connectionString.missing",
-                "A UAT connection string must be supplied when uat-users is enabled."));
+                "A source connection string must be supplied when uat-users is enabled."));
         }
 
         if (string.IsNullOrWhiteSpace(request.Overrides.QaUserInventoryPath))
@@ -92,7 +87,7 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 ? artifacts.GetDefaultUserMapPath()
                 : request.Overrides.UserMapPath!;
 
-            var connectionString = request.Overrides.ConnectionString!.Trim();
+            var connectionString = request.SourceConnectionString!.Trim();
             var sqlOptions = new SqlConnectionOptions(
                 AuthenticationMethod: null,
                 TrustServerCertificate: null,

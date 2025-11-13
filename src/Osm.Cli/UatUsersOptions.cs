@@ -10,7 +10,7 @@ public sealed class UatUsersOptions
 {
     public UatUsersOptions(
         string? modelPath,
-        string? uatConnectionString,
+        string? connectionString,
         bool fromLiveMetadata,
         string userSchema,
         string userTable,
@@ -30,7 +30,7 @@ public sealed class UatUsersOptions
         UatUsersOptionOrigins? origins = null)
     {
         ModelPath = string.IsNullOrWhiteSpace(modelPath) ? null : Path.GetFullPath(modelPath.Trim());
-        UatConnectionString = string.IsNullOrWhiteSpace(uatConnectionString) ? null : uatConnectionString.Trim();
+        ConnectionString = string.IsNullOrWhiteSpace(connectionString) ? null : connectionString.Trim();
         FromLiveMetadata = fromLiveMetadata;
         UserSchema = string.IsNullOrWhiteSpace(userSchema) ? "dbo" : userSchema.Trim();
         UserTable = string.IsNullOrWhiteSpace(userTable) ? "User" : userTable.Trim();
@@ -67,7 +67,7 @@ public sealed class UatUsersOptions
 
     public string? ModelPath { get; }
 
-    public string? UatConnectionString { get; }
+    public string? ConnectionString { get; }
 
     public bool FromLiveMetadata { get; }
 

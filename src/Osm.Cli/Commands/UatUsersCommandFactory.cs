@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Osm.Cli.Commands.Binders;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.UatUsers;
 
@@ -19,9 +20,9 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
     private readonly CliGlobalOptions _globalOptions;
     private readonly ICliConfigurationService _configurationService;
 
+    private readonly SqlOptionBinder _sqlBinder = new();
     private readonly Option<string?> _modelOption = new("--model", "Path to the UAT model JSON file.");
     private readonly Option<bool> _fromLiveOption = new("--from-live", "Discover catalog from live metadata.");
-    private readonly Option<string?> _uatConnectionOption = new("--uat-conn", "ADO.NET connection string for the UAT database (required).");
     private readonly Option<string?> _userSchemaOption = new("--user-schema", () => "dbo", "Schema that owns the user table.");
     private readonly Option<string?> _userTableOption = new("--user-table", () => "User", "User table name.");
     private readonly Option<string?> _userIdOption = new("--user-id-column", () => "Id", "Primary key column for the user table.");
@@ -74,7 +75,6 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
         {
             _modelOption,
             _fromLiveOption,
-            _uatConnectionOption,
             _userSchemaOption,
             _userTableOption,
             _userIdOption,
@@ -91,6 +91,11 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             _fallbackModeOption,
             _fallbackTargetOption
         };
+
+        foreach (var option in _sqlBinder.Options)
+        {
+            command.AddOption(option);
+        }
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
         command.SetHandler(async context => await ExecuteAsync(context).ConfigureAwait(false));
@@ -116,7 +121,9 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             return;
         }
 
-        var configuration = configurationResult.Value.Configuration.UatUsers;
+        var cliConfiguration = configurationResult.Value.Configuration;
+        var configuration = cliConfiguration.UatUsers;
+        var sqlOverrides = _sqlBinder.Bind(parseResult);
 
         var (modelPath, modelFromConfig) = ResolveStringOption(parseResult, _modelOption, configuration.ModelPath, null);
 
@@ -126,7 +133,7 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             : configuration.FromLiveMetadata ?? false;
         var fromLiveFromConfig = !fromLiveSpecified && configuration.FromLiveMetadata.HasValue;
 
-        var (connectionString, connectionFromConfig) = ResolveStringOption(parseResult, _uatConnectionOption, configuration.ConnectionString, null);
+        var connectionString = sqlOverrides.ConnectionString ?? cliConfiguration.Sql.ConnectionString;
 
         var (userSchemaInput, schemaFromConfig) = ResolveStringOption(parseResult, _userSchemaOption, configuration.UserSchema, "dbo");
         var (userTableInput, tableFromConfig) = ResolveStringOption(parseResult, _userTableOption, configuration.UserTable, "User");
@@ -219,7 +226,7 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
         if (string.IsNullOrWhiteSpace(connectionString))
         {
             context.ExitCode = 1;
-            CommandConsole.WriteErrorLine(context.Console, "--uat-conn is required.");
+            CommandConsole.WriteErrorLine(context.Console, "--connection-string is required for uat-users.");
             return;
         }
 

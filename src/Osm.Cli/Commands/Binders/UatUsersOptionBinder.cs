@@ -14,7 +14,6 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
     public UatUsersOptionBinder()
     {
         EnableOption = new Option<bool>("--enable-uat-users", "Enable generation of UAT user remapping artifacts.");
-        UatConnectionOption = new Option<string?>("--uat-conn", "ADO.NET connection string for the UAT database (required when UAT user remapping is enabled).");
         UserSchemaOption = new Option<string?>("--user-schema", () => "dbo", "Schema that owns the user table.");
         UserTableOption = new Option<string?>("--user-table", () => "User", "User table name (schema-qualified values are supported).");
         UserIdOption = new Option<string?>("--user-id-column", () => "Id", "Primary key column for the user table.");
@@ -39,8 +38,6 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
 
     public Option<bool> EnableOption { get; }
 
-    public Option<string?> UatConnectionOption { get; }
-
     public Option<string?> UserSchemaOption { get; }
 
     public Option<string?> UserTableOption { get; }
@@ -64,7 +61,6 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
         get
         {
             yield return EnableOption;
-            yield return UatConnectionOption;
             yield return UserSchemaOption;
             yield return UserTableOption;
             yield return UserIdOption;
@@ -110,7 +106,6 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
 
         return new UatUsersOverrides(
             Enabled: true,
-            ConnectionString: parseResult.GetValueForOption(UatConnectionOption),
             UserSchema: userSchema,
             UserTable: userTable,
             UserIdColumn: parseResult.GetValueForOption(UserIdOption) ?? "Id",

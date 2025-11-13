@@ -98,13 +98,13 @@
    When the QA catalog needs to seed UAT with a vetted user remap, enable the embedded `uat-users` pipeline so the `full-export` run captures both SSDT output and the remediation bundle:
 
    ```bash
-   dotnet run --project src/Osm.Cli \
-     full-export \
-     --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
-     --profile-out ./out/profiles \
-     --build-out ./out/full-export \
-     --enable-uat-users \
-    --uat-conn "Server=uat;Database=UAT;TrustServerCertificate=True" \
+  dotnet run --project src/Osm.Cli \
+    full-export \
+    --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
+    --profile-out ./out/profiles \
+    --build-out ./out/full-export \
+    --connection-string "Server=qa;Database=QA;TrustServerCertificate=True" \
+    --enable-uat-users \
     --uat-user-inventory ./extracts/uat_users.csv \
     --qa-user-inventory ./extracts/qa_users.csv \
     --user-map ./inputs/uat_user_map.csv

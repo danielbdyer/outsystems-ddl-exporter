@@ -154,7 +154,6 @@ public sealed class FullExportApplicationServiceTests
             ReuseModelPath: false,
             UatUsers: new UatUsersOverrides(
                 Enabled: true,
-                ConnectionString: "Server=Test;Database=Uat;Integrated Security=true;",
                 UserSchema: "dbo",
                 UserTable: "User",
                 UserIdColumn: "Id",
@@ -168,7 +167,7 @@ public sealed class FullExportApplicationServiceTests
             configurationContext,
             overrides,
             new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
-            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new SqlOptionsOverrides("Server=Test;Database=Uat;Integrated Security=true;", null, null, null, null, null, null, null, null),
             new CacheOptionsOverrides(null, null));
 
         var result = await service.RunAsync(input, CancellationToken.None);
@@ -176,7 +175,7 @@ public sealed class FullExportApplicationServiceTests
         Assert.True(result.IsSuccess);
         Assert.True(result.Value.UatUsers.Executed);
         var request = Assert.IsType<UatUsersPipelineRequest>(uatRunner.LastRequest);
-        Assert.Equal("Server=Test;Database=Uat;Integrated Security=true;", request.Overrides.ConnectionString);
+        Assert.Equal("Server=Test;Database=Uat;Integrated Security=true;", request.SourceConnectionString);
         Assert.Equal(extractionResult.ExtractionResult, request.Extraction);
         Assert.Equal(buildResult.OutputDirectory, request.OutputDirectory);
         Assert.Same(schemaGraphFactory.GraphToReturn, request.SchemaGraph);
@@ -223,11 +222,20 @@ public sealed class FullExportApplicationServiceTests
             uatRunner,
             coordinator);
 
+        var sqlConfig = new SqlConfiguration(
+            ConnectionString: "Server=Config;Database=Uat;",
+            CommandTimeoutSeconds: null,
+            Sampling: SqlSamplingConfiguration.Empty,
+            Authentication: SqlAuthenticationConfiguration.Empty,
+            MetadataContract: MetadataContractConfiguration.Empty,
+            ProfilingConnectionStrings: Array.Empty<string>(),
+            TableNameMappings: Array.Empty<TableNameMappingConfiguration>());
+
         var configuration = CliConfiguration.Empty with
         {
+            Sql = sqlConfig,
             UatUsers = new UatUsersConfiguration(
                 ModelPath: null,
-                ConnectionString: "Server=Config;Database=Uat;",
                 FromLiveMetadata: null,
                 UserSchema: "app",
                 UserTable: "Users",
@@ -267,7 +275,7 @@ public sealed class FullExportApplicationServiceTests
         Assert.True(result.IsSuccess);
         Assert.True(result.Value.UatUsers.Executed);
         var request = Assert.IsType<UatUsersPipelineRequest>(uatRunner.LastRequest);
-        Assert.Equal("Server=Config;Database=Uat;", request.Overrides.ConnectionString);
+        Assert.Equal("Server=Config;Database=Uat;", request.SourceConnectionString);
         Assert.Equal("app", request.Overrides.UserSchema);
         Assert.Equal("Users", request.Overrides.UserTable);
         Assert.Equal("UserId", request.Overrides.UserIdColumn);
@@ -322,7 +330,6 @@ public sealed class FullExportApplicationServiceTests
         {
             UatUsers = new UatUsersConfiguration(
                 ModelPath: null,
-                ConnectionString: "Server=Config;Database=Uat;",
                 FromLiveMetadata: null,
                 UserSchema: "cfg",
                 UserTable: "CfgUsers",
@@ -350,7 +357,6 @@ public sealed class FullExportApplicationServiceTests
             ReuseModelPath: false,
             UatUsers: new UatUsersOverrides(
                 Enabled: true,
-                ConnectionString: "Server=Cli;Database=Uat;",
                 UserSchema: "cliSchema",
                 UserTable: null,
                 UserIdColumn: null,
@@ -365,7 +371,7 @@ public sealed class FullExportApplicationServiceTests
             configurationContext,
             overrides,
             new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
-            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new SqlOptionsOverrides("Server=Cli;Database=Uat;", null, null, null, null, null, null, null, null),
             new CacheOptionsOverrides(null, null),
             UatUsersConfiguration: configuration.UatUsers);
 
@@ -374,7 +380,7 @@ public sealed class FullExportApplicationServiceTests
         Assert.True(result.IsSuccess);
         Assert.True(result.Value.UatUsers.Executed);
         var request = Assert.IsType<UatUsersPipelineRequest>(uatRunner.LastRequest);
-        Assert.Equal("Server=Cli;Database=Uat;", request.Overrides.ConnectionString);
+        Assert.Equal("Server=Cli;Database=Uat;", request.SourceConnectionString);
         Assert.Equal("cliSchema", request.Overrides.UserSchema);
         Assert.Equal("CfgUsers", request.Overrides.UserTable);
         Assert.Equal("CfgId", request.Overrides.UserIdColumn);
@@ -620,7 +626,7 @@ public sealed class FullExportApplicationServiceTests
             configurationContext,
             overrides,
             new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
-            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new SqlOptionsOverrides("Server=Test;", null, null, null, null, null, null, null, null),
             new CacheOptionsOverrides(null, null));
 
         var result = await service.RunAsync(input, CancellationToken.None);
@@ -682,7 +688,6 @@ public sealed class FullExportApplicationServiceTests
             ReuseModelPath: false,
             UatUsers: new UatUsersOverrides(
                 Enabled: true,
-                ConnectionString: "Server=Test;",
                 UserSchema: "dbo",
                 UserTable: "User",
                 UserIdColumn: "Id",
@@ -696,7 +701,7 @@ public sealed class FullExportApplicationServiceTests
             configurationContext,
             overrides,
             new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
-            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new SqlOptionsOverrides("Server=Test;", null, null, null, null, null, null, null, null),
             new CacheOptionsOverrides(null, null));
 
         var result = await service.RunAsync(input, CancellationToken.None);
@@ -751,7 +756,6 @@ public sealed class FullExportApplicationServiceTests
             ReuseModelPath: false,
             UatUsers: new UatUsersOverrides(
                 Enabled: true,
-                ConnectionString: "Server=Test;",
                 UserSchema: "dbo",
                 UserTable: "User",
                 UserIdColumn: "Id",

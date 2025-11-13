@@ -221,10 +221,13 @@ public sealed class CliConfigurationLoaderTests
 
         var config = new
         {
+            sql = new
+            {
+                connectionString = "Server=.;Database=UAT;"
+            },
             uatUsers = new
             {
                 model = "model.json",
-                connectionString = "Server=.;Database=UAT;",
                 fromLiveMetadata = true,
                 schema = "app",
                 table = "dbo.Users",
@@ -252,7 +255,6 @@ public sealed class CliConfigurationLoaderTests
         Assert.True(result.IsSuccess);
         var uatUsers = result.Value.UatUsers;
         Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "model.json")), uatUsers.ModelPath);
-        Assert.Equal("Server=.;Database=UAT;", uatUsers.ConnectionString);
         Assert.True(uatUsers.FromLiveMetadata);
         Assert.Equal("app", uatUsers.UserSchema);
         Assert.Equal("dbo.Users", uatUsers.UserTable);
