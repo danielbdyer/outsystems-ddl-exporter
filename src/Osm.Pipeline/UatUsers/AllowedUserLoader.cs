@@ -17,8 +17,23 @@ internal static class AllowedUserLoader
         @"INSERT\s+INTO\s+(?:\[?(?<schema>[^\]\s]+)\]?\.)?\[?(?<table>[^\]\s]+)\]?\s*\((?<columns>[^)]+)\)\s+VALUES\s*(?<values>(?:N?'(?:''|[^'])*'|[^;'])+);",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
-    public static AllowedUserLoadResult Load(string? ddlPath, string? userIdsPath, string userIdColumn)
+    public static AllowedUserLoadResult Load(
+        string? ddlPath,
+        string? userIdsPath,
+        string userSchema,
+        string userTable,
+        string userIdColumn)
     {
+        if (string.IsNullOrWhiteSpace(userSchema))
+        {
+            throw new ArgumentException("User schema must be provided.", nameof(userSchema));
+        }
+
+        if (string.IsNullOrWhiteSpace(userTable))
+        {
+            throw new ArgumentException("User table must be provided.", nameof(userTable));
+        }
+
         if (string.IsNullOrWhiteSpace(userIdColumn))
         {
             throw new ArgumentException("User identifier column must be provided.", nameof(userIdColumn));
@@ -35,7 +50,7 @@ internal static class AllowedUserLoader
 
         if (!string.IsNullOrWhiteSpace(ddlPath))
         {
-            foreach (var id in LoadFromSql(ddlPath!, userIdColumn))
+            foreach (var id in LoadFromSql(ddlPath!, userSchema, userTable, userIdColumn))
             {
                 sqlRowCount++;
                 results.Add(id);
@@ -54,7 +69,11 @@ internal static class AllowedUserLoader
         return new AllowedUserLoadResult(results, sqlRowCount, listRowCount);
     }
 
-    private static IEnumerable<UserIdentifier> LoadFromSql(string path, string userIdColumn)
+    private static IEnumerable<UserIdentifier> LoadFromSql(
+        string path,
+        string userSchema,
+        string userTable,
+        string userIdColumn)
     {
         if (!File.Exists(path))
         {
@@ -70,7 +89,13 @@ internal static class AllowedUserLoader
         foreach (Match match in InsertStatementRegex.Matches(text))
         {
             var table = match.Groups["table"].Value;
-            if (!string.Equals(table, "User", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(table, userTable, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var schema = match.Groups["schema"].Value;
+            if (!string.IsNullOrEmpty(schema) && !string.Equals(schema, userSchema, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
