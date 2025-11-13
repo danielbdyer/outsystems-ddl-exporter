@@ -32,6 +32,8 @@ public sealed class LoadAllowedUsersStep : IPipelineStep<UatUsersContext>
         var loadResult = AllowedUserLoader.Load(
             context.AllowedUsersSqlPath,
             context.AllowedUserIdsPath,
+            context.UserSchema,
+            context.UserTable,
             context.UserIdColumn);
 
         context.SetAllowedUserIds(loadResult.UserIds);

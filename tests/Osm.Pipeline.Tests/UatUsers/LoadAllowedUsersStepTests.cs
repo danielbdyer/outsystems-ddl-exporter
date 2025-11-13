@@ -82,6 +82,37 @@ SET IDENTITY_INSERT [dbo].[User] OFF;", Encoding.UTF8);
     }
 
     [Fact]
+    public async Task ReadsIdentifiersFromCustomSchemaAndTable()
+    {
+        using var temp = new TemporaryDirectory();
+        var sqlPath = Path.Combine(temp.Path, "auth.AllowedUsers.sql");
+        File.WriteAllText(sqlPath, @"INSERT INTO [auth].[AllowedUsers] ([UserId], [Name]) VALUES (10, 'Admin');
+INSERT INTO [Auth].[AllowedUsers] ([UserId], [Name]) VALUES (11, 'Operator');
+INSERT INTO [dbo].[AllowedUsers] ([UserId], [Name]) VALUES (12, 'Should be ignored');", Encoding.UTF8);
+
+        var context = new UatUsersContext(
+            new StubSchemaGraph(),
+            new UatUsersArtifacts(temp.Path),
+            new ThrowingConnectionFactory(),
+            "auth",
+            "AllowedUsers",
+            "UserId",
+            includeColumns: null,
+            Path.Combine(temp.Path, "map.csv"),
+            allowedUsersSqlPath: sqlPath,
+            allowedUserIdsPath: null,
+            snapshotPath: null,
+            userEntityIdentifier: null,
+            fromLiveMetadata: false,
+            sourceFingerprint: "test/db");
+
+        var step = new LoadAllowedUsersStep();
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(new[] { "10", "11" }, context.AllowedUserIds.Select(id => id.Value));
+    }
+
+    [Fact]
     public async Task ThrowsWhenNoAllowedUsersDiscovered()
     {
         using var temp = new TemporaryDirectory();
