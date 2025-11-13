@@ -1011,7 +1011,8 @@ public sealed class FullExportApplicationServiceTests
             OutputDirectory: "out",
             ModelPath: modelPath,
             ModelWasExtracted: false,
-            ModelExtractionWarnings: ImmutableArray<string>.Empty);
+            ModelExtractionWarnings: ImmutableArray<string>.Empty,
+            DynamicDataTelemetry: DynamicEntityExtractionTelemetry.Empty);
     }
 
     private sealed class StubProfileService : IApplicationService<CaptureProfileApplicationInput, CaptureProfileApplicationResult>

@@ -284,13 +284,14 @@ public class PipelineReportLauncherTests
             ImmutableArray<string>.Empty,
             MultiEnvironmentProfileReport.Empty);
 
-        return new BuildSsdtApplicationResult(
-            pipelineResult,
-            "fixture",
-            Path.Combine(output.Path, "profile.json"),
-            output.Path,
-            Path.Combine(output.Path, "model.json"),
-            false,
-            ImmutableArray<string>.Empty);
-    }
+    return new BuildSsdtApplicationResult(
+        pipelineResult,
+        "fixture",
+        Path.Combine(output.Path, "profile.json"),
+        output.Path,
+        Path.Combine(output.Path, "model.json"),
+        false,
+        ImmutableArray<string>.Empty,
+        DynamicEntityExtractionTelemetry.Empty);
+}
 }

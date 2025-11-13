@@ -7,7 +7,7 @@ namespace Osm.Pipeline.DynamicData;
 
 public interface IDynamicEntityDataProvider
 {
-    Task<Result<DynamicEntityDataset>> ExtractAsync(
+    Task<Result<DynamicEntityExtractionResult>> ExtractAsync(
         SqlDynamicEntityExtractionRequest request,
         CancellationToken cancellationToken = default);
 }

@@ -102,6 +102,7 @@ public sealed class BuildSsdtApplicationServiceTests
         Assert.Equal("out", result.Value.OutputDirectory);
         Assert.Equal("model.json", result.Value.ModelPath);
         Assert.False(result.Value.ModelWasExtracted);
+        Assert.Equal(DynamicEntityExtractionTelemetry.Empty, result.Value.DynamicDataTelemetry);
     }
 
     [Fact]
@@ -176,7 +177,9 @@ public sealed class BuildSsdtApplicationServiceTests
         var dynamicDataset = CreateDynamicDataset();
         var dynamicProvider = new TestDynamicEntityDataProvider
         {
-            Dataset = dynamicDataset
+            ExtractionResult = new DynamicEntityExtractionResult(
+                dynamicDataset,
+                DynamicEntityExtractionTelemetry.Empty)
         };
 
         var service = new BuildSsdtApplicationService(
@@ -200,6 +203,7 @@ public sealed class BuildSsdtApplicationServiceTests
         Assert.Equal(model, dynamicProvider.LastRequest!.Model);
         Assert.Equal(sqlOverrides.ConnectionString, dynamicProvider.LastRequest.ConnectionString);
         Assert.Equal(modelPath, ingestion.LastPath);
+        Assert.Equal(dynamicProvider.ExtractionResult.Telemetry, result.Value.DynamicDataTelemetry);
     }
 
     [Fact]
@@ -499,16 +503,16 @@ public sealed class BuildSsdtApplicationServiceTests
 
     private sealed class TestDynamicEntityDataProvider : IDynamicEntityDataProvider
     {
-        public DynamicEntityDataset Dataset { get; set; } = DynamicEntityDataset.Empty;
+        public DynamicEntityExtractionResult ExtractionResult { get; set; } = DynamicEntityExtractionResult.Empty;
 
         public SqlDynamicEntityExtractionRequest? LastRequest { get; private set; }
 
-        public Task<Result<DynamicEntityDataset>> ExtractAsync(
+        public Task<Result<DynamicEntityExtractionResult>> ExtractAsync(
             SqlDynamicEntityExtractionRequest request,
             CancellationToken cancellationToken = default)
         {
             LastRequest = request;
-            return Task.FromResult(Result<DynamicEntityDataset>.Success(Dataset));
+            return Task.FromResult(Result<DynamicEntityExtractionResult>.Success(ExtractionResult));
         }
     }
 
