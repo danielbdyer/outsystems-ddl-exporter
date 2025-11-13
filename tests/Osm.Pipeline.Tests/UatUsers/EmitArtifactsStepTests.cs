@@ -18,6 +18,10 @@ public sealed class EmitArtifactsStepTests
     {
         using var temp = new TemporaryDirectory();
         var artifacts = new UatUsersArtifacts(temp.Path);
+        var uatInventoryPath = Path.Combine(temp.Path, "uat.csv");
+        File.WriteAllText(uatInventoryPath, "Id,Username\n1,uat\n2,uat2\n");
+        var qaInventoryPath = Path.Combine(temp.Path, "qa.csv");
+        File.WriteAllText(qaInventoryPath, "Id,Username\n1,qa\n2,qa2\n");
         var context = new UatUsersContext(
             new StubSchemaGraph(),
             artifacts,
@@ -27,8 +31,8 @@ public sealed class EmitArtifactsStepTests
             "Id",
             includeColumns: null,
             Path.Combine(temp.Path, "map.csv"),
-            allowedUsersSqlPath: null,
-            allowedUserIdsPath: Path.Combine(temp.Path, "users.csv"),
+            uatInventoryPath,
+            qaInventoryPath,
             snapshotPath: null,
             userEntityIdentifier: null,
             fromLiveMetadata: false,

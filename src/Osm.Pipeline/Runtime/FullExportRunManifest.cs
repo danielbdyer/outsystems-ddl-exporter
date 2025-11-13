@@ -156,8 +156,8 @@ public sealed record FullExportRunManifest(
         AddPathIfPresent(artifacts, "previewPath", Path.Combine(uatRoot, "01_preview.csv"));
         AddPathIfPresent(artifacts, "applyScriptPath", Path.Combine(uatRoot, "02_apply_user_remap.sql"));
         AddPathIfPresent(artifacts, "catalogPath", Path.Combine(uatRoot, "03_catalog.txt"));
-        AddPathIfPresent(artifacts, "allowedUsersSqlPath", context.AllowedUsersSqlPath);
-        AddPathIfPresent(artifacts, "allowedUserIdsPath", context.AllowedUserIdsPath);
+        AddPathIfPresent(artifacts, "uatUserInventoryPath", context.UatUserInventoryPath);
+        AddPathIfPresent(artifacts, "qaUserInventoryPath", context.QaUserInventoryPath);
         AddPathIfPresent(artifacts, "snapshotPath", context.SnapshotPath);
 
         if (context.IncludeColumns is { Count: > 0 } includeColumns)

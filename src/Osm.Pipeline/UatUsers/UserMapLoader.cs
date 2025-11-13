@@ -35,6 +35,7 @@ public static class UserMapLoader
         }
 
         var raw = new List<UserMappingEntry>();
+        var seenSources = new HashSet<UserIdentifier>();
         for (var i = 1; i < lines.Length; i++)
         {
             var line = lines[i];
@@ -54,6 +55,11 @@ public static class UserMapLoader
             if (!UserIdentifier.TryParse(sourceValue, out var sourceId))
             {
                 throw new InvalidDataException($"Invalid SourceUserId '{sourceValue}' on line {i + 1}.");
+            }
+
+            if (!seenSources.Add(sourceId))
+            {
+                throw new InvalidDataException($"Duplicate SourceUserId '{sourceId}' detected on line {i + 1}.");
             }
 
             UserIdentifier? targetId = null;

@@ -89,14 +89,14 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 configurationFields.Add("UserMapPath");
             }
 
-            if (options.Origins.AllowedUsersSqlPathFromConfiguration)
+            if (options.Origins.UatUserInventoryPathFromConfiguration)
             {
-                configurationFields.Add("AllowedUsersSqlPath");
+                configurationFields.Add("UatUserInventoryPath");
             }
 
-            if (options.Origins.AllowedUserIdsPathFromConfiguration)
+            if (options.Origins.QaUserInventoryPathFromConfiguration)
             {
-                configurationFields.Add("AllowedUserIdsPath");
+                configurationFields.Add("QaUserInventoryPath");
             }
 
             if (options.Origins.SnapshotPathFromConfiguration)
@@ -129,9 +129,9 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 options.IncludeColumns.Length,
                 options.UserEntityIdentifier ?? "<none>");
             _logger.LogInformation(
-                "Allowed user sources: SqlPath={SqlPath}, ListPath={ListPath}.",
-                options.AllowedUsersSqlPath ?? "<none>",
-                options.AllowedUserIdsPath ?? "<none>");
+                "User inventories: UAT={UatInventory}, QA={QaInventory}.",
+                options.UatUserInventoryPath,
+                options.QaUserInventoryPath);
 
             if (string.IsNullOrWhiteSpace(options.UatConnectionString))
             {
@@ -187,8 +187,8 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 options.UserIdColumn,
                 options.IncludeColumns,
                 userMapPath,
-                options.AllowedUsersSqlPath,
-                options.AllowedUserIdsPath,
+                options.UatUserInventoryPath,
+                options.QaUserInventoryPath,
                 options.SnapshotPath,
                 options.UserEntityIdentifier,
                 options.FromLiveMetadata,

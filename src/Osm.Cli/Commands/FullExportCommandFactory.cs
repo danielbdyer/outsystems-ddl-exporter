@@ -69,11 +69,16 @@ internal sealed class FullExportCommandFactory : PipelineCommandFactory<FullExpo
                 return;
             }
 
-            var allowedUsersPath = result.GetValueForOption(uatBinder.UserDdlOption);
-            var allowedIdsPath = result.GetValueForOption(uatBinder.UserIdsOption);
-            if (string.IsNullOrWhiteSpace(allowedUsersPath) && string.IsNullOrWhiteSpace(allowedIdsPath))
+            var qaInventory = result.GetValueForOption(uatBinder.QaInventoryOption);
+            if (string.IsNullOrWhiteSpace(qaInventory))
             {
-                result.ErrorMessage = "Either --user-ddl or --user-ids must be supplied when --enable-uat-users is specified.";
+                result.ErrorMessage = "--qa-user-inventory must be supplied when --enable-uat-users is specified.";
+            }
+
+            var uatInventory = result.GetValueForOption(uatBinder.UatInventoryOption);
+            if (string.IsNullOrWhiteSpace(uatInventory))
+            {
+                result.ErrorMessage = "--uat-user-inventory must be supplied when --enable-uat-users is specified.";
             }
         });
         return command;

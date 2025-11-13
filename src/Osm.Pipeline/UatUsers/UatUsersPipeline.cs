@@ -31,12 +31,14 @@ public sealed class UatUsersPipeline : IPipeline<UatUsersContext>
 
         _inner = new PipelineBuilder<UatUsersContext>(_loggerFactory)
             .Then(new DiscoverUserFkCatalogStep(_loggerFactory.CreateLogger<DiscoverUserFkCatalogStep>()))
-            .Then(new LoadAllowedUsersStep(_loggerFactory.CreateLogger<LoadAllowedUsersStep>()))
+            .Then(new LoadUatUserInventoryStep(_loggerFactory.CreateLogger<LoadUatUserInventoryStep>()))
+            .Then(new LoadQaUserInventoryStep(_loggerFactory.CreateLogger<LoadQaUserInventoryStep>()))
             .Then(new AnalyzeForeignKeyValuesStep(
                 provider,
                 store,
                 _loggerFactory.CreateLogger<AnalyzeForeignKeyValuesStep>()))
             .Then(new PrepareUserMapStep(_loggerFactory.CreateLogger<PrepareUserMapStep>()))
+            .Then(new ValidateUserMapStep(_loggerFactory.CreateLogger<ValidateUserMapStep>()))
             .Then(new EmitArtifactsStep(_loggerFactory.CreateLogger<EmitArtifactsStep>()))
             .Build();
     }

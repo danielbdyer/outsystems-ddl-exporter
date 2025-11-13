@@ -107,8 +107,10 @@ public sealed class AnalyzeForeignKeyValuesStepTests
     {
         var artifacts = new UatUsersArtifacts(root);
         var connectionFactory = new ThrowingConnectionFactory();
-        var allowedPath = Path.Combine(root, "users.csv");
-        File.WriteAllText(allowedPath, "Id\n1\n2\n");
+        var uatInventoryPath = Path.Combine(root, "uat_users.csv");
+        File.WriteAllLines(uatInventoryPath, new[] { "Id,Username", "1,uat-user", "2,uat-admin" });
+        var qaInventoryPath = Path.Combine(root, "qa.csv");
+        File.WriteAllText(qaInventoryPath, "Id,Username\n1,qa-user\n2,qa-admin\n");
 
         return new UatUsersContext(
             new StubSchemaGraph(),
@@ -119,8 +121,8 @@ public sealed class AnalyzeForeignKeyValuesStepTests
             "Id",
             includeColumns: null,
             Path.Combine(root, "map.csv"),
-            allowedUsersSqlPath: null,
-            allowedUserIdsPath: allowedPath,
+            uatInventoryPath,
+            qaInventoryPath,
             snapshotPath: Path.Combine(root, "snapshot.json"),
             userEntityIdentifier: null,
             fromLiveMetadata: false,

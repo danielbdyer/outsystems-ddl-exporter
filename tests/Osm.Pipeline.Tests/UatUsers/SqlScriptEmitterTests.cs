@@ -20,7 +20,10 @@ public sealed class SqlScriptEmitterTests
         Directory.CreateDirectory(directory);
         var artifacts = new UatUsersArtifacts(directory);
         var connectionFactory = new ThrowingConnectionFactory();
-        var allowedPath = Path.Combine(directory, "allowed.csv");
+        var uatInventoryPath = Path.Combine(directory, "uat.csv");
+        File.WriteAllText(uatInventoryPath, "Id,Username\n1,uat\n2,uat\n");
+        var qaInventoryPath = Path.Combine(directory, "qa.csv");
+        File.WriteAllText(qaInventoryPath, "Id,Username\n1,qa\n2,qa\n");
         var context = new UatUsersContext(
             new StubSchemaGraph(),
             artifacts,
@@ -30,8 +33,8 @@ public sealed class SqlScriptEmitterTests
             "Id",
             includeColumns: null,
             Path.Combine(directory, "map.csv"),
-            allowedUsersSqlPath: null,
-            allowedUserIdsPath: allowedPath,
+            uatInventoryPath,
+            qaInventoryPath,
             snapshotPath: null,
             userEntityIdentifier: null,
             fromLiveMetadata: false,
@@ -84,8 +87,10 @@ public sealed class SqlScriptEmitterTests
         var artifacts = new UatUsersArtifacts(directory);
         var connectionFactory = new ThrowingConnectionFactory();
         var sourceId = UserIdentifier.FromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-        var allowedPath = Path.Combine(directory, "allowed.csv");
-        File.WriteAllText(allowedPath, $"Id\n{sourceId}\n");
+        var uatInventoryPath = Path.Combine(directory, "uat.csv");
+        File.WriteAllText(uatInventoryPath, $"Id,Username\n{sourceId},uat\n");
+        var qaInventoryPath = Path.Combine(directory, "qa.csv");
+        File.WriteAllText(qaInventoryPath, "Id,Username\n1,qa\n");
         var context = new UatUsersContext(
             new StubSchemaGraph(),
             artifacts,
@@ -95,8 +100,8 @@ public sealed class SqlScriptEmitterTests
             "Id",
             includeColumns: null,
             Path.Combine(directory, "map.csv"),
-            allowedUsersSqlPath: null,
-            allowedUserIdsPath: allowedPath,
+            uatInventoryPath,
+            qaInventoryPath,
             snapshotPath: null,
             userEntityIdentifier: null,
             fromLiveMetadata: false,

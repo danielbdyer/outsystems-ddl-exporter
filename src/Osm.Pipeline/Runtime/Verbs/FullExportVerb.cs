@@ -272,14 +272,8 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
                 {
                     builder["uatUsers.defaultUserMapPath"] = defaultMapPath;
                 }
-                if (!string.IsNullOrWhiteSpace(uatContext.AllowedUsersSqlPath))
-                {
-                    builder["uatUsers.allowedUsersSqlPath"] = uatContext.AllowedUsersSqlPath;
-                }
-                if (!string.IsNullOrWhiteSpace(uatContext.AllowedUserIdsPath))
-                {
-                    builder["uatUsers.allowedUserIdsPath"] = uatContext.AllowedUserIdsPath;
-                }
+                builder["uatUsers.uatUserInventoryPath"] = uatContext.UatUserInventoryPath;
+                builder["uatUsers.qaUserInventoryPath"] = uatContext.QaUserInventoryPath;
                 if (!string.IsNullOrWhiteSpace(uatContext.SnapshotPath))
                 {
                     builder["uatUsers.snapshotPath"] = uatContext.SnapshotPath;

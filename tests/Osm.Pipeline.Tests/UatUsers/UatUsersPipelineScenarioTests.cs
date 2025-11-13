@@ -22,16 +22,30 @@ public sealed class UatUsersPipelineScenarioTests
         using var temp = new TemporaryDirectory();
         var artifacts = new UatUsersArtifacts(temp.Root);
 
-        var allowedPath = temp.WriteFile(
-            "inputs/allowed_users.csv",
-            "Id\n100\n200\n");
+        var uatInventoryPath = temp.WriteFile(
+            "inputs/uat_users.csv",
+            string.Join(Environment.NewLine,
+            [
+                "Id,Username",
+                "100,uat-admin",
+                "200,uat-owner"
+            ]));
+        var qaInventoryPath = temp.WriteFile(
+            "inputs/qa_users.csv",
+            string.Join(Environment.NewLine,
+            [
+                "Id,Username,EMail,Name,External_Id,Is_Active,Creation_Date,Last_Login",
+                "999,qa-admin,qa@example.com,QA Admin,,1,2024-01-01T00:00:00Z,2024-02-01T00:00:00Z",
+                "111,qa-owner,owner@example.com,QA Owner,,1,2024-01-02T00:00:00Z,2024-02-02T00:00:00Z"
+            ]));
 
         var mapPath = temp.WriteFile(
             "inputs/custom_map.csv",
             string.Join(Environment.NewLine,
             [
                 "SourceUserId,TargetUserId,Rationale",
-                "999,200,Legacy administrator"
+                "999,200,Legacy administrator",
+                "111,100,Legacy owner"
             ]));
 
         var snapshotPath = temp.Combine("snapshots", "fk.json");
@@ -54,8 +68,8 @@ public sealed class UatUsersPipelineScenarioTests
             userIdColumn: "Id",
             includeColumns: null,
             userMapPath: mapPath,
-            allowedUsersSqlPath: null,
-            allowedUserIdsPath: allowedPath,
+            uatInventoryPath,
+            qaUserInventoryPath: qaInventoryPath,
             snapshotPath: snapshotPath,
             userEntityIdentifier: null,
             fromLiveMetadata: false,
@@ -151,8 +165,8 @@ public sealed class UatUsersPipelineScenarioTests
             userIdColumn: "Id",
             includeColumns: null,
             userMapPath: mapPath,
-            allowedUsersSqlPath: null,
-            allowedUserIdsPath: allowedPath,
+            uatInventoryPath,
+            qaUserInventoryPath: qaInventoryPath,
             snapshotPath: snapshotPath,
             userEntityIdentifier: null,
             fromLiveMetadata: false,

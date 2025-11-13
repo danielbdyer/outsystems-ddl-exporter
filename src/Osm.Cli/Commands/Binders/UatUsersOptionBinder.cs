@@ -29,10 +29,10 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
             AllowMultipleArgumentsPerToken = true
         };
         UserMapOption = new Option<string?>("--user-map", "Path to a CSV containing SourceUserId,TargetUserId mappings.");
-        UserDdlOption = new Option<string?>(
-            "--user-ddl",
-            "SQL seed script or CSV export of dbo.User containing allowed user identifiers (auto-detected).");
-        UserIdsOption = new Option<string?>("--user-ids", "Optional CSV or text file containing one allowed user identifier per row.");
+        UatInventoryOption = new Option<string?>(
+            "--uat-user-inventory",
+            "CSV export of the UAT ossys_User table (Id, Username, EMail, Name, External_Id, Is_Active, Creation_Date, Last_Login).");
+        QaInventoryOption = new Option<string?>("--qa-user-inventory", "CSV export of QA dbo.User(Id, Username, EMail, Name, External_Id, Is_Active, Creation_Date, Last_Login).");
         SnapshotOption = new Option<string?>("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
         UserEntityIdOption = new Option<string?>("--user-entity-id", "Optional override identifier for the user entity (accepts btGUID*GUID, physical name, or numeric id).");
     }
@@ -51,9 +51,9 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
 
     public Option<string?> UserMapOption { get; }
 
-    public Option<string?> UserDdlOption { get; }
+    public Option<string?> UatInventoryOption { get; }
 
-    public Option<string?> UserIdsOption { get; }
+    public Option<string?> QaInventoryOption { get; }
 
     public Option<string?> SnapshotOption { get; }
 
@@ -70,8 +70,8 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
             yield return UserIdOption;
             yield return IncludeColumnsOption;
             yield return UserMapOption;
-            yield return UserDdlOption;
-            yield return UserIdsOption;
+            yield return UatInventoryOption;
+            yield return QaInventoryOption;
             yield return SnapshotOption;
             yield return UserEntityIdOption;
         }
@@ -116,8 +116,8 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
             UserIdColumn: parseResult.GetValueForOption(UserIdOption) ?? "Id",
             IncludeColumns: normalizedColumns,
             UserMapPath: parseResult.GetValueForOption(UserMapOption),
-            AllowedUsersSqlPath: parseResult.GetValueForOption(UserDdlOption),
-            AllowedUserIdsPath: parseResult.GetValueForOption(UserIdsOption),
+            UatUserInventoryPath: parseResult.GetValueForOption(UatInventoryOption),
+            QaUserInventoryPath: parseResult.GetValueForOption(QaInventoryOption),
             SnapshotPath: parseResult.GetValueForOption(SnapshotOption),
             UserEntityIdentifier: parseResult.GetValueForOption(UserEntityIdOption));
     }

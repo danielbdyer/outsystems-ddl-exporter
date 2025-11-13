@@ -6,7 +6,8 @@ The `uat-users` verb discovers every foreign-key column that references `dbo.[Us
 
 * **Deterministic discovery** – Metadata is sourced from the OutSystems model (or live metadata when `--from-live` is supplied) and flattened into a sorted, deduplicated catalog. Each catalog entry produces its own update block in the SQL script.
 * **Attribute-level fallback** – When exported models omit explicit relationships to the Users table, provide `--user-entity-id` (accepts `btGUID*GUID`, numeric IDs, entity names, or physical table names). The command synthesizes catalog entries directly from attribute metadata so remediation can proceed without a fully coherent model.
-* **Allowed-user hydration** – Either a `dbo.User` seed script (`--user-ddl`) or a plain identifier list (`--user-ids`) is parsed to determine the set of in-scope users. `--user-ddl` auto-detects CSV exports in addition to `.sql` scripts, so operators can reuse a single flag regardless of how the identifiers were captured. Any FK values outside of that set are treated as orphans.
+* **Inventory-sourced allow-lists** – `--qa-user-inventory` and `--uat-user-inventory` ingest Service Center exports of the `ossys_User` table (schema: `Id,Username,EMail,Name,External_Id,Is_Active,Creation_Date,Last_Login`). The shared loader normalizes whitespace, deduplicates identifiers, enforces the schema declared in `config/supplemental/ossys-user.json`, and captures the entire roster for each environment so QA discoveries, the map template, and UAT targets share deterministic provenance.
+* **Cross-environment map validation** – The `validate-user-map` stage cross-checks the populated map against the QA inventory, the discovered orphan set, and the allowed UAT user inventory from `--uat-user-inventory`. Missing mappings, duplicate `SourceUserId` values, or targets outside the approved UAT roster cause the command to fail before artifacts are emitted.
 * **Live data analysis** – Using the supplied UAT connection, every catalogued column is scanned to collect distinct user identifiers and row counts. Results can be snapshotted to disk via `--snapshot` for repeatable dry runs.
 * **Operator-controlled mappings** – `00_user_map.template.csv` lists every orphan. Populate the corresponding `00_user_map.csv` (or provide `--user-map`) with `SourceUserId,TargetUserId` pairs. Missing mappings are surfaced in both the preview file and the generated SQL comments.
 * **Guarded apply script** – `02_apply_user_remap.sql` creates `#UserRemap` and `#Changes` temp tables, validates target existence, protects `NULL` values, and emits a summary. Updates only occur when `SourceUserId <> TargetUserId`, making the script idempotent and rerunnable.
@@ -20,8 +21,8 @@ uat-users
   [--model <path>]                  # Required unless --from-live is supplied
   [--from-live]                     # Query metadata from the live UAT database
   --uat-conn <connection string>    # Required; used for discovery and data analysis
-  --user-ddl <path>                 # SQL seed script or CSV export of dbo.User(Id, ...) (auto-detected)
-  [--user-ids <path>]               # Optional CSV/txt list of allowed user identifiers
+  --uat-user-inventory <path>       # Required; CSV export of the UAT ossys_User table (Id,Username,EMail,Name,External_Id,Is_Active,Creation_Date,Last_Login)
+  --qa-user-inventory <path>        # Required; CSV export of the QA ossys_User table (same schema)
   [--snapshot <path>]               # Optional JSON cache of FK analysis
   [--user-schema <schema>]          # Default: dbo
   [--user-table <table or schema.table>] # Default: User
@@ -29,8 +30,18 @@ uat-users
   [--include-columns <list>]        # Optional allow-list of column names
   [--user-entity-id <identifier>]   # Optional override to synthesize FKs when the model lacks User relationships
   [--user-map <file>]               # Override path for SourceUserId,TargetUserId mappings
+  --qa-user-inventory <path>        # CSV export of the QA dbo.User table (Id,Username,EMail,Name,External_Id,Is_Active,Creation_Date,Last_Login)
   [--out <dir>]                     # Default: ./_artifacts
 ```
+
+## Required Inventories & CSV Schema
+
+`uat-users` now requires two explicit inventories before it will emit artifacts:
+
+1. **QA user inventory (`--qa-user-inventory`)** – Export every QA account from Service Center/`ossys_User` into a CSV containing the canonical columns (`Id, Username, EMail, Name, External_Id, Is_Active, Creation_Date, Last_Login`). The loader trims whitespace, normalizes timestamps to ISO-8601, and fails fast if the file is missing an `Id` column or if any identifiers are duplicated. This guarantees the `validate-user-map` stage can prove every `SourceUserId` originated in QA before it is mapped.
+2. **UAT user inventory (`--uat-user-inventory`)** – Export the entire UAT `ossys_User` table into a CSV using the same schema. The loader populates the allowed-target set (`AllowedUserIds`) and enforces the same duplicate/missing safeguards so the validator can prove every `TargetUserId` is part of the approved UAT roster before SQL is emitted.
+
+The QA and UAT CSVs share the same column expectations, so operators can reuse the Service Center export recipe for both environments. The deterministic schema is documented in `config/supplemental/ossys-user.json` for auditability.
 
 ## Full Export Walkthrough (QA → UAT)
 
@@ -44,7 +55,8 @@ dotnet run --project src/Osm.Cli \
   --build-out ./out/full-export \
   --enable-uat-users \
   --uat-conn "Server=uat;Database=UAT;TrustServerCertificate=True" \
-  --user-ddl ./extracts/dbo.User.sql \
+  --uat-user-inventory ./extracts/uat_users.csv \
+  --qa-user-inventory ./extracts/qa_users.csv \
   --user-map ./inputs/uat_user_map.csv
 ```
 
@@ -52,9 +64,9 @@ Key expectations:
 
 * `full-export.manifest.json` now carries a `uat-users` stage (`Stages[].Name == "uat-users"`) with metadata such as `artifactRoot`, `allowedCount`, and `defaultUserMapPath` so automation can discover the bundle without scraping console output.
 * The manifest’s `DynamicArtifacts` array lists the published files (`uat-users-preview`, `uat-users-script`, `uat-users-catalog`, `uat-users-map-template`, and both map variants) so CI/CD can archive the run.
-* The metadata block exposes `uatUsers.*` keys (`enabled`, `artifactRoot`, `applyScriptPath`, `previewPath`, `catalogPath`, `allowedUsersSqlPath`, etc.) to record provenance for postmortems and guardrails.
+* The metadata block exposes `uatUsers.*` keys (`enabled`, `artifactRoot`, `applyScriptPath`, `previewPath`, `catalogPath`, `uatUserInventoryPath`, `qaUserInventoryPath`, etc.) to record provenance for postmortems and guardrails.
 
-Pointing `--user-ddl` at the QA `dbo.User` export (SQL or CSV) hydrates the allowed user list; pass `--user-ids` for ad-hoc scenarios. If the primary map lives outside `<build-out>/uat-users`, include `--user-map` so the pipeline synchronizes the custom CSV into the canonical location.
+Provide both inventories via `--qa-user-inventory` and `--uat-user-inventory`. If the primary map lives outside `<build-out>/uat-users`, include `--user-map` so the pipeline synchronizes the custom CSV into the canonical location.
 
 ## Primary Artifacts (written to `<out>/uat-users`)
 
@@ -74,13 +86,14 @@ When operating through `full-export`, the steps below remain the same—the orch
    dotnet run --project src/Osm.Cli -- uat-users \
      --model ./_artifacts/model.json \
      --uat-conn "Server=uat;Database=UAT;Trusted_Connection=True;MultipleActiveResultSets=True" \
-     --user-ddl ./extracts/dbo.User.sql \
+     --uat-user-inventory ./extracts/uat_users.csv \
+     --qa-user-inventory ./extracts/qa_users.csv \
      --out ./_artifacts
    ```
    Inspect `03_catalog.txt` and the generated `00_user_map.template.csv`. Fill in the companion `00_user_map.csv` with desired `SourceUserId,TargetUserId` pairs.
 
 2. **Review mappings and preview counts**
-   Re-run the command after editing the map (or pointing `--user-map` to an updated CSV). Check `01_preview.csv` to confirm expected row counts per orphan/column combination.
+   Re-run the command after editing the map (or pointing `--user-map` to an updated CSV). Check `01_preview.csv` to confirm expected row counts per orphan/column combination. The validator will halt execution if any orphan lacks a mapping, if a `SourceUserId` is missing from the QA inventory, or if a `TargetUserId` is outside the parsed UAT allow-list so fixes can be applied before SQL is emitted.
 
 3. **Apply in UAT**
    Once satisfied, execute `02_apply_user_remap.sql` against UAT. The script materialises `#UserRemap`, validates target users, updates each catalogued column via guarded `;WITH delta` blocks, records every change in `#Changes`, and prints a per-column summary. Re-running the script produces zero updates thanks to the `<>` guard and `WHERE ... IS NOT NULL` predicate.
@@ -95,4 +108,6 @@ When operating through `full-export`, the steps below remain the same—the orch
 * `01_preview.csv` reports accurate row counts per orphan/column and reflects the provided mappings.
 * `02_apply_user_remap.sql` includes `WHERE t.[Column] IS NOT NULL` guards, a target sanity check, and no `IDENTITY_INSERT` statements.
 * Re-running `02_apply_user_remap.sql` after a successful apply produces zero additional changes (idempotent behavior).
-* The command fails fast when allowed user sources do not produce at least one identifier, preventing silent runs with empty allow-lists.
+* The command fails fast when either inventory omits `Id` values or the UAT roster produces zero identifiers, preventing silent runs with empty allow-lists.
+* The CLI requires `--qa-user-inventory` and rejects malformed QA exports (missing `Id`, duplicates, or empty files), guaranteeing the validator has a complete discovery set before proceeding.
+* `validate-user-map` halts the run when mappings are missing, duplicated, or reference targets that are not part of the UAT allow-list, surfacing actionable errors in the console before artifacts are written.
