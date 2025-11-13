@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text.Json;
 using Osm.Pipeline.Configuration;
 using Osm.Domain.Configuration;
+using Osm.Pipeline.UatUsers;
 using Tests.Support;
 
 namespace Osm.Cli.Tests.Configuration;
@@ -231,10 +232,15 @@ public sealed class CliConfigurationLoaderTests
                 includeColumns = new[] { "CreatedBy", "UpdatedBy" },
                 output = "out",
                 userMap = "map.csv",
-                uatInventory = "uat.csv",
+                uatUserInventory = "uat.csv",
                 qaInventory = "qa.csv",
                 snapshot = "snapshot.json",
-                entityId = "UserEntity"
+                entityId = "UserEntity",
+                matchStrategy = "regex",
+                matchAttribute = "Username",
+                matchRegex = "^qa_(?<target>.*)$",
+                fallbackMode = "SingleTarget",
+                fallbackTargets = new[] { "400" }
             }
         };
 
@@ -258,6 +264,11 @@ public sealed class CliConfigurationLoaderTests
         Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "qa.csv")), uatUsers.QaUserInventoryPath);
         Assert.Equal(Path.GetFullPath(Path.Combine(directory.Path, "snapshot.json")), uatUsers.SnapshotPath);
         Assert.Equal("UserEntity", uatUsers.UserEntityIdentifier);
+        Assert.Equal(UserMatchingStrategy.Regex, uatUsers.MatchingStrategy);
+        Assert.Equal("Username", uatUsers.MatchingAttribute);
+        Assert.Equal("^qa_(?<target>.*)$", uatUsers.MatchingRegexPattern);
+        Assert.Equal(UserFallbackAssignmentMode.SingleTarget, uatUsers.FallbackAssignment);
+        Assert.Equal(new[] { "400" }, uatUsers.FallbackTargets);
     }
 
     private static string CreateLegacyTighteningJson()

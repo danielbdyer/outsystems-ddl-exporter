@@ -148,6 +148,8 @@ public sealed record FullExportRunManifest(
         artifacts["userIdColumn"] = context.UserIdColumn;
         artifacts["sourceFingerprint"] = context.SourceFingerprint;
         artifacts["fromLiveMetadata"] = context.FromLiveMetadata.ToString(CultureInfo.InvariantCulture);
+        artifacts["matchingStrategy"] = context.MatchingStrategy.ToString();
+        artifacts["fallbackMode"] = context.FallbackAssignment.ToString();
 
         AddPathIfPresent(artifacts, "userMapPath", context.UserMapPath);
         var defaultMapPath = context.Artifacts.GetDefaultUserMapPath();
@@ -156,9 +158,26 @@ public sealed record FullExportRunManifest(
         AddPathIfPresent(artifacts, "previewPath", Path.Combine(uatRoot, "01_preview.csv"));
         AddPathIfPresent(artifacts, "applyScriptPath", Path.Combine(uatRoot, "02_apply_user_remap.sql"));
         AddPathIfPresent(artifacts, "catalogPath", Path.Combine(uatRoot, "03_catalog.txt"));
+        AddPathIfPresent(artifacts, "matchingReportPath", Path.Combine(uatRoot, "04_matching_report.csv"));
         AddPathIfPresent(artifacts, "uatUserInventoryPath", context.UatUserInventoryPath);
         AddPathIfPresent(artifacts, "qaUserInventoryPath", context.QaUserInventoryPath);
         AddPathIfPresent(artifacts, "snapshotPath", context.SnapshotPath);
+
+        if (!string.IsNullOrWhiteSpace(context.MatchingAttribute))
+        {
+            artifacts["matchingAttribute"] = context.MatchingAttribute;
+        }
+
+        if (!string.IsNullOrWhiteSpace(context.MatchingRegexPattern))
+        {
+            artifacts["matchingRegex"] = context.MatchingRegexPattern;
+        }
+
+        if (context.FallbackTargets.Length > 0)
+        {
+            var targets = string.Join(",", context.FallbackTargets.Select(target => target.ToString()));
+            artifacts["fallbackTargets"] = targets;
+        }
 
         if (context.IncludeColumns is { Count: > 0 } includeColumns)
         {

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using Osm.Pipeline.UatUsers;
 
 namespace Osm.Cli;
 
@@ -21,6 +22,11 @@ public sealed class UatUsersOptions
         string qaUserInventoryPath,
         string? snapshotPath,
         string? userEntityIdentifier,
+        UserMatchingStrategy matchingStrategy,
+        string? matchingAttribute,
+        string? matchingRegexPattern,
+        UserFallbackAssignmentMode fallbackMode,
+        IEnumerable<string>? fallbackTargets,
         UatUsersOptionOrigins? origins = null)
     {
         ModelPath = string.IsNullOrWhiteSpace(modelPath) ? null : Path.GetFullPath(modelPath.Trim());
@@ -51,6 +57,11 @@ public sealed class UatUsersOptions
 
         SnapshotPath = string.IsNullOrWhiteSpace(snapshotPath) ? null : Path.GetFullPath(snapshotPath.Trim());
         UserEntityIdentifier = string.IsNullOrWhiteSpace(userEntityIdentifier) ? null : userEntityIdentifier.Trim();
+        MatchingStrategy = matchingStrategy;
+        MatchingAttribute = UserMatchingConfigurationHelper.ResolveAttribute(matchingStrategy, matchingAttribute);
+        MatchingRegexPattern = string.IsNullOrWhiteSpace(matchingRegexPattern) ? null : matchingRegexPattern.Trim();
+        FallbackMode = fallbackMode;
+        FallbackTargets = UserMatchingConfigurationHelper.NormalizeFallbackTargets(fallbackTargets);
         Origins = origins ?? UatUsersOptionOrigins.None;
     }
 
@@ -79,6 +90,16 @@ public sealed class UatUsersOptions
     public string? SnapshotPath { get; }
 
     public string? UserEntityIdentifier { get; }
+
+    public UserMatchingStrategy MatchingStrategy { get; }
+
+    public string? MatchingAttribute { get; }
+
+    public string? MatchingRegexPattern { get; }
+
+    public UserFallbackAssignmentMode FallbackMode { get; }
+
+    public ImmutableArray<UserIdentifier> FallbackTargets { get; }
 
     public UatUsersOptionOrigins Origins { get; }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.DynamicData;
+using Osm.Pipeline.UatUsers;
 using Osm.Smo;
 
 namespace Osm.Pipeline.Configuration;
@@ -151,7 +152,12 @@ public sealed record UatUsersConfiguration(
     string? UatUserInventoryPath,
     string? QaUserInventoryPath,
     string? SnapshotPath,
-    string? UserEntityIdentifier)
+    string? UserEntityIdentifier,
+    UserMatchingStrategy? MatchingStrategy,
+    string? MatchingAttribute,
+    string? MatchingRegexPattern,
+    UserFallbackAssignmentMode? FallbackAssignment,
+    IReadOnlyList<string> FallbackTargets)
 {
     public static UatUsersConfiguration Empty { get; }
         = new(
@@ -167,5 +173,10 @@ public sealed record UatUsersConfiguration(
             UatUserInventoryPath: null,
             QaUserInventoryPath: null,
             SnapshotPath: null,
-            UserEntityIdentifier: null);
+            UserEntityIdentifier: null,
+            MatchingStrategy: null,
+            MatchingAttribute: null,
+            MatchingRegexPattern: null,
+            FallbackAssignment: null,
+            FallbackTargets: Array.Empty<string>());
 }

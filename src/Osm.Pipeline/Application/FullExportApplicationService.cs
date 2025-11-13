@@ -318,6 +318,21 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var userSchema = ResolveString(overrides?.UserSchema, configuration.UserSchema) ?? "dbo";
         var userTable = ResolveString(overrides?.UserTable, configuration.UserTable) ?? "User";
         var userIdColumn = ResolveString(overrides?.UserIdColumn, configuration.UserIdColumn) ?? "Id";
+        var matchingStrategy = overrides?.MatchingStrategy ?? configuration.MatchingStrategy;
+        var matchingAttribute = ResolveString(overrides?.MatchingAttribute, configuration.MatchingAttribute);
+        var matchingRegex = ResolveString(overrides?.MatchingRegexPattern, configuration.MatchingRegexPattern);
+        var fallbackAssignment = overrides?.FallbackAssignment ?? configuration.FallbackAssignment;
+        IReadOnlyList<UserIdentifier> fallbackTargets;
+        if (overrides?.FallbackTargets is { Count: > 0 } overrideTargets)
+        {
+            fallbackTargets = overrideTargets.ToArray();
+        }
+        else
+        {
+            fallbackTargets = UserMatchingConfigurationHelper
+                .NormalizeFallbackTargets(configuration.FallbackTargets)
+                .ToArray();
+        }
 
         return new UatUsersOverrides(
             Enabled: true,
@@ -330,7 +345,12 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             UatUserInventoryPath: uatInventoryPath,
             QaUserInventoryPath: qaInventoryPath,
             SnapshotPath: ResolveString(overrides?.SnapshotPath, configuration.SnapshotPath),
-            UserEntityIdentifier: ResolveString(overrides?.UserEntityIdentifier, configuration.UserEntityIdentifier));
+            UserEntityIdentifier: ResolveString(overrides?.UserEntityIdentifier, configuration.UserEntityIdentifier),
+            MatchingStrategy: matchingStrategy,
+            MatchingAttribute: matchingAttribute,
+            MatchingRegexPattern: matchingRegex,
+            FallbackAssignment: fallbackAssignment,
+            FallbackTargets: fallbackTargets);
     }
 
     private static IReadOnlyList<string> ResolveIncludeColumns(

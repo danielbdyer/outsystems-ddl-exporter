@@ -37,6 +37,7 @@ public sealed class UatUsersPipeline : IPipeline<UatUsersContext>
                 provider,
                 store,
                 _loggerFactory.CreateLogger<AnalyzeForeignKeyValuesStep>()))
+            .Then(new ApplyMatchingStrategyStep(_loggerFactory.CreateLogger<ApplyMatchingStrategyStep>()))
             .Then(new PrepareUserMapStep(_loggerFactory.CreateLogger<PrepareUserMapStep>()))
             .Then(new ValidateUserMapStep(_loggerFactory.CreateLogger<ValidateUserMapStep>()))
             .Then(new EmitArtifactsStep(_loggerFactory.CreateLogger<EmitArtifactsStep>()))

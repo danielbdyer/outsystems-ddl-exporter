@@ -13,7 +13,12 @@ public sealed record UatUsersOptionOrigins(
     bool UatUserInventoryPathFromConfiguration,
     bool QaUserInventoryPathFromConfiguration,
     bool SnapshotPathFromConfiguration,
-    bool UserEntityIdentifierFromConfiguration)
+    bool UserEntityIdentifierFromConfiguration,
+    bool MatchingStrategyFromConfiguration,
+    bool MatchingAttributeFromConfiguration,
+    bool MatchingRegexFromConfiguration,
+    bool FallbackModeFromConfiguration,
+    bool FallbackTargetsFromConfiguration)
 {
     public static UatUsersOptionOrigins None { get; } = new(
         ModelPathFromConfiguration: false,
@@ -28,5 +33,10 @@ public sealed record UatUsersOptionOrigins(
         UatUserInventoryPathFromConfiguration: false,
         QaUserInventoryPathFromConfiguration: false,
         SnapshotPathFromConfiguration: false,
-        UserEntityIdentifierFromConfiguration: false);
+        UserEntityIdentifierFromConfiguration: false,
+        MatchingStrategyFromConfiguration: false,
+        MatchingAttributeFromConfiguration: false,
+        MatchingRegexFromConfiguration: false,
+        FallbackModeFromConfiguration: false,
+        FallbackTargetsFromConfiguration: false);
 }

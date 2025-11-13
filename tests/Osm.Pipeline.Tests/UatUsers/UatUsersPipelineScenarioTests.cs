@@ -122,18 +122,21 @@ public sealed class UatUsersPipelineScenarioTests
         var previewPath = temp.Combine("uat-users", "01_preview.csv");
         Assert.True(File.Exists(previewPath));
         var previewLines = File.ReadAllLines(previewPath);
-        Assert.Equal(2, previewLines.Length);
+        Assert.Equal(3, previewLines.Length);
         Assert.Contains(
             "dbo.Tasks,CreatedBy,999,200,2",
-            previewLines[1],
-            StringComparison.OrdinalIgnoreCase);
+            previewLines,
+            StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(
+            "dbo.Tasks,UpdatedBy,111,100,3",
+            previewLines,
+            StringComparer.OrdinalIgnoreCase);
 
         var scriptPath = temp.Combine("uat-users", "02_apply_user_remap.sql");
         var script = File.ReadAllText(scriptPath);
         Assert.Contains("CREATE TABLE #UserRemap (SourceUserId INT PRIMARY KEY, TargetUserId INT NOT NULL", script, StringComparison.Ordinal);
         Assert.Contains("999", script, StringComparison.Ordinal);
         Assert.Contains("200", script, StringComparison.Ordinal);
-        Assert.Contains("-- Pending mappings without TargetUserId", script, StringComparison.Ordinal);
 
         var mapLines = File.ReadAllLines(mapPath);
         Assert.Equal(3, mapLines.Length);
@@ -148,6 +151,13 @@ public sealed class UatUsersPipelineScenarioTests
         Assert.Contains(templateRows, row => row.Contains("999", StringComparison.Ordinal));
         Assert.Contains(templateRows, row => row.StartsWith("111,", StringComparison.Ordinal));
         Assert.Contains(templateRows, row => row.Contains(",,", StringComparison.Ordinal));
+
+        var matchingReportPath = temp.Combine("uat-users", "04_matching_report.csv");
+        Assert.True(File.Exists(matchingReportPath));
+        var matchingReport = File.ReadAllLines(matchingReportPath);
+        Assert.Equal(3, matchingReport.Length);
+        Assert.Contains(matchingReport, line => line.Contains("CaseInsensitiveEmail", StringComparison.Ordinal));
+        Assert.Contains(matchingReport, line => line.Contains("fallback mode", StringComparison.OrdinalIgnoreCase));
 
         var catalogPath = temp.Combine("uat-users", "03_catalog.txt");
         Assert.True(File.Exists(catalogPath));

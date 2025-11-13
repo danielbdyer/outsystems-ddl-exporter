@@ -17,8 +17,12 @@ public sealed class UatUsersContext
     private IReadOnlyList<UserIdentifier> _orphanUserIds = Array.Empty<UserIdentifier>();
     private IReadOnlyDictionary<UserIdentifier, UserInventoryRecord> _qaUserInventory
         = ImmutableSortedDictionary<UserIdentifier, UserInventoryRecord>.Empty;
+    private IReadOnlyDictionary<UserIdentifier, UserInventoryRecord> _uatUserInventory
+        = ImmutableSortedDictionary<UserIdentifier, UserInventoryRecord>.Empty;
     private IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> _foreignKeyValueCounts
         = ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>.Empty;
+    private IReadOnlyList<UserMappingEntry> _automaticMappings = Array.Empty<UserMappingEntry>();
+    private IReadOnlyList<UserMatchingResult> _matchingResults = Array.Empty<UserMatchingResult>();
 
     public UatUsersContext(
         IUserSchemaGraph schemaGraph,
@@ -34,7 +38,12 @@ public sealed class UatUsersContext
         string? snapshotPath,
         string? userEntityIdentifier,
         bool fromLiveMetadata,
-        string sourceFingerprint)
+        string sourceFingerprint,
+        UserMatchingStrategy matchingStrategy = UserMatchingStrategy.CaseInsensitiveEmail,
+        string? matchingAttribute = null,
+        string? matchingRegexPattern = null,
+        UserFallbackAssignmentMode fallbackAssignment = UserFallbackAssignmentMode.Ignore,
+        IEnumerable<UserIdentifier>? fallbackTargets = null)
     {
         SchemaGraph = schemaGraph ?? throw new ArgumentNullException(nameof(schemaGraph));
         Artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
@@ -88,6 +97,15 @@ public sealed class UatUsersContext
         UserEntityIdentifier = string.IsNullOrWhiteSpace(userEntityIdentifier) ? null : userEntityIdentifier.Trim();
         FromLiveMetadata = fromLiveMetadata;
         SourceFingerprint = sourceFingerprint.Trim();
+        MatchingStrategy = matchingStrategy;
+        MatchingAttribute = UserMatchingConfigurationHelper.ResolveAttribute(matchingStrategy, matchingAttribute);
+        MatchingRegexPattern = string.IsNullOrWhiteSpace(matchingRegexPattern) ? null : matchingRegexPattern.Trim();
+        FallbackAssignment = fallbackAssignment;
+        FallbackTargets = fallbackTargets is null
+            ? ImmutableArray<UserIdentifier>.Empty
+            : fallbackTargets
+                .Distinct()
+                .ToImmutableArray();
     }
 
     public IUserSchemaGraph SchemaGraph { get; }
@@ -127,6 +145,8 @@ public sealed class UatUsersContext
     public IReadOnlyCollection<UserIdentifier> OrphanUserIds => _orphanUserIds;
 
     public IReadOnlyDictionary<UserIdentifier, UserInventoryRecord> QaUserInventory => _qaUserInventory;
+
+    public IReadOnlyDictionary<UserIdentifier, UserInventoryRecord> UatUserInventory => _uatUserInventory;
 
     public bool TryGetQaUser(UserIdentifier userId, out UserInventoryRecord record)
     {
@@ -204,6 +224,21 @@ public sealed class UatUsersContext
         };
     }
 
+    public void SetUatUserInventory(IReadOnlyDictionary<UserIdentifier, UserInventoryRecord> inventory)
+    {
+        if (inventory is null)
+        {
+            throw new ArgumentNullException(nameof(inventory));
+        }
+
+        _uatUserInventory = inventory switch
+        {
+            ImmutableSortedDictionary<UserIdentifier, UserInventoryRecord> sorted => sorted,
+            ImmutableDictionary<UserIdentifier, UserInventoryRecord> immutable => immutable,
+            _ => ImmutableSortedDictionary.CreateRange(inventory)
+        };
+    }
+
     public void SetForeignKeyValueCounts(IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>> counts)
     {
         if (counts is null)
@@ -226,4 +261,29 @@ public sealed class UatUsersContext
 
         _foreignKeyValueCounts = builder.ToImmutable();
     }
+
+    public void SetAutomaticMappings(IReadOnlyList<UserMappingEntry> entries)
+    {
+        _automaticMappings = entries ?? throw new ArgumentNullException(nameof(entries));
+    }
+
+    public void SetMatchingResults(IReadOnlyList<UserMatchingResult> results)
+    {
+        _matchingResults = results ?? throw new ArgumentNullException(nameof(results));
+    }
+
+    public IReadOnlyList<UserMappingEntry> AutomaticMappings => _automaticMappings;
+
+    public IReadOnlyList<UserMatchingResult> MatchingResults => _matchingResults;
+
+    public UserMatchingStrategy MatchingStrategy { get; }
+
+    public string? MatchingAttribute { get; }
+
+    public string? MatchingRegexPattern { get; }
+
+    public UserFallbackAssignmentMode FallbackAssignment { get; }
+
+    public ImmutableArray<UserIdentifier> FallbackTargets { get; }
+
 }

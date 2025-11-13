@@ -116,6 +116,10 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 includeColumns = Array.Empty<string>();
             }
 
+            var matchingStrategy = request.Overrides.MatchingStrategy ?? UserMatchingStrategy.CaseInsensitiveEmail;
+            var fallbackAssignment = request.Overrides.FallbackAssignment ?? UserFallbackAssignmentMode.Ignore;
+            var fallbackTargets = request.Overrides.FallbackTargets ?? Array.Empty<UserIdentifier>();
+
             var schemaGraph = request.SchemaGraph ?? new ModelSchemaGraph(request.Extraction.Model);
             var context = new UatUsersContext(
                 schemaGraph,
@@ -131,7 +135,12 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 request.Overrides.SnapshotPath,
                 request.Overrides.UserEntityIdentifier,
                 fromLiveMetadata: false,
-                sourceFingerprint: BuildSourceFingerprint(connectionString));
+                sourceFingerprint: BuildSourceFingerprint(connectionString),
+                matchingStrategy: matchingStrategy,
+                matchingAttribute: request.Overrides.MatchingAttribute,
+                matchingRegexPattern: request.Overrides.MatchingRegexPattern,
+                fallbackAssignment: fallbackAssignment,
+                fallbackTargets: fallbackTargets);
 
             var pipeline = new UatUsersPipeline(_loggerFactory);
             _logger.LogInformation(

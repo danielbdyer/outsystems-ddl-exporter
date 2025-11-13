@@ -40,11 +40,15 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
 
         var mapPath = context.UserMapPath;
         var existing = File.Exists(mapPath) ? UserMapLoader.Load(mapPath) : Array.Empty<UserMappingEntry>();
+        var automatic = context.AutomaticMappings ?? Array.Empty<UserMappingEntry>();
         _logger.LogInformation(
             "Loaded {ExistingCount} existing mapping rows from {MapPath}.",
             existing.Count,
             mapPath);
-        var merged = MergeMappings(context.OrphanUserIds, existing);
+        _logger.LogInformation(
+            "Matching engine proposed {AutomaticCount} automatic rows.",
+            automatic.Count);
+        var merged = MergeMappings(context.OrphanUserIds, existing, automatic);
         context.SetUserMap(merged);
 
         WriteUserMap(mapPath, merged);
@@ -87,7 +91,8 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
 
     private static IReadOnlyList<UserMappingEntry> MergeMappings(
         IReadOnlyCollection<UserIdentifier> orphanUserIds,
-        IReadOnlyList<UserMappingEntry> existing)
+        IReadOnlyList<UserMappingEntry> existing,
+        IReadOnlyList<UserMappingEntry> automatic)
     {
         var orphanSet = new SortedSet<UserIdentifier>(orphanUserIds);
         if (orphanSet.Count == 0)
@@ -104,6 +109,19 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
             }
 
             if (!bySource.TryGetValue(entry.SourceUserId, out var current) || ShouldReplace(current, entry))
+            {
+                bySource[entry.SourceUserId] = entry;
+            }
+        }
+
+        foreach (var entry in automatic)
+        {
+            if (!orphanSet.Contains(entry.SourceUserId))
+            {
+                continue;
+            }
+
+            if (!bySource.ContainsKey(entry.SourceUserId))
             {
                 bySource[entry.SourceUserId] = entry;
             }

@@ -108,6 +108,26 @@ public sealed class UatUsersCommand : IUatUsersCommand
             {
                 configurationFields.Add("UserEntityIdentifier");
             }
+            if (options.Origins.MatchingStrategyFromConfiguration)
+            {
+                configurationFields.Add("MatchingStrategy");
+            }
+            if (options.Origins.MatchingAttributeFromConfiguration)
+            {
+                configurationFields.Add("MatchingAttribute");
+            }
+            if (options.Origins.MatchingRegexFromConfiguration)
+            {
+                configurationFields.Add("MatchingRegex");
+            }
+            if (options.Origins.FallbackModeFromConfiguration)
+            {
+                configurationFields.Add("FallbackMode");
+            }
+            if (options.Origins.FallbackTargetsFromConfiguration)
+            {
+                configurationFields.Add("FallbackTargets");
+            }
 
             if (configurationFields.Count > 0)
             {
@@ -132,6 +152,13 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 "User inventories: UAT={UatInventory}, QA={QaInventory}.",
                 options.UatUserInventoryPath,
                 options.QaUserInventoryPath);
+            _logger.LogInformation(
+                "Matching configuration: Strategy={Strategy}, Attribute={Attribute}, Regex={Regex}, Fallback={FallbackMode}, FallbackTargets={FallbackCount}.",
+                options.MatchingStrategy,
+                options.MatchingAttribute ?? "<default>",
+                options.MatchingRegexPattern ?? "<none>",
+                options.FallbackMode,
+                options.FallbackTargets.Length);
 
             if (string.IsNullOrWhiteSpace(options.UatConnectionString))
             {
@@ -192,7 +219,12 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 options.SnapshotPath,
                 options.UserEntityIdentifier,
                 options.FromLiveMetadata,
-                sourceFingerprint);
+                sourceFingerprint,
+                options.MatchingStrategy,
+                options.MatchingAttribute,
+                options.MatchingRegexPattern,
+                options.FallbackMode,
+                options.FallbackTargets);
 
             var pipeline = new UatUsersPipeline(_loggerFactory);
             _logger.LogInformation("Invoking uat-users pipeline.");

@@ -30,6 +30,7 @@ public sealed class LoadUatUserInventoryStep : IPipelineStep<UatUsersContext>
             context.UatUserInventoryPath);
 
         var result = UserInventoryLoader.Load(context.UatUserInventoryPath);
+        context.SetUatUserInventory(result.Records);
         context.SetAllowedUserIds(result.Records.Keys.ToArray());
 
         _logger.LogInformation(

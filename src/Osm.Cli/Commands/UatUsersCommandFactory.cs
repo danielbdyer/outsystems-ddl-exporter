@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.UatUsers;
 
 namespace Osm.Cli.Commands;
 
@@ -42,6 +43,20 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
     private readonly Option<string?> _qaInventoryOption = new("--qa-user-inventory", "CSV export of the QA dbo.User table (Id, Username, EMail, Name, External_Id, Is_Active, Creation_Date, Last_Login).");
     private readonly Option<string?> _snapshotOption = new("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
     private readonly Option<string?> _userEntityIdOption = new("--user-entity-id", "Optional override identifier for the user entity (accepts btGUID*GUID, physical name, or numeric id).");
+    private readonly Option<string?> _matchingStrategyOption = new("--match-strategy", "Matching strategy: case-insensitive-email, exact-attribute, or regex.");
+    private readonly Option<string?> _matchingAttributeOption = new("--match-attribute", "Attribute to evaluate when using exact-attribute or regex strategies (Username, Email, External_Id, etc.).");
+    private readonly Option<string?> _matchingRegexOption = new("--match-regex", "Regex pattern used when --match-strategy=regex (captures 'target' group or first capture).");
+    private readonly Option<string?> _fallbackModeOption = new("--match-fallback-mode", "Fallback assignment mode: ignore, single, or round-robin.");
+    private readonly Option<string[]> _fallbackTargetOption = new(
+        name: "--match-fallback-target",
+        description: "Approved UAT target user IDs to use when fallback mode assigns missing matches (accepts comma-delimited values).",
+        parseArgument: static result => result.Tokens
+            .Select(token => token.Value)
+            .SelectMany(value => value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToArray())
+    {
+        AllowMultipleArgumentsPerToken = true
+    };
 
     public UatUsersCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -69,7 +84,12 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             _uatInventoryOption,
             _qaInventoryOption,
             _snapshotOption,
-            _userEntityIdOption
+            _userEntityIdOption,
+            _matchingStrategyOption,
+            _matchingAttributeOption,
+            _matchingRegexOption,
+            _fallbackModeOption,
+            _fallbackTargetOption
         };
 
         command.AddGlobalOption(_globalOptions.ConfigPath);
@@ -124,6 +144,49 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
         var (qaInventoryPath, qaInventoryFromConfig) = ResolveStringOption(parseResult, _qaInventoryOption, configuration.QaUserInventoryPath, null);
         var (snapshotPath, snapshotFromConfig) = ResolveStringOption(parseResult, _snapshotOption, configuration.SnapshotPath, null);
         var (userEntityId, entityIdFromConfig) = ResolveStringOption(parseResult, _userEntityIdOption, configuration.UserEntityIdentifier, null);
+        var (matchingStrategyInput, matchingStrategyFromConfig) = ResolveStringOption(
+            parseResult,
+            _matchingStrategyOption,
+            configuration.MatchingStrategy?.ToString(),
+            null);
+        var (matchingAttribute, matchingAttributeFromConfig) = ResolveStringOption(
+            parseResult,
+            _matchingAttributeOption,
+            configuration.MatchingAttribute,
+            null);
+        var (matchingRegex, matchingRegexFromConfig) = ResolveStringOption(
+            parseResult,
+            _matchingRegexOption,
+            configuration.MatchingRegexPattern,
+            null);
+        var (fallbackModeInput, fallbackModeFromConfig) = ResolveStringOption(
+            parseResult,
+            _fallbackModeOption,
+            configuration.FallbackAssignment?.ToString(),
+            null);
+        var fallbackTargetsSpecified = parseResult.HasOption(_fallbackTargetOption);
+        var fallbackTargets = fallbackTargetsSpecified
+            ? parseResult.GetValueForOption(_fallbackTargetOption) ?? Array.Empty<string>()
+            : (configuration.FallbackTargets.Count > 0 ? configuration.FallbackTargets.ToArray() : Array.Empty<string>());
+        var fallbackTargetsFromConfig = !fallbackTargetsSpecified && configuration.FallbackTargets.Count > 0;
+
+        UserMatchingStrategy matchingStrategy;
+        UserFallbackAssignmentMode fallbackMode;
+        try
+        {
+            matchingStrategy = matchingStrategyInput is { Length: > 0 }
+                ? UserMatchingConfigurationHelper.ParseStrategy(matchingStrategyInput, UserMatchingStrategy.CaseInsensitiveEmail)
+                : configuration.MatchingStrategy ?? UserMatchingStrategy.CaseInsensitiveEmail;
+            fallbackMode = fallbackModeInput is { Length: > 0 }
+                ? UserMatchingConfigurationHelper.ParseFallbackMode(fallbackModeInput, UserFallbackAssignmentMode.Ignore)
+                : configuration.FallbackAssignment ?? UserFallbackAssignmentMode.Ignore;
+        }
+        catch (ArgumentException ex)
+        {
+            context.ExitCode = 1;
+            CommandConsole.WriteErrorLine(context.Console, ex.Message);
+            return;
+        }
 
         var userSchema = userSchemaInput ?? "dbo";
         var tableValue = userTableInput ?? "User";
@@ -167,34 +230,54 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             return;
         }
 
-        var options = new UatUsersOptions(
-            modelPath,
-            connectionString,
-            fromLive,
-            userSchema,
-            tableValue,
-            userIdColumn ?? "Id",
-            includeColumns,
-            outputDirectory ?? "./_artifacts",
-            userMapPath,
-            uatInventoryPath,
-            qaInventoryPath,
-            snapshotPath,
-            userEntityId,
-            new UatUsersOptionOrigins(
-                ModelPathFromConfiguration: modelFromConfig,
-                ConnectionStringFromConfiguration: connectionFromConfig,
-                FromLiveMetadataFromConfiguration: fromLiveFromConfig,
-                UserSchemaFromConfiguration: schemaFromConfig,
-                UserTableFromConfiguration: tableFromConfig,
-                UserIdColumnFromConfiguration: idFromConfig,
-                IncludeColumnsFromConfiguration: includeColumnsFromConfig,
-                OutputDirectoryFromConfiguration: outputFromConfig,
-                UserMapPathFromConfiguration: userMapFromConfig,
-                UatUserInventoryPathFromConfiguration: uatInventoryFromConfig,
-                QaUserInventoryPathFromConfiguration: qaInventoryFromConfig,
-                SnapshotPathFromConfiguration: snapshotFromConfig,
-                UserEntityIdentifierFromConfiguration: entityIdFromConfig));
+        UatUsersOptions options;
+        try
+        {
+            options = new UatUsersOptions(
+                modelPath,
+                connectionString,
+                fromLive,
+                userSchema,
+                tableValue,
+                userIdColumn ?? "Id",
+                includeColumns,
+                outputDirectory ?? "./_artifacts",
+                userMapPath,
+                uatInventoryPath,
+                qaInventoryPath,
+                snapshotPath,
+                userEntityId,
+                matchingStrategy,
+                matchingAttribute,
+                matchingRegex,
+                fallbackMode,
+                fallbackTargets,
+                new UatUsersOptionOrigins(
+                    ModelPathFromConfiguration: modelFromConfig,
+                    ConnectionStringFromConfiguration: connectionFromConfig,
+                    FromLiveMetadataFromConfiguration: fromLiveFromConfig,
+                    UserSchemaFromConfiguration: schemaFromConfig,
+                    UserTableFromConfiguration: tableFromConfig,
+                    UserIdColumnFromConfiguration: idFromConfig,
+                    IncludeColumnsFromConfiguration: includeColumnsFromConfig,
+                    OutputDirectoryFromConfiguration: outputFromConfig,
+                    UserMapPathFromConfiguration: userMapFromConfig,
+                    UatUserInventoryPathFromConfiguration: uatInventoryFromConfig,
+                    QaUserInventoryPathFromConfiguration: qaInventoryFromConfig,
+                    SnapshotPathFromConfiguration: snapshotFromConfig,
+                    UserEntityIdentifierFromConfiguration: entityIdFromConfig,
+                    MatchingStrategyFromConfiguration: matchingStrategyFromConfig,
+                    MatchingAttributeFromConfiguration: matchingAttributeFromConfig,
+                    MatchingRegexFromConfiguration: matchingRegexFromConfig,
+                    FallbackModeFromConfiguration: fallbackModeFromConfig,
+                    FallbackTargetsFromConfiguration: fallbackTargetsFromConfig));
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException)
+        {
+            context.ExitCode = 1;
+            CommandConsole.WriteErrorLine(context.Console, ex.Message);
+            return;
+        }
 
         using var scope = _scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
@@ -219,7 +302,8 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             throw new ArgumentNullException(nameof(option));
         }
 
-        if (parseResult.HasOption(option))
+        var optionResult = parseResult.FindResultFor(option);
+        if (optionResult is not null && !optionResult.IsImplicit)
         {
             return (parseResult.GetValueForOption(option), false);
         }

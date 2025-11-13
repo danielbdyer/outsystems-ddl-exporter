@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli;
 using Osm.Cli.Commands;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.UatUsers;
 using Xunit;
 using Tests.Support;
 
@@ -31,7 +32,7 @@ public class UatUsersCommandFactoryTests
 
         var root = new RootCommand { command };
         var parser = new CommandLineBuilder(root).UseDefaults().Build();
-        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-schema dbo --user-table dbo.Users --user-id-column UserId --include-columns Name --include-columns EMail --out artifacts --user-map map.csv --uat-user-inventory uat.csv --qa-user-inventory qa.csv --snapshot snap.json --user-entity-id Identifier";
+        var args = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-schema dbo --user-table dbo.Users --user-id-column UserId --include-columns Name --include-columns EMail --out artifacts --user-map map.csv --uat-user-inventory uat.csv --qa-user-inventory qa.csv --snapshot snap.json --user-entity-id Identifier --match-strategy regex --match-attribute Username --match-regex ^qa_(?<target>.*)$ --match-fallback-mode round-robin --match-fallback-target 200 --match-fallback-target 300";
         var exitCode = await parser.InvokeAsync(args);
 
         Assert.Equal(5, exitCode);
@@ -49,6 +50,11 @@ public class UatUsersCommandFactoryTests
         Assert.Equal(Path.GetFullPath("qa.csv"), options.QaUserInventoryPath);
         Assert.Equal(Path.GetFullPath("snap.json"), options.SnapshotPath);
         Assert.Equal("Identifier", options.UserEntityIdentifier);
+        Assert.Equal(UserMatchingStrategy.Regex, options.MatchingStrategy);
+        Assert.Equal("Username", options.MatchingAttribute);
+        Assert.Equal("^qa_(?<target>.*)$", options.MatchingRegexPattern);
+        Assert.Equal(UserFallbackAssignmentMode.RoundRobin, options.FallbackMode);
+        Assert.Equal(new[] { "200", "300" }, options.FallbackTargets.Select(target => target.Value));
         Assert.False(options.Origins.ModelPathFromConfiguration);
         Assert.False(options.Origins.ConnectionStringFromConfiguration);
     }
@@ -171,7 +177,12 @@ public class UatUsersCommandFactoryTests
                 UatUserInventoryPath: uatInventoryPath,
                 QaUserInventoryPath: qaInventoryPath,
                 SnapshotPath: snapshotPath,
-                UserEntityIdentifier: "UserEntity")
+                UserEntityIdentifier: "UserEntity",
+                MatchingStrategy: UserMatchingStrategy.Regex,
+                MatchingAttribute: "Username",
+                MatchingRegexPattern: "^qa_(?<target>.*)$",
+                FallbackAssignment: UserFallbackAssignmentMode.SingleTarget,
+                FallbackTargets: new[] { "400" })
         };
 
         var (options, exitCode) = await InvokeAsync("uat-users", configuration);
@@ -190,6 +201,11 @@ public class UatUsersCommandFactoryTests
         Assert.Equal(Path.GetFullPath(qaInventoryPath), options.QaUserInventoryPath);
         Assert.Equal(Path.GetFullPath(snapshotPath), options.SnapshotPath);
         Assert.Equal("UserEntity", options.UserEntityIdentifier);
+        Assert.Equal(UserMatchingStrategy.Regex, options.MatchingStrategy);
+        Assert.Equal("Username", options.MatchingAttribute);
+        Assert.Equal("^qa_(?<target>.*)$", options.MatchingRegexPattern);
+        Assert.Equal(UserFallbackAssignmentMode.SingleTarget, options.FallbackMode);
+        Assert.Equal(new[] { "400" }, options.FallbackTargets.Select(target => target.Value));
 
         Assert.True(options.Origins.ModelPathFromConfiguration);
         Assert.True(options.Origins.ConnectionStringFromConfiguration);
@@ -203,6 +219,11 @@ public class UatUsersCommandFactoryTests
         Assert.True(options.Origins.QaUserInventoryPathFromConfiguration);
         Assert.True(options.Origins.SnapshotPathFromConfiguration);
         Assert.True(options.Origins.UserEntityIdentifierFromConfiguration);
+        Assert.True(options.Origins.MatchingStrategyFromConfiguration);
+        Assert.True(options.Origins.MatchingAttributeFromConfiguration);
+        Assert.True(options.Origins.MatchingRegexFromConfiguration);
+        Assert.True(options.Origins.FallbackModeFromConfiguration);
+        Assert.True(options.Origins.FallbackTargetsFromConfiguration);
     }
 
     private sealed class FakeUatUsersCommand : IUatUsersCommand

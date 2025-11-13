@@ -51,6 +51,14 @@ public sealed class EmitArtifactsStepTests
             [catalog[0]] = new Dictionary<UserIdentifier, long> { { UserIdentifier.FromString("100"), 42L } }
         });
         context.SetUserMap(new List<UserMappingEntry> { new(UserIdentifier.FromString("100"), UserIdentifier.FromString("200"), "reviewed") });
+        context.SetMatchingResults(new List<UserMatchingResult>
+        {
+            UserMatchingResult.Create(
+                UserIdentifier.FromString("100"),
+                UserIdentifier.FromString("200"),
+                "CaseInsensitiveEmail",
+                "Matched email")
+        });
 
         var step = new EmitArtifactsStep();
         await step.ExecuteAsync(context, CancellationToken.None);
@@ -62,6 +70,14 @@ public sealed class EmitArtifactsStepTests
             "TableName,ColumnName,OldUserId,NewUserId,RowCount",
             "dbo.Orders,CreatedBy,100,200,42"
         }, lines);
+
+        var reportPath = Path.Combine(temp.Path, "uat-users", "04_matching_report.csv");
+        var reportLines = File.ReadAllLines(reportPath);
+        Assert.Equal(new[]
+        {
+            "SourceUserId,TargetUserId,Strategy,Explanation,UsedFallback",
+            "100,200,CaseInsensitiveEmail,Matched email,False"
+        }, reportLines);
     }
 
     private sealed class StubSchemaGraph : IUserSchemaGraph
