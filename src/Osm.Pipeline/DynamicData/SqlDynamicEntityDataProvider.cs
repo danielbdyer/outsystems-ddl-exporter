@@ -1,9 +1,13 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
+using System.IO.Hashing;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -56,7 +60,7 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
         _batchSize = batchSize;
     }
 
-    public async Task<Result<DynamicEntityDataset>> ExtractAsync(
+    public async Task<Result<DynamicEntityExtractionResult>> ExtractAsync(
         SqlDynamicEntityExtractionRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -67,14 +71,14 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
 
         if (string.IsNullOrWhiteSpace(request.ConnectionString))
         {
-            return Result<DynamicEntityDataset>.Failure(ValidationError.Create(
+            return Result<DynamicEntityExtractionResult>.Failure(ValidationError.Create(
                 "pipeline.dynamicData.connectionString.missing",
                 "Dynamic entity extraction requires a SQL connection string."));
         }
 
         if (request.Model is null)
         {
-            return Result<DynamicEntityDataset>.Failure(ValidationError.Create(
+            return Result<DynamicEntityExtractionResult>.Failure(ValidationError.Create(
                 "pipeline.dynamicData.model.missing",
                 "Dynamic entity extraction requires a resolved model."));
         }
@@ -91,9 +95,11 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
         var connectionFactory = _connectionFactoryFactory(request.ConnectionString.Trim(), connectionOptions);
 
         var tables = new List<StaticEntityTableData>();
+        var telemetryEntries = ImmutableArray.CreateBuilder<DynamicEntityTableTelemetry>();
         var totalRows = 0;
         var extractedTables = 0;
         var startTimestamp = _timeProvider.GetTimestamp();
+        var extractionStartedAt = _timeProvider.GetUtcNow();
 
         try
         {
@@ -144,6 +150,18 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
                     totalRows += extraction.RowCount;
                     extractedTables++;
 
+                    telemetryEntries.Add(new DynamicEntityTableTelemetry(
+                        module.Name.Value,
+                        entity.LogicalName.Value,
+                        definition.Schema,
+                        definition.PhysicalName,
+                        definition.EffectiveName,
+                        extraction.RowCount,
+                        extraction.BatchCount,
+                        extraction.Duration,
+                        extraction.Checksum,
+                        extraction.Chunks));
+
                     request.Log?.Record(
                         "dynamicData.extract.table",
                         $"Extracted dynamic entity data for '{definition.Schema}.{definition.PhysicalName}'.",
@@ -153,6 +171,7 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
                             .WithValue("table.name", definition.PhysicalName)
                             .WithCount("rows", extraction.RowCount)
                             .WithCount("batches", extraction.BatchCount)
+                            .WithValue("checksum.crc32", extraction.Checksum)
                             .Build());
                 }
             }
@@ -166,12 +185,17 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
                     .WithValue("error.message", ex.Message)
                     .Build());
 
-            return Result<DynamicEntityDataset>.Failure(ValidationError.Create(
+            return Result<DynamicEntityExtractionResult>.Failure(ValidationError.Create(
                 "pipeline.dynamicData.sql.failed",
                 $"Failed to retrieve dynamic entity data: {ex.Message}"));
         }
 
         var elapsed = _timeProvider.GetElapsedTime(startTimestamp);
+        var completedAtUtc = _timeProvider.GetUtcNow();
+        var telemetry = new DynamicEntityExtractionTelemetry(
+            extractionStartedAt,
+            completedAtUtc,
+            telemetryEntries.ToImmutable());
 
         if (tables.Count == 0)
         {
@@ -182,7 +206,8 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
                     .WithMetric("duration.ms", elapsed.TotalMilliseconds)
                     .Build());
 
-            return Result<DynamicEntityDataset>.Success(DynamicEntityDataset.Empty);
+            return Result<DynamicEntityExtractionResult>.Success(
+                new DynamicEntityExtractionResult(DynamicEntityDataset.Empty, telemetry));
         }
 
         request.Log?.Record(
@@ -194,7 +219,8 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
                 .WithCount("rows", totalRows)
                 .Build());
 
-        return Result<DynamicEntityDataset>.Success(DynamicEntityDataset.Create(tables));
+        return Result<DynamicEntityExtractionResult>.Success(
+            new DynamicEntityExtractionResult(DynamicEntityDataset.Create(tables), telemetry));
     }
 
     private async Task<TableExtractionResult> ExtractTableAsync(
@@ -208,6 +234,7 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
         var rows = new List<StaticEntityRow>();
         var offset = 0;
         var batches = 0;
+        var chunks = ImmutableArray.CreateBuilder<DynamicEntityChunkTelemetry>();
         var schemaQualifiedName = FormatTwoPartName(definition.Schema, definition.PhysicalName);
         var selectList = string.Join(", ", definition.Columns.Select(static column => FormatColumnName(column.ColumnName)));
         var orderClause = orderColumns.Length == 0
@@ -219,6 +246,9 @@ SELECT {selectList}
 FROM {schemaQualifiedName}
 ORDER BY {orderClause}
 OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
+
+        var tableStart = _timeProvider.GetTimestamp();
+        var checksum = new DynamicEntityChecksumCalculator();
 
         while (true)
         {
@@ -246,6 +276,7 @@ OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             var batchCount = 0;
+            var chunkStart = _timeProvider.GetTimestamp();
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -257,7 +288,9 @@ OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
                     values[i] = column.NormalizeValue(rawValue);
                 }
 
-                rows.Add(StaticEntityRow.Create(values));
+                var row = StaticEntityRow.Create(values);
+                rows.Add(row);
+                checksum.AppendRow(row);
                 batchCount++;
             }
 
@@ -268,6 +301,9 @@ OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
 
             offset += batchCount;
             batches++;
+
+            var chunkDuration = _timeProvider.GetElapsedTime(chunkStart);
+            chunks.Add(new DynamicEntityChunkTelemetry(batches, batchCount, chunkDuration));
 
             if (batchCount < _batchSize)
             {
@@ -281,7 +317,14 @@ OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
         }
 
         var tableData = StaticEntityTableData.Create(definition, rows);
-        return new TableExtractionResult(tableData, rows.Count, batches);
+        var tableDuration = _timeProvider.GetElapsedTime(tableStart);
+        return new TableExtractionResult(
+            tableData,
+            rows.Count,
+            batches,
+            checksum.GetChecksum(),
+            chunks.ToImmutable(),
+            tableDuration);
     }
 
     private static StaticEntitySeedTableDefinition CreateDefinition(
@@ -439,8 +482,106 @@ OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
     private readonly record struct TableExtractionResult(
         StaticEntityTableData? Table,
         int RowCount,
-        int BatchCount)
+        int BatchCount,
+        string Checksum,
+        ImmutableArray<DynamicEntityChunkTelemetry> Chunks,
+        TimeSpan Duration)
     {
-        public static TableExtractionResult Empty { get; } = new(null, 0, 0);
+        public static TableExtractionResult Empty { get; } = new(null, 0, 0, "00000000", ImmutableArray<DynamicEntityChunkTelemetry>.Empty, TimeSpan.Zero);
+    }
+
+    private sealed class DynamicEntityChecksumCalculator
+    {
+        private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
+        private static readonly byte[] RowSeparator = { (byte)'\n' };
+        private static readonly byte[] ColumnSeparator = { (byte)'|' };
+        private static readonly byte[] NullMarker = Utf8.GetBytes("<null>");
+        private static readonly byte[] EmptyMarker = Utf8.GetBytes("<empty>");
+        private readonly Crc32 _crc = new();
+
+        public void AppendRow(StaticEntityRow row)
+        {
+            _crc.Append(RowSeparator);
+            if (row.Values.IsDefaultOrEmpty)
+            {
+                return;
+            }
+
+            foreach (var value in row.Values)
+            {
+                _crc.Append(ColumnSeparator);
+                AppendValue(value);
+            }
+        }
+
+        public string GetChecksum()
+        {
+            Span<byte> buffer = stackalloc byte[4];
+            _crc.GetCurrentHash(buffer);
+            return Convert.ToHexString(buffer);
+        }
+
+        private void AppendValue(object? value)
+        {
+            if (value is null || value is DBNull)
+            {
+                _crc.Append(NullMarker);
+                return;
+            }
+
+            switch (value)
+            {
+                case string text:
+                    AppendString(text);
+                    return;
+                case bool boolean:
+                    AppendString(boolean ? "true" : "false");
+                    return;
+                case DateTime dateTime:
+                    AppendString(dateTime.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+                    return;
+                case DateTimeOffset offset:
+                    AppendString(offset.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+                    return;
+                case Guid guid:
+                    AppendString(guid.ToString("D", CultureInfo.InvariantCulture));
+                    return;
+                case byte[] bytes:
+                    AppendString(Convert.ToHexString(bytes));
+                    return;
+                case ReadOnlyMemory<byte> memory:
+                    AppendString(Convert.ToHexString(memory.Span));
+                    return;
+            }
+
+            if (value is IFormattable formattable)
+            {
+                AppendString(formattable.ToString(null, CultureInfo.InvariantCulture));
+                return;
+            }
+
+            AppendString(value.ToString() ?? string.Empty);
+        }
+
+        private void AppendString(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                _crc.Append(EmptyMarker);
+                return;
+            }
+
+            var byteCount = Utf8.GetByteCount(value);
+            var buffer = ArrayPool<byte>.Shared.Rent(byteCount);
+            try
+            {
+                var written = Utf8.GetBytes(value, 0, value.Length, buffer, 0);
+                _crc.Append(buffer.AsSpan(0, written));
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
     }
 }
