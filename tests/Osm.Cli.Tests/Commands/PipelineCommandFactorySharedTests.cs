@@ -39,6 +39,7 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<CacheOptionBinder>();
                     services.AddSingleton<SqlOptionBinder>();
                     services.AddSingleton<TighteningOptionBinder>();
+                    services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<BuildSsdtCommandFactory>();
                 },
@@ -68,6 +69,7 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<CacheOptionBinder>();
                     services.AddSingleton<SqlOptionBinder>();
                     services.AddSingleton<TighteningOptionBinder>();
+                    services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<DmmCompareCommandFactory>();
                 },
@@ -96,6 +98,7 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<CliGlobalOptions>();
                     services.AddSingleton<ModuleFilterOptionBinder>();
                     services.AddSingleton<SqlOptionBinder>();
+                    services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<ExtractModelCommandFactory>();
                 },
@@ -173,6 +176,7 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<TighteningOptionBinder>();
                     services.AddSingleton<SchemaApplyOptionBinder>();
                     services.AddSingleton<UatUsersOptionBinder>();
+                    services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<ILoadHarnessRunner, NullLoadHarnessRunner>();
                     services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
