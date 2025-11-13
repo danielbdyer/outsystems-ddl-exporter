@@ -72,14 +72,17 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
         }
 
         var overrides = options.Overrides ?? FullExportOverrides.Empty;
+        var configurationContext = configurationResult.Value;
+        var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
         var input = new FullExportApplicationInput(
-            configurationResult.Value,
+            configurationContext,
             overrides,
             options.ModuleFilter,
             options.Sql,
             options.Cache,
             options.Tightening,
-            overrides.Apply);
+            overrides.Apply,
+            configuration.UatUsers);
 
         var applicationResult = await _applicationService
             .RunAsync(input, cancellationToken)

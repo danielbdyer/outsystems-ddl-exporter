@@ -183,6 +183,197 @@ public sealed class FullExportApplicationServiceTests
     }
 
     [Fact]
+    public async Task RunAsync_ExecutesUatUsersPipelineUsingConfigurationDefaults()
+    {
+        var model = CreateModel();
+        var extractionResult = CreateExtractionApplicationResult(model);
+        var profileResult = new CaptureProfileApplicationResult(
+            CreateCaptureProfilePipelineResult(),
+            OutputDirectory: "profiles",
+            ModelPath: "model.json",
+            ProfilerProvider: "fixture",
+            FixtureProfilePath: null);
+        var buildResult = CreateBuildResult("model.json");
+
+        var profileService = new StubProfileService(Result<CaptureProfileApplicationResult>.Success(profileResult));
+        var extractService = new StubExtractService(Result<ExtractModelApplicationResult>.Success(extractionResult));
+        var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
+        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
+        var modelDeserializer = new StubModelJsonDeserializer(model);
+        var uatRunner = new RecordingUatUsersRunner
+        {
+            ResultToReturn = Result<UatUsersApplicationResult>.Success(new UatUsersApplicationResult(
+                Executed: true,
+                Context: null,
+                Warnings: ImmutableArray<string>.Empty))
+        };
+        var schemaGraphFactory = new RecordingSchemaGraphFactory
+        {
+            GraphToReturn = new ModelSchemaGraph(model)
+        };
+        var coordinator = new FullExportCoordinator(schemaGraphFactory);
+
+        var service = new FullExportApplicationService(
+            profileService,
+            extractService,
+            buildService,
+            schemaApplyOrchestrator,
+            modelDeserializer,
+            uatRunner,
+            coordinator);
+
+        var configuration = CliConfiguration.Empty with
+        {
+            UatUsers = new UatUsersConfiguration(
+                ModelPath: null,
+                ConnectionString: "Server=Config;Database=Uat;",
+                FromLiveMetadata: null,
+                UserSchema: "app",
+                UserTable: "Users",
+                UserIdColumn: "UserId",
+                IncludeColumns: new[] { "CreatedBy" },
+                OutputRoot: "./out",
+                UserMapPath: "configured-map.csv",
+                AllowedUsersSqlPath: "configured-allowed.sql",
+                AllowedUserIdsPath: null,
+                SnapshotPath: "configured-snapshot.json",
+                UserEntityIdentifier: "UserEntity")
+        };
+
+        var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
+        var overrides = new FullExportOverrides(
+            Build: new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
+            Profile: new CaptureProfileOverrides(null, null, null, null, null),
+            Extract: new ExtractModelOverrides(null, null, null, null, null, null));
+        var input = new FullExportApplicationInput(
+            configurationContext,
+            overrides,
+            new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new CacheOptionsOverrides(null, null),
+            UatUsersConfiguration: configuration.UatUsers);
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.UatUsers.Executed);
+        var request = Assert.IsType<UatUsersPipelineRequest>(uatRunner.LastRequest);
+        Assert.Equal("Server=Config;Database=Uat;", request.Overrides.ConnectionString);
+        Assert.Equal("app", request.Overrides.UserSchema);
+        Assert.Equal("Users", request.Overrides.UserTable);
+        Assert.Equal("UserId", request.Overrides.UserIdColumn);
+        Assert.Equal(new[] { "CreatedBy" }, request.Overrides.IncludeColumns);
+        Assert.Equal("configured-map.csv", request.Overrides.UserMapPath);
+        Assert.Equal("configured-allowed.sql", request.Overrides.AllowedUsersSqlPath);
+        Assert.Null(request.Overrides.AllowedUserIdsPath);
+        Assert.Equal("configured-snapshot.json", request.Overrides.SnapshotPath);
+        Assert.Equal("UserEntity", request.Overrides.UserEntityIdentifier);
+    }
+
+    [Fact]
+    public async Task RunAsync_ExecutesUatUsersPipeline_MergesCliOverridesWithConfigurationDefaults()
+    {
+        var model = CreateModel();
+        var extractionResult = CreateExtractionApplicationResult(model);
+        var profileResult = new CaptureProfileApplicationResult(
+            CreateCaptureProfilePipelineResult(),
+            OutputDirectory: "profiles",
+            ModelPath: "model.json",
+            ProfilerProvider: "fixture",
+            FixtureProfilePath: null);
+        var buildResult = CreateBuildResult("model.json");
+
+        var profileService = new StubProfileService(Result<CaptureProfileApplicationResult>.Success(profileResult));
+        var extractService = new StubExtractService(Result<ExtractModelApplicationResult>.Success(extractionResult));
+        var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
+        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
+        var modelDeserializer = new StubModelJsonDeserializer(model);
+        var uatRunner = new RecordingUatUsersRunner
+        {
+            ResultToReturn = Result<UatUsersApplicationResult>.Success(new UatUsersApplicationResult(
+                Executed: true,
+                Context: null,
+                Warnings: ImmutableArray<string>.Empty))
+        };
+        var schemaGraphFactory = new RecordingSchemaGraphFactory
+        {
+            GraphToReturn = new ModelSchemaGraph(model)
+        };
+        var coordinator = new FullExportCoordinator(schemaGraphFactory);
+
+        var service = new FullExportApplicationService(
+            profileService,
+            extractService,
+            buildService,
+            schemaApplyOrchestrator,
+            modelDeserializer,
+            uatRunner,
+            coordinator);
+
+        var configuration = CliConfiguration.Empty with
+        {
+            UatUsers = new UatUsersConfiguration(
+                ModelPath: null,
+                ConnectionString: "Server=Config;Database=Uat;",
+                FromLiveMetadata: null,
+                UserSchema: "cfg",
+                UserTable: "CfgUsers",
+                UserIdColumn: "CfgId",
+                IncludeColumns: new[] { "CfgCreated" },
+                OutputRoot: "./out",
+                UserMapPath: "cfg-map.csv",
+                AllowedUsersSqlPath: "cfg-allowed.sql",
+                AllowedUserIdsPath: null,
+                SnapshotPath: "cfg-snapshot.json",
+                UserEntityIdentifier: "cfg-entity")
+        };
+
+        var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
+        var overrides = new FullExportOverrides(
+            Build: new BuildSsdtOverrides(null, null, null, null, null, null, null, null),
+            Profile: new CaptureProfileOverrides(null, null, null, null, null),
+            Extract: new ExtractModelOverrides(null, null, null, null, null, null),
+            Apply: null,
+            ReuseModelPath: false,
+            UatUsers: new UatUsersOverrides(
+                Enabled: true,
+                ConnectionString: "Server=Cli;Database=Uat;",
+                UserSchema: "cliSchema",
+                UserTable: null,
+                UserIdColumn: null,
+                IncludeColumns: new[] { "CliColumn" },
+                UserMapPath: "cli-map.csv",
+                AllowedUsersSqlPath: null,
+                AllowedUserIdsPath: "cli-ids.csv",
+                SnapshotPath: "cli-snapshot.json",
+                UserEntityIdentifier: null));
+
+        var input = new FullExportApplicationInput(
+            configurationContext,
+            overrides,
+            new ModuleFilterOverrides(Array.Empty<string>(), null, null, Array.Empty<string>(), Array.Empty<string>()),
+            new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null),
+            new CacheOptionsOverrides(null, null),
+            UatUsersConfiguration: configuration.UatUsers);
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.UatUsers.Executed);
+        var request = Assert.IsType<UatUsersPipelineRequest>(uatRunner.LastRequest);
+        Assert.Equal("Server=Cli;Database=Uat;", request.Overrides.ConnectionString);
+        Assert.Equal("cliSchema", request.Overrides.UserSchema);
+        Assert.Equal("CfgUsers", request.Overrides.UserTable);
+        Assert.Equal("CfgId", request.Overrides.UserIdColumn);
+        Assert.Equal(new[] { "CliColumn" }, request.Overrides.IncludeColumns);
+        Assert.Equal("cli-map.csv", request.Overrides.UserMapPath);
+        Assert.Equal("cfg-allowed.sql", request.Overrides.AllowedUsersSqlPath);
+        Assert.Equal("cli-ids.csv", request.Overrides.AllowedUserIdsPath);
+        Assert.Equal("cli-snapshot.json", request.Overrides.SnapshotPath);
+        Assert.Equal("cfg-entity", request.Overrides.UserEntityIdentifier);
+    }
+
+    [Fact]
     public async Task RunAsync_SkipsSchemaApplyWithoutExplicitConnection()
     {
         var model = CreateModel();

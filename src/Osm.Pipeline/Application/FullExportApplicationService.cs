@@ -24,7 +24,8 @@ public sealed record FullExportApplicationInput(
     SqlOptionsOverrides Sql,
     CacheOptionsOverrides Cache,
     TighteningOverrides? TighteningOverrides = null,
-    SchemaApplyOverrides? ApplyOverrides = null);
+    SchemaApplyOverrides? ApplyOverrides = null,
+    UatUsersConfiguration? UatUsersConfiguration = null);
 
 public sealed record FullExportApplicationResult(
     BuildSsdtApplicationResult Build,
@@ -100,6 +101,9 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var extractOverrides = overrides.Extract ?? FullExportOverrides.Empty.Extract;
         var moduleFilter = input.ModuleFilter;
         var configuration = configurationContext.Configuration ?? CliConfiguration.Empty;
+        var uatUsersConfiguration = input.UatUsersConfiguration
+            ?? configuration.UatUsers
+            ?? UatUsersConfiguration.Empty;
 
         var moduleFilterOptionsResult = ModuleFilterResolver.Resolve(configuration, moduleFilter);
         if (moduleFilterOptionsResult.IsFailure)
@@ -234,7 +238,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var applyStage = new Func<BuildSsdtApplicationResult, CancellationToken, Task<Result<SchemaApplyResult>>>(
             (build, ct) => _schemaApplyOrchestrator.ExecuteAsync(build.PipelineResult, applyOptions, log: null, ct));
 
-        var uatUsersOverrides = overrides.UatUsers ?? FullExportOverrides.Empty.UatUsers;
+        var uatUsersOverrides = ResolveUatUsersOverrides(overrides.UatUsers, uatUsersConfiguration);
         Func<ExtractModelApplicationResult, BuildSsdtApplicationResult, ModelUserSchemaGraph, CancellationToken, Task<Result<UatUsersApplicationResult>>>? uatStage = null;
         if (uatUsersOverrides.Enabled)
         {
@@ -284,6 +288,91 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             outcome.Apply,
             outcome.ApplyOptions,
             outcome.UatUsers);
+    }
+
+    private static UatUsersOverrides ResolveUatUsersOverrides(
+        UatUsersOverrides? overrides,
+        UatUsersConfiguration configuration)
+    {
+        configuration ??= UatUsersConfiguration.Empty;
+        var cliEnabled = overrides?.Enabled == true;
+        var configurationEnabled = ShouldEnableFromConfiguration(configuration);
+
+        if (!cliEnabled && !configurationEnabled)
+        {
+            return UatUsersOverrides.Disabled;
+        }
+
+        var connectionString = ResolveString(overrides?.ConnectionString, configuration.ConnectionString);
+        var allowedUsersSqlPath = ResolveString(overrides?.AllowedUsersSqlPath, configuration.AllowedUsersSqlPath);
+        var allowedUserIdsPath = ResolveString(overrides?.AllowedUserIdsPath, configuration.AllowedUserIdsPath);
+
+        if (string.IsNullOrWhiteSpace(connectionString)
+            || (string.IsNullOrWhiteSpace(allowedUsersSqlPath) && string.IsNullOrWhiteSpace(allowedUserIdsPath)))
+        {
+            return UatUsersOverrides.Disabled;
+        }
+
+        var includeColumns = ResolveIncludeColumns(overrides?.IncludeColumns, configuration.IncludeColumns);
+        var userSchema = ResolveString(overrides?.UserSchema, configuration.UserSchema) ?? "dbo";
+        var userTable = ResolveString(overrides?.UserTable, configuration.UserTable) ?? "User";
+        var userIdColumn = ResolveString(overrides?.UserIdColumn, configuration.UserIdColumn) ?? "Id";
+
+        return new UatUsersOverrides(
+            Enabled: true,
+            ConnectionString: connectionString,
+            UserSchema: userSchema,
+            UserTable: userTable,
+            UserIdColumn: userIdColumn,
+            IncludeColumns: includeColumns,
+            UserMapPath: ResolveString(overrides?.UserMapPath, configuration.UserMapPath),
+            AllowedUsersSqlPath: allowedUsersSqlPath,
+            AllowedUserIdsPath: allowedUserIdsPath,
+            SnapshotPath: ResolveString(overrides?.SnapshotPath, configuration.SnapshotPath),
+            UserEntityIdentifier: ResolveString(overrides?.UserEntityIdentifier, configuration.UserEntityIdentifier));
+    }
+
+    private static IReadOnlyList<string> ResolveIncludeColumns(
+        IReadOnlyList<string>? overrides,
+        IReadOnlyList<string>? configuration)
+    {
+        if (overrides is { Count: > 0 })
+        {
+            return overrides;
+        }
+
+        if (configuration is { Count: > 0 })
+        {
+            return configuration.ToArray();
+        }
+
+        return Array.Empty<string>();
+    }
+
+    private static string? ResolveString(string? primary, string? fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(primary))
+        {
+            return primary;
+        }
+
+        return string.IsNullOrWhiteSpace(fallback) ? null : fallback;
+    }
+
+    private static bool ShouldEnableFromConfiguration(UatUsersConfiguration configuration)
+    {
+        if (configuration is null)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(configuration.ConnectionString))
+        {
+            return false;
+        }
+
+        return !string.IsNullOrWhiteSpace(configuration.AllowedUsersSqlPath)
+            || !string.IsNullOrWhiteSpace(configuration.AllowedUserIdsPath);
     }
 
     private Result<ExtractModelApplicationResult> CreateReuseExtractionResult(
