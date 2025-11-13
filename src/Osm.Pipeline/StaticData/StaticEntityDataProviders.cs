@@ -106,7 +106,7 @@ public sealed class FixtureStaticEntityDataProvider : IStaticEntityDataProvider
                             $"Row for '{definition.Schema}.{definition.PhysicalName}' is missing column '{column.ColumnName}'.")));
                     }
 
-                    values[i] = ConvertJsonValue(valueElement, column);
+                    values[i] = column.NormalizeValue(ConvertJsonValue(valueElement, column));
                 }
 
                 rows.Add(StaticEntityRow.Create(values));
@@ -285,7 +285,9 @@ public sealed class SqlStaticEntityDataProvider : IStaticEntityDataProvider
                     var values = new object?[definition.Columns.Length];
                     for (var i = 0; i < definition.Columns.Length; i++)
                     {
-                        values[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        var column = definition.Columns[i];
+                        var rawValue = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        values[i] = column.NormalizeValue(rawValue);
                     }
 
                     rows.Add(StaticEntityRow.Create(values));

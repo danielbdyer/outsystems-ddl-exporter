@@ -66,9 +66,9 @@ public sealed class StaticSeedScriptExecutionTests
                 PhysicalName: "CS_STATUS",
                 EffectiveName: "CS_STATUS",
                 Columns: ImmutableArray.Create(
-                    new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                    new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false),
-                    new StaticEntitySeedColumn("IsActive", "ISACTIVE", "IsActive", "Boolean", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                    new StaticEntitySeedColumn("Id", "ID", "Id", "Identifier", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                    new StaticEntitySeedColumn("Name", "NAME", "Name", "Text", 50, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false),
+                    new StaticEntitySeedColumn("IsActive", "ISACTIVE", "IsActive", "Boolean", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
             var rows = ImmutableArray.Create(
                 StaticEntityRow.Create(new object?[] { 1, "Active", true }));

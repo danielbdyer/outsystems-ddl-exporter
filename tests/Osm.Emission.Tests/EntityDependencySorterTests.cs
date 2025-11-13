@@ -19,7 +19,7 @@ public sealed class EntityDependencySorterTests
             "OSUSR_SAMPLE_PARENT",
             "OSUSR_SAMPLE_PARENT",
             ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
 
         var childDefinition = new StaticEntitySeedTableDefinition(
             "Sample",
@@ -28,8 +28,8 @@ public sealed class EntityDependencySorterTests
             "OSUSR_SAMPLE_CHILD",
             "OSUSR_SAMPLE_CHILD",
             ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var tables = ImmutableArray.Create(
             new StaticEntityTableData(childDefinition, ImmutableArray<StaticEntityRow>.Empty),
@@ -103,8 +103,8 @@ public sealed class EntityDependencySorterTests
             "OSUSR_SAMPLE_CHILD",
             "OSUSR_SAMPLE_CHILD",
             ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var tables = ImmutableArray.Create(new StaticEntityTableData(childDefinition, ImmutableArray<StaticEntityRow>.Empty));
 
@@ -162,8 +162,8 @@ public sealed class EntityDependencySorterTests
             "OSUSR_SAMPLE_PARENT",
             "OSUSR_SAMPLE_PARENT",
             ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("ChildId", "CHILDID", "ChildId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ChildId", "CHILDID", "ChildId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var childDefinition = new StaticEntitySeedTableDefinition(
             "Sample",
@@ -172,8 +172,8 @@ public sealed class EntityDependencySorterTests
             "OSUSR_SAMPLE_CHILD",
             "OSUSR_SAMPLE_CHILD",
             ImmutableArray.Create(
-                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false),
-                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false)));
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
 
         var tables = ImmutableArray.Create(
             new StaticEntityTableData(childDefinition, ImmutableArray<StaticEntityRow>.Empty),
