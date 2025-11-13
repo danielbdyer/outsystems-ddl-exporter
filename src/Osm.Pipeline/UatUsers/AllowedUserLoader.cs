@@ -50,10 +50,21 @@ internal static class AllowedUserLoader
 
         if (!string.IsNullOrWhiteSpace(ddlPath))
         {
-            foreach (var id in LoadFromSql(ddlPath!, userSchema, userTable, userIdColumn))
+            if (LooksLikeListInput(ddlPath!))
             {
-                sqlRowCount++;
-                results.Add(id);
+                foreach (var id in LoadFromList(ddlPath!, userIdColumn))
+                {
+                    listRowCount++;
+                    results.Add(id);
+                }
+            }
+            else
+            {
+                foreach (var id in LoadFromSql(ddlPath!, userSchema, userTable, userIdColumn))
+                {
+                    sqlRowCount++;
+                    results.Add(id);
+                }
             }
         }
 
@@ -466,5 +477,55 @@ internal static class AllowedUserLoader
         }
 
         return value;
+    }
+
+    private static bool LooksLikeListInput(string path)
+    {
+        var extension = Path.GetExtension(path);
+        if (!string.IsNullOrEmpty(extension) && extension.Equals(".csv", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        try
+        {
+            foreach (var line in File.ReadLines(path))
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                var trimmed = line.TrimStart();
+                if (trimmed.StartsWith('#'))
+                {
+                    continue;
+                }
+
+                if (trimmed.StartsWith("insert", StringComparison.OrdinalIgnoreCase)
+                    || trimmed.StartsWith("set", StringComparison.OrdinalIgnoreCase)
+                    || trimmed.StartsWith("create", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (trimmed.Contains(',', StringComparison.Ordinal) || trimmed.Contains('"'))
+                {
+                    return true;
+                }
+
+                return TryParseSingleValue(trimmed, out _);
+            }
+        }
+        catch (IOException)
+        {
+            // Fall through and treat as SQL to preserve the existing error message when the file is missing.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Fall through to SQL parsing so the caller receives the same permission exception as before.
+        }
+
+        return false;
     }
 }

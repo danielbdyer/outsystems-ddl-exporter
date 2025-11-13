@@ -36,7 +36,9 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
     };
     private readonly Option<string?> _outputOption = new("--out", () => "./_artifacts", "Root directory for artifacts.");
     private readonly Option<string?> _userMapOption = new("--user-map", "Path to a CSV containing SourceUserId,TargetUserId mappings.");
-    private readonly Option<string?> _userDdlOption = new("--user-ddl", "SQL or CSV export of dbo.User containing allowed user identifiers.");
+    private readonly Option<string?> _userDdlOption = new(
+        "--user-ddl",
+        "SQL seed script or CSV export of dbo.User containing allowed user identifiers (auto-detected).");
     private readonly Option<string?> _userIdsOption = new("--user-ids", "Optional CSV or text file containing one allowed user identifier per row.");
     private readonly Option<string?> _snapshotOption = new("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
     private readonly Option<string?> _userEntityIdOption = new("--user-entity-id", "Optional override identifier for the user entity (accepts btGUID*GUID, physical name, or numeric id).");

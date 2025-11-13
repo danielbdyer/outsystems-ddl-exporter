@@ -76,6 +76,17 @@ public class UatUsersCommandFactoryTests
         Assert.Equal(new[] { "Name", "EMail" }, options.IncludeColumns);
     }
 
+    [Fact]
+    public async Task Invoke_AllowsCsvViaUserDdlOption()
+    {
+        var command = "uat-users --model model.json --uat-conn Server=.;Database=UAT; --user-ddl allowed.csv";
+        var (options, exitCode) = await InvokeAsync(command);
+
+        Assert.Equal(5, exitCode);
+        Assert.Equal(Path.GetFullPath("allowed.csv"), options.AllowedUsersSqlPath);
+        Assert.Null(options.AllowedUserIdsPath);
+    }
+
     private static async Task<(UatUsersOptions Options, int ExitCode)> InvokeAsync(
         string commandLine,
         CliConfiguration? configuration = null)

@@ -82,6 +82,40 @@ SET IDENTITY_INSERT [dbo].[User] OFF;", Encoding.UTF8);
     }
 
     [Fact]
+    public async Task ReadsIdentifiersFromCsvProvidedViaSqlArgument()
+    {
+        using var temp = new TemporaryDirectory();
+        var csvPath = Path.Combine(temp.Path, "dbo.User.csv");
+        File.WriteAllLines(csvPath, new[]
+        {
+            "Id,Name",
+            "1,A",
+            "2,B"
+        });
+
+        var context = new UatUsersContext(
+            new StubSchemaGraph(),
+            new UatUsersArtifacts(temp.Path),
+            new ThrowingConnectionFactory(),
+            "dbo",
+            "User",
+            "Id",
+            includeColumns: null,
+            Path.Combine(temp.Path, "map.csv"),
+            allowedUsersSqlPath: csvPath,
+            allowedUserIdsPath: null,
+            snapshotPath: null,
+            userEntityIdentifier: null,
+            fromLiveMetadata: false,
+            sourceFingerprint: "test/db");
+
+        var step = new LoadAllowedUsersStep();
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(new[] { "1", "2" }, context.AllowedUserIds.Select(id => id.Value));
+    }
+
+    [Fact]
     public async Task ReadsIdentifiersFromCustomSchemaAndTable()
     {
         using var temp = new TemporaryDirectory();
