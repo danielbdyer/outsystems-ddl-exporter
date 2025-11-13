@@ -267,6 +267,7 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
                 builder["uatUsers.previewPath"] = Path.Combine(uatRoot, "01_preview.csv");
                 builder["uatUsers.applyScriptPath"] = Path.Combine(uatRoot, "02_apply_user_remap.sql");
                 builder["uatUsers.catalogPath"] = Path.Combine(uatRoot, "03_catalog.txt");
+                builder["uatUsers.idempotentEmission"] = uatContext.IdempotentEmission ? "true" : "false";
                 var defaultMapPath = uatContext.Artifacts.GetDefaultUserMapPath();
                 if (!string.IsNullOrWhiteSpace(defaultMapPath))
                 {

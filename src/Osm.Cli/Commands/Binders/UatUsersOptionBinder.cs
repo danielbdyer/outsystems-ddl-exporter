@@ -34,6 +34,7 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
         QaInventoryOption = new Option<string?>("--qa-user-inventory", "CSV export of QA dbo.User(Id, Username, EMail, Name, External_Id, Is_Active, Creation_Date, Last_Login).");
         SnapshotOption = new Option<string?>("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
         UserEntityIdOption = new Option<string?>("--user-entity-id", "Optional override identifier for the user entity (accepts btGUID*GUID, physical name, or numeric id).");
+        IdempotentEmissionOption = new Option<bool>("--uat-users-idempotent-emission", () => false, "Only rewrite uat-users artifacts when contents change.");
     }
 
     public Option<bool> EnableOption { get; }
@@ -56,6 +57,8 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
 
     public Option<string?> UserEntityIdOption { get; }
 
+    public Option<bool> IdempotentEmissionOption { get; }
+
     public IEnumerable<Option> Options
     {
         get
@@ -70,6 +73,7 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
             yield return QaInventoryOption;
             yield return SnapshotOption;
             yield return UserEntityIdOption;
+            yield return IdempotentEmissionOption;
         }
     }
 
@@ -114,7 +118,8 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
             UatUserInventoryPath: parseResult.GetValueForOption(UatInventoryOption),
             QaUserInventoryPath: parseResult.GetValueForOption(QaInventoryOption),
             SnapshotPath: parseResult.GetValueForOption(SnapshotOption),
-            UserEntityIdentifier: parseResult.GetValueForOption(UserEntityIdOption));
+            UserEntityIdentifier: parseResult.GetValueForOption(UserEntityIdOption),
+            IdempotentEmission: parseResult.GetValueForOption(IdempotentEmissionOption));
     }
 
     internal static (string Schema, string Table) SplitTableIdentifier(string identifier)

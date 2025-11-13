@@ -80,6 +80,66 @@ public sealed class EmitArtifactsStepTests
         }, reportLines);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_DoesNotRewriteArtifactsWhenIdempotentEmissionEnabled()
+    {
+        using var temp = new TemporaryDirectory();
+        var artifacts = new UatUsersArtifacts(temp.Path, idempotentEmission: true);
+        var uatInventoryPath = Path.Combine(temp.Path, "uat.csv");
+        File.WriteAllText(uatInventoryPath, "Id,Username\n1,uat\n");
+        var qaInventoryPath = Path.Combine(temp.Path, "qa.csv");
+        File.WriteAllText(qaInventoryPath, "Id,Username\n1,qa\n");
+        var context = new UatUsersContext(
+            new StubSchemaGraph(),
+            artifacts,
+            new ThrowingConnectionFactory(),
+            "dbo",
+            "User",
+            "Id",
+            includeColumns: null,
+            Path.Combine(temp.Path, "map.csv"),
+            uatInventoryPath,
+            qaInventoryPath,
+            snapshotPath: null,
+            userEntityIdentifier: null,
+            fromLiveMetadata: false,
+            sourceFingerprint: "test/db",
+            idempotentEmission: true);
+
+        context.SetAllowedUserIds(new[] { UserIdentifier.FromString("200") });
+        context.SetOrphanUserIds(new[] { UserIdentifier.FromString("100") });
+
+        var catalog = new List<UserFkColumn>
+        {
+            new("dbo", "Orders", "CreatedBy", "FK_Orders_Users_CreatedBy")
+        };
+        context.SetUserFkCatalog(catalog);
+        context.SetForeignKeyValueCounts(new Dictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>
+        {
+            [catalog[0]] = new Dictionary<UserIdentifier, long> { { UserIdentifier.FromString("100"), 1L } }
+        });
+        context.SetUserMap(new List<UserMappingEntry> { new(UserIdentifier.FromString("100"), UserIdentifier.FromString("200"), null) });
+        context.SetMatchingResults(new List<UserMatchingResult>
+        {
+            UserMatchingResult.Create(
+                UserIdentifier.FromString("100"),
+                UserIdentifier.FromString("200"),
+                "CaseInsensitiveEmail",
+                "Matched email")
+        });
+
+        var step = new EmitArtifactsStep();
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        var scriptPath = Path.Combine(temp.Path, "uat-users", "02_apply_user_remap.sql");
+        var baseline = DateTime.UtcNow.AddMinutes(-10);
+        File.SetLastWriteTimeUtc(scriptPath, baseline);
+
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(baseline, File.GetLastWriteTimeUtc(scriptPath));
+    }
+
     private sealed class StubSchemaGraph : IUserSchemaGraph
     {
         public Task<IReadOnlyList<ForeignKeyDefinition>> GetForeignKeysAsync(CancellationToken cancellationToken)

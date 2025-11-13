@@ -58,6 +58,7 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
     {
         AllowMultipleArgumentsPerToken = true
     };
+    private readonly Option<bool> _idempotentEmissionOption = new("--idempotent-emission", () => false, "Only rewrite artifacts when their contents change.");
 
     public UatUsersCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -89,8 +90,11 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             _matchingAttributeOption,
             _matchingRegexOption,
             _fallbackModeOption,
-            _fallbackTargetOption
+            _fallbackTargetOption,
+            _idempotentEmissionOption
         };
+
+        _idempotentEmissionOption.AddAlias("--uat-users-idempotent-emission");
 
         foreach (var option in _sqlBinder.Options)
         {
@@ -134,6 +138,7 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
         var fromLiveFromConfig = !fromLiveSpecified && configuration.FromLiveMetadata.HasValue;
 
         var connectionString = sqlOverrides.ConnectionString ?? cliConfiguration.Sql.ConnectionString;
+        var connectionFromConfig = sqlOverrides.ConnectionString is null && !string.IsNullOrWhiteSpace(cliConfiguration.Sql.ConnectionString);
 
         var (userSchemaInput, schemaFromConfig) = ResolveStringOption(parseResult, _userSchemaOption, configuration.UserSchema, "dbo");
         var (userTableInput, tableFromConfig) = ResolveStringOption(parseResult, _userTableOption, configuration.UserTable, "User");
@@ -176,6 +181,12 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             ? parseResult.GetValueForOption(_fallbackTargetOption) ?? Array.Empty<string>()
             : (configuration.FallbackTargets.Count > 0 ? configuration.FallbackTargets.ToArray() : Array.Empty<string>());
         var fallbackTargetsFromConfig = !fallbackTargetsSpecified && configuration.FallbackTargets.Count > 0;
+
+        var idempotentSpecified = parseResult.HasOption(_idempotentEmissionOption);
+        var idempotentEmission = idempotentSpecified
+            ? parseResult.GetValueForOption(_idempotentEmissionOption)
+            : configuration.IdempotentEmission ?? false;
+        var idempotentFromConfig = !idempotentSpecified && configuration.IdempotentEmission.HasValue;
 
         UserMatchingStrategy matchingStrategy;
         UserFallbackAssignmentMode fallbackMode;
@@ -259,9 +270,9 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
                 matchingRegex,
                 fallbackMode,
                 fallbackTargets,
+                idempotentEmission,
                 new UatUsersOptionOrigins(
                     ModelPathFromConfiguration: modelFromConfig,
-                    ConnectionStringFromConfiguration: connectionFromConfig,
                     FromLiveMetadataFromConfiguration: fromLiveFromConfig,
                     UserSchemaFromConfiguration: schemaFromConfig,
                     UserTableFromConfiguration: tableFromConfig,
@@ -277,7 +288,9 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
                     MatchingAttributeFromConfiguration: matchingAttributeFromConfig,
                     MatchingRegexFromConfiguration: matchingRegexFromConfig,
                     FallbackModeFromConfiguration: fallbackModeFromConfig,
-                    FallbackTargetsFromConfiguration: fallbackTargetsFromConfig));
+                    FallbackTargetsFromConfiguration: fallbackTargetsFromConfig,
+                    ConnectionStringFromConfiguration: connectionFromConfig,
+                    IdempotentEmissionFromConfiguration: idempotentFromConfig));
         }
         catch (Exception ex) when (ex is ArgumentException or FormatException)
         {

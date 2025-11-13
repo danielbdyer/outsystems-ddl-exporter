@@ -17,7 +17,9 @@ public sealed record UatUsersOptionOrigins(
     bool MatchingAttributeFromConfiguration,
     bool MatchingRegexFromConfiguration,
     bool FallbackModeFromConfiguration,
-    bool FallbackTargetsFromConfiguration)
+    bool FallbackTargetsFromConfiguration,
+    bool ConnectionStringFromConfiguration,
+    bool IdempotentEmissionFromConfiguration)
 {
     public static UatUsersOptionOrigins None { get; } = new(
         ModelPathFromConfiguration: false,
@@ -36,5 +38,7 @@ public sealed record UatUsersOptionOrigins(
         MatchingAttributeFromConfiguration: false,
         MatchingRegexFromConfiguration: false,
         FallbackModeFromConfiguration: false,
-        FallbackTargetsFromConfiguration: false);
+        FallbackTargetsFromConfiguration: false,
+        ConnectionStringFromConfiguration: false,
+        IdempotentEmissionFromConfiguration: false);
 }

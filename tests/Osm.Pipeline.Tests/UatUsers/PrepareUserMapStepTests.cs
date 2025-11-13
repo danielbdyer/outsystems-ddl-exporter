@@ -79,9 +79,36 @@ public sealed class PrepareUserMapStepTests
         }, mapLines);
     }
 
-    private static UatUsersContext CreateContext(string root)
+    [Fact]
+    public async Task ExecuteAsync_DoesNotRewriteUserMapWhenIdempotentEmissionEnabled()
     {
-        var artifacts = new UatUsersArtifacts(root);
+        using var temp = new TemporaryDirectory();
+        var context = CreateContext(temp.Path, idempotentEmission: true);
+        context.SetUserFkCatalog(new List<UserFkColumn>());
+        context.SetAllowedUserIds(new[]
+        {
+            UserIdentifier.FromString("1"),
+            UserIdentifier.FromString("2")
+        });
+        context.SetOrphanUserIds(new[] { UserIdentifier.FromString("100") });
+        context.SetForeignKeyValueCounts(new Dictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>());
+        context.SetAutomaticMappings(Array.Empty<UserMappingEntry>());
+
+        var step = new PrepareUserMapStep();
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        var mapPath = context.UserMapPath!;
+        var baseline = DateTime.UtcNow.AddMinutes(-5);
+        File.SetLastWriteTimeUtc(mapPath, baseline);
+
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(baseline, File.GetLastWriteTimeUtc(mapPath));
+    }
+
+    private static UatUsersContext CreateContext(string root, bool idempotentEmission = false)
+    {
+        var artifacts = new UatUsersArtifacts(root, idempotentEmission);
         var connectionFactory = new ThrowingConnectionFactory();
         var uatInventoryPath = Path.Combine(root, "uat.csv");
         File.WriteAllText(uatInventoryPath, "Id,Username\n1,uat\n");
@@ -102,7 +129,8 @@ public sealed class PrepareUserMapStepTests
             snapshotPath: null,
             userEntityIdentifier: null,
             fromLiveMetadata: false,
-            sourceFingerprint: "test/db");
+            sourceFingerprint: "test/db",
+            idempotentEmission: idempotentEmission);
     }
 
     private sealed class StubSchemaGraph : IUserSchemaGraph

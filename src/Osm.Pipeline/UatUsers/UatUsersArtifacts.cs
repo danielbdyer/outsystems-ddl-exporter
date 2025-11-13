@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
 
 namespace Osm.Pipeline.UatUsers;
@@ -9,8 +8,9 @@ namespace Osm.Pipeline.UatUsers;
 public sealed class UatUsersArtifacts
 {
     private readonly string _artifactRoot;
+    private readonly bool _idempotentEmission;
 
-    public UatUsersArtifacts(string outputDirectory)
+    public UatUsersArtifacts(string outputDirectory, bool idempotentEmission = false)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -20,6 +20,7 @@ public sealed class UatUsersArtifacts
         Root = Path.GetFullPath(outputDirectory);
         _artifactRoot = Path.Combine(Root, "uat-users");
         Directory.CreateDirectory(_artifactRoot);
+        _idempotentEmission = idempotentEmission;
     }
 
     public string Root { get; }
@@ -41,8 +42,14 @@ public sealed class UatUsersArtifacts
             throw new ArgumentNullException(nameof(lines));
         }
 
+        var builder = new StringBuilder();
+        foreach (var line in lines)
+        {
+            builder.AppendLine(line ?? string.Empty);
+        }
+
         var path = ResolvePath(relativePath);
-        File.WriteAllLines(path, lines);
+        IdempotentFileWriter.WriteAllText(path, builder.ToString(), _idempotentEmission);
     }
 
     public void WriteText(string relativePath, string contents)
@@ -53,7 +60,7 @@ public sealed class UatUsersArtifacts
         }
 
         var path = ResolvePath(relativePath);
-        File.WriteAllText(path, contents ?? string.Empty, Encoding.UTF8);
+        IdempotentFileWriter.WriteAllText(path, contents ?? string.Empty, _idempotentEmission);
     }
 
     public void WriteCsv(string relativePath, IEnumerable<IReadOnlyList<string>> rows)
@@ -63,12 +70,14 @@ public sealed class UatUsersArtifacts
             throw new ArgumentNullException(nameof(rows));
         }
 
-        var path = ResolvePath(relativePath);
-        using var writer = new StreamWriter(path, false, Encoding.UTF8);
+        var builder = new StringBuilder();
         foreach (var row in rows)
         {
-            WriteCsvRow(writer, row);
+            WriteCsvRow(builder, row);
         }
+
+        var path = ResolvePath(relativePath);
+        IdempotentFileWriter.WriteAllText(path, builder.ToString(), _idempotentEmission);
     }
 
     private string ResolvePath(string relativePath)
@@ -84,10 +93,25 @@ public sealed class UatUsersArtifacts
         return path;
     }
 
-    private static void WriteCsvRow(TextWriter writer, IReadOnlyList<string> cells)
+    private static void WriteCsvRow(StringBuilder builder, IReadOnlyList<string> cells)
     {
-        var joined = cells.Select(EscapeCsvCell);
-        writer.WriteLine(string.Join(',', joined));
+        if (cells is null)
+        {
+            builder.AppendLine();
+            return;
+        }
+
+        for (var i = 0; i < cells.Count; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(',');
+            }
+
+            builder.Append(EscapeCsvCell(cells[i]));
+        }
+
+        builder.AppendLine();
     }
 
     private static string EscapeCsvCell(string value)

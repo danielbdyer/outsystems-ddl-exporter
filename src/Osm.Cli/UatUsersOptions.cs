@@ -27,6 +27,7 @@ public sealed class UatUsersOptions
         string? matchingRegexPattern,
         UserFallbackAssignmentMode fallbackMode,
         IEnumerable<string>? fallbackTargets,
+        bool idempotentEmission,
         UatUsersOptionOrigins? origins = null)
     {
         ModelPath = string.IsNullOrWhiteSpace(modelPath) ? null : Path.GetFullPath(modelPath.Trim());
@@ -62,6 +63,7 @@ public sealed class UatUsersOptions
         MatchingRegexPattern = string.IsNullOrWhiteSpace(matchingRegexPattern) ? null : matchingRegexPattern.Trim();
         FallbackMode = fallbackMode;
         FallbackTargets = UserMatchingConfigurationHelper.NormalizeFallbackTargets(fallbackTargets);
+        IdempotentEmission = idempotentEmission;
         Origins = origins ?? UatUsersOptionOrigins.None;
     }
 
@@ -100,6 +102,8 @@ public sealed class UatUsersOptions
     public UserFallbackAssignmentMode FallbackMode { get; }
 
     public ImmutableArray<UserIdentifier> FallbackTargets { get; }
+
+    public bool IdempotentEmission { get; }
 
     public UatUsersOptionOrigins Origins { get; }
 
