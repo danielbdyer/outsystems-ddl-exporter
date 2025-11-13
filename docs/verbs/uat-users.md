@@ -6,7 +6,7 @@ The `uat-users` verb discovers every foreign-key column that references `dbo.[Us
 
 * **Deterministic discovery** – Metadata is sourced from the OutSystems model (or live metadata when `--from-live` is supplied) and flattened into a sorted, deduplicated catalog. Each catalog entry produces its own update block in the SQL script.
 * **Attribute-level fallback** – When exported models omit explicit relationships to the Users table, provide `--user-entity-id` (accepts `btGUID*GUID`, numeric IDs, entity names, or physical table names). The command synthesizes catalog entries directly from attribute metadata so remediation can proceed without a fully coherent model.
-* **Allowed-user hydration** – Either a `dbo.User` seed script (`--user-ddl`) or a plain identifier list (`--user-ids`) is parsed to determine the set of in-scope users. Any FK values outside of that set are treated as orphans.
+* **Allowed-user hydration** – Either a `dbo.User` seed script (`--user-ddl`) or a plain identifier list (`--user-ids`) is parsed to determine the set of in-scope users. `--user-ddl` auto-detects CSV exports in addition to `.sql` scripts, so operators can reuse a single flag regardless of how the identifiers were captured. Any FK values outside of that set are treated as orphans.
 * **Live data analysis** – Using the supplied UAT connection, every catalogued column is scanned to collect distinct user identifiers and row counts. Results can be snapshotted to disk via `--snapshot` for repeatable dry runs.
 * **Operator-controlled mappings** – `00_user_map.template.csv` lists every orphan. Populate the corresponding `00_user_map.csv` (or provide `--user-map`) with `SourceUserId,TargetUserId` pairs. Missing mappings are surfaced in both the preview file and the generated SQL comments.
 * **Guarded apply script** – `02_apply_user_remap.sql` creates `#UserRemap` and `#Changes` temp tables, validates target existence, protects `NULL` values, and emits a summary. Updates only occur when `SourceUserId <> TargetUserId`, making the script idempotent and rerunnable.
@@ -20,7 +20,7 @@ uat-users
   [--model <path>]                  # Required unless --from-live is supplied
   [--from-live]                     # Query metadata from the live UAT database
   --uat-conn <connection string>    # Required; used for discovery and data analysis
-  --user-ddl <path>                 # SQL or CSV export of dbo.User(Id, ...)
+  --user-ddl <path>                 # SQL seed script or CSV export of dbo.User(Id, ...) (auto-detected)
   [--user-ids <path>]               # Optional CSV/txt list of allowed user identifiers
   [--snapshot <path>]               # Optional JSON cache of FK analysis
   [--user-schema <schema>]          # Default: dbo
@@ -54,7 +54,7 @@ Key expectations:
 * The manifest’s `DynamicArtifacts` array lists the published files (`uat-users-preview`, `uat-users-script`, `uat-users-catalog`, `uat-users-map-template`, and both map variants) so CI/CD can archive the run.
 * The metadata block exposes `uatUsers.*` keys (`enabled`, `artifactRoot`, `applyScriptPath`, `previewPath`, `catalogPath`, `allowedUsersSqlPath`, etc.) to record provenance for postmortems and guardrails.
 
-Pointing `--user-ddl` at the QA `dbo.User` export hydrates the allowed user list; pass `--user-ids` for ad-hoc scenarios. If the primary map lives outside `<build-out>/uat-users`, include `--user-map` so the pipeline synchronizes the custom CSV into the canonical location.
+Pointing `--user-ddl` at the QA `dbo.User` export (SQL or CSV) hydrates the allowed user list; pass `--user-ids` for ad-hoc scenarios. If the primary map lives outside `<build-out>/uat-users`, include `--user-map` so the pipeline synchronizes the custom CSV into the canonical location.
 
 ## Primary Artifacts (written to `<out>/uat-users`)
 

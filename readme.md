@@ -105,11 +105,13 @@
      --build-out ./out/full-export \
      --enable-uat-users \
      --uat-conn "Server=uat;Database=UAT;TrustServerCertificate=True" \
-     --user-ddl ./extracts/dbo.User.sql \
-     --user-map ./inputs/uat_user_map.csv
-   ```
+    --user-ddl ./extracts/dbo.User.sql \
+    --user-map ./inputs/uat_user_map.csv
+  ```
 
-   The run produces a `uat-users` block in `full-export.manifest.json` (`Stages[].Name == "uat-users"`) plus a dedicated artifact root at `<build-out>/uat-users`. Expect to see:
+  The `--user-ddl` flag now auto-detects CSV exports as well as SQL scripts, so pointing it at `./extracts/dbo.User.csv` works identically when the seed set was captured via a spreadsheet export.
+
+  The run produces a `uat-users` block in `full-export.manifest.json` (`Stages[].Name == "uat-users"`) plus a dedicated artifact root at `<build-out>/uat-users`. Expect to see:
 
    * `00_user_map.template.csv` – orphan list captured from QA. Copy the template to `00_user_map.csv` (or supply `--user-map`) and fill in the `TargetUserId` values the UAT rollout should adopt.
    * `01_preview.csv` – per-table preview of `OldUserId → NewUserId` row counts so QA can validate remap coverage before shipping.

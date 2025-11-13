@@ -29,7 +29,9 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
             AllowMultipleArgumentsPerToken = true
         };
         UserMapOption = new Option<string?>("--user-map", "Path to a CSV containing SourceUserId,TargetUserId mappings.");
-        UserDdlOption = new Option<string?>("--user-ddl", "SQL or CSV export of dbo.User containing allowed user identifiers.");
+        UserDdlOption = new Option<string?>(
+            "--user-ddl",
+            "SQL seed script or CSV export of dbo.User containing allowed user identifiers (auto-detected).");
         UserIdsOption = new Option<string?>("--user-ids", "Optional CSV or text file containing one allowed user identifier per row.");
         SnapshotOption = new Option<string?>("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
         UserEntityIdOption = new Option<string?>("--user-entity-id", "Optional override identifier for the user entity (accepts btGUID*GUID, physical name, or numeric id).");
