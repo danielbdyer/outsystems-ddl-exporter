@@ -122,6 +122,83 @@ public class SchemaApplyOrchestratorTests
         Assert.False(apply.StaticSeedsApplied);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_WithNonDestructiveMode_SkipsSeedValidation()
+    {
+        var safeScript = Path.Combine(Path.GetTempPath(), "apply-safe.sql");
+        var seedScript = Path.Combine(Path.GetTempPath(), "static-seed.sql");
+        var build = CreateBuildResult(safeScript, seedScript, contradictionCount: 0);
+
+        var applier = new RecordingSchemaDataApplier
+        {
+            Outcome = Result<SchemaDataApplyOutcome>.Success(
+                new SchemaDataApplyOutcome(
+                    ImmutableArray.Create(safeScript),
+                    ImmutableArray.Create(seedScript),
+                    ExecutedBatchCount: 2,
+                    Duration: TimeSpan.FromSeconds(1),
+                    MaxBatchSizeBytes: 1024,
+                    StreamingEnabled: true,
+                    StaticSeedValidation: StaticSeedValidationSummary.NotAttempted))
+        };
+
+        var orchestrator = new SchemaApplyOrchestrator(applier);
+        var options = new SchemaApplyOptions(
+            Enabled: true,
+            ConnectionString: "Server=(local);Database=Osm;Trusted_Connection=True;",
+            Authentication: new SqlAuthenticationSettings(null, null, null, null),
+            CommandTimeoutSeconds: 30,
+            ApplySafeScript: true,
+            ApplyStaticSeeds: true,
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.NonDestructive);
+
+        var result = await orchestrator.ExecuteAsync(build, options);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(applier.LastRequest);
+        Assert.Equal(StaticSeedSynchronizationMode.NonDestructive, applier.LastRequest!.StaticSeedSynchronizationMode);
+        Assert.False(result.Value.StaticSeedValidation.Attempted);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithAuthoritativeMode_AttemptsValidation()
+    {
+        var safeScript = Path.Combine(Path.GetTempPath(), "apply-safe.sql");
+        var seedScript = Path.Combine(Path.GetTempPath(), "static-seed.sql");
+        var build = CreateBuildResult(safeScript, seedScript, contradictionCount: 0);
+
+        var applier = new RecordingSchemaDataApplier
+        {
+            Outcome = Result<SchemaDataApplyOutcome>.Success(
+                new SchemaDataApplyOutcome(
+                    ImmutableArray.Create(safeScript),
+                    ImmutableArray.Create(seedScript),
+                    ExecutedBatchCount: 2,
+                    Duration: TimeSpan.FromSeconds(1),
+                    MaxBatchSizeBytes: 1024,
+                    StreamingEnabled: true,
+                    StaticSeedValidation: StaticSeedValidationSummary.Success))
+        };
+
+        var orchestrator = new SchemaApplyOrchestrator(applier);
+        var options = new SchemaApplyOptions(
+            Enabled: true,
+            ConnectionString: "Server=(local);Database=Osm;Trusted_Connection=True;",
+            Authentication: new SqlAuthenticationSettings(null, null, null, null),
+            CommandTimeoutSeconds: 30,
+            ApplySafeScript: true,
+            ApplyStaticSeeds: true,
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.Authoritative);
+
+        var result = await orchestrator.ExecuteAsync(build, options);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(applier.LastRequest);
+        Assert.Equal(StaticSeedSynchronizationMode.Authoritative, applier.LastRequest!.StaticSeedSynchronizationMode);
+        Assert.True(result.Value.StaticSeedValidation.Attempted);
+        Assert.False(result.Value.StaticSeedValidation.Failed);
+    }
+
     private static BuildSsdtPipelineResult CreateBuildResult(
         string safeScriptPath,
         string seedScriptPath,

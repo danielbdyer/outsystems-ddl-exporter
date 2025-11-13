@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Osm.Cli.Commands;
 using Osm.Cli.Commands.Binders;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.LoadHarness;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
@@ -157,6 +158,7 @@ public class PipelineCommandFactorySharedTests
                     "--apply-access-token APPLYTOKEN",
                     "--apply-safe-script false",
                     "--apply-static-seeds true",
+                    "--apply-static-seed-mode Authoritative",
                     "--remediation-generate-pre-scripts false",
                     "--remediation-max-rows-default-backfill 250",
                     "--remediation-sentinel-numeric 999",
@@ -247,6 +249,9 @@ public class PipelineCommandFactorySharedTests
                     Assert.Equal("APPLYTOKEN", typed.Overrides.Apply.AccessToken);
                     Assert.False(typed.Overrides.Apply.ApplySafeScript);
                     Assert.True(typed.Overrides.Apply.ApplyStaticSeeds);
+                    Assert.Equal(
+                        StaticSeedSynchronizationMode.Authoritative,
+                        typed.Overrides.Apply.StaticSeedSynchronizationMode);
 
                     Assert.NotNull(typed.Overrides.UatUsers);
                     Assert.False(typed.Overrides.UatUsers!.Enabled);

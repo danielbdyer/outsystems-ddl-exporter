@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
+using Osm.Pipeline.SqlExtraction;
 using Osm.Pipeline.UatUsers;
 
 namespace Osm.Pipeline.Orchestration;

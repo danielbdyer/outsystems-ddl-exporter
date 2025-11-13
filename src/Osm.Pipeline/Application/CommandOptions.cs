@@ -94,9 +94,10 @@ public sealed record SchemaApplyOverrides(
     string? ApplicationName,
     string? AccessToken,
     bool? ApplySafeScript,
-    bool? ApplyStaticSeeds)
+    bool? ApplyStaticSeeds,
+    StaticSeedSynchronizationMode? StaticSeedSynchronizationMode)
 {
-    public static SchemaApplyOverrides Empty { get; } = new(null, null, null, null, null, null, null, null, null);
+    public static SchemaApplyOverrides Empty { get; } = new(null, null, null, null, null, null, null, null, null, null);
 }
 
 public sealed record UatUsersOverrides(

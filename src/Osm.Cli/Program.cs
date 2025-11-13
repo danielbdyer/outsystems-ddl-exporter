@@ -11,6 +11,7 @@ using Osm.Cli.Commands.Binders;
 using Osm.Cli.Commands.Options;
 using Osm.LoadHarness;
 using Osm.Pipeline.Runtime;
+using Osm.Pipeline.Runtime.Verbs;
 
 var hostBuilder = Host.CreateApplicationBuilder(args);
 hostBuilder.Services.AddLogging(static builder => builder.AddSimpleConsole());
