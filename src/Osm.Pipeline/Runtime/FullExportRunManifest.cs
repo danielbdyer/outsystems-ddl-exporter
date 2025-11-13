@@ -88,6 +88,18 @@ public sealed record FullExportRunManifest(
         stagesBuilder.Add(profileStage);
         stagesBuilder.Add(buildStage);
 
+        var staticSeedStage = CreateStaticSeedStage(result.ApplicationResult.Build);
+        if (staticSeedStage is not null)
+        {
+            stagesBuilder.Add(staticSeedStage);
+        }
+
+        var dynamicInsertStage = CreateDynamicInsertStage(result.ApplicationResult.Build);
+        if (dynamicInsertStage is not null)
+        {
+            stagesBuilder.Add(dynamicInsertStage);
+        }
+
         var uatUsersStage = CreateUatUsersStage(result.ApplicationResult.UatUsers);
         if (uatUsersStage is not null)
         {
@@ -263,29 +275,6 @@ public sealed record FullExportRunManifest(
         AddPathIfPresent(artifacts, "remediationScript", pipelineResult.RemediationScriptPath);
         AddPathIfPresent(artifacts, "sqlProject", pipelineResult.SqlProjectPath);
 
-        if (!pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty)
-        {
-            artifacts["staticSeedScripts"] = string.Join(";", pipelineResult.StaticSeedScriptPaths);
-            var staticSeedRoot = ResolveStaticSeedRoot(pipelineResult);
-            if (!string.IsNullOrWhiteSpace(staticSeedRoot))
-            {
-                artifacts["staticSeedRoot"] = staticSeedRoot;
-            }
-        }
-        artifacts["staticSeedOrdering"] = pipelineResult.StaticSeedTopologicalOrderApplied ? "topological" : "alphabetical";
-
-        if (!pipelineResult.DynamicInsertScriptPaths.IsDefaultOrEmpty)
-        {
-            artifacts["dynamicInsertScripts"] = string.Join(";", pipelineResult.DynamicInsertScriptPaths);
-            var dynamicInsertRoot = ResolveDynamicInsertRoot(pipelineResult);
-            if (!string.IsNullOrWhiteSpace(dynamicInsertRoot))
-            {
-                artifacts["dynamicInsertRoot"] = dynamicInsertRoot;
-            }
-        }
-        artifacts["dynamicInsertMode"] = pipelineResult.DynamicInsertOutputMode.ToString();
-        artifacts["dynamicInsertOrdering"] = pipelineResult.DynamicInsertTopologicalOrderApplied ? "topological" : "alphabetical";
-
         if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty)
         {
             artifacts["telemetryPackages"] = string.Join(";", pipelineResult.TelemetryPackagePaths);
@@ -308,6 +297,77 @@ public sealed record FullExportRunManifest(
             CompletedAtUtc: timing.CompletedAtUtc,
             Duration: timing.Duration,
             Warnings: warnings.ToImmutable(),
+            Artifacts: artifacts.ToImmutable());
+    }
+
+    private static FullExportStageManifest? CreateStaticSeedStage(BuildSsdtApplicationResult result)
+    {
+        if (result is null)
+        {
+            throw new ArgumentNullException(nameof(result));
+        }
+
+        var pipelineResult = result.PipelineResult;
+        if (pipelineResult.StaticSeedScriptPaths.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var timing = ComputeTiming(pipelineResult.ExecutionLog);
+        var artifacts = ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var scriptCount = pipelineResult.StaticSeedScriptPaths.Length.ToString(CultureInfo.InvariantCulture);
+        artifacts["scriptCount"] = scriptCount;
+        artifacts["scripts"] = string.Join(";", pipelineResult.StaticSeedScriptPaths);
+        var staticSeedRoot = ResolveStaticSeedRoot(pipelineResult);
+        if (!string.IsNullOrWhiteSpace(staticSeedRoot))
+        {
+            artifacts["root"] = staticSeedRoot;
+        }
+
+        artifacts["ordering"] = pipelineResult.StaticSeedTopologicalOrderApplied ? "topological" : "alphabetical";
+
+        return new FullExportStageManifest(
+            Name: "static-seed",
+            StartedAtUtc: timing.StartedAtUtc,
+            CompletedAtUtc: timing.CompletedAtUtc,
+            Duration: timing.Duration,
+            Warnings: ImmutableArray<string>.Empty,
+            Artifacts: artifacts.ToImmutable());
+    }
+
+    private static FullExportStageManifest? CreateDynamicInsertStage(BuildSsdtApplicationResult result)
+    {
+        if (result is null)
+        {
+            throw new ArgumentNullException(nameof(result));
+        }
+
+        var pipelineResult = result.PipelineResult;
+        if (pipelineResult.DynamicInsertScriptPaths.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var timing = ComputeTiming(pipelineResult.ExecutionLog);
+        var artifacts = ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var scriptCount = pipelineResult.DynamicInsertScriptPaths.Length.ToString(CultureInfo.InvariantCulture);
+        artifacts["scriptCount"] = scriptCount;
+        artifacts["scripts"] = string.Join(";", pipelineResult.DynamicInsertScriptPaths);
+        var dynamicInsertRoot = ResolveDynamicInsertRoot(pipelineResult);
+        if (!string.IsNullOrWhiteSpace(dynamicInsertRoot))
+        {
+            artifacts["root"] = dynamicInsertRoot;
+        }
+
+        artifacts["ordering"] = pipelineResult.DynamicInsertTopologicalOrderApplied ? "topological" : "alphabetical";
+        artifacts["mode"] = pipelineResult.DynamicInsertOutputMode.ToString();
+
+        return new FullExportStageManifest(
+            Name: "dynamic-insert",
+            StartedAtUtc: timing.StartedAtUtc,
+            CompletedAtUtc: timing.CompletedAtUtc,
+            Duration: timing.Duration,
+            Warnings: ImmutableArray<string>.Empty,
             Artifacts: artifacts.ToImmutable());
     }
 

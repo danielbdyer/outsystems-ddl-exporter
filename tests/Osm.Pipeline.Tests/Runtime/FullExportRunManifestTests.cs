@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data.Common;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -210,26 +211,39 @@ public sealed class FullExportRunManifestTests
             Assert.StartsWith(seedRootFullPath, Path.GetFullPath(artifact.Path), StringComparison.OrdinalIgnoreCase));
 
         var buildStage = Assert.Single(manifest.Stages, stage => stage.Name == "build-ssdt");
-        Assert.True(buildStage.Artifacts.TryGetValue("staticSeedRoot", out var stageSeedRoot));
-        Assert.Equal(seedRootFullPath, Path.GetFullPath(stageSeedRoot!));
-        Assert.Equal(seedRootFullPath, Path.GetFullPath(FullExportRunManifest.ResolveStaticSeedRoot(build.PipelineResult)!));
-
-        Assert.True(buildStage.Artifacts.TryGetValue("dynamicInsertRoot", out var stageDynamicRoot));
-        var expectedDynamicRoot = Path.GetFullPath(Path.Combine(dynamicRoot, "DynamicData", "ModuleA"));
-        Assert.Equal(expectedDynamicRoot, Path.GetFullPath(stageDynamicRoot!));
-        Assert.Equal(expectedDynamicRoot, Path.GetFullPath(FullExportRunManifest.ResolveDynamicInsertRoot(build.PipelineResult)!));
-
         Assert.True(buildStage.Artifacts.TryGetValue("sqlProject", out var stageSqlProject));
         Assert.Equal(
             Path.GetFullPath(build.PipelineResult.SqlProjectPath),
             Path.GetFullPath(stageSqlProject!));
 
-        Assert.True(buildStage.Artifacts.TryGetValue("staticSeedOrdering", out var seedOrdering));
+        var staticSeedStage = Assert.Single(manifest.Stages, stage => stage.Name == "static-seed");
+        Assert.True(staticSeedStage.Artifacts.TryGetValue("root", out var stageSeedRoot));
+        Assert.Equal(seedRootFullPath, Path.GetFullPath(stageSeedRoot!));
+        Assert.Equal(seedRootFullPath, Path.GetFullPath(FullExportRunManifest.ResolveStaticSeedRoot(build.PipelineResult)!));
+        Assert.True(staticSeedStage.Artifacts.TryGetValue("ordering", out var seedOrdering));
         Assert.Equal("alphabetical", seedOrdering);
-        Assert.True(buildStage.Artifacts.TryGetValue("dynamicInsertOrdering", out var insertOrdering));
+        Assert.True(staticSeedStage.Artifacts.TryGetValue("scriptCount", out var seedCount));
+        Assert.Equal(
+            staticSeedPaths.Length.ToString(CultureInfo.InvariantCulture),
+            seedCount);
+        Assert.True(staticSeedStage.Artifacts.TryGetValue("scripts", out var seedScripts));
+        Assert.Equal(string.Join(";", staticSeedPaths), seedScripts);
+
+        var dynamicInsertStage = Assert.Single(manifest.Stages, stage => stage.Name == "dynamic-insert");
+        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("root", out var stageDynamicRoot));
+        var expectedDynamicRoot = Path.GetFullPath(Path.Combine(dynamicRoot, "DynamicData", "ModuleA"));
+        Assert.Equal(expectedDynamicRoot, Path.GetFullPath(stageDynamicRoot!));
+        Assert.Equal(
+            expectedDynamicRoot,
+            Path.GetFullPath(FullExportRunManifest.ResolveDynamicInsertRoot(build.PipelineResult)!));
+        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("ordering", out var insertOrdering));
         Assert.Equal("alphabetical", insertOrdering);
-        Assert.True(buildStage.Artifacts.TryGetValue("dynamicInsertMode", out var insertMode));
+        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("mode", out var insertMode));
         Assert.Equal("PerEntity", insertMode);
+        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("scriptCount", out var insertCount));
+        Assert.Equal("1", insertCount);
+        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("scripts", out var insertScripts));
+        Assert.Equal(string.Join(";", build.PipelineResult.DynamicInsertScriptPaths), insertScripts);
 
         var dynamicFiles = Directory.GetFiles(dynamicRoot, "*", SearchOption.AllDirectories);
         Assert.DoesNotContain(dynamicFiles, path => Path.GetFullPath(path).StartsWith(seedRootFullPath, StringComparison.OrdinalIgnoreCase));
