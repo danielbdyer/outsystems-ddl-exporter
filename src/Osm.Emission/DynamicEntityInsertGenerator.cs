@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
+using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Smo;
 
@@ -67,7 +68,8 @@ public sealed class DynamicEntityInsertGenerator
         DynamicEntityDataset dataset,
         ImmutableArray<StaticEntityTableData> staticSeedCatalog,
         DynamicEntityInsertGenerationOptions? options = null,
-        OsmModel? model = null)
+        OsmModel? model = null,
+        NamingOverrideOptions? namingOverrides = null)
     {
         if (dataset is null)
         {
@@ -86,7 +88,9 @@ public sealed class DynamicEntityInsertGenerator
             return ImmutableArray<DynamicEntityInsertScript>.Empty;
         }
 
-        var orderedTables = EntityDependencySorter.SortByForeignKeys(dataset.Tables, model).Tables;
+        var orderedTables = EntityDependencySorter
+            .SortByForeignKeys(dataset.Tables, model, namingOverrides)
+            .Tables;
         if (orderedTables.IsDefaultOrEmpty)
         {
             return ImmutableArray<DynamicEntityInsertScript>.Empty;
@@ -115,7 +119,7 @@ public sealed class DynamicEntityInsertGenerator
         }
 
         var materialized = scripts.ToImmutable();
-        return ApplyDependencyOrdering(materialized, model);
+        return ApplyDependencyOrdering(materialized, model, namingOverrides);
     }
 
     private static ImmutableArray<StaticEntityRow> FilterRows(
@@ -627,7 +631,8 @@ public sealed class DynamicEntityInsertGenerator
 
     private static ImmutableArray<DynamicEntityInsertScript> ApplyDependencyOrdering(
         ImmutableArray<DynamicEntityInsertScript> scripts,
-        OsmModel? model)
+        OsmModel? model,
+        NamingOverrideOptions? namingOverrides)
     {
         if (scripts.IsDefaultOrEmpty || scripts.Length <= 1 || model is null)
         {
@@ -636,7 +641,8 @@ public sealed class DynamicEntityInsertGenerator
 
         var orderedDefinitions = EntityDependencySorter.SortByForeignKeys(
             scripts.Select(script => new StaticEntityTableData(script.Definition, ImmutableArray<StaticEntityRow>.Empty)).ToImmutableArray(),
-            model);
+            model,
+            namingOverrides);
 
         var definitions = orderedDefinitions.Tables;
         if (definitions.IsDefaultOrEmpty || definitions.Length != scripts.Length)

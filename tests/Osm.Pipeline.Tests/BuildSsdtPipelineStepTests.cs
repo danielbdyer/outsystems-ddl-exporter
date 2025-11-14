@@ -562,6 +562,22 @@ public class BuildSsdtPipelineStepTests
     }
 
     [Fact]
+    public async Task DynamicInsertStep_uses_topological_order_for_sanitized_dataset()
+    {
+        using var output = new TempDirectory();
+        var fixture = CreateSanitizedDynamicFixture();
+        var seedState = CreateStaticSeedsGeneratedState(output.Path, fixture.Model, fixture.Dataset, fixture.NamingOverrides);
+        var step = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
+
+        var result = await step.ExecuteAsync(seedState);
+
+        Assert.True(result.IsSuccess);
+        var state = result.Value;
+        Assert.True(state.DynamicInsertTopologicalOrderApplied);
+        Assert.NotEmpty(state.DynamicInsertScriptPaths);
+    }
+
+    [Fact]
     public async Task SqlValidationStep_records_summary_for_valid_scripts()
     {
         using var output = new TempDirectory();
@@ -708,6 +724,241 @@ public class BuildSsdtPipelineStepTests
         var table = StaticEntityTableData.Create(definition, rows);
         return DynamicEntityDataset.Create(new[] { table });
     }
+
+    private static StaticSeedsGenerated CreateStaticSeedsGeneratedState(
+        string outputDirectory,
+        OsmModel model,
+        DynamicEntityDataset dataset,
+        NamingOverrideOptions namingOverrides)
+    {
+        Directory.CreateDirectory(outputDirectory);
+        var sqlProjectPath = Path.Combine(outputDirectory, "sqlproj");
+        Directory.CreateDirectory(sqlProjectPath);
+
+        var scope = new ModelExecutionScope(
+            ModelPath: Path.Combine(outputDirectory, "model.json"),
+            ModuleFilter: ModuleFilterOptions.IncludeAll,
+            SupplementalModels: SupplementalModelOptions.Default,
+            TighteningOptions: TighteningOptions.Default,
+            SqlOptions: new ResolvedSqlOptions(
+                ConnectionString: null,
+                CommandTimeoutSeconds: null,
+                Sampling: new SqlSamplingSettings(null, null),
+                Authentication: new SqlAuthenticationSettings(null, null, null, null),
+                MetadataContract: MetadataContractOverrides.Strict,
+                ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+                TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty),
+            SmoOptions: SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission).WithNamingOverrides(namingOverrides),
+            TypeMappingPolicy: TypeMappingPolicyLoader.LoadDefault(),
+            ProfilePath: null,
+            BaselineProfilePath: null,
+            InlineModel: model);
+
+        var request = new BuildSsdtPipelineRequest(
+            scope,
+            outputDirectory,
+            "fixture",
+            EvidenceCache: null,
+            DynamicDataset: dataset,
+            DynamicDatasetSource: DynamicDatasetSource.UserProvided,
+            StaticDataProvider: null,
+            SeedOutputDirectoryHint: null,
+            DynamicDataOutputDirectoryHint: null,
+            SqlProjectPathHint: null);
+
+        var log = new PipelineExecutionLogBuilder(TimeProvider.System);
+        var profile = ProfileSnapshot.Create(
+            Array.Empty<ColumnProfile>(),
+            Array.Empty<UniqueCandidateProfile>(),
+            Array.Empty<CompositeUniqueCandidateProfile>(),
+            Array.Empty<ForeignKeyReality>()).Value;
+        var bootstrap = new PipelineBootstrapContext(
+            model,
+            ImmutableArray<EntityModel>.Empty,
+            profile,
+            ImmutableArray<ProfilingInsight>.Empty,
+            ImmutableArray<string>.Empty,
+            MultiEnvironmentReport: null);
+
+        var decisions = PolicyDecisionSet.Create(
+            ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ForeignKeyDecision>.Empty,
+            ImmutableDictionary<IndexCoordinate, UniqueIndexDecision>.Empty,
+            ImmutableArray<TighteningDiagnostic>.Empty,
+            ImmutableDictionary<ColumnCoordinate, ColumnIdentity>.Empty,
+            ImmutableDictionary<IndexCoordinate, string>.Empty,
+            TighteningOptions.Default);
+        var report = PolicyDecisionReporter.Create(decisions);
+
+        var opportunities = new OpportunitiesReport(
+            ImmutableArray<Opportunity>.Empty,
+            ImmutableDictionary<OpportunityDisposition, int>.Empty,
+            ImmutableDictionary<OpportunityCategory, int>.Empty,
+            ImmutableDictionary<OpportunityType, int>.Empty,
+            ImmutableDictionary<RiskLevel, int>.Empty,
+            DateTimeOffset.UtcNow);
+        var validations = ValidationReport.Empty(DateTimeOffset.UtcNow);
+        var manifest = new SsdtManifest(
+            Array.Empty<TableManifestEntry>(),
+            new SsdtManifestOptions(false, false, false, 1),
+            PolicySummary: null,
+            Emission: new SsdtEmissionMetadata("test", "hash"),
+            PreRemediation: Array.Empty<PreRemediationManifestEntry>(),
+            Coverage: SsdtCoverageSummary.CreateComplete(0, 0, 0),
+            PredicateCoverage: SsdtPredicateCoverage.Empty,
+            Unsupported: Array.Empty<string>());
+
+        var decisionLogPath = Path.Combine(outputDirectory, "decisions.json");
+        var opportunityArtifacts = new OpportunityArtifacts(
+            Path.Combine(outputDirectory, "opportunities.json"),
+            Path.Combine(outputDirectory, "validations.json"),
+            Path.Combine(outputDirectory, "safe.sql"),
+            string.Empty,
+            Path.Combine(outputDirectory, "remediation.sql"),
+            string.Empty);
+
+        return new StaticSeedsGenerated(
+            request,
+            log,
+            bootstrap,
+            EvidenceCache: null,
+            decisions,
+            report,
+            opportunities,
+            validations,
+            ImmutableArray<PipelineInsight>.Empty,
+            manifest,
+            decisionLogPath,
+            opportunityArtifacts,
+            sqlProjectPath,
+            SsdtSqlValidationSummary.Empty,
+            ImmutableArray<string>.Empty,
+            ImmutableArray<StaticEntityTableData>.Empty,
+            StaticSeedTopologicalOrderApplied: true);
+    }
+
+    private static SanitizedDynamicFixture CreateSanitizedDynamicFixture()
+    {
+        var parentColumns = ImmutableArray.Create(new StaticEntitySeedColumn(
+            LogicalName: "Id",
+            ColumnName: "ID",
+            EmissionName: "Id",
+            DataType: "INT",
+            Length: null,
+            Precision: null,
+            Scale: null,
+            IsPrimaryKey: true,
+            IsIdentity: false,
+            IsNullable: false));
+
+        var childColumns = ImmutableArray.Create(
+            new StaticEntitySeedColumn(
+                LogicalName: "Id",
+                ColumnName: "ID",
+                EmissionName: "Id",
+                DataType: "INT",
+                Length: null,
+                Precision: null,
+                Scale: null,
+                IsPrimaryKey: true,
+                IsIdentity: false,
+                IsNullable: false),
+            new StaticEntitySeedColumn(
+                LogicalName: "ParentId",
+                ColumnName: "PARENTID",
+                EmissionName: "ParentId",
+                DataType: "INT",
+                Length: null,
+                Precision: null,
+                Scale: null,
+                IsPrimaryKey: false,
+                IsIdentity: false,
+                IsNullable: false));
+
+        var parentDefinition = new StaticEntitySeedTableDefinition(
+            Module: "Sample",
+            LogicalName: "Parent",
+            Schema: "dbo",
+            PhysicalName: "USR_SAMPLE_PARENT_SAN",
+            EffectiveName: "USR_SAMPLE_PARENT_SAN",
+            Columns: parentColumns);
+
+        var childDefinition = new StaticEntitySeedTableDefinition(
+            Module: "Sample",
+            LogicalName: "Child",
+            Schema: "dbo",
+            PhysicalName: "USR_SAMPLE_CHILD_SAN",
+            EffectiveName: "USR_SAMPLE_CHILD_SAN",
+            Columns: childColumns);
+
+        var dataset = DynamicEntityDataset.Create(new[]
+        {
+            StaticEntityTableData.Create(childDefinition, new[] { StaticEntityRow.Create(new object?[] { 10, 1 }) }),
+            StaticEntityTableData.Create(parentDefinition, new[] { StaticEntityRow.Create(new object?[] { 1 }) })
+        });
+
+        var relationship = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_CHILD_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_PARENT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("PARENTID", "ParentId", "ID", "Id", 0) })
+            }).Value;
+
+        var parentEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { CreateAttribute("Id", "ID", isIdentifier: true) }).Value;
+
+        var childEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Child"),
+            new TableName("OSUSR_SAMPLE_CHILD"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true),
+                CreateAttribute("ParentId", "PARENTID")
+            },
+            relationships: new[] { relationship }).Value;
+
+        var module = ModuleModel.Create(new ModuleName("Sample"), isSystemModule: false, isActive: true, entities: new[]
+        {
+            parentEntity,
+            childEntity
+        }).Value;
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var parentOverride = NamingOverrideRule.Create("dbo", "OSUSR_SAMPLE_PARENT", null, null, "USR_SAMPLE_PARENT_SAN").Value;
+        var childOverride = NamingOverrideRule.Create("dbo", "OSUSR_SAMPLE_CHILD", null, null, "USR_SAMPLE_CHILD_SAN").Value;
+        var namingOverrides = NamingOverrideOptions.Create(new[] { parentOverride, childOverride }).Value;
+
+        return new SanitizedDynamicFixture(dataset, model, namingOverrides);
+    }
+
+    private sealed record SanitizedDynamicFixture(
+        DynamicEntityDataset Dataset,
+        OsmModel Model,
+        NamingOverrideOptions NamingOverrides);
 
     private static IDataProfilerFactory CreateProfilerFactory()
     {

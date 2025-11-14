@@ -86,6 +86,7 @@
    * Each run emits `full-export.manifest.json` alongside the SSDT output root. The JSON aggregates stage timings, warning lists, and normalized artifact paths so CI pipelines can discover outputs without scraping logs. For example, `jq -r '.Stages[] | select(.Name=="build-ssdt").Artifacts.safeScript' full-export.manifest.json` resolves the safe script, while `.Artifacts[] | select(.Name=="full-export-manifest").Path` yields the manifest path for archival.
 
    The CLI ends with an `SSDT Emission Summary` that surfaces `build.staticSeedRoot`, `build.dynamicInsertRoot`, and the selected dynamic insert mode. Follow the [Full Export Artifact Contract](docs/full-export-artifact-contract.md#ssdt-integration-playbook) to import the static seeds into SSDT and schedule dynamic inserts inside your deployment pipeline. Use `--dynamic-insert-mode single-file` (or the `dynamicData.insertMode` configuration setting) when you prefer a consolidated replay script; the manifest records the choice in `build.dynamicInsertMode` so automation can branch accordingly.
+   Dynamic dataset ingestion now recognizes sanitized `EffectiveName` values, module/logical identifiers, and active naming overrides when discovering foreign-key edges, so user-supplied or sanitized tables still participate in the topological ordering used by the replay scripts.
 
    **Operational telemetry**
 

@@ -482,8 +482,6 @@ public class FullExportCommandFactoryTests
         var validationsPath = Path.Combine(outputDirectory, "validations.json");
         File.WriteAllText(validationsPath, "{}");
 
-        var telemetryPath = Path.Combine(outputDirectory, "DynamicData", "dynamic-data.telemetry.json");
-
         var pipelineResult = new BuildSsdtPipelineResult(
             ProfileFixtures.LoadSnapshot(Path.Combine("profiling", "profile.edge-case.json")),
             ImmutableArray<ProfilingInsight>.Empty,
@@ -503,7 +501,6 @@ public class FullExportCommandFactoryTests
             Path.Combine(outputDirectory, "OutSystemsModel.sqlproj"),
             staticSeedPaths,
             ImmutableArray<string>.Empty,
-            DynamicDataTelemetryPath: telemetryPath,
             ImmutableArray<string>.Empty,
             SsdtSqlValidationSummary.Empty,
             null,

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
 using Osm.Emission.Seeds;
@@ -254,6 +255,94 @@ public sealed class EntityDependencySorterTests
         Assert.True(ordering.AlphabeticalFallbackApplied);
         Assert.False(ordering.TopologicalOrderingApplied);
         Assert.Equal(2, ordering.Tables.Length);
+    }
+
+    [Fact]
+    public void SortByForeignKeys_ResolvesSanitizedEffectiveNames()
+    {
+        var parentDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Parent",
+            "dbo",
+            "USR_SAMPLE_PARENT_SAN",
+            "USR_SAMPLE_PARENT_SAN",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
+
+        var childDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Child",
+            "dbo",
+            "USR_SAMPLE_CHILD_SAN",
+            "USR_SAMPLE_CHILD_SAN",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
+
+        var tables = ImmutableArray.Create(
+            new StaticEntityTableData(childDefinition, ImmutableArray<StaticEntityRow>.Empty),
+            new StaticEntityTableData(parentDefinition, ImmutableArray<StaticEntityRow>.Empty));
+
+        var parentEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { CreateAttribute("Id", "ID", isIdentifier: true) }).Value;
+
+        var relationship = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_CHILD_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_PARENT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("PARENTID", "ParentId", "ID", "Id", 0) })
+            }).Value;
+
+        var childEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Child"),
+            new TableName("OSUSR_SAMPLE_CHILD"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true),
+                CreateAttribute("ParentId", "PARENTID")
+            },
+            relationships: new[] { relationship }).Value;
+
+        var module = ModuleModel.Create(new ModuleName("Sample"), isSystemModule: false, isActive: true, entities: new[] { parentEntity, childEntity }).Value;
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var parentOverride = NamingOverrideRule.Create("dbo", "OSUSR_SAMPLE_PARENT", null, null, "USR_SAMPLE_PARENT_SAN").Value;
+        var childOverride = NamingOverrideRule.Create("dbo", "OSUSR_SAMPLE_CHILD", null, null, "USR_SAMPLE_CHILD_SAN").Value;
+        var namingOverrides = NamingOverrideOptions.Create(new[] { parentOverride, childOverride }).Value;
+
+        var ordering = EntityDependencySorter.SortByForeignKeys(tables, model, namingOverrides);
+
+        Assert.True(ordering.TopologicalOrderingApplied);
+        Assert.Equal(1, ordering.EdgeCount);
+        Assert.Equal(0, ordering.MissingEdgeCount);
+        Assert.Collection(
+            ordering.Tables,
+            first => Assert.Equal("Parent", first.Definition.LogicalName),
+            second => Assert.Equal("Child", second.Definition.LogicalName));
     }
 
     private static AttributeModel CreateAttribute(string logicalName, string columnName, bool isIdentifier = false)

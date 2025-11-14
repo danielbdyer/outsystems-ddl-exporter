@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 
 namespace Osm.Emission.Seeds;
@@ -10,7 +11,8 @@ public static class EntityDependencySorter
 {
     public static EntityDependencyOrderingResult SortByForeignKeys(
         IReadOnlyList<StaticEntityTableData> tables,
-        OsmModel? model)
+        OsmModel? model,
+        NamingOverrideOptions? namingOverrides = null)
     {
         if (tables is null)
         {
@@ -70,7 +72,9 @@ public static class EntityDependencySorter
 
         var indegree = nodes.Keys.ToDictionary(static key => key, _ => 0, comparer);
 
-        var graphStats = BuildDependencyGraph(model, nodes, edges, indegree, comparer);
+        namingOverrides ??= NamingOverrideOptions.Empty;
+
+        var graphStats = BuildDependencyGraph(model, nodes, edges, indegree, comparer, namingOverrides);
 
         if (nodes.Count <= 1)
         {
@@ -118,7 +122,8 @@ public static class EntityDependencySorter
         IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
         IDictionary<TableKey, HashSet<TableKey>> edges,
         IDictionary<TableKey, int> indegree,
-        TableKeyComparer comparer)
+        TableKeyComparer comparer,
+        NamingOverrideOptions namingOverrides)
     {
         var edgeCount = 0;
         var missingEdgeCount = 0;
@@ -128,12 +133,28 @@ public static class EntityDependencySorter
             return new DependencyGraphStatistics(edgeCount, missingEdgeCount);
         }
 
+        var lookup = TableLookup.Create(nodes);
+        var entityLookup = BuildEntityIdentityLookup(model);
+
         foreach (var module in model.Modules)
         {
             foreach (var entity in module.Entities)
             {
-                var sourceKey = TableKey.From(entity.Schema.Value, entity.PhysicalName.Value);
-                if (!nodes.ContainsKey(sourceKey) || entity.Relationships.IsDefaultOrEmpty)
+                var sourceCandidates = TableNameCandidates.Create(
+                    entity.PhysicalName.Value,
+                    namingOverrides.GetEffectiveTableName(
+                        entity.Schema.Value,
+                        entity.PhysicalName.Value,
+                        entity.LogicalName.Value,
+                        module.Name.Value));
+
+                if (!lookup.TryResolve(
+                        entity.Schema.Value,
+                        sourceCandidates,
+                        module.Name.Value,
+                        entity.LogicalName.Value,
+                        out var sourceKey) ||
+                    entity.Relationships.IsDefaultOrEmpty)
                 {
                     continue;
                 }
@@ -156,8 +177,27 @@ public static class EntityDependencySorter
                             ? entity.Schema.Value
                             : constraint.ReferencedSchema.Trim();
 
-                        var targetKey = TableKey.From(referencedSchema, constraint.ReferencedTable.Trim());
-                        if (!nodes.ContainsKey(targetKey))
+                        var referencedPhysical = constraint.ReferencedTable.Trim();
+                        var referencedKey = TableKey.From(referencedSchema, referencedPhysical);
+                        entityLookup.TryGetValue(referencedKey, out var targetIdentity);
+
+                        var targetLogical = targetIdentity?.LogicalName ?? relationship.TargetEntity.Value;
+                        var targetModule = targetIdentity?.Module;
+
+                        var targetCandidates = TableNameCandidates.Create(
+                            referencedPhysical,
+                            namingOverrides.GetEffectiveTableName(
+                                referencedSchema,
+                                referencedPhysical,
+                                targetLogical,
+                                targetModule));
+
+                        if (!lookup.TryResolve(
+                                referencedSchema,
+                                targetCandidates,
+                                targetModule,
+                                targetLogical,
+                                out var targetKey))
                         {
                             missingEdgeCount++;
                             continue;
@@ -262,13 +302,34 @@ public static class EntityDependencySorter
             .ToImmutableArray();
     }
 
+    private static IReadOnlyDictionary<TableKey, EntityIdentity> BuildEntityIdentityLookup(OsmModel model)
+    {
+        var comparer = new TableKeyComparer();
+        var lookup = new Dictionary<TableKey, EntityIdentity>(comparer);
+
+        foreach (var module in model.Modules)
+        {
+            foreach (var entity in module.Entities)
+            {
+                var key = TableKey.From(entity.Schema.Value, entity.PhysicalName.Value);
+                lookup[key] = new EntityIdentity(module.Name.Value, entity.LogicalName.Value);
+            }
+        }
+
+        return lookup;
+    }
+
     private sealed record TableKey(string Schema, string Table)
     {
         public static TableKey From(StaticEntitySeedTableDefinition definition)
         {
+            var physicalName = string.IsNullOrWhiteSpace(definition.PhysicalName)
+                ? definition.EffectiveName
+                : definition.PhysicalName;
+
             return new TableKey(
                 definition.Schema ?? string.Empty,
-                definition.PhysicalName ?? string.Empty);
+                physicalName ?? string.Empty);
         }
 
         public static TableKey From(string schema, string table)
@@ -277,10 +338,7 @@ public static class EntityDependencySorter
         }
 
         public static bool Equals(StaticEntitySeedTableDefinition definition, TableKey key)
-        {
-            return string.Equals(definition.Schema, key.Schema, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(definition.PhysicalName, key.Table, StringComparison.OrdinalIgnoreCase);
-        }
+            => new TableKeyComparer().Equals(From(definition), key);
     }
 
     private sealed class TableKeyComparer : IEqualityComparer<TableKey>
@@ -308,6 +366,180 @@ public static class EntityDependencySorter
                 StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Table ?? string.Empty));
         }
     }
+
+    private sealed class TableLookup
+    {
+        private readonly IReadOnlyDictionary<TableKey, StaticEntityTableData> _nodes;
+        private readonly IDictionary<TableKey, TableKey> _effectiveLookup;
+        private readonly IDictionary<ModuleEntityKey, TableKey> _moduleLookup;
+
+        private TableLookup(
+            IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
+            IDictionary<TableKey, TableKey> effectiveLookup,
+            IDictionary<ModuleEntityKey, TableKey> moduleLookup)
+        {
+            _nodes = nodes;
+            _effectiveLookup = effectiveLookup;
+            _moduleLookup = moduleLookup;
+        }
+
+        public static TableLookup Create(IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes)
+        {
+            var comparer = new TableKeyComparer();
+            var effectiveLookup = new Dictionary<TableKey, TableKey>(comparer);
+            var moduleLookup = new Dictionary<ModuleEntityKey, TableKey>(ModuleEntityKeyComparer.Instance);
+
+            foreach (var (key, table) in nodes)
+            {
+                var definition = table.Definition;
+                if (!string.IsNullOrWhiteSpace(definition.EffectiveName))
+                {
+                    var alias = TableKey.From(definition.Schema ?? string.Empty, definition.EffectiveName);
+                    if (!effectiveLookup.ContainsKey(alias))
+                    {
+                        effectiveLookup[alias] = key;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(definition.Module) &&
+                    !string.IsNullOrWhiteSpace(definition.LogicalName))
+                {
+                    var moduleKey = new ModuleEntityKey(definition.Module!, definition.LogicalName!);
+                    if (!moduleLookup.ContainsKey(moduleKey))
+                    {
+                        moduleLookup[moduleKey] = key;
+                    }
+                }
+            }
+
+            return new TableLookup(nodes, effectiveLookup, moduleLookup);
+        }
+
+        public bool TryResolve(
+            string? schema,
+            ImmutableArray<string> candidateTables,
+            string? module,
+            string? logicalName,
+            out TableKey key)
+        {
+            var normalizedSchema = NormalizeSchema(schema);
+
+            if (!candidateTables.IsDefaultOrEmpty)
+            {
+                foreach (var candidate in candidateTables)
+                {
+                    if (TryResolveBySchema(normalizedSchema, candidate, out key))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(module) && !string.IsNullOrWhiteSpace(logicalName))
+            {
+                var moduleKey = new ModuleEntityKey(module.Trim(), logicalName.Trim());
+                if (_moduleLookup.TryGetValue(moduleKey, out var resolvedModule))
+                {
+                    key = resolvedModule;
+                    return true;
+                }
+            }
+
+            key = default!;
+            return false;
+        }
+
+        private bool TryResolveBySchema(string schema, string? table, out TableKey key)
+        {
+            if (string.IsNullOrWhiteSpace(table))
+            {
+                key = default!;
+                return false;
+            }
+
+            var normalized = table.Trim();
+            var candidate = new TableKey(schema, normalized);
+            if (_nodes.ContainsKey(candidate))
+            {
+                key = candidate;
+                return true;
+            }
+
+            if (_effectiveLookup.TryGetValue(candidate, out var resolvedAlias))
+            {
+                key = resolvedAlias;
+                return true;
+            }
+
+            key = default!;
+            return false;
+        }
+
+        private static string NormalizeSchema(string? schema)
+            => string.IsNullOrWhiteSpace(schema) ? string.Empty : schema.Trim();
+    }
+
+    private sealed record ModuleEntityKey(string Module, string LogicalName);
+
+    private sealed class ModuleEntityKeyComparer : IEqualityComparer<ModuleEntityKey>
+    {
+        public static ModuleEntityKeyComparer Instance { get; } = new();
+
+        public bool Equals(ModuleEntityKey? x, ModuleEntityKey? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null)
+            {
+                return false;
+            }
+
+            return string.Equals(x.Module, y.Module, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.LogicalName, y.LogicalName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int GetHashCode(ModuleEntityKey obj)
+        {
+            return HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Module ?? string.Empty),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.LogicalName ?? string.Empty));
+        }
+    }
+
+    private sealed class TableNameCandidates
+    {
+        public static ImmutableArray<string> Create(params string?[] names)
+        {
+            if (names is null || names.Length == 0)
+            {
+                return ImmutableArray<string>.Empty;
+            }
+
+            var builder = ImmutableArray.CreateBuilder<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var name in names)
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                var trimmed = name.Trim();
+                if (seen.Add(trimmed))
+                {
+                    builder.Add(trimmed);
+                }
+            }
+
+            return builder.ToImmutable();
+        }
+    }
+
+    private sealed record EntityIdentity(string Module, string LogicalName);
 
     private sealed class StaticEntityTableComparer : IComparer<StaticEntityTableData>
     {
