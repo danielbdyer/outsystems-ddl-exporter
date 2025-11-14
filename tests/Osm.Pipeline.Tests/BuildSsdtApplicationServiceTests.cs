@@ -503,12 +503,13 @@ public sealed class BuildSsdtApplicationServiceTests
 
         public SqlDynamicEntityExtractionRequest? LastRequest { get; private set; }
 
-        public Task<Result<DynamicEntityDataset>> ExtractAsync(
+        public Task<Result<DynamicEntityExtractionResult>> ExtractAsync(
             SqlDynamicEntityExtractionRequest request,
             CancellationToken cancellationToken = default)
         {
             LastRequest = request;
-            return Task.FromResult(Result<DynamicEntityDataset>.Success(Dataset));
+            var result = new DynamicEntityExtractionResult(Dataset, DynamicEntityExtractionTelemetry.Empty);
+            return Task.FromResult(Result<DynamicEntityExtractionResult>.Success(result));
         }
     }
 

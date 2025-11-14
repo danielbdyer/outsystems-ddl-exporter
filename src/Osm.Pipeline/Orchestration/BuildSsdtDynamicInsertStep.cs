@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Smo;
@@ -77,11 +78,16 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 DynamicInsertTopologicalOrderApplied: false));
         }
 
-        var ordering = EntityDependencySorter.SortByForeignKeys(dataset.Tables, state.Bootstrap.FilteredModel);
+        var namingOverrides = state.Request.Scope.SmoOptions.NamingOverrides ?? NamingOverrideOptions.Empty;
+        var ordering = EntityDependencySorter.SortByForeignKeys(
+            dataset.Tables,
+            state.Bootstrap.FilteredModel,
+            namingOverrides);
         var scripts = _generator.GenerateScripts(
             dataset,
             state.StaticSeedData,
-            model: state.Bootstrap.FilteredModel);
+            model: state.Bootstrap.FilteredModel,
+            namingOverrides: namingOverrides);
         var dynamicOrderApplied = ordering.TopologicalOrderingApplied;
         if (scripts.IsDefaultOrEmpty || scripts.Length == 0)
         {

@@ -518,8 +518,6 @@ public class BuildSsdtCommandFactoryTests
                 manifest.Tables.Count,
                 Array.Empty<SsdtSqlValidationIssue>());
 
-            var telemetryPath = Path.Combine("output", "DynamicData", "dynamic-data.telemetry.json");
-
             var pipelineResult = new BuildSsdtPipelineResult(
                 snapshot,
                 ProfilingInsights,
@@ -539,16 +537,15 @@ public class BuildSsdtCommandFactoryTests
                 Path.Combine("output", "OutSystemsModel.sqlproj"),
                 ImmutableArray<string>.Empty,
                 ImmutableArray<string>.Empty,
-                DynamicDataTelemetryPath: telemetryPath,
                 ImmutableArray<string>.Empty,
                 sqlValidation,
                 null,
-            PipelineExecutionLog.Empty,
-            StaticSeedTopologicalOrderApplied: false,
-            DynamicInsertTopologicalOrderApplied: false,
-            DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
-            ImmutableArray<string>.Empty,
-            MultiEnvironmentProfileReport.Empty);
+                PipelineExecutionLog.Empty,
+                StaticSeedTopologicalOrderApplied: false,
+                DynamicInsertTopologicalOrderApplied: false,
+                DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
+                ImmutableArray<string>.Empty,
+                MultiEnvironmentProfileReport.Empty);
 
             return new BuildSsdtApplicationResult(
                 pipelineResult,
