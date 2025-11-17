@@ -59,6 +59,33 @@ entries:
 | `build.dynamicInsertMode` | Emission mode used for dynamic inserts (`PerEntity` or `SingleFile`). |
 | `build.sqlProjectPath` | Full path to the synthesized `.sqlproj` that references the emitted modules and seed scripts. |
 
+### UAT-Users Integration (Pre-Transformed Data)
+
+When `full-export` runs with `--enable-uat-users`, additional metadata tracks the transformation:
+
+| Key | Description |
+| --- | --- |
+| `uatUsers.enabled` | Boolean indicating UAT-users pipeline ran. |
+| `uatUsers.transformationMode` | Either `pre-transformed-inserts` (full-export integration) or `post-load-updates` (standalone). |
+| `uatUsers.orphanCount` | Number of out-of-scope QA user IDs discovered. |
+| `uatUsers.mappedCount` | Number of orphans successfully mapped to UAT targets. |
+| `uatUsers.fkCatalogSize` | Count of FK columns referencing User table. |
+| `uatUsers.qaInventoryPath` | Path to QA user inventory CSV. |
+| `uatUsers.uatInventoryPath` | Path to UAT user inventory CSV. |
+| `uatUsers.userMapPath` | Path to the user mapping CSV used for transformation. |
+| `uatUsers.validationReportPath` | Path to the validation report proving mapping correctness. |
+
+The `dynamic-insert` stage includes `transformationApplied: true` when UAT-users pre-transforms the INSERT scripts. In this mode:
+
+* **Dynamic INSERT scripts contain UAT-ready data**: User FK values are already mapped to UAT targets during generation
+* **No post-load transformation needed**: Load scripts directly to UAT database
+* **Verification proves in-scope guarantee**: All user FK values in emitted scripts exist in UAT inventory
+* **NULL preservation enforced**: NULL user IDs remain NULL (never transformed)
+
+**Contrast with standalone uat-users mode**: When `uat-users` runs independently (not via `full-export`), it emits UPDATE scripts that transform data after loading. The full-export integration eliminates this post-load step by pre-transforming during generation.
+
+> **See**: `docs/design-uat-users-transformation.md` for detailed architecture, verification requirements, and migration path guidance.
+
 The CLI `SSDT Emission Summary` explicitly labels the seed artifacts and prints the
 manifest semantics block so operators can validate the directory split without
 inspecting the manifest JSON directly. 【F:src/Osm.Pipeline/Runtime/Verbs/FullExportVerb.cs†L196-L212】【F:src/Osm.Cli/Commands/CommandConsole.cs†L394-L429】

@@ -1,6 +1,24 @@
 # uat-users Verb
 
-The `uat-users` verb discovers every foreign-key column that references `dbo.[User](Id)`, evaluates the live data set for out-of-scope user identifiers, and emits a deterministic remediation bundle. Operators receive a catalog, an orphan mapping template, a preview of pending row counts, and a guarded apply script that can be rerun safely in UAT.
+The `uat-users` verb discovers every foreign-key column that references `dbo.[User](Id)`, evaluates the live data set for out-of-scope user identifiers, and emits transformation artifacts for QA→UAT data promotion.
+
+## Operational Modes
+
+The verb operates in **two distinct modes** depending on context:
+
+### **Mode 1: Standalone (Post-Load Transformation)**
+When run independently, emits **UPDATE scripts** (`02_apply_user_remap.sql`) that transform user FK values in an existing database already loaded with QA data. Use this mode to migrate existing UAT databases.
+
+**Workflow**: Load QA data → Run UPDATE scripts → Data is UAT-ready
+
+### **Mode 2: Full-Export Integration (Pre-Transformed Data Generation)**
+When integrated with `full-export --enable-uat-users`, **transforms data during INSERT script generation**. The emitted `DynamicData/**/*.dynamic.sql` files contain pre-transformed user FK values, ready for direct UAT deployment.
+
+**Workflow**: Generate pre-transformed INSERT scripts → Load directly to UAT → Data is UAT-ready
+
+**Key benefit**: No post-load transformation step required; INSERT scripts are the source of truth.
+
+> **See**: `docs/design-uat-users-transformation.md` for detailed architecture and verification requirements for each mode.
 
 ## Key Behaviors
 
