@@ -39,6 +39,7 @@ public sealed record BuildSsdtRequestAssemblerContext(
     string OutputDirectory,
     DynamicEntityDataset DynamicDataset,
     DynamicDatasetSource DynamicDatasetSource,
+    StaticSeedParentHandlingMode StaticSeedParentMode,
     IStaticEntityDataProvider? StaticDataProvider,
     CacheOptionsOverrides CacheOverrides,
     string? ConfigPath,
@@ -77,13 +78,18 @@ public sealed class BuildSsdtRequestAssembler
             context.CacheOverrides,
             context.ConfigPath);
 
-        if (cacheOptions is not null && !string.IsNullOrWhiteSpace(context.SqlOptions.ConnectionString))
+        if (cacheOptions is not null)
         {
             var metadata = cacheOptions.Metadata is null
                 ? new Dictionary<string, string?>(StringComparer.Ordinal)
                 : new Dictionary<string, string?>(cacheOptions.Metadata, StringComparer.Ordinal);
 
-            metadata["sql.connectionHash"] = ComputeSha256(context.SqlOptions.ConnectionString!);
+            if (!string.IsNullOrWhiteSpace(context.SqlOptions.ConnectionString))
+            {
+                metadata["sql.connectionHash"] = ComputeSha256(context.SqlOptions.ConnectionString!);
+            }
+
+            metadata["dynamicData.staticSeedParentMode"] = context.StaticSeedParentMode.ToString();
             cacheOptions = cacheOptions with { Metadata = metadata };
         }
 
@@ -201,5 +207,22 @@ public sealed class BuildSsdtRequestAssembler
         }
 
         return DynamicInsertOutputMode.PerEntity;
+    }
+
+    internal static StaticSeedParentHandlingMode ResolveStaticSeedParentMode(
+        DynamicDataConfiguration configuration,
+        StaticSeedParentHandlingMode? overrideValue)
+    {
+        if (overrideValue.HasValue)
+        {
+            return overrideValue.Value;
+        }
+
+        if (configuration is not null && configuration.StaticSeedParentMode.HasValue)
+        {
+            return configuration.StaticSeedParentMode.Value;
+        }
+
+        return StaticSeedParentHandlingMode.AutoLoad;
     }
 }

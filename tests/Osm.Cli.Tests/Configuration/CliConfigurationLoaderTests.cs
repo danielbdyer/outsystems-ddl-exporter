@@ -1,8 +1,10 @@
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using Osm.Pipeline.Configuration;
 using Osm.Domain.Configuration;
+using Osm.Emission;
+using Osm.Pipeline.Configuration;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.UatUsers;
 using Tests.Support;
 
@@ -211,6 +213,56 @@ public sealed class CliConfigurationLoaderTests
         Assert.Contains("AttributesJson", optionalColumns["AttributeJson"]);
         Assert.Contains("Extra", optionalColumns["AttributeJson"]);
         Assert.Contains("ColumnsJson", optionalColumns["ForeignKeyColumnsJson"]);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ReadsDynamicDataConfiguration()
+    {
+        using var directory = new TempDirectory();
+        var configPath = Path.Combine(directory.Path, "appsettings.json");
+
+        var config = new
+        {
+            dynamicData = new
+            {
+                insertMode = "SingleFile",
+                staticSeedParentMode = "ValidateStaticSeedApplication"
+            }
+        };
+
+        await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
+
+        var loader = new CliConfigurationLoader();
+        var result = await loader.LoadAsync(configPath);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(DynamicInsertOutputMode.SingleFile, result.Value.DynamicData.InsertMode);
+        Assert.Equal(StaticSeedParentHandlingMode.ValidateStaticSeedApplication, result.Value.DynamicData.StaticSeedParentMode);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ReturnsError_WhenStaticSeedParentModeInvalid()
+    {
+        using var directory = new TempDirectory();
+        var configPath = Path.Combine(directory.Path, "appsettings.json");
+
+        var config = new
+        {
+            dynamicData = new
+            {
+                staticSeedParentMode = "invalid-mode"
+            }
+        };
+
+        await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config));
+
+        var loader = new CliConfigurationLoader();
+        var result = await loader.LoadAsync(configPath);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(
+            "cli.config.dynamicData.staticSeedParentMode.invalid",
+            Assert.Single(result.Errors).Code);
     }
 
     [Fact]

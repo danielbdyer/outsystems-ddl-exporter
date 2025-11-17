@@ -30,6 +30,9 @@ internal sealed class VerbOptionRegistry
         "--dynamic-insert-mode",
         () => DynamicInsertOutputMode.PerEntity,
         "Dynamic insert emission mode: per-entity files (default) or single-file.");
+    private readonly Option<StaticSeedParentHandlingMode?> _staticSeedParentModeOption = new(
+        "--static-seed-parent-mode",
+        description: "Controls whether static-seed parents are auto-loaded or validated against existing static seed data.");
     private readonly Option<bool> _extractModelInlineOption = new("--extract-model", "Run extract-model before emission and use the inline payload.");
     private readonly Option<string?> _buildOutputOption = new("--out", () => "out", "Output directory for SSDT artifacts.");
     private readonly Option<string?> _buildSqlMetadataOption = new("--sql-metadata-out", "Path to write SQL metadata diagnostics (JSON).");
@@ -102,6 +105,7 @@ internal sealed class VerbOptionRegistry
             .AddOption(_buildSqlMetadataOption)
             .AddOption(_extractModelInlineOption)
             .AddOption(_dynamicInsertModeOption)
+            .AddOption(_staticSeedParentModeOption)
             .BindOverrides(context => CreateBuildOverrides(context));
 
         AttachExtensions(builder, BuildSsdtVerb.VerbName);
@@ -163,6 +167,7 @@ internal sealed class VerbOptionRegistry
             .AddOption(_globalOptions.MaxDegreeOfParallelism)
             .AddOption(_fullExportBuildSqlMetadataOption)
             .AddOption(_dynamicInsertModeOption)
+            .AddOption(_staticSeedParentModeOption)
             .AddOption(_fullExportProfileOutOption)
             .AddOption(_fullExportProfileSqlMetadata)
             .AddOption(_fullExportExtractOutOption)
@@ -219,6 +224,8 @@ internal sealed class VerbOptionRegistry
             dynamicInsertMode = parseResult.GetValueForOption(_dynamicInsertModeOption);
         }
 
+        var staticParentMode = parseResult.GetValueForOption(_staticSeedParentModeOption);
+
         return new BuildSsdtOverrides(
             parseResult.GetValueForOption(_modelOption),
             parseResult.GetValueForOption(_profileOption),
@@ -229,7 +236,8 @@ internal sealed class VerbOptionRegistry
             parseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
             parseResult.GetValueForOption(_buildSqlMetadataOption),
             parseResult.GetValueForOption(_extractModelInlineOption),
-            dynamicInsertMode);
+            dynamicInsertMode,
+            staticParentMode);
     }
 
     private ExtractModelOverrides CreateExtractOverrides(
@@ -271,7 +279,8 @@ internal sealed class VerbOptionRegistry
             parseResult.GetValueForOption(_renameTableOption),
             parseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
             parseResult.GetValueForOption(_fullExportBuildSqlMetadataOption),
-            DynamicInsertMode: dynamicInsertMode);
+            DynamicInsertMode: dynamicInsertMode,
+            StaticSeedParentMode: parseResult.GetValueForOption(_staticSeedParentModeOption));
 
         var profileOverrides = new CaptureProfileOverrides(
             modelPath,

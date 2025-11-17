@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.DynamicData;
@@ -215,6 +216,16 @@ public sealed class FullExportRunManifestTests
         Assert.Equal(
             Path.GetFullPath(build.PipelineResult.SqlProjectPath),
             Path.GetFullPath(stageSqlProject!));
+        Assert.True(buildStage.Artifacts.TryGetValue("staticSeedParentMode", out var parentMode));
+        Assert.Equal("ValidateStaticSeedApplication", parentMode);
+        Assert.True(buildStage.Artifacts.TryGetValue("staticSeedParentCount", out var parentCount));
+        Assert.Equal("3", parentCount);
+        Assert.True(buildStage.Artifacts.TryGetValue("staticSeedParentAutoLoaded", out var autoLoaded));
+        Assert.Equal("1", autoLoaded);
+        Assert.True(buildStage.Artifacts.TryGetValue("staticSeedParentVerified", out var verified));
+        Assert.Equal("1", verified);
+        Assert.True(buildStage.Artifacts.TryGetValue("staticSeedParentPending", out var pending));
+        Assert.Equal("1", pending);
 
         var staticSeedStage = Assert.Single(manifest.Stages, stage => stage.Name == "static-seed");
         Assert.True(staticSeedStage.Artifacts.TryGetValue("root", out var stageSeedRoot));
@@ -664,7 +675,48 @@ public sealed class FullExportRunManifestTests
             outputDirectory,
             modelPath,
             true,
-            ImmutableArray<string>.Empty);
+            ImmutableArray<string>.Empty,
+            StaticSeedParentMode: StaticSeedParentHandlingMode.ValidateStaticSeedApplication,
+            StaticSeedParents: CreateStaticSeedParentStatuses());
+    }
+
+    private static ImmutableArray<StaticSeedParentStatus> CreateStaticSeedParentStatuses()
+    {
+        var cityDefinition = new StaticEntitySeedTableDefinition(
+            "AppCore",
+            "City",
+            "dbo",
+            "OSUSR_DEF_CITY",
+            "City",
+            ImmutableArray<StaticEntitySeedColumn>.Empty);
+        var invoiceTypeDefinition = new StaticEntitySeedTableDefinition(
+            "Billing",
+            "InvoiceType",
+            "billing",
+            "OSUSR_INV_TYPE",
+            "InvoiceType",
+            ImmutableArray<StaticEntitySeedColumn>.Empty);
+        var flagDefinition = new StaticEntitySeedTableDefinition(
+            "Ops",
+            "FeatureFlag",
+            "ops",
+            "OSUSR_OPS_FLAG",
+            "FeatureFlag",
+            ImmutableArray<StaticEntitySeedColumn>.Empty);
+
+        return ImmutableArray.Create(
+            StaticSeedParentStatus.Create(
+                cityDefinition,
+                StaticSeedParentSatisfaction.AutoLoaded,
+                ImmutableArray.Create(new StaticSeedParentReference("AppCore", "Customer"))),
+            StaticSeedParentStatus.Create(
+                invoiceTypeDefinition,
+                StaticSeedParentSatisfaction.Verified,
+                ImmutableArray.Create(new StaticSeedParentReference("Billing", "Invoice"))),
+            StaticSeedParentStatus.Create(
+                flagDefinition,
+                StaticSeedParentSatisfaction.RequiresVerification,
+                ImmutableArray.Create(new StaticSeedParentReference("Ops", "FeatureToggle"))));
     }
 
     private static OutsystemsMetadataSnapshot CreateMetadataSnapshot(string databaseName)

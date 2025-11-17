@@ -508,7 +508,10 @@ public sealed class BuildSsdtApplicationServiceTests
             CancellationToken cancellationToken = default)
         {
             LastRequest = request;
-            var result = new DynamicEntityExtractionResult(Dataset, DynamicEntityExtractionTelemetry.Empty);
+            var result = new DynamicEntityExtractionResult(
+                Dataset,
+                DynamicEntityExtractionTelemetry.Empty,
+                ImmutableArray<StaticSeedParentStatus>.Empty);
             return Task.FromResult(Result<DynamicEntityExtractionResult>.Success(result));
         }
     }

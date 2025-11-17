@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using Osm.Pipeline.Application;
+using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime.Verbs;
 using Osm.Pipeline.UatUsers;
@@ -297,6 +298,29 @@ public sealed record FullExportRunManifest(
         if (!pipelineResult.TelemetryPackagePaths.IsDefaultOrEmpty)
         {
             artifacts["telemetryPackages"] = string.Join(";", pipelineResult.TelemetryPackagePaths);
+        }
+
+        artifacts["staticSeedParentMode"] = result.StaticSeedParentMode.ToString();
+        if (!result.StaticSeedParents.IsDefaultOrEmpty)
+        {
+            var autoLoadedParents = result.StaticSeedParents
+                .Count(status => status.Satisfaction == StaticSeedParentSatisfaction.AutoLoaded);
+            var verifiedParents = result.StaticSeedParents
+                .Count(status => status.Satisfaction == StaticSeedParentSatisfaction.Verified);
+            var pendingParents = result.StaticSeedParents
+                .Count(status => status.Satisfaction == StaticSeedParentSatisfaction.RequiresVerification);
+
+            artifacts["staticSeedParentCount"] = result.StaticSeedParents.Length.ToString(CultureInfo.InvariantCulture);
+            artifacts["staticSeedParentAutoLoaded"] = autoLoadedParents.ToString(CultureInfo.InvariantCulture);
+            artifacts["staticSeedParentVerified"] = verifiedParents.ToString(CultureInfo.InvariantCulture);
+            if (pendingParents > 0)
+            {
+                artifacts["staticSeedParentPending"] = pendingParents.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+        else
+        {
+            artifacts["staticSeedParentCount"] = "0";
         }
 
         var warnings = ImmutableArray.CreateBuilder<string>();

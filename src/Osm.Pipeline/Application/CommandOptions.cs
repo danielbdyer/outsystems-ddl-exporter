@@ -57,7 +57,8 @@ public sealed record BuildSsdtOverrides(
     int? MaxDegreeOfParallelism,
     string? SqlMetadataOutputPath,
     bool ExtractModelInline = false,
-    DynamicInsertOutputMode? DynamicInsertMode = null);
+    DynamicInsertOutputMode? DynamicInsertMode = null,
+    StaticSeedParentHandlingMode? StaticSeedParentMode = null);
 
 public sealed record CaptureProfileOverrides(
     string? ModelPath,

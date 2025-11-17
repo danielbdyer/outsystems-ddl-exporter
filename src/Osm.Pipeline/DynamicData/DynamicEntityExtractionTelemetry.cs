@@ -7,11 +7,13 @@ namespace Osm.Pipeline.DynamicData;
 
 public sealed record DynamicEntityExtractionResult(
     DynamicEntityDataset Dataset,
-    DynamicEntityExtractionTelemetry Telemetry)
+    DynamicEntityExtractionTelemetry Telemetry,
+    ImmutableArray<StaticSeedParentStatus> StaticSeedParents)
 {
     public static DynamicEntityExtractionResult Empty { get; } = new(
         DynamicEntityDataset.Empty,
-        DynamicEntityExtractionTelemetry.Empty);
+        DynamicEntityExtractionTelemetry.Empty,
+        ImmutableArray<StaticSeedParentStatus>.Empty);
 }
 
 public sealed record DynamicEntityExtractionTelemetry(

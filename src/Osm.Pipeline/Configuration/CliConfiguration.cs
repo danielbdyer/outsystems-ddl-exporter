@@ -37,9 +37,11 @@ public sealed record CliConfiguration(
         UatUsersConfiguration.Empty);
 }
 
-public sealed record DynamicDataConfiguration(DynamicInsertOutputMode? InsertMode)
+public sealed record DynamicDataConfiguration(
+    DynamicInsertOutputMode? InsertMode,
+    StaticSeedParentHandlingMode? StaticSeedParentMode)
 {
-    public static DynamicDataConfiguration Empty { get; } = new((DynamicInsertOutputMode?)null);
+    public static DynamicDataConfiguration Empty { get; } = new(null, null);
 }
 
 public sealed record CacheConfiguration(string? Root, bool? Refresh, int? TimeToLiveSeconds)

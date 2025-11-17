@@ -273,7 +273,29 @@ public sealed class CliConfigurationLoader
             }
         }
 
-        configuration = new DynamicDataConfiguration(insertMode);
+        StaticSeedParentHandlingMode? parentMode = null;
+        if (element.TryGetProperty("staticSeedParentMode", out var parentElement)
+            && parentElement.ValueKind == JsonValueKind.String)
+        {
+            var rawParentMode = parentElement.GetString();
+            if (!string.IsNullOrWhiteSpace(rawParentMode))
+            {
+                if (Enum.TryParse(rawParentMode, ignoreCase: true, out StaticSeedParentHandlingMode parsedParentMode))
+                {
+                    parentMode = parsedParentMode;
+                }
+                else
+                {
+                    var supportedParents = string.Join(", ", Enum.GetNames(typeof(StaticSeedParentHandlingMode)));
+                    error = ValidationError.Create(
+                        "cli.config.dynamicData.staticSeedParentMode.invalid",
+                        $"Unrecognized static seed parent mode '{rawParentMode}'. Supported values: {supportedParents}.");
+                    return false;
+                }
+            }
+        }
+
+        configuration = new DynamicDataConfiguration(insertMode, parentMode);
         return true;
     }
 
