@@ -2,42 +2,113 @@
 
 > This backlog captures the open scope needed to finish the extraction → tightening → SMO emission pipeline described in the README while honoring the architectural guardrails and the living test plan. Completed work from earlier iterations has been collapsed into guardrail references so we can focus on the remaining shippable increments.
 
-## 0. Critical: Full-Export & UAT-Users Verification
+---
 
-### 0.1. Provable Export Integrity
-- [ ] **Add export checksum and fingerprinting** to `FullExportRunManifest` so downstream consumers can verify artifact integrity without rerunning the entire pipeline. Include per-stage checksums (extraction hash, profile fingerprint, SSDT emission hash) alongside row-count and entity-count metadata. *(Guardrails §6; Test Plan §17)*
-- [ ] **Implement manifest-driven export verification** that compares the declared artifact list (`DynamicArtifacts`, `StaticSeedArtifacts`) against the filesystem and fails fast when files are missing or have unexpected sizes. *(Guardrails §§1,6; Test Plan §§13.1,17.3)*
-- [ ] **Create an export completeness validator** that cross-references the emitted entity scripts against the model's entity catalog, surfacing missing or orphaned files before SSDT import. Emit a structured report (`export-validation.json`) alongside the manifest. *(Guardrails §8; Test Plan §4)*
-- [ ] **Add regression tests for manifest stability** that assert the `DynamicArtifacts`, `StaticSeedArtifacts`, and `Stages` collections remain deterministic across repeated runs with identical inputs, proving idempotence. *(Test Plan §§8.1,11.1)*
+## 0. Critical: Full-Export & UAT-Users Verification (Milestone-Based)
 
-### 0.2. Provable Topological Insertion Order
-- [ ] **Extend `EntityDependencySorter` to emit a dependency proof artifact** (`topological-order-proof.json`) that records every edge (source table, target table, FK constraint name), the final ordering, and cycle/fallback diagnostics. Persist this alongside dynamic insert scripts. *(Guardrails §§5,8; Test Plan §§2.5,13.1)*
-- [ ] **Add topological order validation tests** that inject known FK cycles or missing edges and assert the sorter produces correct warnings (`CycleDetected`, `MissingEdgeCount`) while still emitting a valid alphabetical fallback. *(Test Plan §§4,11.3)*
-- [ ] **Implement a post-emission FK constraint verifier** that parses emitted dynamic insert scripts, extracts referenced tables, and proves every INSERT statement appears after all its FK dependencies. Fail the build when violations are detected. *(Guardrails §§5,7; Test Plan §§8.3,13.1)*
-- [ ] **Capture topological metadata in `FullExportRunManifest`** under `Stages[].Artifacts.topologicalProof` so CI/CD can archive the proof and operators can audit ordering decisions without re-parsing the model. *(Guardrails §6; Test Plan §17)*
-- [ ] **Document topological fallback behavior** in `docs/full-export-artifact-contract.md`, explaining when alphabetical fallback applies, how to diagnose cycles, and remediation steps for operators. Include examples from the edge-case fixtures. *(Architecture Guardrails §8)*
+### **MILESTONE 1: Export Artifact Verification** *(Proves exports are complete and correct)*
 
-### 0.3. QA → UAT User Mapping Verification
-- [ ] **Add comprehensive user inventory integrity checks** that validate both QA and UAT CSV files contain all required columns (`Id`, `Username`, `EMail`, `Name`, `External_Id`, `Is_Active`, `Creation_Date`, `Last_Login`), report missing/malformed rows with line numbers, and fail fast before FK analysis begins. *(Guardrails §6; Test Plan §§9.1,12.1)*
-- [ ] **Implement orphan discovery proof artifact** (`uat-users-orphan-discovery.json`) that records the FK catalog, distinct user IDs per column, orphan detection logic, and the final orphan set. Include row counts, query fingerprints, and timestamps for audit trails. *(Guardrails §§6,8; Test Plan §17)*
-- [ ] **Create a mapping completeness validator** that proves every orphan from the QA inventory has a corresponding `TargetUserId` in the user map, every `TargetUserId` exists in the UAT inventory, and no duplicate `SourceUserId` entries exist. Emit actionable errors with line numbers and recommended fixes. *(Guardrails §6; Test Plan §§7.3,9.1)*
-- [ ] **Add FK value transformation verification** that re-scans the generated SQL script, extracts all `UPDATE` statements, and proves that every `WHERE <column> IN (...)` clause references only `SourceUserId` values from the orphan set, and every `SET <column> = CASE ...` block assigns only `TargetUserId` values from the UAT inventory. *(Guardrails §§5,8; Test Plan §8.3)*
-- [ ] **Extend `ValidateUserMapStep` to emit a validation report** (`uat-users-validation-report.json`) that includes pass/fail status for each validation rule (QA inventory coverage, UAT inventory coverage, duplicate detection, orphan completeness), along with detailed error contexts and counts. *(Guardrails §6; Test Plan §17)*
+#### M1.1. Full-Export Verification Framework
+- [ ] **Implement comprehensive export verification system** that validates artifact integrity end-to-end:
+  - Add checksums and fingerprints to `FullExportRunManifest` (per-stage: extraction hash, profile fingerprint, SSDT emission hash) with row-count and entity-count metadata
+  - Implement manifest-driven filesystem verification that compares declared artifact lists (`DynamicArtifacts`, `StaticSeedArtifacts`) against actual files, failing fast when files are missing or have unexpected sizes
+  - Build export completeness validator that cross-references emitted entity scripts against the model's entity catalog, surfacing missing or orphaned files before SSDT import
+  - Emit structured verification report (`export-validation.json`) alongside manifest with pass/fail status, missing files, checksum mismatches, and recommended remediation
+  - *(Delivers: Provable export integrity without re-running pipelines)*
+  - *(Guardrails §§1,6,8; Test Plan §§4,13.1,17,17.3)*
 
-### 0.4. In-Scope User Guarantee & FK Reference Integrity
-- [ ] **Implement a snapshot-driven FK value audit** that captures the distinct user IDs from each catalogued column before and after the remap script runs, proving that only in-scope `SourceUserId` values were transformed and all resulting values exist in the UAT user inventory. *(Guardrails §10; Test Plan §18.5)*
-- [ ] **Add a pre-flight NULL preservation check** that queries each FK column for NULL values, records the count in the snapshot, and asserts the generated SQL script includes `WHERE <column> IS NOT NULL` guards for every UPDATE statement. *(Test Plan §8.3; Guardrails §8)*
-- [ ] **Create a UAT inventory allow-list verifier** that cross-references the final user map against the parsed UAT CSV, surfaces any `TargetUserId` values not present in the `Id` column, and blocks artifact emission until the map is corrected. *(Guardrails §6; Test Plan §§7.3,12.1)*
-- [ ] **Extend the matching report** (`04_matching_report.csv`) to include a `ValidationStatus` column (`Valid`, `TargetNotInUAT`, `SourceNotInQA`, `OrphanMismatch`) so operators can identify invalid mappings before the SQL script is generated. *(Guardrails §6; Test Plan §17)*
-- [ ] **Add end-to-end integration tests** that simulate QA→UAT promotion with edge cases: missing UAT users, duplicate source mappings, orphan exclusions, NULL preservation, and GUID vs. INT identifier mixing. Assert the pipeline fails gracefully with actionable diagnostics. *(Test Plan §§9.1,18.5)*
-- [ ] **Document the user mapping verification contract** in `docs/verbs/uat-users.md`, including validation rules, proof artifacts, error messages, and a troubleshooting matrix for common operator mistakes. *(Architecture Guardrails §8)*
+#### M1.2. Topological Insertion Order Proof & Verification
+- [ ] **Implement topological proof generation and constraint verification system**:
+  - Extend `EntityDependencySorter` to emit dependency proof artifact (`topological-order-proof.json`) recording every edge (source table, target table, FK constraint name), final ordering, cycle detection results, missing edge diagnostics, and alphabetical fallback metadata
+  - Build post-emission FK constraint verifier that parses emitted dynamic insert scripts, extracts table references and INSERT ordering, proves every INSERT appears after all FK dependencies, and fails the build when violations are detected
+  - Capture topological metadata in `FullExportRunManifest.Stages[].Artifacts.topologicalProof` with paths to proof artifact, ordering mode, node/edge counts, cycle detection status, and fallback indicators
+  - *(Delivers: Provable correct insertion order with auditable proof)*
+  - *(Guardrails §§5,6,7,8; Test Plan §§2.5,8.3,13.1,17)*
 
-### 0.5. Full-Export + UAT-Users Integrated Workflow
-- [ ] **Extend `FullExportRunManifest` to capture UAT-users provenance** including QA/UAT inventory paths, snapshot fingerprints, orphan counts, mapping counts, FK catalog size, and the matching strategy used. Surface this metadata in the `uatUsers.*` namespace. *(Guardrails §6; Test Plan §17)*
-- [ ] **Add full-export idempotence tests** that run `full-export --enable-uat-users` twice with identical inputs and assert manifests, artifacts, and checksums remain stable (including UAT-users outputs). *(Test Plan §§8.1,11.1)*
-- [ ] **Implement a combined verification step** that runs after the UAT-users pipeline completes, asserting that dynamic insert scripts, static seed scripts, and UAT remap scripts collectively reference only approved entities and users. Emit a consolidated proof report. *(Guardrails §§8,10; Test Plan §13.1)*
-- [ ] **Create a load harness extension** (`tools/FullExportLoadHarness`) that can replay the UAT remap script against a staging database, capture before/after row counts per FK column, and prove the transformation was lossless (no NULLs introduced, no orphans created). *(Guardrails §§7,10; Test Plan §§10.2,18.5)*
-- [ ] **Document the full-export + uat-users playbook** in `docs/full-export-artifact-contract.md`, explaining the artifact layout, proof mechanisms, verification steps, and SSDT/deployment integration for QA→UAT promotion scenarios. *(Architecture Guardrails §8)*
+#### M1.3. Export Verification Test Coverage
+- [ ] **Add comprehensive regression and validation tests for export verification**:
+  - Manifest stability tests asserting `DynamicArtifacts`, `StaticSeedArtifacts`, and `Stages` collections remain deterministic across repeated runs with identical inputs
+  - Topological order validation tests injecting known FK cycles, missing edges, and self-references, asserting correct warnings (`CycleDetected`, `MissingEdgeCount`, `AlphabeticalFallbackApplied`) while still emitting valid output
+  - Checksum verification tests ensuring per-stage hashes remain stable for fixture runs and change appropriately when inputs vary
+  - *(Delivers: Confidence in verification system correctness)*
+  - *(Test Plan §§4,8.1,11.1,11.3)*
+
+---
+
+### **MILESTONE 2: UAT-Users Transformation Guarantees** *(Proves QA→UAT mapping is safe, complete, and in-scope)*
+
+#### M2.1. UAT-Users Verification Framework
+- [ ] **Implement comprehensive UAT-users verification and proof system** covering the full pipeline from inventory validation through FK transformation:
+  - **Inventory integrity checks**: Validate both QA and UAT CSV files contain all required columns (`Id`, `Username`, `EMail`, `Name`, `External_Id`, `Is_Active`, `Creation_Date`, `Last_Login`), report missing/malformed rows with line numbers, detect duplicate IDs, and fail fast before FK analysis begins
+  - **Orphan discovery proof**: Emit `uat-users-orphan-discovery.json` recording the FK catalog (schema, table, column, constraint name), distinct user IDs per column with row counts, orphan detection logic (QA inventory minus UAT allowed set), final orphan set with provenance, query fingerprints, and timestamps for audit trails
+  - **Mapping completeness validation**: Extend `ValidateUserMapStep` to prove every orphan has a corresponding `TargetUserId`, every `TargetUserId` exists in UAT inventory, no duplicate `SourceUserId` entries exist, and emit `uat-users-validation-report.json` with pass/fail status per rule (QA coverage, UAT coverage, duplicate detection, orphan completeness), detailed error contexts with line numbers, and recommended fixes
+  - **UAT allow-list verification**: Cross-reference final user map against parsed UAT CSV, surface any `TargetUserId` values not present in the `Id` column, and block artifact emission until the map is corrected
+  - **FK transformation proof**: Implement snapshot-driven FK value audit capturing distinct user IDs from each catalogued column before transformation (from live DB or snapshot), implement pre-flight NULL preservation check querying each FK column for NULL values and recording counts, extend matching report (`04_matching_report.csv`) with `ValidationStatus` column (`Valid`, `TargetNotInUAT`, `SourceNotInQA`, `OrphanMismatch`), and emit snapshot including NULL counts and distinct ID sets for before/after comparison
+  - *(Delivers: Provable in-scope user guarantee with comprehensive validation)*
+  - *(Guardrails §§6,8,10; Test Plan §§7.3,8.3,9.1,12.1,17,18.5)*
+
+#### M2.2. FK Transformation SQL Verification
+- [ ] **Implement SQL script transformation verification** that proves generated scripts only operate on in-scope data:
+  - Parse emitted `02_apply_user_remap.sql`, extract all `UPDATE` statements, verify every `WHERE <column> IN (...)` clause references only `SourceUserId` values from the discovered orphan set, verify every `SET <column> = CASE ...` block assigns only `TargetUserId` values present in the UAT inventory, assert every UPDATE includes `WHERE <column> IS NOT NULL` guard matching the NULL preservation check, and emit verification report (`uat-users-sql-verification.json`) with pass/fail per UPDATE statement, out-of-scope ID detection, and missing NULL guards
+  - *(Delivers: Proof that SQL transformation is safe and lossless)*
+  - *(Guardrails §§5,8; Test Plan §8.3)*
+
+#### M2.3. UAT-Users Integration Test Coverage
+- [ ] **Add comprehensive end-to-end integration tests for UAT-users edge cases**:
+  - Simulate QA→UAT promotion scenarios: missing UAT users (map contains targets not in UAT inventory), duplicate source mappings (same `SourceUserId` mapped multiple times), orphan exclusions (discovered orphans not in QA inventory), NULL preservation (FK columns with NULLs that must remain NULL), GUID vs. INT identifier mixing (inventory with mixed ID types), inventory column omissions (missing required CSV columns), malformed CSV data (invalid timestamps, encoding issues)
+  - Assert pipeline fails gracefully with actionable diagnostics (error messages include line numbers, invalid values, recommended fixes) and verify no artifacts are emitted when validation fails
+  - *(Delivers: Confidence in UAT-users failure modes and error handling)*
+  - *(Test Plan §§9.1,18.5)*
+
+---
+
+### **MILESTONE 3: Integrated Workflow & Operational Readiness** *(Production-ready full-export + uat-users)*
+
+#### M3.1. Full-Export Manifest Extensions & Combined Verification
+- [ ] **Extend `FullExportRunManifest` and implement combined verification step**:
+  - Capture UAT-users provenance metadata in `uatUsers.*` namespace: QA/UAT inventory paths, snapshot fingerprints, orphan counts, mapping counts, FK catalog size, matching strategy used, validation report path, proof artifact paths
+  - Implement combined verification step running after UAT-users pipeline completes, asserting dynamic insert scripts reference only approved entities (from model catalog), static seed scripts reference approved entities, UAT remap scripts reference only in-scope users (from QA inventory orphans → UAT inventory targets), and emit consolidated proof report (`full-export-verification.json`) aggregating export validation, topological proof, and UAT-users verification results
+  - *(Delivers: Single source of truth for full-export + uat-users correctness)*
+  - *(Guardrails §§6,8,10; Test Plan §§13.1,17)*
+
+#### M3.2. Load Harness Extension for Lossless Transformation Proof
+- [ ] **Extend `tools/FullExportLoadHarness` to verify UAT-users transformations are lossless**:
+  - Add UAT remap script replay capability capturing before/after snapshots: execute `SELECT DISTINCT <column> FROM <table> WHERE <column> IS NOT NULL` for each catalogued FK column before running `02_apply_user_remap.sql`, replay the script, capture after snapshots using same queries, prove all before values were either (a) transformed to UAT-inventory targets per the map or (b) already in UAT inventory (no transformation needed), prove no NULL values were introduced (NULL count before = NULL count after), prove no orphans were created (all after values exist in UAT inventory), and emit load harness report (`load-harness-uat-users.json`) with per-column before/after statistics, transformation counts, introduced NULLs (should be zero), created orphans (should be zero), and pass/fail status
+  - *(Delivers: Runtime proof of lossless transformation against live database)*
+  - *(Guardrails §§7,10; Test Plan §§10.2,18.5)*
+
+#### M3.3. Full-Export Idempotence Tests
+- [ ] **Add full-export workflow idempotence and determinism tests**:
+  - Execute `full-export --enable-uat-users` twice with identical inputs (same model, profile, inventories, user map), assert manifests are byte-identical (all checksums, metadata, artifact lists stable), assert all emitted artifacts are identical (DDL scripts, INSERT scripts, UAT remap scripts, proof artifacts), assert verification reports show same pass/fail results, and cover both scenarios: with and without UAT-users enabled
+  - *(Delivers: Confidence in reproducible builds)*
+  - *(Test Plan §§8.1,11.1)*
+
+#### M3.4. Verification Contract Documentation
+- [ ] **Document verification contracts, proof mechanisms, and troubleshooting playbooks**:
+  - Update `docs/full-export-artifact-contract.md`: Add section explaining verification framework (checksums, manifest validation, completeness checking), topological proof artifact schema and interpretation, combined verification report format, and SSDT/deployment integration workflow consuming verification artifacts
+  - Update `docs/verbs/uat-users.md`: Add section detailing verification rules (inventory checks, orphan discovery, mapping validation, FK transformation proof), proof artifact schemas (`uat-users-orphan-discovery.json`, `uat-users-validation-report.json`, `uat-users-sql-verification.json`), validation failure error messages with examples and fixes, and troubleshooting matrix for common operator mistakes (missing columns, duplicate IDs, out-of-scope targets, NULL handling errors)
+  - Create operator incident response playbook (`docs/incident-response-uat-users.md`): Cover common failure scenarios (missing inventory columns, orphan overflow, UAT user exhaustion, transformation verification failures), provide diagnostic SQL queries to investigate issues, include remediation steps and decision trees, and add examples from integration test fixtures
+  - Update `docs/full-export-artifact-contract.md` topological section: Explain alphabetical fallback behavior, how to diagnose cycles using proof artifact, remediation steps for operators (breaking cycles, adding missing relationships), and include examples from edge-case fixtures showing cycle detection and fallback
+  - *(Delivers: Operator self-service for verification and troubleshooting)*
+  - *(Architecture Guardrails §8)*
+
+---
+
+### **MILESTONE 4: Performance & Security Validation** *(Optional for initial production; recommend for scale)*
+
+#### M4.1. Performance Benchmarking
+- [ ] **Benchmark verification systems at scale**:
+  - Topological sorting: Test models with 1000+ entities and deep FK chains (10+ levels), document worst-case timings and memory usage in `notes/perf-readout.md`, and validate proof artifact generation overhead is acceptable
+  - UAT-users FK discovery and transformation: Test datasets with 100+ FK columns and millions of distinct user IDs, measure orphan discovery time, mapping validation time, SQL generation time, and ensure pipeline completes within acceptable SLAs (document in `notes/perf-readout.md`)
+  - *(Delivers: Confidence in production scalability)*
+  - *(Test Plan §§2.5,10.1,10.2,18.5; Guardrails §7)*
+
+#### M4.2. Security & Permissions Validation
+- [ ] **Document and validate security requirements for UAT-users pipeline**:
+  - Create security audit documentation (`docs/security-uat-users.md`) covering required SQL Server permissions for FK discovery (metadata access, data profiling), inventory validation (no DB access required), remap script execution (UPDATE permissions on catalogued tables), and provide least-privilege principal recipes for each operation
+  - Validate UAT-users pipeline operates correctly under read-only principals during discovery/validation phases and document privilege escalation requirements for apply phase
+  - *(Delivers: Production security compliance)*
+  - *(Test Plan §12.1; Guardrails §10)*
 
 ---
 
@@ -65,8 +136,6 @@
 - [ ] Execute wide-table profiling benchmarks to validate the mock profiler and tightening pipeline maintain acceptable throughput for tables with hundreds of columns. *(Test Plan §2.5; Guardrails §7)*
 - [ ] Add large-entity-count integration tests (500 entities × 10 attributes) to prove the pipeline does not exhibit quadratic behavior. *(Test Plan §10.1; Guardrails §7)*
 - [ ] Capture timing baselines for the hot policy and SMO paths on representative datasets; publish results in `notes/perf-readout.md`. *(Test Plan §10.2)*
-- [ ] **Benchmark topological sorting performance** on models with 1000+ entities and deep FK chains (10+ levels), documenting worst-case timings and memory usage in `notes/perf-readout.md`. *(Test Plan §§2.5,10.2; Guardrails §7)*
-- [ ] **Profile UAT-users FK discovery and transformation** on datasets with 100+ FK columns and millions of distinct user IDs, ensuring the pipeline completes within acceptable SLAs. *(Test Plan §§10.1,18.5; Guardrails §7)*
 
 ## 5. Error Handling & Observability
 - [ ] Improve JSON ingestion error messages with JSONPath context so CLI failures point to the exact offending field. *(Test Plan §9.1; Guardrails §6)*
@@ -79,8 +148,6 @@
 - [ ] Validate that the profiler and extraction adapters operate correctly under read-only SQL principals with minimal permissions. *(Test Plan §12.1)*
 - [ ] Author an operator runbook covering cache warm-up, toggle strategies for incremental hardening, and incident response for failed tightening decisions. *(Backlog §9 alignment)*
 - [ ] Document strategies for substituting live profilers vs. fixture mocks, including environment variable recipes for CI/CD vs. local runs. *(Backlog §9; Guardrails §3)*
-- [ ] **Add UAT-users security audit documentation** covering required SQL permissions for FK discovery, inventory validation, and remap script execution. Include least-privilege principal recipes. *(Test Plan §12.1; Guardrails §10)*
-- [ ] **Create incident response playbook** for failed UAT-users runs, covering common failures (missing inventory columns, orphan overflow, UAT user exhaustion) with diagnostic SQL queries and remediation steps. *(Architecture Guardrails §8)*
 
 ## 7. Quality Gates & Release Packaging
 - [ ] Introduce `dotnet format` and Roslyn analyzer enforcement with `TreatWarningsAsErrors` for critical projects. *(Backlog §8; Guardrails §1)*
@@ -115,9 +182,50 @@ The following foundational work has been completed and is enforced by the test s
 
 ---
 
-## Priority Legend
+## Milestone-Based Delivery Strategy
 
-Tasks in **Section 0 (Critical)** are the highest priority for ensuring provable correctness of full-export and uat-users workflows. These must be completed before production deployment to UAT environments.
+**Section 0 (Critical)** is now organized into **4 milestones** for iterative delivery:
+
+### **Milestone 1: Export Artifact Verification** ✦ FOUNDATIONAL ✦
+Delivers provable export integrity and correct topological ordering.
+- **3 tasks** (M1.1–M1.3)
+- **Outcome**: Full-export generates verifiable proof artifacts; operators can validate exports without re-running pipelines
+- **Blockers removed**: Can deploy to UAT with confidence in export correctness
+
+### **Milestone 2: UAT-Users Transformation Guarantees** ✦ CORE SAFETY ✦
+Delivers provable in-scope user mapping and lossless FK transformation.
+- **3 tasks** (M2.1–M2.3)
+- **Outcome**: UAT-users pipeline proves all transformations are safe, complete, and operate only on in-scope data
+- **Blockers removed**: Can execute QA→UAT promotion with proof of data integrity
+
+### **Milestone 3: Integrated Workflow & Operational Readiness** ✦ PRODUCTION-READY ✦
+Delivers end-to-end verification and operator documentation.
+- **4 tasks** (M3.1–M3.4)
+- **Outcome**: Full-export + uat-users workflow is production-ready with comprehensive verification, lossless transformation proof, and operator self-service documentation
+- **Blockers removed**: Can release to production UAT deployments
+
+### **Milestone 4: Performance & Security Validation** ✦ SCALE & COMPLIANCE ✦
+Validates system performance at scale and security compliance.
+- **2 tasks** (M4.1–M4.2)
+- **Outcome**: System validated for production scale and security requirements
+- **Recommendation**: Complete before high-volume or multi-tenant deployments
+
+### **Task Count Reduction**
+- **Before**: 29 granular tasks across 5 subsections
+- **After**: 12 milestone-based tasks (3 + 3 + 4 + 2) with combined outcomes
+- **Benefit**: Each task delivers a working, verifiable system component vs. partial implementations
+
+### **Implementation Preference**
+Tasks are designed to **implement-as-provable** rather than "build basic then iterate":
+- M1.1 delivers full verification framework (not basic checksums, then later add validation)
+- M2.1 delivers complete UAT-users verification (not basic checks, then later add proofs)
+- Combined tasks reduce integration overhead and deliver verifiable outcomes faster
+
+### **Dependencies**
+- **M1** has no dependencies (foundational)
+- **M2** can start in parallel with M1 (independent concerns)
+- **M3** depends on M1 and M2 completion (integrates their outputs)
+- **M4** depends on M3 (validates production-ready system)
 
 **Sections 1–8** represent the broader release candidate backlog, organized by functional area. Work within each section should be prioritized based on:
 1. Blockers for production deployment (e.g., security validation, SSDT import tests)
@@ -127,4 +235,4 @@ Tasks in **Section 0 (Critical)** are the highest priority for ensuring provable
 
 ---
 
-*Last Updated: 2025-11-17 (post-full-export and uat-users implementation)*
+*Last Updated: 2025-11-17 (reorganized for milestone-based delivery)*
