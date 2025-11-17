@@ -143,7 +143,7 @@
 
 * **OutSystems**: Platform Server O11+ (cloud) with the **System** producer available (metamodel).
 * **SQL Server**: 2017+ (recommended 2019/2022).
-* **.NET**: .NET 9 SDK (or the version pinned in `global.json` when introduced).
+* **.NET**: .NET 9 SDK pinned via [`global.json`](global.json) (currently **9.0.307**). Install that preview SDK so `dotnet` refuses to roll back to older TFMs—if MSBuild reports "unsupported target frameworks" or logger crashes, the pinned SDK was not installed.
 * **C#**: C# 13 preview compiler (`<LangVersion>preview</LangVersion>` is enforced in every project).
 * **NuGet Packages**:
 
