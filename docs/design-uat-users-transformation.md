@@ -1,44 +1,29 @@
 # UAT-Users Transformation Architecture
 
-## Design Principle
+## Design Principle: Single Transformation Logic, Multiple Application Modes
 
-The `uat-users` verb has **two operational modes** depending on whether it runs standalone or integrated with `full-export`:
+The `uat-users` transformation uses a **unified mapping function** applied at different stages depending on operational context:
 
-### **Mode 1: Standalone UAT-Users (Post-Load Transformation)**
-**Use case**: Migrate existing database already loaded with QA data
-
-When run standalone, `uat-users` emits **UPDATE scripts** that transform user FK values after data is loaded:
-```bash
-dotnet run --project src/Osm.Cli -- uat-users \
-  --model ./_artifacts/model.json \
-  --connection-string "Server=uat;Database=UAT;..." \
-  --uat-user-inventory ./uat_users.csv \
-  --qa-user-inventory ./qa_users.csv
+```
+Core Transformation: Map(QA_UserId) -> UAT_UserId
 ```
 
-**Output**: `02_apply_user_remap.sql` with UPDATE statements
-```sql
--- Transforms data already in the database
-UPDATE dbo.Order SET CreatedBy =
-  CASE CreatedBy
-    WHEN 999 THEN 200  -- QA orphan → UAT target
-    WHEN 111 THEN 201
-    ELSE CreatedBy
-  END
-WHERE CreatedBy IN (999, 111) AND CreatedBy IS NOT NULL;
-```
+This mapping is derived from:
+1. **Orphan Discovery**: QA user IDs not present in UAT inventory
+2. **User Map**: Operator-supplied or auto-generated `SourceUserId → TargetUserId` pairs
+3. **Validation**: Proof that every source exists in QA inventory and every target exists in UAT inventory
 
-**Workflow**:
-1. QA data already exists in UAT database
-2. Run `02_apply_user_remap.sql` to fix user IDs in-place
-3. Idempotent; can rerun safely
+**The transformation logic is mode-agnostic.** The difference between modes is **when and where** the mapping is applied, not **what** mapping is applied.
 
 ---
 
-### **Mode 2: Full-Export Integration (Pre-Transformed INSERT Scripts)**
-**Use case**: Generate UAT-ready data set from QA source
+## Recommended Approach: Pre-Transformed INSERT Generation
 
-When integrated with `full-export --enable-uat-users`, the pipeline emits **pre-transformed INSERT scripts** where user FK values are already mapped to UAT targets:
+### **Primary Mode: Full-Export Integration (Pre-Transformed INSERTs)**
+
+**Use this mode for all new UAT deployments and refreshes.**
+
+When integrated with `full-export --enable-uat-users`, the pipeline applies the transformation **during INSERT script generation**, emitting UAT-ready data:
 
 ```bash
 dotnet run --project src/Osm.Cli -- full-export \
@@ -51,91 +36,227 @@ dotnet run --project src/Osm.Cli -- full-export \
   --user-map ./uat_user_map.csv
 ```
 
-**Output**: Dynamic INSERT scripts in `DynamicData/` with **pre-transformed user IDs**
+**Workflow**:
+1. Full-export discovers schema and data from QA
+2. UAT-users pipeline discovers orphans and validates mapping
+3. **Dynamic INSERT generator applies transformation in-memory during emission**
+4. Emitted `DynamicData/**/*.dynamic.sql` files contain UAT-ready data
+5. Load scripts directly to UAT (no post-processing)
 
+**Output**: Pre-transformed INSERT scripts
 ```sql
 -- Order.dynamic.sql: User IDs already mapped during generation
 INSERT INTO dbo.Order (Id, ProductId, CreatedBy, Amount)
 VALUES
-  (1, 100, 200, 50.00),  -- CreatedBy: 999 → 200 (transformed)
-  (2, 101, 201, 75.00);  -- CreatedBy: 111 → 201 (transformed)
+  (1, 100, 200, 50.00),  -- CreatedBy: 999 (QA orphan) → 200 (UAT target)
+  (2, 101, 201, 75.00);  -- CreatedBy: 111 (QA orphan) → 201 (UAT target)
 ```
 
-**Workflow**:
-1. Full-export generates DDL + static seeds (unchanged)
-2. UAT-users pipeline discovers orphans and validates mapping
-3. Dynamic INSERT generator **applies transformation in-memory** during script emission
-4. Emitted INSERT scripts contain UAT-ready data
-5. Load scripts directly to UAT (no post-processing needed)
+**Benefits**:
+- **Simpler deployment**: Load scripts directly; no separate transformation step
+- **Faster UAT refresh**: Eliminates UPDATE overhead on large tables
+- **Reduced lock contention**: Bulk INSERT with `TABLOCK` hints
+- **Idempotent by design**: Reload from source INSERT scripts anytime
+- **Audit-friendly**: INSERT scripts are the immutable source of truth
+- **Minimally-logged operations**: Bulk INSERT faster than row-by-row UPDATE
 
 ---
 
-## Transformation Implementation
+## Verification/Fallback Mode: Standalone UPDATE Script Generation
+
+### **Secondary Mode: Standalone (Post-Load Transformation)**
+
+**Use this mode for verification or migrating existing UAT databases already loaded with QA data.**
+
+When run independently, `uat-users` emits **UPDATE scripts** that can transform data in-place OR serve as verification artifacts:
+
+```bash
+dotnet run --project src/Osm.Cli -- uat-users \
+  --model ./_artifacts/model.json \
+  --connection-string "Server=uat;Database=UAT;..." \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --out ./uat-users-artifacts
+```
+
+**Output**: UPDATE script (can be applied or analyzed)
+```sql
+-- 02_apply_user_remap.sql: Transforms data already in database
+UPDATE dbo.Order SET CreatedBy =
+  CASE CreatedBy
+    WHEN 999 THEN 200  -- QA orphan → UAT target
+    WHEN 111 THEN 201
+    ELSE CreatedBy
+  END
+WHERE CreatedBy IN (999, 111) AND CreatedBy IS NOT NULL;
+```
+
+**Use Cases**:
+1. **Verification**: Generate UPDATE script to analyze transformations before applying pre-transformed INSERTs
+2. **Legacy migration**: Transform existing UAT database already loaded with QA data
+3. **Proof artifact**: Document what transformations will occur for audit/compliance
+4. **Dry-run validation**: Confirm mapping correctness without deploying full export
+
+**Workflow for Legacy Migration**:
+1. QA data already exists in UAT database (loaded via previous process)
+2. Run standalone `uat-users` to generate UPDATE script
+3. Review `01_preview.csv` and `02_apply_user_remap.sql`
+4. Apply UPDATE script to transform data in-place
+5. Script is idempotent; can rerun safely
+
+**Workflow for Verification**:
+1. Run `full-export --enable-uat-users` to generate pre-transformed INSERTs
+2. **Also run standalone `uat-users` to generate UPDATE script for comparison**
+3. Verify UPDATE script transformations match INSERT script transformations
+4. Provides independent proof that transformation logic is consistent
+5. UPDATE script serves as verification artifact (not applied)
+
+---
+
+## Unified Transformation Implementation
+
+Both modes use the **same transformation logic**:
 
 ### Discovery & Validation (Shared by Both Modes)
-1. **FK Catalog Discovery**: Identify all columns referencing `dbo.[User](Id)`
-2. **Orphan Detection**: Query QA database for user IDs not in UAT inventory
-3. **Mapping Validation**: Ensure every orphan has UAT target; verify targets exist
-4. **Proof Artifact Emission**: Generate `uat-users-orphan-discovery.json`, `uat-users-validation-report.json`
-
-### Script Generation (Mode-Specific)
-
-#### **Standalone Mode: UPDATE Script Emission**
 ```csharp
-// SqlScriptEmitter generates UPDATE statements
-foreach (var column in fkCatalog) {
-    var updates = orphanMap
-        .Where(m => m.TargetUserId != null)
-        .Select(m => $"WHEN {m.SourceUserId} THEN {m.TargetUserId}");
+// 1. Discover FK catalog
+var fkCatalog = ModelUserSchemaGraphFactory.Create(model);
 
-    emit($"UPDATE {column.Table} SET {column.Name} = CASE {column.Name} {updates} END");
-}
+// 2. Query QA database for distinct user IDs per column
+var orphans = DiscoverOrphans(qaInventory, uatInventory, fkCatalog);
+
+// 3. Validate user map
+ValidateUserMap(orphans, userMap, qaInventory, uatInventory);
+
+// 4. Build transformation map
+var transformationMap = userMap.ToDictionary(
+    m => m.SourceUserId,
+    m => m.TargetUserId
+);
 ```
 
-#### **Full-Export Integration: INSERT Script Transformation**
+### Application (Mode-Specific)
+
+#### **Primary: In-Memory Transformation During INSERT Generation**
 ```csharp
-// DynamicEntityInsertGenerator applies transformation during row emission
-foreach (var row in entityData) {
-    foreach (var column in row.Columns.Where(c => IsUserFK(c))) {
-        if (orphanMap.TryGetValue(column.Value, out var target)) {
-            column.Value = target.TargetUserId;  // Transform in-memory
+// DynamicEntityInsertGenerator with transformation context
+public class DynamicEntityInsertGenerator {
+    private readonly IReadOnlyDictionary<UserIdentifier, UserIdentifier> _transformationMap;
+    private readonly HashSet<string> _userFkColumns;
+
+    public void EmitInsert(EntityRow row) {
+        foreach (var column in row.Columns) {
+            // Apply transformation if column is a user FK
+            if (_userFkColumns.Contains(column.Name) &&
+                column.Value != null &&
+                _transformationMap.TryGetValue(column.Value, out var target)) {
+                column.Value = target;  // Transform in-memory
+            }
         }
+        EmitInsertStatement(row);  // Emit with transformed values
     }
-    emitInsertStatement(row);  // Emit with transformed values
 }
 ```
 
-**Key difference**: Transformation happens **during script generation**, not as a separate post-deployment step.
+**Key**: Transformation happens during row emission, not as a separate SQL step.
+
+#### **Secondary: SQL-Based Transformation (Verification/Fallback)**
+```csharp
+// SqlScriptEmitter generates UPDATE statements from same transformation map
+public class SqlScriptEmitter {
+    private readonly IReadOnlyDictionary<UserIdentifier, UserIdentifier> _transformationMap;
+
+    public void EmitUpdateScript(FkColumn column) {
+        var cases = _transformationMap
+            .Select(kvp => $"WHEN {kvp.Key} THEN {kvp.Value}")
+            .ToList();
+
+        var inClause = string.Join(", ", _transformationMap.Keys);
+
+        emit($@"
+UPDATE {column.Table}
+SET {column.Name} = CASE {column.Name}
+    {string.Join("\n    ", cases)}
+    ELSE {column.Name}
+END
+WHERE {column.Name} IN ({inClause})
+  AND {column.Name} IS NOT NULL;
+");
+    }
+}
+```
+
+**Key**: Same `_transformationMap` used; different application mechanism.
 
 ---
 
-## Verification Requirements (Both Modes)
+## Decision Tree: Which Mode Should I Use?
 
-Regardless of mode, the verification framework must prove:
+```
+┌─────────────────────────────────────────┐
+│ Do you need to deploy to UAT?          │
+└────────────┬────────────────────────────┘
+             │
+             ├─ YES ──► Is UAT database empty or being refreshed?
+             │          │
+             │          ├─ YES ──► ✅ Use Full-Export Integration (Recommended)
+             │          │          Generate pre-transformed INSERT scripts
+             │          │          Load directly to UAT
+             │          │
+             │          └─ NO ───► UAT already contains QA data?
+             │                     │
+             │                     ├─ YES ──► Use Standalone Mode (Legacy Migration)
+             │                     │          Generate & apply UPDATE scripts
+             │                     │
+             │                     └─ NO ───► Drop existing data; use Full-Export Integration
+             │
+             └─ NO ──► Just want to verify transformations?
+                       │
+                       └─ YES ──► Use Standalone Mode (Verification Only)
+                                  Generate UPDATE scripts as proof artifacts
+                                  Do NOT apply; use for analysis/audit
+```
 
-1. **Mapping Completeness**: Every orphan has a UAT target
-2. **In-Scope Guarantee**: All targets exist in UAT inventory
-3. **NULL Preservation**: NULL user IDs remain NULL (never transformed)
-4. **Lossless Transformation**: No orphans created; all transformations reversible
+**Recommendation**: Always prefer **Full-Export Integration** unless you have an existing UAT database you cannot drop.
 
-### **Mode 1 Verification (UPDATE Scripts)**
-- Parse `02_apply_user_remap.sql`
-- Extract `WHERE ... IN (...)` clauses → verify against orphan set
-- Extract `CASE ... WHEN ... THEN ...` blocks → verify against UAT inventory
-- Assert `WHERE ... IS NOT NULL` guards present
+---
 
-### **Mode 2 Verification (INSERT Scripts)**
-- Parse emitted `DynamicData/**/*.dynamic.sql` files
-- Extract all INSERT VALUES containing user FK columns
-- Verify no orphan IDs appear in emitted data (all transformed or filtered)
-- Verify all user FK values exist in UAT inventory
-- Compare row counts: QA source vs. UAT-ready output (should match; no data loss)
+## Verification Strategy: Dual Proof Mechanism
+
+For high-assurance scenarios, generate artifacts in **both modes** for cross-validation:
+
+### Verification Workflow
+```bash
+# 1. Generate pre-transformed INSERTs (primary deployment artifact)
+full-export --enable-uat-users \
+  --build-out ./uat-export \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --user-map ./uat_user_map.csv
+
+# 2. Generate UPDATE script (verification artifact)
+uat-users \
+  --model ./uat-export/model.json \
+  --connection-string "Server=qa;..." \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --user-map ./uat_user_map.csv \
+  --out ./uat-users-verification
+```
+
+### Cross-Validation Checks
+1. **Transformation count match**: UPDATE script `WHERE ... IN (...)` clause should contain same count as orphans discovered
+2. **User ID coverage**: All user IDs in UPDATE script `CASE` blocks should appear in INSERT scripts
+3. **NULL preservation**: Both modes should preserve NULLs (UPDATE has `WHERE ... IS NOT NULL`, INSERTs skip NULLs)
+4. **Target compliance**: Both modes map to same UAT inventory targets
+
+The UPDATE script serves as an **independent proof** that transformation logic is correct, even if you never apply it.
 
 ---
 
 ## Full-Export Artifact Contract Extension
 
-When `--enable-uat-users` is supplied to `full-export`, the manifest tracks transformation metadata:
+When `full-export` runs with `--enable-uat-users`, the manifest tracks transformation metadata:
 
 ```json
 {
@@ -148,7 +269,7 @@ When `--enable-uat-users` is supplied to `full-export`, the manifest tracks tran
     "uatUsers.qaInventoryPath": "/path/to/qa_users.csv",
     "uatUsers.uatInventoryPath": "/path/to/uat_users.csv",
     "uatUsers.userMapPath": "/path/to/uat_user_map.csv",
-    "uatUsers.validationReportPath": "/out/uat-users/uat-users-validation-report.json"
+    "uatUsers.validationReportPath": "/out/uat-users-verification.json"
   },
   "Stages": [
     {
@@ -156,77 +277,121 @@ When `--enable-uat-users` is supplied to `full-export`, the manifest tracks tran
       "Status": "Success",
       "Artifacts": {
         "transformationApplied": true,
-        "scripts": [...],
-        "mode": "PerEntity"
+        "mode": "PerEntity",
+        "scripts": [...]
       }
     }
   ]
 }
 ```
 
-**Key addition**: `transformationApplied: true` signals that INSERT scripts contain pre-transformed data.
+**Key fields**:
+- `transformationMode`: Always `pre-transformed-inserts` for full-export integration
+- `transformationApplied: true`: Signals INSERT scripts contain UAT-ready data
 
----
-
-## Migration Path
-
-### **Phase 1: Existing Databases** (Use Standalone Mode)
-If UAT database already contains QA data:
-```bash
-# Generate transformation script only
-uat-users --model ... --connection-string ... --out ./migration
-# Apply to existing database
-sqlcmd -S uat -d UAT -i ./migration/02_apply_user_remap.sql
-```
-
-### **Phase 2: Fresh Deployments** (Use Full-Export Integration)
-For new UAT environment or full refresh:
-```bash
-# Generate UAT-ready data set
-full-export --enable-uat-users ... --build-out ./uat-export
-# Deploy DDL + static seeds via SSDT
-# Load pre-transformed dynamic data
-sqlcmd -S uat -d UAT -i ./uat-export/DynamicData/**/*.dynamic.sql
-```
-
-**No post-processing needed** - data is UAT-ready at generation time.
+Standalone mode would use `transformationMode: post-load-updates` (but this is rare in practice).
 
 ---
 
 ## Implementation Checklist
 
-- [ ] **M2.1 Enhancement**: Extend verification framework to support both modes
-  - Detect transformation mode from context (standalone vs. full-export integration)
-  - Generate appropriate proof artifacts for each mode
+### Core Transformation Logic (Mode-Agnostic)
+- [ ] User inventory loaders (QA + UAT CSV parsing)
+- [ ] FK catalog discovery from model
+- [ ] Orphan detection (QA users not in UAT inventory)
+- [ ] User map validation (sources in QA, targets in UAT, no duplicates)
+- [ ] Transformation map builder (`SourceUserId → TargetUserId`)
+- [ ] Verification report generation (orphan discovery, validation results)
 
-- [ ] **M2.2 Mode Detection**: Update SQL verification to handle both UPDATE and INSERT scripts
-  - Parse UPDATE scripts for standalone mode
-  - Parse INSERT scripts for full-export mode
-  - Common validation: orphan set coverage, UAT inventory compliance, NULL preservation
+### Primary Mode: Full-Export Integration
+- [ ] `DynamicEntityInsertGenerator` transformation hook
+- [ ] Accept user FK column catalog during initialization
+- [ ] Accept transformation map during initialization
+- [ ] Apply transformation in-memory during row emission
+- [ ] Preserve NULLs (skip transformation for NULL values)
+- [ ] Emit metadata in manifest (`transformationApplied: true`)
+- [ ] Verification: Parse INSERT scripts, prove all user IDs in UAT inventory
 
-- [ ] **DynamicEntityInsertGenerator Integration**: Add transformation hook
-  - Accept user mapping context during initialization
-  - Apply transformations in-memory during row emission
-  - Emit metadata in manifest indicating transformation applied
+### Secondary Mode: Standalone UPDATE Script Generation
+- [ ] `SqlScriptEmitter` UPDATE script generator
+- [ ] Build CASE blocks from transformation map
+- [ ] Generate WHERE clauses with orphan IN lists
+- [ ] Add `WHERE ... IS NOT NULL` guards
+- [ ] Emit idempotent, rerunnable UPDATE scripts
+- [ ] Verification: Parse UPDATE scripts, prove transformations match map
 
-- [ ] **M3.1 Manifest Extension**: Add `transformationMode` and `transformationApplied` fields
-
-- [ ] **M3.4 Documentation**: Update all references to clarify two-mode design
-  - `docs/verbs/uat-users.md`: Explain standalone vs. integrated behavior
-  - `docs/full-export-artifact-contract.md`: Document pre-transformed INSERT contract
-  - `docs/incident-response-uat-users.md`: Cover troubleshooting for both modes
+### Dual-Mode Verification
+- [ ] Generate artifacts in both modes for cross-validation
+- [ ] Compare transformation counts (UPDATE vs INSERT)
+- [ ] Verify user ID coverage matches between modes
+- [ ] Prove NULL preservation in both modes
+- [ ] Emit cross-validation report
 
 ---
 
-## Benefits of Pre-Transformed INSERT Approach
+## Migration Path
 
-1. **Simpler deployment**: Load scripts directly; no post-processing step
-2. **Faster UAT refresh**: Eliminates UPDATE overhead on large tables
-3. **Reduced lock contention**: Bulk INSERT faster than UPDATE
-4. **Idempotent by design**: Reload from INSERT scripts anytime
-5. **Audit-friendly**: INSERT scripts are the source of truth
-6. **Minimally-logged bulk operations**: Can use `TABLOCK` hints without constraint violations
+### **New UAT Deployments** (Recommended)
+Use full-export integration exclusively:
+
+```bash
+# Single command generates UAT-ready artifacts
+full-export --enable-uat-users \
+  --build-out ./uat-export \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --user-map ./uat_user_map.csv
+
+# Deploy to UAT
+sqlcmd -S uat -d UAT -i ./uat-export/SafeScript.sql
+# Load static seeds via SSDT post-deployment
+# Load pre-transformed dynamic data
+for file in ./uat-export/DynamicData/**/*.dynamic.sql; do
+  sqlcmd -S uat -d UAT -i "$file"
+done
+```
+
+**No UPDATE scripts needed.** Data is UAT-ready at generation time.
+
+### **Existing UAT Databases** (Legacy Migration)
+Use standalone mode to transform in-place:
+
+```bash
+# Generate UPDATE script
+uat-users \
+  --model ./model.json \
+  --connection-string "Server=uat;Database=UAT;..." \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --out ./uat-users-migration
+
+# Review preview
+cat ./uat-users-migration/01_preview.csv
+
+# Apply transformation
+sqlcmd -S uat -d UAT -i ./uat-users-migration/02_apply_user_remap.sql
+```
+
+**After first migration**: Switch to full-export integration for future refreshes.
 
 ---
 
-*Last Updated: 2025-11-17*
+## Why Pre-Transformed INSERTs Are Superior
+
+| Aspect | Pre-Transformed INSERTs (Mode 2) | Post-Load UPDATEs (Mode 1) |
+|--------|----------------------------------|----------------------------|
+| **Deployment complexity** | Load scripts directly | Load data, then run UPDATE scripts |
+| **Performance** | Bulk INSERT with TABLOCK | Row-by-row UPDATE (slower) |
+| **Lock contention** | Minimal (table locks) | Row/page locks (higher contention) |
+| **Transaction log** | Minimally logged (bulk) | Fully logged (row updates) |
+| **Idempotence** | Drop/reload anytime | Requires guards (`CASE ELSE`) |
+| **Audit trail** | INSERT scripts are source of truth | Requires UPDATE script + before state |
+| **Rollback** | Drop and reload original | Complex (inverse UPDATE script) |
+| **Verification** | Parse INSERT scripts | Parse UPDATE scripts + replay |
+| **Deployment risk** | Low (fresh load) | Medium (in-place transformation) |
+
+**Recommendation**: Use Mode 2 (pre-transformed INSERTs) for all new deployments. Use Mode 1 only for verification or legacy migration.
+
+---
+
+*Last Updated: 2025-11-17 (clarified recommended approach and unified transformation logic)*

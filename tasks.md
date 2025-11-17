@@ -47,14 +47,16 @@
   - *(Delivers: Provable in-scope user guarantee with comprehensive validation)*
   - *(Guardrails §§6,8,10; Test Plan §§7.3,8.3,9.1,12.1,17,18.5)*
 
-#### M2.2. Transformation Script Verification (Dual-Mode)
-- [ ] **Implement transformation verification supporting both standalone and full-export integration modes**:
-  - **Standalone mode (UPDATE scripts)**: Parse `02_apply_user_remap.sql`, extract `UPDATE` statements, verify `WHERE ... IN (...)` clauses reference only orphan set, verify `CASE ... WHEN ... THEN` blocks assign only UAT inventory targets, assert `WHERE ... IS NOT NULL` guards present
-  - **Full-export integration mode (pre-transformed INSERTs)**: Parse emitted `DynamicData/**/*.dynamic.sql` files, extract INSERT VALUES for user FK columns, verify no orphan IDs appear in emitted data (all transformed or filtered), verify all user FK values exist in UAT inventory, compare row counts between QA source and UAT-ready output (should match; no data loss)
-  - Emit mode-appropriate verification report (`uat-users-sql-verification.json`) with pass/fail per statement, out-of-scope ID detection, NULL preservation verification, and transformation statistics
-  - *(Delivers: Proof that SQL transformation is safe and lossless in both operational modes)*
+#### M2.2. Transformation Verification with Unified Logic
+- [ ] **Implement transformation verification using unified mapping logic applied at different stages**:
+  - **Core verification**: Build transformation map from user mapping CSV, validate every source exists in QA inventory, validate every target exists in UAT inventory, prove no duplicate sources, emit transformation map artifact for audit
+  - **Primary (full-export integration)**: Verify pre-transformed INSERT scripts—parse emitted `DynamicData/**/*.dynamic.sql` files, extract INSERT VALUES for user FK columns, prove no orphan IDs appear in emitted data (all transformed to UAT targets or were already in UAT inventory), verify all user FK values exist in UAT inventory, compare row counts between QA source and UAT-ready output (should match; no data loss)
+  - **Secondary (standalone verification)**: Generate UPDATE script as independent proof artifact—emit `02_apply_user_remap.sql` using same transformation map, parse emitted UPDATE statements, verify `WHERE ... IN (...)` clauses reference only orphan set, verify `CASE ... WHEN ... THEN` blocks assign only UAT inventory targets, assert `WHERE ... IS NOT NULL` guards present
+  - **Cross-validation**: Compare transformation counts between INSERT and UPDATE artifacts, prove user ID coverage matches, verify NULL preservation in both representations
+  - Emit unified verification report (`uat-users-verification.json`) with transformation map fingerprint, INSERT script validation results, UPDATE script validation results (when generated), cross-validation status, and pass/fail per verification rule
+  - *(Delivers: Single transformation logic with mode-specific application; UPDATE script serves as verification artifact)*
   - *(Guardrails §§5,8; Test Plan §8.3)*
-  - *(See: docs/design-uat-users-transformation.md)*
+  - *(See: docs/design-uat-users-transformation.md §Unified Transformation Implementation)*
 
 #### M2.3. UAT-Users Integration Test Coverage
 - [ ] **Add comprehensive end-to-end integration tests for UAT-users edge cases**:
@@ -75,14 +77,14 @@
   - *(Guardrails §§6,8,10; Test Plan §§13.1,17)*
   - *(See: docs/design-uat-users-transformation.md for mode semantics)*
 
-#### M3.2. Load Harness Extension for Lossless Transformation Proof (Dual-Mode)
-- [ ] **Extend `tools/FullExportLoadHarness` to verify UAT-users transformations are lossless in both operational modes**:
-  - **Standalone mode validation**: Add UPDATE script replay capability capturing before/after snapshots (execute `SELECT DISTINCT <column> FROM <table> WHERE <column> IS NOT NULL` per FK column before running `02_apply_user_remap.sql`, replay script, capture after snapshots, prove transformations match user map, verify NULL preservation, detect orphan creation)
-  - **Full-export integration mode validation**: Add pre-transformed INSERT script validation (load generated `DynamicData/**/*.dynamic.sql` into staging database, query all user FK columns, prove all values exist in UAT inventory, compare row counts against source manifest to detect data loss, verify NULL counts match expectations)
-  - Emit unified load harness report (`load-harness-uat-users.json`) with mode indicator, per-column before/after statistics (for standalone) or validation results (for full-export), transformation counts, introduced NULLs (should be zero), created orphans (should be zero), and pass/fail status
-  - *(Delivers: Runtime proof of lossless transformation in both standalone and integrated modes)*
+#### M3.2. Load Harness Extension for Transformation Verification
+- [ ] **Extend `tools/FullExportLoadHarness` to prove pre-transformed INSERT scripts are UAT-ready and lossless**:
+  - **Primary validation (recommended workflow)**: Load pre-transformed INSERT scripts (`DynamicData/**/*.dynamic.sql`) into staging database, query all user FK columns across catalogued tables, prove all values exist in UAT inventory (no orphans introduced), compare row counts against source manifest to detect data loss, verify NULL counts match expectations from discovery phase, emit per-table validation results
+  - **Optional verification (dual-proof mechanism)**: If UPDATE script was generated for cross-validation, load original QA data into separate staging database, replay `02_apply_user_remap.sql`, capture before/after snapshots per FK column, prove transformations match user map, verify UPDATE-transformed data matches INSERT-transformed data, confirm NULL preservation in both approaches
+  - Emit load harness report (`load-harness-uat-users.json`) with primary validation results (INSERT script validation always included), optional cross-validation results (UPDATE script comparison if generated), per-column statistics, transformation counts, introduced NULLs (should be zero), created orphans (should be zero), and overall pass/fail status
+  - *(Delivers: Runtime proof that pre-transformed INSERTs are UAT-ready; optional UPDATE script serves as independent verification)*
   - *(Guardrails §§7,10; Test Plan §§10.2,18.5)*
-  - *(See: docs/design-uat-users-transformation.md §Verification Requirements)*
+  - *(See: docs/design-uat-users-transformation.md §Verification Strategy)*
 
 #### M3.3. Full-Export Idempotence Tests
 - [ ] **Add full-export workflow idempotence and determinism tests**:
@@ -91,15 +93,15 @@
   - *(Test Plan §§8.1,11.1)*
 
 #### M3.4. Verification Contract Documentation
-- [ ] **Document verification contracts, proof mechanisms, and troubleshooting playbooks**:
-  - Update `docs/full-export-artifact-contract.md`: Add sections explaining verification framework (checksums, manifest validation, completeness checking), topological proof artifact schema and interpretation, combined verification report format, **pre-transformed INSERT contract when UAT-users is enabled** (transformation mode metadata, transformationApplied flag semantics, UAT-ready data guarantee), and SSDT/deployment integration workflow consuming verification artifacts
-  - Update `docs/verbs/uat-users.md`: **Document dual-mode operation** (standalone UPDATE scripts vs. full-export integration with pre-transformed INSERTs), add section detailing verification rules for both modes (inventory checks, orphan discovery, mapping validation, FK transformation proof), proof artifact schemas (`uat-users-orphan-discovery.json`, `uat-users-validation-report.json`, `uat-users-sql-verification.json`), validation failure error messages with examples and fixes, and troubleshooting matrix for common operator mistakes (missing columns, duplicate IDs, out-of-scope targets, NULL handling errors)
-  - Create operator incident response playbook (`docs/incident-response-uat-users.md`): Cover common failure scenarios for both modes (missing inventory columns, orphan overflow, UAT user exhaustion, transformation verification failures), provide diagnostic SQL queries to investigate issues (including queries to verify INSERT script transformations), include remediation steps and decision trees, and add examples from integration test fixtures
+- [ ] **Document verification contracts, proof mechanisms, and recommended workflow**:
+  - Update `docs/full-export-artifact-contract.md`: Add sections explaining verification framework (checksums, manifest validation, completeness checking), topological proof artifact schema and interpretation, combined verification report format, **pre-transformed INSERT contract when UAT-users is enabled** (transformation mode metadata, transformationApplied flag semantics, UAT-ready data guarantee), recommended deployment workflow (full-export with pre-transformed INSERTs as primary), optional verification workflow (generate UPDATE script for cross-validation), and SSDT/deployment integration consuming verification artifacts
+  - Update `docs/verbs/uat-users.md`: **Lead with recommended approach** (full-export integration with pre-transformed INSERTs), explain standalone mode as verification/legacy migration tool, add decision tree showing when to use each approach, document unified transformation logic with mode-specific application, add section detailing verification rules (inventory checks, orphan discovery, mapping validation, FK transformation proof), proof artifact schemas (`uat-users-orphan-discovery.json`, `uat-users-validation-report.json`, `uat-users-verification.json`), validation failure error messages with examples and fixes, and troubleshooting matrix for common operator mistakes
+  - Create operator incident response playbook (`docs/incident-response-uat-users.md`): Cover common failure scenarios (missing inventory columns, orphan overflow, UAT user exhaustion, transformation verification failures in INSERT scripts), provide diagnostic SQL queries to investigate issues (query INSERT scripts for orphan IDs, verify UAT inventory coverage, check NULL preservation), include remediation steps and decision trees, emphasize recommended workflow (full-export integration), and add examples from integration test fixtures
   - Update `docs/full-export-artifact-contract.md` topological section: Explain alphabetical fallback behavior, how to diagnose cycles using proof artifact, remediation steps for operators (breaking cycles, adding missing relationships), and include examples from edge-case fixtures showing cycle detection and fallback
-  - **Reference `docs/design-uat-users-transformation.md`** from updated documentation to provide architectural context for dual-mode design
-  - *(Delivers: Operator self-service for verification and troubleshooting across both operational modes)*
+  - **Reference `docs/design-uat-users-transformation.md`** from all documentation to provide architectural context, decision tree, unified transformation logic explanation, and comparison table showing why pre-transformed INSERTs are superior
+  - *(Delivers: Operator self-service with clear guidance on recommended approach; UPDATE script positioned as verification tool)*
   - *(Architecture Guardrails §8)*
-  - *(See: docs/design-uat-users-transformation.md for transformation architecture)*
+  - *(See: docs/design-uat-users-transformation.md for transformation architecture and decision tree)*
 
 ---
 

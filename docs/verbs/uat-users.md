@@ -1,24 +1,60 @@
 # uat-users Verb
 
-The `uat-users` verb discovers every foreign-key column that references `dbo.[User](Id)`, evaluates the live data set for out-of-scope user identifiers, and emits transformation artifacts for QA→UAT data promotion.
+The `uat-users` verb discovers every foreign-key column that references `dbo.[User](Id)`, evaluates the live data set for out-of-scope user identifiers, and enables QA→UAT data promotion with provably correct user ID transformations.
 
-## Operational Modes
+---
 
-The verb operates in **two distinct modes** depending on context:
+## ✅ Recommended Approach: Full-Export Integration
 
-### **Mode 1: Standalone (Post-Load Transformation)**
-When run independently, emits **UPDATE scripts** (`02_apply_user_remap.sql`) that transform user FK values in an existing database already loaded with QA data. Use this mode to migrate existing UAT databases.
+**For all new UAT deployments and refreshes, use `full-export --enable-uat-users`.**
 
-**Workflow**: Load QA data → Run UPDATE scripts → Data is UAT-ready
+The recommended workflow generates **pre-transformed INSERT scripts** where user FK values are already mapped to UAT targets during script generation:
 
-### **Mode 2: Full-Export Integration (Pre-Transformed Data Generation)**
-When integrated with `full-export --enable-uat-users`, **transforms data during INSERT script generation**. The emitted `DynamicData/**/*.dynamic.sql` files contain pre-transformed user FK values, ready for direct UAT deployment.
+```bash
+dotnet run --project src/Osm.Cli -- full-export \
+  --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
+  --profile-out ./out/profiles \
+  --build-out ./out/uat-export \
+  --enable-uat-users \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --user-map ./uat_user_map.csv
+```
 
-**Workflow**: Generate pre-transformed INSERT scripts → Load directly to UAT → Data is UAT-ready
+**Outcome**: `DynamicData/**/*.dynamic.sql` files contain UAT-ready data. Load directly to UAT—no post-processing needed.
 
-**Key benefit**: No post-load transformation step required; INSERT scripts are the source of truth.
+**Benefits**:
+- Simpler deployment (no separate transformation step)
+- Faster UAT refresh (bulk INSERT vs. row-by-row UPDATE)
+- Idempotent (reload from source scripts anytime)
+- Audit-friendly (INSERT scripts are immutable source of truth)
 
-> **See**: `docs/design-uat-users-transformation.md` for detailed architecture and verification requirements for each mode.
+---
+
+## Alternative Mode: Standalone (Verification & Legacy Migration)
+
+**Use standalone mode for:**
+1. **Verification**: Generate UPDATE script to analyze transformations before deployment
+2. **Legacy migration**: Transform existing UAT database already loaded with QA data
+
+When run independently, `uat-users` emits **UPDATE scripts** that can transform data in-place OR serve as verification artifacts:
+
+```bash
+dotnet run --project src/Osm.Cli -- uat-users \
+  --model ./_artifacts/model.json \
+  --connection-string "Server=uat;Database=UAT;..." \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --out ./uat-users-artifacts
+```
+
+**Outcome**: `02_apply_user_remap.sql` with UPDATE statements
+
+**Primary use case**: Generate as **verification artifact** (cross-validate transformation logic) or apply to existing UAT database as one-time migration.
+
+**After legacy migration**: Switch to full-export integration for future refreshes.
+
+> **See**: `docs/design-uat-users-transformation.md` for detailed architecture, decision tree, and unified transformation logic.
 
 ## Key Behaviors
 
