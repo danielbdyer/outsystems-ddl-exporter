@@ -91,6 +91,7 @@ public sealed class TighteningAnalysisPipeline : ICommandHandler<TighteningAnaly
             request.Scope.SupplementalModels,
             telemetry,
             (_, token) => LoadProfileAsync(request.Scope.ProfilePath, token),
+            request.Scope.SqlOptions,
             request.Scope.InlineModel,
             request.Scope.ModelWarnings);
 

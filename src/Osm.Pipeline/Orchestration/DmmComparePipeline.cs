@@ -139,6 +139,7 @@ public sealed class DmmComparePipeline : ICommandHandler<DmmComparePipelineReque
                 return Result<ProfileCaptureResult>.Success(
                     new ProfileCaptureResult(snapshotResult.Value, MultiEnvironmentProfileReport.Empty));
             },
+            request.Scope.SqlOptions,
             request.Scope.InlineModel,
             request.Scope.ModelWarnings);
 

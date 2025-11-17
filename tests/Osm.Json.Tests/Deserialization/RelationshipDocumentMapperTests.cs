@@ -88,4 +88,38 @@ public class RelationshipDocumentMapperTests
         Assert.Equal("CUSTOMERID", column.OwnerColumn);
         Assert.Equal("ID", column.ReferencedColumn);
     }
+
+    [Fact]
+    public void Map_ShouldAllowMissingConstraintColumns()
+    {
+        var warnings = new List<string>();
+        var context = CreateContext(warnings);
+        var mapper = new RelationshipDocumentMapper(context);
+
+        var document = new ModelJsonDeserializer.RelationshipDocument
+        {
+            ViaAttributeName = "CustomerId",
+            TargetEntityName = "Customer",
+            TargetEntityPhysicalName = "OSUSR_CUSTOMER",
+            ActualConstraints = new[]
+            {
+                new ModelJsonDeserializer.RelationshipConstraintDocument
+                {
+                    Name = "FK_OSUSR_ORDER_CUSTOMER",
+                    ReferencedSchema = "dbo",
+                    ReferencedTable = "OSUSR_CUSTOMER",
+                    Columns = null
+                }
+            }
+        };
+
+        var result = mapper.Map(
+            new[] { document },
+            DocumentPathContext.Root.Property("relationships"));
+
+        Assert.True(result.IsSuccess);
+        var relationship = Assert.Single(result.Value);
+        var constraint = Assert.Single(relationship.ActualConstraints);
+        Assert.Empty(constraint.Columns);
+    }
 }

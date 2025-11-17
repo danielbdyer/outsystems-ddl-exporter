@@ -21,11 +21,16 @@ public interface IModelIngestionService
 public sealed class ModelIngestionService : IModelIngestionService
 {
     private readonly IModelJsonDeserializer _deserializer;
+    private readonly IRelationshipConstraintHydrator _constraintHydrator;
     private readonly IFileSystem _fileSystem;
 
-    public ModelIngestionService(IModelJsonDeserializer deserializer, IFileSystem? fileSystem = null)
+    public ModelIngestionService(
+        IModelJsonDeserializer deserializer,
+        IRelationshipConstraintHydrator? constraintHydrator = null,
+        IFileSystem? fileSystem = null)
     {
         _deserializer = deserializer ?? throw new ArgumentNullException(nameof(deserializer));
+        _constraintHydrator = constraintHydrator ?? NullRelationshipConstraintHydrator.Instance;
         _fileSystem = fileSystem ?? new FileSystem();
     }
 
@@ -52,6 +57,22 @@ public sealed class ModelIngestionService : IModelIngestionService
             ingestionOptions.ValidationOverrides,
             ingestionOptions.MissingSchemaFallback);
 
-        return _deserializer.Deserialize(stream, warnings, deserializerOptions);
+        var deserializeResult = _deserializer.Deserialize(stream, warnings, deserializerOptions);
+        if (deserializeResult.IsFailure)
+        {
+            return deserializeResult;
+        }
+
+        var model = deserializeResult.Value;
+        if (ingestionOptions.SqlMetadata is null)
+        {
+            return Result<OsmModel>.Success(model);
+        }
+
+        var hydratedResult = await _constraintHydrator
+            .HydrateAsync(model, ingestionOptions.SqlMetadata, warnings, cancellationToken)
+            .ConfigureAwait(false);
+
+        return hydratedResult;
     }
 }

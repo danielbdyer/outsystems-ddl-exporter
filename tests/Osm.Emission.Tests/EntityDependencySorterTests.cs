@@ -95,6 +95,114 @@ public sealed class EntityDependencySorterTests
     }
 
     [Fact]
+    public void SortByForeignKeys_ReportsEdgesAfterMetadataEnrichment()
+    {
+        var parentDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Parent",
+            "dbo",
+            "OSUSR_SAMPLE_PARENT",
+            "OSUSR_SAMPLE_PARENT",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
+
+        var childDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Child",
+            "dbo",
+            "OSUSR_SAMPLE_CHILD",
+            "OSUSR_SAMPLE_CHILD",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
+
+        var tables = ImmutableArray.Create(
+            new StaticEntityTableData(childDefinition, ImmutableArray<StaticEntityRow>.Empty),
+            new StaticEntityTableData(parentDefinition, ImmutableArray<StaticEntityRow>.Empty));
+
+        var parentEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { CreateAttribute("Id", "ID", isIdentifier: true) }).Value;
+
+        var childRelationshipWithoutColumns = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_CHILD_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_PARENT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    Array.Empty<RelationshipActualConstraintColumn>())
+            }).Value;
+
+        var childRelationshipWithColumns = childRelationshipWithoutColumns with
+        {
+            ActualConstraints = ImmutableArray.Create(
+                RelationshipActualConstraint.Create(
+                    "FK_CHILD_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_PARENT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("PARENTID", "ParentId", "ID", "Id", 0) }))
+        };
+
+        var childEntityWithoutColumns = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Child"),
+            new TableName("OSUSR_SAMPLE_CHILD"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true),
+                CreateAttribute("ParentId", "PARENTID")
+            },
+            relationships: new[] { childRelationshipWithoutColumns }).Value;
+
+        var childEntityWithColumns = childEntityWithoutColumns with
+        {
+            Relationships = ImmutableArray.Create(childRelationshipWithColumns)
+        };
+
+        var modelWithoutColumns = OsmModel.Create(
+            DateTime.UtcNow,
+            new[]
+            {
+                ModuleModel.Create(new ModuleName("Sample"), isSystemModule: false, isActive: true, entities: new[] { parentEntity, childEntityWithoutColumns }).Value
+            }).Value;
+
+        var modelWithColumns = OsmModel.Create(
+            DateTime.UtcNow,
+            new[]
+            {
+                ModuleModel.Create(new ModuleName("Sample"), isSystemModule: false, isActive: true, entities: new[] { parentEntity, childEntityWithColumns }).Value
+            }).Value;
+
+        var orderingWithoutColumns = EntityDependencySorter.SortByForeignKeys(tables, modelWithoutColumns);
+        Assert.Equal(0, orderingWithoutColumns.EdgeCount);
+
+        var orderingWithColumns = EntityDependencySorter.SortByForeignKeys(tables, modelWithColumns);
+        Assert.Equal(1, orderingWithColumns.EdgeCount);
+    }
+
+    [Fact]
     public void SortByForeignKeys_ReportsMissingEdgesWhenReferencedTableAbsent()
     {
         var childDefinition = new StaticEntitySeedTableDefinition(
