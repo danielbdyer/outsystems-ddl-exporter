@@ -3,16 +3,17 @@
 > Use this quick checklist before starting implementation work to confirm the pipeline can build and test end-to-end on the current machine or CI agent.
 
 0. **Install the expected .NET SDK (one-time per environment)**
-   - Run the helper script below to install the .NET SDK 9.0 toolchain in a deterministic location and persist the required environment variables:
+   - The repo now pins `.NET` via [`global.json`](../global.json) to **SDK `9.0.307`**. Install that exact preview release so `dotnet` refuses to run older TFMs and the build keeps access to the C# 13 preview compiler. When the `global.json` changes, re-run the helper script below with the updated version string.
+   - Run the helper script below to install the pinned SDK toolchain in a deterministic location and persist the required environment variables:
 
 ```bash
 #!/bin/bash
 set -e
 
 # Define the version of .NET you want to install
-DOTNET_VERSION="9.0"
+DOTNET_VERSION="9.0.307"
 
-echo "🚧 Installing .NET SDK $DOTNET_VERSION to /root/.dotnet"
+echo "🚧 Installing .NET SDK $DOTNET_VERSION (from global.json) to /root/.dotnet"
 
 # Step 1: Install prerequisites
 sudo apt-get update
