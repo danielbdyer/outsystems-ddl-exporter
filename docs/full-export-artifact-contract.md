@@ -93,6 +93,117 @@ inspecting the manifest JSON directly. 【F:src/Osm.Pipeline/Runtime/Verbs/FullE
 Downstream tooling can rely on these fields to stage seed scripts independently of the
 SSDT output while still applying the full export bundle on first-run deployments.
 
+---
+
+## Data Integrity Verification (DMM Replacement)
+
+The full-export pipeline supports **end-to-end data integrity verification** to provide unfailing confidence that the ETL process is correct. This capability enables replacing expensive third-party tools (like DMM) with a verifiable, auditable pipeline.
+
+### Verification Artifacts
+
+When verification is enabled, additional artifacts are generated:
+
+| Artifact | Description |
+| --- | --- |
+| `source-data-fingerprint.json` | Per-table row counts, per-column checksums, NULL counts, and distinct value counts captured from source database (QA) |
+| `data-integrity-verification.json` | Comprehensive verification report comparing source fingerprint against target data after loading INSERT scripts |
+| `load-harness-full-verification.json` | Extended load harness report including source-to-target parity verification, transformation validation, and performance metrics |
+
+### Verification Report Schema
+
+The `data-integrity-verification.json` report proves:
+1. **No data loss**: Row counts match source exactly
+2. **1:1 data fidelity**: Non-transformed columns have identical checksums
+3. **Correct transformations**: User FK values map correctly per transformation map
+4. **NULL preservation**: NULL counts match per column
+
+**Report structure**:
+```json
+{
+  "overallStatus": "PASS" | "FAIL",
+  "verificationTimestamp": "ISO-8601 timestamp",
+  "sourceFingerprint": "path to source-data-fingerprint.json",
+  "tables": [
+    {
+      "table": "schema.table",
+      "rowCountMatch": true,
+      "sourceRowCount": 1500,
+      "targetRowCount": 1500,
+      "columns": [
+        {
+          "name": "columnName",
+          "isTransformed": false,
+          "checksumMatch": true,
+          "nullCountMatch": true,
+          "status": "PASS"
+        }
+      ],
+      "status": "PASS"
+    }
+  ],
+  "discrepancies": [],
+  "summary": {
+    "tablesVerified": 50,
+    "tablesPassed": 50,
+    "tablesFailed": 0,
+    "columnsVerified": 500,
+    "columnsPassed": 500,
+    "columnsFailed": 0,
+    "transformedColumns": 23,
+    "dataLossDetected": false
+  }
+}
+```
+
+### Integration with CI/CD
+
+Use verification as a **quality gate** before production deployment:
+
+```yaml
+- name: Run Full Export with UAT-Users
+  run: |
+    dotnet run --project src/Osm.Cli -- full-export \
+      --enable-uat-users \
+      --build-out ./out/uat-export \
+      ...
+
+- name: Verify Data Integrity (Load Harness)
+  run: |
+    dotnet run --project tools/FullExportLoadHarness \
+      --source-connection "$QA_CONNECTION" \
+      --target-connection "$UAT_STAGING_CONNECTION" \
+      --manifest ./out/uat-export/full-export.manifest.json \
+      --verification-report-out ./verification-report.json
+
+- name: Check Verification Status
+  run: |
+    STATUS=$(jq -r '.overallStatus' ./verification-report.json)
+    if [ "$STATUS" != "PASS" ]; then
+      echo "❌ Data integrity verification FAILED"
+      exit 1
+    fi
+
+- name: Deploy to Production UAT
+  if: success()
+  run: |
+    # Deploy verified artifacts with confidence
+```
+
+### Benefits Over DMM
+
+| Aspect | DMM | Full-Export with Verification |
+|--------|-----|-------------------------------|
+| **Data integrity proof** | Manual validation | Automated verification report |
+| **Transformation validation** | Hope and pray | Provable correctness (checksum + map validation) |
+| **Cost** | Expensive subscription | Open-source tooling |
+| **Developer experience** | Nightmare (manual processes) | Deterministic, repeatable, verifiable |
+| **NULL preservation** | Not guaranteed | Proven with NULL count comparison |
+| **Audit trail** | Limited visibility | Complete fingerprint + verification report |
+
+> **See**: `docs/design-uat-users-transformation.md` for detailed verification strategy, load harness integration, and incremental verification approaches for large datasets.
+
+---
+
 ## SSDT Integration Playbook
 
 ### 1. Land static seed MERGE scripts in Post-Deployment

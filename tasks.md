@@ -25,13 +25,23 @@
   - *(Delivers: Provable correct insertion order with auditable proof)*
   - *(Guardrails §§5,6,7,8; Test Plan §§2.5,8.3,13.1,17)*
 
-#### M1.3. Export Verification Test Coverage
+#### M1.3. Data Integrity Verification (Source-to-Target Parity)
+- [ ] **Implement end-to-end data integrity verification proving exported data matches source exactly**:
+  - **Source data capture**: Extract row counts, column checksums, and distinct value counts per table from source database (QA), record in `source-data-fingerprint.json` with table name, row count, per-column NULL counts, per-column distinct value counts (for low-cardinality columns), and aggregate checksum per table
+  - **Target data validation**: After loading emitted INSERT scripts to target database (UAT staging), extract same metrics, compare against source fingerprint, prove row counts match (no data loss), prove NULL counts match per column (NULL preservation), prove non-transformed columns have identical checksums (1:1 data fidelity), and for transformed columns (user FKs), prove all values map correctly per transformation map
+  - **Transformation verification**: For each user FK column, query target values, prove every value either (a) exists in UAT inventory (transformed correctly) or (b) was already in UAT inventory (no transformation needed), prove orphan set was fully transformed, verify no orphans introduced, and emit per-column transformation audit
+  - **Comprehensive verification report**: Generate `data-integrity-verification.json` with source/target row count comparison per table, per-column NULL count comparison, non-transformed column checksum comparison (pass/fail), transformed column validation results (all values in UAT inventory), detected discrepancies with row-level detail (for small datasets), and overall pass/fail status
+  - *(Delivers: Unfailing confidence in ETL pipeline correctness; proves full-export can replace DMM)*
+  - *(Guardrails §§6,8,10; Test Plan §§13.1,18.5)*
+
+#### M1.4. Export Verification Test Coverage
 - [ ] **Add comprehensive regression and validation tests for export verification**:
   - Manifest stability tests asserting `DynamicArtifacts`, `StaticSeedArtifacts`, and `Stages` collections remain deterministic across repeated runs with identical inputs
   - Topological order validation tests injecting known FK cycles, missing edges, and self-references, asserting correct warnings (`CycleDetected`, `MissingEdgeCount`, `AlphabeticalFallbackApplied`) while still emitting valid output
   - Checksum verification tests ensuring per-stage hashes remain stable for fixture runs and change appropriately when inputs vary
-  - *(Delivers: Confidence in verification system correctness)*
-  - *(Test Plan §§4,8.1,11.1,11.3)*
+  - **Data integrity verification tests**: Load fixture data to source database, run full-export, load INSERT scripts to target, verify source-to-target parity using verification framework, assert non-transformed data matches exactly, assert transformed data maps correctly, and prove zero data loss
+  - *(Delivers: Confidence in verification system correctness and data integrity validation)*
+  - *(Test Plan §§4,8.1,11.1,11.3,13.1)*
 
 ---
 
@@ -77,13 +87,16 @@
   - *(Guardrails §§6,8,10; Test Plan §§13.1,17)*
   - *(See: docs/design-uat-users-transformation.md for mode semantics)*
 
-#### M3.2. Load Harness Extension for Transformation Verification
-- [ ] **Extend `tools/FullExportLoadHarness` to prove pre-transformed INSERT scripts are UAT-ready and lossless**:
-  - **Primary validation (recommended workflow)**: Load pre-transformed INSERT scripts (`DynamicData/**/*.dynamic.sql`) into staging database, query all user FK columns across catalogued tables, prove all values exist in UAT inventory (no orphans introduced), compare row counts against source manifest to detect data loss, verify NULL counts match expectations from discovery phase, emit per-table validation results
-  - **Optional verification (dual-proof mechanism)**: If UPDATE script was generated for cross-validation, load original QA data into separate staging database, replay `02_apply_user_remap.sql`, capture before/after snapshots per FK column, prove transformations match user map, verify UPDATE-transformed data matches INSERT-transformed data, confirm NULL preservation in both approaches
-  - Emit load harness report (`load-harness-uat-users.json`) with primary validation results (INSERT script validation always included), optional cross-validation results (UPDATE script comparison if generated), per-column statistics, transformation counts, introduced NULLs (should be zero), created orphans (should be zero), and overall pass/fail status
-  - *(Delivers: Runtime proof that pre-transformed INSERTs are UAT-ready; optional UPDATE script serves as independent verification)*
-  - *(Guardrails §§7,10; Test Plan §§10.2,18.5)*
+#### M3.2. Load Harness Extension for End-to-End Data Verification
+- [ ] **Extend `tools/FullExportLoadHarness` to prove full-export ETL pipeline correctness end-to-end**:
+  - **Source data fingerprinting**: Connect to source database (QA), extract row counts per table, calculate per-column checksums for non-transformed columns, record NULL counts per column, capture distinct value counts for low-cardinality columns, and persist source fingerprint to enable post-load comparison
+  - **Target data loading and validation**: Load emitted DDL scripts (SafeScript.sql), load static seed scripts (via SSDT post-deployment), load pre-transformed dynamic INSERT scripts (`DynamicData/**/*.dynamic.sql`) to staging database, extract same metrics from target, compare against source fingerprint
+  - **Data integrity verification (non-transformed columns)**: For every non-user-FK column, compare source vs. target checksums, prove 1:1 data match, detect any discrepancies with row-level detail, verify NULL counts match exactly, and emit per-column verification results
+  - **Transformation verification (user FK columns)**: Query all user FK columns in target, prove every value exists in UAT inventory (no orphans introduced), compare against transformation map to verify correct mapping, prove orphan set was fully transformed, verify NULL preservation (NULL count source = NULL count target), and emit per-column transformation audit
+  - **Comprehensive ETL verification report**: Generate `load-harness-full-verification.json` with source/target row count comparison per table (must match exactly), per-column checksum comparison for non-transformed data (pass/fail), per-column transformation validation for user FKs (all in UAT inventory), detected discrepancies (with row-level detail for small datasets), performance metrics (load time, index build time), and overall pass/fail status proving ETL correctness
+  - **Optional dual-proof verification**: If UPDATE script was generated for cross-validation, load original QA data to separate staging, replay `02_apply_user_remap.sql`, compare UPDATE-transformed data vs. INSERT-transformed data, prove both approaches yield identical results
+  - *(Delivers: Unfailing confidence in full-export ETL pipeline; proves tool can replace DMM with verified data integrity)*
+  - *(Guardrails §§7,10; Test Plan §§10.2,13.1,18.5)*
   - *(See: docs/design-uat-users-transformation.md §Verification Strategy)*
 
 #### M3.3. Full-Export Idempotence Tests
@@ -198,10 +211,10 @@ The following foundational work has been completed and is enforced by the test s
 **Section 0 (Critical)** is now organized into **4 milestones** for iterative delivery:
 
 ### **Milestone 1: Export Artifact Verification** ✦ FOUNDATIONAL ✦
-Delivers provable export integrity and correct topological ordering.
-- **3 tasks** (M1.1–M1.3)
-- **Outcome**: Full-export generates verifiable proof artifacts; operators can validate exports without re-running pipelines
-- **Blockers removed**: Can deploy to UAT with confidence in export correctness
+Delivers provable export integrity, correct topological ordering, and end-to-end data parity.
+- **4 tasks** (M1.1–M1.4)
+- **Outcome**: Full-export generates verifiable proof artifacts; operators can validate exports without re-running pipelines; **source-to-target data integrity verification proves 1:1 data match and correct transformations**
+- **Blockers removed**: Can deploy to UAT with confidence in export correctness; **can replace DMM with verified ETL pipeline**
 
 ### **Milestone 2: UAT-Users Transformation Guarantees** ✦ CORE SAFETY ✦
 Delivers provable in-scope user mapping and lossless FK transformation.
@@ -223,7 +236,7 @@ Validates system performance at scale and security compliance.
 
 ### **Task Count Reduction**
 - **Before**: 29 granular tasks across 5 subsections
-- **After**: 12 milestone-based tasks (3 + 3 + 4 + 2) with combined outcomes
+- **After**: 13 milestone-based tasks (4 + 3 + 4 + 2) with combined outcomes
 - **Benefit**: Each task delivers a working, verifiable system component vs. partial implementations
 
 ### **Implementation Preference**

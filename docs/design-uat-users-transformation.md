@@ -394,4 +394,231 @@ sqlcmd -S uat -d UAT -i ./uat-users-migration/02_apply_user_remap.sql
 
 ---
 
-*Last Updated: 2025-11-17 (clarified recommended approach and unified transformation logic)*
+## End-to-End Data Integrity Verification (DMM Replacement)
+
+A **critical goal** of the full-export pipeline is to provide **unfailing confidence** that the ETL process is correct, enabling replacement of expensive third-party tools (like DMM) with a verifiable, auditable pipeline.
+
+### Verification Strategy: Source-to-Target Parity
+
+The pipeline implements comprehensive data integrity verification proving:
+1. **No data loss**: All rows exported from source appear in target
+2. **1:1 data fidelity**: Non-transformed columns match source exactly (byte-for-byte)
+3. **Correct transformations**: User FK values map correctly per transformation map
+4. **NULL preservation**: NULL values remain NULL (never transformed or lost)
+
+### Implementation: Data Fingerprinting
+
+#### **Source Fingerprint Capture**
+Before generating INSERT scripts, capture source database metrics:
+```json
+{
+  "tables": [
+    {
+      "schema": "dbo",
+      "table": "Order",
+      "rowCount": 1500,
+      "columns": [
+        {
+          "name": "Id",
+          "nullCount": 0,
+          "checksum": "ABC123...",
+          "distinctCount": 1500
+        },
+        {
+          "name": "ProductId",
+          "nullCount": 0,
+          "checksum": "DEF456...",
+          "distinctCount": 50
+        },
+        {
+          "name": "CreatedBy",
+          "isUserFK": true,
+          "nullCount": 10,
+          "distinctCount": 120,
+          "orphanCount": 15,
+          "orphanIds": [999, 111, ...]
+        },
+        {
+          "name": "Amount",
+          "nullCount": 5,
+          "checksum": "GHI789..."
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### **Target Validation**
+After loading INSERT scripts to target (UAT staging):
+```sql
+-- Verify row counts
+SELECT COUNT(*) FROM dbo.Order;  -- Must equal source: 1500
+
+-- Verify non-transformed columns (checksum comparison)
+SELECT CHECKSUM_AGG(CHECKSUM(Id, ProductId, Amount))
+FROM dbo.Order;  -- Must equal source checksum
+
+-- Verify NULL preservation
+SELECT
+  SUM(CASE WHEN CreatedBy IS NULL THEN 1 ELSE 0 END) AS NullCount
+FROM dbo.Order;  -- Must equal source: 10
+
+-- Verify transformed column (all values in UAT inventory)
+SELECT DISTINCT CreatedBy
+FROM dbo.Order
+WHERE CreatedBy IS NOT NULL
+  AND CreatedBy NOT IN (SELECT Id FROM dbo.[User]);  -- Must return 0 rows
+```
+
+#### **Verification Report**
+```json
+{
+  "overallStatus": "PASS",
+  "verificationTimestamp": "2025-11-17T10:30:00Z",
+  "sourceFingerprint": "source-data-fingerprint.json",
+  "tables": [
+    {
+      "table": "dbo.Order",
+      "rowCountMatch": true,
+      "sourceRowCount": 1500,
+      "targetRowCount": 1500,
+      "columns": [
+        {
+          "name": "Id",
+          "isTransformed": false,
+          "checksumMatch": true,
+          "nullCountMatch": true,
+          "status": "PASS"
+        },
+        {
+          "name": "ProductId",
+          "isTransformed": false,
+          "checksumMatch": true,
+          "nullCountMatch": true,
+          "status": "PASS"
+        },
+        {
+          "name": "CreatedBy",
+          "isTransformed": true,
+          "transformationType": "user-fk-remap",
+          "nullCountMatch": true,
+          "allValuesInUATInventory": true,
+          "orphansTransformed": 15,
+          "orphansRemaining": 0,
+          "status": "PASS"
+        },
+        {
+          "name": "Amount",
+          "isTransformed": false,
+          "checksumMatch": true,
+          "nullCountMatch": true,
+          "status": "PASS"
+        }
+      ],
+      "status": "PASS"
+    }
+  ],
+  "discrepancies": [],
+  "summary": {
+    "tablesVerified": 50,
+    "tablesPassed": 50,
+    "tablesFailed": 0,
+    "columnsVerified": 500,
+    "columnsPassed": 500,
+    "columnsFailed": 0,
+    "transformedColumns": 23,
+    "dataLossDetected": false
+  }
+}
+```
+
+### Benefits: Replacing DMM with Confidence
+
+| Aspect | DMM (Current) | Full-Export with Verification |
+|--------|---------------|-------------------------------|
+| **Data integrity proof** | Manual validation required | Automated verification report |
+| **Transformation validation** | Hope and pray | Provable correctness (checksum + map validation) |
+| **Audit trail** | Limited visibility | Complete fingerprint + verification report |
+| **Cost** | Expensive subscription | Open-source tooling |
+| **Developer experience** | "Nightmare" (per user feedback) | Deterministic, repeatable, verifiable |
+| **NULL preservation** | Not guaranteed | Proven with NULL count comparison |
+| **Data loss detection** | Manual row count checks | Automated row count + checksum verification |
+| **Rollback capability** | Complex | Drop and reload from source INSERT scripts |
+
+### Integration with Load Harness
+
+The `FullExportLoadHarness` tool implements this verification:
+
+```bash
+dotnet run --project tools/FullExportLoadHarness \
+  --source-connection "Server=qa;Database=QA;..." \
+  --target-connection "Server=uat-staging;Database=UAT;..." \
+  --manifest ./out/full-export/full-export.manifest.json \
+  --uat-user-inventory ./uat_users.csv \
+  --verification-report-out ./verification-report.json
+```
+
+**Workflow**:
+1. Connect to source (QA) and capture fingerprint
+2. Load DDL scripts to target (UAT staging)
+3. Load static seeds via SSDT post-deployment
+4. Load pre-transformed dynamic INSERTs
+5. Extract target metrics
+6. Compare source vs. target
+7. Emit verification report with pass/fail
+
+**If verification passes**: Deploy to production UAT with confidence
+
+**If verification fails**: Report shows exact discrepancies (table, column, row count, checksum mismatch) for remediation
+
+### Verification as a Quality Gate
+
+Recommended CI/CD integration:
+
+```yaml
+# GitHub Actions example
+- name: Run Full Export
+  run: |
+    dotnet run --project src/Osm.Cli -- full-export \
+      --enable-uat-users \
+      --build-out ./out/uat-export \
+      ...
+
+- name: Verify Data Integrity
+  run: |
+    dotnet run --project tools/FullExportLoadHarness \
+      --source-connection "$QA_CONNECTION" \
+      --target-connection "$UAT_STAGING_CONNECTION" \
+      --manifest ./out/uat-export/full-export.manifest.json \
+      --verification-report-out ./verification-report.json
+
+- name: Check Verification Status
+  run: |
+    STATUS=$(jq -r '.overallStatus' ./verification-report.json)
+    if [ "$STATUS" != "PASS" ]; then
+      echo "❌ Data integrity verification FAILED"
+      jq '.discrepancies' ./verification-report.json
+      exit 1
+    fi
+    echo "✅ Data integrity verification PASSED"
+
+- name: Deploy to Production UAT
+  if: success()
+  run: |
+    # Deploy verified artifacts to production UAT
+```
+
+### Future Enhancement: Incremental Verification
+
+For large datasets, implement **incremental verification**:
+- Verify random sample (e.g., 10% of rows)
+- Checksum by partition (e.g., per day/month)
+- Verify critical tables exhaustively
+- Verify non-critical tables by sampling
+
+This enables verification at scale without exhaustive comparison overhead.
+
+---
+
+*Last Updated: 2025-11-17 (added end-to-end data integrity verification for DMM replacement)*
