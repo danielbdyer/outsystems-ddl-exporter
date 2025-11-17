@@ -11,3 +11,4 @@ TestResults/
 [Rr]elease/
 [Bb]uild/
 .nuget/packages/
+tests/Fixtures/emission-matrix/**/pipeline-telemetry.zip

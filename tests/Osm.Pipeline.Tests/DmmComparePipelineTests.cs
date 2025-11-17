@@ -122,7 +122,16 @@ public class DmmComparePipelineTests
 
         Assert.True(result.IsSuccess);
         var value = result.Value;
-        Assert.True(value.Comparison.IsMatch);
+        Assert.False(value.Comparison.IsMatch);
+        Assert.Contains(
+            value.Comparison.ModelDifferences,
+            diff => string.Equals(diff.Property, "TablePresence", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Schema, "dbo", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Table, "OSUSR_U_USER", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            value.Comparison.SsdtDifferences,
+            diff => string.Equals(diff.Property, "Collation", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(diff.Column, "Email", StringComparison.OrdinalIgnoreCase));
         Assert.True(File.Exists(diffPath));
         Assert.NotNull(value.EvidenceCache);
         Assert.True(Directory.Exists(value.EvidenceCache!.CacheDirectory));

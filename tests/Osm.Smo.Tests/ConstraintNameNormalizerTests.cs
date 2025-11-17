@@ -70,7 +70,7 @@ public class ConstraintNameNormalizerTests
             referencedEntity: parentEntity);
 
         // Assert
-        Assert.Equal("FK_Customer_City_CityId", normalized);
+        Assert.Equal("OSFRK_Customer_City_CityId", normalized);
     }
 
     [Fact]

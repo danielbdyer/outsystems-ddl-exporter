@@ -16,6 +16,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.LoadHarness;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.DynamicData;
@@ -503,14 +504,14 @@ public class FullExportCommandFactoryTests
             Path.Combine(outputDirectory, "OutSystemsModel.sqlproj"),
             staticSeedPaths,
             ImmutableArray<string>.Empty,
-            DynamicDataTelemetryPath: telemetryPath,
-            ImmutableArray<string>.Empty,
+            TelemetryPackagePaths: ImmutableArray.Create(telemetryPath),
             SsdtSqlValidationSummary.Empty,
             null,
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
+            ImmutableArray<DynamicEntityTableReconciliation>.Empty,
             ImmutableArray<string>.Empty,
             null);
 

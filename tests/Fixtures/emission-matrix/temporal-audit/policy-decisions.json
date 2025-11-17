@@ -8,13 +8,13 @@
   "ForeignKeyCount": 1,
   "ForeignKeysCreatedCount": 1,
   "ColumnRationales": {
-    "MANDATORY": 5,
+    "DEFAULT_PRESENT": 1,
     "FK_ENFORCED": 1,
     "PHYSICAL_NOT_NULL": 5,
-    "DEFAULT_PRESENT": 1,
+    "MANDATORY": 5,
+    "PK": 2,
     "PROFILE_MISSING": 1,
-    "DATA_NO_NULLS": 5,
-    "PK": 2
+    "DATA_NO_NULLS": 5
   },
   "UniqueIndexRationales": {},
   "ForeignKeyRationales": {
@@ -31,13 +31,13 @@
       "ForeignKeyCount": 1,
       "ForeignKeysCreatedCount": 1,
       "ColumnRationales": {
-        "MANDATORY": 5,
+        "DEFAULT_PRESENT": 1,
         "FK_ENFORCED": 1,
         "PHYSICAL_NOT_NULL": 5,
-        "DEFAULT_PRESENT": 1,
+        "MANDATORY": 5,
+        "PK": 2,
         "PROFILE_MISSING": 1,
-        "DATA_NO_NULLS": 5,
-        "PK": 2
+        "DATA_NO_NULLS": 5
       },
       "UniqueIndexRationales": {},
       "ForeignKeyRationales": {
@@ -46,52 +46,12 @@
     }
   },
   "TogglePrecedence": {
-    "policy.mode": {
-      "Value": "EvidenceGated",
-      "Source": 0
-    },
-    "policy.nullBudget": {
-      "Value": 0,
-      "Source": 0
-    },
-    "foreignKeys.enableCreation": {
-      "Value": true,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossSchema": {
-      "Value": false,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossCatalog": {
-      "Value": false,
-      "Source": 0
-    },
-    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
-      "Value": false,
-      "Source": 0
-    },
-    "uniqueness.enforceSingleColumn": {
-      "Value": true,
-      "Source": 0
-    },
-    "uniqueness.enforceMultiColumn": {
-      "Value": true,
-      "Source": 0
-    },
-    "remediation.generatePreScripts": {
-      "Value": true,
-      "Source": 0
-    },
-    "remediation.maxRowsDefaultBackfill": {
-      "Value": 100000,
-      "Source": 0
-    },
     "remediation.sentinels.numeric": {
       "Value": "0",
       "Source": 0
     },
-    "remediation.sentinels.text": {
-      "Value": "",
+    "policy.nullBudget": {
+      "Value": 0,
       "Source": 0
     },
     "remediation.sentinels.date": {
@@ -105,6 +65,50 @@
     "mocking.profileMockFolder": {
       "Value": null,
       "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.sentinels.text": {
+      "Value": "",
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowNoCheckCreation": {
+      "Value": false,
+      "Source": 0
+    },
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
     }
   },
   "Columns": [
@@ -116,7 +120,8 @@
       "RequiresRemediation": false,
       "Rationales": [
         "PROFILE_MISSING"
-      ]
+      ],
+      "Module": "Matrix"
     },
     {
       "Schema": "dbo",
@@ -129,7 +134,8 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "Module": "Matrix"
     },
     {
       "Schema": "dbo",
@@ -139,7 +145,8 @@
       "RequiresRemediation": false,
       "Rationales": [
         "FK_ENFORCED"
-      ]
+      ],
+      "Module": "Matrix"
     },
     {
       "Schema": "dbo",
@@ -152,7 +159,8 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "Module": "Matrix"
     },
     {
       "Schema": "dbo",
@@ -160,7 +168,8 @@
       "Column": "LEGACYCODE",
       "MakeNotNull": false,
       "RequiresRemediation": false,
-      "Rationales": []
+      "Rationales": [],
+      "Module": "Matrix"
     },
     {
       "Schema": "dbo",
@@ -173,7 +182,8 @@
         "DEFAULT_PRESENT",
         "MANDATORY",
         "PHYSICAL_NOT_NULL"
-      ]
+      ],
+      "Module": "Matrix"
     },
     {
       "Schema": "dbo",
@@ -185,7 +195,8 @@
         "DATA_NO_NULLS",
         "MANDATORY",
         "PHYSICAL_NOT_NULL"
-      ]
+      ],
+      "Module": "Matrix"
     },
     {
       "Schema": "dbo",
@@ -197,7 +208,8 @@
         "DATA_NO_NULLS",
         "MANDATORY",
         "PHYSICAL_NOT_NULL"
-      ]
+      ],
+      "Module": "Matrix"
     }
   ],
   "UniqueIndexes": [],
@@ -207,9 +219,11 @@
       "Table": "OSUSR_M_TEMPORALORDER",
       "Column": "AUDITID",
       "CreateConstraint": true,
+      "ScriptWithNoCheck": false,
       "Rationales": [
         "DB_CONSTRAINT_PRESENT"
-      ]
+      ],
+      "Module": "Matrix"
     }
   ],
   "Diagnostics": [],
@@ -240,12 +254,10 @@
         ]
       },
       {
-        "Module": "UserExtension_CS",
+        "Module": "Users",
         "Schema": "dbo",
-        "Table": "ossys_User",
-        "Predicates": [
-          "HasUniqueIndex"
-        ]
+        "Table": "OSUSR_U_USER",
+        "Predicates": []
       }
     ],
     "PredicateCounts": {
@@ -259,7 +271,6 @@
       "HasLogicalForeignKeyWithDbConstraint": 1,
       "HasTemporalHistory": 1,
       "HasTrigger": 1,
-      "HasUniqueIndex": 1,
       "IsStaticEntity": 1
     }
   }

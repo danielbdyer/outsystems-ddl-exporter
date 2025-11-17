@@ -13,6 +13,7 @@ using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Domain.Configuration;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
@@ -655,6 +656,7 @@ public class CommandConsoleTests
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
+            ImmutableArray<DynamicEntityTableReconciliation>.Empty,
             ImmutableArray<string>.Empty,
             MultiEnvironmentProfileReport.Empty);
 

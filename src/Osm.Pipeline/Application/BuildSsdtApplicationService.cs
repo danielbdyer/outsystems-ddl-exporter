@@ -189,7 +189,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
                 return Result<BuildSsdtApplicationResult>.Failure(dynamicDatasetResult.Errors);
             }
 
-            dynamicDataset = dynamicDatasetResult.Value;
+            dynamicDataset = dynamicDatasetResult.Value.Dataset;
             dynamicDatasetSource = DynamicDatasetSource.SqlProvider;
         }
 

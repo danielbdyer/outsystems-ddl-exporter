@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Runtime.Verbs;
@@ -381,6 +382,12 @@ public sealed record FullExportRunManifest(
         artifacts["ordering"] = pipelineResult.DynamicInsertTopologicalOrderApplied ? "topological" : "alphabetical";
         artifacts["mode"] = pipelineResult.DynamicInsertOutputMode.ToString();
 
+        var reconciliationSummary = CreateReconciliationSummary(pipelineResult.DynamicTableReconciliations);
+        if (!string.IsNullOrWhiteSpace(reconciliationSummary))
+        {
+            artifacts["reconciledTables"] = reconciliationSummary;
+        }
+
         return new FullExportStageManifest(
             Name: "dynamic-insert",
             StartedAtUtc: timing.StartedAtUtc,
@@ -419,6 +426,22 @@ public sealed record FullExportRunManifest(
         }
 
         return Path.Combine(directory, fileName);
+    }
+
+    private static string? CreateReconciliationSummary(
+        ImmutableArray<DynamicEntityTableReconciliation> reconciliations)
+    {
+        if (reconciliations.IsDefaultOrEmpty || reconciliations.Length == 0)
+        {
+            return null;
+        }
+
+        var entries = reconciliations
+            .Select(reconciliation =>
+                $"{reconciliation.ResolvedModule}.{reconciliation.ResolvedLogicalName}:{reconciliation.DatasetSchema}.{reconciliation.DatasetPhysicalName}->{reconciliation.ResolvedSchema}.{reconciliation.ResolvedPhysicalName}")
+            .ToArray();
+
+        return entries.Length == 0 ? null : string.Join(";", entries);
     }
 
     internal static StageTiming ComputeTiming(PipelineExecutionLog log)

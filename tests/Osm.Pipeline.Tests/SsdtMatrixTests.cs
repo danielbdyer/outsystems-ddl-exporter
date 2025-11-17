@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -95,6 +96,8 @@ public sealed class SsdtMatrixTests
         Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(error => error.Message)));
 
         var expectedRoot = FixtureFile.GetPath(testCase.Expected);
+        var telemetryPackagePath = Path.Combine(output.Path, "pipeline-telemetry.zip");
+        Assert.True(File.Exists(telemetryPackagePath), "pipeline telemetry package should be generated for every matrix case.");
         DirectorySnapshot.AssertMatches(expectedRoot, output.Path);
 
         var policyPath = Path.Combine(output.Path, "policy-decisions.json");
@@ -124,6 +127,10 @@ public sealed class SsdtMatrixTests
 
     private static BuildSsdtPipeline CreatePipeline()
     {
+        var timeProvider = new FixedTimeProvider(DateTimeOffset.Parse(
+            "2025-11-13T22:29:51.945931+00:00",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal));
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var evidenceCacheStep = new BuildSsdtEvidenceCacheStep(new EvidenceCacheCoordinator(new EvidenceCacheService()));
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
@@ -140,7 +147,7 @@ public sealed class SsdtMatrixTests
         var telemetryPackagingStep = new BuildSsdtTelemetryPackagingStep();
 
         return new BuildSsdtPipeline(
-            TimeProvider.System,
+            timeProvider,
             bootstrapStep,
             evidenceCacheStep,
             policyStep,
@@ -150,6 +157,21 @@ public sealed class SsdtMatrixTests
             staticSeedStep,
             dynamicInsertStep,
             telemetryPackagingStep);
+    }
+
+    private sealed class FixedTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset _utcNow;
+
+        public FixedTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public override long GetTimestamp() => 0L;
+
     }
 
     private static PipelineBootstrapper CreatePipelineBootstrapper()

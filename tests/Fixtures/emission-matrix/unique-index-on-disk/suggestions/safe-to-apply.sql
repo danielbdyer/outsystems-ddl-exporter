@@ -1,20 +1,15 @@
--- Nullability dbo.OSUSR_OP_OPERATORPROFILE (ID) Risk=Low
--- Rationale: MANDATORY
--- Rationale: PK
--- Rationale: PROFILE_MISSING
--- Evidence: MANDATORY
--- Evidence: Null profile unavailable.
--- Evidence: PK
-ALTER TABLE [dbo].[OSUSR_OP_OPERATORPROFILE]
-    ALTER COLUMN [ID] Identifier NOT NULL;
-GO
+-- ============================================================================
+-- OutSystems DDL Exporter - Safe to Apply Opportunities
+-- ============================================================================
+-- Generated: 2025-11-13 22:29:53 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 0
+--
+-- This script contains 0 safe to apply opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- ============================================================================
 
--- Nullability dbo.OSUSR_OP_OPERATORPROFILE (OPERATORCODE) Risk=Low
--- Rationale: MANDATORY
--- Rationale: PROFILE_MISSING
--- Evidence: MANDATORY
--- Evidence: Null profile unavailable.
-ALTER TABLE [dbo].[OSUSR_OP_OPERATORPROFILE]
-    ALTER COLUMN [OPERATORCODE] Text NOT NULL;
-GO
-
+-- No opportunities in this category.

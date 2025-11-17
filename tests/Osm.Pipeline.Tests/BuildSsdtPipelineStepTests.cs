@@ -562,6 +562,75 @@ public class BuildSsdtPipelineStepTests
     }
 
     [Fact]
+    public async Task DynamicInsertStep_records_reconciliations_when_names_differ()
+    {
+        using var output = new TempDirectory();
+        var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
+        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
+        var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
+        var evidenceState = new EvidencePrepared(
+            bootstrapState.Request,
+            bootstrapState.Log,
+            bootstrapState.Bootstrap,
+            EvidenceCache: null);
+        var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
+        var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
+        var emissionStep = new BuildSsdtEmissionStep(
+            new SmoModelFactory(),
+            new SsdtEmitter(),
+            new PolicyDecisionLogWriter(),
+            new EmissionFingerprintCalculator(),
+            new OpportunityLogWriter());
+        var emissionState = (await emissionStep.ExecuteAsync(decisionState)).Value;
+        var sqlProjectStep = new BuildSsdtSqlProjectStep();
+        var projectState = (await sqlProjectStep.ExecuteAsync(emissionState)).Value;
+        var validationStep = new BuildSsdtSqlValidationStep();
+        var validatedState = (await validationStep.ExecuteAsync(projectState)).Value;
+        var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
+        var seedState = (await staticSeedStep.ExecuteAsync(validatedState)).Value;
+
+        var baseTable = Assert.Single(seedState.StaticSeedData);
+        var remappedTables = ImmutableArray.Create(
+            baseTable with
+            {
+                Definition = baseTable.Definition with
+                {
+                    PhysicalName = baseTable.Definition.PhysicalName + "_ALT1",
+                    EffectiveName = baseTable.Definition.PhysicalName + "_ALT1"
+                }
+            },
+            baseTable with
+            {
+                Definition = baseTable.Definition with
+                {
+                    PhysicalName = baseTable.Definition.PhysicalName + "_ALT2",
+                    EffectiveName = baseTable.Definition.PhysicalName + "_ALT2"
+                }
+            });
+
+        var dataset = new DynamicEntityDataset(remappedTables);
+        var reconciledSeedState = seedState with
+        {
+            Request = seedState.Request with
+            {
+                DynamicDataset = dataset,
+                DynamicDatasetSource = DynamicDatasetSource.UserProvided
+            }
+        };
+
+        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
+        var dynamicStateResult = await dynamicInsertStep.ExecuteAsync(reconciledSeedState);
+
+        Assert.True(dynamicStateResult.IsSuccess);
+        var dynamicState = dynamicStateResult.Value;
+        Assert.Equal(remappedTables.Length, dynamicState.DynamicTableReconciliations.Length);
+
+        var log = dynamicState.Log.Build();
+        Assert.Contains(log.Entries, entry => entry.Step == "dynamicData.insert.reconciled");
+    }
+
+    [Fact]
     public async Task SqlValidationStep_records_summary_for_valid_scripts()
     {
         using var output = new TempDirectory();

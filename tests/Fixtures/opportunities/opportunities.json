@@ -109,7 +109,8 @@
           "Attribute": "DeliveryDate"
         }
       ],
-      "HasStatements": true
+      "HasStatements": true,
+      "IsContradiction": true
     },
     {
       "Type": "UniqueIndex",
@@ -222,7 +223,8 @@
           "Attribute": "OrderNumber"
         }
       ],
-      "HasStatements": true
+      "HasStatements": true,
+      "IsContradiction": true
     },
     {
       "Type": "ForeignKey",
@@ -236,8 +238,8 @@
       "Disposition": "NeedsRemediation",
       "Category": "Contradiction",
       "Evidence": [
-        "HasConstraint=False",
         "ConstraintTrust=Missing",
+        "HasConstraint=False",
         "HasOrphans=True (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)",
         "OrphanCount=3",
         "OrphanSample=(101) -> 'MissingCustomer', (202) -> 'LegacyCustomer'"
@@ -335,7 +337,7 @@
               }
             ],
             "TotalOrphans": 3,
-            "IsTruncated": false,
+            "IsTruncated": true,
             "DisplayedRowCount": 2
           },
           "HasDatabaseConstraint": false,
@@ -356,7 +358,8 @@
           "Attribute": "CustomerId"
         }
       ],
-      "HasStatements": true
+      "HasStatements": true,
+      "IsContradiction": true
     }
   ],
   "DispositionCounts": {
@@ -371,8 +374,12 @@
     "ForeignKey": 1
   },
   "RiskCounts": {
-    "High": 1,
-    "Moderate": 2
+    "Moderate": 2,
+    "High": 1
   },
-  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00"
+  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00",
+  "TotalCount": 3,
+  "ContradictionCount": 3,
+  "RecommendationCount": 0,
+  "ValidationCount": 0
 }

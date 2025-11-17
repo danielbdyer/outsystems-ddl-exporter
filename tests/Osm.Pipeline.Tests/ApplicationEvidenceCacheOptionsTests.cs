@@ -359,11 +359,11 @@ public sealed class ApplicationEvidenceCacheOptionsTests
 
     private sealed class StubDynamicEntityDataProvider : IDynamicEntityDataProvider
     {
-        public Task<Result<DynamicEntityDataset>> ExtractAsync(
+        public Task<Result<DynamicEntityExtractionResult>> ExtractAsync(
             SqlDynamicEntityExtractionRequest request,
             CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(Result<DynamicEntityDataset>.Success(DynamicEntityDataset.Empty));
+            return Task.FromResult(Result<DynamicEntityExtractionResult>.Success(DynamicEntityExtractionResult.Empty));
         }
     }
 

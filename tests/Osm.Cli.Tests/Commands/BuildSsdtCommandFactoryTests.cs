@@ -17,6 +17,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Configuration;
@@ -539,16 +540,16 @@ public class BuildSsdtCommandFactoryTests
                 Path.Combine("output", "OutSystemsModel.sqlproj"),
                 ImmutableArray<string>.Empty,
                 ImmutableArray<string>.Empty,
-                DynamicDataTelemetryPath: telemetryPath,
-                ImmutableArray<string>.Empty,
+                TelemetryPackagePaths: ImmutableArray.Create(telemetryPath),
                 sqlValidation,
                 null,
-            PipelineExecutionLog.Empty,
-            StaticSeedTopologicalOrderApplied: false,
-            DynamicInsertTopologicalOrderApplied: false,
-            DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
-            ImmutableArray<string>.Empty,
-            MultiEnvironmentProfileReport.Empty);
+                PipelineExecutionLog.Empty,
+                StaticSeedTopologicalOrderApplied: false,
+                DynamicInsertTopologicalOrderApplied: false,
+                DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
+                ImmutableArray<DynamicEntityTableReconciliation>.Empty,
+                ImmutableArray<string>.Empty,
+                MultiEnvironmentProfileReport.Empty);
 
             return new BuildSsdtApplicationResult(
                 pipelineResult,

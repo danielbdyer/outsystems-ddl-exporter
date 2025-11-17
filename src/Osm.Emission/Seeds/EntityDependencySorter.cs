@@ -352,30 +352,31 @@ public static class EntityDependencySorter
                 StringComparison.OrdinalIgnoreCase);
         }
     }
-    public sealed record EntityDependencyOrderingResult(
-        ImmutableArray<StaticEntityTableData> Tables,
-        int NodeCount,
-        int EdgeCount,
-        int MissingEdgeCount,
-        bool ModelAvailable,
-        bool CycleDetected,
-        bool AlphabeticalFallbackApplied)
-    {
-        public static EntityDependencyOrderingResult Empty(bool modelAvailable)
-            => new(
-                ImmutableArray<StaticEntityTableData>.Empty,
-                NodeCount: 0,
-                EdgeCount: 0,
-                MissingEdgeCount: 0,
-                ModelAvailable: modelAvailable,
-                CycleDetected: false,
-                AlphabeticalFallbackApplied: false);
-
-        public bool TopologicalOrderingAttempted => ModelAvailable && NodeCount > 1 && EdgeCount > 0;
-
-        public bool TopologicalOrderingApplied =>
-            TopologicalOrderingAttempted && !CycleDetected && !AlphabeticalFallbackApplied;
-    }
 
     private sealed record DependencyGraphStatistics(int EdgeCount, int MissingEdgeCount);
+}
+
+public sealed record EntityDependencyOrderingResult(
+    ImmutableArray<StaticEntityTableData> Tables,
+    int NodeCount,
+    int EdgeCount,
+    int MissingEdgeCount,
+    bool ModelAvailable,
+    bool CycleDetected,
+    bool AlphabeticalFallbackApplied)
+{
+    public static EntityDependencyOrderingResult Empty(bool modelAvailable)
+        => new(
+            ImmutableArray<StaticEntityTableData>.Empty,
+            NodeCount: 0,
+            EdgeCount: 0,
+            MissingEdgeCount: 0,
+            ModelAvailable: modelAvailable,
+            CycleDetected: false,
+            AlphabeticalFallbackApplied: false);
+
+    public bool TopologicalOrderingAttempted => ModelAvailable && NodeCount > 1 && EdgeCount > 0;
+
+    public bool TopologicalOrderingApplied =>
+        TopologicalOrderingAttempted && !CycleDetected && !AlphabeticalFallbackApplied;
 }

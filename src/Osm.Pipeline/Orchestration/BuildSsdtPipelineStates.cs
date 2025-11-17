@@ -126,7 +126,8 @@ public record DynamicInsertsGenerated(
     ImmutableArray<string> DynamicInsertScriptPaths,
     DynamicInsertOutputMode DynamicInsertOutputMode,
     bool StaticSeedTopologicalOrderApplied,
-    bool DynamicInsertTopologicalOrderApplied)
+    bool DynamicInsertTopologicalOrderApplied,
+    ImmutableArray<DynamicEntityTableReconciliation> DynamicTableReconciliations)
     : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, StaticSeedTopologicalOrderApplied);
 
 public record TelemetryPackaged(
@@ -150,5 +151,6 @@ public record TelemetryPackaged(
     DynamicInsertOutputMode DynamicInsertOutputMode,
     bool StaticSeedTopologicalOrderApplied,
     bool DynamicInsertTopologicalOrderApplied,
+    ImmutableArray<DynamicEntityTableReconciliation> DynamicTableReconciliations,
     ImmutableArray<string> TelemetryPackagePaths)
-    : DynamicInsertsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, DynamicInsertOutputMode, StaticSeedTopologicalOrderApplied, DynamicInsertTopologicalOrderApplied);
+    : DynamicInsertsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, DynamicInsertOutputMode, StaticSeedTopologicalOrderApplied, DynamicInsertTopologicalOrderApplied, DynamicTableReconciliations);

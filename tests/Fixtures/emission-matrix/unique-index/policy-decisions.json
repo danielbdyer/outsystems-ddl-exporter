@@ -8,15 +8,15 @@
   "ForeignKeyCount": 0,
   "ForeignKeysCreatedCount": 0,
   "ColumnRationales": {
-    "MANDATORY": 2,
-    "PK": 1,
     "UNIQUE_NO_NULLS": 1,
     "PHYSICAL_NOT_NULL": 1,
+    "MANDATORY": 2,
+    "PK": 1,
     "DATA_NO_NULLS": 2
   },
   "UniqueIndexRationales": {
-    "PHYSICAL_UNIQUE_KEY": 1,
-    "UNIQUE_NO_NULLS": 1
+    "UNIQUE_NO_NULLS": 1,
+    "PHYSICAL_UNIQUE_KEY": 1
   },
   "ForeignKeyRationales": {},
   "ModuleRollups": {
@@ -30,66 +30,26 @@
       "ForeignKeyCount": 0,
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
-        "MANDATORY": 2,
-        "PK": 1,
         "UNIQUE_NO_NULLS": 1,
         "PHYSICAL_NOT_NULL": 1,
+        "MANDATORY": 2,
+        "PK": 1,
         "DATA_NO_NULLS": 2
       },
       "UniqueIndexRationales": {
-        "PHYSICAL_UNIQUE_KEY": 1,
-        "UNIQUE_NO_NULLS": 1
+        "UNIQUE_NO_NULLS": 1,
+        "PHYSICAL_UNIQUE_KEY": 1
       },
       "ForeignKeyRationales": {}
     }
   },
   "TogglePrecedence": {
-    "policy.mode": {
-      "Value": "EvidenceGated",
-      "Source": 0
-    },
-    "policy.nullBudget": {
-      "Value": 0,
-      "Source": 0
-    },
-    "foreignKeys.enableCreation": {
-      "Value": true,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossSchema": {
-      "Value": false,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossCatalog": {
-      "Value": false,
-      "Source": 0
-    },
-    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
-      "Value": false,
-      "Source": 0
-    },
-    "uniqueness.enforceSingleColumn": {
-      "Value": true,
-      "Source": 0
-    },
-    "uniqueness.enforceMultiColumn": {
-      "Value": true,
-      "Source": 0
-    },
-    "remediation.generatePreScripts": {
-      "Value": true,
-      "Source": 0
-    },
-    "remediation.maxRowsDefaultBackfill": {
-      "Value": 100000,
-      "Source": 0
-    },
     "remediation.sentinels.numeric": {
       "Value": "0",
       "Source": 0
     },
-    "remediation.sentinels.text": {
-      "Value": "",
+    "policy.nullBudget": {
+      "Value": 0,
       "Source": 0
     },
     "remediation.sentinels.date": {
@@ -103,6 +63,50 @@
     "mocking.profileMockFolder": {
       "Value": null,
       "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.sentinels.text": {
+      "Value": "",
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowNoCheckCreation": {
+      "Value": false,
+      "Source": 0
+    },
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
     }
   },
   "Columns": [
@@ -112,7 +116,8 @@
       "Column": "BIRTHDATE",
       "MakeNotNull": false,
       "RequiresRemediation": false,
-      "Rationales": []
+      "Rationales": [],
+      "Module": "M"
     },
     {
       "Schema": "dbo",
@@ -120,7 +125,8 @@
       "Column": "CREDITLIMIT",
       "MakeNotNull": false,
       "RequiresRemediation": false,
-      "Rationales": []
+      "Rationales": [],
+      "Module": "M"
     },
     {
       "Schema": "dbo",
@@ -132,7 +138,8 @@
         "DATA_NO_NULLS",
         "MANDATORY",
         "UNIQUE_NO_NULLS"
-      ]
+      ],
+      "Module": "M"
     },
     {
       "Schema": "dbo",
@@ -145,7 +152,8 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "Module": "M"
     }
   ],
   "UniqueIndexes": [
@@ -158,7 +166,8 @@
       "Rationales": [
         "PHYSICAL_UNIQUE_KEY",
         "UNIQUE_NO_NULLS"
-      ]
+      ],
+      "Module": "M"
     }
   ],
   "ForeignKeys": [],
@@ -172,18 +181,10 @@
         "Predicates": [
           "HasUniqueIndex"
         ]
-      },
-      {
-        "Module": "UserExtension_CS",
-        "Schema": "dbo",
-        "Table": "ossys_User",
-        "Predicates": [
-          "HasUniqueIndex"
-        ]
       }
     ],
     "PredicateCounts": {
-      "HasUniqueIndex": 2
+      "HasUniqueIndex": 1
     }
   }
 }

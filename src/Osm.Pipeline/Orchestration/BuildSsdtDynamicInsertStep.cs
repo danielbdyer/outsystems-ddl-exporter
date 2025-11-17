@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Configuration;
 using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Smo;
@@ -74,14 +75,32 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 ImmutableArray<string>.Empty,
                 state.Request.DynamicInsertOutputMode,
                 state.StaticSeedTopologicalOrderApplied,
-                DynamicInsertTopologicalOrderApplied: false));
+                DynamicInsertTopologicalOrderApplied: false,
+                ImmutableArray<DynamicEntityTableReconciliation>.Empty));
         }
 
-        var ordering = EntityDependencySorter.SortByForeignKeys(dataset.Tables, state.Bootstrap.FilteredModel);
+        var namingOverrides = state.Request.Scope.SmoOptions.NamingOverrides ?? NamingOverrideOptions.Empty;
+        var model = state.Bootstrap.FilteredModel;
+        var ordering = EntityDependencySorter.SortByForeignKeys(dataset.Tables, model);
+        var reconciliations = ImmutableArray<DynamicEntityTableReconciliation>.Empty;
+
+        if (ShouldAttemptReconciliation(ordering, dataset))
+        {
+            var resolution = DynamicTableNameResolver.Resolve(dataset, model, namingOverrides);
+            if (resolution.HasReconciliations)
+            {
+                dataset = resolution.Dataset;
+                ordering = EntityDependencySorter.SortByForeignKeys(dataset.Tables, model);
+                reconciliations = resolution.Reconciliations;
+                RecordReconciliationTelemetry(state.Log, reconciliations);
+            }
+        }
+
         var scripts = _generator.GenerateScripts(
             dataset,
             state.StaticSeedData,
-            model: state.Bootstrap.FilteredModel);
+            model: model,
+            namingOverrides: namingOverrides);
         var dynamicOrderApplied = ordering.TopologicalOrderingApplied;
         if (scripts.IsDefaultOrEmpty || scripts.Length == 0)
         {
@@ -109,7 +128,8 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 ImmutableArray<string>.Empty,
                 state.Request.DynamicInsertOutputMode,
                 state.StaticSeedTopologicalOrderApplied,
-                DynamicInsertTopologicalOrderApplied: dynamicOrderApplied));
+                DynamicInsertTopologicalOrderApplied: dynamicOrderApplied,
+                reconciliations));
         }
 
         var outputRoot = state.Request.DynamicDataOutputDirectoryHint;
@@ -170,7 +190,48 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
             scriptPaths,
             state.Request.DynamicInsertOutputMode,
             state.StaticSeedTopologicalOrderApplied,
-            DynamicInsertTopologicalOrderApplied: dynamicOrderApplied));
+            DynamicInsertTopologicalOrderApplied: dynamicOrderApplied,
+            reconciliations));
+    }
+
+    private static bool ShouldAttemptReconciliation(
+        EntityDependencyOrderingResult ordering,
+        DynamicEntityDataset dataset)
+    {
+        if (dataset is null || dataset.Tables.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        if (ordering.MissingEdgeCount > 0)
+        {
+            return true;
+        }
+
+        return dataset.Tables.Length > 1 && ordering.EdgeCount == 0;
+    }
+
+    private static void RecordReconciliationTelemetry(
+        PipelineExecutionLogBuilder log,
+        ImmutableArray<DynamicEntityTableReconciliation> reconciliations)
+    {
+        if (log is null || reconciliations.IsDefaultOrEmpty || reconciliations.Length == 0)
+        {
+            return;
+        }
+
+        var pairs = reconciliations
+            .Select(reconciliation =>
+                $"{reconciliation.DatasetSchema}.{reconciliation.DatasetPhysicalName}->{reconciliation.ResolvedSchema}.{reconciliation.ResolvedPhysicalName}")
+            .ToArray();
+
+        log.Record(
+            "dynamicData.insert.reconciled",
+            "Reconciled dynamic entity table names with the filtered model.",
+            new PipelineLogMetadataBuilder()
+                .WithCount("tables", reconciliations.Length)
+                .WithValue("reconciled", string.Join(";", pairs))
+                .Build());
     }
 
     private static async Task<ImmutableArray<string>> WritePerEntityScriptsAsync(

@@ -1001,6 +1001,7 @@ public sealed class FullExportApplicationServiceTests
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
+            DynamicTableReconciliations: ImmutableArray<DynamicEntityTableReconciliation>.Empty,
             Warnings: ImmutableArray<string>.Empty,
             MultiEnvironmentReport: null);
 

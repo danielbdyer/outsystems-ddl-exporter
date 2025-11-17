@@ -186,5 +186,6 @@
     "Nullability": 1,
     "ForeignKey": 1
   },
-  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00"
+  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00",
+  "TotalCount": 2
 }

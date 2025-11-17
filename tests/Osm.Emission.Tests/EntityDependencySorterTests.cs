@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
 using Osm.Emission.Seeds;
@@ -254,6 +255,100 @@ public sealed class EntityDependencySorterTests
         Assert.True(ordering.AlphabeticalFallbackApplied);
         Assert.False(ordering.TopologicalOrderingApplied);
         Assert.Equal(2, ordering.Tables.Length);
+    }
+
+    [Fact]
+    public void SortByForeignKeys_ReordersAfterDynamicTableReconciliation()
+    {
+        var parentColumns = ImmutableArray.Create(
+            new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false));
+        var childColumns = ImmutableArray.Create(
+            new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+            new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false));
+
+        var parentDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Parent",
+            "dbo",
+            "OSUSR_SAMPLE_PARENT_CANON",
+            "OSUSR_SAMPLE_PARENT_CANON",
+            parentColumns);
+
+        var childDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Child",
+            "dbo",
+            "OSUSR_SAMPLE_CHILD_CANON",
+            "OSUSR_SAMPLE_CHILD_CANON",
+            childColumns);
+
+        var tables = ImmutableArray.Create(
+            new StaticEntityTableData(parentDefinition, ImmutableArray<StaticEntityRow>.Empty),
+            new StaticEntityTableData(childDefinition, ImmutableArray<StaticEntityRow>.Empty));
+
+        var parentEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { CreateAttribute("Id", "ID", isIdentifier: true) }).Value;
+
+        var relationship = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_CHILD_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_PARENT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("PARENTID", "ParentId", "ID", "Id", 0) })
+            }).Value;
+
+        var childEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Child"),
+            new TableName("OSUSR_SAMPLE_CHILD"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true),
+                CreateAttribute("ParentId", "PARENTID")
+            },
+            relationships: new[] { relationship }).Value;
+
+        var module = ModuleModel.Create(new ModuleName("Sample"), isSystemModule: false, isActive: true, entities: new[] { parentEntity, childEntity }).Value;
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var initialOrdering = EntityDependencySorter.SortByForeignKeys(tables, model);
+        Assert.Equal(0, initialOrdering.EdgeCount);
+
+        var namingRuleParent = NamingOverrideRule.Create("dbo", "OSUSR_SAMPLE_PARENT", null, null, "OSUSR_SAMPLE_PARENT_CANON").Value;
+        var namingRuleChild = NamingOverrideRule.Create("dbo", "OSUSR_SAMPLE_CHILD", null, null, "OSUSR_SAMPLE_CHILD_CANON").Value;
+        var namingOverrides = NamingOverrideOptions.Create(new[] { namingRuleParent, namingRuleChild }).Value;
+
+        var dataset = new DynamicEntityDataset(tables);
+        var resolution = DynamicTableNameResolver.Resolve(dataset, model, namingOverrides);
+        Assert.True(resolution.HasReconciliations);
+        Assert.Equal(2, resolution.Reconciliations.Length);
+
+        var ordering = EntityDependencySorter.SortByForeignKeys(resolution.Dataset.Tables, model);
+        Assert.True(ordering.TopologicalOrderingApplied);
+        Assert.Equal("Parent", ordering.Tables[0].Definition.LogicalName);
+        Assert.Equal("Child", ordering.Tables[1].Definition.LogicalName);
     }
 
     private static AttributeModel CreateAttribute(string logicalName, string columnName, bool isIdentifier = false)

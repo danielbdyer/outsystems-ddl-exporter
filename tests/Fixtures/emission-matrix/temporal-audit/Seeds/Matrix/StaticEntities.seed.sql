@@ -20,7 +20,7 @@ MERGE INTO [dbo].[TemporalOrder] AS Target
 USING
 (
     VALUES
-        (1, N'PENDING', 1, '2025-01-01T00:00:00.0000000', '9999-12-31T23:59:59.0000000')
+        (1, N'PENDING', 1, CAST('2025-01-01 00:00:00.0000000' AS datetime2(7)), CAST('9999-12-31 23:59:59.0000000' AS datetime2(7)))
 ) AS Source ([Id], [Status], [AuditId], [ValidFrom], [ValidTo])
     ON Target.[Id] = Source.[Id]
 WHEN MATCHED THEN UPDATE SET

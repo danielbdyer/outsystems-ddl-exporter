@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.Abstractions;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,6 +11,14 @@ namespace Osm.LoadHarness;
 public sealed class LoadHarnessReportWriter
 {
     private readonly IFileSystem _fileSystem;
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        WriteIndented = true,
+        Converters =
+        {
+            new JsonStringEnumConverter()
+        }
+    };
 
     public LoadHarnessReportWriter(IFileSystem fileSystem)
     {
@@ -38,10 +47,7 @@ public sealed class LoadHarnessReportWriter
         await JsonSerializer.SerializeAsync(
                 stream,
                 report,
-                new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                },
+                SerializerOptions,
                 cancellationToken)
             .ConfigureAwait(false);
     }

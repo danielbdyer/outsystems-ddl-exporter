@@ -1,8 +1,12 @@
 {
   "Opportunities": [],
   "DispositionCounts": {},
+  "CategoryCounts": {},
   "TypeCounts": {},
   "RiskCounts": {},
-  "GeneratedAtUtc": "2025-10-29T12:31:22.9334618+00:00",
-  "TotalCount": 0
+  "GeneratedAtUtc": "2025-11-13T22:29:54.182804+00:00",
+  "TotalCount": 0,
+  "ContradictionCount": 0,
+  "RecommendationCount": 0,
+  "ValidationCount": 0
 }

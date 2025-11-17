@@ -149,6 +149,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.StaticSeedTopologicalOrderApplied,
             finalState.DynamicInsertTopologicalOrderApplied,
             finalState.DynamicInsertOutputMode,
+            finalState.DynamicTableReconciliations,
             finalState.Bootstrap.Warnings,
             finalState.Bootstrap.MultiEnvironmentReport);
     }

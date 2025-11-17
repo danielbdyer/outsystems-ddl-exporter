@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using Osm.Domain.Configuration;
 using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
 using Osm.Domain.Model;
@@ -67,7 +68,8 @@ public sealed class DynamicEntityInsertGenerator
         DynamicEntityDataset dataset,
         ImmutableArray<StaticEntityTableData> staticSeedCatalog,
         DynamicEntityInsertGenerationOptions? options = null,
-        OsmModel? model = null)
+        OsmModel? model = null,
+        NamingOverrideOptions? namingOverrides = null)
     {
         if (dataset is null)
         {
@@ -86,7 +88,20 @@ public sealed class DynamicEntityInsertGenerator
             return ImmutableArray<DynamicEntityInsertScript>.Empty;
         }
 
-        var orderedTables = EntityDependencySorter.SortByForeignKeys(dataset.Tables, model).Tables;
+        namingOverrides ??= NamingOverrideOptions.Empty;
+
+        var ordering = EntityDependencySorter.SortByForeignKeys(dataset.Tables, model);
+        if (ShouldAttemptReconciliation(ordering, dataset))
+        {
+            var resolution = DynamicTableNameResolver.Resolve(dataset, model, namingOverrides);
+            if (resolution.HasReconciliations)
+            {
+                dataset = resolution.Dataset;
+                ordering = EntityDependencySorter.SortByForeignKeys(dataset.Tables, model);
+            }
+        }
+
+        var orderedTables = ordering.Tables;
         if (orderedTables.IsDefaultOrEmpty)
         {
             return ImmutableArray<DynamicEntityInsertScript>.Empty;
@@ -116,6 +131,23 @@ public sealed class DynamicEntityInsertGenerator
 
         var materialized = scripts.ToImmutable();
         return ApplyDependencyOrdering(materialized, model);
+    }
+
+    private static bool ShouldAttemptReconciliation(
+        EntityDependencyOrderingResult ordering,
+        DynamicEntityDataset dataset)
+    {
+        if (dataset is null || dataset.Tables.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        if (ordering.MissingEdgeCount > 0)
+        {
+            return true;
+        }
+
+        return dataset.Tables.Length > 1 && ordering.EdgeCount == 0;
     }
 
     private static ImmutableArray<StaticEntityRow> FilterRows(

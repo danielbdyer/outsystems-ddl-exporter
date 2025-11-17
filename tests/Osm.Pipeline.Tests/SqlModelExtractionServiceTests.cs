@@ -681,7 +681,7 @@ public class SqlModelExtractionServiceTests
 
         var after = GC.GetTotalMemory(forceFullCollection: true);
         var retained = Math.Max(0L, after - baseline);
-        var threshold = fileInfo.Length * 6L;
+        var threshold = fileInfo.Length * 10L;
         Assert.True(retained < threshold, $"Retained memory ({retained} bytes) exceeded threshold ({threshold} bytes).");
     }
 

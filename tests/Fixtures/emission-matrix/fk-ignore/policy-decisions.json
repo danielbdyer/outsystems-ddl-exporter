@@ -8,17 +8,17 @@
   "ForeignKeyCount": 1,
   "ForeignKeysCreatedCount": 0,
   "ColumnRationales": {
-    "PK": 2,
     "PHYSICAL_NOT_NULL": 2,
-    "DATA_NO_NULLS": 2,
-    "DATA_HAS_ORPHANS": 1,
+    "MANDATORY": 2,
+    "PK": 2,
     "DELETE_RULE_IGNORE": 1,
-    "MANDATORY": 2
+    "DATA_HAS_ORPHANS": 1,
+    "DATA_NO_NULLS": 2
   },
   "UniqueIndexRationales": {},
   "ForeignKeyRationales": {
-    "DATA_HAS_ORPHANS": 1,
-    "DELETE_RULE_IGNORE": 1
+    "DELETE_RULE_IGNORE": 1,
+    "DATA_HAS_ORPHANS": 1
   },
   "ModuleRollups": {
     "M": {
@@ -31,67 +31,27 @@
       "ForeignKeyCount": 1,
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
-        "PK": 2,
         "PHYSICAL_NOT_NULL": 2,
-        "DATA_NO_NULLS": 2,
-        "DATA_HAS_ORPHANS": 1,
+        "MANDATORY": 2,
+        "PK": 2,
         "DELETE_RULE_IGNORE": 1,
-        "MANDATORY": 2
+        "DATA_HAS_ORPHANS": 1,
+        "DATA_NO_NULLS": 2
       },
       "UniqueIndexRationales": {},
       "ForeignKeyRationales": {
-        "DATA_HAS_ORPHANS": 1,
-        "DELETE_RULE_IGNORE": 1
+        "DELETE_RULE_IGNORE": 1,
+        "DATA_HAS_ORPHANS": 1
       }
     }
   },
   "TogglePrecedence": {
-    "policy.mode": {
-      "Value": "EvidenceGated",
-      "Source": 0
-    },
-    "policy.nullBudget": {
-      "Value": 0,
-      "Source": 0
-    },
-    "foreignKeys.enableCreation": {
-      "Value": true,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossSchema": {
-      "Value": false,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossCatalog": {
-      "Value": false,
-      "Source": 0
-    },
-    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
-      "Value": false,
-      "Source": 0
-    },
-    "uniqueness.enforceSingleColumn": {
-      "Value": true,
-      "Source": 0
-    },
-    "uniqueness.enforceMultiColumn": {
-      "Value": true,
-      "Source": 0
-    },
-    "remediation.generatePreScripts": {
-      "Value": true,
-      "Source": 0
-    },
-    "remediation.maxRowsDefaultBackfill": {
-      "Value": 100000,
-      "Source": 0
-    },
     "remediation.sentinels.numeric": {
       "Value": "0",
       "Source": 0
     },
-    "remediation.sentinels.text": {
-      "Value": "",
+    "policy.nullBudget": {
+      "Value": 0,
       "Source": 0
     },
     "remediation.sentinels.date": {
@@ -104,6 +64,50 @@
     },
     "mocking.profileMockFolder": {
       "Value": null,
+      "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.sentinels.text": {
+      "Value": "",
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowNoCheckCreation": {
+      "Value": false,
+      "Source": 0
+    },
+    "policy.mode": {
+      "Value": "EvidenceGated",
       "Source": 0
     }
   },
@@ -119,7 +123,8 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "Module": "M"
     },
     {
       "Schema": "dbo",
@@ -130,7 +135,8 @@
       "Rationales": [
         "DATA_HAS_ORPHANS",
         "DELETE_RULE_IGNORE"
-      ]
+      ],
+      "Module": "M"
     },
     {
       "Schema": "dbo",
@@ -143,7 +149,8 @@
         "MANDATORY",
         "PHYSICAL_NOT_NULL",
         "PK"
-      ]
+      ],
+      "Module": "M"
     }
   ],
   "UniqueIndexes": [],
@@ -153,10 +160,12 @@
       "Table": "OSUSR_B",
       "Column": "AID",
       "CreateConstraint": false,
+      "ScriptWithNoCheck": false,
       "Rationales": [
         "DATA_HAS_ORPHANS",
         "DELETE_RULE_IGNORE"
-      ]
+      ],
+      "Module": "M"
     }
   ],
   "Diagnostics": [],
@@ -178,18 +187,15 @@
         ]
       },
       {
-        "Module": "UserExtension_CS",
+        "Module": "Users",
         "Schema": "dbo",
-        "Table": "ossys_User",
-        "Predicates": [
-          "HasUniqueIndex"
-        ]
+        "Table": "OSUSR_U_USER",
+        "Predicates": []
       }
     ],
     "PredicateCounts": {
       "HasLogicalForeignKey": 1,
-      "HasLogicalForeignKeyWithoutDbConstraint": 1,
-      "HasUniqueIndex": 1
+      "HasLogicalForeignKeyWithoutDbConstraint": 1
     }
   }
 }

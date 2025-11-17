@@ -52,7 +52,7 @@ public sealed class SqlDynamicEntityDataProviderIntegrationTests
         var result = await provider.ExtractAsync(request, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        var dataset = result.Value;
+        var dataset = result.Value.Dataset;
         dataset.IsEmpty.Should().BeFalse();
         dataset.Tables.Should().NotBeEmpty();
         dataset.Tables[0].Rows.Should().NotBeEmpty();

@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Xunit;
 using Xunit.Sdk;
 
@@ -91,18 +93,33 @@ public static class DirectorySnapshot
     private static IReadOnlyDictionary<string, string> ReadAllFiles(string root)
     {
         return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Where(ShouldIncludeFile)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
                 path => NormalizeRelativePath(Path.GetRelativePath(root, path)),
-                path => NormalizeContent(path, File.ReadAllText(path)),
+                path => NormalizeContent(path),
                 StringComparer.OrdinalIgnoreCase);
     }
 
     private static string NormalizeRelativePath(string path) => path.Replace('\\', '/');
 
-    private static string NormalizeContent(string path, string content)
+    private static bool ShouldIncludeFile(string path)
     {
-        if (Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase))
+        var extension = Path.GetExtension(path);
+        return !string.Equals(extension, ".zip", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeContent(string path)
+    {
+        var extension = Path.GetExtension(path);
+        if (string.Equals(extension, ".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return "<zip>";
+        }
+
+        var content = File.ReadAllText(path);
+
+        if (string.Equals(extension, ".json", StringComparison.OrdinalIgnoreCase))
         {
             using var document = JsonDocument.Parse(content);
             using var stream = new MemoryStream();
@@ -111,7 +128,18 @@ public static class DirectorySnapshot
                 WriteCanonicalJson(writer, document.RootElement);
             }
 
-            return Encoding.UTF8.GetString(stream.ToArray()).TrimEnd();
+            var normalized = Encoding.UTF8.GetString(stream.ToArray()).TrimEnd();
+            if (string.Equals(Path.GetFileName(path), "validations.json", StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = SortValidations(normalized);
+            }
+            normalized = GeneratedAtUtcRegex.Replace(normalized, "\"GeneratedAtUtc\": \"<timestamp>\"");
+            return normalized;
+        }
+
+        if (string.Equals(extension, ".sql", StringComparison.OrdinalIgnoreCase))
+        {
+            content = GeneratedCommentRegex.Replace(content, "-- Generated: <timestamp>");
         }
 
         return content.Replace("\r\n", "\n").TrimEnd();
@@ -177,4 +205,44 @@ public static class DirectorySnapshot
     }
 
     private sealed record FileDifference(string RelativePath, string Details);
+
+    private static readonly Regex GeneratedAtUtcRegex = new("\"GeneratedAtUtc\"\\s*:\\s*\"[^\"]+\"", RegexOptions.Compiled);
+
+    private static readonly Regex GeneratedCommentRegex = new("^-- Generated:.*$", RegexOptions.Compiled | RegexOptions.Multiline);
+
+    private static string SortValidations(string json)
+    {
+        var node = JsonNode.Parse(json);
+        if (node is not JsonObject root || !root.TryGetPropertyValue("Validations", out var validationsNode))
+        {
+            return json;
+        }
+
+        if (validationsNode is not JsonArray array || array.Count <= 1)
+        {
+            return json;
+        }
+
+        var ordered = array
+            .Where(static element => element is not null)
+            .Select(static element => element!.ToJsonString())
+            .OrderBy(static entry => entry, StringComparer.Ordinal)
+            .Select(static entry => JsonNode.Parse(entry))
+            .Where(static parsed => parsed is not null)
+            .ToArray();
+
+        if (ordered.Length == 0)
+        {
+            return json;
+        }
+
+        var replacement = new JsonArray();
+        foreach (var entry in ordered)
+        {
+            replacement.Add(entry);
+        }
+
+        root["Validations"] = replacement;
+        return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }).TrimEnd();
+    }
 }

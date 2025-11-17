@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.DynamicData;
@@ -252,6 +253,79 @@ public sealed class FullExportRunManifestTests
             .Select(static path => Path.GetFullPath(path))
             .ToArray();
         Assert.All(staticSeedPaths.Select(Path.GetFullPath), path => Assert.Contains(path, staticFiles));
+    }
+
+    [Fact]
+    public void Create_PopulatesReconciledTablesMetadataWhenPresent()
+    {
+        using var tempDir = new TempDirectory();
+        var outputDirectory = Path.Combine(tempDir.Path, "full-export");
+        var dynamicRoot = outputDirectory;
+        var modelPath = Path.Combine(tempDir.Path, "model.json");
+        var profilePath = Path.Combine(tempDir.Path, "profile.json");
+        var safeScriptPath = Path.Combine(tempDir.Path, "safe.sql");
+        var remediationScriptPath = Path.Combine(tempDir.Path, "remediation.sql");
+        var staticSeedPaths = ImmutableArray.Create(Path.Combine(tempDir.Path, "Seeds", "ModuleA", "StaticEntities.seed.sql"));
+
+        Directory.CreateDirectory(Path.GetDirectoryName(staticSeedPaths[0])!);
+        File.WriteAllText(staticSeedPaths[0], "PRINT 'seed';");
+
+        var extraction = CreateExtractionApplicationResult(modelPath);
+        var capture = CreateCaptureApplicationResult(profilePath, modelPath, Path.Combine(tempDir.Path, "Profiles"));
+        var build = CreateBuildApplicationResult(dynamicRoot, modelPath, profilePath, safeScriptPath, remediationScriptPath, staticSeedPaths);
+        var reconciliations = ImmutableArray.Create(new DynamicEntityTableReconciliation(
+            "Sample",
+            "Child",
+            "dbo",
+            "OSUSR_SAMPLE_CHILD_ALT",
+            "OSUSR_SAMPLE_CHILD_ALT",
+            "Sample",
+            "Child",
+            "dbo",
+            "OSUSR_SAMPLE_CHILD",
+            "OSUSR_SAMPLE_CHILD",
+            DynamicTableResolutionStrategy.EffectiveName));
+        var reconciledBuild = build with
+        {
+            PipelineResult = build.PipelineResult with { DynamicTableReconciliations = reconciliations }
+        };
+
+        var schemaApply = new SchemaApplyResult(
+            Attempted: false,
+            SafeScriptApplied: false,
+            StaticSeedsApplied: false,
+            AppliedScripts: ImmutableArray<string>.Empty,
+            AppliedSeedScripts: ImmutableArray<string>.Empty,
+            SkippedScripts: ImmutableArray<string>.Empty,
+            Warnings: ImmutableArray<string>.Empty,
+            PendingRemediationCount: 0,
+            SafeScriptPath: safeScriptPath,
+            RemediationScriptPath: remediationScriptPath,
+            StaticSeedScriptPaths: staticSeedPaths,
+            Duration: TimeSpan.Zero,
+            StaticSeedSynchronizationMode: StaticSeedSynchronizationMode.NonDestructive,
+            StaticSeedValidation: StaticSeedValidationSummary.NotAttempted);
+
+        var applicationResult = new FullExportApplicationResult(
+            reconciledBuild,
+            capture,
+            extraction,
+            schemaApply,
+            SchemaApplyOptions.Disabled,
+            UatUsersApplicationResult.Disabled);
+        var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, "config/full-export.json");
+        var verbResult = new FullExportVerbResult(configurationContext, applicationResult);
+
+        var artifacts = new List<PipelineArtifact>
+        {
+            new("dynamic-insert", Path.Combine(dynamicRoot, "DynamicData", "ModuleA", "Entity.dynamic.sql"), "application/sql")
+        };
+
+        var manifest = FullExportRunManifest.Create(verbResult, artifacts, TimeProvider.System);
+        var dynamicInsertStage = Assert.Single(manifest.Stages, stage => stage.Name == "dynamic-insert");
+        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("reconciledTables", out var reconciled));
+        Assert.Contains("OSUSR_SAMPLE_CHILD_ALT", reconciled);
+        Assert.Contains("OSUSR_SAMPLE_CHILD", reconciled);
     }
 
     [Fact]
@@ -654,6 +728,7 @@ public sealed class FullExportRunManifestTests
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
+            ImmutableArray<DynamicEntityTableReconciliation>.Empty,
             ImmutableArray<string>.Empty,
             null);
 

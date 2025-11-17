@@ -38,52 +38,12 @@
     }
   },
   "TogglePrecedence": {
-    "policy.mode": {
-      "Value": "EvidenceGated",
-      "Source": 0
-    },
-    "policy.nullBudget": {
-      "Value": 0,
-      "Source": 0
-    },
-    "foreignKeys.enableCreation": {
-      "Value": true,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossSchema": {
-      "Value": false,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossCatalog": {
-      "Value": false,
-      "Source": 0
-    },
-    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
-      "Value": false,
-      "Source": 0
-    },
-    "uniqueness.enforceSingleColumn": {
-      "Value": true,
-      "Source": 0
-    },
-    "uniqueness.enforceMultiColumn": {
-      "Value": true,
-      "Source": 0
-    },
-    "remediation.generatePreScripts": {
-      "Value": true,
-      "Source": 0
-    },
-    "remediation.maxRowsDefaultBackfill": {
-      "Value": 100000,
-      "Source": 0
-    },
     "remediation.sentinels.numeric": {
       "Value": "0",
       "Source": 0
     },
-    "remediation.sentinels.text": {
-      "Value": "",
+    "policy.nullBudget": {
+      "Value": 0,
       "Source": 0
     },
     "remediation.sentinels.date": {
@@ -96,6 +56,50 @@
     },
     "mocking.profileMockFolder": {
       "Value": null,
+      "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.sentinels.text": {
+      "Value": "",
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowNoCheckCreation": {
+      "Value": false,
+      "Source": 0
+    },
+    "policy.mode": {
+      "Value": "EvidenceGated",
       "Source": 0
     }
   },
@@ -110,7 +114,8 @@
         "MANDATORY",
         "PK",
         "PROFILE_MISSING"
-      ]
+      ],
+      "Module": "Operator"
     },
     {
       "Schema": "dbo",
@@ -121,7 +126,8 @@
       "Rationales": [
         "MANDATORY",
         "PROFILE_MISSING"
-      ]
+      ],
+      "Module": "Operator"
     }
   ],
   "UniqueIndexes": [
@@ -133,7 +139,8 @@
       "RequiresRemediation": false,
       "Rationales": [
         "PHYSICAL_UNIQUE_KEY"
-      ]
+      ],
+      "Module": "Operator"
     },
     {
       "Schema": "dbo",
@@ -143,7 +150,8 @@
       "RequiresRemediation": false,
       "Rationales": [
         "PHYSICAL_UNIQUE_KEY"
-      ]
+      ],
+      "Module": "Operator"
     }
   ],
   "ForeignKeys": [],
@@ -159,16 +167,14 @@
         ]
       },
       {
-        "Module": "UserExtension_CS",
+        "Module": "Users",
         "Schema": "dbo",
-        "Table": "ossys_User",
-        "Predicates": [
-          "HasUniqueIndex"
-        ]
+        "Table": "OSUSR_U_USER",
+        "Predicates": []
       }
     ],
     "PredicateCounts": {
-      "HasUniqueIndex": 2
+      "HasUniqueIndex": 1
     }
   }
 }
