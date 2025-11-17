@@ -27,6 +27,7 @@ public sealed record PipelineBootstrapRequest(
     SupplementalModelOptions SupplementalModels,
     PipelineBootstrapTelemetry Telemetry,
     Func<OsmModel, CancellationToken, Task<Result<ProfileCaptureResult>>> ProfileCaptureAsync,
+    ResolvedSqlOptions SqlOptions,
     OsmModel? InlineModel = null,
     ImmutableArray<string> ModelWarnings = default);
 

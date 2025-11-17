@@ -9,9 +9,11 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
+using Osm.Pipeline.Configuration;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.SqlExtraction;
 using Osm.Validation.Profiling;
 using Tests.Support;
 using Xunit;
@@ -20,6 +22,7 @@ namespace Osm.Pipeline.Tests.Orchestration;
 
 public sealed class PipelineBootstrapperStageTests
 {
+
     [Fact]
     public async Task ModelLoader_LoadsModelAndLogsWarnings()
     {
@@ -213,6 +216,7 @@ public sealed class PipelineBootstrapperStageTests
             supplemental ?? SupplementalModelOptions.Default,
             telemetry,
             profileCapture ?? ((_, _) => Task.FromResult(Result<ProfileCaptureResult>.Failure(ValidationError.Create("profiling.unused", "Profiling not configured for test.")))),
+            PipelineBootstrapperTestDefaults.SqlOptions,
             inlineModel,
             inlineWarnings);
 
@@ -258,6 +262,7 @@ public sealed class PipelineBootstrapperIntegrationTests
             SupplementalModelOptions.Default,
             telemetry,
             (_, _) => Task.FromResult(Result<ProfileCaptureResult>.Success(new ProfileCaptureResult(profile, MultiEnvironmentProfileReport.Empty))),
+            PipelineBootstrapperTestDefaults.SqlOptions,
             InlineModel: null,
             ModelWarnings: default);
 
@@ -285,6 +290,18 @@ public sealed class PipelineBootstrapperIntegrationTests
         var warningEntry = entries.First(entry => entry.Step == "model.schema.warnings");
         Assert.Equal("Schema warning", warningEntry.Metadata["warnings.summary"]);
     }
+}
+
+internal static class PipelineBootstrapperTestDefaults
+{
+    public static readonly ResolvedSqlOptions SqlOptions = new(
+        ConnectionString: "Server=(local);Database=OSM",
+        CommandTimeoutSeconds: null,
+        Sampling: new SqlSamplingSettings(null, null),
+        Authentication: new SqlAuthenticationSettings(null, null, "osm-tests", null),
+        MetadataContract: MetadataContractOverrides.Strict,
+        ProfilingConnectionStrings: ImmutableArray<string>.Empty,
+        TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty);
 }
 
 internal sealed class FakeModelIngestionService : IModelIngestionService

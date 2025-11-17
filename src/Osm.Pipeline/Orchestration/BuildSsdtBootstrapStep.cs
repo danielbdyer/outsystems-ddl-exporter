@@ -38,6 +38,7 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
             request.Scope.SupplementalModels,
             telemetry,
             (model, token) => CaptureProfileAsync(request, model, token),
+            request.Scope.SqlOptions,
             request.Scope.InlineModel,
             request.Scope.ModelWarnings);
 

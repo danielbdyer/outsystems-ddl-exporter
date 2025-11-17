@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Orchestration;
 
@@ -39,7 +40,11 @@ internal sealed class ModelLoader
         }
 
         var ingestionWarnings = new List<string>();
-        var ingestionOptions = new ModelIngestionOptions(context.Request.ModuleFilter.ValidationOverrides, null);
+        var sqlMetadataOptions = CreateSqlMetadataOptions(context.Request.SqlOptions);
+        var ingestionOptions = new ModelIngestionOptions(
+            context.Request.ModuleFilter.ValidationOverrides,
+            MissingSchemaFallback: null,
+            SqlMetadata: sqlMetadataOptions);
 
         var modelResult = await _modelIngestionService
             .LoadFromFileAsync(context.Request.ModelPath, ingestionWarnings, cancellationToken, ingestionOptions)
@@ -53,5 +58,25 @@ internal sealed class ModelLoader
         context.SetModel(modelResult.Value, ingestionWarnings);
 
         return Result<BootstrapPipelineContext>.Success(context);
+}
+
+    private static ModelIngestionSqlMetadataOptions? CreateSqlMetadataOptions(ResolvedSqlOptions sqlOptions)
+    {
+        if (sqlOptions is null || string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
+        {
+            return null;
+        }
+
+        var authentication = sqlOptions.Authentication;
+        var connectionOptions = new SqlConnectionOptions(
+            authentication.Method,
+            authentication.TrustServerCertificate,
+            authentication.ApplicationName,
+            authentication.AccessToken);
+
+        return new ModelIngestionSqlMetadataOptions(
+            sqlOptions.ConnectionString,
+            connectionOptions,
+            sqlOptions.CommandTimeoutSeconds);
     }
 }

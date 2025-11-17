@@ -191,7 +191,8 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             {
                 var ingestionOptions = new ModelIngestionOptions(
                     context.ModuleFilter.ValidationOverrides,
-                    MissingSchemaFallback: null);
+                    MissingSchemaFallback: null,
+                    SqlMetadata: CreateSqlMetadataOptions(context.SqlOptions));
 
                 var modelLoadResult = await _modelIngestionService
                     .LoadFromFileAsync(
@@ -318,5 +319,25 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             modelResolution.Warnings,
             staticSeedParentMode,
             staticSeedParents);
+    }
+
+    private static ModelIngestionSqlMetadataOptions? CreateSqlMetadataOptions(ResolvedSqlOptions sqlOptions)
+    {
+        if (sqlOptions is null || string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
+        {
+            return null;
+        }
+
+        var authentication = sqlOptions.Authentication;
+        var connectionOptions = new SqlConnectionOptions(
+            authentication.Method,
+            authentication.TrustServerCertificate,
+            authentication.ApplicationName,
+            authentication.AccessToken);
+
+        return new ModelIngestionSqlMetadataOptions(
+            sqlOptions.ConnectionString,
+            connectionOptions,
+            sqlOptions.CommandTimeoutSeconds);
     }
 }

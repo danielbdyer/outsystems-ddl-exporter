@@ -78,6 +78,8 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IProfileSnapshotDeserializer, ProfileSnapshotDeserializer>();
         services.AddSingleton<IProfileSnapshotSerializer, ProfileSnapshotSerializer>();
         services.AddSingleton<IDataProfilerFactory, DataProfilerFactory>();
+        services.AddSingleton<IRelationshipConstraintMetadataProvider, SqlRelationshipConstraintMetadataProvider>();
+        services.AddSingleton<IRelationshipConstraintHydrator, RelationshipConstraintHydrator>();
         services.AddSingleton<NullCountQueryBuilder>();
         services.AddSingleton<UniqueCandidateQueryBuilder>();
         services.AddSingleton<ForeignKeyProbeQueryBuilder>();
