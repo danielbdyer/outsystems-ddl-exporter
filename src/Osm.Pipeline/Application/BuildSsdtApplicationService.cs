@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -26,14 +27,52 @@ public sealed record BuildSsdtApplicationInput(
     DynamicEntityDataset? DynamicDataset = null,
     bool EnableDynamicSqlExtraction = false);
 
-public sealed record BuildSsdtApplicationResult(
-    BuildSsdtPipelineResult PipelineResult,
-    string ProfilerProvider,
-    string? ProfilePath,
-    string OutputDirectory,
-    string ModelPath,
-    bool ModelWasExtracted,
-    ImmutableArray<string> ModelExtractionWarnings);
+public sealed record BuildSsdtApplicationResult
+{
+    public BuildSsdtApplicationResult(
+        BuildSsdtPipelineResult PipelineResult,
+        string ProfilerProvider,
+        string? ProfilePath,
+        string OutputDirectory,
+        string ModelPath,
+        bool ModelWasExtracted,
+        ImmutableArray<string> ModelExtractionWarnings,
+        StaticSeedParentHandlingMode StaticSeedParentMode = StaticSeedParentHandlingMode.AutoLoad,
+        ImmutableArray<StaticSeedParentStatus> StaticSeedParents = default)
+    {
+        this.PipelineResult = PipelineResult ?? throw new ArgumentNullException(nameof(PipelineResult));
+        this.ProfilerProvider = ProfilerProvider ?? throw new ArgumentNullException(nameof(ProfilerProvider));
+        this.ProfilePath = ProfilePath;
+        this.OutputDirectory = OutputDirectory ?? throw new ArgumentNullException(nameof(OutputDirectory));
+        this.ModelPath = ModelPath ?? throw new ArgumentNullException(nameof(ModelPath));
+        this.ModelWasExtracted = ModelWasExtracted;
+        this.ModelExtractionWarnings = ModelExtractionWarnings.IsDefault
+            ? ImmutableArray<string>.Empty
+            : ModelExtractionWarnings;
+        this.StaticSeedParentMode = StaticSeedParentMode;
+        this.StaticSeedParents = StaticSeedParents.IsDefault
+            ? ImmutableArray<StaticSeedParentStatus>.Empty
+            : StaticSeedParents;
+    }
+
+    public BuildSsdtPipelineResult PipelineResult { get; }
+
+    public string ProfilerProvider { get; }
+
+    public string? ProfilePath { get; }
+
+    public string OutputDirectory { get; }
+
+    public string ModelPath { get; }
+
+    public bool ModelWasExtracted { get; }
+
+    public ImmutableArray<string> ModelExtractionWarnings { get; }
+
+    public StaticSeedParentHandlingMode StaticSeedParentMode { get; }
+
+    public ImmutableArray<StaticSeedParentStatus> StaticSeedParents { get; }
+}
 
 public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase, IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>
 {
@@ -86,6 +125,11 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
         }
 
         var context = contextResult.Value;
+        var staticSeedParentMode = BuildSsdtRequestAssembler.ResolveStaticSeedParentMode(
+            context.Configuration.DynamicData,
+            input.Overrides.StaticSeedParentMode);
+
+        var staticSeedParents = ImmutableArray<StaticSeedParentStatus>.Empty;
         var dynamicDatasetSource = DynamicDatasetSource.None;
         var dynamicDataset = input.DynamicDataset ?? DynamicEntityDataset.Empty;
         if (!dynamicDataset.IsEmpty)
@@ -178,7 +222,9 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
                 modelForDynamicData!,
                 context.ModuleFilter,
                 namingOverrides,
-                context.SqlOptions.CommandTimeoutSeconds);
+                context.SqlOptions.CommandTimeoutSeconds,
+                Log: null,
+                ParentHandlingMode: staticSeedParentMode);
 
             var dynamicDatasetResult = await _dynamicDataProvider
                 .ExtractAsync(extractionRequest, cancellationToken)
@@ -191,11 +237,37 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
 
             dynamicDataset = dynamicDatasetResult.Value.Dataset;
             dynamicDatasetSource = DynamicDatasetSource.SqlProvider;
+            staticSeedParents = dynamicDatasetResult.Value.StaticSeedParents;
         }
 
         if (!dynamicDataset.IsEmpty && dynamicDatasetSource == DynamicDatasetSource.None && input.EnableDynamicSqlExtraction)
         {
             dynamicDatasetSource = DynamicDatasetSource.SqlProvider;
+        }
+
+        if (staticSeedParentMode == StaticSeedParentHandlingMode.ValidateStaticSeedApplication
+            && !staticSeedParents.IsDefaultOrEmpty
+            && staticSeedParents.Any(status => status.Satisfaction == StaticSeedParentSatisfaction.RequiresVerification))
+        {
+            if (staticDataProviderResult.Value is null)
+            {
+                await FlushMetadataAsync(context, cancellationToken).ConfigureAwait(false);
+                return ValidationError.Create(
+                    "pipeline.dynamicData.parents.staticProvider.missing",
+                    "Static data provider is required when validating static-seed parent tables.");
+            }
+
+            var parentValidator = new StaticSeedParentValidator();
+            var verificationResult = await parentValidator
+                .ValidateAsync(staticSeedParents, staticDataProviderResult.Value, cancellationToken)
+                .ConfigureAwait(false);
+            verificationResult = await EnsureSuccessOrFlushAsync(verificationResult, context, cancellationToken).ConfigureAwait(false);
+            if (verificationResult.IsFailure)
+            {
+                return Result<BuildSsdtApplicationResult>.Failure(verificationResult.Errors);
+            }
+
+            staticSeedParents = verificationResult.Value;
         }
 
         var assemblyResult = _assembler.Assemble(new BuildSsdtRequestAssemblerContext(
@@ -210,6 +282,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             outputDirectory,
             dynamicDataset,
             dynamicDatasetSource,
+            staticSeedParentMode,
             staticDataProviderResult.Value,
             context.CacheOverrides,
             context.ConfigPath,
@@ -242,6 +315,8 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             assembly.OutputDirectory,
             modelResolution.ModelPath,
             modelResolution.WasExtracted,
-            modelResolution.Warnings);
+            modelResolution.Warnings,
+            staticSeedParentMode,
+            staticSeedParents);
     }
 }

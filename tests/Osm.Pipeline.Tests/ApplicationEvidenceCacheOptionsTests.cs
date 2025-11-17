@@ -365,7 +365,8 @@ public sealed class ApplicationEvidenceCacheOptionsTests
         {
             var result = new DynamicEntityExtractionResult(
                 DynamicEntityDataset.Empty,
-                DynamicEntityExtractionTelemetry.Empty);
+                DynamicEntityExtractionTelemetry.Empty,
+                ImmutableArray<StaticSeedParentStatus>.Empty);
             return Task.FromResult(Result<DynamicEntityExtractionResult>.Success(result));
         }
     }

@@ -142,6 +142,7 @@ public sealed class BuildSsdtRequestAssemblerTests
         string outputDirectory = "out",
         DynamicEntityDataset? dynamicDataset = null,
         DynamicDatasetSource datasetSource = DynamicDatasetSource.None,
+        StaticSeedParentHandlingMode staticSeedParentMode = StaticSeedParentHandlingMode.AutoLoad,
         IStaticEntityDataProvider? staticDataProvider = null,
         SqlMetadataLog? sqlMetadataLog = null)
     {
@@ -159,6 +160,7 @@ public sealed class BuildSsdtRequestAssemblerTests
             outputDirectory,
             dynamicDataset,
             datasetSource,
+            staticSeedParentMode,
             staticDataProvider,
             new CacheOptionsOverrides(null, null),
             "config.json",
