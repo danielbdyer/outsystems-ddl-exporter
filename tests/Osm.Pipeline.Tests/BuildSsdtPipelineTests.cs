@@ -35,7 +35,7 @@ public class BuildSsdtPipelineTests
     [Fact]
     public async Task HandleAsync_returns_failure_when_model_path_missing()
     {
-        var scope = CreateScope(modelPath: null!);
+        var scope = CreateScope(modelPath: string.Empty);
 
         var request = new BuildSsdtPipelineRequest(
             scope,
@@ -277,17 +277,17 @@ public class BuildSsdtPipelineTests
         Assert.True(manifestDocument.RootElement.GetProperty("Tables").GetArrayLength() > 0);
 
         var coverageElement = manifestDocument.RootElement.GetProperty("Coverage");
-        Assert.Equal(4, coverageElement.GetProperty("Tables").GetProperty("Emitted").GetInt32());
+        Assert.Equal(5, coverageElement.GetProperty("Tables").GetProperty("Emitted").GetInt32());
         Assert.Equal(5, coverageElement.GetProperty("Tables").GetProperty("Total").GetInt32());
-        Assert.Equal(80.0, coverageElement.GetProperty("Tables").GetProperty("Percentage").GetDouble(), precision: 2);
+        Assert.Equal(100.0, coverageElement.GetProperty("Tables").GetProperty("Percentage").GetDouble(), precision: 2);
 
-        Assert.Equal(14, coverageElement.GetProperty("Columns").GetProperty("Emitted").GetInt32());
-        Assert.Equal(17, coverageElement.GetProperty("Columns").GetProperty("Total").GetInt32());
-        Assert.Equal(82.35, coverageElement.GetProperty("Columns").GetProperty("Percentage").GetDouble(), precision: 2);
+        Assert.Equal(24, coverageElement.GetProperty("Columns").GetProperty("Emitted").GetInt32());
+        Assert.Equal(24, coverageElement.GetProperty("Columns").GetProperty("Total").GetInt32());
+        Assert.Equal(100.0, coverageElement.GetProperty("Columns").GetProperty("Percentage").GetDouble(), precision: 2);
 
-        Assert.Equal(8, coverageElement.GetProperty("Constraints").GetProperty("Emitted").GetInt32());
+        Assert.Equal(9, coverageElement.GetProperty("Constraints").GetProperty("Emitted").GetInt32());
         Assert.Equal(9, coverageElement.GetProperty("Constraints").GetProperty("Total").GetInt32());
-        Assert.Equal(88.89, coverageElement.GetProperty("Constraints").GetProperty("Percentage").GetDouble(), precision: 2);
+        Assert.Equal(100.0, coverageElement.GetProperty("Constraints").GetProperty("Percentage").GetDouble(), precision: 2);
 
         Assert.Equal(JsonValueKind.Array, manifestDocument.RootElement.GetProperty("Unsupported").ValueKind);
     }

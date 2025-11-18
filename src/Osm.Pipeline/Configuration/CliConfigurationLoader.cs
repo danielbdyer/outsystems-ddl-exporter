@@ -295,7 +295,16 @@ public sealed class CliConfigurationLoader
             }
         }
 
-        configuration = new DynamicDataConfiguration(insertMode, parentMode);
+        bool? deferJunctionTables = null;
+        if (element.TryGetProperty("deferJunctionTables", out var deferElement))
+        {
+            if (deferElement.ValueKind == JsonValueKind.True || deferElement.ValueKind == JsonValueKind.False)
+            {
+                deferJunctionTables = deferElement.GetBoolean();
+            }
+        }
+
+        configuration = new DynamicDataConfiguration(insertMode, parentMode, deferJunctionTables);
         return true;
     }
 

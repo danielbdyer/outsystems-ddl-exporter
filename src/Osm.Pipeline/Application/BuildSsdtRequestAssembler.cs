@@ -40,6 +40,7 @@ public sealed record BuildSsdtRequestAssemblerContext(
     DynamicEntityDataset DynamicDataset,
     DynamicDatasetSource DynamicDatasetSource,
     StaticSeedParentHandlingMode StaticSeedParentMode,
+    bool DeferJunctionTables,
     IStaticEntityDataProvider? StaticDataProvider,
     CacheOptionsOverrides CacheOverrides,
     string? ConfigPath,
@@ -90,6 +91,7 @@ public sealed class BuildSsdtRequestAssembler
             }
 
             metadata["dynamicData.staticSeedParentMode"] = context.StaticSeedParentMode.ToString();
+            metadata["dynamicData.deferJunctionTables"] = context.DeferJunctionTables ? "true" : "false";
             cacheOptions = cacheOptions with { Metadata = metadata };
         }
 
@@ -121,7 +123,10 @@ public sealed class BuildSsdtRequestAssembler
             Path.Combine(context.OutputDirectory, "DynamicData"),
             sqlProjectPath,
             dynamicInsertMode,
-            context.SqlMetadataLog);
+            context.SqlMetadataLog)
+        {
+            DeferJunctionTables = context.DeferJunctionTables
+        };
 
         return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory, sqlProjectPath);
     }
@@ -224,5 +229,22 @@ public sealed class BuildSsdtRequestAssembler
         }
 
         return StaticSeedParentHandlingMode.AutoLoad;
+    }
+
+    internal static bool ResolveDeferJunctionTables(
+        DynamicDataConfiguration configuration,
+        bool? overrideValue)
+    {
+        if (overrideValue.HasValue)
+        {
+            return overrideValue.Value;
+        }
+
+        if (configuration is not null && configuration.DeferJunctionTables.HasValue)
+        {
+            return configuration.DeferJunctionTables.Value;
+        }
+
+        return false;
     }
 }

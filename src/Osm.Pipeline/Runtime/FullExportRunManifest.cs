@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
@@ -367,7 +368,7 @@ public sealed record FullExportRunManifest(
             artifacts["root"] = staticSeedRoot;
         }
 
-        artifacts["ordering"] = pipelineResult.StaticSeedTopologicalOrderApplied ? "topological" : "alphabetical";
+        artifacts["ordering"] = pipelineResult.StaticSeedOrderingMode.ToMetadataValue();
 
         return new FullExportStageManifest(
             Name: "static-seed",
@@ -402,7 +403,7 @@ public sealed record FullExportRunManifest(
             artifacts["root"] = dynamicInsertRoot;
         }
 
-        artifacts["ordering"] = pipelineResult.DynamicInsertTopologicalOrderApplied ? "topological" : "alphabetical";
+        artifacts["ordering"] = pipelineResult.DynamicInsertOrderingMode.ToMetadataValue();
         artifacts["mode"] = pipelineResult.DynamicInsertOutputMode.ToString();
 
         return new FullExportStageManifest(

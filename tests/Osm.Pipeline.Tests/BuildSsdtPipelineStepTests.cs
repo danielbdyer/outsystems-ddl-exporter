@@ -834,7 +834,8 @@ public class BuildSsdtPipelineStepTests
             SsdtSqlValidationSummary.Empty,
             ImmutableArray<string>.Empty,
             ImmutableArray<StaticEntityTableData>.Empty,
-            StaticSeedTopologicalOrderApplied: true);
+            StaticSeedTopologicalOrderApplied: true,
+            StaticSeedOrderingMode: EntityDependencyOrderingMode.Alphabetical);
     }
 
     private static SanitizedDynamicFixture CreateSanitizedDynamicFixture()

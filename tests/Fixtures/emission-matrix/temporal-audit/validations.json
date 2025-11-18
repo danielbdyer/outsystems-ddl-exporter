@@ -1,0 +1,586 @@
+{
+  "Validations": [
+    {
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Validated: Column is already NOT NULL and profiling confirms data integrity.",
+      "Evidence": [
+        "MANDATORY",
+        "Nulls=0 (Outcome=Succeeded, Sample=250, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PHYSICAL_NOT_NULL",
+        "PK",
+        "Rows=250"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_AUDIT"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_AUDIT",
+      "ConstraintName": "ID",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_M_AUDIT"
+              },
+              "Column": {
+                "Value": "ID"
+              }
+            },
+            "Module": {
+              "Value": "Matrix"
+            },
+            "EntityLogicalName": {
+              "Value": "Audit"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_M_AUDIT"
+            },
+            "AttributeLogicalName": {
+              "Value": "Id"
+            },
+            "ModuleName": "Matrix",
+            "EntityName": "Audit",
+            "TableName": "OSUSR_M_AUDIT",
+            "AttributeName": "Id"
+          },
+          "DataType": "Identifier",
+          "SqlType": "int",
+          "PhysicalNullable": false,
+          "PhysicalUnique": true,
+          "RowCount": 250,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 250,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_M_AUDIT"
+            },
+            "Column": {
+              "Value": "ID"
+            }
+          },
+          "Module": "Matrix",
+          "Entity": "Audit",
+          "Attribute": "Id"
+        }
+      ]
+    },
+    {
+      "Type": "ForeignKey",
+      "Title": "FOREIGN KEY",
+      "Summary": "Validated: Foreign key constraint is already being created to enforce referential integrity.",
+      "Evidence": [
+        "ConstraintTrust=Trusted (WITH CHECK)",
+        "HasConstraint=True",
+        "HasOrphans=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "OrphanCount=0"
+      ],
+      "Rationales": [
+        "DB_CONSTRAINT_PRESENT"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "AUDITID"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "ConstraintName": "FK_OSUSR_M_TEMPORALORDER_AUDITID_OSUSR_M_AUDIT",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_M_TEMPORALORDER"
+              },
+              "Column": {
+                "Value": "AUDITID"
+              }
+            },
+            "Module": {
+              "Value": "Matrix"
+            },
+            "EntityLogicalName": {
+              "Value": "TemporalOrder"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_M_TEMPORALORDER"
+            },
+            "AttributeLogicalName": {
+              "Value": "AuditId"
+            },
+            "ModuleName": "Matrix",
+            "EntityName": "TemporalOrder",
+            "TableName": "OSUSR_M_TEMPORALORDER",
+            "AttributeName": "AuditId"
+          },
+          "DataType": "Identifier",
+          "SqlType": "int",
+          "PhysicalNullable": true,
+          "PhysicalUnique": null,
+          "RowCount": null,
+          "NullCount": null,
+          "NullProbeStatus": null,
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": false,
+          "OrphanCount": 0,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": true,
+          "DeleteRule": "Protect",
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_M_TEMPORALORDER"
+            },
+            "Column": {
+              "Value": "AUDITID"
+            }
+          },
+          "Module": "Matrix",
+          "Entity": "TemporalOrder",
+          "Attribute": "AuditId"
+        }
+      ]
+    },
+    {
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Validated: Column is already NOT NULL and profiling confirms data integrity.",
+      "Evidence": [
+        "MANDATORY",
+        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PHYSICAL_NOT_NULL",
+        "PK",
+        "Rows=1024"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "ConstraintName": "ID",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_M_TEMPORALORDER"
+              },
+              "Column": {
+                "Value": "ID"
+              }
+            },
+            "Module": {
+              "Value": "Matrix"
+            },
+            "EntityLogicalName": {
+              "Value": "TemporalOrder"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_M_TEMPORALORDER"
+            },
+            "AttributeLogicalName": {
+              "Value": "Id"
+            },
+            "ModuleName": "Matrix",
+            "EntityName": "TemporalOrder",
+            "TableName": "OSUSR_M_TEMPORALORDER",
+            "AttributeName": "Id"
+          },
+          "DataType": "Identifier",
+          "SqlType": "int",
+          "PhysicalNullable": false,
+          "PhysicalUnique": null,
+          "RowCount": 1024,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 1024,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_M_TEMPORALORDER"
+            },
+            "Column": {
+              "Value": "ID"
+            }
+          },
+          "Module": "Matrix",
+          "Entity": "TemporalOrder",
+          "Attribute": "Id"
+        }
+      ]
+    },
+    {
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Validated: Column is already NOT NULL and profiling confirms data integrity.",
+      "Evidence": [
+        "DEFAULT_PRESENT",
+        "MANDATORY",
+        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PHYSICAL_NOT_NULL",
+        "Rows=1024"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "STATUS"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "ConstraintName": "STATUS",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_M_TEMPORALORDER"
+              },
+              "Column": {
+                "Value": "STATUS"
+              }
+            },
+            "Module": {
+              "Value": "Matrix"
+            },
+            "EntityLogicalName": {
+              "Value": "TemporalOrder"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_M_TEMPORALORDER"
+            },
+            "AttributeLogicalName": {
+              "Value": "Status"
+            },
+            "ModuleName": "Matrix",
+            "EntityName": "TemporalOrder",
+            "TableName": "OSUSR_M_TEMPORALORDER",
+            "AttributeName": "Status"
+          },
+          "DataType": "Text",
+          "SqlType": "nvarchar",
+          "PhysicalNullable": false,
+          "PhysicalUnique": null,
+          "RowCount": 1024,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 1024,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_M_TEMPORALORDER"
+            },
+            "Column": {
+              "Value": "STATUS"
+            }
+          },
+          "Module": "Matrix",
+          "Entity": "TemporalOrder",
+          "Attribute": "Status"
+        }
+      ]
+    },
+    {
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Validated: Column is already NOT NULL and profiling confirms data integrity.",
+      "Evidence": [
+        "MANDATORY",
+        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PHYSICAL_NOT_NULL",
+        "Rows=1024"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "VALIDFROM"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "ConstraintName": "VALIDFROM",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_M_TEMPORALORDER"
+              },
+              "Column": {
+                "Value": "VALIDFROM"
+              }
+            },
+            "Module": {
+              "Value": "Matrix"
+            },
+            "EntityLogicalName": {
+              "Value": "TemporalOrder"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_M_TEMPORALORDER"
+            },
+            "AttributeLogicalName": {
+              "Value": "ValidFrom"
+            },
+            "ModuleName": "Matrix",
+            "EntityName": "TemporalOrder",
+            "TableName": "OSUSR_M_TEMPORALORDER",
+            "AttributeName": "ValidFrom"
+          },
+          "DataType": "DateTime",
+          "SqlType": "datetime2",
+          "PhysicalNullable": false,
+          "PhysicalUnique": null,
+          "RowCount": 1024,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 1024,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_M_TEMPORALORDER"
+            },
+            "Column": {
+              "Value": "VALIDFROM"
+            }
+          },
+          "Module": "Matrix",
+          "Entity": "TemporalOrder",
+          "Attribute": "ValidFrom"
+        }
+      ]
+    },
+    {
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Validated: Column is already NOT NULL and profiling confirms data integrity.",
+      "Evidence": [
+        "MANDATORY",
+        "Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)",
+        "PHYSICAL_NOT_NULL",
+        "Rows=1024"
+      ],
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "VALIDTO"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_M_TEMPORALORDER",
+      "ConstraintName": "VALIDTO",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_M_TEMPORALORDER"
+              },
+              "Column": {
+                "Value": "VALIDTO"
+              }
+            },
+            "Module": {
+              "Value": "Matrix"
+            },
+            "EntityLogicalName": {
+              "Value": "TemporalOrder"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_M_TEMPORALORDER"
+            },
+            "AttributeLogicalName": {
+              "Value": "ValidTo"
+            },
+            "ModuleName": "Matrix",
+            "EntityName": "TemporalOrder",
+            "TableName": "OSUSR_M_TEMPORALORDER",
+            "AttributeName": "ValidTo"
+          },
+          "DataType": "DateTime",
+          "SqlType": "datetime2",
+          "PhysicalNullable": false,
+          "PhysicalUnique": null,
+          "RowCount": 1024,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 1024,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_M_TEMPORALORDER"
+            },
+            "Column": {
+              "Value": "VALIDTO"
+            }
+          },
+          "Module": "Matrix",
+          "Entity": "TemporalOrder",
+          "Attribute": "ValidTo"
+        }
+      ]
+    }
+  ],
+  "TypeCounts": {
+    "Nullability": 5,
+    "ForeignKey": 1
+  },
+  "GeneratedAtUtc": "2025-11-18T02:32:40.3186426+00:00",
+  "TotalCount": 6
+}

@@ -16,6 +16,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.LoadHarness;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.DynamicData;
@@ -169,6 +170,59 @@ public class FullExportCommandFactoryTests
         Assert.Equal("snapshot.json", overrides.SnapshotPath);
         Assert.Equal("Users::Entity", overrides.UserEntityIdentifier);
         Assert.False(overrides.IdempotentEmission);
+    }
+
+    [Fact]
+    public async Task Invoke_ForwardsDeferJunctionTablesOverrideToBuildOverrides()
+    {
+        using var tempDir = new TempDirectory();
+
+        var loadHarnessRunner = new FakeLoadHarnessRunner();
+        var configuration = CliConfiguration.Empty;
+        var applicationResult = CreateFullExportApplicationResult(tempDir.Path, "Server=Test;");
+        var verbResult = new FullExportVerbResult(
+            new CliConfigurationContext(configuration, "config.json"),
+            applicationResult);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(new StubConfigurationService());
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
+        services.AddSingleton<ILoadHarnessRunner>(loadHarnessRunner);
+        services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
+        var fakeVerb = new FakeFullExportVerb(verbResult);
+        services.AddSingleton<IVerbRegistry>(_ => new FakeVerbRegistry(fakeVerb));
+        services.AddSingleton<FullExportCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<FullExportCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+
+        var args = string.Join(
+            ' ',
+            "full-export",
+            "--model",
+            "model.json",
+            "--profile",
+            "profile.json",
+            "--build-out",
+            tempDir.Path,
+            "--defer-junction-tables",
+            "false");
+
+        var exitCode = await parser.InvokeAsync(args);
+
+        Assert.Equal(0, exitCode);
+        Assert.NotNull(fakeVerb.LastOptions);
+        Assert.False(fakeVerb.LastOptions!.Overrides.Build.DeferJunctionTables);
     }
 
     [Fact]
@@ -507,6 +561,8 @@ public class FullExportCommandFactoryTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            StaticSeedOrderingMode: EntityDependencyOrderingMode.Alphabetical,
+            DynamicInsertOrderingMode: EntityDependencyOrderingMode.Alphabetical,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             null);

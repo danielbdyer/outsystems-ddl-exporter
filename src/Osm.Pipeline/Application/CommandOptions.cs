@@ -58,7 +58,8 @@ public sealed record BuildSsdtOverrides(
     string? SqlMetadataOutputPath,
     bool ExtractModelInline = false,
     DynamicInsertOutputMode? DynamicInsertMode = null,
-    StaticSeedParentHandlingMode? StaticSeedParentMode = null);
+    StaticSeedParentHandlingMode? StaticSeedParentMode = null,
+    bool? DeferJunctionTables = null);
 
 public sealed record CaptureProfileOverrides(
     string? ModelPath,

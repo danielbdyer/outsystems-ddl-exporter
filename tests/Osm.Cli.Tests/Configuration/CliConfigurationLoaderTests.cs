@@ -226,7 +226,8 @@ public sealed class CliConfigurationLoaderTests
             dynamicData = new
             {
                 insertMode = "SingleFile",
-                staticSeedParentMode = "ValidateStaticSeedApplication"
+                staticSeedParentMode = "ValidateStaticSeedApplication",
+                deferJunctionTables = true
             }
         };
 
@@ -238,6 +239,7 @@ public sealed class CliConfigurationLoaderTests
         Assert.True(result.IsSuccess);
         Assert.Equal(DynamicInsertOutputMode.SingleFile, result.Value.DynamicData.InsertMode);
         Assert.Equal(StaticSeedParentHandlingMode.ValidateStaticSeedApplication, result.Value.DynamicData.StaticSeedParentMode);
+        Assert.True(result.Value.DynamicData.DeferJunctionTables);
     }
 
     [Fact]

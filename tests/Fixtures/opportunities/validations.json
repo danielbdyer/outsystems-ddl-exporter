@@ -1,96 +1,6 @@
 {
   "Validations": [
     {
-      "Type": "Nullability",
-      "Title": "NOT NULL",
-      "Summary": "Validated: Column is already NOT NULL and profiling confirms data integrity.",
-      "Evidence": [
-        "Rows=100",
-        "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"
-      ],
-      "Rationales": [],
-      "Column": {
-        "Schema": {
-          "Value": "dbo"
-        },
-        "Table": {
-          "Value": "OSUSR_ABC_ORDER"
-        },
-        "Column": {
-          "Value": "ID"
-        }
-      },
-      "Index": null,
-      "Schema": "dbo",
-      "Table": "OSUSR_ABC_ORDER",
-      "ConstraintName": "ID",
-      "Columns": [
-        {
-          "Identity": {
-            "Coordinate": {
-              "Schema": {
-                "Value": "dbo"
-              },
-              "Table": {
-                "Value": "OSUSR_ABC_ORDER"
-              },
-              "Column": {
-                "Value": "ID"
-              }
-            },
-            "Module": {
-              "Value": "Orders"
-            },
-            "EntityLogicalName": {
-              "Value": "Order"
-            },
-            "EntityPhysicalName": {
-              "Value": "OSUSR_ABC_ORDER"
-            },
-            "AttributeLogicalName": {
-              "Value": "Id"
-            },
-            "ModuleName": "Orders",
-            "EntityName": "Order",
-            "TableName": "OSUSR_ABC_ORDER",
-            "AttributeName": "Id"
-          },
-          "DataType": "Integer",
-          "SqlType": "INT",
-          "PhysicalNullable": false,
-          "PhysicalUnique": false,
-          "RowCount": 100,
-          "NullCount": 0,
-          "NullProbeStatus": {
-            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
-            "SampleSize": 100,
-            "Outcome": "Succeeded"
-          },
-          "HasDuplicates": false,
-          "UniqueProbeStatus": null,
-          "HasOrphans": null,
-          "OrphanCount": null,
-          "OrphanSample": null,
-          "HasDatabaseConstraint": true,
-          "DeleteRule": null,
-          "Coordinate": {
-            "Schema": {
-              "Value": "dbo"
-            },
-            "Table": {
-              "Value": "OSUSR_ABC_ORDER"
-            },
-            "Column": {
-              "Value": "ID"
-            }
-          },
-          "Module": "Orders",
-          "Entity": "Order",
-          "Attribute": "Id"
-        }
-      ]
-    },
-    {
       "Type": "ForeignKey",
       "Title": "FOREIGN KEY",
       "Summary": "Validated: Foreign key constraint is already being created to enforce referential integrity.",
@@ -180,11 +90,102 @@
           "Attribute": "CustomerId"
         }
       ]
+    },
+    {
+      "Type": "Nullability",
+      "Title": "NOT NULL",
+      "Summary": "Validated: Column is already NOT NULL and profiling confirms data integrity.",
+      "Evidence": [
+        "Rows=100",
+        "Nulls=0 (Outcome=Succeeded, Sample=100, Captured=2024-01-01T00:00:00.0000000+00:00)"
+      ],
+      "Rationales": [],
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_ABC_ORDER"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "Index": null,
+      "Schema": "dbo",
+      "Table": "OSUSR_ABC_ORDER",
+      "ConstraintName": "ID",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_ABC_ORDER"
+              },
+              "Column": {
+                "Value": "ID"
+              }
+            },
+            "Module": {
+              "Value": "Orders"
+            },
+            "EntityLogicalName": {
+              "Value": "Order"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_ABC_ORDER"
+            },
+            "AttributeLogicalName": {
+              "Value": "Id"
+            },
+            "ModuleName": "Orders",
+            "EntityName": "Order",
+            "TableName": "OSUSR_ABC_ORDER",
+            "AttributeName": "Id"
+          },
+          "DataType": "Integer",
+          "SqlType": "INT",
+          "PhysicalNullable": false,
+          "PhysicalUnique": false,
+          "RowCount": 100,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 100,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": false,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": true,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_ABC_ORDER"
+            },
+            "Column": {
+              "Value": "ID"
+            }
+          },
+          "Module": "Orders",
+          "Entity": "Order",
+          "Attribute": "Id"
+        }
+      ]
     }
   ],
   "TypeCounts": {
     "Nullability": 1,
     "ForeignKey": 1
   },
-  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00"
+  "GeneratedAtUtc": "2024-01-01T00:00:00+00:00",
+  "TotalCount": 2
 }

@@ -453,6 +453,137 @@ public sealed class EntityDependencySorterTests
             second => Assert.Equal("Child", second.Definition.LogicalName));
     }
 
+    [Fact]
+    public void SortByForeignKeys_DefersJunctionTablesWhenEdgesMissing()
+    {
+        var leftDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Left",
+            "dbo",
+            "OSUSR_SAMPLE_LEFT",
+            "OSUSR_SAMPLE_LEFT",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
+        var rightDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Right",
+            "dbo",
+            "OSUSR_SAMPLE_RIGHT",
+            "OSUSR_SAMPLE_RIGHT",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
+        var bridgeDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Bridge",
+            "dbo",
+            "OSUSR_SAMPLE_BRIDGE",
+            "OSUSR_SAMPLE_BRIDGE",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("LeftId", "LEFTID", "LeftId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("RightId", "RIGHTID", "RightId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
+
+        var tables = ImmutableArray.Create(
+            new StaticEntityTableData(bridgeDefinition, ImmutableArray<StaticEntityRow>.Empty),
+            new StaticEntityTableData(leftDefinition, ImmutableArray<StaticEntityRow>.Empty),
+            new StaticEntityTableData(rightDefinition, ImmutableArray<StaticEntityRow>.Empty));
+
+        var leftEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Left"),
+            new TableName("OSUSR_SAMPLE_LEFT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { CreateAttribute("Id", "ID", isIdentifier: true) }).Value;
+
+        var rightEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Right"),
+            new TableName("OSUSR_SAMPLE_RIGHT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { CreateAttribute("Id", "ID", isIdentifier: true) }).Value;
+
+        var leftRelationship = RelationshipModel.Create(
+            new AttributeName("LeftId"),
+            new EntityName("Left"),
+            new TableName("OSUSR_SAMPLE_LEFT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_BRIDGE_LEFT",
+                    referencedSchema: "core",
+                    referencedTable: "OSUSR_SAMPLE_LEFT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("LEFTID", "LeftId", "ID", "Id", 0) })
+            }).Value;
+
+        var rightRelationship = RelationshipModel.Create(
+            new AttributeName("RightId"),
+            new EntityName("Right"),
+            new TableName("OSUSR_SAMPLE_RIGHT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_BRIDGE_RIGHT",
+                    referencedSchema: "core",
+                    referencedTable: "OSUSR_SAMPLE_RIGHT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("RIGHTID", "RightId", "ID", "Id", 0) })
+            }).Value;
+
+        var bridgeEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Bridge"),
+            new TableName("OSUSR_SAMPLE_BRIDGE"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true),
+                CreateAttribute("LeftId", "LEFTID"),
+                CreateAttribute("RightId", "RIGHTID")
+            },
+            relationships: new[] { leftRelationship, rightRelationship }).Value;
+
+        var module = ModuleModel.Create(
+            new ModuleName("Sample"),
+            isSystemModule: false,
+            isActive: true,
+            entities: new[] { leftEntity, rightEntity, bridgeEntity }).Value;
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var ordering = EntityDependencySorter.SortByForeignKeys(
+            tables,
+            model,
+            namingOverrides: null,
+            options: new EntityDependencySortOptions(true));
+
+        Assert.Equal(EntityDependencyOrderingMode.JunctionDeferred, ordering.Mode);
+        Assert.Equal(0, ordering.EdgeCount);
+        Assert.Equal(3, ordering.NodeCount);
+        Assert.Collection(
+            ordering.Tables,
+            first => Assert.Equal("Left", first.Definition.LogicalName),
+            second => Assert.Equal("Right", second.Definition.LogicalName),
+            third => Assert.Equal("Bridge", third.Definition.LogicalName));
+    }
+
     private static AttributeModel CreateAttribute(string logicalName, string columnName, bool isIdentifier = false)
     {
         return AttributeModel.Create(

@@ -104,6 +104,86 @@ public sealed class BuildSsdtApplicationServiceTests
         Assert.False(result.Value.ModelWasExtracted);
     }
 
+    [Theory]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(null, true, true)]
+    [InlineData(null, null, false)]
+    public async Task RunAsync_PropagatesDeferJunctionTablesSetting(
+        bool? overrideValue,
+        bool? configurationValue,
+        bool expected)
+    {
+        var overrides = new BuildSsdtOverrides(
+            ModelPath: "model.json",
+            ProfilePath: "profile.snapshot",
+            OutputDirectory: "out",
+            ProfilerProvider: "fixture",
+            StaticDataPath: null,
+            RenameOverrides: null,
+            MaxDegreeOfParallelism: null,
+            SqlMetadataOutputPath: null,
+            DeferJunctionTables: overrideValue);
+        var moduleFilterOverrides = new ModuleFilterOverrides(
+            Array.Empty<string>(),
+            IncludeSystemModules: null,
+            IncludeInactiveModules: null,
+            AllowMissingPrimaryKey: Array.Empty<string>(),
+            AllowMissingSchema: Array.Empty<string>());
+        var sqlOverrides = new SqlOptionsOverrides(null, null, null, null, null, null, null, null, null);
+        var cacheOverrides = new CacheOptionsOverrides(null, null);
+        var configuration = new CliConfiguration(
+            TighteningOptions.Default,
+            ModelPath: null,
+            ProfilePath: null,
+            DmmPath: null,
+            CacheConfiguration.Empty,
+            new ProfilerConfiguration("fixture", null, null),
+            SqlConfiguration.Empty,
+            ModuleFilterConfiguration.Empty,
+            TypeMappingConfiguration.Empty,
+            SupplementalModelConfiguration.Empty,
+            DynamicDataConfiguration.Empty with { DeferJunctionTables = configurationValue },
+            UatUsersConfiguration.Empty);
+        var context = new CliConfigurationContext(configuration, "config.json");
+        var input = new BuildSsdtApplicationInput(
+            context,
+            overrides,
+            moduleFilterOverrides,
+            sqlOverrides,
+            cacheOverrides,
+            TighteningOverrides: null,
+            DynamicDataset: null,
+            EnableDynamicSqlExtraction: false);
+
+        var dispatcher = new RecordingDispatcher();
+        dispatcher.SetResult(Result<BuildSsdtPipelineResult>.Success(CreatePipelineResult()));
+        var assembler = new BuildSsdtRequestAssembler();
+        var modelResolution = new StubModelResolutionService();
+        var outputResolver = new TestOutputDirectoryResolver();
+        var namingBinder = new TestNamingOverridesBinder();
+        var staticDataProvider = new TestStaticEntityDataProvider();
+        var staticDataFactory = new TestStaticDataProviderFactory(staticDataProvider);
+        var modelIngestion = new TestModelIngestionService();
+        var dynamicDataProvider = new TestDynamicEntityDataProvider();
+
+        var service = new BuildSsdtApplicationService(
+            dispatcher,
+            assembler,
+            modelResolution,
+            outputResolver,
+            namingBinder,
+            staticDataFactory,
+            modelIngestion,
+            dynamicDataProvider);
+
+        var result = await service.RunAsync(input, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(dispatcher.Request);
+        Assert.Equal(expected, dispatcher.Request!.DeferJunctionTables);
+    }
+
     [Fact]
     public async Task RunAsync_UsesSqlDynamicDataProvider_WhenDatasetMissingAndConnectionAvailable()
     {
@@ -379,6 +459,8 @@ public sealed class BuildSsdtApplicationServiceTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            StaticSeedOrderingMode: EntityDependencyOrderingMode.Alphabetical,
+            DynamicInsertOrderingMode: EntityDependencyOrderingMode.Alphabetical,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             MultiEnvironmentProfileReport.Empty);

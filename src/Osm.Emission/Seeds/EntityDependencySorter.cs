@@ -7,12 +7,25 @@ using Osm.Domain.Model;
 
 namespace Osm.Emission.Seeds;
 
+public sealed record EntityDependencySortOptions(bool DeferJunctionTables)
+{
+    public static EntityDependencySortOptions Default { get; } = new(false);
+}
+
+public enum EntityDependencyOrderingMode
+{
+    Alphabetical,
+    Topological,
+    JunctionDeferred
+}
+
 public static class EntityDependencySorter
 {
     public static EntityDependencyOrderingResult SortByForeignKeys(
         IReadOnlyList<StaticEntityTableData> tables,
         OsmModel? model,
-        NamingOverrideOptions? namingOverrides = null)
+        NamingOverrideOptions? namingOverrides = null,
+        EntityDependencySortOptions? options = null)
     {
         if (tables is null)
         {
@@ -38,7 +51,8 @@ public static class EntityDependencySorter
                 MissingEdgeCount: 0,
                 ModelAvailable: model is not null,
                 CycleDetected: false,
-                AlphabeticalFallbackApplied: false);
+                AlphabeticalFallbackApplied: false,
+                Mode: EntityDependencyOrderingMode.Alphabetical);
         }
 
         if (model is null)
@@ -50,8 +64,11 @@ public static class EntityDependencySorter
                 MissingEdgeCount: 0,
                 ModelAvailable: false,
                 CycleDetected: false,
-                AlphabeticalFallbackApplied: false);
+                AlphabeticalFallbackApplied: false,
+                Mode: EntityDependencyOrderingMode.Alphabetical);
         }
+
+        options ??= EntityDependencySortOptions.Default;
 
         var comparer = new TableKeyComparer();
         var nodes = new Dictionary<TableKey, StaticEntityTableData>(comparer);
@@ -74,7 +91,20 @@ public static class EntityDependencySorter
 
         namingOverrides ??= NamingOverrideOptions.Empty;
 
-        var graphStats = BuildDependencyGraph(model, nodes, edges, indegree, comparer, namingOverrides);
+        var lookup = TableLookup.Create(nodes);
+        var entityLookup = BuildEntityIdentityLookup(model);
+        var classification = options.DeferJunctionTables
+            ? JunctionTableClassifier.Classify(model, nodes, lookup, namingOverrides)
+            : JunctionTableClassification.Disabled;
+        var graphStats = BuildDependencyGraph(
+            model,
+            nodes,
+            edges,
+            indegree,
+            comparer,
+            namingOverrides,
+            lookup,
+            entityLookup);
 
         if (nodes.Count <= 1)
         {
@@ -85,10 +115,11 @@ public static class EntityDependencySorter
                 graphStats.MissingEdgeCount,
                 ModelAvailable: true,
                 CycleDetected: false,
-                AlphabeticalFallbackApplied: false);
+                AlphabeticalFallbackApplied: false,
+                Mode: EntityDependencyOrderingMode.Alphabetical);
         }
 
-        var ordered = TopologicalSort(nodes, edges, indegree, comparer);
+        var ordered = TopologicalSort(nodes, edges, indegree, comparer, classification);
         var cycleDetected = ordered.Length != nodes.Count;
         var fallbackApplied = false;
 
@@ -107,6 +138,13 @@ public static class EntityDependencySorter
             }
         }
 
+        var orderingMode = DetermineOrderingMode(
+            modelAvailable: true,
+            graphStats.EdgeCount,
+            cycleDetected,
+            fallbackApplied,
+            classification);
+
         return new EntityDependencyOrderingResult(
             ordered,
             nodes.Count,
@@ -114,7 +152,8 @@ public static class EntityDependencySorter
             graphStats.MissingEdgeCount,
             ModelAvailable: true,
             CycleDetected: cycleDetected,
-            AlphabeticalFallbackApplied: fallbackApplied);
+            AlphabeticalFallbackApplied: fallbackApplied,
+            Mode: orderingMode);
     }
 
     private static DependencyGraphStatistics BuildDependencyGraph(
@@ -123,7 +162,9 @@ public static class EntityDependencySorter
         IDictionary<TableKey, HashSet<TableKey>> edges,
         IDictionary<TableKey, int> indegree,
         TableKeyComparer comparer,
-        NamingOverrideOptions namingOverrides)
+        NamingOverrideOptions namingOverrides,
+        TableLookup lookup,
+        IReadOnlyDictionary<TableKey, EntityIdentity> entityLookup)
     {
         var edgeCount = 0;
         var missingEdgeCount = 0;
@@ -132,9 +173,6 @@ public static class EntityDependencySorter
         {
             return new DependencyGraphStatistics(edgeCount, missingEdgeCount);
         }
-
-        var lookup = TableLookup.Create(nodes);
-        var entityLookup = BuildEntityIdentityLookup(model);
 
         foreach (var module in model.Modules)
         {
@@ -168,7 +206,7 @@ public static class EntityDependencySorter
 
                     foreach (var constraint in relationship.ActualConstraints)
                     {
-                        if (string.IsNullOrWhiteSpace(constraint.ReferencedTable))
+                        if (!HasValidConstraint(constraint))
                         {
                             continue;
                         }
@@ -208,14 +246,6 @@ public static class EntityDependencySorter
                             continue;
                         }
 
-                        if (constraint.Columns.IsDefaultOrEmpty ||
-                            !constraint.Columns.Any(static column =>
-                                !string.IsNullOrWhiteSpace(column.OwnerColumn) &&
-                                !string.IsNullOrWhiteSpace(column.ReferencedColumn)))
-                        {
-                            continue;
-                        }
-
                         var dependents = edges[targetKey];
 
                         if (dependents.Add(sourceKey))
@@ -235,14 +265,16 @@ public static class EntityDependencySorter
         IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
         IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
         IDictionary<TableKey, int> indegree,
-        TableKeyComparer comparer)
+        TableKeyComparer comparer,
+        JunctionTableClassification classification)
     {
         var result = ImmutableArray.CreateBuilder<StaticEntityTableData>();
         result.Capacity = nodes.Count;
+        var readyComparer = new ReadyQueueComparer(nodes, classification);
         var ready = nodes.Keys
             .Where(key => indegree.TryGetValue(key, out var degree) && degree == 0)
-            .OrderBy(key => nodes[key], new StaticEntityTableComparer())
             .ToList();
+        ready.Sort(readyComparer);
 
         while (ready.Count > 0)
         {
@@ -261,7 +293,7 @@ public static class EntityDependencySorter
                 indegree[neighbor] = Math.Max(0, indegree[neighbor] - 1);
                 if (indegree[neighbor] == 0)
                 {
-                    InsertSorted(ready, neighbor, nodes);
+                    InsertSorted(ready, neighbor, readyComparer);
                 }
             }
         }
@@ -272,14 +304,12 @@ public static class EntityDependencySorter
     private static void InsertSorted(
         IList<TableKey> ready,
         TableKey key,
-        IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes)
+        IComparer<TableKey> comparer)
     {
-        var comparer = new StaticEntityTableComparer();
-        var table = nodes[key];
         var index = 0;
         for (; index < ready.Count; index++)
         {
-            var comparison = comparer.Compare(table, nodes[ready[index]]);
+            var comparison = comparer.Compare(key, ready[index]);
             if (comparison < 0)
             {
                 break;
@@ -300,6 +330,50 @@ public static class EntityDependencySorter
         return tables
             .OrderBy(table => table, new StaticEntityTableComparer())
             .ToImmutableArray();
+    }
+
+    private static bool HasValidConstraint(RelationshipActualConstraint constraint)
+    {
+        if (constraint is null)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(constraint.ReferencedTable))
+        {
+            return false;
+        }
+
+        if (constraint.Columns.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        return constraint.Columns.Any(static column =>
+            !string.IsNullOrWhiteSpace(column.OwnerColumn) &&
+            !string.IsNullOrWhiteSpace(column.ReferencedColumn));
+    }
+
+    private static EntityDependencyOrderingMode DetermineOrderingMode(
+        bool modelAvailable,
+        int edgeCount,
+        bool cycleDetected,
+        bool fallbackApplied,
+        JunctionTableClassification classification)
+    {
+        if (!modelAvailable || cycleDetected || fallbackApplied)
+        {
+            return EntityDependencyOrderingMode.Alphabetical;
+        }
+
+        if (classification.HasPrioritizedJunctions)
+        {
+            return EntityDependencyOrderingMode.JunctionDeferred;
+        }
+
+        return edgeCount > 0
+            ? EntityDependencyOrderingMode.Topological
+            : EntityDependencyOrderingMode.Alphabetical;
     }
 
     private static IReadOnlyDictionary<TableKey, EntityIdentity> BuildEntityIdentityLookup(OsmModel model)
@@ -539,6 +613,281 @@ public static class EntityDependencySorter
         }
     }
 
+    private sealed class JunctionTableClassifier
+    {
+        public static JunctionTableClassification Classify(
+            OsmModel? model,
+            IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
+            TableLookup lookup,
+            NamingOverrideOptions namingOverrides)
+        {
+            if (model is null || nodes.Count == 0 || model.Modules.IsDefaultOrEmpty)
+            {
+                return JunctionTableClassification.Disabled;
+            }
+
+            var comparer = new TableKeyComparer();
+            var junctions = new HashSet<TableKey>(comparer);
+
+            foreach (var module in model.Modules)
+            {
+                if (module.Entities.IsDefaultOrEmpty)
+                {
+                    continue;
+                }
+
+                foreach (var entity in module.Entities)
+                {
+                    var candidates = TableNameCandidates.Create(
+                        entity.PhysicalName.Value,
+                        namingOverrides.GetEffectiveTableName(
+                            entity.Schema.Value,
+                            entity.PhysicalName.Value,
+                            entity.LogicalName.Value,
+                            module.Name.Value));
+
+                    if (!lookup.TryResolve(
+                            entity.Schema.Value,
+                            candidates,
+                            module.Name.Value,
+                            entity.LogicalName.Value,
+                            out var key) ||
+                        !nodes.TryGetValue(key, out var table))
+                    {
+                        continue;
+                    }
+
+                    if (IsJunction(entity, table))
+                    {
+                        junctions.Add(key);
+                    }
+                }
+            }
+
+            return junctions.Count == 0
+                ? JunctionTableClassification.Disabled
+                : new JunctionTableClassification(junctions, enabled: true);
+        }
+
+        private static bool IsJunction(EntityModel entity, StaticEntityTableData table)
+        {
+            if (entity.Relationships.IsDefaultOrEmpty)
+            {
+                return false;
+            }
+
+            var definition = table.Definition;
+            if (definition.Columns.IsDefaultOrEmpty)
+            {
+                return false;
+            }
+
+            var nonKeyAliases = definition.Columns
+                .Where(static column => !column.IsPrimaryKey)
+                .SelectMany(GetColumnAliases)
+                .Where(static alias => !string.IsNullOrWhiteSpace(alias))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (nonKeyAliases.Length < 2)
+            {
+                return false;
+            }
+
+            var nonKeySet = new HashSet<string>(nonKeyAliases, StringComparer.OrdinalIgnoreCase);
+            var fkColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var referencedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var ownerKey = CreateEntityKey(definition.Schema ?? entity.Schema.Value, definition.PhysicalName ?? entity.PhysicalName.Value);
+
+            foreach (var relationship in entity.Relationships)
+            {
+                if (relationship.ActualConstraints.IsDefaultOrEmpty)
+                {
+                    continue;
+                }
+
+                foreach (var constraint in relationship.ActualConstraints)
+                {
+                    if (!HasValidConstraint(constraint))
+                    {
+                        continue;
+                    }
+
+                    var referencedSchema = string.IsNullOrWhiteSpace(constraint.ReferencedSchema)
+                        ? entity.Schema.Value
+                        : constraint.ReferencedSchema.Trim();
+
+                    var referencedTable = string.IsNullOrWhiteSpace(constraint.ReferencedTable)
+                        ? relationship.TargetPhysicalName.Value
+                        : constraint.ReferencedTable.Trim();
+
+                    var referencedKey = CreateEntityKey(referencedSchema, referencedTable);
+                    if (string.Equals(ownerKey, referencedKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var matchedColumn = false;
+                    foreach (var column in constraint.Columns)
+                    {
+                        matchedColumn |= TrackForeignKeyColumn(column.OwnerColumn, column.OwnerAttribute, nonKeySet, fkColumns);
+                    }
+
+                    if (matchedColumn)
+                    {
+                        referencedTargets.Add(referencedKey);
+                    }
+                }
+            }
+
+            if (referencedTargets.Count < 2)
+            {
+                return false;
+            }
+
+            foreach (var column in definition.Columns)
+            {
+                if (column.IsPrimaryKey)
+                {
+                    continue;
+                }
+
+                if (!GetColumnAliases(column).Any(alias => fkColumns.Contains(alias)))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
+    private sealed class JunctionTableClassification
+    {
+        private readonly ISet<TableKey>? _junctions;
+        private readonly bool _enabled;
+
+        public static JunctionTableClassification Disabled { get; } = new(null, false);
+
+        public JunctionTableClassification(ISet<TableKey>? junctions, bool enabled)
+        {
+            _junctions = junctions;
+            _enabled = enabled;
+        }
+
+        public bool HasPrioritizedJunctions => _enabled && _junctions is not null && _junctions.Count > 0;
+
+        public bool IsJunction(TableKey key)
+            => HasPrioritizedJunctions && _junctions!.Contains(key);
+    }
+
+    private sealed class ReadyQueueComparer : IComparer<TableKey>
+    {
+        private readonly IReadOnlyDictionary<TableKey, StaticEntityTableData> _nodes;
+        private readonly JunctionTableClassification _classification;
+        private readonly StaticEntityTableComparer _tableComparer = new();
+
+        public ReadyQueueComparer(
+            IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
+            JunctionTableClassification classification)
+        {
+            _nodes = nodes;
+            _classification = classification ?? JunctionTableClassification.Disabled;
+        }
+
+        public int Compare(TableKey? x, TableKey? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return 0;
+            }
+
+            if (x is null)
+            {
+                return -1;
+            }
+
+            if (y is null)
+            {
+                return 1;
+            }
+
+            if (_classification.HasPrioritizedJunctions)
+            {
+                var xJunction = _classification.IsJunction(x);
+                var yJunction = _classification.IsJunction(y);
+                if (xJunction != yJunction)
+                {
+                    return xJunction ? 1 : -1;
+                }
+            }
+
+            return _tableComparer.Compare(_nodes[x], _nodes[y]);
+        }
+    }
+
+    private static bool TrackForeignKeyColumn(
+        string? ownerColumn,
+        string? ownerAttribute,
+        ISet<string> nonKeyColumns,
+        ISet<string> fkColumns)
+    {
+        var matched = false;
+
+        if (!string.IsNullOrWhiteSpace(ownerColumn))
+        {
+            var normalized = ownerColumn.Trim();
+            fkColumns.Add(normalized);
+            matched |= nonKeyColumns.Contains(normalized);
+        }
+
+        if (!string.IsNullOrWhiteSpace(ownerAttribute))
+        {
+            var normalizedAttribute = ownerAttribute.Trim();
+            fkColumns.Add(normalizedAttribute);
+            matched |= nonKeyColumns.Contains(normalizedAttribute);
+        }
+
+        return matched;
+    }
+
+    private static IEnumerable<string> GetColumnAliases(StaticEntitySeedColumn column)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var alias in EnumerateAliases(column))
+        {
+            if (string.IsNullOrWhiteSpace(alias))
+            {
+                continue;
+            }
+
+            var normalized = alias.Trim();
+            if (seen.Add(normalized))
+            {
+                yield return normalized;
+            }
+        }
+
+        static IEnumerable<string?> EnumerateAliases(StaticEntitySeedColumn column)
+        {
+            yield return column.ColumnName;
+            yield return column.EffectiveColumnName;
+            yield return column.EmissionName;
+            yield return column.TargetColumnName;
+            yield return column.LogicalName;
+        }
+    }
+
+    private static string CreateEntityKey(string? schema, string? table)
+    {
+        var normalizedSchema = string.IsNullOrWhiteSpace(schema) ? string.Empty : schema.Trim();
+        var normalizedTable = string.IsNullOrWhiteSpace(table) ? string.Empty : table.Trim();
+        return string.IsNullOrEmpty(normalizedSchema)
+            ? normalizedTable.ToLowerInvariant()
+            : $"{normalizedSchema}.{normalizedTable}".ToLowerInvariant();
+    }
+
     private sealed record EntityIdentity(string Module, string LogicalName);
 
     private sealed class StaticEntityTableComparer : IComparer<StaticEntityTableData>
@@ -591,7 +940,8 @@ public static class EntityDependencySorter
         int MissingEdgeCount,
         bool ModelAvailable,
         bool CycleDetected,
-        bool AlphabeticalFallbackApplied)
+        bool AlphabeticalFallbackApplied,
+        EntityDependencyOrderingMode Mode)
     {
         public static EntityDependencyOrderingResult Empty(bool modelAvailable)
             => new(
@@ -601,12 +951,15 @@ public static class EntityDependencySorter
                 MissingEdgeCount: 0,
                 ModelAvailable: modelAvailable,
                 CycleDetected: false,
-                AlphabeticalFallbackApplied: false);
+                AlphabeticalFallbackApplied: false,
+                Mode: EntityDependencyOrderingMode.Alphabetical);
 
-        public bool TopologicalOrderingAttempted => ModelAvailable && NodeCount > 1 && EdgeCount > 0;
+        public bool TopologicalOrderingAttempted =>
+            ModelAvailable && NodeCount > 1 &&
+            (EdgeCount > 0 || Mode == EntityDependencyOrderingMode.JunctionDeferred);
 
         public bool TopologicalOrderingApplied =>
-            TopologicalOrderingAttempted && !CycleDetected && !AlphabeticalFallbackApplied;
+            Mode != EntityDependencyOrderingMode.Alphabetical && !CycleDetected && !AlphabeticalFallbackApplied;
     }
 
     private sealed record DependencyGraphStatistics(int EdgeCount, int MissingEdgeCount);

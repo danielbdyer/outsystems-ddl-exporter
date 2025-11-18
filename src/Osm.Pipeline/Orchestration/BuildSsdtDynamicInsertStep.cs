@@ -75,20 +75,28 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 ImmutableArray<string>.Empty,
                 state.Request.DynamicInsertOutputMode,
                 state.StaticSeedTopologicalOrderApplied,
-                DynamicInsertTopologicalOrderApplied: false));
+                state.StaticSeedOrderingMode,
+                DynamicInsertTopologicalOrderApplied: false,
+                DynamicInsertOrderingMode: EntityDependencyOrderingMode.Alphabetical));
         }
 
         var namingOverrides = state.Request.Scope.SmoOptions.NamingOverrides ?? NamingOverrideOptions.Empty;
+        var sortOptions = state.Request.DeferJunctionTables
+            ? new EntityDependencySortOptions(true)
+            : EntityDependencySortOptions.Default;
         var ordering = EntityDependencySorter.SortByForeignKeys(
             dataset.Tables,
             state.Bootstrap.FilteredModel,
-            namingOverrides);
+            namingOverrides,
+            sortOptions);
         var scripts = _generator.GenerateScripts(
             dataset,
             state.StaticSeedData,
             model: state.Bootstrap.FilteredModel,
-            namingOverrides: namingOverrides);
+            namingOverrides: namingOverrides,
+            sortOptions: sortOptions);
         var dynamicOrderApplied = ordering.TopologicalOrderingApplied;
+        var dynamicOrderingMode = ordering.Mode;
         if (scripts.IsDefaultOrEmpty || scripts.Length == 0)
         {
             state.Log.Record(
@@ -115,7 +123,9 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 ImmutableArray<string>.Empty,
                 state.Request.DynamicInsertOutputMode,
                 state.StaticSeedTopologicalOrderApplied,
-                DynamicInsertTopologicalOrderApplied: dynamicOrderApplied));
+                state.StaticSeedOrderingMode,
+                DynamicInsertTopologicalOrderApplied: dynamicOrderApplied,
+                DynamicInsertOrderingMode: dynamicOrderingMode));
         }
 
         var outputRoot = state.Request.DynamicDataOutputDirectoryHint;
@@ -153,7 +163,7 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 .WithCount("ordering.missingEdges", ordering.MissingEdgeCount)
                 .WithValue("ordering.cycleDetected", ordering.CycleDetected ? "true" : "false")
                 .WithValue("ordering.fallbackApplied", ordering.AlphabeticalFallbackApplied ? "true" : "false")
-                .WithValue("ordering.mode", ordering.TopologicalOrderingApplied ? "topological" : "alphabetical")
+                .WithValue("ordering.mode", ordering.Mode.ToMetadataValue())
                 .Build());
 
         return Result<DynamicInsertsGenerated>.Success(new DynamicInsertsGenerated(
@@ -176,7 +186,9 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
             scriptPaths,
             state.Request.DynamicInsertOutputMode,
             state.StaticSeedTopologicalOrderApplied,
-            DynamicInsertTopologicalOrderApplied: dynamicOrderApplied));
+            state.StaticSeedOrderingMode,
+            DynamicInsertTopologicalOrderApplied: dynamicOrderApplied,
+            DynamicInsertOrderingMode: dynamicOrderingMode));
     }
 
     private static async Task<ImmutableArray<string>> WritePerEntityScriptsAsync(

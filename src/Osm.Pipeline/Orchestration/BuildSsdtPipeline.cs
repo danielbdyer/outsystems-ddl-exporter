@@ -148,6 +148,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             finalState.Log.Build(),
             finalState.StaticSeedTopologicalOrderApplied,
             finalState.DynamicInsertTopologicalOrderApplied,
+            finalState.StaticSeedOrderingMode,
+            finalState.DynamicInsertOrderingMode,
             finalState.DynamicInsertOutputMode,
             finalState.Bootstrap.Warnings,
             finalState.Bootstrap.MultiEnvironmentReport);

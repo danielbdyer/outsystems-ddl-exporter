@@ -31,6 +31,11 @@ namespace Osm.Pipeline.Tests;
 
 public sealed class SsdtMatrixTests
 {
+    private static readonly bool UpdateMatrixSnapshots = string.Equals(
+        Environment.GetEnvironmentVariable("OSM_UPDATE_SSDT_MATRIX_FIXTURES"),
+        "1",
+        StringComparison.OrdinalIgnoreCase);
+
     public static IEnumerable<object[]> MatrixCases()
     {
         var manifestPath = FixtureFile.GetPath(Path.Combine("emission-matrix", "matrix.json"));
@@ -95,6 +100,12 @@ public sealed class SsdtMatrixTests
         Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Errors.Select(error => error.Message)));
 
         var expectedRoot = FixtureFile.GetPath(testCase.Expected);
+        if (UpdateMatrixSnapshots)
+        {
+            UpdateSnapshot(expectedRoot, output.Path);
+            return;
+        }
+
         DirectorySnapshot.AssertMatches(expectedRoot, output.Path);
 
         var policyPath = Path.Combine(output.Path, "policy-decisions.json");
@@ -174,6 +185,51 @@ public sealed class SsdtMatrixTests
         var sqlBuilder = new StaticSeedSqlBuilder(literalFormatter);
         var templateService = new StaticEntitySeedTemplateService();
         return new StaticEntitySeedScriptGenerator(templateService, sqlBuilder);
+    }
+
+    private static void UpdateSnapshot(string expectedRoot, string actualRoot)
+    {
+        if (string.IsNullOrWhiteSpace(expectedRoot))
+        {
+            throw new ArgumentException("Expected root must be provided when updating snapshots.", nameof(expectedRoot));
+        }
+
+        if (string.IsNullOrWhiteSpace(actualRoot))
+        {
+            throw new ArgumentException("Actual root must be provided when updating snapshots.", nameof(actualRoot));
+        }
+
+        if (Directory.Exists(expectedRoot))
+        {
+            Directory.Delete(expectedRoot, recursive: true);
+        }
+
+        CopyDirectory(actualRoot, expectedRoot);
+
+        var telemetryPackage = Path.Combine(expectedRoot, "pipeline-telemetry.zip");
+        if (File.Exists(telemetryPackage))
+        {
+            File.Delete(telemetryPackage);
+        }
+    }
+
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+
+        foreach (var file in Directory.GetFiles(source))
+        {
+            var fileName = Path.GetFileName(file);
+            var destinationPath = Path.Combine(destination, fileName);
+            File.Copy(file, destinationPath, overwrite: true);
+        }
+
+        foreach (var directory in Directory.GetDirectories(source))
+        {
+            var name = Path.GetFileName(directory);
+            var destinationPath = Path.Combine(destination, name);
+            CopyDirectory(directory, destinationPath);
+        }
     }
 
     private static readonly JsonSerializerOptions SerializerOptions = new()

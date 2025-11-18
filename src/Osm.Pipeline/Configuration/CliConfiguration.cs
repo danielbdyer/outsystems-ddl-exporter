@@ -39,9 +39,10 @@ public sealed record CliConfiguration(
 
 public sealed record DynamicDataConfiguration(
     DynamicInsertOutputMode? InsertMode,
-    StaticSeedParentHandlingMode? StaticSeedParentMode)
+    StaticSeedParentHandlingMode? StaticSeedParentMode,
+    bool? DeferJunctionTables)
 {
-    public static DynamicDataConfiguration Empty { get; } = new(null, null);
+    public static DynamicDataConfiguration Empty { get; } = new(null, null, null);
 }
 
 public sealed record CacheConfiguration(string? Root, bool? Refresh, int? TimeToLiveSeconds)

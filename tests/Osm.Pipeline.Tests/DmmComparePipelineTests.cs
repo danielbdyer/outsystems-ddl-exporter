@@ -43,7 +43,7 @@ public class DmmComparePipelineTests
 
         var scope = new ModelExecutionScope(
             modelPath,
-            ModuleFilterOptions.IncludeAll,
+            EdgeCaseModuleFilter,
             SupplementalModelOptions.Default,
             TighteningOptions.Default,
             new ResolvedSqlOptions(
@@ -88,7 +88,7 @@ public class DmmComparePipelineTests
 
         var scope = new ModelExecutionScope(
             modelPath,
-            ModuleFilterOptions.IncludeAll,
+            EdgeCaseModuleFilter,
             SupplementalModelOptions.Default,
             TighteningOptions.Default,
             new ResolvedSqlOptions(
@@ -225,7 +225,7 @@ public class DmmComparePipelineTests
 
     private const string EdgeCaseScript = @"CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER](
     [ID] BIGINT NOT NULL,
-    [EMAIL] NVARCHAR(255) COLLATE Latin1_General_CI_AI NOT NULL,
+    [EMAIL] NVARCHAR(255) NOT NULL,
     [FIRSTNAME] NVARCHAR(100) NULL DEFAULT ('') ,
     [LASTNAME] NVARCHAR(100) NULL DEFAULT ('') ,
     [CITYID] BIGINT NOT NULL,
@@ -234,7 +234,7 @@ public class DmmComparePipelineTests
 CREATE TABLE [dbo].[OSUSR_DEF_CITY](
     [ID] BIGINT NOT NULL,
     [NAME] NVARCHAR(200) NOT NULL,
-    [ISACTIVE] BIT NOT NULL DEFAULT (1),
+    [ISACTIVE] BIT NOT NULL DEFAULT 1,
     CONSTRAINT [PK_City_Id] PRIMARY KEY ([ID])
 );
 CREATE TABLE [billing].[BILLING_ACCOUNT](
@@ -246,7 +246,24 @@ CREATE TABLE [billing].[BILLING_ACCOUNT](
 CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
     [ID] BIGINT NOT NULL,
     [TRIGGEREDBYUSERID] BIGINT NULL,
-    [CREATEDON] DATETIME NOT NULL DEFAULT (getutcdate()),
+    [CREATEDON] DATETIME NOT NULL DEFAULT getutcdate(),
     CONSTRAINT [PK_JobRun_Id] PRIMARY KEY ([ID])
+);
+CREATE TABLE [dbo].[OSUSR_U_USER](
+    [ID] BIGINT IDENTITY (1, 1) NOT NULL,
+    [USERNAME] NVARCHAR(250) NOT NULL,
+    [EMAIL] NVARCHAR(250) NOT NULL,
+    [NAME] NVARCHAR(256) NULL,
+    [MOBILEPHONE] NVARCHAR(20) NULL,
+    [PASSWORD] NVARCHAR(256) NULL,
+    [EXTERNAL_ID] NVARCHAR(36) NULL,
+    [IS_ACTIVE] BIT NULL,
+    [CREATION_DATE] DATETIME NULL,
+    [LAST_LOGIN] DATETIME NULL,
+    CONSTRAINT [PK_OSUSR_U_USER] PRIMARY KEY ([ID])
 );";
+    private static ModuleFilterOptions EdgeCaseModuleFilter { get; } = ModuleFilterOptions.Create(
+        new[] { "AppCore", "ExtBilling", "Ops" },
+        includeSystemModules: false,
+        includeInactiveModules: true).Value;
 }

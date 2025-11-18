@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
@@ -80,7 +81,8 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
             var json = JsonSerializer.Serialize(report, JsonOptions);
             await _fileSystem.File.WriteAllTextAsync(reportPath, json, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
-            var validationsJson = JsonSerializer.Serialize(validations, JsonOptions);
+            var normalizedValidations = NormalizeValidations(validations);
+            var validationsJson = JsonSerializer.Serialize(normalizedValidations, JsonOptions);
             await _fileSystem.File.WriteAllTextAsync(validationsPath, validationsJson, Utf8NoBom, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -435,5 +437,70 @@ public sealed class OpportunityLogWriter : IOpportunityLogWriter
         };
 
         builder.Append(description);
+    }
+
+    private static ValidationReport NormalizeValidations(ValidationReport validations)
+    {
+        if (validations.Validations.IsDefaultOrEmpty)
+        {
+            return validations;
+        }
+
+        var sorted = validations.Validations.Sort(ValidationFindingComparer.Instance);
+        if (sorted == validations.Validations)
+        {
+            return validations;
+        }
+
+        return new ValidationReport(sorted, validations.TypeCounts, validations.GeneratedAtUtc);
+    }
+
+    private sealed class ValidationFindingComparer : IComparer<ValidationFinding>
+    {
+        public static ValidationFindingComparer Instance { get; } = new();
+
+        public int Compare(ValidationFinding? x, ValidationFinding? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return 0;
+            }
+
+            if (x is null)
+            {
+                return -1;
+            }
+
+            if (y is null)
+            {
+                return 1;
+            }
+
+            var schemaComparison = string.Compare(x.Schema, y.Schema, StringComparison.OrdinalIgnoreCase);
+            if (schemaComparison != 0)
+            {
+                return schemaComparison;
+            }
+
+            var tableComparison = string.Compare(x.Table, y.Table, StringComparison.OrdinalIgnoreCase);
+            if (tableComparison != 0)
+            {
+                return tableComparison;
+            }
+
+            var constraintComparison = string.Compare(x.ConstraintName, y.ConstraintName, StringComparison.OrdinalIgnoreCase);
+            if (constraintComparison != 0)
+            {
+                return constraintComparison;
+            }
+
+            var typeComparison = x.Type.CompareTo(y.Type);
+            if (typeComparison != 0)
+            {
+                return typeComparison;
+            }
+
+            return string.Compare(x.Title, y.Title, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

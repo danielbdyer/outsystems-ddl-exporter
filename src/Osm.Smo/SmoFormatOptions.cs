@@ -25,10 +25,10 @@ public sealed record IndexNamingOptions(
     string ForeignKeyPrefix)
 {
     public static IndexNamingOptions Default { get; } = new(
-        PrimaryKeyPrefix: string.Empty,
-        UniqueIndexPrefix: string.Empty,
-        NonUniqueIndexPrefix: string.Empty,
-        ForeignKeyPrefix: string.Empty);
+        PrimaryKeyPrefix: "PK",
+        UniqueIndexPrefix: "UIX",
+        NonUniqueIndexPrefix: "IX",
+        ForeignKeyPrefix: "FK");
 
     public string Apply(string normalizedName, ConstraintNameKind kind)
     {

@@ -7,6 +7,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
@@ -271,6 +272,8 @@ public class SchemaApplyOrchestratorTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            StaticSeedOrderingMode: EntityDependencyOrderingMode.Alphabetical,
+            DynamicInsertOrderingMode: EntityDependencyOrderingMode.Alphabetical,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             MultiEnvironmentReport: null);

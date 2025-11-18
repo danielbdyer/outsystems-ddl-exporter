@@ -1,0 +1,372 @@
+{
+  "Columns": [
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_AUDIT"
+        },
+        "Column": {
+          "Value": "DETAILS"
+        }
+      },
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "PROFILE_MISSING"
+      ]
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_AUDIT"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "AUDITID"
+        }
+      },
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "FK_ENFORCED"
+      ]
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "LEGACYCODE"
+        }
+      },
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": []
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "STATUS"
+        }
+      },
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "DEFAULT_PRESENT",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ]
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "VALIDFROM"
+        }
+      },
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ]
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "VALIDTO"
+        }
+      },
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL"
+      ]
+    }
+  ],
+  "UniqueIndexes": [],
+  "ForeignKeys": [
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_M_TEMPORALORDER"
+        },
+        "Column": {
+          "Value": "AUDITID"
+        }
+      },
+      "CreateConstraint": true,
+      "ScriptWithNoCheck": false,
+      "Rationales": [
+        "DB_CONSTRAINT_PRESENT"
+      ]
+    }
+  ],
+  "ColumnRationaleCounts": {
+    "PK": 2,
+    "FK_ENFORCED": 1,
+    "PROFILE_MISSING": 1,
+    "DEFAULT_PRESENT": 1,
+    "MANDATORY": 5,
+    "DATA_NO_NULLS": 5,
+    "PHYSICAL_NOT_NULL": 5
+  },
+  "UniqueIndexRationaleCounts": {},
+  "ForeignKeyRationaleCounts": {
+    "DB_CONSTRAINT_PRESENT": 1
+  },
+  "Diagnostics": [],
+  "ModuleRollups": {
+    "Matrix": {
+      "ColumnCount": 8,
+      "TightenedColumnCount": 5,
+      "RemediationColumnCount": 0,
+      "UniqueIndexCount": 0,
+      "UniqueIndexesEnforcedCount": 0,
+      "UniqueIndexesRequireRemediationCount": 0,
+      "ForeignKeyCount": 1,
+      "ForeignKeysCreatedCount": 1,
+      "ColumnRationales": {
+        "PK": 2,
+        "FK_ENFORCED": 1,
+        "PROFILE_MISSING": 1,
+        "DEFAULT_PRESENT": 1,
+        "MANDATORY": 5,
+        "DATA_NO_NULLS": 5,
+        "PHYSICAL_NOT_NULL": 5
+      },
+      "UniqueIndexRationales": {},
+      "ForeignKeyRationales": {
+        "DB_CONSTRAINT_PRESENT": 1
+      }
+    }
+  },
+  "TogglePrecedence": {
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.sentinels.numeric": {
+      "Value": "0",
+      "Source": 0
+    },
+    "remediation.sentinels.text": {
+      "Value": "",
+      "Source": 0
+    },
+    "remediation.sentinels.date": {
+      "Value": "1900-01-01",
+      "Source": 0
+    },
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
+    },
+    "policy.nullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "mocking.useProfileMockFolder": {
+      "Value": false,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowNoCheckCreation": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "mocking.profileMockFolder": {
+      "Value": null,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    }
+  },
+  "ColumnModules": {
+    "dbo.OSUSR_M_TEMPORALORDER.VALIDTO": "Matrix",
+    "dbo.OSUSR_M_TEMPORALORDER.LEGACYCODE": "Matrix",
+    "dbo.OSUSR_M_TEMPORALORDER.VALIDFROM": "Matrix",
+    "dbo.OSUSR_M_TEMPORALORDER.STATUS": "Matrix",
+    "dbo.OSUSR_M_TEMPORALORDER.ID": "Matrix",
+    "dbo.OSUSR_M_AUDIT.ID": "Matrix",
+    "dbo.OSUSR_M_AUDIT.DETAILS": "Matrix",
+    "dbo.OSUSR_M_TEMPORALORDER.AUDITID": "Matrix"
+  },
+  "IndexModules": {},
+  "Toggles": {
+    "Mode": {
+      "Value": 1,
+      "Source": 0
+    },
+    "NullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "ForeignKeyCreationEnabled": {
+      "Value": true,
+      "Source": 0
+    },
+    "ForeignKeyCrossSchemaAllowed": {
+      "Value": false,
+      "Source": 0
+    },
+    "ForeignKeyCrossCatalogAllowed": {
+      "Value": false,
+      "Source": 0
+    },
+    "ForeignKeyTreatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "ForeignKeyAllowNoCheckCreation": {
+      "Value": false,
+      "Source": 0
+    },
+    "SingleColumnUniqueEnforced": {
+      "Value": true,
+      "Source": 0
+    },
+    "MultiColumnUniqueEnforced": {
+      "Value": true,
+      "Source": 0
+    },
+    "RemediationGeneratePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "RemediationMaxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "RemediationSentinelNumeric": {
+      "Value": "0",
+      "Source": 0
+    },
+    "RemediationSentinelText": {
+      "Value": "",
+      "Source": 0
+    },
+    "RemediationSentinelDate": {
+      "Value": "1900-01-01",
+      "Source": 0
+    },
+    "MockingUseProfileMockFolder": {
+      "Value": false,
+      "Source": 0
+    },
+    "MockingProfileMockFolder": {
+      "Value": null,
+      "Source": 0
+    }
+  },
+  "ColumnCount": 8,
+  "TightenedColumnCount": 5,
+  "RemediationColumnCount": 0,
+  "UniqueIndexCount": 0,
+  "UniqueIndexesEnforcedCount": 0,
+  "UniqueIndexesRequireRemediationCount": 0,
+  "ForeignKeyCount": 1,
+  "ForeignKeysCreatedCount": 1,
+  "ForeignKeysScriptedWithNoCheckCount": 0,
+  "ModuleCount": 1
+}

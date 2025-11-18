@@ -31,9 +31,10 @@
 -- Review the evidence and remediation suggestions for each opportunity below.
 -- ---------- Nullability ----------
 
--- NOT NULL CONTRADICTIONS
--- Why this matters: Mandatory attributes contain NULL values that would violate a NOT NULL constraint.
--- What to do: Identify and update rows with NULL values before enforcing the NOT NULL constraint.
+-- NULLABILITY CONTRADICTIONS
+-- Why this matters: Your OutSystems model marks these columns as Mandatory (NOT NULL),
+-- but the actual database contains NULL values in these columns.
+-- What to do: Update the NULL values to appropriate defaults, then add NOT NULL constraints.
 -- Nullability dbo.OSUSR_ABC_ORDER (DELIVERYDATE) Category=Contradiction Risk=Moderate
 -- Summary: DATA CONTRADICTION: Profiling found NULL values that violate the model's mandatory constraint. Manual remediation required.
 -- Rationale: DATA_HAS_NULLS
@@ -60,8 +61,10 @@ GO
 -- ---------- ForeignKey ----------
 
 -- FOREIGN KEY CONTRADICTIONS
--- Why this matters: Child rows reference parents that do not exist, breaking referential integrity.
--- What to do: Either remove or repair orphaned child rows before enabling the foreign key constraint.
+-- Why this matters: Orphaned rows exist - child records reference parent records that
+-- don't exist. This violates referential integrity and can cause application errors.
+-- What to do: Delete orphaned records or update them to reference valid parent records,
+-- then add foreign key constraints to prevent this from happening again.
 -- ForeignKey dbo.OSUSR_ABC_ORDER (FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER) Category=Contradiction Risk=High
 -- Summary: DATA CONTRADICTION: Profiling found orphaned rows that violate referential integrity. Manual remediation required.
 -- Foreign key state: No database constraint currently enforces this relationship.
@@ -77,6 +80,6 @@ GO
 -- Evidence: OrphanCount=3
 -- Evidence: OrphanSample=(101) -> 'MissingCustomer', (202) -> 'LegacyCustomer'
 ALTER TABLE [dbo].[OSUSR_ABC_ORDER] WITH CHECK ADD CONSTRAINT [FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[OSUSR_DEF_CUSTOMER] ([Id]);
-GO
 ALTER TABLE [dbo].[OSUSR_ABC_ORDER] CHECK CONSTRAINT [FK_OSUSR_ABC_ORDER_CUSTOMERID_OSUSR_DEF_CUSTOMER];
 GO
+

@@ -75,7 +75,16 @@ public sealed class OpportunityLogWriterTests
             expectedValidations.Trim(),
             actualValidationsJson.Trim());
         Assert.Equal(validations.TotalCount, actualValidations!.TotalCount);
-        Assert.Equal(validations.Validations[0].Summary, actualValidations.Validations[0].Summary);
+
+        var expectedSummaries = validations.Validations
+            .Select(v => v.Summary)
+            .OrderBy(summary => summary, StringComparer.Ordinal)
+            .ToArray();
+        var actualSummaries = actualValidations.Validations
+            .Select(v => v.Summary)
+            .OrderBy(summary => summary, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expectedSummaries, actualSummaries);
     }
 
     private static OpportunitiesReport CreateReport()

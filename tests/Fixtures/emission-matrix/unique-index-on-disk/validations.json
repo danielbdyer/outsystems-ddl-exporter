@@ -1,0 +1,179 @@
+{
+  "Validations": [
+    {
+      "Type": "UniqueIndex",
+      "Title": "UNIQUE",
+      "Summary": "Validated: Index is already UNIQUE and profiling confirms data integrity.",
+      "Evidence": [],
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY"
+      ],
+      "Column": null,
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_OP_OPERATORPROFILE"
+        },
+        "Index": {
+          "Value": "PK_OperatorProfile_Id"
+        }
+      },
+      "Schema": "dbo",
+      "Table": "OSUSR_OP_OPERATORPROFILE",
+      "ConstraintName": "PK_OperatorProfile_Id",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_OP_OPERATORPROFILE"
+              },
+              "Column": {
+                "Value": "ID"
+              }
+            },
+            "Module": {
+              "Value": "Operator"
+            },
+            "EntityLogicalName": {
+              "Value": "OperatorProfile"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_OP_OPERATORPROFILE"
+            },
+            "AttributeLogicalName": {
+              "Value": "Id"
+            },
+            "ModuleName": "Operator",
+            "EntityName": "OperatorProfile",
+            "TableName": "OSUSR_OP_OPERATORPROFILE",
+            "AttributeName": "Id"
+          },
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": null,
+          "NullCount": null,
+          "NullProbeStatus": null,
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_OP_OPERATORPROFILE"
+            },
+            "Column": {
+              "Value": "ID"
+            }
+          },
+          "Module": "Operator",
+          "Entity": "OperatorProfile",
+          "Attribute": "Id"
+        }
+      ]
+    },
+    {
+      "Type": "UniqueIndex",
+      "Title": "UNIQUE",
+      "Summary": "Validated: Index is already UNIQUE and profiling confirms data integrity.",
+      "Evidence": [],
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY"
+      ],
+      "Column": null,
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_OP_OPERATORPROFILE"
+        },
+        "Index": {
+          "Value": "UIX_OPERATORPROFILE_OPERATORCODE"
+        }
+      },
+      "Schema": "dbo",
+      "Table": "OSUSR_OP_OPERATORPROFILE",
+      "ConstraintName": "UIX_OPERATORPROFILE_OPERATORCODE",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_OP_OPERATORPROFILE"
+              },
+              "Column": {
+                "Value": "OPERATORCODE"
+              }
+            },
+            "Module": {
+              "Value": "Operator"
+            },
+            "EntityLogicalName": {
+              "Value": "OperatorProfile"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_OP_OPERATORPROFILE"
+            },
+            "AttributeLogicalName": {
+              "Value": "OperatorCode"
+            },
+            "ModuleName": "Operator",
+            "EntityName": "OperatorProfile",
+            "TableName": "OSUSR_OP_OPERATORPROFILE",
+            "AttributeName": "OperatorCode"
+          },
+          "DataType": "Text",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": null,
+          "NullCount": null,
+          "NullProbeStatus": null,
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_OP_OPERATORPROFILE"
+            },
+            "Column": {
+              "Value": "OPERATORCODE"
+            }
+          },
+          "Module": "Operator",
+          "Entity": "OperatorProfile",
+          "Attribute": "OperatorCode"
+        }
+      ]
+    }
+  ],
+  "TypeCounts": {
+    "UniqueIndex": 2
+  },
+  "GeneratedAtUtc": "2025-11-18T02:32:40.2014841+00:00",
+  "TotalCount": 2
+}

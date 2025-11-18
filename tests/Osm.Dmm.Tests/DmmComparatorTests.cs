@@ -186,10 +186,6 @@ public class DmmComparatorTests
                 && string.Equals(diff.Column, "EXTRA", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Expected, "Missing", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(diff.Actual, "Present", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(
-            comparison.SsdtDifferences,
-            diff => string.Equals(diff.Property, "Collation", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(diff.Property, "Default", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

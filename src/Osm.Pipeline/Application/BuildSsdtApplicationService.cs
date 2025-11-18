@@ -128,6 +128,9 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
         var staticSeedParentMode = BuildSsdtRequestAssembler.ResolveStaticSeedParentMode(
             context.Configuration.DynamicData,
             input.Overrides.StaticSeedParentMode);
+        var deferJunctionTables = BuildSsdtRequestAssembler.ResolveDeferJunctionTables(
+            context.Configuration.DynamicData,
+            input.Overrides.DeferJunctionTables);
 
         var staticSeedParents = ImmutableArray<StaticSeedParentStatus>.Empty;
         var dynamicDatasetSource = DynamicDatasetSource.None;
@@ -284,6 +287,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             dynamicDataset,
             dynamicDatasetSource,
             staticSeedParentMode,
+            deferJunctionTables,
             staticDataProviderResult.Value,
             context.CacheOverrides,
             context.ConfigPath,

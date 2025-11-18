@@ -101,7 +101,9 @@ public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<DynamicInse
             state.DynamicInsertScriptPaths,
             state.DynamicInsertOutputMode,
             state.StaticSeedTopologicalOrderApplied,
+            state.StaticSeedOrderingMode,
             state.DynamicInsertTopologicalOrderApplied,
+            state.DynamicInsertOrderingMode,
             packagePaths);
 
         return Task.FromResult(Result<TelemetryPackaged>.Success(nextState));
