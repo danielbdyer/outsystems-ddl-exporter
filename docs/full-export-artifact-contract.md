@@ -59,12 +59,191 @@ entries:
 | `build.dynamicInsertMode` | Emission mode used for dynamic inserts (`PerEntity` or `SingleFile`). |
 | `build.sqlProjectPath` | Full path to the synthesized `.sqlproj` that references the emitted modules and seed scripts. |
 
+### UAT-Users Integration (Pre-Transformed Data)
+
+When `full-export` runs with `--enable-uat-users`, additional metadata tracks the transformation:
+
+| Key | Description |
+| --- | --- |
+| `uatUsers.enabled` | Boolean indicating UAT-users pipeline ran. |
+| `uatUsers.transformationMode` | Either `pre-transformed-inserts` (full-export integration) or `post-load-updates` (standalone). |
+| `uatUsers.orphanCount` | Number of out-of-scope QA user IDs discovered. |
+| `uatUsers.mappedCount` | Number of orphans successfully mapped to UAT targets. |
+| `uatUsers.fkCatalogSize` | Count of FK columns referencing User table. |
+| `uatUsers.qaInventoryPath` | Path to QA user inventory CSV. |
+| `uatUsers.uatInventoryPath` | Path to UAT user inventory CSV. |
+| `uatUsers.userMapPath` | Path to the user mapping CSV used for transformation. |
+| `uatUsers.validationReportPath` | Path to the validation report proving mapping correctness. |
+
+The `dynamic-insert` stage includes `transformationApplied: true` when UAT-users pre-transforms the INSERT scripts. In this mode:
+
+* **Dynamic INSERT scripts contain UAT-ready data**: User FK values are already mapped to UAT targets during generation
+* **No post-load transformation needed**: Load scripts directly to UAT database
+* **Verification proves in-scope guarantee**: All user FK values in emitted scripts exist in UAT inventory
+* **NULL preservation enforced**: NULL user IDs remain NULL (never transformed)
+
+**Contrast with standalone uat-users mode**: When `uat-users` runs independently (not via `full-export`), it emits UPDATE scripts that transform data after loading. The full-export integration eliminates this post-load step by pre-transforming during generation.
+
+> **See**: `docs/design-uat-users-transformation.md` for detailed architecture, verification requirements, and migration path guidance.
+
 The CLI `SSDT Emission Summary` explicitly labels the seed artifacts and prints the
 manifest semantics block so operators can validate the directory split without
 inspecting the manifest JSON directly. 【F:src/Osm.Pipeline/Runtime/Verbs/FullExportVerb.cs†L196-L212】【F:src/Osm.Cli/Commands/CommandConsole.cs†L394-L429】
 
 Downstream tooling can rely on these fields to stage seed scripts independently of the
 SSDT output while still applying the full export bundle on first-run deployments.
+
+---
+
+## Data Integrity Verification (DMM Replacement)
+
+The full-export pipeline supports **end-to-end data integrity verification** to provide unfailing confidence that the ETL process is correct. This capability enables replacing expensive third-party tools (like DMM) with a verifiable, auditable pipeline.
+
+### Verification Artifacts
+
+When verification is enabled, additional artifacts are generated:
+
+| Artifact | Description |
+| --- | --- |
+| `source-data-fingerprint.json` | Per-table row counts, per-column checksums, NULL counts, and distinct value counts captured from source database (QA) |
+| `data-integrity-verification.json` | Comprehensive verification report comparing source fingerprint against target data after loading INSERT scripts |
+| `load-harness-full-verification.json` | Extended load harness report including source-to-target parity verification, transformation validation, and performance metrics |
+
+### Verification Report Schema
+
+### Modular Verification Architecture
+
+Verification is **composable and layered**:
+
+**Base Layer: Full-Export Verification** (always active)
+- Row count verification (no data loss)
+- Column checksum verification (1:1 data fidelity)
+- NULL preservation verification
+- Schema validation (DDL matches model)
+- **Works standalone** - you can verify basic full-export without UAT-users
+
+**Specialized Layer: UAT-Users Verification** (when `--enable-uat-users`)
+- User FK transformation verification
+- UAT inventory compliance
+- Transformation map validation
+- **Builds on base layer** - non-user-FK columns verified via base layer
+
+**Key principle**: UAT-users doesn't replace base verification; it **adds specialized checks on top**.
+
+The `data-integrity-verification.json` report proves:
+1. **No data loss**: Row counts match source exactly (base layer)
+2. **1:1 data fidelity**: Non-transformed columns have identical checksums (base layer)
+3. **Correct transformations**: User FK values map correctly per transformation map (uat-users layer)
+4. **NULL preservation**: NULL counts match per column (both layers)
+
+**Report structure (modular)**:
+```json
+{
+  "overallStatus": "PASS",
+  "verificationTimestamp": "2025-11-17T10:30:00Z",
+  "sourceFingerprint": "source-data-fingerprint.json",
+
+  // Base Layer: Always Present
+  "baseVerification": {
+    "rowCountVerification": "PASS",
+    "checksumVerification": "PASS",
+    "nullPreservation": "PASS",
+    "schemaValidation": "PASS"
+  },
+
+  // Specialized Layer: Present when --enable-uat-users
+  "uatUsersVerification": {
+    "enabled": true,
+    "transformationMapValid": true,
+    "orphanMappingComplete": true,
+    "uatInventoryCompliance": "PASS",
+    "transformedColumnCount": 23
+  },
+
+  "tables": [...],
+  "discrepancies": [],
+  "summary": {
+    "tablesVerified": 50,
+    "tablesPassed": 50,
+    "tablesFailed": 0,
+    "columnsVerified": 500,
+    "columnsPassed": 500,
+    "columnsFailed": 0,
+    "baseLayerColumns": 477,        // Verified via base layer
+    "transformedColumns": 23,       // Verified via uat-users layer
+    "dataLossDetected": false
+  }
+}
+```
+
+### Command-Line Verification Workflow
+
+**Step 1: Generate Full Export**
+```bash
+# With UAT-users transformation
+dotnet run --project src/Osm.Cli -- full-export \
+  --enable-uat-users \
+  --build-out ./out/uat-export \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --user-map ./uat_user_map.csv
+
+# OR without UAT-users (base verification only)
+dotnet run --project src/Osm.Cli -- full-export \
+  --build-out ./out/export
+```
+
+**Step 2: Verify Data Integrity**
+```bash
+dotnet run --project tools/FullExportLoadHarness \
+  --source-connection "Server=qa;Database=QA;Trusted_Connection=True" \
+  --target-connection "Server=uat-staging;Database=UAT;Trusted_Connection=True" \
+  --manifest ./out/uat-export/full-export.manifest.json \
+  --uat-user-inventory ./uat_users.csv \
+  --verification-report-out ./verification-report.json
+```
+
+**Step 3: Review Results**
+```bash
+# Check overall status
+jq -r '.overallStatus' ./verification-report.json
+# Output: PASS or FAIL
+
+# Review base verification (always present)
+jq '.baseVerification' ./verification-report.json
+
+# Review UAT-users verification (if --enable-uat-users was used)
+jq '.uatUsersVerification' ./verification-report.json
+
+# If FAIL, review discrepancies
+jq '.discrepancies' ./verification-report.json
+```
+
+**Step 4: Deploy (if verification passed)**
+```bash
+# Deploy to production UAT
+sqlcmd -S uat -d UAT -i ./out/uat-export/SafeScript.sql
+
+# Load pre-transformed dynamic data
+for file in ./out/uat-export/DynamicData/**/*.dynamic.sql; do
+  sqlcmd -S uat -d UAT -i "$file"
+done
+```
+
+### Benefits Over DMM
+
+| Aspect | DMM | Full-Export with Verification |
+|--------|-----|-------------------------------|
+| **Data integrity proof** | Manual validation | Automated verification report |
+| **Transformation validation** | Hope and pray | Provable correctness (checksum + map validation) |
+| **Cost** | Expensive subscription | Open-source tooling |
+| **Developer experience** | Nightmare (manual processes) | Deterministic, repeatable, verifiable |
+| **NULL preservation** | Not guaranteed | Proven with NULL count comparison |
+| **Audit trail** | Limited visibility | Complete fingerprint + verification report |
+
+> **See**: `docs/design-uat-users-transformation.md` for detailed verification strategy, load harness integration, and incremental verification approaches for large datasets.
+
+---
 
 ## SSDT Integration Playbook
 
