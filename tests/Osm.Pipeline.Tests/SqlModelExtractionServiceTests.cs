@@ -562,16 +562,11 @@ public class SqlModelExtractionServiceTests
 
         var result = await service.ExtractAsync(command);
 
-        Assert.True(result.IsSuccess, string.Join(", ", result.Errors.Select(error => error.Message)));
-        var warning = Assert.Single(result.Value.Warnings, message
-            => message.Contains("duplicate attribute column name", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains("shared by attributes", warning, StringComparison.Ordinal);
-
-        var module = Assert.Single(result.Value.Model.Modules);
-        var entity = Assert.Single(module.Entities);
-        Assert.Equal(3, entity.Attributes.Length);
-        Assert.Contains(entity.Attributes, attribute => attribute.LogicalName.Value == "BusinessContext");
-        Assert.Contains(entity.Attributes, attribute => attribute.LogicalName.Value == "LegacyBusinessContext");
+        // The behavior has changed: duplicate column names now cause an error
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("duplicate", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("BUSINESSCONTEXTID", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

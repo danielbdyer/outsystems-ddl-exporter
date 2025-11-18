@@ -32,7 +32,12 @@ public sealed class AnalyzeCommandFactoryTests
         services.AddSingleton<ICliConfigurationService>(configurationService);
         services.AddSingleton<IApplicationService<AnalyzeApplicationInput, AnalyzeApplicationResult>>(applicationService);
         services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, applicationService));
         services.AddSingleton<AnalyzeCommandFactory>();
 

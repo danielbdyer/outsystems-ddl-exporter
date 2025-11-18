@@ -40,6 +40,8 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<CacheOptionBinder>();
                     services.AddSingleton<SqlOptionBinder>();
                     services.AddSingleton<TighteningOptionBinder>();
+                    services.AddSingleton<SchemaApplyOptionBinder>();
+                    services.AddSingleton<UatUsersOptionBinder>();
                     services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<BuildSsdtCommandFactory>();
@@ -70,6 +72,8 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<CacheOptionBinder>();
                     services.AddSingleton<SqlOptionBinder>();
                     services.AddSingleton<TighteningOptionBinder>();
+                    services.AddSingleton<SchemaApplyOptionBinder>();
+                    services.AddSingleton<UatUsersOptionBinder>();
                     services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<DmmCompareCommandFactory>();
@@ -98,7 +102,11 @@ public class PipelineCommandFactorySharedTests
                 {
                     services.AddSingleton<CliGlobalOptions>();
                     services.AddSingleton<ModuleFilterOptionBinder>();
+                    services.AddSingleton<CacheOptionBinder>();
                     services.AddSingleton<SqlOptionBinder>();
+                    services.AddSingleton<TighteningOptionBinder>();
+                    services.AddSingleton<SchemaApplyOptionBinder>();
+                    services.AddSingleton<UatUsersOptionBinder>();
                     services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<ExtractModelCommandFactory>();

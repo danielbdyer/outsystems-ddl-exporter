@@ -1,5 +1,6 @@
 **/bin/
 **/obj/
+.artifacts/**
 *.user
 *.suo
 *.userprefs
@@ -11,3 +12,4 @@ TestResults/
 [Rr]elease/
 [Bb]uild/
 .nuget/packages/
+*.DS_Store
