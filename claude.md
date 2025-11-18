@@ -158,21 +158,29 @@ When building successfully in an environment with proper network access to NuGet
 
 ## Known Issues
 
-### Network Access Limitation in Sandboxed Environments
+### Proxy Authentication Limitation with .NET NuGet Client
 
 If you encounter errors like:
 
 ```
 error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json.
-error NU1301:   Resource temporarily unavailable (api.nuget.org:443)
+error NU1301:   The proxy tunnel request to proxy 'http://proxy:port/' failed with status code '401'.
 ```
 
-This indicates the environment doesn't have external network access to download NuGet packages. This is expected in certain sandboxed or restricted network environments.
+This indicates that .NET's NuGet client cannot properly authenticate with the proxy server.
+
+**Root Cause:**
+
+While tools like `curl` and `wget` properly parse proxy credentials from `HTTP_PROXY` environment variables in the format `http://user:pass@proxy:port`, .NET's `HttpClient` (used by NuGet) does not extract and use these embedded credentials. It only uses the proxy address (`http://proxy:port/`) without authentication, resulting in a `401 Unauthorized` response.
+
+This is a known limitation of how .NET handles proxy authentication from environment variables, particularly with non-standard authentication schemes.
 
 **Workaround options:**
-1. Use a development machine with internet access
-2. Configure a local NuGet package cache
-3. Use a corporate NuGet feed/proxy if available
+1. Use a development machine with direct internet access (no proxy required)
+2. Use a proxy that doesn't require authentication
+3. Configure proxy credentials in `~/.nuget/NuGet/NuGet.Config` (if proxy supports Basic auth)
+4. Pre-populate a local NuGet package cache and use `--source` to point to the local cache
+5. Use a corporate NuGet feed/proxy with .NET-compatible authentication
 
 ## Technology Stack
 
