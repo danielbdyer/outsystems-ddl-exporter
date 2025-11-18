@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\TestSupport\FixtureFile.cs" Link="TestSupport\FixtureFile.cs" />
+    <Compile Include="..\Osm.TestSupport\FixtureFile.cs" Link="Osm.TestSupport\FixtureFile.cs" />
   </ItemGroup>
 
   <ItemGroup>

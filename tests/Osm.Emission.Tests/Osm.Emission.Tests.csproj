@@ -18,11 +18,11 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\TestSupport\FixtureFile.cs" Link="TestSupport\FixtureFile.cs" />
-    <Compile Include="..\TestSupport\ModelFixtures.cs" Link="TestSupport\ModelFixtures.cs" />
-    <Compile Include="..\TestSupport\ProfileFixtures.cs" Link="TestSupport\ProfileFixtures.cs" />
-    <Compile Include="..\TestSupport\FixtureProfileSource.cs" Link="TestSupport\FixtureProfileSource.cs" />
-    <Compile Include="..\TestSupport\TempDirectory.cs" Link="TestSupport\TempDirectory.cs" />
+    <Compile Include="..\Osm.TestSupport\FixtureFile.cs" Link="Osm.TestSupport\FixtureFile.cs" />
+    <Compile Include="..\Osm.TestSupport\ModelFixtures.cs" Link="Osm.TestSupport\ModelFixtures.cs" />
+    <Compile Include="..\Osm.TestSupport\ProfileFixtures.cs" Link="Osm.TestSupport\ProfileFixtures.cs" />
+    <Compile Include="..\Osm.TestSupport\FixtureProfileSource.cs" Link="Osm.TestSupport\FixtureProfileSource.cs" />
+    <Compile Include="..\Osm.TestSupport\TempDirectory.cs" Link="Osm.TestSupport\TempDirectory.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Osm.Domain\Osm.Domain.csproj" />

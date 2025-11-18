@@ -18,12 +18,12 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\TestSupport\FixtureFile.cs" Link="TestSupport\FixtureFile.cs" />
-    <Compile Include="..\TestSupport\TempDirectory.cs" Link="TestSupport\TempDirectory.cs" />
-    <Compile Include="..\TestSupport\DirectorySnapshot.cs" Link="TestSupport\DirectorySnapshot.cs" />
-    <Compile Include="..\TestSupport\EmissionOutput.cs" Link="TestSupport\EmissionOutput.cs" />
-    <Compile Include="..\TestSupport\DockerAvailability.cs" Link="TestSupport\DockerAvailability.cs" />
-    <Compile Include="..\TestSupport\SqlServerFixture.cs" Link="TestSupport\SqlServerFixture.cs" />
+    <Compile Include="..\Osm.TestSupport\FixtureFile.cs" Link="Osm.TestSupport\FixtureFile.cs" />
+    <Compile Include="..\Osm.TestSupport\TempDirectory.cs" Link="Osm.TestSupport\TempDirectory.cs" />
+    <Compile Include="..\Osm.TestSupport\DirectorySnapshot.cs" Link="Osm.TestSupport\DirectorySnapshot.cs" />
+    <Compile Include="..\Osm.TestSupport\EmissionOutput.cs" Link="Osm.TestSupport\EmissionOutput.cs" />
+    <Compile Include="..\Osm.TestSupport\DockerAvailability.cs" Link="Osm.TestSupport\DockerAvailability.cs" />
+    <Compile Include="..\Osm.TestSupport\SqlServerFixture.cs" Link="Osm.TestSupport\SqlServerFixture.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Osm.Domain\Osm.Domain.csproj" />
