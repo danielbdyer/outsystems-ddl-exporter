@@ -359,7 +359,7 @@ public class SmoModelFactoryTests
         Assert.True(smoColumn.CheckConstraints.Any());
         var checkConstraint = Assert.Single(smoColumn.CheckConstraints);
         Assert.Equal("CK_Custom_Check", checkConstraint.Name);
-        Assert.Equal("([" + updatedAttribute.ColumnName.Value + "] > (0))", checkConstraint.Expression);
+        Assert.Equal("[" + updatedAttribute.ColumnName.Value + "] > (0)", checkConstraint.Expression);
         Assert.True(checkConstraint.IsNotTrusted);
     }
 

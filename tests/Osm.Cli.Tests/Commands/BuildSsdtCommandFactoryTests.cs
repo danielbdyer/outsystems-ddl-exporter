@@ -53,6 +53,8 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
         services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
@@ -185,6 +187,8 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
         services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
@@ -221,6 +225,8 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
         services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
@@ -268,6 +274,8 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
         services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
@@ -314,6 +322,8 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
         services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();

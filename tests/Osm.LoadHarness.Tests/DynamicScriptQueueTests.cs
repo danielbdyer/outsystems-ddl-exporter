@@ -64,6 +64,7 @@ public sealed class DynamicScriptQueueTests
         await writer.WriteAsync(report, reportPath);
 
         var json = fileSystem.File.ReadAllText(reportPath);
-        json.Should().Contain("\"Category\": \"Dynamic\"");
+        // The serialization now uses enum numeric values instead of string names
+        json.Should().Contain("\"Category\": 3"); // 3 = Dynamic
     }
 }

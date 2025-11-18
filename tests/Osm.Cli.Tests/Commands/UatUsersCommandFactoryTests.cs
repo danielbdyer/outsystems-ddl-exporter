@@ -41,7 +41,7 @@ public class UatUsersCommandFactoryTests
         Assert.Equal("Server=.;Database=QA;", options.ConnectionString);
         Assert.False(options.FromLiveMetadata);
         Assert.Equal("dbo", options.UserSchema);
-        Assert.Equal("User", options.UserTable);
+        Assert.Equal("Users", options.UserTable);
         Assert.Equal("UserId", options.UserIdColumn);
         Assert.Equal(new[] { "Name", "EMail" }, options.IncludeColumns);
         Assert.Equal(Path.GetFullPath("artifacts"), options.OutputDirectory);
@@ -204,7 +204,7 @@ public class UatUsersCommandFactoryTests
         Assert.Equal("Server=.;Database=QA;", options.ConnectionString);
         Assert.False(options.FromLiveMetadata);
         Assert.Equal("dbo", options.UserSchema);
-        Assert.Equal("User", options.UserTable);
+        Assert.Equal("Users", options.UserTable);
         Assert.Equal("UserId", options.UserIdColumn);
         Assert.Equal(new[] { "CreatedBy", "UpdatedBy" }, options.IncludeColumns);
         Assert.Equal(Path.GetFullPath(outputRoot), options.OutputDirectory);

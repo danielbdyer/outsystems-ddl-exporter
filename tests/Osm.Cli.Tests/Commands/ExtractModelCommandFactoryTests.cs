@@ -37,7 +37,11 @@ public class ExtractModelCommandFactoryTests
         services.AddSingleton<IApplicationService<ExtractModelApplicationInput, ExtractModelApplicationResult>>(application);
         services.AddSingleton<CliGlobalOptions>();
         services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
         services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<ExtractModelCommandFactory>();

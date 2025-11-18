@@ -48,7 +48,8 @@ public class DmmComparatorTests
         var comparator = new DmmComparator();
         var comparison = comparator.Compare(_baselineTables, ParseScript(EdgeCaseScript));
 
-        Assert.True(comparison.IsMatch);
+        var ssdtDiffs = string.Join(", ", comparison.SsdtDifferences.Select(d => $"{d.Schema}.{d.Table}.{d.Property}: Expected={d.Expected}, Actual={d.Actual}"));
+        Assert.True(comparison.IsMatch, $"Expected match but got: Model differences: {comparison.ModelDifferences.Count}, SSDT differences: {comparison.SsdtDifferences.Count} ({ssdtDiffs})");
         Assert.Empty(comparison.ModelDifferences);
         Assert.Empty(comparison.SsdtDifferences);
     }
