@@ -179,9 +179,11 @@ public sealed class DmmComparator
                     actualColumn.IsNullable ? "NULL" : "NOT NULL"));
             }
 
+            var normalizedExpectedDefault = NormalizeDefaultExpression(expectedColumn.DefaultExpression);
+            var normalizedActualDefault = NormalizeDefaultExpression(actualColumn.DefaultExpression);
             if (!string.Equals(
-                    expectedColumn.DefaultExpression ?? string.Empty,
-                    actualColumn.DefaultExpression ?? string.Empty,
+                    normalizedExpectedDefault ?? string.Empty,
+                    normalizedActualDefault ?? string.Empty,
                     StringComparison.OrdinalIgnoreCase))
             {
                 ssdtDifferences.Add(Difference.Column(
@@ -189,23 +191,43 @@ public sealed class DmmComparator
                     expected.Name,
                     expectedColumn.Name,
                     "Default",
-                    ValueOrNull(expectedColumn.DefaultExpression),
-                    ValueOrNull(actualColumn.DefaultExpression)));
+                    ValueOrNull(normalizedExpectedDefault),
+                    ValueOrNull(normalizedActualDefault)));
             }
 
-            if (!string.Equals(
-                    expectedColumn.Collation ?? string.Empty,
-                    actualColumn.Collation ?? string.Empty,
-                    StringComparison.OrdinalIgnoreCase))
+            // Only compare collation if both sides specify it
+            // If one side is empty/null, assume it's using database default
+            var expectedHasCollation = !string.IsNullOrWhiteSpace(expectedColumn.Collation);
+            var actualHasCollation = !string.IsNullOrWhiteSpace(actualColumn.Collation);
+
+            if (expectedHasCollation && actualHasCollation)
             {
+                if (!string.Equals(
+                        expectedColumn.Collation,
+                        actualColumn.Collation,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    ssdtDifferences.Add(Difference.Column(
+                        expected.Schema,
+                        expected.Name,
+                        expectedColumn.Name,
+                        "Collation",
+                        expectedColumn.Collation,
+                        actualColumn.Collation));
+                }
+            }
+            else if (expectedHasCollation && !actualHasCollation)
+            {
+                // Model specifies collation but DMM doesn't - this is a difference
                 ssdtDifferences.Add(Difference.Column(
                     expected.Schema,
                     expected.Name,
                     expectedColumn.Name,
                     "Collation",
-                    ValueOrNull(expectedColumn.Collation),
-                    ValueOrNull(actualColumn.Collation)));
+                    expectedColumn.Collation,
+                    null));
             }
+            // If expectedCollation is empty but actual has one, ignore it (database default)
 
             if (features.HasFlag(DmmComparisonFeatures.ExtendedProperties))
             {
@@ -556,6 +578,41 @@ public sealed class DmmComparator
 
     private static string NormalizeDescription(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static string? NormalizeDefaultExpression(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+
+        // Strip outer parentheses if present: "(1)" -> "1", "(getutcdate())" -> "getutcdate()"
+        if (trimmed.StartsWith("(", StringComparison.Ordinal) && trimmed.EndsWith(")", StringComparison.Ordinal))
+        {
+            var inner = trimmed.Substring(1, trimmed.Length - 2);
+            // Only strip if the inner content doesn't have unmatched parentheses
+            // This handles cases like (getutcdate()) but not ((1))
+            if (CountParentheses(inner) == 0 || !inner.Contains('('))
+            {
+                return inner;
+            }
+        }
+
+        return trimmed;
+    }
+
+    private static int CountParentheses(string value)
+    {
+        int count = 0;
+        foreach (char c in value)
+        {
+            if (c == '(') count++;
+            else if (c == ')') count--;
+        }
+        return count;
+    }
 
     private static string? ValueOrNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;

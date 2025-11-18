@@ -69,14 +69,17 @@ public class CliIntegrationTests
 
         var emission = EmissionOutput.Load(output.Path);
 
-        Assert.Equal(5, emission.Manifest.Tables.Count);
+        // Now includes UserExtension_CS module with ossys_User table
+        Assert.Equal(6, emission.Manifest.Tables.Count);
         Assert.Contains("Customer", emission.Manifest.Tables.Select(t => t.Table));
+        Assert.Contains("User", emission.Manifest.Tables.Select(t => t.Table));
         Assert.True(emission.Manifest.Options.SanitizeModuleNames);
 
         using (var subset = emission.CreateSnapshot(
                    "manifest.json",
                    "policy-decisions.json",
-                   "Modules/AppCore/dbo.Customer.sql"))
+                   "Modules/AppCore/dbo.Customer.sql",
+                   "Modules/UserExtension_CS/dbo.User.sql"))
         {
             DirectorySnapshot.AssertMatches(smokeSnapshotRoot, subset.Path);
         }
@@ -284,7 +287,8 @@ public class CliIntegrationTests
             .Distinct()
             .ToArray();
 
-        Assert.Equal(new[] { "AppCore" }, modules);
+        // UserExtension_CS is now always included as a supplemental module (ossys_User)
+        Assert.Equal(new[] { "AppCore", "UserExtension_CS" }, modules.Order());
     }
 
     [Fact]
@@ -328,7 +332,8 @@ public class CliIntegrationTests
             .Distinct()
             .ToArray();
 
-        Assert.Equal(new[] { "ExtBilling" }, modules);
+        // UserExtension_CS is now always included as a supplemental module (ossys_User)
+        Assert.Equal(new[] { "ExtBilling", "UserExtension_CS" }, modules.Order());
     }
 
     [Fact]
