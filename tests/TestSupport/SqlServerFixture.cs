@@ -40,7 +40,12 @@ public sealed class SqlServerFixture : IAsyncLifetime, IAsyncDisposable
 
     public async Task InitializeAsync()
     {
-        DockerAvailability.EnsureAvailable();
+        // Skip initialization silently if Docker is unavailable
+        // Tests using this fixture should be marked with [DockerFact] to skip when Docker is unavailable
+        if (!DockerAvailability.TryGetAvailability(out _))
+        {
+            return;
+        }
 
         try
         {
