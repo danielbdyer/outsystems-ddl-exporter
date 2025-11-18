@@ -111,36 +111,56 @@ When verification is enabled, additional artifacts are generated:
 
 ### Verification Report Schema
 
-The `data-integrity-verification.json` report proves:
-1. **No data loss**: Row counts match source exactly
-2. **1:1 data fidelity**: Non-transformed columns have identical checksums
-3. **Correct transformations**: User FK values map correctly per transformation map
-4. **NULL preservation**: NULL counts match per column
+### Modular Verification Architecture
 
-**Report structure**:
+Verification is **composable and layered**:
+
+**Base Layer: Full-Export Verification** (always active)
+- Row count verification (no data loss)
+- Column checksum verification (1:1 data fidelity)
+- NULL preservation verification
+- Schema validation (DDL matches model)
+- **Works standalone** - you can verify basic full-export without UAT-users
+
+**Specialized Layer: UAT-Users Verification** (when `--enable-uat-users`)
+- User FK transformation verification
+- UAT inventory compliance
+- Transformation map validation
+- **Builds on base layer** - non-user-FK columns verified via base layer
+
+**Key principle**: UAT-users doesn't replace base verification; it **adds specialized checks on top**.
+
+The `data-integrity-verification.json` report proves:
+1. **No data loss**: Row counts match source exactly (base layer)
+2. **1:1 data fidelity**: Non-transformed columns have identical checksums (base layer)
+3. **Correct transformations**: User FK values map correctly per transformation map (uat-users layer)
+4. **NULL preservation**: NULL counts match per column (both layers)
+
+**Report structure (modular)**:
 ```json
 {
-  "overallStatus": "PASS" | "FAIL",
-  "verificationTimestamp": "ISO-8601 timestamp",
-  "sourceFingerprint": "path to source-data-fingerprint.json",
-  "tables": [
-    {
-      "table": "schema.table",
-      "rowCountMatch": true,
-      "sourceRowCount": 1500,
-      "targetRowCount": 1500,
-      "columns": [
-        {
-          "name": "columnName",
-          "isTransformed": false,
-          "checksumMatch": true,
-          "nullCountMatch": true,
-          "status": "PASS"
-        }
-      ],
-      "status": "PASS"
-    }
-  ],
+  "overallStatus": "PASS",
+  "verificationTimestamp": "2025-11-17T10:30:00Z",
+  "sourceFingerprint": "source-data-fingerprint.json",
+
+  // Base Layer: Always Present
+  "baseVerification": {
+    "rowCountVerification": "PASS",
+    "checksumVerification": "PASS",
+    "nullPreservation": "PASS",
+    "schemaValidation": "PASS"
+  },
+
+  // Specialized Layer: Present when --enable-uat-users
+  "uatUsersVerification": {
+    "enabled": true,
+    "transformationMapValid": true,
+    "orphanMappingComplete": true,
+    "uatInventoryCompliance": "PASS",
+    "transformedColumnCount": 23
+  },
+
+  "tables": [...],
   "discrepancies": [],
   "summary": {
     "tablesVerified": 50,
@@ -149,44 +169,65 @@ The `data-integrity-verification.json` report proves:
     "columnsVerified": 500,
     "columnsPassed": 500,
     "columnsFailed": 0,
-    "transformedColumns": 23,
+    "baseLayerColumns": 477,        // Verified via base layer
+    "transformedColumns": 23,       // Verified via uat-users layer
     "dataLossDetected": false
   }
 }
 ```
 
-### Integration with CI/CD
+### Command-Line Verification Workflow
 
-Use verification as a **quality gate** before production deployment:
+**Step 1: Generate Full Export**
+```bash
+# With UAT-users transformation
+dotnet run --project src/Osm.Cli -- full-export \
+  --enable-uat-users \
+  --build-out ./out/uat-export \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --user-map ./uat_user_map.csv
 
-```yaml
-- name: Run Full Export with UAT-Users
-  run: |
-    dotnet run --project src/Osm.Cli -- full-export \
-      --enable-uat-users \
-      --build-out ./out/uat-export \
-      ...
+# OR without UAT-users (base verification only)
+dotnet run --project src/Osm.Cli -- full-export \
+  --build-out ./out/export
+```
 
-- name: Verify Data Integrity (Load Harness)
-  run: |
-    dotnet run --project tools/FullExportLoadHarness \
-      --source-connection "$QA_CONNECTION" \
-      --target-connection "$UAT_STAGING_CONNECTION" \
-      --manifest ./out/uat-export/full-export.manifest.json \
-      --verification-report-out ./verification-report.json
+**Step 2: Verify Data Integrity**
+```bash
+dotnet run --project tools/FullExportLoadHarness \
+  --source-connection "Server=qa;Database=QA;Trusted_Connection=True" \
+  --target-connection "Server=uat-staging;Database=UAT;Trusted_Connection=True" \
+  --manifest ./out/uat-export/full-export.manifest.json \
+  --uat-user-inventory ./uat_users.csv \
+  --verification-report-out ./verification-report.json
+```
 
-- name: Check Verification Status
-  run: |
-    STATUS=$(jq -r '.overallStatus' ./verification-report.json)
-    if [ "$STATUS" != "PASS" ]; then
-      echo "❌ Data integrity verification FAILED"
-      exit 1
-    fi
+**Step 3: Review Results**
+```bash
+# Check overall status
+jq -r '.overallStatus' ./verification-report.json
+# Output: PASS or FAIL
 
-- name: Deploy to Production UAT
-  if: success()
-  run: |
-    # Deploy verified artifacts with confidence
+# Review base verification (always present)
+jq '.baseVerification' ./verification-report.json
+
+# Review UAT-users verification (if --enable-uat-users was used)
+jq '.uatUsersVerification' ./verification-report.json
+
+# If FAIL, review discrepancies
+jq '.discrepancies' ./verification-report.json
+```
+
+**Step 4: Deploy (if verification passed)**
+```bash
+# Deploy to production UAT
+sqlcmd -S uat -d UAT -i ./out/uat-export/SafeScript.sql
+
+# Load pre-transformed dynamic data
+for file in ./out/uat-export/DynamicData/**/*.dynamic.sql; do
+  sqlcmd -S uat -d UAT -i "$file"
+done
 ```
 
 ### Benefits Over DMM

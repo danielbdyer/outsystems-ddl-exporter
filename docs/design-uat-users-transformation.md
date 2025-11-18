@@ -398,13 +398,35 @@ sqlcmd -S uat -d UAT -i ./uat-users-migration/02_apply_user_remap.sql
 
 A **critical goal** of the full-export pipeline is to provide **unfailing confidence** that the ETL process is correct, enabling replacement of expensive third-party tools (like DMM) with a verifiable, auditable pipeline.
 
+### Modular Verification Architecture
+
+Verification is **composable and layered**:
+
+#### **Base Layer: Full-Export Verification** (Always Active)
+When you run `full-export` (with or without `--enable-uat-users`), you get:
+- Row count verification (no data loss)
+- Column checksum verification (1:1 data fidelity for all non-transformed columns)
+- NULL preservation verification (NULL counts match)
+- Schema validation (DDL matches model)
+
+**This verification works standalone** - you can verify a basic full-export without any user transformations.
+
+#### **Specialized Layer: UAT-Users Verification** (When `--enable-uat-users`)
+When you add `--enable-uat-users`, the verification extends with:
+- User FK transformation verification (orphan mapping correctness)
+- UAT inventory compliance (all transformed values exist in UAT)
+- Transformation map validation (source → target mapping)
+- **Builds on base verification** - non-user-FK columns still verified via base layer
+
+**Key principle**: UAT-users doesn't replace base verification; it **adds specialized checks on top**.
+
 ### Verification Strategy: Source-to-Target Parity
 
 The pipeline implements comprehensive data integrity verification proving:
-1. **No data loss**: All rows exported from source appear in target
-2. **1:1 data fidelity**: Non-transformed columns match source exactly (byte-for-byte)
-3. **Correct transformations**: User FK values map correctly per transformation map
-4. **NULL preservation**: NULL values remain NULL (never transformed or lost)
+1. **No data loss**: All rows exported from source appear in target (base layer)
+2. **1:1 data fidelity**: Non-transformed columns match source exactly (base layer)
+3. **Correct transformations**: User FK values map correctly per transformation map (uat-users layer)
+4. **NULL preservation**: NULL values remain NULL, never transformed or lost (both layers)
 
 ### Implementation: Data Fingerprinting
 
@@ -471,47 +493,65 @@ WHERE CreatedBy IS NOT NULL
   AND CreatedBy NOT IN (SELECT Id FROM dbo.[User]);  -- Must return 0 rows
 ```
 
-#### **Verification Report**
+#### **Verification Report (Modular Structure)**
 ```json
 {
   "overallStatus": "PASS",
   "verificationTimestamp": "2025-11-17T10:30:00Z",
   "sourceFingerprint": "source-data-fingerprint.json",
+
+  // Base Layer: Full-Export Verification (always present)
+  "baseVerification": {
+    "rowCountVerification": "PASS",
+    "checksumVerification": "PASS",
+    "nullPreservation": "PASS",
+    "schemaValidation": "PASS"
+  },
+
+  // Specialized Layer: UAT-Users Verification (when --enable-uat-users)
+  "uatUsersVerification": {
+    "enabled": true,
+    "transformationMapValid": true,
+    "orphanMappingComplete": true,
+    "uatInventoryCompliance": "PASS",
+    "transformedColumnCount": 23
+  },
+
   "tables": [
     {
       "table": "dbo.Order",
-      "rowCountMatch": true,
+      "rowCountMatch": true,           // Base layer
       "sourceRowCount": 1500,
       "targetRowCount": 1500,
       "columns": [
         {
           "name": "Id",
-          "isTransformed": false,
-          "checksumMatch": true,
+          "isTransformed": false,       // Base layer handles this
+          "checksumMatch": true,        // Base layer verification
           "nullCountMatch": true,
           "status": "PASS"
         },
         {
           "name": "ProductId",
-          "isTransformed": false,
-          "checksumMatch": true,
+          "isTransformed": false,       // Base layer handles this
+          "checksumMatch": true,        // Base layer verification
           "nullCountMatch": true,
           "status": "PASS"
         },
         {
           "name": "CreatedBy",
-          "isTransformed": true,
+          "isTransformed": true,        // UAT-users layer handles this
           "transformationType": "user-fk-remap",
-          "nullCountMatch": true,
-          "allValuesInUATInventory": true,
+          "nullCountMatch": true,       // Both layers verify NULL preservation
+          "allValuesInUATInventory": true,    // UAT-users layer verification
           "orphansTransformed": 15,
           "orphansRemaining": 0,
           "status": "PASS"
         },
         {
           "name": "Amount",
-          "isTransformed": false,
-          "checksumMatch": true,
+          "isTransformed": false,       // Base layer handles this
+          "checksumMatch": true,        // Base layer verification
           "nullCountMatch": true,
           "status": "PASS"
         }
@@ -527,7 +567,8 @@ WHERE CreatedBy IS NOT NULL
     "columnsVerified": 500,
     "columnsPassed": 500,
     "columnsFailed": 0,
-    "transformedColumns": 23,
+    "baseLayerColumns": 477,          // Verified via checksum (base layer)
+    "transformedColumns": 23,         // Verified via UAT-users layer
     "dataLossDetected": false
   }
 }
@@ -572,41 +613,52 @@ dotnet run --project tools/FullExportLoadHarness \
 
 **If verification fails**: Report shows exact discrepancies (table, column, row count, checksum mismatch) for remediation
 
-### Verification as a Quality Gate
+### Command-Line Verification Workflow
 
-Recommended CI/CD integration:
+**Step 1: Generate Full Export**
+```bash
+dotnet run --project src/Osm.Cli -- full-export \
+  --enable-uat-users \
+  --build-out ./out/uat-export \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --user-map ./uat_user_map.csv
+```
 
-```yaml
-# GitHub Actions example
-- name: Run Full Export
-  run: |
-    dotnet run --project src/Osm.Cli -- full-export \
-      --enable-uat-users \
-      --build-out ./out/uat-export \
-      ...
+**Step 2: Verify Data Integrity (Load Harness)**
+```bash
+dotnet run --project tools/FullExportLoadHarness \
+  --source-connection "Server=qa;Database=QA;Trusted_Connection=True" \
+  --target-connection "Server=uat-staging;Database=UAT;Trusted_Connection=True" \
+  --manifest ./out/uat-export/full-export.manifest.json \
+  --uat-user-inventory ./uat_users.csv \
+  --verification-report-out ./verification-report.json
+```
 
-- name: Verify Data Integrity
-  run: |
-    dotnet run --project tools/FullExportLoadHarness \
-      --source-connection "$QA_CONNECTION" \
-      --target-connection "$UAT_STAGING_CONNECTION" \
-      --manifest ./out/uat-export/full-export.manifest.json \
-      --verification-report-out ./verification-report.json
+**Step 3: Review Verification Report**
+```bash
+# Check overall status
+jq -r '.overallStatus' ./verification-report.json
+# Output: PASS or FAIL
 
-- name: Check Verification Status
-  run: |
-    STATUS=$(jq -r '.overallStatus' ./verification-report.json)
-    if [ "$STATUS" != "PASS" ]; then
-      echo "❌ Data integrity verification FAILED"
-      jq '.discrepancies' ./verification-report.json
-      exit 1
-    fi
-    echo "✅ Data integrity verification PASSED"
+# If PASS, review summary
+jq '.summary' ./verification-report.json
 
-- name: Deploy to Production UAT
-  if: success()
-  run: |
-    # Deploy verified artifacts to production UAT
+# If FAIL, review discrepancies
+jq '.discrepancies' ./verification-report.json
+```
+
+**Step 4: Deploy to Production (if verification passed)**
+```bash
+# Deploy DDL
+sqlcmd -S uat -d UAT -i ./out/uat-export/SafeScript.sql
+
+# Deploy static seeds (via SSDT post-deployment)
+
+# Deploy pre-transformed dynamic data
+for file in ./out/uat-export/DynamicData/**/*.dynamic.sql; do
+  sqlcmd -S uat -d UAT -i "$file"
+done
 ```
 
 ### Future Enhancement: Incremental Verification
