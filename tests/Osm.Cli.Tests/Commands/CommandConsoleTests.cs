@@ -13,6 +13,7 @@ using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Domain.Configuration;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Orchestration;
@@ -654,6 +655,8 @@ public class CommandConsoleTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            StaticSeedOrderingMode: EntityDependencyOrderingMode.Alphabetical,
+            DynamicInsertOrderingMode: EntityDependencyOrderingMode.Alphabetical,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             MultiEnvironmentProfileReport.Empty);

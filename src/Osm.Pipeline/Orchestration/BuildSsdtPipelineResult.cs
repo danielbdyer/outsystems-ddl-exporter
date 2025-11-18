@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Osm.Domain.Profiling;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Evidence;
 using Osm.Validation.Tightening;
@@ -35,6 +36,8 @@ public sealed record BuildSsdtPipelineResult(
     PipelineExecutionLog ExecutionLog,
     bool StaticSeedTopologicalOrderApplied,
     bool DynamicInsertTopologicalOrderApplied,
+    EntityDependencyOrderingMode StaticSeedOrderingMode,
+    EntityDependencyOrderingMode DynamicInsertOrderingMode,
     DynamicInsertOutputMode DynamicInsertOutputMode,
     ImmutableArray<string> Warnings,
     MultiEnvironmentProfileReport? MultiEnvironmentReport);

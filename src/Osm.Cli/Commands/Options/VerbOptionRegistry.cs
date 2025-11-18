@@ -30,6 +30,12 @@ internal sealed class VerbOptionRegistry
         "--dynamic-insert-mode",
         () => DynamicInsertOutputMode.PerEntity,
         "Dynamic insert emission mode: per-entity files (default) or single-file.");
+    private readonly Option<bool?> _deferJunctionTablesOption = new(
+        "--defer-junction-tables",
+        description: "Defer junction tables until after their parents when ordering entity dependencies.")
+    {
+        Arity = ArgumentArity.ZeroOrOne
+    };
     private readonly Option<StaticSeedParentHandlingMode?> _staticSeedParentModeOption = new(
         "--static-seed-parent-mode",
         description: "Controls whether static-seed parents are auto-loaded or validated against existing static seed data.");
@@ -71,6 +77,8 @@ internal sealed class VerbOptionRegistry
         _uatUsersBinder = uatUsersBinder ?? throw new ArgumentNullException(nameof(uatUsersBinder));
         _extensions = extensions?.ToArray() ?? Array.Empty<IVerbOptionExtension>();
 
+        _deferJunctionTablesOption.SetDefaultValue(true);
+
         BuildSsdt = CreateBuildSsdtDeclaration();
         Profile = CreateProfileDeclaration();
         ExtractModel = CreateExtractModelDeclaration();
@@ -105,6 +113,7 @@ internal sealed class VerbOptionRegistry
             .AddOption(_buildSqlMetadataOption)
             .AddOption(_extractModelInlineOption)
             .AddOption(_dynamicInsertModeOption)
+            .AddOption(_deferJunctionTablesOption)
             .AddOption(_staticSeedParentModeOption)
             .BindOverrides(context => CreateBuildOverrides(context));
 
@@ -167,6 +176,7 @@ internal sealed class VerbOptionRegistry
             .AddOption(_globalOptions.MaxDegreeOfParallelism)
             .AddOption(_fullExportBuildSqlMetadataOption)
             .AddOption(_dynamicInsertModeOption)
+            .AddOption(_deferJunctionTablesOption)
             .AddOption(_staticSeedParentModeOption)
             .AddOption(_fullExportProfileOutOption)
             .AddOption(_fullExportProfileSqlMetadata)
@@ -225,6 +235,11 @@ internal sealed class VerbOptionRegistry
         }
 
         var staticParentMode = parseResult.GetValueForOption(_staticSeedParentModeOption);
+        bool? deferJunctionTables = null;
+        if (parseResult.HasOption(_deferJunctionTablesOption))
+        {
+            deferJunctionTables = parseResult.GetValueForOption(_deferJunctionTablesOption);
+        }
 
         return new BuildSsdtOverrides(
             parseResult.GetValueForOption(_modelOption),
@@ -237,7 +252,8 @@ internal sealed class VerbOptionRegistry
             parseResult.GetValueForOption(_buildSqlMetadataOption),
             parseResult.GetValueForOption(_extractModelInlineOption),
             dynamicInsertMode,
-            staticParentMode);
+            staticParentMode,
+            deferJunctionTables);
     }
 
     private ExtractModelOverrides CreateExtractOverrides(
@@ -280,7 +296,10 @@ internal sealed class VerbOptionRegistry
             parseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
             parseResult.GetValueForOption(_fullExportBuildSqlMetadataOption),
             DynamicInsertMode: dynamicInsertMode,
-            StaticSeedParentMode: parseResult.GetValueForOption(_staticSeedParentModeOption));
+            StaticSeedParentMode: parseResult.GetValueForOption(_staticSeedParentModeOption),
+            DeferJunctionTables: parseResult.HasOption(_deferJunctionTablesOption)
+                ? parseResult.GetValueForOption(_deferJunctionTablesOption)
+                : null);
 
         var profileOverrides = new CaptureProfileOverrides(
             modelPath,

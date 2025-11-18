@@ -1,74 +1,15 @@
--- Nullability dbo.OSUSR_M_TEMPORALORDER (VALIDTO) Risk=Low
--- Rationale: DATA_NO_NULLS
--- Rationale: MANDATORY
--- Rationale: PHYSICAL_NOT_NULL
--- Evidence: MANDATORY
--- Evidence: Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)
--- Evidence: PHYSICAL_NOT_NULL
--- Evidence: Rows=1024
-ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]
-    ALTER COLUMN [VALIDTO] datetime2 NOT NULL;
-GO
+-- ============================================================================
+-- OutSystems DDL Exporter - Safe to Apply Opportunities
+-- ============================================================================
+-- Generated: 2025-11-18 02:07:29 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 0
+--
+-- This script contains 0 safe to apply opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- ============================================================================
 
--- Nullability dbo.OSUSR_M_TEMPORALORDER (ID) Risk=Low
--- Rationale: DATA_NO_NULLS
--- Rationale: MANDATORY
--- Rationale: PHYSICAL_NOT_NULL
--- Rationale: PK
--- Evidence: MANDATORY
--- Evidence: Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)
--- Evidence: PHYSICAL_NOT_NULL
--- Evidence: PK
--- Evidence: Rows=1024
-ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]
-    ALTER COLUMN [ID] int NOT NULL;
-GO
-
--- Nullability dbo.OSUSR_M_TEMPORALORDER (STATUS) Risk=Low
--- Rationale: DATA_NO_NULLS
--- Rationale: DEFAULT_PRESENT
--- Rationale: MANDATORY
--- Rationale: PHYSICAL_NOT_NULL
--- Evidence: DEFAULT_PRESENT
--- Evidence: MANDATORY
--- Evidence: Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)
--- Evidence: PHYSICAL_NOT_NULL
--- Evidence: Rows=1024
-ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]
-    ALTER COLUMN [STATUS] nvarchar NOT NULL;
-GO
-
--- Nullability dbo.OSUSR_M_AUDIT (ID) Risk=Low
--- Rationale: DATA_NO_NULLS
--- Rationale: MANDATORY
--- Rationale: PHYSICAL_NOT_NULL
--- Rationale: PK
--- Evidence: MANDATORY
--- Evidence: Nulls=0 (Outcome=Succeeded, Sample=250, Captured=2024-01-01T00:00:00.0000000+00:00)
--- Evidence: PHYSICAL_NOT_NULL
--- Evidence: PK
--- Evidence: Rows=250
-ALTER TABLE [dbo].[OSUSR_M_AUDIT]
-    ALTER COLUMN [ID] int NOT NULL;
-GO
-
--- Nullability dbo.OSUSR_M_TEMPORALORDER (VALIDFROM) Risk=Low
--- Rationale: DATA_NO_NULLS
--- Rationale: MANDATORY
--- Rationale: PHYSICAL_NOT_NULL
--- Evidence: MANDATORY
--- Evidence: Nulls=0 (Outcome=Succeeded, Sample=1024, Captured=2024-01-01T00:00:00.0000000+00:00)
--- Evidence: PHYSICAL_NOT_NULL
--- Evidence: Rows=1024
-ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER]
-    ALTER COLUMN [VALIDFROM] datetime2 NOT NULL;
-GO
-
--- ForeignKey dbo.OSUSR_M_TEMPORALORDER (FK_OSUSR_M_TEMPORALORDER_AUDITID_OSUSR_M_AUDIT) Risk=Low
--- Rationale: DB_CONSTRAINT_PRESENT
--- Evidence: HasConstraint=True
--- Evidence: HasOrphans=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)
-ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER] WITH CHECK ADD CONSTRAINT [FK_OSUSR_M_TEMPORALORDER_AUDITID_OSUSR_M_AUDIT] FOREIGN KEY ([AUDITID]) REFERENCES [dbo].[OSUSR_M_AUDIT] ([ID]);
-ALTER TABLE [dbo].[OSUSR_M_TEMPORALORDER] CHECK CONSTRAINT [FK_OSUSR_M_TEMPORALORDER_AUDITID_OSUSR_M_AUDIT];
-GO
-
+-- No opportunities in this category.

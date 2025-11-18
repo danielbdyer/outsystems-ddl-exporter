@@ -17,6 +17,8 @@ using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Sql;
 using Osm.TestSupport;
 using Tests.Support;
+using Osm.Domain.Model;
+using Osm.Domain.ValueObjects;
 
 namespace Osm.Pipeline.Integration.Tests;
 
@@ -156,6 +158,24 @@ public sealed class SqlDynamicEntityDataProviderIntegrationTests
             .Contain(error => error.Code == "tests.staticSeed.parents.missing");
     }
 
+    [Fact]
+    public void DynamicInsertGenerator_DefersJunctionTablesWhenRequested()
+    {
+        var (dataset, model) = CreateJunctionDataset();
+        var generator = new DynamicEntityInsertGenerator(new SqlLiteralFormatter());
+
+        var scripts = generator.GenerateScripts(
+            dataset,
+            ImmutableArray<StaticEntityTableData>.Empty,
+            model: model,
+            sortOptions: new EntityDependencySortOptions(true));
+
+        scripts.Should().HaveCount(3);
+        scripts[0].Definition.LogicalName.Should().Be("Left");
+        scripts[1].Definition.LogicalName.Should().Be("Right");
+        scripts[2].Definition.LogicalName.Should().Be("Bridge");
+    }
+
     private static ModuleFilterOptions CreateCustomerFilter()
     {
         var entityFilters = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
@@ -186,6 +206,149 @@ public sealed class SqlDynamicEntityDataProviderIntegrationTests
         => new(
             TimeProvider.System,
             static (connectionString, options) => new SqlConnectionFactory(connectionString, options));
+
+    private static (DynamicEntityDataset Dataset, Osm.Domain.Model.OsmModel Model) CreateJunctionDataset()
+    {
+        var leftDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Left",
+            "dbo",
+            "OSUSR_SAMPLE_LEFT",
+            "OSUSR_SAMPLE_LEFT",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
+        var rightDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Right",
+            "dbo",
+            "OSUSR_SAMPLE_RIGHT",
+            "OSUSR_SAMPLE_RIGHT",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
+        var bridgeDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Bridge",
+            "dbo",
+            "OSUSR_SAMPLE_BRIDGE",
+            "OSUSR_SAMPLE_BRIDGE",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("LeftId", "LEFTID", "LeftId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("RightId", "RIGHTID", "RightId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
+
+        var dataset = DynamicEntityDataset.Create(new[]
+        {
+            new StaticEntityTableData(leftDefinition, ImmutableArray.Create(
+                new StaticEntityRow(ImmutableArray.Create<object?>(1)))),
+            new StaticEntityTableData(rightDefinition, ImmutableArray.Create(
+                new StaticEntityRow(ImmutableArray.Create<object?>(10)))),
+            new StaticEntityTableData(bridgeDefinition, ImmutableArray.Create(
+                new StaticEntityRow(ImmutableArray.Create<object?>(100, 1, 10))))
+        });
+
+        var leftEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Left"),
+            new TableName("OSUSR_SAMPLE_LEFT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { CreateIdentifierAttribute("ID") }).Value;
+
+        var rightEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Right"),
+            new TableName("OSUSR_SAMPLE_RIGHT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[] { CreateIdentifierAttribute("ID") }).Value;
+
+        var leftRelationship = RelationshipModel.Create(
+            new AttributeName("LeftId"),
+            new EntityName("Left"),
+            new TableName("OSUSR_SAMPLE_LEFT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_BRIDGE_LEFT",
+                    referencedSchema: "core",
+                    referencedTable: "OSUSR_SAMPLE_LEFT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("LEFTID", "LeftId", "ID", "Id", 0) })
+            }).Value;
+
+        var rightRelationship = RelationshipModel.Create(
+            new AttributeName("RightId"),
+            new EntityName("Right"),
+            new TableName("OSUSR_SAMPLE_RIGHT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_BRIDGE_RIGHT",
+                    referencedSchema: "core",
+                    referencedTable: "OSUSR_SAMPLE_RIGHT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("RIGHTID", "RightId", "ID", "Id", 0) })
+            }).Value;
+
+        var bridgeEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Bridge"),
+            new TableName("OSUSR_SAMPLE_BRIDGE"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateIdentifierAttribute("ID"),
+                CreateMandatoryAttribute("LEFTID"),
+                CreateMandatoryAttribute("RIGHTID")
+            },
+            relationships: new[] { leftRelationship, rightRelationship }).Value;
+
+        var module = ModuleModel.Create(
+            new ModuleName("Sample"),
+            isSystemModule: false,
+            isActive: true,
+            entities: new[] { leftEntity, rightEntity, bridgeEntity }).Value;
+        var model = Osm.Domain.Model.OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        return (dataset, model);
+    }
+
+    private static AttributeModel CreateIdentifierAttribute(string columnName)
+        => CreateAttribute(columnName, columnName, isIdentifier: true, isMandatory: true);
+
+    private static AttributeModel CreateMandatoryAttribute(string columnName)
+        => CreateAttribute(columnName, columnName, isIdentifier: false, isMandatory: true);
+
+    private static AttributeModel CreateAttribute(string logicalName, string columnName, bool isIdentifier, bool isMandatory)
+    {
+        return AttributeModel.Create(
+            new AttributeName(logicalName),
+            new ColumnName(columnName),
+            dataType: "INT",
+            isMandatory: isMandatory,
+            isIdentifier: isIdentifier,
+            isAutoNumber: false,
+            isActive: true,
+            reality: new AttributeReality(null, null, null, null, IsPresentButInactive: false),
+            metadata: AttributeMetadata.Empty,
+            onDisk: AttributeOnDiskMetadata.Empty).Value;
+    }
 
     private sealed class FailingStaticEntityDataProvider : IStaticEntityDataProvider
     {

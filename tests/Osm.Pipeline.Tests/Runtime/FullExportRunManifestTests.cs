@@ -664,6 +664,8 @@ public sealed class FullExportRunManifestTests
             PipelineExecutionLog.Empty,
             StaticSeedTopologicalOrderApplied: false,
             DynamicInsertTopologicalOrderApplied: false,
+            StaticSeedOrderingMode: EntityDependencyOrderingMode.Alphabetical,
+            DynamicInsertOrderingMode: EntityDependencyOrderingMode.Alphabetical,
             DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
             ImmutableArray<string>.Empty,
             null);

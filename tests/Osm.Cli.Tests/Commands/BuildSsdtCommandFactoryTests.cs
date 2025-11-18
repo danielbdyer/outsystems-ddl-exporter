@@ -17,6 +17,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Emission;
+using Osm.Emission.Seeds;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Configuration;
@@ -204,6 +205,39 @@ public class BuildSsdtCommandFactoryTests
         Assert.DoesNotContain("Profiling insights:", output);
         Assert.DoesNotContain("Informational insights:", output);
         Assert.DoesNotContain("Column contains 12.5% null values.", output);
+    }
+
+    [Fact]
+    public async Task Invoke_ForwardsDeferJunctionTablesOverride()
+    {
+        var configurationService = new FakeConfigurationService();
+        var application = new FakeBuildApplicationService();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(configurationService);
+        services.AddSingleton<IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult>>(application);
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
+        services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
+        services.AddSingleton<BuildSsdtCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<BuildSsdtCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+        var console = new TestConsole();
+
+        var args = "build-ssdt --model model.json --profile profile.json --out output --defer-junction-tables false";
+        var exitCode = await parser.InvokeAsync(args, console);
+
+        Assert.Equal(0, exitCode);
+        Assert.NotNull(application.LastInput);
+        Assert.False(application.LastInput!.Overrides.DeferJunctionTables);
     }
 
     [Fact]
@@ -543,6 +577,8 @@ public class BuildSsdtCommandFactoryTests
                 PipelineExecutionLog.Empty,
                 StaticSeedTopologicalOrderApplied: false,
                 DynamicInsertTopologicalOrderApplied: false,
+                StaticSeedOrderingMode: EntityDependencyOrderingMode.Alphabetical,
+                DynamicInsertOrderingMode: EntityDependencyOrderingMode.Alphabetical,
                 DynamicInsertOutputMode: DynamicInsertOutputMode.PerEntity,
                 ImmutableArray<string>.Empty,
                 MultiEnvironmentProfileReport.Empty);

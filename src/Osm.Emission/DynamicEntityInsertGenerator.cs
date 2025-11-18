@@ -69,7 +69,8 @@ public sealed class DynamicEntityInsertGenerator
         ImmutableArray<StaticEntityTableData> staticSeedCatalog,
         DynamicEntityInsertGenerationOptions? options = null,
         OsmModel? model = null,
-        NamingOverrideOptions? namingOverrides = null)
+        NamingOverrideOptions? namingOverrides = null,
+        EntityDependencySortOptions? sortOptions = null)
     {
         if (dataset is null)
         {
@@ -89,7 +90,7 @@ public sealed class DynamicEntityInsertGenerator
         }
 
         var orderedTables = EntityDependencySorter
-            .SortByForeignKeys(dataset.Tables, model, namingOverrides)
+            .SortByForeignKeys(dataset.Tables, model, namingOverrides, sortOptions)
             .Tables;
         if (orderedTables.IsDefaultOrEmpty)
         {
@@ -119,7 +120,7 @@ public sealed class DynamicEntityInsertGenerator
         }
 
         var materialized = scripts.ToImmutable();
-        return ApplyDependencyOrdering(materialized, model, namingOverrides);
+        return ApplyDependencyOrdering(materialized, model, namingOverrides, sortOptions);
     }
 
     private static ImmutableArray<StaticEntityRow> FilterRows(
@@ -632,7 +633,8 @@ public sealed class DynamicEntityInsertGenerator
     private static ImmutableArray<DynamicEntityInsertScript> ApplyDependencyOrdering(
         ImmutableArray<DynamicEntityInsertScript> scripts,
         OsmModel? model,
-        NamingOverrideOptions? namingOverrides)
+        NamingOverrideOptions? namingOverrides,
+        EntityDependencySortOptions? sortOptions)
     {
         if (scripts.IsDefaultOrEmpty || scripts.Length <= 1 || model is null)
         {
@@ -642,7 +644,8 @@ public sealed class DynamicEntityInsertGenerator
         var orderedDefinitions = EntityDependencySorter.SortByForeignKeys(
             scripts.Select(script => new StaticEntityTableData(script.Definition, ImmutableArray<StaticEntityRow>.Empty)).ToImmutableArray(),
             model,
-            namingOverrides);
+            namingOverrides,
+            sortOptions);
 
         var definitions = orderedDefinitions.Tables;
         if (definitions.IsDefaultOrEmpty || definitions.Length != scripts.Length)

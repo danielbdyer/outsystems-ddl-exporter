@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql160DatabaseSchemaProvider</DSP>
+    <ModelCollation>1033,CI</ModelCollation>
+    <ModelVersion>2.0</ModelVersion>
+    <Name>OutSystemsModel</Name>
+    <RootPath>.</RootPath>
+    <SqlTargetName>OutSystemsModel</SqlTargetName>
+    <DefaultCollation>SQL_Latin1_General_CP1_CI_AS</DefaultCollation>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <ProjectVersion>4.2</ProjectVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Build Include="Modules\Operator\dbo.OperatorProfile.sql" />
+    <Build Include="Modules\Users\dbo.User.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <PostDeploy Include="Seeds\**\*.sql" />
+  </ItemGroup>
+</Project>

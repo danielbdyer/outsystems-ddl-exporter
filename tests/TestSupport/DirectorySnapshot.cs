@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Xunit;
 using Xunit.Sdk;
 
@@ -91,6 +92,7 @@ public static class DirectorySnapshot
     private static IReadOnlyDictionary<string, string> ReadAllFiles(string root)
     {
         return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Where(path => !ShouldIgnoreFile(path))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
                 path => NormalizeRelativePath(Path.GetRelativePath(root, path)),
@@ -98,7 +100,20 @@ public static class DirectorySnapshot
                 StringComparer.OrdinalIgnoreCase);
     }
 
+    private static bool ShouldIgnoreFile(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        return Path.GetFileName(path).Equals("pipeline-telemetry.zip", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string NormalizeRelativePath(string path) => path.Replace('\\', '/');
+
+    private static readonly Regex GeneratedHeaderRegex = new("^-- Generated: .*$", RegexOptions.Multiline);
+    private const string NormalizedTimestamp = "0001-01-01T00:00:00.0000000+00:00";
 
     private static string NormalizeContent(string path, string content)
     {
@@ -114,7 +129,9 @@ public static class DirectorySnapshot
             return Encoding.UTF8.GetString(stream.ToArray()).TrimEnd();
         }
 
-        return content.Replace("\r\n", "\n").TrimEnd();
+        var normalized = content.Replace("\r\n", "\n");
+        normalized = GeneratedHeaderRegex.Replace(normalized, "-- Generated: <timestamp>");
+        return normalized.TrimEnd();
     }
 
     private static void WriteCanonicalJson(Utf8JsonWriter writer, JsonElement element)
@@ -126,6 +143,12 @@ public static class DirectorySnapshot
                 foreach (var property in element.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
                 {
                     writer.WritePropertyName(property.Name);
+                    if (string.Equals(property.Name, "GeneratedAtUtc", StringComparison.OrdinalIgnoreCase))
+                    {
+                        writer.WriteStringValue(NormalizedTimestamp);
+                        continue;
+                    }
+
                     WriteCanonicalJson(writer, property.Value);
                 }
 

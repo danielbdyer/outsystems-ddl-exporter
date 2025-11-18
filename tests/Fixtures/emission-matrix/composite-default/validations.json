@@ -1,0 +1,163 @@
+{
+  "Validations": [
+    {
+      "Type": "UniqueIndex",
+      "Title": "UNIQUE",
+      "Summary": "Validated: Index is already UNIQUE and profiling confirms data integrity.",
+      "Evidence": [
+        "Composite duplicates=False"
+      ],
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS"
+      ],
+      "Column": null,
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Index": {
+          "Value": "UX_ORDERALLOC_COUNTRY_DOCUMENT"
+        }
+      },
+      "Schema": "dbo",
+      "Table": "OSUSR_A_ORDERALLOCATION",
+      "ConstraintName": "UX_ORDERALLOC_COUNTRY_DOCUMENT",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_A_ORDERALLOCATION"
+              },
+              "Column": {
+                "Value": "COUNTRYID"
+              }
+            },
+            "Module": {
+              "Value": "M"
+            },
+            "EntityLogicalName": {
+              "Value": "OrderAllocation"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_A_ORDERALLOCATION"
+            },
+            "AttributeLogicalName": {
+              "Value": "CountryId"
+            },
+            "ModuleName": "M",
+            "EntityName": "OrderAllocation",
+            "TableName": "OSUSR_A_ORDERALLOCATION",
+            "AttributeName": "CountryId"
+          },
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 1200,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 1200,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_A_ORDERALLOCATION"
+            },
+            "Column": {
+              "Value": "COUNTRYID"
+            }
+          },
+          "Module": "M",
+          "Entity": "OrderAllocation",
+          "Attribute": "CountryId"
+        },
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_A_ORDERALLOCATION"
+              },
+              "Column": {
+                "Value": "DOCUMENTID"
+              }
+            },
+            "Module": {
+              "Value": "M"
+            },
+            "EntityLogicalName": {
+              "Value": "OrderAllocation"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_A_ORDERALLOCATION"
+            },
+            "AttributeLogicalName": {
+              "Value": "DocumentId"
+            },
+            "ModuleName": "M",
+            "EntityName": "OrderAllocation",
+            "TableName": "OSUSR_A_ORDERALLOCATION",
+            "AttributeName": "DocumentId"
+          },
+          "DataType": "Identifier",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 1200,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 1200,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": null,
+          "UniqueProbeStatus": null,
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_A_ORDERALLOCATION"
+            },
+            "Column": {
+              "Value": "DOCUMENTID"
+            }
+          },
+          "Module": "M",
+          "Entity": "OrderAllocation",
+          "Attribute": "DocumentId"
+        }
+      ]
+    }
+  ],
+  "TypeCounts": {
+    "UniqueIndex": 1
+  },
+  "GeneratedAtUtc": "2025-11-18T02:07:29.1876205+00:00",
+  "TotalCount": 1
+}

@@ -56,7 +56,8 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                 state.SqlValidation,
                 ImmutableArray<string>.Empty,
                 ImmutableArray<StaticEntityTableData>.Empty,
-                StaticSeedTopologicalOrderApplied: false));
+                StaticSeedTopologicalOrderApplied: false,
+                StaticSeedOrderingMode: EntityDependencyOrderingMode.Alphabetical));
         }
 
         if (state.Request.StaticDataProvider is null)
@@ -75,9 +76,17 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         }
 
         var deterministicData = EntitySeedDeterminizer.Normalize(staticDataResult.Value);
-        var ordering = EntityDependencySorter.SortByForeignKeys(deterministicData, model);
+        var sortOptions = state.Request.DeferJunctionTables
+            ? new EntityDependencySortOptions(true)
+            : EntityDependencySortOptions.Default;
+        var ordering = EntityDependencySorter.SortByForeignKeys(
+            deterministicData,
+            model,
+            state.Request.Scope.SmoOptions.NamingOverrides,
+            sortOptions);
         var orderedData = ordering.Tables;
         var topologicalOrderingApplied = ordering.TopologicalOrderingApplied;
+        var staticOrderingMode = ordering.Mode;
         var preflight = StaticSeedForeignKeyPreflight.Analyze(orderedData, model);
         LogForeignKeyPreflight(state.Log, preflight);
         var seedOptions = state.Request.Scope.TighteningOptions.Emission.StaticSeeds;
@@ -159,7 +168,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                 .WithCount("ordering.missingEdges", ordering.MissingEdgeCount)
                 .WithValue("ordering.cycleDetected", ordering.CycleDetected ? "true" : "false")
                 .WithValue("ordering.fallbackApplied", ordering.AlphabeticalFallbackApplied ? "true" : "false")
-                .WithValue("ordering.mode", ordering.TopologicalOrderingApplied ? "topological" : "alphabetical")
+                .WithValue("ordering.mode", ordering.Mode.ToMetadataValue())
                 .Build());
 
         return Result<StaticSeedsGenerated>.Success(new StaticSeedsGenerated(
@@ -179,7 +188,8 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
             state.SqlValidation,
             seedPaths,
             orderedData,
-            topologicalOrderingApplied));
+            topologicalOrderingApplied,
+            staticOrderingMode));
     }
 
     private static string ResolveModuleDirectoryName(

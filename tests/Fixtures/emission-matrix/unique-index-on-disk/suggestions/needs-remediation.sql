@@ -1,1 +1,15 @@
+-- ============================================================================
+-- OutSystems DDL Exporter - Needs Remediation Opportunities
+-- ============================================================================
+-- Generated: 2025-11-18 02:07:29 UTC
+--
+-- SUMMARY:
+--   Total Opportunities: 0
+--
+-- This script contains 0 needs remediation opportunities.
+--
+-- IMPORTANT: Never modify OutSystems model JSON files directly.
+--            These scripts are suggestions only and will not auto-execute.
+-- ============================================================================
+
 -- No opportunities in this category.

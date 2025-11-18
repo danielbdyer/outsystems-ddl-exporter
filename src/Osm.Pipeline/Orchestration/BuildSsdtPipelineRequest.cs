@@ -21,4 +21,5 @@ public sealed record BuildSsdtPipelineRequest(
     string? DynamicDataOutputDirectoryHint,
     string? SqlProjectPathHint,
     DynamicInsertOutputMode DynamicInsertOutputMode = DynamicInsertOutputMode.PerEntity,
-    SqlMetadataLog? SqlMetadataLog = null) : ICommand<BuildSsdtPipelineResult>;
+    SqlMetadataLog? SqlMetadataLog = null,
+    bool DeferJunctionTables = false) : ICommand<BuildSsdtPipelineResult>;

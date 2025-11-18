@@ -1,0 +1,288 @@
+{
+  "Columns": [
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Column": {
+          "Value": "COUNTRYID"
+        }
+      },
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS",
+        "DATA_NO_NULLS",
+        "MANDATORY"
+      ]
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Column": {
+          "Value": "DOCUMENTID"
+        }
+      },
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS",
+        "DATA_NO_NULLS",
+        "MANDATORY"
+      ]
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Column": {
+          "Value": "ID"
+        }
+      },
+      "MakeNotNull": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "DATA_NO_NULLS",
+        "MANDATORY",
+        "PHYSICAL_NOT_NULL",
+        "PK"
+      ]
+    },
+    {
+      "Column": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Column": {
+          "Value": "QTY"
+        }
+      },
+      "MakeNotNull": false,
+      "RequiresRemediation": false,
+      "Rationales": []
+    }
+  ],
+  "UniqueIndexes": [
+    {
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_A_ORDERALLOCATION"
+        },
+        "Index": {
+          "Value": "UX_ORDERALLOC_COUNTRY_DOCUMENT"
+        }
+      },
+      "EnforceUnique": true,
+      "RequiresRemediation": false,
+      "Rationales": [
+        "COMPOSITE_UNIQUE_NO_NULLS"
+      ]
+    }
+  ],
+  "ForeignKeys": [],
+  "ColumnRationaleCounts": {
+    "PK": 1,
+    "MANDATORY": 3,
+    "DATA_NO_NULLS": 3,
+    "PHYSICAL_NOT_NULL": 1,
+    "COMPOSITE_UNIQUE_NO_NULLS": 2
+  },
+  "UniqueIndexRationaleCounts": {
+    "COMPOSITE_UNIQUE_NO_NULLS": 1
+  },
+  "ForeignKeyRationaleCounts": {},
+  "Diagnostics": [],
+  "ModuleRollups": {
+    "M": {
+      "ColumnCount": 4,
+      "TightenedColumnCount": 3,
+      "RemediationColumnCount": 0,
+      "UniqueIndexCount": 1,
+      "UniqueIndexesEnforcedCount": 1,
+      "UniqueIndexesRequireRemediationCount": 0,
+      "ForeignKeyCount": 0,
+      "ForeignKeysCreatedCount": 0,
+      "ColumnRationales": {
+        "PK": 1,
+        "MANDATORY": 3,
+        "DATA_NO_NULLS": 3,
+        "PHYSICAL_NOT_NULL": 1,
+        "COMPOSITE_UNIQUE_NO_NULLS": 2
+      },
+      "UniqueIndexRationales": {
+        "COMPOSITE_UNIQUE_NO_NULLS": 1
+      },
+      "ForeignKeyRationales": {}
+    }
+  },
+  "TogglePrecedence": {
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "remediation.sentinels.numeric": {
+      "Value": "0",
+      "Source": 0
+    },
+    "remediation.sentinels.text": {
+      "Value": "",
+      "Source": 0
+    },
+    "remediation.sentinels.date": {
+      "Value": "1900-01-01",
+      "Source": 0
+    },
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
+    },
+    "policy.nullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "mocking.useProfileMockFolder": {
+      "Value": false,
+      "Source": 0
+    },
+    "remediation.maxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "uniqueness.enforceMultiColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowNoCheckCreation": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "mocking.profileMockFolder": {
+      "Value": null,
+      "Source": 0
+    },
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    }
+  },
+  "ColumnModules": {
+    "dbo.OSUSR_A_ORDERALLOCATION.ID": "M",
+    "dbo.OSUSR_A_ORDERALLOCATION.DOCUMENTID": "M",
+    "dbo.OSUSR_A_ORDERALLOCATION.COUNTRYID": "M",
+    "dbo.OSUSR_A_ORDERALLOCATION.QTY": "M"
+  },
+  "IndexModules": {
+    "dbo.OSUSR_A_ORDERALLOCATION.UX_ORDERALLOC_COUNTRY_DOCUMENT": "M"
+  },
+  "Toggles": {
+    "Mode": {
+      "Value": 1,
+      "Source": 0
+    },
+    "NullBudget": {
+      "Value": 0,
+      "Source": 0
+    },
+    "ForeignKeyCreationEnabled": {
+      "Value": true,
+      "Source": 0
+    },
+    "ForeignKeyCrossSchemaAllowed": {
+      "Value": false,
+      "Source": 0
+    },
+    "ForeignKeyCrossCatalogAllowed": {
+      "Value": false,
+      "Source": 0
+    },
+    "ForeignKeyTreatMissingDeleteRuleAsIgnore": {
+      "Value": false,
+      "Source": 0
+    },
+    "ForeignKeyAllowNoCheckCreation": {
+      "Value": false,
+      "Source": 0
+    },
+    "SingleColumnUniqueEnforced": {
+      "Value": true,
+      "Source": 0
+    },
+    "MultiColumnUniqueEnforced": {
+      "Value": true,
+      "Source": 0
+    },
+    "RemediationGeneratePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "RemediationMaxRowsDefaultBackfill": {
+      "Value": 100000,
+      "Source": 0
+    },
+    "RemediationSentinelNumeric": {
+      "Value": "0",
+      "Source": 0
+    },
+    "RemediationSentinelText": {
+      "Value": "",
+      "Source": 0
+    },
+    "RemediationSentinelDate": {
+      "Value": "1900-01-01",
+      "Source": 0
+    },
+    "MockingUseProfileMockFolder": {
+      "Value": false,
+      "Source": 0
+    },
+    "MockingProfileMockFolder": {
+      "Value": null,
+      "Source": 0
+    }
+  },
+  "ColumnCount": 4,
+  "TightenedColumnCount": 3,
+  "RemediationColumnCount": 0,
+  "UniqueIndexCount": 1,
+  "UniqueIndexesEnforcedCount": 1,
+  "UniqueIndexesRequireRemediationCount": 0,
+  "ForeignKeyCount": 0,
+  "ForeignKeysCreatedCount": 0,
+  "ForeignKeysScriptedWithNoCheckCount": 0,
+  "ModuleCount": 1
+}

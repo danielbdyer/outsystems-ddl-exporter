@@ -85,7 +85,9 @@ public sealed class BuildSsdtRequestAssemblerTests
             sqlOptions,
             moduleFilter,
             modelPath: "model.json",
-            outputDirectory: "out");
+            outputDirectory: "out",
+            staticSeedParentMode: StaticSeedParentHandlingMode.ValidateStaticSeedApplication,
+            deferJunctionTables: true);
 
         var result = assembler.Assemble(context);
         Assert.True(result.IsSuccess);
@@ -101,6 +103,24 @@ public sealed class BuildSsdtRequestAssemblerTests
         var connectionHash = cache.Metadata["sql.connectionHash"];
         Assert.False(string.IsNullOrWhiteSpace(connectionHash));
         Assert.Equal(64, connectionHash!.Length);
+        Assert.Equal(
+            StaticSeedParentHandlingMode.ValidateStaticSeedApplication.ToString(),
+            cache.Metadata["dynamicData.staticSeedParentMode"]);
+        Assert.Equal("true", cache.Metadata["dynamicData.deferJunctionTables"]);
+    }
+
+    [Theory]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(null, true, true)]
+    [InlineData(null, null, false)]
+    public void ResolveDeferJunctionTables_PrefersOverrides(bool? overrideValue, bool? configurationValue, bool expected)
+    {
+        var configuration = DynamicDataConfiguration.Empty with { DeferJunctionTables = configurationValue };
+
+        var actual = BuildSsdtRequestAssembler.ResolveDeferJunctionTables(configuration, overrideValue);
+
+        Assert.Equal(expected, actual);
     }
 
     [Fact]
@@ -143,6 +163,7 @@ public sealed class BuildSsdtRequestAssemblerTests
         DynamicEntityDataset? dynamicDataset = null,
         DynamicDatasetSource datasetSource = DynamicDatasetSource.None,
         StaticSeedParentHandlingMode staticSeedParentMode = StaticSeedParentHandlingMode.AutoLoad,
+        bool deferJunctionTables = false,
         IStaticEntityDataProvider? staticDataProvider = null,
         SqlMetadataLog? sqlMetadataLog = null)
     {
@@ -161,6 +182,7 @@ public sealed class BuildSsdtRequestAssemblerTests
             dynamicDataset,
             datasetSource,
             staticSeedParentMode,
+            deferJunctionTables,
             staticDataProvider,
             new CacheOptionsOverrides(null, null),
             "config.json",

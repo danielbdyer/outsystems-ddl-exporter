@@ -1,0 +1,105 @@
+{
+  "Validations": [
+    {
+      "Type": "UniqueIndex",
+      "Title": "UNIQUE",
+      "Summary": "Validated: Index is already UNIQUE and profiling confirms data integrity.",
+      "Evidence": [
+        "Unique duplicates=False (Outcome=Succeeded, Sample=0, Captured=2024-01-01T00:00:00.0000000+00:00)"
+      ],
+      "Rationales": [
+        "PHYSICAL_UNIQUE_KEY",
+        "UNIQUE_NO_NULLS"
+      ],
+      "Column": null,
+      "Index": {
+        "Schema": {
+          "Value": "dbo"
+        },
+        "Table": {
+          "Value": "OSUSR_U_USER"
+        },
+        "Index": {
+          "Value": "UX_USER_EMAIL"
+        }
+      },
+      "Schema": "dbo",
+      "Table": "OSUSR_U_USER",
+      "ConstraintName": "UX_USER_EMAIL",
+      "Columns": [
+        {
+          "Identity": {
+            "Coordinate": {
+              "Schema": {
+                "Value": "dbo"
+              },
+              "Table": {
+                "Value": "OSUSR_U_USER"
+              },
+              "Column": {
+                "Value": "EMAIL"
+              }
+            },
+            "Module": {
+              "Value": "M"
+            },
+            "EntityLogicalName": {
+              "Value": "User"
+            },
+            "EntityPhysicalName": {
+              "Value": "OSUSR_U_USER"
+            },
+            "AttributeLogicalName": {
+              "Value": "Email"
+            },
+            "ModuleName": "M",
+            "EntityName": "User",
+            "TableName": "OSUSR_U_USER",
+            "AttributeName": "Email"
+          },
+          "DataType": "Text",
+          "SqlType": null,
+          "PhysicalNullable": null,
+          "PhysicalUnique": null,
+          "RowCount": 100,
+          "NullCount": 0,
+          "NullProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 100,
+            "Outcome": "Succeeded"
+          },
+          "HasDuplicates": false,
+          "UniqueProbeStatus": {
+            "CapturedAtUtc": "2024-01-01T00:00:00+00:00",
+            "SampleSize": 0,
+            "Outcome": "Succeeded"
+          },
+          "HasOrphans": null,
+          "OrphanCount": null,
+          "OrphanSample": null,
+          "HasDatabaseConstraint": false,
+          "DeleteRule": null,
+          "Coordinate": {
+            "Schema": {
+              "Value": "dbo"
+            },
+            "Table": {
+              "Value": "OSUSR_U_USER"
+            },
+            "Column": {
+              "Value": "EMAIL"
+            }
+          },
+          "Module": "M",
+          "Entity": "User",
+          "Attribute": "Email"
+        }
+      ]
+    }
+  ],
+  "TypeCounts": {
+    "UniqueIndex": 1
+  },
+  "GeneratedAtUtc": "2025-11-18T02:07:28.4584457+00:00",
+  "TotalCount": 1
+}
