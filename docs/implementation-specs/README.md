@@ -24,9 +24,11 @@ Each specification follows a consistent format:
 ## Specifications
 
 ### Milestone 1: Export Artifact Verification
+- [M1.0-global-topological-ordering.md](./M1.0-global-topological-ordering.md) - Bootstrap snapshot and global FK ordering
 - [M1.1-export-verification-framework.md](./M1.1-export-verification-framework.md) - Comprehensive export verification system
 - [M1.2-topological-proof-generation.md](./M1.2-topological-proof-generation.md) - Dependency ordering proof and validation
-- [M1.3-data-integrity-verification.md](./M1.3-data-integrity-verification.md) - Source-to-target data parity verification
+- [M1.3-data-integrity-verification.md](./M1.3-data-integrity-verification.md) - Post-load data integrity verification (DMM replacement) ✓
+  - Includes Appendix A: Research findings on checksum algorithms, NULL handling, and pipeline architecture
 - [M1.4-verification-test-coverage.md](./M1.4-verification-test-coverage.md) - Test scenarios for verification systems
 
 ### Milestone 2: UAT-Users Transformation Guarantees
