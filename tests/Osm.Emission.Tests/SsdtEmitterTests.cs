@@ -135,8 +135,9 @@ public class SsdtEmitterTests
         var tablePath = Path.Combine(temp.Path, foreignKeyTable.TableFile);
         var script = await File.ReadAllTextAsync(tablePath).ConfigureAwait(false);
 
-        // The SQL syntax has changed - now uses "ADD" without "WITH CHECK" prefix
-        Assert.Contains("ADD CONSTRAINT", script, StringComparison.OrdinalIgnoreCase);
+        // Foreign keys are now emitted inline in CREATE TABLE, not as separate ALTER TABLE statements
+        // Just verify the constraint exists and is trusted (not WITH NOCHECK)
+        Assert.Contains("FOREIGN KEY", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("WITH NOCHECK", script, StringComparison.OrdinalIgnoreCase);
     }
 
