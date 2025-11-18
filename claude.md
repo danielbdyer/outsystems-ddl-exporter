@@ -192,6 +192,25 @@ This is a known limitation of how .NET handles proxy authentication from environ
   - System.CommandLine 2.0.0-beta4
   - System.Collections.Immutable 9.0.9
 
+## Automated Setup with SessionStart Hook
+
+This repository includes a SessionStart hook that automatically installs .NET SDK and attempts to restore NuGet packages when you start a Claude Code session in the cloud.
+
+### How It Works
+
+The hook is configured in `.claude/settings.json` and runs `scripts/install_dotnet_and_restore.sh` automatically:
+
+1. **Checks if .NET SDK is installed** - If not, downloads and installs .NET SDK 9.0.307
+2. **Attempts NuGet package restore** - Tries to restore packages (may fail due to proxy auth)
+3. **Graceful failure handling** - Even if restore fails, the hook exits successfully so your session can start
+
+### Files
+
+- **.claude/settings.json**: Hook configuration
+- **scripts/install_dotnet_and_restore.sh**: Installation and restore script
+
+The script is idempotent - it's safe to run multiple times and will skip installation if .NET is already present.
+
 ## Configuration Files
 
 - **global.json**: Specifies the exact .NET SDK version (9.0.307) with `rollForward: disable`
