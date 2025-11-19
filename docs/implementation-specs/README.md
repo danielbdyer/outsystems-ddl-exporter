@@ -23,13 +23,10 @@ Each specification follows a consistent format:
 
 ## Specifications
 
-### 🚨 **CRITICAL PATH ANALYSIS**
-- [M1.0-MVP-CRITICAL-PATH.md](./M1.0-MVP-CRITICAL-PATH.md) - **READ THIS FIRST**: Separates MVP from validation features
-
 ### Milestone 1: Export Artifact Verification
 
 #### Core Functionality (Ship First)
-- [M1.0-global-topological-ordering.md](./M1.0-global-topological-ordering.md) - **🔴 MVP**: Bootstrap snapshot and global FK ordering (1.5-2 days)
+- [M1.0-global-topological-ordering.md](./M1.0-global-topological-ordering.md) - **🔴 MVP**: Bootstrap snapshot, global FK ordering, and observability measures
 - [M1.1-export-verification-framework.md](./M1.1-export-verification-framework.md) - Export verification system (independent track)
 
 #### Validation & Observability (Ship Later)
@@ -63,9 +60,8 @@ Each specification follows a consistent format:
 ## Reading Order
 
 **🔴 START HERE for deadline-driven delivery:**
-1. **M1.0-MVP-CRITICAL-PATH.md** - Understand what ships first vs. validation features
-2. **M1.0-global-topological-ordering.md** - Bootstrap snapshot solution (1.5-2 days)
-3. **M1.1-export-verification-framework.md** - Artifact verification (parallel track)
+1. **M1.0-global-topological-ordering.md** - Bootstrap snapshot solution with observability (includes critical path analysis)
+2. **M1.1-export-verification-framework.md** - Artifact verification (parallel track)
 
 **For understanding verification architecture:**
 1. M1.1 → M1.7 (M1.2) → M1.8 (M1.3) → M3.2 (base verification stack)
@@ -73,16 +69,15 @@ Each specification follows a consistent format:
 3. M3.1 (integration metadata)
 
 **🚀 RECOMMENDED IMPLEMENTATION ORDER (Deadline-Driven):**
-1. **M1.0 MVP** (this week) - Bootstrap snapshot + PostDeployment template → Fixes FK violations
+1. **M1.0 MVP** (this week) - Bootstrap snapshot + PostDeployment template + observability → Fixes FK violations
 2. **M1.1** (parallel) - Export verification framework → Manifest/artifact validation
 3. **M1.5** (next sprint) - Per-table emission mode → Production enhancement
-4. **M1.6** (if requested) - Observability measures → Diagnostic aids
-5. **M1.7** (when ready for CI/CD) - Topological proof → Automated verification
-6. **M1.8** (DMM replacement) - Data integrity → High-confidence validation
-7. M2.1 (UAT verification - can parallel with M1.x)
-8. M2.2 (transformation verification - depends on M1.8 + M2.1)
-9. M3.1 (manifest - depends on all above)
-10. M3.2 (load harness - depends on all above)
+4. **M1.7** (when ready for CI/CD) - Topological proof → Automated verification
+5. **M1.8** (DMM replacement) - Data integrity → High-confidence validation
+6. M2.1 (UAT verification - can parallel with M1.x)
+7. M2.2 (transformation verification - depends on M1.8 + M2.1)
+8. M3.1 (manifest - depends on all above)
+9. M3.2 (load harness - depends on all above)
 
 ---
 
