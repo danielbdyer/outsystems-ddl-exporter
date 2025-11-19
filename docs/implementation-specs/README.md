@@ -64,8 +64,10 @@ Each specification follows a consistent format:
 ## Reading Order
 
 **🔴 START HERE for deadline-driven delivery:**
-1. **M1.0-global-topological-ordering.md** - Bootstrap snapshot solution with observability (includes critical path analysis)
+1. **M1.0-global-topological-ordering.md** - Bootstrap snapshot solution with observability
+   - **NEW**: Includes "Codebase Integration Guide" with exact file paths, integration points, and critical questions
 2. **M1.1-export-verification-framework.md** - Artifact verification (parallel track)
+   - **NEW**: Includes "Codebase Integration Guide" with DI setup, CLI integration, and implementation phases
 3. **M1.2-topological-proof-validation.md** - Runtime ordering validation (basic safety)
 4. **M1.3-data-integrity-checks.md** - Quick row count/NULL checks (basic verification)
 
