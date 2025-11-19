@@ -42,19 +42,14 @@ Each specification follows a consistent format:
 ### Milestone 2: UAT-Users Transformation Guarantees
 - [M2.1-uat-users-verification-framework.md](./M2.1-uat-users-verification-framework.md) - **🔴 MVP**: UAT-users artifact verification framework (map completeness, FK catalog, SQL safety)
   - **NEW**: Includes "Codebase Integration Guide" with verification patterns, validation logic reuse, and CLI integration
-- [M2.2-transformation-verification.md](./M2.2-transformation-verification.md) - **🟡 Enhanced**: UPDATE script transformation verification (CASE block parsing, NULL preservation)
-  - **NEW**: Scoped to UPDATE-only (current architecture), uses TSql150Parser for robust SQL parsing
-  - **NOTE**: INSERT transformation is addressed in M2.4
+- [M2.2-transformation-verification.md](./M2.2-transformation-verification.md) - **🟡 Enhanced**: Unified transformation verification for both INSERT and UPDATE modes
+  - **Part A (Shared Fundamentals)**: Transformation map validation, FK catalog verification, core infrastructure (deliver FIRST)
+  - **Part B (INSERT Verification)**: Primary approach - parse pre-transformed INSERT scripts, verify orphan elimination, UAT inventory compliance
+  - **Part C (UPDATE Verification)**: Secondary/proof artifact - parse UPDATE scripts, verify CASE blocks, WHERE guards
+  - **Cross-Validation**: Compare INSERT vs UPDATE transformation counts, prove equivalence
+  - **Modular Report**: Extends M1.3 base verification with `uatUsersVerification` section
+  - Uses TSql150Parser for robust SQL parsing, aligns with tasks.md original vision
 - [M2.3-uat-users-integration-tests.md](./M2.3-uat-users-integration-tests.md) - **🟡 Enhanced**: Comprehensive integration tests (edge cases, idempotence, error handling, full-export integration)
-- [M2.4-insert-transformation-implementation.md](./M2.4-insert-transformation-implementation.md) - **🔵 Preferred**: Pre-transformed INSERT generation (aspirational Mode 1 from design doc)
-  - Implements transformation during INSERT generation (not post-load UPDATE)
-  - Larger scope but preferred approach for performance and simplicity
-- [M2.5-insert-verification.md](./M2.5-insert-verification.md) - **🟡 Enhanced**: INSERT transformation verification (automated proof that transformations were applied correctly)
-  - Parses generated INSERT scripts to verify orphan elimination
-  - Validates transformation correctness and NULL preservation
-- [M2.6-cross-mode-validation.md](./M2.6-cross-mode-validation.md) - **🔵 Advanced**: Cross-mode validation (INSERT vs UPDATE equivalence proof)
-  - Proves both transformation modes produce identical results
-  - Provides confidence for mode selection based on performance needs
 
 ### Milestone 3: Integrated Workflow & Operational Readiness
 - [M3.1-manifest-extensions.md](./M3.1-manifest-extensions.md) - FullExportRunManifest UAT-users metadata
@@ -87,7 +82,8 @@ Each specification follows a consistent format:
 1. **MVP Path**: M1.0 (includes per-table emission) → M1.1 → M1.2 (basic proof) → M1.3 (basic integrity)
 2. **Full Features**: M1.7 (comprehensive proof) → M1.8 (DMM replacement)
 3. **UAT Pipeline**:
-   - M2.1 (artifact verification) → M2.2 (UPDATE verification) → M2.3 (integration tests) → M2.4 (INSERT transformation) → M2.5 (INSERT verification) → M2.6 (cross-mode validation)
+   - M2.1 (artifact verification) → M2.2 Part A (shared fundamentals) → M2.2 Part B (INSERT) + Part C (UPDATE) → M2.3 (integration tests)
+   - **Structure**: M2.2 uses Part A → Part B or C approach, prioritizing shared essence before mode-specific implementations
    - **NEW**: All include comprehensive "Codebase Integration Guides" with exact patterns, validation logic, and test strategies
 4. **Integration**: M3.1 (manifest metadata) → M3.2 (load harness verification)
 
@@ -99,13 +95,12 @@ Each specification follows a consistent format:
 5. **M1.7 Full Observability** (when operators request) - Topological proof artifacts → Documentation/auditing
 6. **M1.8 DMM Replacement** (when ready for production) - Comprehensive data integrity → Hash comparison, full validation
 7. **M2.1 UAT-Users Verification** (can parallel with M1.x) - Artifact verification framework → Map/catalog/SQL validation, CI/CD gates
-8. **M2.2 UPDATE Verification** (after M2.1) - UPDATE script transformation correctness → CASE block parsing, NULL preservation
-9. **M2.3 Integration Tests** (after M2.1 + M2.2) - Comprehensive test suite → Edge cases, idempotence, error handling
-10. **M2.4 INSERT Transformation** (preferred, larger scope) - Pre-transformed INSERT generation → Performance, simplicity benefits
-11. **M2.5 INSERT Verification** (after M2.4) - Automated INSERT transformation correctness proof → Orphan detection, NULL preservation
-12. **M2.6 Cross-Mode Validation** (after M2.4 + M2.5) - INSERT vs UPDATE equivalence proof → Mode interchangeability confidence
-13. **M3.1 Manifest Extensions** (after M2.x) - UAT-users metadata in manifest → Enables automation
-14. **M3.2 Load Harness Verification** (after all above) - End-to-end ETL verification → Full confidence in UAT deployments
+8. **M2.2 Part A** (after M2.1) - Shared fundamentals → Transformation map validation, FK catalog verification (enables Part B + C)
+9. **M2.2 Part B** (after Part A) - INSERT verification (PRIMARY) → Parse INSERTs, verify orphan elimination, UAT compliance
+10. **M2.2 Part C** (after Part A) - UPDATE verification (SECONDARY) → Parse CASE blocks, verify WHERE guards, cross-validation
+11. **M2.3 Integration Tests** (after M2.1 + M2.2) - Comprehensive test suite → Edge cases, idempotence, error handling
+12. **M3.1 Manifest Extensions** (after M2.x) - UAT-users metadata in manifest → Enables automation
+13. **M3.2 Load Harness Verification** (after all above) - End-to-end ETL verification → Full confidence in UAT deployments
 
 ---
 
