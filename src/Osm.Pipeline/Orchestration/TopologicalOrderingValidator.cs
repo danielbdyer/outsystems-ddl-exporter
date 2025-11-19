@@ -47,15 +47,22 @@ public sealed class TopologicalOrderingValidator
                 CycleDetected: false);
         }
 
-        // Build entity lookup: PhysicalName -> Entity
+        namingOverrides ??= NamingOverrideOptions.Empty;
+
+        // Build entity lookup: EffectiveName -> Entity
+        // Apply naming overrides to match what EntityDependencySorter uses
         var entityLookup = model.Modules
             .SelectMany(m => m.Entities)
-            .ToDictionary(e => e.PhysicalName.Value, e => e, StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(
+                e => namingOverrides.GetEffectiveTableName(e.Schema.Value, e.PhysicalName.Value, e.LogicalName.Value, e.Module.Value),
+                e => e,
+                StringComparer.OrdinalIgnoreCase);
 
-        // Build position lookup: TableName -> Index
+        // Build position lookup: EffectiveName -> Index
+        // Use EffectiveName which has naming overrides already applied by the sorter
         var positions = orderedTables
-            .Select((table, index) => (table.Definition.PhysicalName, Index: index))
-            .ToDictionary(x => x.PhysicalName, x => x.Index, StringComparer.OrdinalIgnoreCase);
+            .Select((table, index) => (table.Definition.EffectiveName, Index: index))
+            .ToDictionary(x => x.EffectiveName, x => x.Index, StringComparer.OrdinalIgnoreCase);
 
         var violations = ImmutableArray.CreateBuilder<OrderingViolation>();
         var totalFks = 0;
@@ -64,7 +71,7 @@ public sealed class TopologicalOrderingValidator
         // For each table, verify all FK parents appear BEFORE it
         foreach (var (table, childIndex) in orderedTables.Select((t, i) => (t, i)))
         {
-            if (!entityLookup.TryGetValue(table.Definition.PhysicalName, out var entity))
+            if (!entityLookup.TryGetValue(table.Definition.EffectiveName, out var entity))
             {
                 continue;
             }
@@ -78,11 +85,26 @@ public sealed class TopologicalOrderingValidator
 
                 totalFks++;
 
-                var parentPhysicalName = relationship.TargetPhysicalName.Value;
-                var fkName = relationship.ActualConstraints[0].Name;
+                // Get parent schema and physical name from ActualConstraints
+                var constraint = relationship.ActualConstraints[0];
+                var fkName = constraint.Name;
                 var displayName = string.IsNullOrWhiteSpace(fkName) ? "<unnamed>" : fkName;
 
-                if (!positions.TryGetValue(parentPhysicalName, out var parentIndex))
+                var parentSchema = string.IsNullOrWhiteSpace(constraint.ReferencedSchema)
+                    ? entity.Schema.Value
+                    : constraint.ReferencedSchema.Trim();
+
+                var parentPhysicalName = constraint.ReferencedTable.Trim();
+                var parentLogicalName = relationship.TargetEntity.Value;
+
+                // Apply naming overrides to match what EntityDependencySorter produces
+                var effectiveParentName = namingOverrides.GetEffectiveTableName(
+                    parentSchema,
+                    parentPhysicalName,
+                    parentLogicalName,
+                    null); // Module can be null - GetEffectiveTableName handles it
+
+                if (!positions.TryGetValue(effectiveParentName, out var parentIndex))
                 {
                     // Parent not in sorted list (excluded entity)
                     missingEdges++;
