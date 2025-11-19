@@ -37,9 +37,9 @@
     "ForeignKeyCount": 0,
     "ForeignKeysCreatedCount": 0,
     "ColumnRationales": {
-      "PK": 1,
+      "MANDATORY": 2,
       "PROFILE_MISSING": 2,
-      "MANDATORY": 2
+      "PK": 1
     },
     "UniqueIndexRationales": {
       "PHYSICAL_UNIQUE_KEY": 2
@@ -56,9 +56,9 @@
         "ForeignKeyCount": 0,
         "ForeignKeysCreatedCount": 0,
         "ColumnRationales": {
-          "PK": 1,
+          "MANDATORY": 2,
           "PROFILE_MISSING": 2,
-          "MANDATORY": 2
+          "PK": 1
         },
         "UniqueIndexRationales": {
           "PHYSICAL_UNIQUE_KEY": 2
@@ -67,18 +67,6 @@
       }
     },
     "TogglePrecedence": {
-      "foreignKeys.enableCreation": {
-        "Value": true,
-        "Source": 0
-      },
-      "remediation.sentinels.numeric": {
-        "Value": "0",
-        "Source": 0
-      },
-      "remediation.sentinels.text": {
-        "Value": "",
-        "Source": 0
-      },
       "remediation.sentinels.date": {
         "Value": "1900-01-01",
         "Source": 0
@@ -87,19 +75,31 @@
         "Value": "EvidenceGated",
         "Source": 0
       },
+      "remediation.generatePreScripts": {
+        "Value": true,
+        "Source": 0
+      },
+      "remediation.sentinels.text": {
+        "Value": "",
+        "Source": 0
+      },
       "policy.nullBudget": {
         "Value": 0,
+        "Source": 0
+      },
+      "uniqueness.enforceSingleColumn": {
+        "Value": true,
         "Source": 0
       },
       "mocking.useProfileMockFolder": {
         "Value": false,
         "Source": 0
       },
-      "remediation.maxRowsDefaultBackfill": {
-        "Value": 100000,
+      "uniqueness.enforceMultiColumn": {
+        "Value": true,
         "Source": 0
       },
-      "uniqueness.enforceMultiColumn": {
+      "foreignKeys.enableCreation": {
         "Value": true,
         "Source": 0
       },
@@ -107,7 +107,11 @@
         "Value": false,
         "Source": 0
       },
-      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "remediation.sentinels.numeric": {
+        "Value": "0",
+        "Source": 0
+      },
+      "foreignKeys.allowCrossCatalog": {
         "Value": false,
         "Source": 0
       },
@@ -115,19 +119,15 @@
         "Value": null,
         "Source": 0
       },
-      "uniqueness.enforceSingleColumn": {
-        "Value": true,
+      "remediation.maxRowsDefaultBackfill": {
+        "Value": 100000,
         "Source": 0
       },
       "foreignKeys.allowCrossSchema": {
         "Value": false,
         "Source": 0
       },
-      "remediation.generatePreScripts": {
-        "Value": true,
-        "Source": 0
-      },
-      "foreignKeys.allowCrossCatalog": {
+      "foreignKeys.treatMissingDeleteRuleAsIgnore": {
         "Value": false,
         "Source": 0
       }

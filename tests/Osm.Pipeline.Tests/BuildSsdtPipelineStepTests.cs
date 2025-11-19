@@ -381,7 +381,7 @@ public class BuildSsdtPipelineStepTests
 
         Assert.True(result.IsSuccess);
         var state = result.Value;
-        Assert.Contains(Path.Combine(output.Path, "Seeds", "StaticEntities.seed.sql"), state.StaticSeedScriptPaths);
+        Assert.Contains(Path.Combine(output.Path, "BaselineSeeds", "StaticEntities.seed.sql"), state.StaticSeedScriptPaths);
         Assert.True(state.StaticSeedScriptPaths.Length >= 2);
     }
 
