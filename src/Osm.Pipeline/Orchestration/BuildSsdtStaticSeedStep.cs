@@ -90,6 +90,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         var preflight = StaticSeedForeignKeyPreflight.Analyze(orderedData, model);
         LogForeignKeyPreflight(state.Log, preflight);
         var seedOptions = state.Request.Scope.TighteningOptions.Emission.StaticSeeds;
+        var validationOverrides = state.Request.Scope.ModuleFilter.ValidationOverrides;
         var seedsRoot = state.Request.SeedOutputDirectoryHint;
         if (string.IsNullOrWhiteSpace(seedsRoot))
         {
@@ -131,7 +132,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
 
                 var modulePath = Path.Combine(moduleDirectory, "StaticEntities.seed.sql");
                 await _seedGenerator
-                    .WriteAsync(modulePath, moduleTables, seedOptions.SynchronizationMode, model, cancellationToken)
+                    .WriteAsync(modulePath, moduleTables, seedOptions.SynchronizationMode, model, validationOverrides, cancellationToken)
                     .ConfigureAwait(false);
                 seedPathBuilder.Add(modulePath);
             }
@@ -140,7 +141,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
             {
                 var masterPath = Path.Combine(seedsRoot!, "StaticEntities.seed.sql");
                 await _seedGenerator
-                    .WriteAsync(masterPath, orderedData, seedOptions.SynchronizationMode, model, cancellationToken)
+                    .WriteAsync(masterPath, orderedData, seedOptions.SynchronizationMode, model, validationOverrides, cancellationToken)
                     .ConfigureAwait(false);
                 seedPathBuilder.Add(masterPath);
             }
@@ -149,7 +150,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         {
             var seedPath = Path.Combine(seedsRoot!, "StaticEntities.seed.sql");
             await _seedGenerator
-                .WriteAsync(seedPath, orderedData, seedOptions.SynchronizationMode, model, cancellationToken)
+                .WriteAsync(seedPath, orderedData, seedOptions.SynchronizationMode, model, validationOverrides, cancellationToken)
                 .ConfigureAwait(false);
             seedPathBuilder.Add(seedPath);
         }
