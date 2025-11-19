@@ -308,7 +308,7 @@ public sealed class TopologicalOrderingValidatorTests
             "Employee",
             "dbo",
             "OSUSR_EMPLOYEE",
-            "OSUSR_EMPLOYEE",
+            "Employee", // EffectiveName = logicalName when no naming overrides
             ImmutableArray.Create(
                 new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null,
                     IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
@@ -346,7 +346,7 @@ public sealed class TopologicalOrderingValidatorTests
             "Order",
             "dbo",
             "OSUSR_ORDER",
-            "OSUSR_ORDER",
+            "Order", // EffectiveName = logicalName when no naming overrides
             ImmutableArray.Create(
                 new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null,
                     IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
@@ -388,7 +388,7 @@ public sealed class TopologicalOrderingValidatorTests
             "A",
             "dbo",
             "OSUSR_A",
-            "OSUSR_A",
+            "A", // EffectiveName = logicalName when no naming overrides
             ImmutableArray.Create(
                 new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null,
                     IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
@@ -400,7 +400,7 @@ public sealed class TopologicalOrderingValidatorTests
             "B",
             "dbo",
             "OSUSR_B",
-            "OSUSR_B",
+            "B", // EffectiveName = logicalName when no naming overrides
             ImmutableArray.Create(
                 new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null,
                     IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
@@ -468,7 +468,7 @@ public sealed class TopologicalOrderingValidatorTests
                 $"Entity{i}",
                 "dbo",
                 tableName,
-                tableName,
+                $"Entity{i}", // EffectiveName = logicalName when no naming overrides
                 columns.ToImmutableArray());
 
             tableDefs.Add(new StaticEntityTableData(def, ImmutableArray<StaticEntityRow>.Empty));
@@ -770,8 +770,124 @@ public sealed class TopologicalOrderingValidatorTests
 
     #endregion
 
-    // NOTE: Naming override support is not implemented in M1.0 MVP
-    // This functionality can be added in a future iteration if needed
+    #region Naming Override Tests
+
+    [Fact]
+    public void Validate_WithNamingOverrides_ResolvesCorrectly()
+    {
+        // Arrange: Physical names differ from table definitions due to naming overrides
+        var validator = new TopologicalOrderingValidator();
+
+        // Table definitions use sanitized names (as they appear in sorted output)
+        // EffectiveName should match what GetEffectiveTableName returns with overrides
+        var parentDef = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Parent",
+            "dbo",
+            "USR_PARENT_SAN",
+            "USR_PARENT_SAN", // EffectiveName = sanitized name after override
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null,
+                    IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
+
+        var childDef = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Child",
+            "dbo",
+            "USR_CHILD_SAN",
+            "USR_CHILD_SAN", // EffectiveName = sanitized name after override
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null,
+                    IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null,
+                    IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
+
+        var tables = ImmutableArray.Create(
+            new StaticEntityTableData(parentDef, ImmutableArray<StaticEntityRow>.Empty),
+            new StaticEntityTableData(childDef, ImmutableArray<StaticEntityRow>.Empty));
+
+        // Model uses original names (before override)
+        var parentEntity = CreateEntity("Parent", "OSUSR_PARENT", Array.Empty<RelationshipModel>());
+        var relationship = CreateRelationship("ParentId", "Parent", "OSUSR_PARENT", "FK_CHILD_PARENT");
+        var childEntity = CreateEntity("Child", "OSUSR_CHILD", new[] { relationship });
+
+        var model = CreateModel(parentEntity, childEntity);
+
+        // Naming overrides map original -> sanitized
+        var parentOverride = NamingOverrideRule.Create("dbo", "OSUSR_PARENT", null, null, "USR_PARENT_SAN").Value;
+        var childOverride = NamingOverrideRule.Create("dbo", "OSUSR_CHILD", null, null, "USR_CHILD_SAN").Value;
+        var namingOverrides = NamingOverrideOptions.Create(new[] { parentOverride, childOverride }).Value;
+
+        // Act
+        var result = validator.Validate(tables, model, namingOverrides);
+
+        // Assert - Should resolve names correctly via overrides
+        Assert.True(result.IsValid);
+        Assert.Empty(result.Violations);
+        Assert.Equal(1, result.TotalForeignKeys);
+        Assert.Equal(0, result.MissingEdges);
+    }
+
+    [Fact]
+    public void Validate_WithNamingOverrides_DetectsViolations()
+    {
+        // Arrange: Naming overrides applied, but ordering is wrong
+        var validator = new TopologicalOrderingValidator();
+
+        // Table definitions use sanitized names - WRONG ORDER (child before parent)
+        var childDef = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Child",
+            "dbo",
+            "USR_CHILD_SAN",
+            "USR_CHILD_SAN", // EffectiveName = sanitized name after override
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null,
+                    IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null,
+                    IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
+
+        var parentDef = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Parent",
+            "dbo",
+            "USR_PARENT_SAN",
+            "USR_PARENT_SAN", // EffectiveName = sanitized name after override
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null,
+                    IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
+
+        var tables = ImmutableArray.Create(
+            new StaticEntityTableData(childDef, ImmutableArray<StaticEntityRow>.Empty),
+            new StaticEntityTableData(parentDef, ImmutableArray<StaticEntityRow>.Empty));
+
+        // Model uses original names
+        var parentEntity = CreateEntity("Parent", "OSUSR_PARENT", Array.Empty<RelationshipModel>());
+        var relationship = CreateRelationship("ParentId", "Parent", "OSUSR_PARENT", "FK_CHILD_PARENT");
+        var childEntity = CreateEntity("Child", "OSUSR_CHILD", new[] { relationship });
+
+        var model = CreateModel(parentEntity, childEntity);
+
+        // Naming overrides map original -> sanitized
+        var parentOverride = NamingOverrideRule.Create("dbo", "OSUSR_PARENT", null, null, "USR_PARENT_SAN").Value;
+        var childOverride = NamingOverrideRule.Create("dbo", "OSUSR_CHILD", null, null, "USR_CHILD_SAN").Value;
+        var namingOverrides = NamingOverrideOptions.Create(new[] { parentOverride, childOverride }).Value;
+
+        // Act
+        var result = validator.Validate(tables, model, namingOverrides);
+
+        // Assert - Should detect violation even with naming overrides
+        Assert.False(result.IsValid);
+        Assert.Single(result.Violations);
+        Assert.True(result.CycleDetected);
+
+        var violation = result.Violations[0];
+        Assert.Equal("USR_CHILD_SAN", violation.ChildTable);
+        Assert.Equal("OSUSR_PARENT", violation.ParentTable); // Violation uses physical name from constraint
+        Assert.Equal("ChildBeforeParent", violation.ViolationType);
+    }
+
+    #endregion
 
     #region Metric Accuracy Tests
 
@@ -827,7 +943,7 @@ public sealed class TopologicalOrderingValidatorTests
             logicalName,
             "dbo",
             physicalName,
-            physicalName,
+            logicalName, // EffectiveName = logicalName when no naming overrides
             ImmutableArray.Create(
                 new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null,
                     IsPrimaryKey: true, IsIdentity: false, IsNullable: false)));
@@ -840,7 +956,7 @@ public sealed class TopologicalOrderingValidatorTests
             logicalName,
             "dbo",
             physicalName,
-            physicalName,
+            logicalName, // EffectiveName = logicalName when no naming overrides
             ImmutableArray.Create(
                 new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null,
                     IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
