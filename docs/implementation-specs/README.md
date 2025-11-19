@@ -40,16 +40,26 @@ Each specification follows a consistent format:
 - [M1.4-verification-test-coverage.md](./M1.4-verification-test-coverage.md) - Test scenarios for verification systems
 
 ### Milestone 2: UAT-Users Transformation Guarantees
-- [M2.1-uat-users-verification-framework.md](./M2.1-uat-users-verification-framework.md) - **🔴 MVP**: UAT-users artifact verification framework (map completeness, FK catalog, SQL safety)
-  - **NEW**: Includes "Codebase Integration Guide" with verification patterns, validation logic reuse, and CLI integration
-- [M2.2-transformation-verification.md](./M2.2-transformation-verification.md) - **🟡 Enhanced**: Unified transformation verification for both INSERT and UPDATE modes
+
+**Critical Path (Milestone Deadline)**:
+- [M2.1-uat-users-verification-framework.md](./M2.1-uat-users-verification-framework.md) - **🔴 Critical Path**: UAT-users artifact verification framework (map completeness, FK catalog, SQL safety)
+  - Includes "Codebase Integration Guide" with verification patterns, validation logic reuse, and CLI integration
+- [M2.4-insert-transformation-implementation.md](./M2.4-insert-transformation-implementation.md) - **🔴 Critical Path**: INSERT transformation implementation (pre-transformed INSERT generation)
+  - Like M1.0 (critical path implementation) - verification can be deferred
+  - Refactors pipeline to run UAT-users before build, injects TransformationContext into DynamicEntityInsertGenerator
+  - Enables full-export + uat-users integration for milestone deadline
+  - **~3 weeks effort** (validated by codebase analysis)
+
+**Verification (Deferred Verifiability)**:
+- [M2.2-transformation-verification.md](./M2.2-transformation-verification.md) - **🟡 Verification (Deferred)**: Unified transformation verification for both INSERT and UPDATE modes
+  - Like M1.1/M1.2 (verification) - proves M2.4 (critical path) works correctly
   - **Part A (Shared Fundamentals)**: Transformation map validation, FK catalog verification, core infrastructure (deliver FIRST)
-  - **Part B (INSERT Verification)**: Primary approach - parse pre-transformed INSERT scripts, verify orphan elimination, UAT inventory compliance
-  - **Part C (UPDATE Verification)**: Secondary/proof artifact - parse UPDATE scripts, verify CASE blocks, WHERE guards
+  - **Part B (INSERT Verification)**: Parse pre-transformed INSERT scripts, verify orphan elimination, UAT inventory compliance
+  - **Part C (UPDATE Verification)**: Parse UPDATE scripts, verify CASE blocks, WHERE guards
   - **Cross-Validation**: Compare INSERT vs UPDATE transformation counts, prove equivalence
   - **Modular Report**: Extends M1.3 base verification with `uatUsersVerification` section
-  - Uses TSql150Parser for robust SQL parsing, aligns with tasks.md original vision
-- [M2.3-uat-users-integration-tests.md](./M2.3-uat-users-integration-tests.md) - **🟡 Enhanced**: Comprehensive integration tests (edge cases, idempotence, error handling, full-export integration)
+  - Can be deferred after M2.4 ships (manual inspection sufficient for milestone)
+- [M2.3-uat-users-integration-tests.md](./M2.3-uat-users-integration-tests.md) - **🟡 Verification (Deferred)**: Comprehensive integration tests (edge cases, idempotence, error handling)
 
 ### Milestone 3: Integrated Workflow & Operational Readiness
 - [M3.1-manifest-extensions.md](./M3.1-manifest-extensions.md) - FullExportRunManifest UAT-users metadata
@@ -81,10 +91,11 @@ Each specification follows a consistent format:
 **For understanding validation progression (MVP → Full Features):**
 1. **MVP Path**: M1.0 (includes per-table emission) → M1.1 → M1.2 (basic proof) → M1.3 (basic integrity)
 2. **Full Features**: M1.7 (comprehensive proof) → M1.8 (DMM replacement)
-3. **UAT Pipeline**:
-   - M2.1 (artifact verification) → M2.2 Part A (shared fundamentals) → M2.2 Part B (INSERT) + Part C (UPDATE) → M2.3 (integration tests)
+3. **UAT Pipeline** (Critical Path vs Verification):
+   - **Critical Path**: M2.1 (artifact verification) → M2.4 (INSERT transformation implementation)
+   - **Verification (Deferred)**: M2.2 Part A → Part B (INSERT verification) + Part C (UPDATE verification) → M2.3 (integration tests)
+   - **Pattern**: Like M1.0 (implementation) vs M1.1/M1.2 (verification) - deferred verifiability for milestone deadline
    - **Structure**: M2.2 uses Part A → Part B or C approach, prioritizing shared essence before mode-specific implementations
-   - **NEW**: All include comprehensive "Codebase Integration Guides" with exact patterns, validation logic, and test strategies
 4. **Integration**: M3.1 (manifest metadata) → M3.2 (load harness verification)
 
 **🚀 RECOMMENDED IMPLEMENTATION ORDER:**
@@ -94,13 +105,14 @@ Each specification follows a consistent format:
 4. **M1.3 Basic Verification** (after M1.0+M1.2) - Row count/NULL checks → Quick sanity verification
 5. **M1.7 Full Observability** (when operators request) - Topological proof artifacts → Documentation/auditing
 6. **M1.8 DMM Replacement** (when ready for production) - Comprehensive data integrity → Hash comparison, full validation
-7. **M2.1 UAT-Users Verification** (can parallel with M1.x) - Artifact verification framework → Map/catalog/SQL validation, CI/CD gates
-8. **M2.2 Part A** (after M2.1) - Shared fundamentals → Transformation map validation, FK catalog verification (enables Part B + C)
-9. **M2.2 Part B** (after Part A) - INSERT verification (PRIMARY) → Parse INSERTs, verify orphan elimination, UAT compliance
-10. **M2.2 Part C** (after Part A) - UPDATE verification (SECONDARY) → Parse CASE blocks, verify WHERE guards, cross-validation
-11. **M2.3 Integration Tests** (after M2.1 + M2.2) - Comprehensive test suite → Edge cases, idempotence, error handling
-12. **M3.1 Manifest Extensions** (after M2.x) - UAT-users metadata in manifest → Enables automation
-13. **M3.2 Load Harness Verification** (after all above) - End-to-end ETL verification → Full confidence in UAT deployments
+7. **M2.1 UAT-Users Verification** (can parallel with M1.x) - CRITICAL PATH → Artifact verification framework, CI/CD gates
+8. **M2.4 INSERT Transformation** (after M2.1) - CRITICAL PATH (~3 weeks) → Pre-transformed INSERT generation, full-export integration
+9. **M2.2 Part A** (after M2.4 ships) - DEFERRED VERIFICATION → Shared fundamentals, transformation map validation
+10. **M2.2 Part B** (after Part A) - DEFERRED VERIFICATION → INSERT verification, orphan elimination proof
+11. **M2.2 Part C** (after Part A) - DEFERRED VERIFICATION → UPDATE verification, CASE block validation
+12. **M2.3 Integration Tests** (after M2.2) - DEFERRED VERIFICATION → Edge cases, idempotence, error handling
+13. **M3.1 Manifest Extensions** (after M2.4) - UAT-users metadata in manifest → Enables automation
+14. **M3.2 Load Harness Verification** (after all above) - End-to-end ETL verification → Full confidence in UAT deployments
 
 ---
 
