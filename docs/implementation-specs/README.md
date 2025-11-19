@@ -26,15 +26,12 @@ Each specification follows a consistent format:
 ### Milestone 1: Export Artifact Verification
 
 #### Core Functionality (Ship First)
-- [M1.0-global-topological-ordering.md](./M1.0-global-topological-ordering.md) - **🔴 MVP**: Bootstrap snapshot, global FK ordering, and observability measures
+- [M1.0-global-topological-ordering.md](./M1.0-global-topological-ordering.md) - **🔴 MVP**: Bootstrap snapshot, global FK ordering, observability, and per-table emission
 - [M1.1-export-verification-framework.md](./M1.1-export-verification-framework.md) - **🔴 MVP**: Export verification system (manifest/artifact validation)
 
 #### Basic Validation (Ship After MVP)
-- [M1.2-topological-proof-validation.md](./M1.2-topological-proof-validation.md) - **🟡 MVP**: Runtime ordering validation (fail-fast checks)
-- [M1.3-data-integrity-checks.md](./M1.3-data-integrity-checks.md) - **🟡 MVP**: Basic row count and NULL checks (quick sanity verification)
-
-#### Production Enhancements (Ship Later)
-- [M1.5-per-table-emission.md](./M1.5-per-table-emission.md) - **🟡 Enhancement**: Per-table baseline seed emission (fine-grain version control) - TBD
+- [M1.2-topological-proof-validation.md](./M1.2-topological-proof-validation.md) - **🟡 Basic**: Runtime ordering validation (fail-fast checks)
+- [M1.3-data-integrity-checks.md](./M1.3-data-integrity-checks.md) - **🟡 Basic**: Row count and NULL checks (quick sanity verification)
 
 #### Advanced Validation & Observability (Ship When Requested)
 - [M1.7-topological-proof-generation.md](./M1.7-topological-proof-generation.md) - **🔵 Deferred**: Full topological proof artifacts (documentation/auditing)
@@ -73,23 +70,22 @@ Each specification follows a consistent format:
 4. **M1.3-data-integrity-checks.md** - Quick row count/NULL checks (basic verification)
 
 **For understanding validation progression (MVP → Full Features):**
-1. **MVP Path**: M1.0 → M1.1 → M1.2 (basic proof) → M1.3 (basic integrity) → M1.5 (per-table)
+1. **MVP Path**: M1.0 (includes per-table emission) → M1.1 → M1.2 (basic proof) → M1.3 (basic integrity)
 2. **Full Features**: M1.7 (comprehensive proof) → M1.8 (DMM replacement)
 3. **UAT Pipeline**: M2.1 → M2.2 (specialized transformation layer)
 4. **Integration**: M3.1 (manifest metadata) → M3.2 (load harness verification)
 
 **🚀 RECOMMENDED IMPLEMENTATION ORDER (Deadline-Driven):**
-1. **M1.0 MVP** (this week) - Bootstrap snapshot + PostDeployment template + observability → Fixes FK violations
+1. **M1.0 MVP** (this week) - Bootstrap snapshot + PostDeployment + observability + per-table emission → Fixes FK violations, provides fine-grain version control
 2. **M1.1 MVP** (parallel with M1.0) - Export verification framework → Manifest/artifact validation
 3. **M1.2 Basic Validation** (after M1.0) - Runtime ordering validation → Catches sorting bugs early
 4. **M1.3 Basic Verification** (after M1.0+M1.2) - Row count/NULL checks → Quick sanity verification
-5. **M1.5 Enhancement** (next sprint) - Per-table emission mode → Production version control
-6. **M1.7 Full Observability** (when operators request) - Topological proof artifacts → Documentation/auditing
-7. **M1.8 DMM Replacement** (when ready for production) - Comprehensive data integrity → Hash comparison, full validation
-8. M2.1 (UAT verification - can parallel with M1.x)
-9. M2.2 (transformation verification - depends on M1.8 + M2.1)
-10. M3.1 (manifest extensions - depends on all above)
-11. M3.2 (load harness verification - depends on all above)
+5. **M1.7 Full Observability** (when operators request) - Topological proof artifacts → Documentation/auditing
+6. **M1.8 DMM Replacement** (when ready for production) - Comprehensive data integrity → Hash comparison, full validation
+7. M2.1 (UAT verification - can parallel with M1.x)
+8. M2.2 (transformation verification - depends on M1.8 + M2.1)
+9. M3.1 (manifest extensions - depends on all above)
+10. M3.2 (load harness verification - depends on all above)
 
 ---
 
