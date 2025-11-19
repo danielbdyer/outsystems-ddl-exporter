@@ -72,7 +72,7 @@ Each specification follows a consistent format:
 1. **M1.0 MVP** (this week) - Bootstrap snapshot + PostDeployment template + observability → Fixes FK violations
 2. **M1.1** (parallel) - Export verification framework → Manifest/artifact validation
 3. **M1.5** (next sprint) - Per-table emission mode → Production enhancement
-4. **M1.7** (when ready for CI/CD) - Topological proof → Automated verification
+4. **M1.7** (when operators request proof artifacts) - Topological proof → Verification documentation
 5. **M1.8** (DMM replacement) - Data integrity → High-confidence validation
 6. M2.1 (UAT verification - can parallel with M1.x)
 7. M2.2 (transformation verification - depends on M1.8 + M2.1)
