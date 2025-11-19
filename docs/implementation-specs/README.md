@@ -42,9 +42,13 @@ Each specification follows a consistent format:
 ### Milestone 2: UAT-Users Transformation Guarantees
 - [M2.1-uat-users-verification-framework.md](./M2.1-uat-users-verification-framework.md) - **🔴 MVP**: UAT-users artifact verification framework (map completeness, FK catalog, SQL safety)
   - **NEW**: Includes "Codebase Integration Guide" with verification patterns, validation logic reuse, and CLI integration
-- [M2.2-transformation-verification.md](./M2.2-transformation-verification.md) - **🟡 Enhanced**: Transformation correctness verification (INSERT/UPDATE parsers, NULL preservation, cross-mode validation)
-  - **NEW**: Includes "Codebase Integration Guide" with INSERT parser, UPDATE simulator, and M1.8 checksum integration
+- [M2.2-transformation-verification.md](./M2.2-transformation-verification.md) - **🟡 Enhanced**: UPDATE script transformation verification (CASE block parsing, NULL preservation)
+  - **NEW**: Scoped to UPDATE-only (current architecture), uses TSql150Parser for robust SQL parsing
+  - **NOTE**: INSERT transformation is addressed in M2.4
 - [M2.3-uat-users-integration-tests.md](./M2.3-uat-users-integration-tests.md) - **🟡 Enhanced**: Comprehensive integration tests (edge cases, idempotence, error handling, full-export integration)
+- [M2.4-insert-transformation-implementation.md](./M2.4-insert-transformation-implementation.md) - **🔵 Preferred**: Pre-transformed INSERT generation (aspirational Mode 1 from design doc)
+  - Implements transformation during INSERT generation (not post-load UPDATE)
+  - Larger scope but preferred approach for performance and simplicity
 
 ### Milestone 3: Integrated Workflow & Operational Readiness
 - [M3.1-manifest-extensions.md](./M3.1-manifest-extensions.md) - FullExportRunManifest UAT-users metadata
@@ -81,18 +85,19 @@ Each specification follows a consistent format:
    - **NEW**: All include comprehensive "Codebase Integration Guides" with exact patterns, validation logic, and test strategies
 4. **Integration**: M3.1 (manifest metadata) → M3.2 (load harness verification)
 
-**🚀 RECOMMENDED IMPLEMENTATION ORDER (Deadline-Driven):**
-1. **M1.0 MVP** (this week) - Bootstrap snapshot + PostDeployment + observability + per-table emission → Fixes FK violations, provides fine-grain version control
+**🚀 RECOMMENDED IMPLEMENTATION ORDER:**
+1. **M1.0 MVP** - Bootstrap snapshot + PostDeployment + observability + per-table emission → Fixes FK violations, provides fine-grain version control
 2. **M1.1 MVP** (parallel with M1.0) - Export verification framework → Manifest/artifact validation
 3. **M1.2 Basic Validation** (after M1.0) - Runtime ordering validation → Catches sorting bugs early
 4. **M1.3 Basic Verification** (after M1.0+M1.2) - Row count/NULL checks → Quick sanity verification
 5. **M1.7 Full Observability** (when operators request) - Topological proof artifacts → Documentation/auditing
 6. **M1.8 DMM Replacement** (when ready for production) - Comprehensive data integrity → Hash comparison, full validation
 7. **M2.1 UAT-Users Verification** (can parallel with M1.x) - Artifact verification framework → Map/catalog/SQL validation, CI/CD gates
-8. **M2.2 Transformation Verification** (after M1.8 + M2.1) - Transformation correctness → INSERT/UPDATE parsers, NULL preservation, cross-mode validation
-9. **M2.3 Integration Tests** (after M2.1 + M2.2) - Comprehensive test suite → Edge cases, idempotence, error handling, full-export integration
-10. **M3.1 Manifest Extensions** (after M2.x) - UAT-users metadata in manifest → Enables automation
-11. **M3.2 Load Harness Verification** (after all above) - End-to-end ETL verification → Full confidence in UAT deployments
+8. **M2.2 UPDATE Verification** (after M2.1) - UPDATE script transformation correctness → CASE block parsing, NULL preservation
+9. **M2.3 Integration Tests** (after M2.1 + M2.2) - Comprehensive test suite → Edge cases, idempotence, error handling
+10. **M2.4 INSERT Transformation** (preferred, larger scope) - Pre-transformed INSERT generation → Performance, simplicity benefits
+11. **M3.1 Manifest Extensions** (after M2.x) - UAT-users metadata in manifest → Enables automation
+12. **M3.2 Load Harness Verification** (after all above) - End-to-end ETL verification → Full confidence in UAT deployments
 
 ---
 
