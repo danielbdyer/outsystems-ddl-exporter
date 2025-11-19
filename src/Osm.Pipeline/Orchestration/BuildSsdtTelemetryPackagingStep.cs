@@ -9,12 +9,12 @@ using Osm.Domain.Abstractions;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<DynamicInsertsGenerated, TelemetryPackaged>
+public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<PostDeploymentTemplateGenerated, TelemetryPackaged>
 {
     private const string PackageFileName = "pipeline-telemetry.zip";
 
     public Task<Result<TelemetryPackaged>> ExecuteAsync(
-        DynamicInsertsGenerated state,
+        PostDeploymentTemplateGenerated state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -104,6 +104,11 @@ public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<DynamicInse
             state.StaticSeedOrderingMode,
             state.DynamicInsertTopologicalOrderApplied,
             state.DynamicInsertOrderingMode,
+            state.BootstrapSnapshotPath,
+            state.BootstrapTopologicalOrderApplied,
+            state.BootstrapOrderingMode,
+            state.BootstrapEntityCount,
+            state.PostDeploymentTemplatePath,
             packagePaths);
 
         return Task.FromResult(Result<TelemetryPackaged>.Success(nextState));

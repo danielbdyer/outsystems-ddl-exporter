@@ -1,7 +1,7 @@
 -- ============================================================================
 -- OutSystems DDL Exporter - Needs Remediation Opportunities
 -- ============================================================================
--- Generated: 2025-11-18 02:07:29 UTC
+-- Generated: 2025-11-19 17:49:07 UTC
 --
 -- SUMMARY:
 --   Total Opportunities: 0

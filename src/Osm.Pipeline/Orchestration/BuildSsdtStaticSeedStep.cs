@@ -93,7 +93,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         var seedsRoot = state.Request.SeedOutputDirectoryHint;
         if (string.IsNullOrWhiteSpace(seedsRoot))
         {
-            seedsRoot = Path.Combine(state.Request.OutputDirectory, "Seeds");
+            seedsRoot = Path.Combine(state.Request.OutputDirectory, "BaselineSeeds");
         }
 
         Directory.CreateDirectory(seedsRoot!);

@@ -143,6 +143,8 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<BuildSsdtSqlValidationStep>();
         services.AddSingleton<BuildSsdtStaticSeedStep>();
         services.AddSingleton<BuildSsdtDynamicInsertStep>();
+        services.AddSingleton<BuildSsdtBootstrapSnapshotStep>();
+        services.AddSingleton<BuildSsdtPostDeploymentTemplateStep>();
         services.AddSingleton<BuildSsdtTelemetryPackagingStep>();
         services.AddSingleton<ISchemaDataApplier, SchemaDataApplier>();
         services.AddSingleton<SchemaApplyOrchestrator>();

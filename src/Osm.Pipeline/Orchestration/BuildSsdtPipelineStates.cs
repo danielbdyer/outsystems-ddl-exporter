@@ -132,6 +132,65 @@ public record DynamicInsertsGenerated(
     EntityDependencyOrderingMode DynamicInsertOrderingMode)
     : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, StaticSeedTopologicalOrderApplied, StaticSeedOrderingMode);
 
+public record BootstrapSnapshotGenerated(
+    BuildSsdtPipelineRequest Request,
+    PipelineExecutionLogBuilder Log,
+    PipelineBootstrapContext Bootstrap,
+    EvidenceCacheResult? EvidenceCache,
+    PolicyDecisionSet Decisions,
+    PolicyDecisionReport Report,
+    OpportunitiesReport Opportunities,
+    ValidationReport Validations,
+    ImmutableArray<PipelineInsight> Insights,
+    SsdtManifest Manifest,
+    string DecisionLogPath,
+    OpportunityArtifacts OpportunityArtifacts,
+    string SqlProjectPath,
+    SsdtSqlValidationSummary SqlValidation,
+    ImmutableArray<string> StaticSeedScriptPaths,
+    ImmutableArray<StaticEntityTableData> StaticSeedData,
+    ImmutableArray<string> DynamicInsertScriptPaths,
+    DynamicInsertOutputMode DynamicInsertOutputMode,
+    bool StaticSeedTopologicalOrderApplied,
+    EntityDependencyOrderingMode StaticSeedOrderingMode,
+    bool DynamicInsertTopologicalOrderApplied,
+    EntityDependencyOrderingMode DynamicInsertOrderingMode,
+    string? BootstrapSnapshotPath,
+    bool BootstrapTopologicalOrderApplied,
+    EntityDependencyOrderingMode BootstrapOrderingMode,
+    int BootstrapEntityCount)
+    : DynamicInsertsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, DynamicInsertOutputMode, StaticSeedTopologicalOrderApplied, StaticSeedOrderingMode, DynamicInsertTopologicalOrderApplied, DynamicInsertOrderingMode);
+
+public record PostDeploymentTemplateGenerated(
+    BuildSsdtPipelineRequest Request,
+    PipelineExecutionLogBuilder Log,
+    PipelineBootstrapContext Bootstrap,
+    EvidenceCacheResult? EvidenceCache,
+    PolicyDecisionSet Decisions,
+    PolicyDecisionReport Report,
+    OpportunitiesReport Opportunities,
+    ValidationReport Validations,
+    ImmutableArray<PipelineInsight> Insights,
+    SsdtManifest Manifest,
+    string DecisionLogPath,
+    OpportunityArtifacts OpportunityArtifacts,
+    string SqlProjectPath,
+    SsdtSqlValidationSummary SqlValidation,
+    ImmutableArray<string> StaticSeedScriptPaths,
+    ImmutableArray<StaticEntityTableData> StaticSeedData,
+    ImmutableArray<string> DynamicInsertScriptPaths,
+    DynamicInsertOutputMode DynamicInsertOutputMode,
+    bool StaticSeedTopologicalOrderApplied,
+    EntityDependencyOrderingMode StaticSeedOrderingMode,
+    bool DynamicInsertTopologicalOrderApplied,
+    EntityDependencyOrderingMode DynamicInsertOrderingMode,
+    string? BootstrapSnapshotPath,
+    bool BootstrapTopologicalOrderApplied,
+    EntityDependencyOrderingMode BootstrapOrderingMode,
+    int BootstrapEntityCount,
+    string? PostDeploymentTemplatePath)
+    : BootstrapSnapshotGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, DynamicInsertOutputMode, StaticSeedTopologicalOrderApplied, StaticSeedOrderingMode, DynamicInsertTopologicalOrderApplied, DynamicInsertOrderingMode, BootstrapSnapshotPath, BootstrapTopologicalOrderApplied, BootstrapOrderingMode, BootstrapEntityCount);
+
 public record TelemetryPackaged(
     BuildSsdtPipelineRequest Request,
     PipelineExecutionLogBuilder Log,
@@ -155,5 +214,10 @@ public record TelemetryPackaged(
     EntityDependencyOrderingMode StaticSeedOrderingMode,
     bool DynamicInsertTopologicalOrderApplied,
     EntityDependencyOrderingMode DynamicInsertOrderingMode,
+    string? BootstrapSnapshotPath,
+    bool BootstrapTopologicalOrderApplied,
+    EntityDependencyOrderingMode BootstrapOrderingMode,
+    int BootstrapEntityCount,
+    string? PostDeploymentTemplatePath,
     ImmutableArray<string> TelemetryPackagePaths)
-    : DynamicInsertsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, DynamicInsertOutputMode, StaticSeedTopologicalOrderApplied, StaticSeedOrderingMode, DynamicInsertTopologicalOrderApplied, DynamicInsertOrderingMode);
+    : PostDeploymentTemplateGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, DynamicInsertOutputMode, StaticSeedTopologicalOrderApplied, StaticSeedOrderingMode, DynamicInsertTopologicalOrderApplied, DynamicInsertOrderingMode, BootstrapSnapshotPath, BootstrapTopologicalOrderApplied, BootstrapOrderingMode, BootstrapEntityCount, PostDeploymentTemplatePath);

@@ -148,6 +148,8 @@ public sealed class SsdtMatrixTests
         var sqlValidationStep = new BuildSsdtSqlValidationStep(new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
         var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
+        var bootstrapSnapshotStep = new BuildSsdtBootstrapSnapshotStep(new StaticSeedSqlBuilder(new SqlLiteralFormatter()));
+        var postDeploymentTemplateStep = new BuildSsdtPostDeploymentTemplateStep();
         var telemetryPackagingStep = new BuildSsdtTelemetryPackagingStep();
 
         return new BuildSsdtPipeline(
@@ -160,6 +162,8 @@ public sealed class SsdtMatrixTests
             sqlValidationStep,
             staticSeedStep,
             dynamicInsertStep,
+            bootstrapSnapshotStep,
+            postDeploymentTemplateStep,
             telemetryPackagingStep);
     }
 

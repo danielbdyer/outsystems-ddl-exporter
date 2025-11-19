@@ -381,7 +381,7 @@ public class BuildSsdtPipelineStepTests
 
         Assert.True(result.IsSuccess);
         var state = result.Value;
-        Assert.Contains(Path.Combine(output.Path, "Seeds", "StaticEntities.seed.sql"), state.StaticSeedScriptPaths);
+        Assert.Contains(Path.Combine(output.Path, "BaselineSeeds", "StaticEntities.seed.sql"), state.StaticSeedScriptPaths);
         Assert.True(state.StaticSeedScriptPaths.Length >= 2);
     }
 
@@ -464,8 +464,14 @@ public class BuildSsdtPipelineStepTests
         var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
         var dynamicState = (await dynamicInsertStep.ExecuteAsync(seedState)).Value;
 
+        var bootstrapSnapshotStep = new BuildSsdtBootstrapSnapshotStep(new StaticSeedSqlBuilder(new SqlLiteralFormatter()));
+        var bootstrapSnapshotState = (await bootstrapSnapshotStep.ExecuteAsync(dynamicState)).Value;
+
+        var postDeploymentTemplateStep = new BuildSsdtPostDeploymentTemplateStep();
+        var postDeploymentState = (await postDeploymentTemplateStep.ExecuteAsync(bootstrapSnapshotState)).Value;
+
         var step = new BuildSsdtTelemetryPackagingStep();
-        var result = await step.ExecuteAsync(dynamicState);
+        var result = await step.ExecuteAsync(postDeploymentState);
 
         Assert.True(result.IsSuccess);
         var packaged = result.Value;

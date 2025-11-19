@@ -22,6 +22,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
     private readonly BuildSsdtSqlValidationStep _sqlValidationStep;
     private readonly BuildSsdtStaticSeedStep _staticSeedStep;
     private readonly BuildSsdtDynamicInsertStep _dynamicInsertStep;
+    private readonly BuildSsdtBootstrapSnapshotStep _bootstrapSnapshotStep;
+    private readonly BuildSsdtPostDeploymentTemplateStep _postDeploymentTemplateStep;
     private readonly BuildSsdtTelemetryPackagingStep _telemetryPackagingStep;
 
     public BuildSsdtPipeline(
@@ -34,6 +36,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         BuildSsdtSqlValidationStep sqlValidationStep,
         BuildSsdtStaticSeedStep staticSeedStep,
         BuildSsdtDynamicInsertStep dynamicInsertStep,
+        BuildSsdtBootstrapSnapshotStep bootstrapSnapshotStep,
+        BuildSsdtPostDeploymentTemplateStep postDeploymentTemplateStep,
         BuildSsdtTelemetryPackagingStep telemetryPackagingStep)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
@@ -45,6 +49,8 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         _sqlValidationStep = sqlValidationStep ?? throw new ArgumentNullException(nameof(sqlValidationStep));
         _staticSeedStep = staticSeedStep ?? throw new ArgumentNullException(nameof(staticSeedStep));
         _dynamicInsertStep = dynamicInsertStep ?? throw new ArgumentNullException(nameof(dynamicInsertStep));
+        _bootstrapSnapshotStep = bootstrapSnapshotStep ?? throw new ArgumentNullException(nameof(bootstrapSnapshotStep));
+        _postDeploymentTemplateStep = postDeploymentTemplateStep ?? throw new ArgumentNullException(nameof(postDeploymentTemplateStep));
         _telemetryPackagingStep = telemetryPackagingStep ?? throw new ArgumentNullException(nameof(telemetryPackagingStep));
     }
 
@@ -83,7 +89,9 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
             .BindAsync((emission, token) => _sqlValidationStep.ExecuteAsync(emission, token), cancellationToken)
             .BindAsync((validation, token) => _staticSeedStep.ExecuteAsync(validation, token), cancellationToken)
             .BindAsync((seeds, token) => _dynamicInsertStep.ExecuteAsync(seeds, token), cancellationToken)
-            .BindAsync((dynamicInserts, token) => _telemetryPackagingStep.ExecuteAsync(dynamicInserts, token), cancellationToken)
+            .BindAsync((dynamicInserts, token) => _bootstrapSnapshotStep.ExecuteAsync(dynamicInserts, token), cancellationToken)
+            .BindAsync((bootstrapSnapshot, token) => _postDeploymentTemplateStep.ExecuteAsync(bootstrapSnapshot, token), cancellationToken)
+            .BindAsync((postDeployment, token) => _telemetryPackagingStep.ExecuteAsync(postDeployment, token), cancellationToken)
             .ConfigureAwait(false);
 
         if (finalStateResult.IsFailure)
