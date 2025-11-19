@@ -28,12 +28,13 @@ public sealed class StaticEntitySeedScriptGenerator
     public string Generate(
         IReadOnlyList<StaticEntityTableData> tables,
         StaticSeedSynchronizationMode synchronizationMode)
-        => Generate(tables, synchronizationMode, model: null);
+        => Generate(tables, synchronizationMode, model: null, validationOverrides: null);
 
     public string Generate(
         IReadOnlyList<StaticEntityTableData> tables,
         StaticSeedSynchronizationMode synchronizationMode,
-        OsmModel? model)
+        OsmModel? model,
+        ModuleValidationOverrides? validationOverrides = null)
     {
         if (tables is null)
         {
@@ -60,7 +61,7 @@ public sealed class StaticEntitySeedScriptGenerator
                 builder.AppendLine();
             }
 
-            builder.Append(_sqlBuilder.BuildBlock(ordered[i], synchronizationMode));
+            builder.Append(_sqlBuilder.BuildBlock(ordered[i], synchronizationMode, validationOverrides));
         }
 
         return _templateService.ApplyBlocks(builder.ToString());
@@ -71,13 +72,14 @@ public sealed class StaticEntitySeedScriptGenerator
         IReadOnlyList<StaticEntityTableData> tables,
         StaticSeedSynchronizationMode synchronizationMode,
         CancellationToken cancellationToken = default)
-        => WriteAsync(path, tables, synchronizationMode, model: null, cancellationToken);
+        => WriteAsync(path, tables, synchronizationMode, model: null, validationOverrides: null, cancellationToken);
 
     public async Task WriteAsync(
         string path,
         IReadOnlyList<StaticEntityTableData> tables,
         StaticSeedSynchronizationMode synchronizationMode,
         OsmModel? model,
+        ModuleValidationOverrides? validationOverrides = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -85,7 +87,7 @@ public sealed class StaticEntitySeedScriptGenerator
             throw new ArgumentException("Seed output path must be provided.", nameof(path));
         }
 
-        var script = Generate(tables, synchronizationMode, model);
+        var script = Generate(tables, synchronizationMode, model, validationOverrides);
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? Directory.GetCurrentDirectory());
         await File.WriteAllTextAsync(path, script, Utf8NoBom, cancellationToken).ConfigureAwait(false);
     }

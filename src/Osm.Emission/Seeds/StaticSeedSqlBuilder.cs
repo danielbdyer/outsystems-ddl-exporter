@@ -29,12 +29,17 @@ public sealed class StaticSeedSqlBuilder
         _formatOptions = formatOptions ?? throw new ArgumentNullException(nameof(formatOptions));
     }
 
-    public string BuildBlock(StaticEntityTableData tableData, StaticSeedSynchronizationMode synchronizationMode)
+    public string BuildBlock(
+        StaticEntityTableData tableData,
+        StaticSeedSynchronizationMode synchronizationMode,
+        ModuleValidationOverrides? validationOverrides = null)
     {
         if (tableData is null)
         {
             throw new ArgumentNullException(nameof(tableData));
         }
+
+        validationOverrides ??= ModuleValidationOverrides.Empty;
 
         var definition = tableData.Definition;
         var schema = definition.Schema;
@@ -134,7 +139,18 @@ public sealed class StaticSeedSqlBuilder
         var primaryColumns = definition.Columns.Where(column => column.IsPrimaryKey).ToArray();
         if (primaryColumns.Length == 0)
         {
-            throw new InvalidOperationException($"Static entity '{definition.Module}::{definition.LogicalName}' does not define a primary key.");
+            // Check if missing primary key is allowed via configuration override
+            var allowMissingPk = validationOverrides.AllowsMissingPrimaryKey(definition.Module, definition.LogicalName);
+            if (!allowMissingPk)
+            {
+                throw new InvalidOperationException(
+                    $"Static entity '{definition.Module}::{definition.LogicalName}' does not define a primary key. " +
+                    $"To allow this entity without a primary key, add it to the 'allowMissingPrimaryKey' configuration for module '{definition.Module}'.");
+            }
+
+            // If override allows missing PK, use all columns as matching criteria (fallback behavior)
+            // This allows MERGE to work by matching on all columns
+            primaryColumns = definition.Columns.ToArray();
         }
 
         builder.Append("    ON ");

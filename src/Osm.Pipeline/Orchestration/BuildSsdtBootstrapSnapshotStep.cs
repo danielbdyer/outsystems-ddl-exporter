@@ -96,7 +96,8 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
         var orderedEntities = ordering.Tables;
 
         // Generate bootstrap snapshot script with observability
-        var bootstrapScript = GenerateBootstrapScript(orderedEntities, ordering, model);
+        var validationOverrides = state.Request.Scope.ModuleFilter.ValidationOverrides;
+        var bootstrapScript = GenerateBootstrapScript(orderedEntities, ordering, model, validationOverrides);
 
         // Write to Bootstrap directory
         var bootstrapDirectory = Path.Combine(state.Request.OutputDirectory, "Bootstrap");
@@ -153,7 +154,8 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
     private string GenerateBootstrapScript(
         ImmutableArray<StaticEntityTableData> orderedEntities,
         EntityDependencySorter.EntityDependencyOrderingResult ordering,
-        OsmModel model)
+        OsmModel model,
+        ModuleValidationOverrides validationOverrides)
     {
         var builder = new StringBuilder();
 
@@ -189,7 +191,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
             builder.AppendLine();
 
             // Generate MERGE statement (reuse existing StaticSeedSqlBuilder)
-            var mergeScript = _sqlBuilder.BuildBlock(entity, StaticSeedSynchronizationMode.ValidateThenApply);
+            var mergeScript = _sqlBuilder.BuildBlock(entity, StaticSeedSynchronizationMode.ValidateThenApply, validationOverrides);
             builder.AppendLine(mergeScript);
 
             // Diagnostic PRINT statement (M1.0 observability requirement)
