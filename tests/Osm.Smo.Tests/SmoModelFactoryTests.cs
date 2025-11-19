@@ -11,6 +11,7 @@ using Osm.Domain.Profiling;
 using Osm.Domain.ValueObjects;
 using Osm.Json;
 using Osm.Smo;
+using Osm.TestSupport;
 using Osm.Validation.Tightening;
 using Tests.Support;
 
@@ -251,7 +252,7 @@ public class SmoModelFactoryTests
         Assert.False(cityForeignKey.IsNoCheck);
     }
 
-    [Fact]
+    [SqlServerFact]
     public void Create_aligns_model_with_all_policy_decisions()
     {
         var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
@@ -856,7 +857,7 @@ public class SmoModelFactoryTests
         Assert.Equal("User", foreignKey.ReferencedLogicalTable);
     }
 
-    [Fact]
+    [SqlServerFact]
     public void Create_includes_ossys_user_supplemental_table_with_expected_shape()
     {
         var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
@@ -949,7 +950,7 @@ public class SmoModelFactoryTests
         Assert.Empty(userTable.ForeignKeys);
     }
 
-    [Fact]
+    [SqlServerFact]
     public void CreateSmoTables_materializes_detached_smo_objects()
     {
         var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();

@@ -7,6 +7,7 @@ using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.ValueObjects;
 using Osm.Smo;
+using Osm.TestSupport;
 using Osm.Validation.Tightening;
 using Tests.Support;
 using Xunit;
@@ -29,7 +30,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         _policy = new TighteningPolicy();
     }
 
-    [Fact]
+    [SqlServerFact]
     public void CreateTable_populates_columns_indexes_and_foreign_keys()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
@@ -79,7 +80,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
             column.ReferencedColumn.Equals("Id", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
+    [SqlServerFact]
     public void CreateTable_uses_smo_index_type_when_system_index_is_in_scope()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
@@ -100,7 +101,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         Assert.Equal(0, systemIndex.GetOffset(5));
     }
 
-    [Fact]
+    [SqlServerFact]
     public void CreateTable_respects_naming_overrides_for_referenced_tables()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
@@ -129,7 +130,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
         Assert.Equal("CityArchive", foreignKey.ReferencedTable);
     }
 
-    [Fact]
+    [SqlServerFact]
     public void CreateTable_emits_all_columns_for_composite_foreign_keys()
     {
         var (model, decisions, snapshot) = SmoTestHelper.LoadCompositeForeignKeyArtifacts();
@@ -155,7 +156,7 @@ public sealed class SmoObjectGraphFactoryTests : IDisposable
             });
     }
 
-    [Fact]
+    [SqlServerFact]
     public void CreateTable_marks_untrusted_foreign_keys_as_not_checked()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
