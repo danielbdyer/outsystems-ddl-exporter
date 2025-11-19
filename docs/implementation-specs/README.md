@@ -40,9 +40,11 @@ Each specification follows a consistent format:
 - [M1.4-verification-test-coverage.md](./M1.4-verification-test-coverage.md) - Test scenarios for verification systems
 
 ### Milestone 2: UAT-Users Transformation Guarantees
-- [M2.1-uat-users-verification-framework.md](./M2.1-uat-users-verification-framework.md) - UAT-users pipeline verification
-- [M2.2-transformation-verification.md](./M2.2-transformation-verification.md) - Specialized transformation layer
-- [M2.3-uat-users-integration-tests.md](./M2.3-uat-users-integration-tests.md) - Edge case test coverage
+- [M2.1-uat-users-verification-framework.md](./M2.1-uat-users-verification-framework.md) - **🔴 MVP**: UAT-users artifact verification framework (map completeness, FK catalog, SQL safety)
+  - **NEW**: Includes "Codebase Integration Guide" with verification patterns, validation logic reuse, and CLI integration
+- [M2.2-transformation-verification.md](./M2.2-transformation-verification.md) - **🟡 Enhanced**: Transformation correctness verification (INSERT/UPDATE parsers, NULL preservation, cross-mode validation)
+  - **NEW**: Includes "Codebase Integration Guide" with INSERT parser, UPDATE simulator, and M1.8 checksum integration
+- [M2.3-uat-users-integration-tests.md](./M2.3-uat-users-integration-tests.md) - **🟡 Enhanced**: Comprehensive integration tests (edge cases, idempotence, error handling, full-export integration)
 
 ### Milestone 3: Integrated Workflow & Operational Readiness
 - [M3.1-manifest-extensions.md](./M3.1-manifest-extensions.md) - FullExportRunManifest UAT-users metadata
@@ -74,7 +76,9 @@ Each specification follows a consistent format:
 **For understanding validation progression (MVP → Full Features):**
 1. **MVP Path**: M1.0 (includes per-table emission) → M1.1 → M1.2 (basic proof) → M1.3 (basic integrity)
 2. **Full Features**: M1.7 (comprehensive proof) → M1.8 (DMM replacement)
-3. **UAT Pipeline**: M2.1 → M2.2 (specialized transformation layer)
+3. **UAT Pipeline**:
+   - M2.1 (artifact verification) → M2.2 (transformation verification) → M2.3 (integration tests)
+   - **NEW**: All include comprehensive "Codebase Integration Guides" with exact patterns, validation logic, and test strategies
 4. **Integration**: M3.1 (manifest metadata) → M3.2 (load harness verification)
 
 **🚀 RECOMMENDED IMPLEMENTATION ORDER (Deadline-Driven):**
@@ -84,12 +88,14 @@ Each specification follows a consistent format:
 4. **M1.3 Basic Verification** (after M1.0+M1.2) - Row count/NULL checks → Quick sanity verification
 5. **M1.7 Full Observability** (when operators request) - Topological proof artifacts → Documentation/auditing
 6. **M1.8 DMM Replacement** (when ready for production) - Comprehensive data integrity → Hash comparison, full validation
-7. M2.1 (UAT verification - can parallel with M1.x)
-8. M2.2 (transformation verification - depends on M1.8 + M2.1)
-9. M3.1 (manifest extensions - depends on all above)
-10. M3.2 (load harness verification - depends on all above)
+7. **M2.1 UAT-Users Verification** (can parallel with M1.x) - Artifact verification framework → Map/catalog/SQL validation, CI/CD gates
+8. **M2.2 Transformation Verification** (after M1.8 + M2.1) - Transformation correctness → INSERT/UPDATE parsers, NULL preservation, cross-mode validation
+9. **M2.3 Integration Tests** (after M2.1 + M2.2) - Comprehensive test suite → Edge cases, idempotence, error handling, full-export integration
+10. **M3.1 Manifest Extensions** (after M2.x) - UAT-users metadata in manifest → Enables automation
+11. **M3.2 Load Harness Verification** (after all above) - End-to-end ETL verification → Full confidence in UAT deployments
 
 ---
 
-*Generated: 2025-11-18*
+*Generated: 2025-11-19*
+*Updated with M2.* UAT-Users Transformation Verification specs*
 *Context: Pre-implementation technical specifications for Release Candidate tasks*
