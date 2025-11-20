@@ -103,6 +103,17 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
         var validator = new TopologicalOrderingValidator();
         var validation = validator.Validate(orderedEntities, model, state.Request.Scope.SmoOptions.NamingOverrides, circularDepsOptions);
 
+        if (validation.CycleDetected && validation.SkippedConstraints > 0)
+        {
+            state.Log.Record(
+                "bootstrap.snapshot.cycle-warning",
+                "Cycle flag suppressed: foreign key columns not hydrated; run model ingestion with SQL metadata or hydrate constraints.",
+                new PipelineLogMetadataBuilder()
+                    .WithCount("ordering.constraints.skipped", validation.SkippedConstraints)
+                    .WithCount("ordering.constraints.validated", validation.ValidatedConstraints)
+                    .Build());
+        }
+
         // Generate bootstrap snapshot script with observability
         var validationOverrides = state.Request.Scope.ModuleFilter.ValidationOverrides;
         var bootstrapScript = GenerateBootstrapScript(orderedEntities, ordering, validation, model, validationOverrides);
