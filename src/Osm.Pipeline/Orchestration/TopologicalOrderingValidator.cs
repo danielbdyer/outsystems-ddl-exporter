@@ -35,7 +35,9 @@ public sealed class TopologicalOrderingValidator
                 TotalForeignKeys: 0,
                 MissingEdges: 0,
                 CycleDetected: false,
-                Cycles: ImmutableArray<CycleDiagnostic>.Empty);
+                Cycles: ImmutableArray<CycleDiagnostic>.Empty,
+                ValidatedConstraints: 0,
+                SkippedConstraints: 0);
         }
 
         if (model is null || model.Modules.IsDefaultOrEmpty)
@@ -47,7 +49,9 @@ public sealed class TopologicalOrderingValidator
                 TotalForeignKeys: 0,
                 MissingEdges: 0,
                 CycleDetected: false,
-                Cycles: ImmutableArray<CycleDiagnostic>.Empty);
+                Cycles: ImmutableArray<CycleDiagnostic>.Empty,
+                ValidatedConstraints: 0,
+                SkippedConstraints: 0);
         }
 
         namingOverrides ??= NamingOverrideOptions.Empty;
@@ -67,9 +71,12 @@ public sealed class TopologicalOrderingValidator
             .Select((table, index) => (table.Definition.EffectiveName, Index: index))
             .ToDictionary(x => x.EffectiveName, x => x.Index, StringComparer.OrdinalIgnoreCase);
 
+        var tableNameLookup = BuildEffectiveNameLookup(orderedTables, namingOverrides);
+
         var violations = ImmutableArray.CreateBuilder<OrderingViolation>();
-        var totalFks = 0;
+        var validatedConstraints = 0;
         var missingEdges = 0;
+        var skippedConstraints = 0;
 
         // For each table, verify all FK parents appear BEFORE it
         foreach (var (table, childIndex) in orderedTables.Select((t, i) => (t, i)))
@@ -86,80 +93,149 @@ public sealed class TopologicalOrderingValidator
                     continue;
                 }
 
-                totalFks++;
+                var validConstraints = relationship.ActualConstraints
+                    .Where(HasValidConstraint)
+                    .ToArray();
 
-                // Get parent schema and physical name from ActualConstraints
-                var constraint = relationship.ActualConstraints[0];
-                var fkName = constraint.Name;
-                var displayName = string.IsNullOrWhiteSpace(fkName) ? "<unnamed>" : fkName;
+                skippedConstraints += relationship.ActualConstraints.Length - validConstraints.Length;
 
-                var parentSchema = string.IsNullOrWhiteSpace(constraint.ReferencedSchema)
-                    ? entity.Schema.Value
-                    : constraint.ReferencedSchema.Trim();
-
-                var parentPhysicalName = constraint.ReferencedTable.Trim();
-                var parentLogicalName = relationship.TargetEntity.Value;
-
-                // Apply naming overrides to match what EntityDependencySorter produces
-                var effectiveParentName = namingOverrides.GetEffectiveTableName(
-                    parentSchema,
-                    parentPhysicalName,
-                    parentLogicalName,
-                    null); // Module can be null - GetEffectiveTableName handles it
-
-                if (!positions.TryGetValue(effectiveParentName, out var parentIndex))
+                if (validConstraints.Length == 0)
                 {
-                    // Parent not in sorted list (excluded entity)
-                    missingEdges++;
-                    violations.Add(new OrderingViolation(
-                        ChildTable: table.Definition.PhysicalName,
-                        ParentTable: parentPhysicalName,
-                        ForeignKeyName: displayName,
-                        ChildPosition: childIndex,
-                        ParentPosition: -1,
-                        ViolationType: "MissingParent"));
                     continue;
                 }
 
-                // CRITICAL: For topological ordering, parent must appear BEFORE child in the list
-                // Valid: parentIndex < childIndex (parent comes first)
-                // Violation: parentIndex > childIndex (child comes before parent - wrong!)
-                // Exception: Self-references where parentIndex == childIndex are valid
-                if (parentIndex > childIndex)
+                foreach (var constraint in validConstraints)
                 {
-                    violations.Add(new OrderingViolation(
-                        ChildTable: table.Definition.PhysicalName,
-                        ParentTable: parentPhysicalName,
-                        ForeignKeyName: displayName,
-                        ChildPosition: childIndex,
-                        ParentPosition: parentIndex,
-                        ViolationType: "ChildBeforeParent"));
+                    validatedConstraints++;
+
+                    var fkName = constraint.Name;
+                    var displayName = string.IsNullOrWhiteSpace(fkName) ? "<unnamed>" : fkName;
+
+                    var parentSchema = string.IsNullOrWhiteSpace(constraint.ReferencedSchema)
+                        ? entity.Schema.Value
+                        : constraint.ReferencedSchema.Trim();
+
+                    var parentPhysicalName = constraint.ReferencedTable.Trim();
+                    var parentLogicalName = relationship.TargetEntity.Value;
+
+                    // Apply naming overrides to match what EntityDependencySorter produces
+                    var effectiveParentName = namingOverrides.GetEffectiveTableName(
+                        parentSchema,
+                        parentPhysicalName,
+                        parentLogicalName,
+                        null); // Module can be null - GetEffectiveTableName handles it
+
+                    if (!positions.TryGetValue(effectiveParentName, out var parentIndex))
+                    {
+                        // Parent not in sorted list (excluded entity)
+                        missingEdges++;
+                        violations.Add(new OrderingViolation(
+                            ChildTable: table.Definition.PhysicalName,
+                            ParentTable: parentPhysicalName,
+                            ForeignKeyName: displayName,
+                            ChildPosition: childIndex,
+                            ParentPosition: -1,
+                            ViolationType: "MissingParent"));
+                        continue;
+                    }
+
+                    // CRITICAL: For topological ordering, parent must appear BEFORE child in the list
+                    // Valid: parentIndex < childIndex (parent comes first)
+                    // Violation: parentIndex > childIndex (child comes before parent - wrong!)
+                    // Exception: Self-references where parentIndex == childIndex are valid
+                    if (parentIndex > childIndex)
+                    {
+                        violations.Add(new OrderingViolation(
+                            ChildTable: table.Definition.PhysicalName,
+                            ParentTable: parentPhysicalName,
+                            ForeignKeyName: displayName,
+                            ChildPosition: childIndex,
+                            ParentPosition: parentIndex,
+                            ViolationType: "ChildBeforeParent"));
+                    }
                 }
             }
         }
 
-        var cycleDetected = violations.Any(v => v.ViolationType == "ChildBeforeParent");
+        var cycleViolationsDetected = violations.Any(v => v.ViolationType == "ChildBeforeParent");
 
         // Extract cycle diagnostics if cycles were detected
         circularDependencyOptions ??= CircularDependencyOptions.Empty;
-        var cycles = cycleDetected
-            ? ExtractCycleDiagnostics(violations, entityLookup, orderedTables, circularDependencyOptions)
-            : ImmutableArray<CycleDiagnostic>.Empty;
+        var (cycles, hasResolvedCycleConstraint) = cycleViolationsDetected
+            ? ExtractCycleDiagnostics(violations, entityLookup, tableNameLookup, namingOverrides, circularDependencyOptions)
+            : (ImmutableArray<CycleDiagnostic>.Empty, false);
+
+        var cycleDetected = cycleViolationsDetected && hasResolvedCycleConstraint;
 
         return new TopologicalValidationResult(
             IsValid: violations.Count == 0 || violations.All(v => v.ViolationType == "MissingParent"),
             Violations: violations.ToImmutable(),
             TotalEntities: orderedTables.Length,
-            TotalForeignKeys: totalFks,
+            TotalForeignKeys: validatedConstraints,
             MissingEdges: missingEdges,
             CycleDetected: cycleDetected,
-            Cycles: cycles);
+            Cycles: cycles,
+            ValidatedConstraints: validatedConstraints,
+            SkippedConstraints: skippedConstraints);
     }
 
-    private static ImmutableArray<CycleDiagnostic> ExtractCycleDiagnostics(
+    private static bool HasValidConstraint(RelationshipActualConstraint constraint)
+    {
+        if (constraint is null)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(constraint.ReferencedTable))
+        {
+            return false;
+        }
+
+        if (constraint.Columns.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        return constraint.Columns.Any(static column =>
+            !string.IsNullOrWhiteSpace(column.OwnerColumn) &&
+            !string.IsNullOrWhiteSpace(column.ReferencedColumn));
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildEffectiveNameLookup(
+        ImmutableArray<StaticEntityTableData> orderedTables,
+        NamingOverrideOptions namingOverrides)
+    {
+        var lookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var table in orderedTables)
+        {
+            var definition = table.Definition;
+            var effectiveName = namingOverrides.GetEffectiveTableName(
+                definition.Schema ?? string.Empty,
+                definition.PhysicalName ?? definition.EffectiveName ?? string.Empty,
+                definition.LogicalName ?? definition.EffectiveName ?? definition.PhysicalName ?? string.Empty,
+                definition.Module);
+
+            AddIfMissing(definition.PhysicalName);
+            AddIfMissing(definition.EffectiveName);
+
+            void AddIfMissing(string? name)
+            {
+                if (!string.IsNullOrWhiteSpace(name) && !lookup.ContainsKey(name))
+                {
+                    lookup[name] = effectiveName;
+                }
+            }
+        }
+
+        return lookup;
+    }
+
+    private static (ImmutableArray<CycleDiagnostic> Cycles, bool HasResolvedConstraints) ExtractCycleDiagnostics(
         ImmutableArray<OrderingViolation>.Builder violations,
         IReadOnlyDictionary<string, EntityModel> entityLookup,
-        ImmutableArray<StaticEntityTableData> orderedTables,
+        IReadOnlyDictionary<string, string> tableNameLookup,
+        NamingOverrideOptions namingOverrides,
         CircularDependencyOptions circularDependencyOptions)
     {
         // For now, return a simple diagnostic showing which tables have violations
@@ -168,63 +244,93 @@ public sealed class TopologicalOrderingValidator
 
         if (cycleViolations.Length == 0)
         {
-            return ImmutableArray<CycleDiagnostic>.Empty;
+            return (ImmutableArray<CycleDiagnostic>.Empty, false);
         }
 
         // Group violations into potential cycles
         var tablesInCycle = cycleViolations
-            .SelectMany(v => new[] { v.ChildTable, v.ParentTable })
+            .SelectMany(v => new[]
+            {
+                NormalizeTableName(v.ChildTable, tableNameLookup),
+                NormalizeTableName(v.ParentTable, tableNameLookup)
+            })
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
 
         // Check if this cycle is allowed
         var isAllowed = circularDependencyOptions.IsCycleAllowed(tablesInCycle);
 
+        var hasResolvedConstraint = false;
+
         // Extract FK metadata
         var fkInfo = cycleViolations
             .Select(v =>
             {
+                var normalizedChild = NormalizeTableName(v.ChildTable, tableNameLookup);
+                var normalizedParent = NormalizeTableName(v.ParentTable, tableNameLookup);
+                var resolutionStatus = "Resolved";
+
                 // Extract FK metadata from entity model
-                if (!entityLookup.TryGetValue(v.ChildTable, out var entity))
+                if (!entityLookup.TryGetValue(normalizedChild, out var entity))
                 {
+                    resolutionStatus = "EntityLookupFailed";
                     return new ForeignKeyInCycle(
                         ConstraintName: v.ForeignKeyName,
-                        SourceTable: v.ChildTable,
-                        TargetTable: v.ParentTable,
-                        SourceColumn: "Unknown",
-                        TargetColumn: "Unknown",
+                        SourceTable: normalizedChild,
+                        TargetTable: normalizedParent,
+                        SourceColumn: string.Empty,
+                        TargetColumn: string.Empty,
                         IsNullable: false,
-                        DeleteRule: "Unknown");
+                        DeleteRule: string.Empty,
+                        ResolutionStatus: resolutionStatus);
                 }
 
-                // Find the relationship that matches this FK
-                var relationship = entity.Relationships.FirstOrDefault(r =>
-                    r.ActualConstraints.Any(c => c.Name == v.ForeignKeyName));
+                // Find the relationship that matches this FK or the referenced table
+                var relationshipFound = TryResolveRelationship(
+                    entity,
+                    v.ForeignKeyName,
+                    normalizedParent,
+                    namingOverrides,
+                    tableNameLookup,
+                    out var relationship,
+                    out var constraint);
 
-                if (relationship == null)
+                if (!relationshipFound || relationship is null || constraint is null)
                 {
+                    resolutionStatus = "RelationshipLookupFailed";
                     return new ForeignKeyInCycle(
                         ConstraintName: v.ForeignKeyName,
-                        SourceTable: v.ChildTable,
-                        TargetTable: v.ParentTable,
-                        SourceColumn: "Unknown",
-                        TargetColumn: "Unknown",
+                        SourceTable: normalizedChild,
+                        TargetTable: normalizedParent,
+                        SourceColumn: string.Empty,
+                        TargetColumn: string.Empty,
                         IsNullable: false,
-                        DeleteRule: "Unknown");
+                        DeleteRule: string.Empty,
+                        ResolutionStatus: resolutionStatus);
                 }
 
-                var constraint = relationship.ActualConstraints.First(c => c.Name == v.ForeignKeyName);
                 var sourceAttr = entity.Attributes.FirstOrDefault(a =>
                     a.LogicalName.Value == relationship.ViaAttribute.Value);
 
+                var columnPair = constraint.Columns.FirstOrDefault(static column =>
+                    !string.IsNullOrWhiteSpace(column.OwnerColumn) &&
+                    !string.IsNullOrWhiteSpace(column.ReferencedColumn));
+
+                resolutionStatus = columnPair is null
+                    ? "ColumnPairMissing"
+                    : "Resolved";
+
+                hasResolvedConstraint |= columnPair is not null;
+
                 return new ForeignKeyInCycle(
                     ConstraintName: v.ForeignKeyName,
-                    SourceTable: v.ChildTable,
-                    TargetTable: v.ParentTable,
-                    SourceColumn: sourceAttr?.ColumnName.Value ?? "Unknown",
-                    TargetColumn: constraint.Columns.FirstOrDefault()?.ReferencedColumn ?? "Unknown",
+                    SourceTable: normalizedChild,
+                    TargetTable: normalizedParent,
+                    SourceColumn: columnPair?.OwnerColumn ?? string.Empty,
+                    TargetColumn: columnPair?.ReferencedColumn ?? string.Empty,
                     IsNullable: sourceAttr?.IsMandatory == false,
-                    DeleteRule: constraint.OnDeleteAction);
+                    DeleteRule: constraint.OnDeleteAction ?? string.Empty,
+                    ResolutionStatus: resolutionStatus);
             })
             .ToImmutableArray();
 
@@ -247,12 +353,102 @@ public sealed class TopologicalOrderingValidator
             }
         }
 
-        return ImmutableArray.Create(new CycleDiagnostic(
+        return (ImmutableArray.Create(new CycleDiagnostic(
             TablesInCycle: tablesInCycle,
             CyclePath: cyclePath,
             ForeignKeys: fkInfo,
             IsAllowed: isAllowed,
-            AllowanceReason: allowanceReason));
+            AllowanceReason: allowanceReason)),
+            hasResolvedConstraint);
+    }
+
+    private static bool TryResolveRelationship(
+        EntityModel entity,
+        string foreignKeyName,
+        string normalizedParent,
+        NamingOverrideOptions namingOverrides,
+        IReadOnlyDictionary<string, string> tableNameLookup,
+        out RelationshipModel? relationship,
+        out RelationshipActualConstraint? constraint)
+    {
+        relationship = null;
+        constraint = null;
+
+        relationship = entity.Relationships.FirstOrDefault(r =>
+            r.HasDatabaseConstraint &&
+            !r.ActualConstraints.IsDefaultOrEmpty &&
+            r.ActualConstraints.Any(c =>
+                HasValidConstraint(c) &&
+                string.Equals(c.Name, foreignKeyName, StringComparison.OrdinalIgnoreCase)));
+
+        if (relationship is not null)
+        {
+            constraint = relationship.ActualConstraints.First(c =>
+                HasValidConstraint(c) &&
+                string.Equals(c.Name, foreignKeyName, StringComparison.OrdinalIgnoreCase));
+            return constraint is not null;
+        }
+
+        relationship = entity.Relationships.FirstOrDefault(r =>
+            r.HasDatabaseConstraint &&
+            !r.ActualConstraints.IsDefaultOrEmpty &&
+            r.ActualConstraints.Any(c =>
+                HasValidConstraint(c) &&
+                string.Equals(
+                    NormalizeConstraintTarget(entity, r, c, namingOverrides, tableNameLookup),
+                    normalizedParent,
+                    StringComparison.OrdinalIgnoreCase)));
+
+        if (relationship is null)
+        {
+            return false;
+        }
+
+        var resolvedRelationship = relationship;
+
+        constraint = resolvedRelationship.ActualConstraints.FirstOrDefault(c =>
+            HasValidConstraint(c) &&
+            string.Equals(
+                NormalizeConstraintTarget(entity, resolvedRelationship, c, namingOverrides, tableNameLookup),
+                normalizedParent,
+                StringComparison.OrdinalIgnoreCase));
+
+        return constraint is not null;
+    }
+
+    private static string NormalizeConstraintTarget(
+        EntityModel entity,
+        RelationshipModel relationship,
+        RelationshipActualConstraint constraint,
+        NamingOverrideOptions namingOverrides,
+        IReadOnlyDictionary<string, string> tableNameLookup)
+    {
+        var parentSchema = string.IsNullOrWhiteSpace(constraint.ReferencedSchema)
+            ? entity.Schema.Value
+            : constraint.ReferencedSchema.Trim();
+
+        var parentPhysicalName = constraint.ReferencedTable.Trim();
+        var parentLogicalName = relationship.TargetEntity.Value;
+
+        var effectiveParentName = namingOverrides.GetEffectiveTableName(
+            parentSchema,
+            parentPhysicalName,
+            parentLogicalName,
+            entity.Module.Value);
+
+        return NormalizeTableName(effectiveParentName, tableNameLookup);
+    }
+
+    private static string NormalizeTableName(
+        string? tableName,
+        IReadOnlyDictionary<string, string> tableNameLookup)
+    {
+        if (!string.IsNullOrWhiteSpace(tableName) && tableNameLookup.TryGetValue(tableName, out var effective))
+        {
+            return effective;
+        }
+
+        return tableName ?? string.Empty;
     }
 }
 
@@ -266,7 +462,9 @@ public sealed record TopologicalValidationResult(
     int TotalForeignKeys,
     int MissingEdges,
     bool CycleDetected,
-    ImmutableArray<CycleDiagnostic> Cycles);
+    ImmutableArray<CycleDiagnostic> Cycles,
+    int ValidatedConstraints,
+    int SkippedConstraints);
 
 /// <summary>
 /// Represents a single ordering violation (child-before-parent, missing parent, etc).
@@ -299,4 +497,5 @@ public sealed record ForeignKeyInCycle(
     string SourceColumn,
     string TargetColumn,
     bool IsNullable,
-    string DeleteRule);
+    string DeleteRule,
+    string ResolutionStatus);

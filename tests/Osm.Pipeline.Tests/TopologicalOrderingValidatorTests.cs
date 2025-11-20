@@ -440,8 +440,8 @@ public sealed class TopologicalOrderingValidatorTests
         // NEW: Verify cycle diagnostic information
         Assert.Single(result.Cycles);
         var cycle = result.Cycles[0];
-        Assert.Contains("OSUSR_A", cycle.TablesInCycle);
-        Assert.Contains("OSUSR_B", cycle.TablesInCycle);
+        Assert.Contains("A", cycle.TablesInCycle);
+        Assert.Contains("B", cycle.TablesInCycle);
         Assert.NotEmpty(cycle.CyclePath);
         Assert.NotEmpty(cycle.ForeignKeys);
     }
@@ -740,6 +740,57 @@ public sealed class TopologicalOrderingValidatorTests
         Assert.True(result.IsValid);
         Assert.Empty(result.Violations);
         Assert.Equal(0, result.TotalForeignKeys); // Not counted
+        Assert.Equal(0, result.ValidatedConstraints);
+        Assert.Equal(0, result.SkippedConstraints);
+    }
+
+    [Fact]
+    public void Validate_RelationshipWithUnhydratedColumns_SkipsConstraint()
+    {
+        // Arrange: FK relationship where constraint columns are not hydrated
+        var validator = new TopologicalOrderingValidator();
+
+        var parentDef = CreateTableDefinition("Parent", "OSUSR_PARENT");
+        var childDef = CreateTableDefinitionWithFk("Child", "OSUSR_CHILD");
+
+        var tables = ImmutableArray.Create(
+            new StaticEntityTableData(childDef, ImmutableArray<StaticEntityRow>.Empty),
+            new StaticEntityTableData(parentDef, ImmutableArray<StaticEntityRow>.Empty));
+
+        var parentEntity = CreateEntity("Parent", "OSUSR_PARENT", Array.Empty<RelationshipModel>());
+
+        var unhydratedConstraint = RelationshipActualConstraint.Create(
+            "FK_CHILD_PARENT",
+            referencedSchema: "dbo",
+            referencedTable: "OSUSR_PARENT",
+            onDeleteAction: "NO_ACTION",
+            onUpdateAction: "NO_ACTION",
+            new[]
+            {
+                RelationshipActualConstraintColumn.Create(ownerColumn: string.Empty, ownerAttribute: "ParentId", referencedColumn: string.Empty, referencedAttribute: "Id", ordinal: 0)
+            });
+
+        var relationship = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_PARENT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[] { unhydratedConstraint }).Value;
+
+        var childEntity = CreateEntity("Child", "OSUSR_CHILD", new[] { relationship });
+
+        var model = CreateModel(parentEntity, childEntity);
+
+        // Act
+        var result = validator.Validate(tables, model, NamingOverrideOptions.Empty);
+
+        // Assert - Constraint skipped because columns are not hydrated
+        Assert.True(result.IsValid);
+        Assert.Empty(result.Violations);
+        Assert.Equal(0, result.TotalForeignKeys);
+        Assert.Equal(0, result.ValidatedConstraints);
+        Assert.Equal(1, result.SkippedConstraints);
     }
 
     #endregion
@@ -936,6 +987,8 @@ public sealed class TopologicalOrderingValidatorTests
         Assert.Equal(3, result.TotalEntities);
         Assert.Equal(3, result.TotalForeignKeys); // B->A, C->B, C->X
         Assert.Equal(1, result.MissingEdges); // C->X
+        Assert.Equal(3, result.ValidatedConstraints);
+        Assert.Equal(0, result.SkippedConstraints);
         Assert.Single(result.Violations); // Only missing parent
         Assert.True(result.IsValid); // Missing parent doesn't invalidate
     }
