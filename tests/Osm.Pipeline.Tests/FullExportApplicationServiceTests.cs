@@ -264,7 +264,8 @@ public sealed class FullExportApplicationServiceTests
                 FallbackTargets: Array.Empty<string>(),
                 IdempotentEmission: true,
                 VerifyArtifacts: null,
-                VerificationReportPath: null)
+                VerificationReportPath: null,
+                Concurrency: null)
         };
 
         var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
@@ -364,7 +365,8 @@ public sealed class FullExportApplicationServiceTests
                 FallbackTargets: Array.Empty<string>(),
                 IdempotentEmission: null,
                 VerifyArtifacts: null,
-                VerificationReportPath: null)
+                VerificationReportPath: null,
+                Concurrency: null)
         };
 
         var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);

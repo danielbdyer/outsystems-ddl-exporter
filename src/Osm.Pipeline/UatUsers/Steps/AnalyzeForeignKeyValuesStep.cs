@@ -91,8 +91,20 @@ public sealed class AnalyzeForeignKeyValuesStep : IPipelineStep<UatUsersContext>
         else
         {
             _logger.LogInformation("Collecting foreign key value counts from the source database.");
+
+            var completedCount = 0;
+            IProgress<int>? progress = null;
+            if (context.Progress is not null)
+            {
+                progress = new Progress<int>(increment =>
+                {
+                    var completed = Interlocked.Add(ref completedCount, increment);
+                    context.Progress.Report((completed, context.UserFkCatalog.Count));
+                });
+            }
+
             counts = await _valueProvider
-                .CollectAsync(context.UserFkCatalog, context.ConnectionFactory, cancellationToken)
+                .CollectAsync(context.UserFkCatalog, context.ConnectionFactory, context.Concurrency, progress, cancellationToken)
                 .ConfigureAwait(false);
 
             if (!string.IsNullOrWhiteSpace(context.SnapshotPath))

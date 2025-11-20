@@ -162,7 +162,8 @@ public sealed record UatUsersConfiguration(
     IReadOnlyList<string> FallbackTargets,
     bool? IdempotentEmission,
     bool? VerifyArtifacts,
-    string? VerificationReportPath)
+    string? VerificationReportPath,
+    int? Concurrency)
 {
     public static UatUsersConfiguration Empty { get; }
         = new(
@@ -185,5 +186,6 @@ public sealed record UatUsersConfiguration(
             FallbackTargets: Array.Empty<string>(),
             IdempotentEmission: null,
             VerifyArtifacts: null,
-            VerificationReportPath: null);
+            VerificationReportPath: null,
+            Concurrency: null);
 }

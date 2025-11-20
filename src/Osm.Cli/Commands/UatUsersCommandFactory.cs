@@ -61,6 +61,7 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
     private readonly Option<bool> _idempotentEmissionOption = new("--idempotent-emission", () => false, "Only rewrite artifacts when their contents change.");
     private readonly Option<bool> _verifyOption = new("--verify", () => false, "Run verification on generated artifacts and emit a verification report.");
     private readonly Option<string?> _verificationReportOption = new("--verification-report", "Path for the verification report JSON file (defaults to {artifacts-root}/uat-users/verification-report.json).");
+    private readonly Option<int?> _concurrencyOption = new("--concurrency", "Max degree of parallelism for foreign key analysis.");
 
     public UatUsersCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -95,7 +96,8 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             _fallbackTargetOption,
             _idempotentEmissionOption,
             _verifyOption,
-            _verificationReportOption
+            _verificationReportOption,
+            _concurrencyOption
         };
 
         _idempotentEmissionOption.AddAlias("--uat-users-idempotent-emission");
@@ -204,6 +206,11 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             configuration.VerificationReportPath,
             null);
 
+        var concurrencySpecified = parseResult.HasOption(_concurrencyOption);
+        var concurrency = concurrencySpecified
+            ? parseResult.GetValueForOption(_concurrencyOption)
+            : configuration.Concurrency;
+
         UserMatchingStrategy matchingStrategy;
         UserFallbackAssignmentMode fallbackMode;
         try
@@ -289,6 +296,7 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
                 idempotentEmission,
                 verifyArtifacts,
                 verificationReportPath,
+                concurrency,
                 new UatUsersOptionOrigins(
                     ModelPathFromConfiguration: modelFromConfig,
                     FromLiveMetadataFromConfiguration: fromLiveFromConfig,

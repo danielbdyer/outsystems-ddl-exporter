@@ -220,6 +220,8 @@ public sealed class UatUsersPipelineScenarioTests
         public Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>> CollectAsync(
             IReadOnlyList<UserFkColumn> catalog,
             IDbConnectionFactory connectionFactory,
+            int maxConcurrency,
+            IProgress<int>? progress,
             CancellationToken cancellationToken)
         {
             RequestedColumnCount += catalog.Count;
@@ -232,6 +234,8 @@ public sealed class UatUsersPipelineScenarioTests
         public Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>> CollectAsync(
             IReadOnlyList<UserFkColumn> catalog,
             IDbConnectionFactory connectionFactory,
+            int maxConcurrency,
+            IProgress<int>? progress,
             CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Snapshot should have been reused; live collection was not expected.");

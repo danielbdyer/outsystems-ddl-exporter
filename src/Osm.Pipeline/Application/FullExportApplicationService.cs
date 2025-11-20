@@ -353,6 +353,8 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         var idempotentEmission = overrides?.IdempotentEmission
             ?? configuration.IdempotentEmission
             ?? false;
+        var concurrency = overrides?.Concurrency ?? configuration.Concurrency;
+
         IReadOnlyList<UserIdentifier> fallbackTargets;
         if (overrides?.FallbackTargets is { Count: > 0 } overrideTargets)
         {
@@ -381,7 +383,8 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
             MatchingRegexPattern: matchingRegex,
             FallbackAssignment: fallbackAssignment,
             FallbackTargets: fallbackTargets,
-            IdempotentEmission: idempotentEmission);
+            IdempotentEmission: idempotentEmission,
+            Concurrency: concurrency);
     }
 
     private static IReadOnlyList<string> ResolveIncludeColumns(
