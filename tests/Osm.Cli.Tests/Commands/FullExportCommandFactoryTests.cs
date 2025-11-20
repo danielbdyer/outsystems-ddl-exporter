@@ -48,15 +48,9 @@ public class FullExportCommandFactoryTests
         using var tempDir = new TempDirectory();
 
         var loadHarnessRunner = new FakeLoadHarnessRunner();
-        var configuration = CliConfiguration.Empty with
-        {
-            Sql = SqlConfiguration.Empty with
-            {
-                ConnectionString = connectionString
-            }
-        };
+        var configuration = CliConfiguration.Empty;
 
-        var applicationResult = CreateFullExportApplicationResult(tempDir.Path, connectionString);
+        var applicationResult = CreateFullExportApplicationResult(tempDir.Path, null!);
         var verbResult = new FullExportVerbResult(
             new CliConfigurationContext(configuration, "config.json"),
             applicationResult);
