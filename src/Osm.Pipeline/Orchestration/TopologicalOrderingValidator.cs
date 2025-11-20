@@ -19,11 +19,13 @@ public sealed class TopologicalOrderingValidator
     /// <param name="orderedTables">Tables in sorted order to validate</param>
     /// <param name="model">OSM model containing entity relationships</param>
     /// <param name="namingOverrides">Naming override options for table lookups</param>
+    /// <param name="circularDependencyOptions">Configuration for allowed cycles and ordering overrides</param>
     /// <returns>Validation result with any violations detected</returns>
     public TopologicalValidationResult Validate(
         ImmutableArray<StaticEntityTableData> orderedTables,
         OsmModel? model,
-        NamingOverrideOptions? namingOverrides = null)
+        NamingOverrideOptions? namingOverrides = null,
+        CircularDependencyOptions? circularDependencyOptions = null)
     {
         if (orderedTables.IsDefaultOrEmpty)
         {
@@ -140,8 +142,9 @@ public sealed class TopologicalOrderingValidator
         var cycleDetected = violations.Any(v => v.ViolationType == "ChildBeforeParent");
 
         // Extract cycle diagnostics if cycles were detected
+        circularDependencyOptions ??= CircularDependencyOptions.Empty;
         var cycles = cycleDetected
-            ? ExtractCycleDiagnostics(violations, entityLookup, orderedTables)
+            ? ExtractCycleDiagnostics(violations, entityLookup, orderedTables, circularDependencyOptions)
             : ImmutableArray<CycleDiagnostic>.Empty;
 
         return new TopologicalValidationResult(
@@ -157,7 +160,8 @@ public sealed class TopologicalOrderingValidator
     private static ImmutableArray<CycleDiagnostic> ExtractCycleDiagnostics(
         ImmutableArray<OrderingViolation>.Builder violations,
         IReadOnlyDictionary<string, EntityModel> entityLookup,
-        ImmutableArray<StaticEntityTableData> orderedTables)
+        ImmutableArray<StaticEntityTableData> orderedTables,
+        CircularDependencyOptions circularDependencyOptions)
     {
         // For now, return a simple diagnostic showing which tables have violations
         // This is a starting point - we'll enhance to show actual cycle paths
@@ -173,6 +177,9 @@ public sealed class TopologicalOrderingValidator
             .SelectMany(v => new[] { v.ChildTable, v.ParentTable })
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
+
+        // Check if this cycle is allowed
+        var isAllowed = circularDependencyOptions.IsCycleAllowed(tablesInCycle);
 
         var fkInfo = cycleViolations
             .Select(v =>
@@ -227,7 +234,9 @@ public sealed class TopologicalOrderingValidator
         return ImmutableArray.Create(new CycleDiagnostic(
             TablesInCycle: tablesInCycle,
             CyclePath: cyclePath,
-            ForeignKeys: fkInfo));
+            ForeignKeys: fkInfo,
+            IsAllowed: isAllowed,
+            AllowanceReason: isAllowed ? "Manual ordering configured" : null));
     }
 }
 
@@ -260,7 +269,9 @@ public sealed record OrderingViolation(
 public sealed record CycleDiagnostic(
     ImmutableArray<string> TablesInCycle,
     string CyclePath,
-    ImmutableArray<ForeignKeyInCycle> ForeignKeys);
+    ImmutableArray<ForeignKeyInCycle> ForeignKeys,
+    bool IsAllowed,
+    string? AllowanceReason);
 
 /// <summary>
 /// Foreign key metadata within a circular dependency.
