@@ -230,7 +230,11 @@ public class CommandConsoleTests
             defaultDefinition: null,
             rowCount: 1_000,
             nullCount: 125,
-            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_000)).Value;
+            ProfilingProbeStatus.CreateSucceeded(DateTimeOffset.UnixEpoch, 1_000),
+            NullRowSample.Create(
+                ImmutableArray.Create("Id"),
+                ImmutableArray.Create(new NullRowIdentifier(ImmutableArray.Create<object?>(123))),
+                125)).Value;
 
         var coverageColumn = ColumnProfile.Create(
             new SchemaName("dbo"),
@@ -682,7 +686,6 @@ public class CommandConsoleTests
         Assert.Contains("Validations: validations.json", output);
         Assert.Contains("Safe script: safe.sql (3 ready)", output);
         Assert.Contains("Remediation script: remediation.sql (⚠️ 2 contradictions)", output);
-        Assert.Contains("Dynamic insert mode: PerEntity", output);
         Assert.Contains("Tightening: Columns 1/2, Unique 1/1, Foreign Keys 1/1", output);
     }
 

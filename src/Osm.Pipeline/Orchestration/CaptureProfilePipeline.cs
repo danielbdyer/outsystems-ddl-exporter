@@ -83,7 +83,8 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
 {
     private static readonly JsonSerializerOptions ManifestSerializerOptions = new()
     {
-        WriteIndented = true
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
     private readonly TimeProvider _timeProvider;

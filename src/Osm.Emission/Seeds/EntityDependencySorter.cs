@@ -25,7 +25,8 @@ public static class EntityDependencySorter
         IReadOnlyList<StaticEntityTableData> tables,
         OsmModel? model,
         NamingOverrideOptions? namingOverrides = null,
-        EntityDependencySortOptions? options = null)
+        EntityDependencySortOptions? options = null,
+        CircularDependencyOptions? circularDependencyOptions = null)
     {
         if (tables is null)
         {
@@ -119,7 +120,7 @@ public static class EntityDependencySorter
                 Mode: EntityDependencyOrderingMode.Alphabetical);
         }
 
-        var ordered = TopologicalSort(nodes, edges, indegree, comparer, classification);
+        var ordered = TopologicalSort(nodes, edges, indegree, comparer, classification, circularDependencyOptions);
         var cycleDetected = ordered.Length != nodes.Count;
         var fallbackApplied = false;
 
@@ -266,11 +267,12 @@ public static class EntityDependencySorter
         IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
         IDictionary<TableKey, int> indegree,
         TableKeyComparer comparer,
-        JunctionTableClassification classification)
+        JunctionTableClassification classification,
+        CircularDependencyOptions? circularDependencyOptions)
     {
         var result = ImmutableArray.CreateBuilder<StaticEntityTableData>();
         result.Capacity = nodes.Count;
-        var readyComparer = new ReadyQueueComparer(nodes, classification);
+        var readyComparer = new ReadyQueueComparer(nodes, classification, circularDependencyOptions);
         var ready = nodes.Keys
             .Where(key => indegree.TryGetValue(key, out var degree) && degree == 0)
             .ToList();
@@ -785,14 +787,17 @@ public static class EntityDependencySorter
     {
         private readonly IReadOnlyDictionary<TableKey, StaticEntityTableData> _nodes;
         private readonly JunctionTableClassification _classification;
+        private readonly CircularDependencyOptions? _circularDependencyOptions;
         private readonly StaticEntityTableComparer _tableComparer = new();
 
         public ReadyQueueComparer(
             IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
-            JunctionTableClassification classification)
+            JunctionTableClassification classification,
+            CircularDependencyOptions? circularDependencyOptions = null)
         {
             _nodes = nodes;
             _classification = classification ?? JunctionTableClassification.Disabled;
+            _circularDependencyOptions = circularDependencyOptions;
         }
 
         public int Compare(TableKey? x, TableKey? y)
@@ -812,6 +817,32 @@ public static class EntityDependencySorter
                 return 1;
             }
 
+            // Apply manual ordering from CircularDependencyOptions if configured
+            if (_circularDependencyOptions is not null)
+            {
+                var xTableName = GetPhysicalTableName(x);
+                var yTableName = GetPhysicalTableName(y);
+                var xPosition = _circularDependencyOptions.GetManualPosition(xTableName);
+                var yPosition = _circularDependencyOptions.GetManualPosition(yTableName);
+
+                // If both have manual positions, compare by position (lower first)
+                if (xPosition.HasValue && yPosition.HasValue)
+                {
+                    return xPosition.Value.CompareTo(yPosition.Value);
+                }
+
+                // If only one has a manual position, it goes before the other
+                if (xPosition.HasValue)
+                {
+                    return -1;
+                }
+
+                if (yPosition.HasValue)
+                {
+                    return 1;
+                }
+            }
+
             if (_classification.HasPrioritizedJunctions)
             {
                 var xJunction = _classification.IsJunction(x);
@@ -823,6 +854,19 @@ public static class EntityDependencySorter
             }
 
             return _tableComparer.Compare(_nodes[x], _nodes[y]);
+        }
+
+        private string GetPhysicalTableName(TableKey key)
+        {
+            if (!_nodes.TryGetValue(key, out var table))
+            {
+                return key.Table;
+            }
+
+            var definition = table.Definition;
+            return !string.IsNullOrWhiteSpace(definition.PhysicalName)
+                ? definition.PhysicalName
+                : definition.EffectiveName ?? key.Table;
         }
     }
 

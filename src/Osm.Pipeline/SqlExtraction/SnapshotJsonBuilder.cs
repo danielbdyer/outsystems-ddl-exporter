@@ -98,10 +98,31 @@ public sealed class SnapshotJsonBuilder
         writer.WritePropertyName("modules");
         writer.WriteStartArray();
 
-        WriteModules(writer, snapshot);
+        if (snapshot.Modules.Count > 0)
+        {
+            WriteModules(writer, snapshot);
+        }
+        else if (snapshot.ModuleJson.Count > 0)
+        {
+            WriteModulesFromJson(writer, snapshot.ModuleJson);
+        }
 
         writer.WriteEndArray();
         writer.WriteEndObject();
+    }
+
+    private static void WriteModulesFromJson(Utf8JsonWriter writer, IEnumerable<OutsystemsModuleJsonRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", row.ModuleName);
+            writer.WriteBoolean("isSystem", row.IsSystem);
+            writer.WriteBoolean("isActive", row.IsActive);
+            writer.WritePropertyName("entities");
+            writer.WriteRawValue(row.ModuleEntitiesJson, skipInputValidation: true);
+            writer.WriteEndObject();
+        }
     }
 
     private static void WriteModules(Utf8JsonWriter writer, OutsystemsMetadataSnapshot snapshot)

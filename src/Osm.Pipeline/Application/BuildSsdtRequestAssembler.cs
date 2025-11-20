@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
@@ -50,7 +51,7 @@ public sealed record BuildSsdtRequestAssemblerContext(
 
 public sealed class BuildSsdtRequestAssembler
 {
-    public Result<BuildSsdtRequestAssembly> Assemble(BuildSsdtRequestAssemblerContext context)
+    public async Task<Result<BuildSsdtRequestAssembly>> AssembleAsync(BuildSsdtRequestAssemblerContext context)
     {
         if (context is null)
         {
@@ -111,6 +112,22 @@ public sealed class BuildSsdtRequestAssembler
 
         var sqlProjectPath = Path.Combine(context.OutputDirectory, "OutSystemsModel.sqlproj");
 
+        // Load circular dependency configuration if provided
+        CircularDependencyOptions? circularDepsOptions = null;
+        if (!string.IsNullOrWhiteSpace(context.Overrides.CircularDepsConfig))
+        {
+            var configResult = await Osm.Json.Deserialization.CircularDependencyConfigDeserializer
+                .LoadFromFileAsync(context.Overrides.CircularDepsConfig)
+                .ConfigureAwait(false);
+
+            if (configResult.IsFailure)
+            {
+                return Result<BuildSsdtRequestAssembly>.Failure(configResult.Errors);
+            }
+
+            circularDepsOptions = configResult.Value;
+        }
+
         var request = new BuildSsdtPipelineRequest(
             scope,
             context.OutputDirectory,
@@ -125,7 +142,8 @@ public sealed class BuildSsdtRequestAssembler
             dynamicInsertMode,
             context.SqlMetadataLog)
         {
-            DeferJunctionTables = context.DeferJunctionTables
+            DeferJunctionTables = context.DeferJunctionTables,
+            CircularDependencyOptions = circularDepsOptions
         };
 
         return new BuildSsdtRequestAssembly(request, profilerProvider, profilePath, context.OutputDirectory, sqlProjectPath);

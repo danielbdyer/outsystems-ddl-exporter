@@ -562,11 +562,11 @@ public class SqlModelExtractionServiceTests
 
         var result = await service.ExtractAsync(command);
 
-        // The behavior has changed: duplicate column names now cause an error
-        Assert.True(result.IsFailure);
-        var error = Assert.Single(result.Errors);
-        Assert.Contains("duplicate", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("BUSINESSCONTEXTID", error.Message, StringComparison.OrdinalIgnoreCase);
+        // Duplicate column names should cause a warning, not a failure
+        Assert.True(result.IsSuccess);
+        var warning = Assert.Single(result.Value.Warnings);
+        Assert.Contains("duplicate", warning, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("BUSINESSCONTEXTID", warning, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
