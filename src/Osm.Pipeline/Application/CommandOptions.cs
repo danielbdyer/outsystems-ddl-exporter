@@ -120,7 +120,8 @@ public sealed record UatUsersOverrides(
     string? MatchingRegexPattern = null,
     UserFallbackAssignmentMode? FallbackAssignment = null,
     IReadOnlyList<UserIdentifier>? FallbackTargets = null,
-    bool IdempotentEmission = false)
+    bool IdempotentEmission = false,
+    int? Concurrency = null)
 {
     public static UatUsersOverrides Disabled { get; } = new(
         false,
@@ -138,7 +139,8 @@ public sealed record UatUsersOverrides(
         null,
         null,
         Array.Empty<UserIdentifier>(),
-        false);
+        false,
+        null);
 }
 
 public sealed record FullExportOverrides(

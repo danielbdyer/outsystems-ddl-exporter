@@ -196,7 +196,8 @@ public class UatUsersCommandFactoryTests
                 FallbackTargets: new[] { "400" },
                 IdempotentEmission: true,
                 VerifyArtifacts: null,
-                VerificationReportPath: null)
+                VerificationReportPath: null,
+                Concurrency: null)
         };
 
         var (options, exitCode) = await InvokeAsync("uat-users", configuration);

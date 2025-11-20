@@ -88,17 +88,16 @@ public sealed class ModelSchemaGraph : IUserSchemaGraph
 
     public Task<IReadOnlyList<ForeignKeyDefinition>> GetForeignKeysAsync(CancellationToken cancellationToken)
     {
-        var result = new List<ForeignKeyDefinition>();
-
-        foreach (var module in _model.Modules)
-        {
-            foreach (var entity in module.Entities)
+        var results = _model.Modules.AsParallel()
+            .SelectMany(module => module.Entities)
+            .SelectMany(entity =>
             {
                 if (entity.Relationships.IsDefaultOrEmpty)
                 {
-                    continue;
+                    return Enumerable.Empty<ForeignKeyDefinition>();
                 }
 
+                var definitions = new List<ForeignKeyDefinition>();
                 foreach (var relationship in entity.Relationships)
                 {
                     if (relationship.ActualConstraints.IsDefaultOrEmpty)
@@ -138,13 +137,15 @@ public sealed class ModelSchemaGraph : IUserSchemaGraph
                             new ForeignKeyTable(referencedSchema, constraint.ReferencedTable.Trim()),
                             columns);
 
-                        result.Add(definition);
+                        definitions.Add(definition);
                     }
                 }
-            }
-        }
 
-        return Task.FromResult<IReadOnlyList<ForeignKeyDefinition>>(result);
+                return definitions;
+            })
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<ForeignKeyDefinition>>(results);
     }
 
     private static bool MatchesUserReference(

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data;
@@ -17,6 +18,8 @@ public interface IUserForeignKeyValueProvider
     Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>> CollectAsync(
         IReadOnlyList<UserFkColumn> catalog,
         IDbConnectionFactory connectionFactory,
+        int maxConcurrency,
+        IProgress<int>? progress,
         CancellationToken cancellationToken);
 }
 
@@ -32,6 +35,8 @@ public sealed class SqlUserForeignKeyValueProvider : IUserForeignKeyValueProvide
     public async Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>> CollectAsync(
         IReadOnlyList<UserFkColumn> catalog,
         IDbConnectionFactory connectionFactory,
+        int maxConcurrency,
+        IProgress<int>? progress,
         CancellationToken cancellationToken)
     {
         if (catalog is null)
@@ -50,55 +55,81 @@ public sealed class SqlUserForeignKeyValueProvider : IUserForeignKeyValueProvide
             return ImmutableDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>.Empty;
         }
 
-        _logger.LogInformation("Opening SQL connection to collect foreign key statistics for {ColumnCount} columns.", catalog.Count);
-        await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var results = ImmutableDictionary.CreateBuilder<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>();
-
-        foreach (var column in catalog)
+        if (maxConcurrency <= 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            _logger.LogInformation(
+            maxConcurrency = 1;
+        }
+
+        _logger.LogInformation(
+            "Collecting foreign key statistics for {ColumnCount} columns using concurrency limit {Concurrency}.",
+            catalog.Count,
+            maxConcurrency);
+
+        var results = new ConcurrentDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>();
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = maxConcurrency,
+            CancellationToken = cancellationToken
+        };
+
+        await Parallel.ForEachAsync(catalog, parallelOptions, async (column, token) =>
+        {
+            _logger.LogDebug(
                 "Scanning column {Schema}.{Table}.{Column} for user references.",
                 column.SchemaName,
                 column.TableName,
                 column.ColumnName);
-            using var command = connection.CreateCommand();
-            command.CommandText = BuildCommandText(column);
-            command.CommandType = CommandType.Text;
 
-            _logger.LogDebug("Executing SQL for {Schema}.{Table}.{Column}: {Sql}", column.SchemaName, column.TableName, column.ColumnName, command.CommandText);
-
-            using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            var values = new SortedDictionary<UserIdentifier, long>();
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            try
             {
-                if (reader.IsDBNull(0))
+                await using var connection = await connectionFactory.CreateOpenConnectionAsync(token).ConfigureAwait(false);
+                using var command = connection.CreateCommand();
+                command.CommandText = BuildCommandText(column);
+                command.CommandType = CommandType.Text;
+
+                _logger.LogDebug("Executing SQL for {Schema}.{Table}.{Column}: {Sql}", column.SchemaName, column.TableName, column.ColumnName, command.CommandText);
+
+                using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
+                var values = new SortedDictionary<UserIdentifier, long>();
+                while (await reader.ReadAsync(token).ConfigureAwait(false))
                 {
-                    continue;
+                    if (reader.IsDBNull(0))
+                    {
+                        continue;
+                    }
+
+                    var rawValue = reader.GetValue(0);
+                    var userId = UserIdentifier.FromDatabaseValue(rawValue);
+                    var rowCount = Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture);
+                    values[userId] = rowCount;
                 }
 
-                var rawValue = reader.GetValue(0);
-                var userId = UserIdentifier.FromDatabaseValue(rawValue);
-                var rowCount = Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture);
-                values[userId] = rowCount;
+                var distinctCount = values.Count;
+                var totalRowCount = values.Sum(static pair => pair.Value);
+
+                var columnResult = distinctCount == 0
+                    ? ImmutableDictionary<UserIdentifier, long>.Empty
+                    : values.ToImmutableDictionary(static pair => pair.Key, static pair => pair.Value);
+
+                results[column] = columnResult;
+                progress?.Report(1);
+
+                _logger.LogDebug(
+                    "Column {Schema}.{Table}.{Column} produced {DistinctCount} distinct user IDs across {RowCount} rows.",
+                    column.SchemaName,
+                    column.TableName,
+                    column.ColumnName,
+                    distinctCount,
+                    totalRowCount);
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to analyze column {Schema}.{Table}.{Column}.", column.SchemaName, column.TableName, column.ColumnName);
+                throw;
+            }
+        }).ConfigureAwait(false);
 
-            var distinctCount = values.Count;
-            var totalRowCount = values.Sum(static pair => pair.Value);
-            results[column] = distinctCount == 0
-                ? ImmutableDictionary<UserIdentifier, long>.Empty
-                : values.ToImmutableDictionary(static pair => pair.Key, static pair => pair.Value);
-
-            _logger.LogInformation(
-                "Column {Schema}.{Table}.{Column} produced {DistinctCount} distinct user IDs across {RowCount} rows.",
-                column.SchemaName,
-                column.TableName,
-                column.ColumnName,
-                distinctCount,
-                totalRowCount);
-        }
-
-        return results.ToImmutable();
+        return results.ToImmutableDictionary();
     }
 
     private static string BuildCommandText(UserFkColumn column)

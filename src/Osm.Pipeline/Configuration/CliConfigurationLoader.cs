@@ -584,6 +584,14 @@ public sealed class CliConfigurationLoader
             }
         }
 
+        int? concurrency = null;
+        if (element.TryGetProperty("concurrency", out var concurrencyElement)
+            && concurrencyElement.ValueKind == JsonValueKind.Number
+            && concurrencyElement.TryGetInt32(out var parsedConcurrency))
+        {
+            concurrency = parsedConcurrency;
+        }
+
         configuration = new UatUsersConfiguration(
             ModelPath: modelPath,
             FromLiveMetadata: fromLive,
@@ -604,7 +612,8 @@ public sealed class CliConfigurationLoader
             FallbackTargets: fallbackTargets,
             IdempotentEmission: idempotentEmission,
             VerifyArtifacts: verifyArtifacts,
-            VerificationReportPath: verificationReportPath);
+            VerificationReportPath: verificationReportPath,
+            Concurrency: concurrency);
         return true;
     }
 

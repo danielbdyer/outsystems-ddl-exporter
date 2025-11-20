@@ -141,6 +141,8 @@ public sealed class AnalyzeForeignKeyValuesStepTests
         public Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>> CollectAsync(
             IReadOnlyList<UserFkColumn> catalog,
             IDbConnectionFactory connectionFactory,
+            int maxConcurrency,
+            IProgress<int>? progress,
             CancellationToken cancellationToken)
         {
             return Task.FromResult(_counts);
@@ -152,6 +154,8 @@ public sealed class AnalyzeForeignKeyValuesStepTests
         public Task<IReadOnlyDictionary<UserFkColumn, IReadOnlyDictionary<UserIdentifier, long>>> CollectAsync(
             IReadOnlyList<UserFkColumn> catalog,
             IDbConnectionFactory connectionFactory,
+            int maxConcurrency,
+            IProgress<int>? progress,
             CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Provider should not be invoked when loading snapshot.");

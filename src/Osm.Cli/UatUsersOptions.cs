@@ -30,6 +30,7 @@ public sealed class UatUsersOptions
         bool idempotentEmission,
         bool verifyArtifacts,
         string? verificationReportPath,
+        int? concurrency = null,
         UatUsersOptionOrigins? origins = null)
     {
         ModelPath = string.IsNullOrWhiteSpace(modelPath) ? null : Path.GetFullPath(modelPath.Trim());
@@ -70,6 +71,7 @@ public sealed class UatUsersOptions
         VerificationReportPath = string.IsNullOrWhiteSpace(verificationReportPath)
             ? null
             : Path.GetFullPath(verificationReportPath.Trim());
+        Concurrency = concurrency ?? 4;
         Origins = origins ?? UatUsersOptionOrigins.None;
     }
 
@@ -114,6 +116,8 @@ public sealed class UatUsersOptions
     public bool VerifyArtifacts { get; }
 
     public string? VerificationReportPath { get; }
+
+    public int Concurrency { get; }
 
     public UatUsersOptionOrigins Origins { get; }
 

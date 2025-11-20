@@ -136,7 +136,8 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 matchingRegexPattern: request.Overrides.MatchingRegexPattern,
                 fallbackAssignment: fallbackAssignment,
                 fallbackTargets: fallbackTargets,
-                idempotentEmission: request.Overrides.IdempotentEmission);
+                idempotentEmission: request.Overrides.IdempotentEmission,
+                concurrency: request.Overrides.Concurrency);
 
             var pipeline = new UatUsersPipeline(_loggerFactory);
             _logger.LogInformation(

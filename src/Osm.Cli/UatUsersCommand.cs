@@ -217,6 +217,7 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 Path.Combine(artifacts.Root, "uat-users"),
                 userMapPath,
                 sourceFingerprint);
+            using var progressBar = new ConsoleProgressBar();
             var context = new UatUsersContext(
                 schemaGraph,
                 artifacts,
@@ -237,7 +238,9 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 options.MatchingRegexPattern,
                 options.FallbackMode,
                 options.FallbackTargets,
-                options.IdempotentEmission);
+                options.IdempotentEmission,
+                options.Concurrency,
+                progress: progressBar);
 
             var pipeline = new UatUsersPipeline(_loggerFactory);
             _logger.LogInformation("Invoking uat-users pipeline.");

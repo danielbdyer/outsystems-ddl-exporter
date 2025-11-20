@@ -44,7 +44,9 @@ public sealed class UatUsersContext
         string? matchingRegexPattern = null,
         UserFallbackAssignmentMode fallbackAssignment = UserFallbackAssignmentMode.Ignore,
         IEnumerable<UserIdentifier>? fallbackTargets = null,
-        bool idempotentEmission = false)
+        bool idempotentEmission = false,
+        int? concurrency = null,
+        IProgress<(int Completed, int Total)>? progress = null)
     {
         SchemaGraph = schemaGraph ?? throw new ArgumentNullException(nameof(schemaGraph));
         Artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
@@ -108,6 +110,8 @@ public sealed class UatUsersContext
                 .Distinct()
                 .ToImmutableArray();
         IdempotentEmission = idempotentEmission;
+        Concurrency = concurrency ?? 4;
+        Progress = progress;
     }
 
     public IUserSchemaGraph SchemaGraph { get; }
@@ -289,5 +293,9 @@ public sealed class UatUsersContext
     public ImmutableArray<UserIdentifier> FallbackTargets { get; }
 
     public bool IdempotentEmission { get; }
+
+    public int Concurrency { get; }
+
+    public IProgress<(int Completed, int Total)>? Progress { get; }
 
 }

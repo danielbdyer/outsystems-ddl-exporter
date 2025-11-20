@@ -35,6 +35,7 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
         SnapshotOption = new Option<string?>("--snapshot", "Optional path to cache foreign key scans as a snapshot.");
         UserEntityIdOption = new Option<string?>("--user-entity-id", "Optional override identifier for the user entity (accepts btGUID*GUID, physical name, or numeric id).");
         IdempotentEmissionOption = new Option<bool>("--uat-users-idempotent-emission", () => false, "Only rewrite uat-users artifacts when contents change.");
+        ConcurrencyOption = new Option<int?>("--concurrency", "Max degree of parallelism for foreign key analysis.");
     }
 
     public Option<bool> EnableOption { get; }
@@ -59,6 +60,8 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
 
     public Option<bool> IdempotentEmissionOption { get; }
 
+    public Option<int?> ConcurrencyOption { get; }
+
     public IEnumerable<Option> Options
     {
         get
@@ -74,6 +77,7 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
             yield return SnapshotOption;
             yield return UserEntityIdOption;
             yield return IdempotentEmissionOption;
+            yield return ConcurrencyOption;
         }
     }
 
@@ -119,7 +123,8 @@ internal sealed class UatUsersOptionBinder : BinderBase<UatUsersOverrides>, ICom
             QaUserInventoryPath: parseResult.GetValueForOption(QaInventoryOption),
             SnapshotPath: parseResult.GetValueForOption(SnapshotOption),
             UserEntityIdentifier: parseResult.GetValueForOption(UserEntityIdOption),
-            IdempotentEmission: parseResult.GetValueForOption(IdempotentEmissionOption));
+            IdempotentEmission: parseResult.GetValueForOption(IdempotentEmissionOption),
+            Concurrency: parseResult.GetValueForOption(ConcurrencyOption));
     }
 
     internal static (string Schema, string Table) SplitTableIdentifier(string identifier)

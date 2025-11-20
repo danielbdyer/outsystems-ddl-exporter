@@ -68,7 +68,7 @@ public sealed class SqlDynamicEntityDataProviderIntegrationTests
 
         using var tempDirectory = new TempDirectory();
         var generator = new DynamicEntityInsertGenerator(new SqlLiteralFormatter());
-        var scripts = generator.GenerateScripts(dataset, ImmutableArray<StaticEntityTableData>.Empty, model: model);
+        var scripts = generator.GenerateArtifacts(dataset, ImmutableArray<StaticEntityTableData>.Empty, model: model);
 
         scripts.Should().NotBeEmpty();
 
@@ -77,7 +77,11 @@ public sealed class SqlDynamicEntityDataProviderIntegrationTests
             var moduleDirectory = Path.Combine(tempDirectory.Path, script.Definition.Module ?? "unknown");
             Directory.CreateDirectory(moduleDirectory);
             var filePath = Path.Combine(moduleDirectory, $"{script.Definition.PhysicalName}.dynamic.sql");
-            await File.WriteAllTextAsync(filePath, script.Script);
+
+            await using var fileStream = File.Create(filePath);
+            using var writer = new StreamWriter(fileStream);
+            await script.WriteAsync(writer, CancellationToken.None);
+
             File.Exists(filePath).Should().BeTrue();
         }
     }
@@ -164,7 +168,7 @@ public sealed class SqlDynamicEntityDataProviderIntegrationTests
         var (dataset, model) = CreateJunctionDataset();
         var generator = new DynamicEntityInsertGenerator(new SqlLiteralFormatter());
 
-        var scripts = generator.GenerateScripts(
+        var scripts = generator.GenerateArtifacts(
             dataset,
             ImmutableArray<StaticEntityTableData>.Empty,
             model: model,
