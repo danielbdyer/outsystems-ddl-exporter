@@ -158,6 +158,8 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<ICommandHandler<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>, CaptureProfilePipeline>();
         services.AddSingleton<ICommandHandler<FullExportPipelineRequest, FullExportPipelineResult>, FullExportPipeline>();
         services.AddSingleton<ICommandHandler<TighteningAnalysisPipelineRequest, TighteningAnalysisPipelineResult>, TighteningAnalysisPipeline>();
+        services.AddSingleton<IDataIntegrityQueryExecutor, SqlDataIntegrityQueryExecutor>();
+        services.AddSingleton<BasicDataIntegrityChecker>();
 
         return services;
     }
