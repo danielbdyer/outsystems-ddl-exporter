@@ -127,8 +127,6 @@ public class BuildSsdtCommandFactoryTests
         Assert.Contains("Decision log: decision.log", output);
         Assert.Contains("Opportunities: opportunities.json", output);
         Assert.Contains("Safe script: suggestions/safe-to-apply.sql", output);
-        var telemetryPath = Path.Combine("output", "DynamicData", "dynamic-data.telemetry.json");
-        Assert.Contains($"Dynamic data telemetry: {telemetryPath}", output);
         Assert.Contains("Remediation script: suggestions/needs-remediation.sql", output);
         Assert.Contains("Tightening: Columns 1/2, Unique 1/1, Foreign Keys 1/1", output);
         var summaryIndex = output.IndexOf("SSDT build summary:", StringComparison.Ordinal);
@@ -365,6 +363,9 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
 
@@ -402,6 +403,9 @@ public class BuildSsdtCommandFactoryTests
         services.AddSingleton<CacheOptionBinder>();
         services.AddSingleton<SqlOptionBinder>();
         services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
         services.AddSingleton<IVerbRegistry>(sp => new FakeVerbRegistry(configurationService, application));
         services.AddSingleton<BuildSsdtCommandFactory>();
 

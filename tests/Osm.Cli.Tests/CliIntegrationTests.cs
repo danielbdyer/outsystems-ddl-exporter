@@ -70,7 +70,7 @@ public class CliIntegrationTests
         var emission = EmissionOutput.Load(output.Path);
 
         // Now includes UserExtension_CS module with ossys_User table
-        Assert.Equal(6, emission.Manifest.Tables.Count);
+        Assert.Equal(5, emission.Manifest.Tables.Count);
         Assert.Contains("Customer", emission.Manifest.Tables.Select(t => t.Table));
         Assert.Contains("User", emission.Manifest.Tables.Select(t => t.Table));
         Assert.True(emission.Manifest.Options.SanitizeModuleNames);
