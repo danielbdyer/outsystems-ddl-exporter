@@ -18,6 +18,7 @@ using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
+using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
@@ -41,6 +42,7 @@ public sealed class FullExportApplicationServiceTests
         {
             var model = CreateModel();
             var modelDeserializer = new StubModelJsonDeserializer(model);
+            var modelIngestionService = new StubModelIngestionService(Result<OsmModel>.Success(model));
 
             var profileResult = new CaptureProfileApplicationResult(
                 CreateCaptureProfilePipelineResult(),
@@ -55,19 +57,20 @@ public sealed class FullExportApplicationServiceTests
             var buildResult = CreateBuildResult(modelPath);
             var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
 
-        var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
-        var uatRunner = new RecordingUatUsersRunner();
-        var schemaGraphFactory = new RecordingSchemaGraphFactory();
-        var coordinator = new FullExportCoordinator(schemaGraphFactory);
+            var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
+            var uatRunner = new RecordingUatUsersRunner();
+            var schemaGraphFactory = new RecordingSchemaGraphFactory();
+            var coordinator = new FullExportCoordinator(schemaGraphFactory);
 
-        var service = new FullExportApplicationService(
-            profileService,
-            extractService,
-            buildService,
-            schemaApplyOrchestrator,
-            modelDeserializer,
-            uatRunner,
-            coordinator);
+            var service = new FullExportApplicationService(
+                profileService,
+                extractService,
+                buildService,
+                schemaApplyOrchestrator,
+                modelDeserializer,
+                modelIngestionService,
+                uatRunner,
+                coordinator);
 
             var configurationContext = new CliConfigurationContext(CliConfiguration.Empty, ConfigPath: null);
             var overrides = new FullExportOverrides(
@@ -123,6 +126,7 @@ public sealed class FullExportApplicationServiceTests
         var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
         var modelDeserializer = new StubModelJsonDeserializer(model);
+        var modelIngestionService = new StubModelIngestionService(Result<OsmModel>.Success(model));
         var uatRunner = new RecordingUatUsersRunner
         {
             ResultToReturn = Result<UatUsersApplicationResult>.Success(new UatUsersApplicationResult(
@@ -142,6 +146,7 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
+            modelIngestionService,
             uatRunner,
             coordinator);
 
@@ -176,10 +181,12 @@ public sealed class FullExportApplicationServiceTests
         Assert.True(result.Value.UatUsers.Executed);
         var request = Assert.IsType<UatUsersPipelineRequest>(uatRunner.LastRequest);
         Assert.Equal("Server=Test;Database=Uat;Integrated Security=true;", request.SourceConnectionString);
-        Assert.Equal(extractionResult.ExtractionResult, request.Extraction);
+        Assert.Same(model, request.Extraction.Model);
+        Assert.Equal(extractionResult.ExtractionResult.Dataset, request.Extraction.Dataset);
+        Assert.False(string.IsNullOrWhiteSpace(request.Extraction.JsonPayload.FilePath));
         Assert.Equal(buildResult.OutputDirectory, request.OutputDirectory);
         Assert.Same(schemaGraphFactory.GraphToReturn, request.SchemaGraph);
-        Assert.Same(extractionResult.ExtractionResult, schemaGraphFactory.LastExtraction);
+        Assert.Same(request.Extraction, schemaGraphFactory.LastExtraction);
         Assert.False(request.Overrides.IdempotentEmission);
     }
 
@@ -201,6 +208,7 @@ public sealed class FullExportApplicationServiceTests
         var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
         var modelDeserializer = new StubModelJsonDeserializer(model);
+        var modelIngestionService = new StubModelIngestionService(Result<OsmModel>.Success(model));
         var uatRunner = new RecordingUatUsersRunner
         {
             ResultToReturn = Result<UatUsersApplicationResult>.Success(new UatUsersApplicationResult(
@@ -220,6 +228,7 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
+            modelIngestionService,
             uatRunner,
             coordinator);
 
@@ -309,6 +318,7 @@ public sealed class FullExportApplicationServiceTests
         var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
         var modelDeserializer = new StubModelJsonDeserializer(model);
+        var modelIngestionService = new StubModelIngestionService(Result<OsmModel>.Success(model));
         var uatRunner = new RecordingUatUsersRunner
         {
             ResultToReturn = Result<UatUsersApplicationResult>.Success(new UatUsersApplicationResult(
@@ -328,6 +338,7 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
+            modelIngestionService,
             uatRunner,
             coordinator);
 
@@ -420,6 +431,7 @@ public sealed class FullExportApplicationServiceTests
         var schemaDataApplier = new RecordingSchemaDataApplier();
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(schemaDataApplier);
         var modelDeserializer = new StubModelJsonDeserializer(model);
+        var modelIngestionService = new StubModelIngestionService(Result<OsmModel>.Success(model));
         var uatRunner = new RecordingUatUsersRunner();
         var schemaGraphFactory = new RecordingSchemaGraphFactory();
         var coordinator = new FullExportCoordinator(schemaGraphFactory);
@@ -438,6 +450,7 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
+            modelIngestionService,
             uatRunner,
             coordinator);
 
@@ -493,6 +506,7 @@ public sealed class FullExportApplicationServiceTests
         var schemaDataApplier = new RecordingSchemaDataApplier();
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(schemaDataApplier);
         var modelDeserializer = new StubModelJsonDeserializer(model);
+        var modelIngestionService = new StubModelIngestionService(Result<OsmModel>.Success(model));
         var uatRunner = new RecordingUatUsersRunner();
         var schemaGraphFactory = new RecordingSchemaGraphFactory();
         var coordinator = new FullExportCoordinator(schemaGraphFactory);
@@ -503,6 +517,7 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
+            modelIngestionService,
             uatRunner,
             coordinator);
 
@@ -565,6 +580,7 @@ public sealed class FullExportApplicationServiceTests
         var schemaDataApplier = new RecordingSchemaDataApplier();
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(schemaDataApplier);
         var modelDeserializer = new StubModelJsonDeserializer(model);
+        var modelIngestionService = new StubModelIngestionService(Result<OsmModel>.Success(model));
         var uatRunner = new RecordingUatUsersRunner();
         var schemaGraphFactory = new RecordingSchemaGraphFactory();
         var coordinator = new FullExportCoordinator(schemaGraphFactory);
@@ -610,6 +626,7 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
+            modelIngestionService,
             uatRunner,
             coordinator);
 
@@ -668,6 +685,7 @@ public sealed class FullExportApplicationServiceTests
         var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
         var modelDeserializer = new StubModelJsonDeserializer(model);
+        var modelIngestionService = new StubModelIngestionService(Result<OsmModel>.Success(model));
         var failureError = ValidationError.Create("pipeline.uatUsers.failure", "uat-users failed");
         var uatRunner = new RecordingUatUsersRunner
         {
@@ -685,6 +703,7 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
+            modelIngestionService,
             uatRunner,
             coordinator);
 
@@ -717,8 +736,8 @@ public sealed class FullExportApplicationServiceTests
 
         Assert.True(result.IsFailure);
         Assert.Equal(failureError, Assert.Single(result.Errors));
-        Assert.NotNull(uatRunner.LastRequest);
-        Assert.Same(extractionResult.ExtractionResult, schemaGraphFactory.LastExtraction);
+        var uatRequest = Assert.IsType<UatUsersPipelineRequest>(uatRunner.LastRequest);
+        Assert.Same(uatRequest.Extraction, schemaGraphFactory.LastExtraction);
     }
 
     [Fact]
@@ -739,6 +758,7 @@ public sealed class FullExportApplicationServiceTests
         var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
         var modelDeserializer = new StubModelJsonDeserializer(model);
+        var modelIngestionService = new StubModelIngestionService(Result<OsmModel>.Success(model));
         var uatRunner = new RecordingUatUsersRunner();
         var schemaGraphFactory = new RecordingSchemaGraphFactory
         {
@@ -753,6 +773,7 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
+            modelIngestionService,
             uatRunner,
             coordinator);
 
@@ -787,7 +808,8 @@ public sealed class FullExportApplicationServiceTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("uatUsers.schemaGraph.error", error.Code);
         Assert.Null(uatRunner.LastRequest);
-        Assert.Same(extractionResult.ExtractionResult, schemaGraphFactory.LastExtraction);
+        Assert.NotNull(schemaGraphFactory.LastExtraction);
+        Assert.Same(model, schemaGraphFactory.LastExtraction!.Model);
     }
 
     [Fact]
@@ -808,6 +830,7 @@ public sealed class FullExportApplicationServiceTests
         var buildService = new RecordingBuildService(Result<BuildSsdtApplicationResult>.Success(buildResult));
         var schemaApplyOrchestrator = new SchemaApplyOrchestrator(new StubSchemaDataApplier());
         var modelDeserializer = new StubModelJsonDeserializer(model);
+        var modelIngestionService = new StubModelIngestionService(Result<OsmModel>.Success(model));
         var uatRunner = new RecordingUatUsersRunner();
         var schemaGraphFactory = new RecordingSchemaGraphFactory();
         var coordinator = new FullExportCoordinator(schemaGraphFactory);
@@ -818,6 +841,7 @@ public sealed class FullExportApplicationServiceTests
             buildService,
             schemaApplyOrchestrator,
             modelDeserializer,
+            modelIngestionService,
             uatRunner,
             coordinator);
 
@@ -1172,6 +1196,34 @@ public sealed class FullExportApplicationServiceTests
         {
             warnings?.Clear();
             return Result<OsmModel>.Success(_model);
+        }
+    }
+
+    private sealed class StubModelIngestionService : IModelIngestionService
+    {
+        public StubModelIngestionService(Result<OsmModel> resultToReturn)
+        {
+            ResultToReturn = resultToReturn;
+        }
+
+        public Result<OsmModel> ResultToReturn { get; }
+
+        public Task<Result<OsmModel>> LoadFromFileAsync(
+            string path,
+            ICollection<string>? warnings,
+            CancellationToken cancellationToken = default,
+            ModelIngestionOptions? options = null)
+        {
+            return Task.FromResult(ResultToReturn);
+        }
+
+        public Task<Result<OsmModel>> LoadFromStreamAsync(
+            Stream jsonStream,
+            ICollection<string>? warnings,
+            CancellationToken cancellationToken = default,
+            ModelIngestionOptions? options = null)
+        {
+            return Task.FromResult(ResultToReturn);
         }
     }
 }
