@@ -109,6 +109,8 @@ When verification is enabled, additional artifacts are generated:
 | `data-integrity-verification.json` | Comprehensive verification report comparing source fingerprint against target data after loading INSERT scripts |
 | `load-harness-full-verification.json` | Extended load harness report including source-to-target parity verification, transformation validation, and performance metrics |
 
+The base-layer implementation ships with the `verify-data` CLI command (row counts + NULL counts only). It reads the filtered `model.json` and naming overrides from the run manifest/config, compares QA vs. UAT staging, and emits `data-integrity-verification.json` with a `baseVerification` block. Operators can run it after manual applies or post-harness replay; see `docs/verbs/verify-data.md` for usage examples.
+
 ### Verification Report Schema
 
 ### Modular Verification Architecture

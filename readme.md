@@ -92,6 +92,8 @@
 
    * Append `--run-load-harness` to immediately replay the generated safe/remediation/static seed scripts against a staging database. The CLI streams batch timings, lock contention, wait stat deltas, and index fragmentation to the console and persists a JSON report (configure with `--load-harness-report-out`, `--load-harness-connection-string`, and `--load-harness-command-timeout`). For ad-hoc replays use `tools/FullExportLoadHarness`, which exposes the same harness runner. 【F:src/Osm.Cli/Commands/FullExportCommandFactory.cs†L34-L201】【F:tools/FullExportLoadHarness/Program.cs†L1-L63】
 
+   * Need a quick sanity check without the harness? Run `verify-data` after applying the artifacts to compare QA vs. UAT row counts and nullable column NULL counts, emitting `data-integrity-verification.json` for audit. See `docs/verbs/verify-data.md` for the standalone flow and for how to pair it with a harness replay when desired.
+
    The emitted manifest mirrors the fixtures we keep under `tests/Fixtures/emission/edge-case` (and the rename variant under `tests/Fixtures/emission/edge-case-rename`), so you can diff your live runs against the curated baselines.
 
    **QA → UAT dataset (one-shot)**
