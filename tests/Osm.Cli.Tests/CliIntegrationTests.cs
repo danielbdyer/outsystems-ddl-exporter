@@ -481,6 +481,7 @@ public class CliIntegrationTests
     [FIRSTNAME] NVARCHAR(100) NULL DEFAULT (''),
     [LASTNAME] NVARCHAR(100) NULL DEFAULT (''),
     [CITYID] BIGINT NOT NULL,
+    [LEGACYCODE] VARCHAR(50) NULL,
     CONSTRAINT [PK_Customer_Id] PRIMARY KEY ([ID])
 );
 CREATE TABLE [dbo].[OSUSR_DEF_CITY](
@@ -501,16 +502,16 @@ CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN](
     [CREATEDON] DATETIME NOT NULL DEFAULT (getutcdate()),
     CONSTRAINT [PK_JobRun_Id] PRIMARY KEY ([ID])
 );
-CREATE TABLE [dbo].[User](
+CREATE TABLE [dbo].[ossys_User](
     [Id] BIGINT IDENTITY (1, 1) NOT NULL,
     [Username] NVARCHAR(50) NOT NULL,
     [Email] NVARCHAR(255) NOT NULL,
     CONSTRAINT [PK_User_Id] PRIMARY KEY ([Id])
 );
 CREATE UNIQUE INDEX [UIX_User_Username]
-    ON [dbo].[User]([Username]);
+    ON [dbo].[ossys_User]([Username]);
 CREATE UNIQUE INDEX [UIX_User_Email]
-    ON [dbo].[User]([Email]);
+    ON [dbo].[ossys_User]([Email]);
 ALTER TABLE [dbo].[OSUSR_ABC_CUSTOMER]
 ADD CONSTRAINT [FK_Customer_City_CityId]
 FOREIGN KEY ([CITYID]) REFERENCES [dbo].[OSUSR_DEF_CITY]([ID]);";

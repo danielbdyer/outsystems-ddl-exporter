@@ -25,9 +25,13 @@ public class CliConfigurationServiceTests
 
             Assert.True(result.IsSuccess);
             Assert.NotNull(result.Value);
-            Assert.Equal(Path.GetFullPath(pipelinePath), Path.GetFullPath(result.Value.ConfigPath!));
-            Assert.Equal(Path.GetFullPath(Path.Combine(workspace.Path, "model.json")), Path.GetFullPath(result.Value.Configuration.ModelPath!));
-            Assert.Equal(Path.GetFullPath(Path.Combine(workspace.Path, "profile.json")), Path.GetFullPath(result.Value.Configuration.ProfilePath!));
+
+            // Use the actual config path as the canonical workspace path to avoid symlink issues on macOS (/var vs /private/var)
+            var canonicalWorkspacePath = Path.GetDirectoryName(Path.GetFullPath(result.Value.ConfigPath!))!;
+            var expectedPipelinePath = Path.Combine(canonicalWorkspacePath, "pipeline.json");
+            Assert.Equal(expectedPipelinePath, Path.GetFullPath(result.Value.ConfigPath!));
+            Assert.Equal(Path.Combine(canonicalWorkspacePath, "model.json"), Path.GetFullPath(result.Value.Configuration.ModelPath!));
+            Assert.Equal(Path.Combine(canonicalWorkspacePath, "profile.json"), Path.GetFullPath(result.Value.Configuration.ProfilePath!));
         }
         finally
         {
