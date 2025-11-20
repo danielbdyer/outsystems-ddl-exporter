@@ -2,8 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
 using Osm.Domain.Configuration;
@@ -52,7 +55,142 @@ public sealed class DynamicEntityInsertGenerationOptions
     public int BatchSize { get; }
 }
 
-public sealed record DynamicEntityInsertScript(StaticEntitySeedTableDefinition Definition, string Script);
+public sealed class DynamicEntityInsertArtifact
+{
+    private readonly StaticEntitySeedTableDefinition _definition;
+    private readonly ImmutableArray<StaticEntityRow> _rows;
+    private readonly int _batchSize;
+    private readonly SqlLiteralFormatter _formatter;
+    private readonly bool _disableConstraints;
+
+    internal DynamicEntityInsertArtifact(
+        StaticEntitySeedTableDefinition definition,
+        ImmutableArray<StaticEntityRow> rows,
+        int batchSize,
+        SqlLiteralFormatter formatter,
+        bool disableConstraints)
+    {
+        _definition = definition;
+        _rows = rows;
+        _batchSize = batchSize;
+        _formatter = formatter;
+        _disableConstraints = disableConstraints;
+    }
+
+    public StaticEntitySeedTableDefinition Definition => _definition;
+
+    public async Task WriteAsync(TextWriter writer, CancellationToken cancellationToken)
+    {
+        if (writer is null)
+        {
+            throw new ArgumentNullException(nameof(writer));
+        }
+
+        await writer.WriteLineAsync("--------------------------------------------------------------------------------").ConfigureAwait(false);
+        await writer.WriteLineAsync($"-- Module: {_definition.Module}").ConfigureAwait(false);
+        await writer.WriteLineAsync($"-- Entity: {_definition.LogicalName} ({_definition.Schema}.{_definition.PhysicalName})").ConfigureAwait(false);
+        await writer.WriteLineAsync("--------------------------------------------------------------------------------").ConfigureAwait(false);
+        await writer.WriteLineAsync().ConfigureAwait(false);
+
+        if (_disableConstraints)
+        {
+            await writer.WriteLineAsync($"ALTER TABLE [{_definition.Schema}].[{_definition.PhysicalName}] NOCHECK CONSTRAINT ALL;").ConfigureAwait(false);
+            await writer.WriteLineAsync("GO").ConfigureAwait(false);
+            await writer.WriteLineAsync().ConfigureAwait(false);
+        }
+
+        await writer.WriteLineAsync("SET NOCOUNT ON;").ConfigureAwait(false);
+        await writer.WriteLineAsync().ConfigureAwait(false);
+
+        var targetIdentifier = SqlIdentifierFormatter.Qualify(_definition.Schema, _definition.EffectiveName);
+        var columnNames = _definition.Columns
+            .Select(column => SqlIdentifierFormatter.Quote(column.EffectiveColumnName))
+            .ToArray();
+
+        var hasIdentity = _definition.Columns.Any(column => column.IsIdentity);
+        if (hasIdentity)
+        {
+            await writer.WriteLineAsync($"SET IDENTITY_INSERT {targetIdentifier} ON;").ConfigureAwait(false);
+            await writer.WriteLineAsync("GO").ConfigureAwait(false);
+            await writer.WriteLineAsync().ConfigureAwait(false);
+        }
+
+        var batches = PartitionRows(_rows, _batchSize).ToArray();
+        for (var batchIndex = 0; batchIndex < batches.Length; batchIndex++)
+        {
+            var batchRows = batches[batchIndex];
+            await writer.WriteLineAsync($"PRINT 'Applying batch {batchIndex + 1} for {targetIdentifier} ({batchRows.Length} rows)';").ConfigureAwait(false);
+            await writer.WriteLineAsync($"INSERT INTO {targetIdentifier} WITH (TABLOCK)").ConfigureAwait(false);
+            await writer.WriteAsync("    (").ConfigureAwait(false);
+            await writer.WriteAsync(string.Join(", ", columnNames)).ConfigureAwait(false);
+            await writer.WriteLineAsync(")").ConfigureAwait(false);
+            await writer.WriteLineAsync("VALUES").ConfigureAwait(false);
+
+            for (var rowIndex = 0; rowIndex < batchRows.Length; rowIndex++)
+            {
+                var row = batchRows[rowIndex];
+                await writer.WriteAsync("    (").ConfigureAwait(false);
+                for (var columnIndex = 0; columnIndex < _definition.Columns.Length; columnIndex++)
+                {
+                    if (columnIndex > 0)
+                    {
+                        await writer.WriteAsync(", ").ConfigureAwait(false);
+                    }
+
+                    await writer.WriteAsync(_formatter.FormatValue(row.Values[columnIndex])).ConfigureAwait(false);
+                }
+
+                await writer.WriteAsync(')').ConfigureAwait(false);
+                if (rowIndex < batchRows.Length - 1)
+                {
+                    await writer.WriteAsync(',').ConfigureAwait(false);
+                }
+
+                await writer.WriteLineAsync().ConfigureAwait(false);
+            }
+
+            await writer.WriteLineAsync("GO").ConfigureAwait(false);
+            await writer.WriteLineAsync().ConfigureAwait(false);
+        }
+
+        if (hasIdentity)
+        {
+            await writer.WriteLineAsync($"SET IDENTITY_INSERT {targetIdentifier} OFF;").ConfigureAwait(false);
+            await writer.WriteLineAsync("GO").ConfigureAwait(false);
+        }
+
+        if (_disableConstraints)
+        {
+            await writer.WriteLineAsync().ConfigureAwait(false);
+            await writer.WriteLineAsync($"ALTER TABLE [{_definition.Schema}].[{_definition.PhysicalName}] CHECK CONSTRAINT ALL;").ConfigureAwait(false);
+            await writer.WriteLineAsync("GO").ConfigureAwait(false);
+        }
+    }
+
+    private static IEnumerable<ImmutableArray<StaticEntityRow>> PartitionRows(
+        ImmutableArray<StaticEntityRow> rows,
+        int batchSize)
+    {
+        if (rows.IsDefaultOrEmpty)
+        {
+            yield break;
+        }
+
+        for (var i = 0; i < rows.Length; i += batchSize)
+        {
+            var length = Math.Min(batchSize, rows.Length - i);
+            var span = rows.AsSpan(i, length);
+            var builder = ImmutableArray.CreateBuilder<StaticEntityRow>(length);
+
+            for (var j = 0; j < span.Length; j++)
+            {
+                builder.Add(span[j]);
+            }
+
+            yield return builder.MoveToImmutable();
+        }
+    }
+}
 
 public sealed class DynamicEntityInsertGenerator
 {
@@ -64,7 +202,7 @@ public sealed class DynamicEntityInsertGenerator
         _literalFormatter = literalFormatter ?? throw new ArgumentNullException(nameof(literalFormatter));
     }
 
-    public ImmutableArray<DynamicEntityInsertScript> GenerateScripts(
+    public ImmutableArray<DynamicEntityInsertArtifact> GenerateArtifacts(
         DynamicEntityDataset dataset,
         ImmutableArray<StaticEntityTableData> staticSeedCatalog,
         DynamicEntityInsertGenerationOptions? options = null,
@@ -86,18 +224,21 @@ public sealed class DynamicEntityInsertGenerator
 
         if (dataset.IsEmpty)
         {
-            return ImmutableArray<DynamicEntityInsertScript>.Empty;
+            return ImmutableArray<DynamicEntityInsertArtifact>.Empty;
         }
 
-        var orderedTables = EntityDependencySorter
-            .SortByForeignKeys(dataset.Tables, model, namingOverrides, sortOptions)
-            .Tables;
+        var ordering = EntityDependencySorter.SortByForeignKeys(dataset.Tables, model, namingOverrides, sortOptions);
+        var orderedTables = ordering.Tables;
+
         if (orderedTables.IsDefaultOrEmpty)
         {
-            return ImmutableArray<DynamicEntityInsertScript>.Empty;
+            return ImmutableArray<DynamicEntityInsertArtifact>.Empty;
         }
 
-        var scripts = ImmutableArray.CreateBuilder<DynamicEntityInsertScript>(orderedTables.Length);
+        // If a cycle is detected or fallback is applied, we should disable constraints to ensure data can be loaded
+        var disableConstraints = ordering.CycleDetected || ordering.AlphabeticalFallbackApplied;
+
+        var scripts = ImmutableArray.CreateBuilder<DynamicEntityInsertArtifact>(orderedTables.Length);
 
         foreach (var table in orderedTables)
         {
@@ -115,12 +256,16 @@ public sealed class DynamicEntityInsertGenerator
 
             var normalizedTable = normalized[0];
             var orderedRows = OrderRows(normalizedTable.Definition, normalizedTable.Rows, model);
-            var script = BuildScript(normalizedTable.Definition, orderedRows, options.BatchSize);
-            scripts.Add(new DynamicEntityInsertScript(normalizedTable.Definition, script));
+
+            scripts.Add(new DynamicEntityInsertArtifact(
+                normalizedTable.Definition,
+                orderedRows,
+                options.BatchSize,
+                _literalFormatter,
+                disableConstraints));
         }
 
-        var materialized = scripts.ToImmutable();
-        return ApplyDependencyOrdering(materialized, model, namingOverrides, sortOptions);
+        return scripts.ToImmutable();
     }
 
     private static ImmutableArray<StaticEntityRow> FilterRows(
@@ -629,182 +774,4 @@ public sealed class DynamicEntityInsertGenerator
             return true;
         }
     }
-
-    private static ImmutableArray<DynamicEntityInsertScript> ApplyDependencyOrdering(
-        ImmutableArray<DynamicEntityInsertScript> scripts,
-        OsmModel? model,
-        NamingOverrideOptions? namingOverrides,
-        EntityDependencySortOptions? sortOptions)
-    {
-        if (scripts.IsDefaultOrEmpty || scripts.Length <= 1 || model is null)
-        {
-            return scripts;
-        }
-
-        var orderedDefinitions = EntityDependencySorter.SortByForeignKeys(
-            scripts.Select(script => new StaticEntityTableData(script.Definition, ImmutableArray<StaticEntityRow>.Empty)).ToImmutableArray(),
-            model,
-            namingOverrides,
-            sortOptions);
-
-        var definitions = orderedDefinitions.Tables;
-        if (definitions.IsDefaultOrEmpty || definitions.Length != scripts.Length)
-        {
-            return scripts;
-        }
-
-        var lookup = new Dictionary<TableKey, DynamicEntityInsertScript>(TableKeyComparer.Instance);
-        foreach (var script in scripts)
-        {
-            lookup[CreateTableKey(script.Definition)] = script;
-        }
-
-        var orderedScripts = ImmutableArray.CreateBuilder<DynamicEntityInsertScript>(scripts.Length);
-        foreach (var definition in definitions)
-        {
-            var key = CreateTableKey(definition.Definition);
-            if (!lookup.TryGetValue(key, out var script))
-            {
-                return scripts;
-            }
-
-            orderedScripts.Add(script);
-        }
-
-        return orderedScripts.MoveToImmutable();
-    }
-
-    private sealed record TableKey(string Module, string Schema, string Table);
-
-    private sealed class TableKeyComparer : IEqualityComparer<TableKey>
-    {
-        public static TableKeyComparer Instance { get; } = new();
-
-        public bool Equals(TableKey? x, TableKey? y)
-        {
-            if (ReferenceEquals(x, y))
-            {
-                return true;
-            }
-
-            if (x is null || y is null)
-            {
-                return false;
-            }
-
-            return string.Equals(x.Module, y.Module, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(x.Schema, y.Schema, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(x.Table, y.Table, StringComparison.OrdinalIgnoreCase);
-        }
-
-        public int GetHashCode(TableKey obj)
-        {
-            return HashCode.Combine(
-                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Module ?? string.Empty),
-                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Schema ?? string.Empty),
-                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Table ?? string.Empty));
-        }
-    }
-
-    private static TableKey CreateTableKey(StaticEntitySeedTableDefinition definition)
-        => new(definition.Module ?? string.Empty, definition.Schema ?? string.Empty, definition.PhysicalName ?? string.Empty);
-
-    private string BuildScript(
-        StaticEntitySeedTableDefinition definition,
-        ImmutableArray<StaticEntityRow> rows,
-        int batchSize)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine("--------------------------------------------------------------------------------");
-        builder.AppendLine($"-- Module: {definition.Module}");
-        builder.AppendLine($"-- Entity: {definition.LogicalName} ({definition.Schema}.{definition.PhysicalName})");
-        builder.AppendLine("--------------------------------------------------------------------------------");
-        builder.AppendLine();
-        builder.AppendLine("SET NOCOUNT ON;");
-        builder.AppendLine();
-
-        var targetIdentifier = SqlIdentifierFormatter.Qualify(definition.Schema, definition.EffectiveName);
-        var columnNames = definition.Columns
-            .Select(column => SqlIdentifierFormatter.Quote(column.EffectiveColumnName))
-            .ToArray();
-
-        var hasIdentity = definition.Columns.Any(column => column.IsIdentity);
-        if (hasIdentity)
-        {
-            builder.AppendLine($"SET IDENTITY_INSERT {targetIdentifier} ON;");
-            builder.AppendLine("GO");
-            builder.AppendLine();
-        }
-
-        var batches = PartitionRows(rows, batchSize).ToArray();
-        for (var batchIndex = 0; batchIndex < batches.Length; batchIndex++)
-        {
-            var batchRows = batches[batchIndex];
-            builder.AppendLine($"PRINT 'Applying batch {batchIndex + 1} for {targetIdentifier} ({batchRows.Length} rows)';");
-            builder.AppendLine($"INSERT INTO {targetIdentifier} WITH (TABLOCK)");
-            builder.Append("    (");
-            builder.Append(string.Join(", ", columnNames));
-            builder.AppendLine(")");
-            builder.AppendLine("VALUES");
-
-            for (var rowIndex = 0; rowIndex < batchRows.Length; rowIndex++)
-            {
-                var row = batchRows[rowIndex];
-                builder.Append("    (");
-                for (var columnIndex = 0; columnIndex < definition.Columns.Length; columnIndex++)
-                {
-                    if (columnIndex > 0)
-                    {
-                        builder.Append(", ");
-                    }
-
-                    builder.Append(_literalFormatter.FormatValue(row.Values[columnIndex]));
-                }
-
-                builder.Append(')');
-                if (rowIndex < batchRows.Length - 1)
-                {
-                    builder.Append(',');
-                }
-
-                builder.AppendLine();
-            }
-
-            builder.AppendLine("GO");
-            builder.AppendLine();
-        }
-
-        if (hasIdentity)
-        {
-            builder.AppendLine($"SET IDENTITY_INSERT {targetIdentifier} OFF;");
-            builder.AppendLine("GO");
-        }
-
-        return builder.ToString();
-    }
-
-    private static IEnumerable<ImmutableArray<StaticEntityRow>> PartitionRows(
-        ImmutableArray<StaticEntityRow> rows,
-        int batchSize)
-    {
-        if (rows.IsDefaultOrEmpty)
-        {
-            yield break;
-        }
-
-        for (var i = 0; i < rows.Length; i += batchSize)
-        {
-            var length = Math.Min(batchSize, rows.Length - i);
-            var span = rows.AsSpan(i, length);
-            var builder = ImmutableArray.CreateBuilder<StaticEntityRow>(length);
-
-            for (var j = 0; j < span.Length; j++)
-            {
-                builder.Add(span[j]);
-            }
-
-            yield return builder.MoveToImmutable();
-        }
-    }
-
 }
