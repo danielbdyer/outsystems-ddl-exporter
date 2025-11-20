@@ -111,7 +111,7 @@ internal sealed class VerifyDataCommandFactory : ICommandFactory
             return;
         }
 
-        var namingOverrides = configResult.Value.Configuration.Tightening.NamingOverrides;
+        var namingOverrides = configResult.Value.Configuration.Tightening.Emission.NamingOverrides;
         var commandTimeout = configResult.Value.Configuration.Sql.CommandTimeoutSeconds;
         var checkResult = await checker
             .CheckAsync(
