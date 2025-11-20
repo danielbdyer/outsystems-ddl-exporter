@@ -1,0 +1,1585 @@
+Build started 11/19/2025 4:49:10 PM.
+     1>Project "/Users/dannydyer/outsystems-ddl-exporter/OutSystemsModelToSql.sln" on node 1 (VSTest target(s)).
+     1>ValidateSolutionConfiguration:
+         Building solution configuration "Debug|Any CPU".
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Json.Tests/bin/Debug/net9.0/Osm.Json.Tests.dll (.NETCoreApp,Version=v9.0)
+VSTest version 17.14.1 (arm64)
+
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/bin/Debug/net9.0/Osm.Pipeline.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Smo.Tests/bin/Debug/net9.0/Osm.Smo.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Validation.Tests/bin/Debug/net9.0/Osm.Validation.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Domain.Tests/bin/Debug/net9.0/Osm.Domain.Tests.dll (.NETCoreApp,Version=v9.0)
+Starting test execution, please wait...
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Dmm.Tests/bin/Debug/net9.0/Osm.Dmm.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Emission.Tests/bin/Debug/net9.0/Osm.Emission.Tests.dll (.NETCoreApp,Version=v9.0)
+A total of 1 test files matched the specified pattern.
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/bin/Debug/net9.0/Osm.Cli.Tests.dll (.NETCoreApp,Version=v9.0)
+VSTest version 17.14.1 (arm64)
+
+VSTest version 17.14.1 (arm64)
+VSTest version 17.14.1 (arm64)
+
+VSTest version 17.14.1 (arm64)
+
+
+VSTest version 17.14.1 (arm64)
+
+VSTest version 17.14.1 (arm64)
+
+VSTest version 17.14.1 (arm64)
+
+Starting test execution, please wait...
+Starting test execution, please wait...
+Starting test execution, please wait...
+Starting test execution, please wait...
+Starting test execution, please wait...
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+A total of 1 test files matched the specified pattern.
+A total of 1 test files matched the specified pattern.
+A total of 1 test files matched the specified pattern.
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+A total of 1 test files matched the specified pattern.
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+[xUnit.net 00:00:00.09]   Discovering: Osm.Json.Tests
+[xUnit.net 00:00:00.12]   Discovered:  Osm.Json.Tests
+[xUnit.net 00:00:00.12]   Starting:    Osm.Json.Tests
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+[xUnit.net 00:00:00.01] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+[xUnit.net 00:00:00.09]   Discovering: Osm.Domain.Tests
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+[xUnit.net 00:00:00.12]   Discovering: Osm.Smo.Tests
+  Passed Osm.Json.Tests.Deserialization.MetaDescriptionReaderTests.Extract_ShouldSearchNestedStructures [20 ms]
+  Passed Osm.Json.Tests.AdvancedSqlScriptTests.JsonAggregates_ShouldEmbedNestedFragmentsWithoutEscaping(relativePath: "src/AdvancedSql/outsystems_model_export.sql") [19 ms]
+  Passed Osm.Json.Tests.Deserialization.MetaDescriptionReaderTests.Extract_ShouldLocateDescriptionProperty [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.MetaDescriptionReaderTests.Normalize_ShouldReturnNullForWhitespace [< 1 ms]
+  Passed Osm.Json.Tests.AdvancedSqlScriptTests.JsonAggregates_ShouldEmbedNestedFragmentsWithoutEscaping(relativePath: "src/AdvancedSql/outsystems_metadata_rowsets.sql") [2 ms]
+  Passed Osm.Json.Tests.Deserialization.TriggerDocumentMapperTests.Map_ShouldReturnEmpty_WhenNoTriggers [4 ms]
+  Passed Osm.Json.Tests.Deserialization.RelationshipDocumentMapperTests.Map_ShouldAllowMissingConstraintColumns [31 ms]
+  Passed Osm.Json.Tests.Deserialization.RelationshipDocumentMapperTests.Map_ShouldMaterializeActualConstraints [1 ms]
+  Passed Osm.Json.Tests.Deserialization.RelationshipDocumentMapperTests.Map_ShouldRespectHasConstraintFlag [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.SequenceDocumentMapperTests.Map_ShouldProduceSequenceModel [32 ms]
+  Passed Osm.Json.Tests.FixtureSanityTests.EdgeCaseModel_Should_BeDiscoverable [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.IndexDocumentMapperTests.Map_ShouldMaterializeOnDiskMetadata [34 ms]
+  Passed Osm.Json.Tests.Deserialization.TemporalMetadataMapperTests.Map_ShouldReturnNone_WhenDocumentMissing [2 ms]
+  Passed Osm.Json.Tests.FixtureSanityTests.EdgeCaseModel_Should_ExposeThreeModules [1 ms]
+  Passed Osm.Json.Tests.AdvancedSqlScriptTests.ConditionalJsonFragments_ShouldUseOuterJsonQuery(relativePath: "src/AdvancedSql/outsystems_model_export.sql") [18 ms]
+  Passed Osm.Json.Tests.Deserialization.TemporalMetadataMapperTests.Map_ShouldProjectRetentionMetadata [8 ms]
+  Passed Osm.Json.Tests.Deserialization.TriggerDocumentMapperTests.Map_ShouldFail_WhenNameInvalid [16 ms]
+  Passed Osm.Json.Tests.Deserialization.IndexDocumentMapperTests.Map_ShouldFail_WhenColumnsMissing [12 ms]
+  Passed Osm.Json.Tests.Deserialization.BooleanAsZeroOneConverterTests.Read_ShouldNormalizeSupportedValues(json: "true", expected: 1) [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.BooleanAsZeroOneConverterTests.Read_ShouldNormalizeSupportedValues(json: "\"1\"", expected: 1) [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.BooleanAsZeroOneConverterTests.Read_ShouldNormalizeSupportedValues(json: "false", expected: 0) [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.BooleanAsZeroOneConverterTests.Read_ShouldNormalizeSupportedValues(json: "1", expected: 1) [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.BooleanAsZeroOneConverterTests.Read_ShouldNormalizeSupportedValues(json: "\"true\"", expected: 1) [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.BooleanAsZeroOneConverterTests.Read_ShouldNormalizeSupportedValues(json: "0", expected: 0) [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.BooleanAsZeroOneConverterTests.Read_ShouldNormalizeSupportedValues(json: "\"False\"", expected: 0) [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.AttributeDocumentMapperTests.Map_ShouldFail_WhenNameIsInvalid [1 ms]
+  Passed Osm.Json.Tests.Deserialization.AttributeDocumentMapperTests.Map_ShouldProduceAttributeModel [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.AttributeDocumentMapperTests.Map_ShouldFail_WhenAttributeCollectionContainsNullEntry [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.BooleanAsZeroOneConverterTests.Read_ShouldThrow_WhenValueIsUnsupported [1 ms]
+  Passed Osm.Json.Tests.AdvancedSqlScriptTests.ConditionalJsonFragments_ShouldUseOuterJsonQuery(relativePath: "src/AdvancedSql/outsystems_metadata_rowsets.sql") [15 ms]
+  Passed Osm.Json.Tests.ProfileSnapshotDeserializerTests.Deserialize_ShouldIncludeForeignKeyMetadata_WhenReferenceSchemaInvalid [77 ms]
+[xUnit.net 00:00:00.12]   Discovered:  Osm.Domain.Tests
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+[xUnit.net 00:00:00.12]   Starting:    Osm.Domain.Tests
+  Passed Osm.Json.Tests.ProfileSnapshotDeserializerTests.Deserialize_ShouldFailWhenColumnsMissing [1 ms]
+  Passed Osm.Json.Tests.TighteningOptionsDeserializerTests.Deserialize_Should_Parse_Nullability_Overrides [83 ms]
+  Passed Osm.Json.Tests.TighteningOptionsDeserializerTests.Deserialize_Should_Parse_Entity_Naming_Overrides [3 ms]
+  Passed Osm.Json.Tests.TighteningOptionsDeserializerTests.Deserialize_Should_Fail_For_Invalid_Mode [< 1 ms]
+  Passed Osm.Json.Tests.TighteningOptionsDeserializerTests.Deserialize_Should_Enable_NoCheck_Flag_When_Configured [< 1 ms]
+  Passed Osm.Json.Tests.ProfileSnapshotDeserializerTests.Deserialize_ShouldParseCompositeUniqueCandidates [9 ms]
+  Passed Osm.Json.Tests.ProfileSnapshotDeserializerTests.Deserialize_ShouldIncludeCoordinateMetadata_WhenSchemaInvalid [1 ms]
+  Passed Osm.Json.Tests.TighteningOptionsDeserializerTests.Deserialize_Should_Honor_CautiousRelaxation_Flag [2 ms]
+  Passed Osm.Json.Tests.TighteningOptionsDeserializerTests.Deserialize_Should_Fail_For_Invalid_NullBudget [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.Map_ShouldDeduplicateInactiveReferenceAttributes_ByColumnName [56 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.Map_ShouldFail_WhenSchemaMissingAndNoOverride [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.ModuleDocumentMapperTests.Map_ShouldProjectActiveEntities [49 ms]
+  Passed Osm.Json.Tests.Deserialization.ModuleDocumentMapperTests.Map_ShouldFail_WhenEntityCollectionContainsNullEntry [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.ModuleDocumentMapperTests.Map_ShouldReturnNull_WhenAllEntitiesInactive [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.DuplicateWarningEmitter_ShouldReportDuplicates_WhenAllowancesEnabled [2 ms]
+  Passed Osm.Json.Tests.TighteningOptionsDeserializerTests.Deserialize_Should_Load_Default_Configuration [4 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.PrimaryKeyValidator_ShouldFail_WhenNoIdentifierAndOverrideMissing [< 1 ms]
+  Passed Osm.Json.Tests.ProfileSnapshotDeserializerTests.Deserialize_ShouldParseEdgeCaseFixture [6 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.Map_ShouldDeduplicateInactiveReferenceAttributes_ByLogicalName [< 1 ms]
+  Passed Osm.Json.Tests.TighteningOptionsDeserializerTests.Deserialize_Should_Honor_Legacy_Table_And_Entity_Collections [2 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.Map_ShouldAllowMissingSchema_WhenOverrideExists [2 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.PrimaryKeyValidator_ShouldWarn_WhenOverrideAllowsMissingPrimaryKey [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.Map_ShouldFail_WhenDuplicateReferenceAttributesAmbiguous [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.EntityMetadataFactory_ShouldCreateMetadata [2 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.Map_ShouldWarnAndSucceed_WhenDuplicateLogicalNamesAllowed [< 1 ms]
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+[xUnit.net 00:00:00.05]   Discovering: Osm.Validation.Tests
+[xUnit.net 00:00:00.11]   Discovering: Osm.Emission.Tests
+[xUnit.net 00:00:00.15]   Discovering: Osm.Dmm.Tests
+[xUnit.net 00:00:00.18]   Discovered:  Osm.Dmm.Tests
+[xUnit.net 00:00:00.18]   Starting:    Osm.Dmm.Tests
+  Passed Osm.Domain.Tests.AttributeReferenceTests.Create_ShouldNormalizeDeleteRuleAndConstraint [10 ms]
+  Passed Osm.Domain.Tests.AttributeReferenceTests.Create_ShouldReturnNone_WhenIsReferenceFalse [< 1 ms]
+  Passed Osm.Domain.Tests.RelationshipModelTests.Create_ShouldTrimDeleteRuleAndPreserveConstraint [8 ms]
+  Passed Osm.Domain.Tests.RelationshipModelTests.Create_ShouldDefaultDeleteRuleToIgnore_WhenNull [< 1 ms]
+  Passed Osm.Domain.Tests.IndexModelTests.Create_ShouldAttach_OnDiskMetadata [12 ms]
+  Passed Osm.Domain.Tests.IndexOnDiskMetadataTests.Create_ShouldNormalizeFillFactor(input: 65, expected: 65) [2 ms]
+  Passed Osm.Domain.Tests.IndexOnDiskMetadataTests.Create_ShouldNormalizeFillFactor(input: 0, expected: null) [1 ms]
+  Passed Osm.Domain.Tests.IndexOnDiskMetadataTests.Create_ShouldNormalizeFillFactor(input: 105, expected: null) [< 1 ms]
+  Passed Osm.Domain.Tests.IndexOnDiskMetadataTests.Create_ShouldNormalizeFillFactor(input: null, expected: null) [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_SortsAndDeduplicatesModules [20 ms]
+  Passed Osm.Domain.Tests.AttributeReferenceTests.Create_ShouldFail_WhenReferenceMissingTargetNames [10 ms]
+  Passed Osm.Domain.Tests.EntityModelTests.Create_ShouldFail_WhenDuplicateAttributePhysicalNamesDetectedIgnoringCase [21 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_RejectsWhitespaceModuleName [< 1 ms]
+  Passed Osm.Domain.Tests.EntityEmissionSnapshotTests.Create_FiltersInactiveAttributesAndSelectsIdentifiers [21 ms]
+  Passed Osm.Domain.Tests.IndexColumnModelTests.Create_ShouldFail_WhenOrdinalNotPositive [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_RejectsModulesWithDelimitersOrLineBreaks(module: "App\rCore") [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_RejectsModulesWithDelimitersOrLineBreaks(module: "App\nCore") [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_RejectsModulesWithDelimitersOrLineBreaks(module: "App,Core") [< 1 ms]
+  Passed Osm.Domain.Tests.IndexModelTests.Create_ShouldFail_WhenColumnsEmpty [9 ms]
+  Passed Osm.Domain.Tests.IndexColumnModelTests.Create_ShouldSucceed_WhenOrdinalPositive [1 ms]
+  Passed Osm.Domain.Tests.ModuleModelTests.Create_ShouldSucceed_WhenEntitiesAreUnique [23 ms]
+  Passed Osm.Domain.Tests.ModuleModelTests.Create_ShouldFail_WhenEntitiesMissing [< 1 ms]
+  Passed Osm.Domain.Tests.AttributeModelTests.Create_ShouldTrimOptionalFields [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleModelTests.Create_ShouldFail_WhenDuplicateLogicalNames [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleModelTests.Create_ShouldFail_WhenDuplicatePhysicalNamesIgnoringCase [< 1 ms]
+  Passed Osm.Domain.Tests.AttributeModelTests.Create_ShouldFail_WhenPrecisionNegative [< 1 ms]
+  Passed Osm.Domain.Tests.AttributeModelTests.Create_ShouldReturnReferenceNone_WhenNotReference [< 1 ms]
+  Passed Osm.Domain.Tests.IndexDataSpaceTests.Create_ShouldFail_WhenNameMissing(name: "   ") [< 1 ms]
+  Passed Osm.Domain.Tests.OsmModelTests.Create_ShouldSucceed_WhenModulesAreDistinct [24 ms]
+  Passed Osm.Domain.Tests.IndexDataSpaceTests.Create_ShouldFail_WhenNameMissing(name: "") [< 1 ms]
+  Passed Osm.Domain.Tests.IndexDataSpaceTests.Create_ShouldFail_WhenNameMissing(name: null) [< 1 ms]
+  Passed Osm.Domain.Tests.AttributeModelTests.Create_ShouldFail_WhenScaleNegative [< 1 ms]
+  Passed Osm.Domain.Tests.OsmModelTests.Create_ShouldFail_WhenNoModulesProvided [< 1 ms]
+  Passed Osm.Domain.Tests.IndexDataSpaceTests.Create_ShouldFail_WhenTypeMissing(type: "") [< 1 ms]
+  Passed Osm.Domain.Tests.IndexOnDiskMetadataTests.Create_ShouldPreserveExplicitCollections [7 ms]
+  Passed Osm.Domain.Tests.IndexDataSpaceTests.Create_ShouldFail_WhenTypeMissing(type: null) [< 1 ms]
+  Passed Osm.Domain.Tests.IndexDataSpaceTests.Create_ShouldFail_WhenTypeMissing(type: "   ") [< 1 ms]
+  Passed Osm.Domain.Tests.IndexDataSpaceTests.Create_ShouldTrimValues [< 1 ms]
+  Passed Osm.Domain.Tests.OsmModelTests.Create_ShouldFail_WhenModuleNamesCollideIgnoringCase [< 1 ms]
+  Passed Osm.Domain.Tests.AttributeModelTests.Create_ShouldFail_WhenDataTypeMissing [< 1 ms]
+  Passed Osm.Domain.Tests.IndexModelTests.Create_ShouldSucceed_WhenOrdinalsUnique [2 ms]
+  Passed Osm.Domain.Tests.IndexOnDiskMetadataTests.Create_ShouldUseEmptyCollections_WhenDefaultsProvided [< 1 ms]
+  Passed Osm.Domain.Tests.AttributeModelTests.Create_ShouldFail_WhenLengthNegative [< 1 ms]
+  Passed Osm.Domain.Tests.IndexModelTests.Create_ShouldFail_WhenDuplicateOrdinals [< 1 ms]
+  Passed Osm.Domain.Tests.IndexOnDiskMetadataTests.Create_ShouldNormalizeFilterDefinition [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_AcceptsCleanModuleNames [3 ms]
+  Passed Osm.Domain.Tests.EntityModelTests.Create_ShouldSucceed_WhenInputsAreValid [5 ms]
+  Passed Osm.Domain.Tests.EntityModelTests.Create_ShouldFail_WhenAttributesAreEmpty [< 1 ms]
+  Passed Osm.Domain.Tests.EntityModelTests.Create_ShouldFail_WhenPrimaryKeyMissing [< 1 ms]
+  Passed Osm.Domain.Tests.EntityModelTests.Create_ShouldFail_WhenDuplicateAttributeLogicalNamesDetected [< 1 ms]
+  Passed Osm.Domain.Tests.EntityModelTests.Create_ShouldFail_WhenDuplicateTriggerNames [< 1 ms]
+  Passed Osm.Domain.Tests.EntityModelTests.Create_ShouldAllowDuplicateAttributeColumns_WhenOverrideEnabled [< 1 ms]
+  Passed Osm.Domain.Tests.EntityModelTests.Create_ShouldAllowMissingPrimaryKey_WhenOverrideEnabled [< 1 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.TighteningOptions_Create_Should_Succeed_With_Valid_Children [9 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_ParsesEntityFilters [5 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.MockingOptions_Should_Require_Folder_When_Enabled [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_ReturnsFailure_WhenEntityFilterEmpty [< 1 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.NullabilityOverrideRule_Should_Require_Module_Entity_And_Attribute [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.WithIncludeSystemModules_ShouldUpdateFlag [2 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.NamingOverrideOptions_Should_Prefer_Module_Specific_Entity_Override [3 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.NamingOverrideRule_Should_Default_Schema_When_Only_Table [< 1 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.NamingOverrideOptions_Should_Apply_Entity_Override_By_Logical_Name [< 1 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.NamingOverrideOptions_Should_Fail_On_Conflicting_Physical_Override [< 1 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.NamingOverrideOptions_Should_Apply_Physical_And_Logical_From_Single_Rule [< 1 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.RemediationOptions_Should_Require_Sentinels [< 1 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.NullabilityOverrideOptions_Should_Relax_Configured_Column [4 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.PolicyOptions_Should_Reject_OutOfRange_NullBudget [< 1 ms]
+  Passed Osm.Domain.Tests.TighteningOptionsTests.NamingOverrideOptions_Should_Fail_On_Conflicting_Entity_Overrides [< 1 ms]
+[xUnit.net 00:00:00.23]   Finished:    Osm.Domain.Tests
+[xUnit.net 00:00:00.19]   Discovered:  Osm.Emission.Tests
+[xUnit.net 00:00:00.19]   Starting:    Osm.Emission.Tests
+[xUnit.net 00:00:00.19]   Discovering: Osm.Pipeline.Tests
+[xUnit.net 00:00:00.15]   Discovered:  Osm.Validation.Tests
+[xUnit.net 00:00:00.15]   Starting:    Osm.Validation.Tests
+[xUnit.net 00:00:00.12]   Discovering: Osm.Cli.Tests
+  Passed Osm.Domain.Tests.TighteningOptionsTests.NamingOverrideRule_Should_Create_Module_Scoped_Logical_Override [1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Merge_AddsNewModules [13 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_Allows256CharacterModuleName [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_RejectsNullModuleName [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Create_ReturnsIncludeAll_WhenModulesNull [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.Merge_IgnoresDuplicateModules [< 1 ms]
+  Passed Osm.Domain.Tests.ModuleFilterOptionsTests.WithIncludeInactiveModules_ShouldUpdateFlag [< 1 ms]
+
+Test Run Successful.
+Total tests: 75
+     Passed: 75
+ Total time: 0.8022 Seconds
+[xUnit.net 00:00:00.28]   Discovered:  Osm.Pipeline.Tests
+[xUnit.net 00:00:00.28]   Starting:    Osm.Pipeline.Tests
+  Passed Osm.Emission.Tests.SqlLiteralFormatterTests.EscapeString_EscapesSingleQuotes [3 ms]
+  Passed Osm.Emission.Tests.SqlLiteralFormatterTests.FormatValue_WithBinary_ReturnsHexLiteral [1 ms]
+  Passed Osm.Emission.Tests.TableHeaderFactoryTests.Create_returns_null_when_headers_disabled [18 ms]
+  Passed Osm.Emission.Tests.StaticEntitySeedScriptGeneratorTests.Generate_WithValidateThenApplyMode_AddsDriftGuards [18 ms]
+  Passed Osm.Emission.Tests.StaticEntitySeedScriptGeneratorTests.Generate_UsesEffectiveTableNameWhenOverridden [< 1 ms]
+  Passed Osm.Emission.Tests.StaticEntitySeedScriptGeneratorTests.Generate_WithValidateThenApplyModeAndNoRows_GuardsAgainstExistingData [< 1 ms]
+  Passed Osm.Emission.Tests.StaticEntitySeedScriptGeneratorTests.Generate_ProducesMergeBlocksForEachRow [< 1 ms]
+  Passed Osm.Emission.Tests.TableHeaderFactoryTests.Create_includes_rename_details_when_mapping_is_present [2 ms]
+  Passed Osm.Emission.Tests.StaticEntitySeedScriptGeneratorTests.StaticEntitySeedColumn_NormalizeValue_ConvertsSingleSpaceToNullWhenNullable [2 ms]
+  Passed Osm.Emission.Tests.StaticEntitySeedScriptGeneratorTests.Generate_WithAuthoritativeMode_AppendsDeleteClause [< 1 ms]
+  Passed Osm.Emission.Tests.SqlLiteralFormatterTests.FormatValue_WithDateTime_UsesDatetime2Cast [16 ms]
+  Passed Osm.Emission.Tests.SqlLiteralFormatterTests.FormatValue_WithTimeOnly_UsesCast [< 1 ms]
+  Passed Osm.Emission.Tests.SqlLiteralFormatterTests.FormatValue_WithNull_ReturnsNullLiteral [< 1 ms]
+  Passed Osm.Emission.Tests.SqlLiteralFormatterTests.FormatValue_WithString_EscapesAndPrefixesUnicode(input: "O'Brien", expected: "N'O''Brien'") [< 1 ms]
+  Passed Osm.Emission.Tests.SqlLiteralFormatterTests.FormatValue_WithString_EscapesAndPrefixesUnicode(input: "", expected: "N''") [< 1 ms]
+  Passed Osm.Emission.Tests.SqlLiteralFormatterTests.FormatValue_WithDateTimeOffset_UsesDatetimeOffsetCast [< 1 ms]
+  Passed Osm.Emission.Tests.SqlLiteralFormatterTests.FormatValue_WithDateOnly_UsesCast [< 1 ms]
+  Passed Osm.Emission.Tests.TablePlanWriterTests.WriteAsync_skips_when_content_is_unchanged [34 ms]
+  Passed Osm.Emission.Tests.TablePlanWriterTests.WriteAsync_writes_plan_content_and_appends_newline [1 ms]
+  Passed Osm.Emission.Tests.StaticEntitySeedScriptGeneratorTests.Generate_OrdersTablesUsingForeignKeyDependencies [14 ms]
+  Passed Osm.Emission.Tests.TablePlanWriterTests.WriteAsync_respects_parallelism_when_multiple_plans_are_provided [1 ms]
+  Passed Osm.Emission.Tests.EntityDependencySorterTests.SortByForeignKeys_ResolvesSanitizedEffectiveNames [40 ms]
+  Passed Osm.Emission.Tests.StaticSeedSqlBuilderValidationOverridesTests.BuildBlock_WithoutPrimaryKey_EmptyRows_WithOverride_Succeeds [24 ms]
+  Passed Osm.Emission.Tests.StaticSeedSqlBuilderValidationOverridesTests.BuildBlock_WithoutPrimaryKey_MultipleEntitiesInOverride_OnlyConfiguredEntitySucceeds [< 1 ms]
+  Passed Osm.Emission.Tests.StaticSeedSqlBuilderValidationOverridesTests.BuildBlock_WithoutPrimaryKey_AndNoOverride_ThrowsException [< 1 ms]
+  Passed Osm.Emission.Tests.StaticSeedSqlBuilderValidationOverridesTests.BuildBlock_WithPrimaryKey_WithOverride_UsesOnlyPrimaryKeyForMatching [< 1 ms]
+  Passed Osm.Emission.Tests.StaticSeedSqlBuilderValidationOverridesTests.BuildBlock_WithoutPrimaryKey_WithOverride_Succeeds [< 1 ms]
+  Passed Osm.Emission.Tests.StaticSeedSqlBuilderValidationOverridesTests.BuildBlock_WithoutPrimaryKey_WithWildcardOverride_Succeeds [< 1 ms]
+  Passed Osm.Emission.Tests.StaticSeedSqlBuilderValidationOverridesTests.BuildBlock_WithoutPrimaryKey_WithWrongEntityOverride_ThrowsException [< 1 ms]
+  Passed Osm.Emission.Tests.SsdtEmitterTests.EmitAsync_honors_cancellation_token [53 ms]
+  Passed Osm.Emission.Tests.StaticSeedSqlBuilderValidationOverridesTests.BuildBlock_WithoutPrimaryKey_WithWrongModuleOverride_ThrowsException [< 1 ms]
+  Passed Osm.Emission.Tests.StaticEntitySeedScriptGeneratorTests.DefinitionBuilder_UsesEmissionSnapshotFiltering [18 ms]
+  Passed Osm.Emission.Tests.ManifestBuilderTests.Build_populates_summary_and_defaults_when_report_is_provided [33 ms]
+  Passed Osm.Emission.Tests.EntityDependencySorterTests.SortByForeignKeys_DefersJunctionTablesWhenEdgesMissing [16 ms]
+  Passed Osm.Emission.Tests.EntityDependencySorterTests.SortByForeignKeys_DetectsCyclesAndAppliesFallback [< 1 ms]
+  Passed Osm.Emission.Tests.EntityDependencySorterTests.SortByForeignKeys_ReportsMissingEdgesWhenReferencedTableAbsent [< 1 ms]
+  Passed Osm.Emission.Tests.EntityDependencySorterTests.SortByForeignKeys_ReportsEdgesAfterMetadataEnrichment [< 1 ms]
+  Passed Osm.Emission.Tests.EntityDependencySorterTests.SortByForeignKeys_ParentsPrecedeChildren [< 1 ms]
+  Passed Osm.Emission.Tests.StaticSeedForeignKeyPreflightTests.Analyze_WhenParentAfterChild_FlagsOrderingViolation [62 ms]
+  Passed Osm.Emission.Tests.StaticSeedForeignKeyPreflightTests.Analyze_WhenParentsPresent_ReturnsEmpty [1 ms]
+  Passed Osm.Emission.Tests.StaticSeedForeignKeyPreflightTests.Analyze_WhenParentMissing_FlagsOrphan [< 1 ms]
+  Passed Osm.Emission.Tests.DynamicEntityInsertGeneratorTests.GenerateScripts_EmitsSelfReferencingParentsBeforeChildren [65 ms]
+  Passed Osm.Emission.Tests.DynamicEntityInsertGeneratorTests.GenerateScripts_BatchesLargeDatasetsWithoutRepeatedEnumeration [9 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.SchemaResolver_ShouldApplyFallback_WhenOverrideAllowsMissingSchema [< 1 ms]
+  Passed Osm.Json.Tests.Deserialization.EntityDocumentMapperTests.Map_ShouldWarnAndSucceed_WhenDuplicateColumnNamesAllowed [< 1 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldAcceptBooleanPhysicalPresenceFlag [334 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldSkipInactiveModuleWhenAllEntitiesAreInactiveWithoutAttributes [16 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldWarnAndSkipModulesWithoutEntities [2 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenModuleEntityEntryIsNull [1 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenJsonMalformed [1 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenAttributesCollectionMissing [1 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenModuleEntryNull [3 ms]
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Documentation.Tests/bin/Debug/net9.0/Osm.Documentation.Tests.dll (.NETCoreApp,Version=v9.0)
+[xUnit.net 00:00:00.29]   Discovered:  Osm.Cli.Tests
+[xUnit.net 00:00:00.29]   Starting:    Osm.Cli.Tests
+VSTest version 17.14.1 (arm64)
+
+  Passed Osm.Pipeline.Tests.CommandDispatcherTests.DispatchAsync_InvokesRegisteredHandler [5 ms]
+  Passed Osm.Pipeline.Tests.CommandDispatcherTests.DispatchAsync_DisposesHandlerScope [1 ms]
+  Passed Osm.Pipeline.Tests.CommandDispatcherTests.DispatchAsync_ThrowsWhenHandlerMissing [1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetDescriptorTests.EntitiesDescriptor_ShouldExposeColumnMetadataInOrdinalOrder [27 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetDescriptorTests.EntitiesProcessor_ShouldPopulateAccumulator [12 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetDescriptorTests.AttributesDescriptor_ShouldDescribeNullability [5 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetDescriptorTests.AttributesProcessor_ShouldPreserveNullableFields [2 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetDescriptorTests.ModuleJsonProcessor_ShouldCaptureSerializedModule [1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.PrepareUserMapStepTests.GeneratesTemplateAndAugmentsMap [64 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.PrepareUserMapStepTests.ExecuteAsync_DoesNotRewriteUserMapWhenIdempotentEmissionEnabled [5 ms]
+  Passed Osm.Pipeline.Tests.StaticDataProviderFactoryTests.Create_UsesSqlProviderWhenConnectionStringAvailable [3 ms]
+  Passed Osm.Pipeline.Tests.StaticDataProviderFactoryTests.Create_UsesFixtureProviderWhenPathProvided [< 1 ms]
+  Passed Osm.Pipeline.Tests.StaticDataProviderFactoryTests.Create_FailsWhenStaticDataRequiredButUnavailable [5 ms]
+  Passed Osm.Pipeline.Tests.Evidence.ManifestEvaluatorTests.EvaluateAsync_ShouldDescribeArtifactMismatch [86 ms]
+  Passed Osm.Pipeline.Tests.Evidence.ManifestEvaluatorTests.EvaluateAsync_ShouldDetectExpiredManifest [1 ms]
+  Passed Osm.Pipeline.Tests.Evidence.ManifestEvaluatorTests.EvaluateAsync_ShouldReuseManifest_WhenArtifactsMatch [4 ms]
+  Passed Osm.Pipeline.Tests.Evidence.ManifestEvaluatorTests.EvaluateAsync_ShouldDetectMetadataMismatch [1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientAdvancedSqlExecutorTests.ExecuteAsync_ShouldReturnFailureWhenNoRows [15 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.DuplicateLogicalNames_WithModuleOverride_SelectsOverride [127 ms]
+  Passed Osm.Validation.Tests.ModelValidation.ModelValidatorHappyPathTests.Validate_ShouldReturnValidReport_ForEdgeCaseFixture [222 ms]
+  Passed Osm.Validation.Tests.ModelValidation.IndexRulesTests.Validate_ShouldFail_WhenIndexOrdinalsHaveGaps [224 ms]
+  Passed Osm.Validation.Tests.ModelValidation.IndexRulesTests.Validate_ShouldFail_WhenIndexReferencesMissingAttribute [< 1 ms]
+  Passed Osm.Validation.Tests.ModelValidation.RequiredFieldsTests.Validate_ShouldFail_WhenModuleContainsNoEntities [226 ms]
+  Passed Osm.Validation.Tests.ModelValidation.RequiredFieldsTests.Validate_ShouldFail_WhenModelContainsNoModules [2 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.ForeignKeyMatrix_EvaluatorAlignsWithDefinitions(scenarioName: "IgnoreRule", expectCreate: True) [6 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.ForeignKeyMatrix_EvaluatorAlignsWithDefinitions(scenarioName: "CrossSchemaBlocked", expectCreate: False) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.ForeignKeyMatrix_EvaluatorAlignsWithDefinitions(scenarioName: "CrossCatalogBlocked", expectCreate: False) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.ForeignKeyMatrix_EvaluatorAlignsWithDefinitions(scenarioName: "HasOrphan", expectCreate: False) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.ForeignKeyMatrix_EvaluatorAlignsWithDefinitions(scenarioName: "PolicyDisabled", expectCreate: False) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.ForeignKeyMatrix_EvaluatorAlignsWithDefinitions(scenarioName: "Eligible", expectCreate: True) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.ForeignKeyMatrix_EvaluatorAlignsWithDefinitions(scenarioName: "ExistingConstraint", expectCreate: True) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.PhysicalRealityTests.PhysicalNotNullColumns_AreHonoredEvenInCautiousMode [5 ms]
+  Passed Osm.Validation.Tests.Policy.OpportunityTests.Create_SortsAndDeduplicatesEvidence [8 ms]
+  Passed Osm.Validation.Tests.Policy.UniqueIndexDecisionStrategyTests.EvidenceModeTreatsIncludedColumnsAsSingleColumnIndex [240 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_emits_evidence_warning_for_null_count_probe_outcome(outcome: FallbackTimeout, expectedPhrase: "timed out") [7 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_emits_evidence_warning_for_null_count_probe_outcome(outcome: Cancelled, expectedPhrase: "cancelled") [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: EvidenceGated, scenarioName: "DuplicatesWithoutPhysicalReality", enforce: False, remediationName: "None", expectedRationales: ["UNIQUE_DUPLICATES_PRESENT", "COMPOSITE_UNIQUE_DUPLICATES_PRESENT"]) [9 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Cautious, scenarioName: "PhysicalReality", enforce: True, remediationName: "None", expectedRationales: ["PHYSICAL_UNIQUE_KEY"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Aggressive, scenarioName: "PhysicalReality", enforce: True, remediationName: "None", expectedRationales: ["PHYSICAL_UNIQUE_KEY"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Cautious, scenarioName: "CleanWithEvidence", enforce: False, remediationName: "None", expectedRationales: ["DATA_NO_NULLS", "UNIQUE_NO_NULLS", "COMPOSITE_UNIQUE_NO_NULLS"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Cautious, scenarioName: "CleanWithoutEvidence", enforce: False, remediationName: "None", expectedRationales: ["PROFILE_MISSING", "UNIQUE_NO_NULLS", "COMPOSITE_UNIQUE_NO_NULLS"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: EvidenceGated, scenarioName: "CleanWithoutEvidence", enforce: False, remediationName: "None", expectedRationales: ["PROFILE_MISSING", "UNIQUE_NO_NULLS", "COMPOSITE_UNIQUE_NO_NULLS"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Aggressive, scenarioName: "DuplicatesWithPhysicalReality", enforce: True, remediationName: "Always", expectedRationales: ["PHYSICAL_UNIQUE_KEY", "UNIQUE_DUPLICATES_PRESENT", "COMPOSITE_UNIQUE_DUPLICATES_PRESENT", "REMEDIATE_BEFORE_TIGHTEN"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Aggressive, scenarioName: "CleanWithoutEvidence", enforce: True, remediationName: "WhenEvidenceMissing", expectedRationales: ["PROFILE_MISSING", "UNIQUE_NO_NULLS", "COMPOSITE_UNIQUE_NO_NULLS", "REMEDIATE_BEFORE_TIGHTEN"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_emits_evidence_warning_for_unique_candidate_probe_outcome(outcome: Cancelled) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: EvidenceGated, scenarioName: "PhysicalReality", enforce: True, remediationName: "None", expectedRationales: ["PHYSICAL_UNIQUE_KEY"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Cautious, scenarioName: "PolicyDisabled", enforce: False, remediationName: "None", expectedRationales: ["UNIQUE_POLICY_DISABLED"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: EvidenceGated, scenarioName: "CleanWithEvidence", enforce: True, remediationName: "None", expectedRationales: ["DATA_NO_NULLS", "UNIQUE_NO_NULLS", "COMPOSITE_UNIQUE_NO_NULLS"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Aggressive, scenarioName: "DuplicatesWithoutPhysicalReality", enforce: True, remediationName: "Always", expectedRationales: ["UNIQUE_DUPLICATES_PRESENT", "COMPOSITE_UNIQUE_DUPLICATES_PRESENT", "PROFILE_MISSING", "REMEDIATE_BEFORE_TIGHTEN"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_emits_evidence_warning_for_unique_candidate_probe_outcome(outcome: FallbackTimeout) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Aggressive, scenarioName: "CleanWithEvidence", enforce: True, remediationName: "None", expectedRationales: ["DATA_NO_NULLS", "UNIQUE_NO_NULLS", "COMPOSITE_UNIQUE_NO_NULLS"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: EvidenceGated, scenarioName: "PolicyDisabled", enforce: False, remediationName: "None", expectedRationales: ["UNIQUE_POLICY_DISABLED"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Aggressive, scenarioName: "PolicyDisabled", enforce: False, remediationName: "None", expectedRationales: ["UNIQUE_POLICY_DISABLED"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Cautious, scenarioName: "DuplicatesWithPhysicalReality", enforce: True, remediationName: "None", expectedRationales: ["PHYSICAL_UNIQUE_KEY", "UNIQUE_DUPLICATES_PRESENT", "COMPOSITE_UNIQUE_DUPLICATES_PRESENT"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: EvidenceGated, scenarioName: "DuplicatesWithPhysicalReality", enforce: True, remediationName: "None", expectedRationales: ["PHYSICAL_UNIQUE_KEY", "UNIQUE_DUPLICATES_PRESENT", "COMPOSITE_UNIQUE_DUPLICATES_PRESENT"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_DefinitionsRemainStable(mode: Cautious, scenarioName: "DuplicatesWithoutPhysicalReality", enforce: False, remediationName: "None", expectedRationales: ["UNIQUE_DUPLICATES_PRESENT", "COMPOSITE_UNIQUE_DUPLICATES_PRESENT"]) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.UniqueMatrix_RowCountMatchesExpectations [< 1 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_emits_duplicate_warning_for_unique_candidate_with_duplicates [< 1 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_emits_evidence_warning_for_foreign_key_probe_outcome(outcome: Cancelled) [< 1 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_emits_evidence_warning_for_foreign_key_probe_outcome(outcome: FallbackTimeout) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.ForeignKeyMatrix_DefinitionsMatchExpectations [2 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_includes_orphan_sample_details_in_message [2 ms]
+  Passed Osm.Validation.Tests.Policy.ColumnIdentityTests.FromEntityAndAttribute_PopulatesMetadata [247 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.NullabilityMatrix_MetadataMatchesExpectations [4 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_rolls_up_nullability_recommendations_by_table [4 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_emits_null_tightening_recommendation_for_nullable_column_without_nulls [< 1 ms]
+  Passed Osm.Validation.Tests.Profiling.ProfilingInsightGeneratorTests.Generate_emits_orphan_warning_for_foreign_key [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.ColumnIdentityTests.FromForeignKeyReference_ResolvesReferencingColumn [7 ms]
+  Passed Osm.Validation.Tests.Policy.ColumnIdentityTests.FromColumnProfile_ResolvesUsingAttributeIndex [11 ms]
+  Passed Osm.Validation.Tests.Policy.ForeignKeyEvaluatorTests.Should_Create_Constraint_When_Eligible_And_Creation_Enabled [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.ForeignKeyEvaluatorTests.Should_Block_CrossSchema_Constraint_When_Overrides_Disallow [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.ForeignKeyEvaluatorTests.TreatMissingDeleteRuleAsIgnore_AllowsCreation [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.ForeignKeyEvaluatorTests.CautiousMode_WithOrphans_ScriptsWithNoCheck [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyGoldenVectorsTests.EvaluateEvidenceGatedTightensOnCleanSignals [16 ms]
+  Passed Osm.Validation.Tests.Policy.EntityLookupResolverTests.Should_Select_Override_When_Module_Provides_Single_Canonical [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyGoldenVectorsTests.EvaluateCautiousMatchesGoldenExpectations [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.EntityLookupResolverTests.Should_Treat_All_Module_Overrides_As_Resolved [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMatrixTests.NullabilityMatrix_DefinitionsMatchExpectations [20 ms]
+  Passed Osm.Validation.Tests.Policy.EntityLookupResolverTests.Should_Report_Conflicting_Module_Overrides_When_Not_All_Duplicates_Are_Covered [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyGoldenVectorsTests.EvaluateAggressiveRequiresRemediationWhenDataIsDirty [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.MandatoryDefaultTests.MandatoryDefaultColumns_TightenWhenDataIsClean [3 ms]
+  Passed Osm.Validation.Tests.Policy.MandatoryDefaultTests.MandatoryColumnsWithoutDefault_TightenWhenDataIsClean [5 ms]
+  Passed Osm.Validation.Tests.ModelValidation.AttributeUniquenessTests.Validate_ShouldFlagDuplicateLogicalAttributeNames [1 ms]
+  Passed Osm.Validation.Tests.ModelValidation.AttributeUniquenessTests.Validate_ShouldFlagDuplicatePhysicalAttributeNames [< 1 ms]
+  Passed Osm.Validation.Tests.ModelValidation.IdentifierRulesTests.Validate_ShouldFail_WhenMultipleIdentifiersPresent [< 1 ms]
+  Passed Osm.Validation.Tests.ModelValidation.IdentifierRulesTests.Validate_ShouldFail_WhenIdentifierMissing [< 1 ms]
+  Passed Osm.Validation.Tests.ModelValidation.IdentifierRulesTests.Validate_ShouldFail_WhenIdentifierTypeNotIdentifier [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.NullabilityEvaluatorTests.EvidenceGated_Should_StayNullable_When_MandatoryColumn_Has_Nulls [1 ms]
+  Passed Osm.Validation.Tests.Policy.NullBudgetTests.NullBudget_AllowsTinyNullRatesWithinTolerance [295 ms]
+  Passed Osm.Validation.Tests.Policy.DecisionReportTests.Reporter_AggregatesCountsAndRationales [25 ms]
+  Passed Osm.Validation.Tests.Policy.ChangeRiskClassifierTests.ForUniqueIndex_WhenDuplicatesDetected_ReturnsHighRisk [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.ChangeRiskClassifierTests.ForNotNull_WhenProfileMissing_ReturnsHighRisk [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.ChangeRiskClassifierTests.ForForeignKey_WhenOrphansDetected_ReturnsHighRisk [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.ChangeRiskClassifierTests.ForForeignKey_WhenScriptedWithNoCheck_ReturnsHighRisk [< 1 ms]
+  Passed Osm.Validation.Tests.ModelValidation.ReferenceRulesTests.Validate_ShouldWarn_WhenDbConstraintCrossesCatalog [2 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.UniqueColumn_TighteningDependsOnMode(mode: Cautious, expected: True, expectDataRationales: False) [171 ms]
+  Passed Osm.Validation.Tests.Policy.OpportunityBuilderTests.TryCreate_BuildsOpportunityWithExpectedSummary(enforceUnique: True, requiresRemediation: True, hasDuplicates: False, policyDisabled: False, hasEvidence: True, physicalReality: False, expectedSummary: "Unique index was not enforced. Remediate data befo"···, expectedRisk: Moderate) [32 ms]
+  Passed Osm.Validation.Tests.Policy.NullabilityEvaluatorTests.Analyze_Should_Create_Remediation_Opportunity_When_Data_Has_Nulls [14 ms]
+  Passed Osm.Validation.Tests.Policy.OpportunityBuilderTests.TryCreate_BuildsOpportunityWithExpectedSummary(enforceUnique: False, requiresRemediation: False, hasDuplicates: False, policyDisabled: True, hasEvidence: True, physicalReality: False, expectedSummary: "Unique index was not enforced. Enable policy suppo"···, expectedRisk: Moderate) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.OpportunityBuilderTests.TryCreate_BuildsOpportunityWithExpectedSummary(enforceUnique: False, requiresRemediation: False, hasDuplicates: False, policyDisabled: False, hasEvidence: False, physicalReality: False, expectedSummary: "Unique index was not enforced. Collect profiling e"···, expectedRisk: Moderate) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.OpportunityBuilderTests.TryCreate_BuildsOpportunityWithExpectedSummary(enforceUnique: False, requiresRemediation: False, hasDuplicates: False, policyDisabled: False, hasEvidence: True, physicalReality: False, expectedSummary: "Unique index was not enforced. Review policy requi"···, expectedRisk: Moderate) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.OpportunityBuilderTests.TryCreate_BuildsOpportunityWithExpectedSummary(enforceUnique: False, requiresRemediation: False, hasDuplicates: True, policyDisabled: False, hasEvidence: True, physicalReality: False, expectedSummary: "Unique index was not enforced. Resolve duplicate v"···, expectedRisk: High) [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.OpportunityBuilderTests.TryCreate_ReturnsNullWhenEnforcementSafe [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.NullabilityEvaluatorTests.EvidenceGated_Should_Tighten_MandatoryColumn_When_NullBudgetNotExceeded [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.UniqueIndexDecisionOrchestratorTests.Evaluate_CreatesUniqueDecisionsAndOpportunities [67 ms]
+  Passed Osm.Validation.Tests.Policy.NullabilityEvaluatorTests.Cautious_Should_Allow_MandatoryRelaxation_When_FlagEnabled [< 1 ms]
+  Passed Osm.Validation.Tests.ModelValidation.ReferenceRulesTests.Validate_ShouldFail_WhenReferenceTargetsUnknownEntity [5 ms]
+  Passed Osm.Validation.Tests.Policy.NullabilityEvaluatorTests.Aggressive_Should_Flag_Remediation_When_UniqueSignal_Exceeds_NullBudget [< 1 ms]
+  Passed Osm.Validation.Tests.ModelValidation.ReferenceRulesTests.Validate_ShouldFail_WhenReferenceMetadataMissing [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.NullabilityEvaluatorTests.Analyze_Should_Skip_Opportunity_For_Intentional_Nullability [< 1 ms]
+  Passed Osm.Validation.Tests.ModelValidation.ReferenceRulesTests.Validate_ShouldWarn_WhenDbConstraintCrossesSchema [13 ms]
+  Passed Osm.Validation.Tests.Policy.NullabilityEvaluatorTests.NullabilityOverride_Should_Keep_Column_Nullable [15 ms]
+  Passed Osm.Pipeline.Tests.Configuration.SqlSectionReaderTests.TryRead_WhenSectionPresent_ParsesConfiguration [95 ms]
+  Passed Osm.Pipeline.Tests.Configuration.SqlSectionReaderTests.TryRead_WhenSectionMissing_ReturnsFalse [2 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientAdvancedSqlExecutorTests.ExecuteAsync_ShouldConcatenateAllJsonChunks [19 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.ProfilingProbePolicy_ReturnsFallbackOnTimeoutAsync [4 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.TableSamplingPolicy_GetSampleSizeHonorsRowCountAndLimits [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.NullCountQueryBuilder_ConfiguresSamplingCommand [2 ms]
+  Passed Tests.Osm.Pipeline.Tests.Profiling.MultiTargetSqlDataProfilerTests.CaptureAsync_PrefersMostInformativeNullRowSample [214 ms]
+  Passed Osm.Validation.Tests.Policy.ColumnDecisionAggregatorTests.Aggregate_ComputesNullabilityAndForeignKeyDecisions [18 ms]
+  Passed Osm.Validation.Tests.Policy.NullabilityEvaluatorTests.Cautious_Should_Block_MandatoryRelaxation_When_FlagDisabled [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.ColumnDecisionAggregatorTests.Aggregate_InvokesAllAnalyzersPerColumn [2 ms]
+  Passed Osm.Validation.Tests.Policy.PrimaryKeyTighteningTests.PrimaryKeyColumns_AreAlwaysTightened [334 ms]
+  Passed Osm.Validation.Tests.Policy.UniqueIndexDecisionStrategyTests.AggressiveModeWithoutEvidenceRequiresRemediation [103 ms]
+  Passed Osm.Validation.Tests.Policy.UniqueIndexDecisionStrategyTests.EvidenceModeTreatsOnDiskUniqueAsPhysicalReality [5 ms]
+  Passed Osm.Validation.Tests.Policy.UniqueIndexDecisionStrategyTests.PhysicalUniqueWithDuplicatesStillEnforcesInEvidenceMode [3 ms]
+  Passed Osm.Validation.Tests.Policy.DecisionSummaryFormatterTests.FormatForConsole_WhenNullContradictions_ReturnsContradictionSummary [50 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.UniqueColumn_TighteningDependsOnMode(mode: Aggressive, expected: True, expectDataRationales: True) [54 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.UniqueColumn_TighteningDependsOnMode(mode: EvidenceGated, expected: True, expectDataRationales: True) [2 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.Analyze_ReturnsOpportunitiesReport [11 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.UniqueIndexDecision_AggressiveRequiresRemediationWhenDuplicates [4 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.CompositeUnique_WithDuplicates_ShouldAvoidTightening [6 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.IgnoreForeignKey_ShouldAvoidTighteningOrCreatingConstraint [4 ms]
+  Passed Osm.Validation.Tests.Opportunities.TighteningOpportunitiesAnalyzerTests.Analyze_generates_foreign_key_statement [94 ms]
+  Passed Osm.Validation.Tests.Opportunities.TighteningOpportunitiesAnalyzerTests.Analyze_creates_not_null_opportunity_with_safe_risk [4 ms]
+  Passed Osm.Validation.Tests.Opportunities.TighteningOpportunitiesAnalyzerTests.Analyze_ignores_duplicate_logical_entity_names_without_throwing [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.DecisionSummaryFormatterTests.FormatForConsole_SortsSummariesByMagnitude [40 ms]
+  Passed Osm.Validation.Tests.Policy.DecisionSummaryFormatterTests.FormatForConsole_WhenProfileMissingColumns_ReturnsNullableSummary [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.DecisionSummaryFormatterTests.FormatForConsole_WhenMandatoryColumns_ReturnsMandatorySummary [< 1 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.ProtectForeignKey_ShouldTightenAndCreateConstraint [12 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.MissingDeleteRule_ShouldStillCreateForeignKey [3 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.CompositeUnique_TighteningDependsOnMode(mode: Aggressive, expected: True, expectDataRationales: True) [4 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.CompositeUnique_TighteningDependsOnMode(mode: EvidenceGated, expected: True, expectDataRationales: True) [3 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.CompositeUnique_TighteningDependsOnMode(mode: Cautious, expected: True, expectDataRationales: False) [3 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.DuplicateLogicalNames_WithoutOverride_ProducesWarningDiagnostic [< 1 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenDuplicateAttributeLogicalNamesDetected [30 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldIncludeJsonPath_WhenAttributesCollectionMissing [1 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldIncludeJsonPath_WhenAttributeNameInvalid [2 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldSkipInactiveEntitiesMissingAttributes [1 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldHandleNormalizedMetaArrays [11 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldAllowMissingSchema_WhenOverrideProvided [23 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldLoadEdgeCaseFixture [150 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldWarnAndSucceed_WhenDuplicateAttributeLogicalNamesAllowed [85 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenAttributePhysicalNameMissing [34 ms]
+  Passed Tests.Osm.Pipeline.Tests.Profiling.MultiTargetSqlDataProfilerTests.CaptureAsync_RetainsOrphanSamplesWhenSecondaryLacksRows [21 ms]
+  Passed Tests.Osm.Pipeline.Tests.Profiling.MultiTargetSqlDataProfilerTests.CaptureAsync_PrefersMostInformativeOrphanSample [2 ms]
+  Passed Tests.Osm.Pipeline.Tests.Profiling.MultiTargetSqlDataProfilerTests.CaptureAsync_RetainsNullSamplesWhenSecondaryLacksRows [4 ms]
+  Passed Osm.Pipeline.Tests.FullExportApplicationServiceTests.RunAsync_SkipsSchemaApplyWithoutExplicitConnection [54 ms]
+  Passed Osm.Pipeline.Tests.FullExportApplicationServiceTests.RunAsync_ExecutesUatUsersPipeline_MergesCliOverridesWithConfigurationDefaults [2 ms]
+  Passed Osm.Pipeline.Tests.FullExportApplicationServiceTests.RunAsync_ExecutesUatUsersPipelineWhenEnabled [< 1 ms]
+  Passed Tests.Osm.Pipeline.Tests.Profiling.MultiEnvironmentConstraintConsensusTests.Analyze_MarksMissingEnvironmentAsUnsafeForNotNull [1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.EmitArtifactsStepTests.WritesPreviewWithRowCounts [220 ms]
+[xUnit.net 00:00:00.62]     Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails [FAIL]
+[xUnit.net 00:00:00.62]       System.InvalidOperationException : Unable to resolve service for type 'Osm.Cli.Commands.Options.VerbOptionRegistry' while attempting to activate 'Osm.Cli.Commands.BuildSsdtCommandFactory'.
+[xUnit.net 00:00:00.62]       Stack Trace:
+[xUnit.net 00:00:00.62]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateArgumentCallSites(ServiceIdentifier serviceIdentifier, Type implementationType, CallSiteChain callSiteChain, ParameterInfo[] parameters, Boolean throwIfCallSiteNotFound)
+[xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateConstructorCallSite(ResultCache lifetime, ServiceIdentifier serviceIdentifier, Type implementationType, CallSiteChain callSiteChain)
+[xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.TryCreateExact(ServiceDescriptor descriptor, ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain, Int32 slot)
+[xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.TryCreateExact(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+[xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateCallSite(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+[xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.GetCallSite(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+[xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceProvider.CreateServiceAccessor(ServiceIdentifier serviceIdentifier)
+[xUnit.net 00:00:00.63]            at System.Collections.Concurrent.ConcurrentDictionary`2.GetOrAdd(TKey key, Func`2 valueFactory)
+[xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(ServiceIdentifier serviceIdentifier, ServiceProviderEngineScope serviceProviderEngineScope)
+[xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(Type serviceType)
+[xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService(IServiceProvider provider, Type serviceType)
+[xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService[T](IServiceProvider provider)
+[xUnit.net 00:00:00.63]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(409,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails()
+[xUnit.net 00:00:00.63]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(419,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails()
+[xUnit.net 00:00:00.63]         --- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ReturnsDefault_WhenPathMissing [46 ms]
+  Failed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails [77 ms]
+  Error Message:
+   System.InvalidOperationException : Unable to resolve service for type 'Osm.Cli.Commands.Options.VerbOptionRegistry' while attempting to activate 'Osm.Cli.Commands.BuildSsdtCommandFactory'.
+  Stack Trace:
+     at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateArgumentCallSites(ServiceIdentifier serviceIdentifier, Type implementationType, CallSiteChain callSiteChain, ParameterInfo[] parameters, Boolean throwIfCallSiteNotFound)
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateConstructorCallSite(ResultCache lifetime, ServiceIdentifier serviceIdentifier, Type implementationType, CallSiteChain callSiteChain)
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.TryCreateExact(ServiceDescriptor descriptor, ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain, Int32 slot)
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.TryCreateExact(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateCallSite(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.GetCallSite(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.CreateServiceAccessor(ServiceIdentifier serviceIdentifier)
+   at System.Collections.Concurrent.ConcurrentDictionary`2.GetOrAdd(TKey key, Func`2 valueFactory)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(ServiceIdentifier serviceIdentifier, ServiceProviderEngineScope serviceProviderEngineScope)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(Type serviceType)
+   at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService(IServiceProvider provider, Type serviceType)
+   at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService[T](IServiceProvider provider)
+   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 409
+   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 419
+--- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.Commands.CacheOptionBinderTests.GetValue_ParsesCacheOptions [34 ms]
+  Passed Osm.Cli.Tests.Commands.CacheOptionBinderTests.GetValue_DefaultsWhenOptionsOmitted [< 1 ms]
+  Passed Osm.Cli.Tests.Commands.VerbOptionRegistryTests.SharedModelAndProfilerOptions_BindConsistentlyAcrossVerbs [146 ms]
+  Passed Osm.Cli.Tests.Commands.VerbOptionRegistryTests.FullExportLoadHarnessExtension_BindsOptions [9 ms]
+  Passed Osm.Cli.Tests.Commands.ProfileCommandFactoryTests.Invoke_WritesErrorsWhenPipelineFails [167 ms]
+  Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_RequiresQaInventory [10 ms]
+  Passed Osm.Cli.Tests.Commands.DmmCompareCommandFactoryTests.Invoke_ParsesOptions [38 ms]
+  Passed Osm.Cli.Tests.Commands.DmmCompareCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails [2 ms]
+  Passed Osm.Cli.Tests.Commands.DmmCompareCommandFactoryTests.Invoke_WritesErrorsWhenApplicationFails [< 1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.EmitArtifactsStepTests.ExecuteAsync_DoesNotRewriteArtifactsWhenIdempotentEmissionEnabled [2 ms]
+  Passed Osm.Pipeline.Tests.SchemaApplyOrchestratorTests.ExecuteAsync_WithAuthoritativeMode_AttemptsValidation [11 ms]
+  Passed Osm.Pipeline.Tests.SchemaApplyOrchestratorTests.ExecuteAsync_WithValidationFailure_SurfacesWarningAndSkipsSeeds [1 ms]
+  Passed Osm.Pipeline.Tests.SchemaApplyOrchestratorTests.ExecuteAsync_WithValidateThenApplyMode_AppliesSeedsWhenValidationPasses [< 1 ms]
+  Passed Osm.Pipeline.Tests.SchemaApplyOrchestratorTests.ExecuteAsync_WithNonDestructiveMode_SkipsSeedValidation [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.ProfilingQueryExecutor_ShouldMarkTrustedConstraintsAndSkipOrphanProbeAsync [219 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.ProfilingProbePolicy_ReturnsCancelledStatusWhenTableTimeoutTriggersAsync [< 1 ms]
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+Model: model.json
+Profile: profile.json
+Output directory: out
+Columns confirmed NOT NULL: 0/0
+Unique indexes confirmed UNIQUE: 0/0
+Foreign keys safe to create: 0/0
+Tightening toggles:
+  foreignKeys.allowCrossCatalog = false (Default)
+  foreignKeys.allowCrossSchema = false (Default)
+  foreignKeys.allowNoCheckCreation = false (Default)
+  foreignKeys.enableCreation = true (Default)
+  foreignKeys.treatMissingDeleteRuleAsIgnore = false (Default)
+  mocking.profileMockFolder = <null> (Default)
+  mocking.useProfileMockFolder = false (Default)
+  policy.mode = EvidenceGated (Default)
+  policy.nullBudget = 0 (Default)
+  remediation.generatePreScripts = true (Default)
+  remediation.maxRowsDefaultBackfill = 100000 (Default)
+  remediation.sentinels.date = 1900-01-01 (Default)
+  remediation.sentinels.numeric = 0 (Default)
+  remediation.sentinels.text =  (Default)
+  uniqueness.enforceMultiColumn = true (Default)
+  uniqueness.enforceSingleColumn = true (Default)
+summary
+Summary written to out/summary.txt
+Decision log written to out/policy-decisions.json
+  Passed Osm.Cli.Tests.ProfileSnapshotDebugFormatterTests.ToJson_ProducesIndentedSnapshot [163 ms]
+  Passed Osm.Cli.Tests.Commands.SqlOptionBinderTests.GetValue_DefaultsTrustServerCertificateWhenFlagProvidedWithoutValue [1 ms]
+  Passed Osm.Cli.Tests.Commands.SqlOptionBinderTests.GetValue_ParsesSqlOptions [4 ms]
+  Passed Osm.Cli.Tests.Commands.ProfileCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline [74 ms]
+  Passed Osm.Cli.Tests.Commands.ProfileCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails [4 ms]
+  Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_NormalizesBracketedUserTableInput(userTableArgument: "\"[dbo].[Users]\"", expectedSchema: "dbo", expectedTable: "Users") [79 ms]
+  Passed Osm.Cli.Tests.Commands.AnalyzeCommandFactoryTests.Invoke_ParsesOptionsAndRunsVerb [246 ms]
+  Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_NormalizesBracketedUserTableInput(userTableArgument: "\"schema.[User.Table]\"", expectedSchema: "schema", expectedTable: "User.Table") [< 1 ms]
+  Passed Osm.Cli.Tests.Commands.DmmCompareCommandFactoryTests.Invoke_WritesDiffDetailsWhenMismatchDetected [68 ms]
+  Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_NormalizesBracketedUserTableInput(userTableArgument: "\"[custom].[User Accounts]\"", expectedSchema: "custom", expectedTable: "User Accounts") [3 ms]
+  Passed Osm.Cli.Tests.Commands.ModuleFilterOptionBinderTests.GetValue_ParsesModuleFilters [3 ms]
+  Passed Osm.Cli.Tests.Commands.ModuleFilterOptionBinderTests.GetValue_ResolvesExcludeFlags [< 1 ms]
+  Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_NormalizesBracketedUserTableInput(userTableArgument: "\"[custom schema].User\"", expectedSchema: "custom schema", expectedTable: "User") [< 1 ms]
+  Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_DeduplicatesIncludeColumnsIgnoringCase [1 ms]
+[xUnit.net 00:00:00.74]     Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_UsesConfigurationDefaults_WhenOptionsOmitted [FAIL]
+[xUnit.net 00:00:00.74]       Assert.True() Failure
+[xUnit.net 00:00:00.74]       Expected: True
+[xUnit.net 00:00:00.74]       Actual:   False
+[xUnit.net 00:00:00.74]       Stack Trace:
+[xUnit.net 00:00:00.74]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/UatUsersCommandFactoryTests.cs(221,0): at Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_UsesConfigurationDefaults_WhenOptionsOmitted()
+[xUnit.net 00:00:00.74]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:00.74]     Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline [FAIL]
+[xUnit.net 00:00:00.74]       Assert.Contains() Failure: Sub-string not found
+[xUnit.net 00:00:00.74]       String:    "Using model at model.json.\n\nSSDT build su"···
+[xUnit.net 00:00:00.74]       Not found: "Dynamic data telemetry: output/DynamicDat"···
+[xUnit.net 00:00:00.74]       Stack Trace:
+[xUnit.net 00:00:00.74]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(131,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline()
+[xUnit.net 00:00:00.74]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(159,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline()
+[xUnit.net 00:00:00.74]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:00.74]     Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent [FAIL]
+[xUnit.net 00:00:00.74]       System.InvalidOperationException : Unable to resolve service for type 'Osm.Cli.Commands.Options.VerbOptionRegistry' while attempting to activate 'Osm.Cli.Commands.BuildSsdtCommandFactory'.
+[xUnit.net 00:00:00.74]       Stack Trace:
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateArgumentCallSites(ServiceIdentifier serviceIdentifier, Type implementationType, CallSiteChain callSiteChain, ParameterInfo[] parameters, Boolean throwIfCallSiteNotFound)
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateConstructorCallSite(ResultCache lifetime, ServiceIdentifier serviceIdentifier, Type implementationType, CallSiteChain callSiteChain)
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.TryCreateExact(ServiceDescriptor descriptor, ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain, Int32 slot)
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.TryCreateExact(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateCallSite(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.GetCallSite(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceProvider.CreateServiceAccessor(ServiceIdentifier serviceIdentifier)
+[xUnit.net 00:00:00.74]            at System.Collections.Concurrent.ConcurrentDictionary`2.GetOrAdd(TKey key, Func`2 valueFactory)
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(ServiceIdentifier serviceIdentifier, ServiceProviderEngineScope serviceProviderEngineScope)
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(Type serviceType)
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService(IServiceProvider provider, Type serviceType)
+[xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService[T](IServiceProvider provider)
+[xUnit.net 00:00:00.74]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(372,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent()
+[xUnit.net 00:00:00.74]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(382,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent()
+[xUnit.net 00:00:00.74]         --- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_RequiresUatInventory [1 ms]
+  Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_AcceptsUatInventoryCsv [5 ms]
+  Passed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_SuppressesInformationalProfilingInsightsWhenNoActionRequired [143 ms]
+  Failed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_UsesConfigurationDefaults_WhenOptionsOmitted [19 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_UsesConfigurationDefaults_WhenOptionsOmitted() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/UatUsersCommandFactoryTests.cs:line 221
+--- End of stack trace from previous location ---
+  Failed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline [5 ms]
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "Using model at model.json.\n\nSSDT build su"···
+Not found: "Dynamic data telemetry: output/DynamicDat"···
+  Stack Trace:
+     at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 131
+   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 159
+--- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_ParsesOptions [2 ms]
+  Failed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent [2 ms]
+  Error Message:
+   System.InvalidOperationException : Unable to resolve service for type 'Osm.Cli.Commands.Options.VerbOptionRegistry' while attempting to activate 'Osm.Cli.Commands.BuildSsdtCommandFactory'.
+  Stack Trace:
+     at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateArgumentCallSites(ServiceIdentifier serviceIdentifier, Type implementationType, CallSiteChain callSiteChain, ParameterInfo[] parameters, Boolean throwIfCallSiteNotFound)
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateConstructorCallSite(ResultCache lifetime, ServiceIdentifier serviceIdentifier, Type implementationType, CallSiteChain callSiteChain)
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.TryCreateExact(ServiceDescriptor descriptor, ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain, Int32 slot)
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.TryCreateExact(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.CreateCallSite(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteFactory.GetCallSite(ServiceIdentifier serviceIdentifier, CallSiteChain callSiteChain)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.CreateServiceAccessor(ServiceIdentifier serviceIdentifier)
+   at System.Collections.Concurrent.ConcurrentDictionary`2.GetOrAdd(TKey key, Func`2 valueFactory)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(ServiceIdentifier serviceIdentifier, ServiceProviderEngineScope serviceProviderEngineScope)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(Type serviceType)
+   at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService(IServiceProvider provider, Type serviceType)
+   at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService[T](IServiceProvider provider)
+   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 372
+   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 382
+--- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ForwardsDeferJunctionTablesOverride [1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.ForeignKeyProbeQueryBuilder_ConfiguresMetadataCommand [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.TableSamplingPolicy_ShouldRespectThreshold [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.TableSamplingPolicy_DetermineSampleSizeFallsBackToRowCountWhenNotSampling [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.ForeignKeyProbeQueryBuilder_ConfiguresRealityCommand [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.UniqueCandidateQueryBuilder_ConfiguresCommand [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ModelDeserializerFacadeTests.Deserialize_ShouldPropagateErrors [1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ModelDeserializerFacadeTests.Deserialize_ShouldReturnEmptyModelWhenNoModules [< 1 ms]
+  Passed Osm.Pipeline.Tests.ExtractModelPipelineTests.HandleAsync_ShouldUseFixtureExecutorWhenManifestProvided [129 ms]
+[xUnit.net 00:00:00.77]     Osm.Cli.Tests.Configuration.CliConfigurationServiceTests.LoadAsync_DefaultsToPipelineJson [FAIL]
+[xUnit.net 00:00:00.77]       Assert.Equal() Failure: Strings differ
+[xUnit.net 00:00:00.77]                   ↓ (pos 1)
+[xUnit.net 00:00:00.77]       Expected: "/var/folders/bm/8_pl41ls20b9yyldpl9pgg580"···
+[xUnit.net 00:00:00.77]       Actual:   "/private/var/folders/bm/8_pl41ls20b9yyldp"···
+[xUnit.net 00:00:00.77]                   ↑ (pos 1)
+[xUnit.net 00:00:00.77]       Stack Trace:
+[xUnit.net 00:00:00.77]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Configuration/CliConfigurationServiceTests.cs(28,0): at Osm.Cli.Tests.Configuration.CliConfigurationServiceTests.LoadAsync_DefaultsToPipelineJson()
+[xUnit.net 00:00:00.77]         --- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPayloadIsUnexpected_WritesUniformError(testCase: PipelineCommandCase { CommandName = build-ssdt, SharedArgs = --config config.json --model model.json --profile profile.json --out output --max-degree-of-parallelism 3, FactoryType = Osm.Cli.Commands.BuildSsdtCommandFactory, VerbName = build-ssdt, OptionsType = Osm.Pipeline.Runtime.Verbs.BuildSsdtVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [29 ms]
+  Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPayloadIsUnexpected_WritesUniformError(testCase: PipelineCommandCase { CommandName = dmm-compare, SharedArgs = --config config.json --model model.json --profile profile.json --dmm baseline.dmm --out diff --max-degree-of-parallelism 2, FactoryType = Osm.Cli.Commands.DmmCompareCommandFactory, VerbName = dmm-compare, OptionsType = Osm.Pipeline.Runtime.Verbs.DmmCompareVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [< 1 ms]
+  Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPayloadIsUnexpected_WritesUniformError(testCase: PipelineCommandCase { CommandName = extract-model, SharedArgs = --config config.json --out extracted.json --only-active-attributes, FactoryType = Osm.Cli.Commands.ExtractModelCommandFactory, VerbName = extract-model, OptionsType = Osm.Pipeline.Runtime.Verbs.ExtractModelVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [< 1 ms]
+  Passed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_EmitsSqlValidationErrorsWhenPresent [8 ms]
+  Passed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenPipelineFails [1 ms]
+  Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPayloadIsUnexpected_WritesUniformError(testCase: PipelineCommandCase { CommandName = full-export, SharedArgs = --config config.json --modules ModuleA --include-system-modules --include-inactive-modules --allow-missing-primary-key Module::* --allow-missing-schema Module::* --cache-root ./cache --refresh-cache --connection-string Server=Sql01;Database=Osm;Trusted_Connection=True; --command-timeout 120 --sampling-threshold 5000 --sampling-size 250 --sql-authentication ActiveDirectoryPassword --sql-trust-server-certificate false --sql-application-name OsmCli --sql-access-token TOKEN --profiling-connection-string Perf::Server02 --model model.json --profile profile.json --build-out ./build --profiler-provider fixture --static-data static.json --rename-table Module=Override --max-degree-of-parallelism 4 --build-sql-metadata-out build-metadata.json --profile-out ./profiles --profile-sql-metadata-out profile-metadata.json --extract-out extracted.json --only-active-attributes --mock-advanced-sql manifest.json --extract-sql-metadata-out extract-metadata.json --apply --apply-connection-string Server=Sql01;Database=Apply;Trusted_Connection=True; --apply-command-timeout 90 --apply-sql-authentication ActiveDirectoryIntegrated --apply-trust-server-certificate false --apply-application-name OsmCliApply --apply-access-token APPLYTOKEN --apply-safe-script false --apply-static-seeds true --apply-static-seed-mode Authoritative --remediation-generate-pre-scripts false --remediation-max-rows-default-backfill 250 --remediation-sentinel-numeric 999 --remediation-sentinel-text [NULL] --remediation-sentinel-date 2000-01-01 --use-profile-mock-folder --profile-mock-folder mocks, FactoryType = Osm.Cli.Commands.FullExportCommandFactory, VerbName = full-export, OptionsType = Osm.Pipeline.Runtime.Verbs.FullExportVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [18 ms]
+  Failed Osm.Cli.Tests.Configuration.CliConfigurationServiceTests.LoadAsync_DefaultsToPipelineJson [309 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+            ↓ (pos 1)
+Expected: "/var/folders/bm/8_pl41ls20b9yyldpl9pgg580"···
+Actual:   "/private/var/folders/bm/8_pl41ls20b9yyldp"···
+            ↑ (pos 1)
+  Stack Trace:
+     at Osm.Cli.Tests.Configuration.CliConfigurationServiceTests.LoadAsync_DefaultsToPipelineJson() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Configuration/CliConfigurationServiceTests.cs:line 28
+--- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPipelineFails_WritesErrorsAndExitCodeOne(testCase: PipelineCommandCase { CommandName = build-ssdt, SharedArgs = --config config.json --model model.json --profile profile.json --out output --max-degree-of-parallelism 3, FactoryType = Osm.Cli.Commands.BuildSsdtCommandFactory, VerbName = build-ssdt, OptionsType = Osm.Pipeline.Runtime.Verbs.BuildSsdtVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [4 ms]
+  Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPipelineFails_WritesErrorsAndExitCodeOne(testCase: PipelineCommandCase { CommandName = dmm-compare, SharedArgs = --config config.json --model model.json --profile profile.json --dmm baseline.dmm --out diff --max-degree-of-parallelism 2, FactoryType = Osm.Cli.Commands.DmmCompareCommandFactory, VerbName = dmm-compare, OptionsType = Osm.Pipeline.Runtime.Verbs.DmmCompareVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [< 1 ms]
+  Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPipelineFails_WritesErrorsAndExitCodeOne(testCase: PipelineCommandCase { CommandName = extract-model, SharedArgs = --config config.json --out extracted.json --only-active-attributes, FactoryType = Osm.Cli.Commands.ExtractModelCommandFactory, VerbName = extract-model, OptionsType = Osm.Pipeline.Runtime.Verbs.ExtractModelVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [< 1 ms]
+  Passed Osm.Pipeline.Tests.ExtractModelPipelineTests.HandleAsync_ShouldFailWhenConnectionStringMissingForLiveExtraction [< 1 ms]
+  Passed Osm.Pipeline.Tests.ModuleFilterTests.Apply_ReturnsModel_WhenFilterEmpty [370 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ModelDeserializerFacadeTests.Deserialize_ShouldReturnModelAndAppendModuleWarnings [124 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UserInventoryLoaderTests.Load_ThrowsOnDuplicateIds [8 ms]
+  Passed Osm.Pipeline.Tests.Orchestration.PipelineBootstrapperIntegrationTests.BootstrapAsync_ComposesStagesAndPreservesTelemetry [482 ms]
+  Passed Osm.Pipeline.Tests.ModuleFilterTests.Apply_FiltersToSpecifiedModules [13 ms]
+  Passed Osm.Pipeline.Tests.Profiling.SqlDataProfilerOrchestrationTests.CaptureAsync_ComposesMetadataPlansAndQueryResults [443 ms]
+  Passed Osm.Pipeline.Tests.ModuleFilterTests.Apply_RemovesInactiveEntities_WhenInactiveModulesExcluded [15 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UserInventoryLoaderTests.Load_ReadsRows [22 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UserInventoryLoaderTests.Load_ThrowsWhenFileMissing [< 1 ms]
+  Passed Osm.Pipeline.Tests.ModuleFilterTests.Apply_ReturnsFailure_WhenModuleMissing [4 ms]
+  Passed Osm.Pipeline.Tests.Profiling.SqlDataProfilerOrchestrationTests.CaptureAsync_ShouldPopulateForeignKeyNoCheckFromResults [18 ms]
+  Passed Osm.Pipeline.Tests.Orchestration.PipelineBootstrapperStageTests.ModuleFilterRunner_PropagatesFailures [8 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenDuplicateAttributeColumnsDetected [17 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldExposeJsonPathWhenDeserializationFails [< 1 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldHonorCustomConverters [8 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenReferenceAttributeMissingTargetLogicalName [1 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenEntityAttributeEntryIsNull [13 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldProduceDomainModel_ForRichPayload [36 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldAcceptLegacyFillFactorProperty [78 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldExposeJsonPathMetadata_OnDuplicateEntityPhysicalNames [14 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenDuplicateEntityPhysicalNames [24 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineTests.HandleAsync_uses_fixture_profile_strategy_via_bootstrapper [459 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineTests.HandleAsync_returns_failure_when_output_directory_missing [< 1 ms]
+  Passed Osm.Pipeline.Tests.ModuleFilterTests.Apply_ReturnsFailure_WhenEntityMissing [10 ms]
+  Passed Osm.Pipeline.Tests.Profiling.SqlDataProfilerOrchestrationTests.CaptureAsync_CollectsMappedTableMetadataWhenMappingsConfigured [4 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientOutsystemsMetadataReaderTests.ReadAsync_ShouldReturnAllModules_WhenModuleCsvWhitespace [72 ms]
+  Passed Osm.Pipeline.Tests.Orchestration.PipelineBootstrapperStageTests.SupplementalLoader_LoadsEntitiesAndLogs [36 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetReaderTests.ReadAllAsync_ShouldPropagateColumnMetadata [37 ms]
+  Passed Osm.Pipeline.Tests.FullExportPipelineTests.HandleAsync_records_stage_telemetry_and_artifacts [247 ms]
+  Passed Osm.Pipeline.Tests.Orchestration.PipelineBootstrapperStageTests.ModelLoader_LoadsModelAndLogsWarnings [9 ms]
+  Passed Osm.Pipeline.Tests.FullExportPipelineTests.HandleAsync_skips_uat_users_when_disabled [3 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetReaderTests.ReadAllAsync_ShouldProjectTypedRows [8 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetReaderTests.GetRequiredString_ShouldThrowInvalidOperationException_WhenColumnIsNull [< 1 ms]
+  Passed Osm.Pipeline.Tests.ModuleFilterTests.Apply_ExcludesSystemAndInactiveModules [47 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetReaderTests.ReadAllAsync_ShouldReportRootCauseMessagesForColumnFailures [< 1 ms]
+  Passed Osm.Pipeline.Tests.Orchestration.PipelineBootstrapperStageTests.ProfilerRunner_CapturesProfileAndGeneratesInsights [5 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientOutsystemsMetadataReaderTests.ReadAsync_ShouldLogAndReturnFailure_WhenAttributeJsonNullWithoutOverride [16 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientOutsystemsMetadataReaderTests.ReadAsync_ShouldReturnFailureWhenResultSetMissing [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetReaderTests.ReadAllAsync_ShouldWrapFactoryExceptions [13 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientOutsystemsMetadataReaderTests.ReadAsync_ShouldLogAndReturnFailure_WhenColumnValueIsInvalid [11 ms]
+[xUnit.net 00:00:01.23]   Finished:    Osm.Json.Tests
+  Passed Osm.Pipeline.Tests.Orchestration.PipelineBootstrapperStageTests.ProfilerRunner_PropagatesFailures [14 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetReaderTests.ReadAllAsync_ShouldReturnNullsForDbNull [1 ms]
+  Passed Osm.Pipeline.Tests.ModuleFilterTests.Apply_FiltersEntitiesWithinModule [16 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientOutsystemsMetadataReaderTests.ReadAsync_ShouldUseSequentialAccessCommandBehavior [2 ms]
+  Passed Osm.Pipeline.Tests.ModelResolutionServiceTests.ResolveModelAsync_FailsWhenConnectionStringMissing [2 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientOutsystemsMetadataReaderTests.ReadAsync_ShouldAllowNullableAttributeJson_WhenOverrideConfigured [3 ms]
+  Passed Osm.Pipeline.Tests.Configuration.ModuleFilterSectionReaderTests.Read_WhenLegacyPathProvided_ResolvesAbsolutePath [3 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientOutsystemsMetadataReaderTests.ReadAsync_ShouldLogAndReturnFailure_WhenRequiredColumnIsNull [2 ms]
+  Passed Osm.Pipeline.Tests.ModelResolutionServiceTests.ResolveModelAsync_RespectsExtractModelInlineOverride [5 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientOutsystemsMetadataReaderTests.ReadAsync_ShouldMaterializeSnapshot [1 ms]
+  Passed Osm.Pipeline.Tests.ModelResolutionServiceTests.ResolveModelAsync_ReturnsExistingModelPath_WhenOverrideProvided [1 ms]
+  Passed Osm.Pipeline.Tests.FullExportPipelineTests.HandleAsync_returns_failure_when_uat_users_fails [33 ms]
+  Passed Osm.Pipeline.Tests.ModelResolutionServiceTests.ResolveModelAsync_ExtractsModelAndWritesFile [7 ms]
+  Passed Osm.Pipeline.Tests.Configuration.ModuleFilterSectionReaderTests.Read_WhenSectionPresent_ParsesModuleFilters [14 ms]
+  Passed Osm.Pipeline.Tests.Configuration.ModuleFilterSectionReaderTests.Read_WhenSectionMissing_ReturnsSentinel [< 1 ms]
+  Passed Osm.Pipeline.Tests.FakeProfilerTests.CaptureAsync_ShouldReturnSnapshotFromFixture [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SqlClientOutsystemsMetadataReaderTests.ReadAsync_ShouldPassFullLengthModuleCsvToCommand [12 ms]
+  Passed Osm.Pipeline.Tests.FullExportPipelineTests.HandleAsync_runs_uat_users_when_enabled [12 ms]
+  Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPipelineFails_WritesErrorsAndExitCodeOne(testCase: PipelineCommandCase { CommandName = full-export, SharedArgs = --config config.json --modules ModuleA --include-system-modules --include-inactive-modules --allow-missing-primary-key Module::* --allow-missing-schema Module::* --cache-root ./cache --refresh-cache --connection-string Server=Sql01;Database=Osm;Trusted_Connection=True; --command-timeout 120 --sampling-threshold 5000 --sampling-size 250 --sql-authentication ActiveDirectoryPassword --sql-trust-server-certificate false --sql-application-name OsmCli --sql-access-token TOKEN --profiling-connection-string Perf::Server02 --model model.json --profile profile.json --build-out ./build --profiler-provider fixture --static-data static.json --rename-table Module=Override --max-degree-of-parallelism 4 --build-sql-metadata-out build-metadata.json --profile-out ./profiles --profile-sql-metadata-out profile-metadata.json --extract-out extracted.json --only-active-attributes --mock-advanced-sql manifest.json --extract-sql-metadata-out extract-metadata.json --apply --apply-connection-string Server=Sql01;Database=Apply;Trusted_Connection=True; --apply-command-timeout 90 --apply-sql-authentication ActiveDirectoryIntegrated --apply-trust-server-certificate false --apply-application-name OsmCliApply --apply-access-token APPLYTOKEN --apply-safe-script false --apply-static-seeds true --apply-static-seed-mode Authoritative --remediation-generate-pre-scripts false --remediation-max-rows-default-backfill 250 --remediation-sentinel-numeric 999 --remediation-sentinel-text [NULL] --remediation-sentinel-date 2000-01-01 --use-profile-mock-folder --profile-mock-folder mocks, FactoryType = Osm.Cli.Commands.FullExportCommandFactory, VerbName = full-export, OptionsType = Osm.Pipeline.Runtime.Verbs.FullExportVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [45 ms]
+  Passed Osm.Cli.Tests.PipelineReportLauncherTests.GenerateAsync_WithSqlValidationErrors_RendersSampleLinks [379 ms]
+  Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ResolvesRelativePaths [346 ms]
+  Passed Osm.Cli.Tests.PipelineReportLauncherTests.GenerateAsync_WritesReportWithArtifactLinksAndFallbackInsights [33 ms]
+  Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ReadsSupplementalModelConfiguration [22 ms]
+  Passed Osm.Cli.Tests.PipelineReportLauncherTests.GenerateAsync_WithInsights_RendersInsightCards [24 ms]
+  Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ReadsUatUsersConfiguration [10 ms]
+  Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ReturnsError_WhenStaticSeedParentModeInvalid [5 ms]
+  Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ReadsModuleEntityFilters [8 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldWarn_WhenDuplicateAttributeColumnsAllowed [2 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenFallbackSchemaInvalid [3 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldAllowMissingPrimaryKey_WhenOverrideProvided [9 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenModuleNameMissing [17 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldIncludePayload_WhenSchemaMissingWithoutOverride [1 ms]
+  Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenReferenceAttributeMissingTargetPhysicalName [14 ms]
+
+Test Run Successful.
+Total tests: 89
+     Passed: 89
+  Passed Osm.Pipeline.Tests.FullExportPipelineTests.HandleAsync_skips_apply_when_connection_missing [26 ms]
+  Passed Osm.Pipeline.Tests.FullExportPipelineTests.HandleAsync_propagates_stage_errors [6 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetMapTests.AttributesDescriptor_ShouldDescribeNullability [< 1 ms]
+  Passed Osm.Pipeline.Tests.FullExportPipelineTests.HandleAsync_invokes_schema_applier_when_enabled [8 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetMapTests.AttributesProcessor_ShouldPreserveNullableFields [7 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetMapTests.EntitiesDescriptor_ShouldExposeColumnMetadataInOrdinalOrder [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.ResultSetMapTests.EntitiesProcessor_ShouldPopulateAccumulator [1 ms]
+  Passed Osm.Pipeline.Tests.ModelIngestionServiceTests.LoadFromFileAsync_ShouldInvokeHydrator_WhenSqlMetadataProvided [6 ms]
+ Total time: 1.9557 Seconds
+  Passed Osm.Pipeline.Tests.ModelIngestionServiceTests.LoadFromFileAsync_ShouldFail_WhenFileMissing [< 1 ms]
+  Passed Osm.Pipeline.Tests.Orchestration.PipelineBootstrapperStageTests.ModuleFilterRunner_AppliesFilter [77 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.DiscoverUserFkCatalogStepTests.IncludeColumnsFiltersCatalog [56 ms]
+  Passed Osm.Pipeline.Tests.ModelIngestionServiceTests.LoadFromFileAsync_ShouldFail_WhenJsonMalformed [7 ms]
+  Passed Osm.Pipeline.Tests.ModelIngestion.RelationshipConstraintHydratorTests.HydrateAsync_ShouldWarn_WhenConstraintNameMissing [13 ms]
+  Passed Osm.Pipeline.Tests.ModelIngestionServiceTests.LoadFromFileAsync_ShouldReturnModel_WhenFileExists [10 ms]
+  Passed Osm.Pipeline.Tests.ModelIngestion.RelationshipConstraintHydratorTests.HydrateAsync_ShouldAddWarning_WhenMetadataMissing [9 ms]
+  Passed Osm.Pipeline.Tests.CompareWithDmmApplicationServiceTests.RunAsync_ComposesPipelineRequestWithCacheOptions [76 ms]
+  Passed Osm.Pipeline.Tests.CompareWithDmmApplicationServiceTests.RunAsync_WhenMaxDegreeOfParallelismNotPositive_ReturnsParallelismError(parallelism: 0) [< 1 ms]
+  Passed Osm.Pipeline.Tests.CompareWithDmmApplicationServiceTests.RunAsync_WhenMaxDegreeOfParallelismNotPositive_ReturnsParallelismError(parallelism: -1) [5 ms]
+  Passed Osm.Pipeline.Tests.PipelineExecutionLogBuilderTests.MetadataBuilder_ProducesCategorizedKeys [< 1 ms]
+  Passed Osm.Pipeline.Tests.ModelIngestion.RelationshipConstraintHydratorTests.HydrateAsync_ShouldPopulateConstraintColumns [15 ms]
+  Passed Osm.Pipeline.Tests.Orchestration.PipelineBootstrapperStageTests.SupplementalLoader_PropagatesFailures [34 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SnapshotValidatorTests.Validate_ShouldThrowWhenAttributesNull [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SnapshotValidatorTests.Validate_ShouldReturnNullForValidPayload [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SnapshotValidatorTests.Validate_ShouldReturnErrorWhenModulesMissing [< 1 ms]
+  Passed Osm.Pipeline.Tests.Orchestration.PipelineBootstrapperStageTests.ModelLoader_UsesInlineModelWhenProvided [2 ms]
+  Passed Osm.Pipeline.Tests.Orchestration.PipelineBootstrapperStageTests.ModelLoader_PropagatesFailures [< 1 ms]
+  Passed Osm.Pipeline.Tests.PipelineExecutionLogBuilderTests.Record_UsesInjectedTimeProvider [9 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipelineApplications_RegistersApplicationServices [1 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipelineEvidence_RegistersEvidenceCacheServices [< 1 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipelineTightening_RegistersTighteningPolicy [< 1 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipelineSqlInfrastructure_RegistersConnectionFactoryDelegate [1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ProfilingPlanBuilderTests.BuildPlans_ShapesPlanWithColumnsUniquesAndRowCounts [102 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipeline_ComposesAllSlices [3 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipelineConfiguration_RegistersCliConfigurationServices [< 1 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipelineVerbs_RegistersVerbsAndRegistry [2 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.DiscoverUserFkCatalogStepTests.SynthesizesCatalogFromAttributeReferenceWhenRelationshipsMissing [48 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipelineInfrastructure_RegistersSystemTimeProvider [2 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipelineOrchestration_RegistersCommandHandlersAndDependencies [2 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipelineEmission_RegistersEmissionComponents [1 ms]
+  Passed Osm.Pipeline.Tests.Runtime.PipelineServiceCollectionExtensionsTests.AddPipelineIngestion_RegistersIngestionDependencies [3 ms]
+  Passed Osm.Pipeline.Tests.OutputDirectoryResolverTests.Resolve_ReturnsProvidedDirectory [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.DataProfilerFactoryTests.Create_unsupported_provider_returns_error [15 ms]
+  Passed Osm.Pipeline.Tests.OutputDirectoryResolverTests.Resolve_DefaultsToOutWhenOverrideMissing [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.EntityProfilingLookupTests.Create_ShouldHonorModuleScopedOverrides_WhenDuplicatesPresent [21 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtRequestAssemblerTests.Assemble_UsesProvidedStaticDataProvider [3 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtRequestAssemblerTests.ResolveDeferJunctionTables_PrefersOverrides(overrideValue: True, configurationValue: False, expected: True) [11 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtRequestAssemblerTests.ResolveDeferJunctionTables_PrefersOverrides(overrideValue: False, configurationValue: True, expected: False) [< 1 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtRequestAssemblerTests.ResolveDeferJunctionTables_PrefersOverrides(overrideValue: null, configurationValue: True, expected: True) [< 1 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtRequestAssemblerTests.ResolveDeferJunctionTables_PrefersOverrides(overrideValue: null, configurationValue: null, expected: False) [< 1 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtRequestAssemblerTests.Assemble_ComposesCacheMetadata [< 1 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtRequestAssemblerTests.Assemble_PrefersOverrideProfilerProvider [< 1 ms]
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Etl.Integration.Tests/bin/Debug/net9.0/Osm.Etl.Integration.Tests.dll (.NETCoreApp,Version=v9.0)
+  Passed Osm.Pipeline.Tests.Evidence.EvidenceCacheWriterTests.WriteAsync_ShouldDeriveFileNameFromDescriptorType [3 ms]
+  Passed Osm.Pipeline.Tests.Profiling.DataProfilerFactoryTests.Create_sql_profiler_allows_named_connection_strings [23 ms]
+  Passed Osm.Pipeline.Tests.Profiling.EntityProfilingLookupTests.BuildPlans_ShouldUseOverridesWhenSelectingForeignKeyTargets [25 ms]
+  Passed Osm.Pipeline.Tests.Profiling.DataProfilerFactoryTests.Create_sql_profiler_with_secondary_connections_returns_multi_target_profiler [8 ms]
+  Passed Osm.Pipeline.Tests.Profiling.DataProfilerFactoryTests.Create_sql_provider_returns_sql_profiler [4 ms]
+  Passed Osm.Pipeline.Tests.Profiling.DataProfilerFactoryTests.Create_fixture_provider_without_profile_path_returns_error [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.DataProfilerFactoryTests.Create_sql_provider_without_connection_string_returns_error [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.DataProfilerFactoryTests.Create_fixture_provider_returns_fixture_profiler [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.EntityProfilingLookupTests.Create_ShouldSelectDeterministicCanonicalEntity_WhenDuplicatesPresent [11 ms]
+  Passed Osm.Pipeline.Tests.Profiling.DataProfilerFactoryTests.Create_sql_profiler_preserves_label_metadata_and_deduplicates_conflicts [3 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.DiscoverUserFkCatalogStepTests.DiscoversAndDeduplicatesCatalog [59 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheCoordinatorTests.CacheAsync_records_reuse_outcome_and_metadata [36 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheCoordinatorTests.CacheAsync_persists_results_and_records_creation_metadata [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ForeignKeyMappingResolverTests.Resolve_ShouldPreferCrossModulePrefixWhenExplicit [4 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ForeignKeyMappingResolverTests.Resolve_ShouldPreferSameModuleWhenDuplicatesExist [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ForeignKeyMappingResolverTests.Resolve_ShouldRespectActualConstraintWhenPhysicalNameDiffers [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ForeignKeyMappingResolverTests.Resolve_ShouldHonorModuleScopedOverrides [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ForeignKeyMappingResolverTests.Resolve_ShouldHonorRelationshipPhysicalNameAndCaseInsensitiveAttributeMatch [< 1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.ForeignKeyMappingResolverTests.Resolve_ShouldReturnAmbiguousWhenDuplicatesWithoutConstraint [< 1 ms]
+  Passed Osm.Pipeline.Tests.FixtureOutsystemsMetadataReaderTests.ReadAsync_ShouldReturnErrorWhenCaseMissing [< 1 ms]
+  Passed Osm.Pipeline.Tests.FixtureOutsystemsMetadataReaderTests.ReadAsync_ShouldReturnFixtureSnapshot [< 1 ms]
+  Passed Osm.Pipeline.Tests.FixtureOutsystemsMetadataReaderTests.ReadAsync_ShouldEmitEmptyCollections_WhenOnlyActiveAttributesCaseMatches [4 ms]
+  Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ReadsSqlMetadataContract [47 ms]
+  Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ReadsLegacyTighteningDocument [63 ms]
+  Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ParsesModuleCsvAndBooleanStrings [4 ms]
+  Passed Osm.Cli.Tests.Commands.CommandConsoleTests.EmitMultiEnvironmentReport_WritesTableAndFindings [358 ms]
+  Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ReadsDynamicDataConfiguration [70 ms]
+  Passed Osm.Cli.Tests.Commands.CommandConsoleTests.EmitPipelineLog_GroupsDuplicatesAndEmitsSamples [26 ms]
+  Passed Osm.Cli.Tests.Commands.PolicyCommandFactoryTests.ExplainCommand_WritesTableOutputWithFilters [390 ms]
+  Passed Osm.Cli.Tests.Commands.CommandConsoleTests.EmitNamingOverrideTemplate_WritesTemplateWhenDuplicatesExist [15 ms]
+VSTest version 17.14.1 (arm64)
+
+  Passed Osm.Pipeline.Tests.Configuration.TighteningSectionReaderTests.ReadAsync_WhenTighteningPathMissing_ReturnsValidationError [40 ms]
+  Passed Osm.Pipeline.Tests.Performance.SqlDataProfilerPerformanceTests.CaptureAsync_ShouldHonorSamplingThreshold_ForWideTable [11 ms]
+  Passed Osm.Pipeline.Tests.Runtime.FullExportRunManifestTests.Create_PartitionsStaticSeedArtifacts [93 ms]
+  Passed Osm.Pipeline.Tests.Runtime.FullExportRunManifestTests.Create_IncludesUatUsersStageMetadata [42 ms]
+  Passed Osm.Pipeline.Tests.Runtime.FullExportRunManifestTests.SerializeManifest_ProducesExpectedShape [14 ms]
+[xUnit.net 00:00:01.33]     Osm.Cli.Tests.Commands.CommandConsoleTests.EmitSqlProfilerSnapshot_SummarizesKeyAnomalies [FAIL]
+[xUnit.net 00:00:01.33]       Assert.Contains() Failure: Sub-string not found
+[xUnit.net 00:00:01.33]       String:    "SQL profiler snapshot:\n  Columns: 2 profi"···
+[xUnit.net 00:00:01.33]       Not found: "Sample rows violating NOT NULL:"
+[xUnit.net 00:00:01.33]       Stack Trace:
+[xUnit.net 00:00:01.33]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs(299,0): at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitSqlProfilerSnapshot_SummarizesKeyAnomalies()
+[xUnit.net 00:00:01.33]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:01.33]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Passed Osm.Dmm.Tests.ScriptDomDmmLensTests.Project_includes_unique_constraints_from_create_table_and_alter_table [659 ms]
+  Passed Osm.Dmm.Tests.SsdtTableLayoutComparatorTests.Compare_returns_match_when_layout_matches [896 ms]
+  Passed Osm.Dmm.Tests.SsdtTableLayoutComparatorTests.Compare_detects_mismatched_folder [16 ms]
+  Passed Osm.Dmm.Tests.SsdtTableLayoutComparatorTests.Compare_detects_missing_table_file [229 ms]
+  Passed Osm.Dmm.Tests.SsdtTableLayoutComparatorTests.Compare_detects_unexpected_file [21 ms]
+  Passed Osm.Cli.Tests.Commands.PolicyCommandFactoryTests.ExplainCommand_EmitsJsonWhenRequested [130 ms]
+  Passed Osm.Cli.Tests.Commands.ExtractModelCommandFactoryTests.Invoke_ParsesOptions [603 ms]
+  Passed Osm.Cli.Tests.Commands.InspectCommandFactoryTests.Invoke_LoadsModelAndWritesSummary [686 ms]
+  Failed Osm.Cli.Tests.Commands.CommandConsoleTests.EmitSqlProfilerSnapshot_SummarizesKeyAnomalies [218 ms]
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "SQL profiler snapshot:\n  Columns: 2 profi"···
+Not found: "Sample rows violating NOT NULL:"
+  Stack Trace:
+     at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitSqlProfilerSnapshot_SummarizesKeyAnomalies() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs:line 299
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Passed Osm.Cli.Tests.Commands.CommandConsoleTests.WriteErrors_WritesCodeAndMessagePairs [< 1 ms]
+  Passed Osm.Cli.Tests.Commands.CommandConsoleTests.EmitPipelineWarnings_PrefixesWarningsAndPreservesWhitespacePrefixedMessages [2 ms]
+  Passed Osm.Cli.Tests.Commands.CommandConsoleTests.EmitProfilingInsights_WritesStructuredSections [15 ms]
+  Passed Osm.Cli.Tests.Commands.CommandConsoleTests.EmitSchemaApplySummary_IncludesStaticSeedValidationStatus [2 ms]
+  Passed Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_ForwardsDeferJunctionTablesOverrideToBuildOverrides [929 ms]
+[xUnit.net 00:00:01.40]     Osm.Cli.Tests.Commands.CommandConsoleTests.EmitBuildSsdtSummary_WritesCompactBlock [FAIL]
+[xUnit.net 00:00:01.40]       Assert.Contains() Failure: Sub-string not found
+[xUnit.net 00:00:01.40]       String:    "\nSSDT build summary:\n  Output: /tmp/outpu"···
+[xUnit.net 00:00:01.40]       Not found: "Dynamic insert mode: PerEntity"
+[xUnit.net 00:00:01.40]       Stack Trace:
+[xUnit.net 00:00:01.40]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs(685,0): at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitBuildSsdtSummary_WritesCompactBlock()
+[xUnit.net 00:00:01.40]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:01.40]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+  Passed Osm.Pipeline.Tests.Evidence.EvidenceCacheServiceTests.CacheAsync_ShouldDetectMetadataMismatchWhenDirectoryMissing [212 ms]
+  Passed Osm.Pipeline.Tests.Evidence.EvidenceCacheWriterTests.WriteAsync_ShouldPersistManifestAndArtifacts [291 ms]
+  Passed Osm.Pipeline.Tests.SupplementalEntityLoaderTests.LoadAsync_includes_built_in_user_model_when_enabled [33 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheServiceTests.CacheAsync_ShouldInvalidateCache_WhenModuleSelectionChanges [2 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheServiceTests.CacheAsync_ShouldReuseExistingCache_WhenManifestMatches [7 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheServiceTests.CacheAsync_ShouldNormalizeCommandAndRoot [< 1 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheServiceTests.CacheAsync_ShouldCacheArtifactsAndManifest_OnFirstRun [1 ms]
+  Passed Osm.Pipeline.Tests.Evidence.EvidenceCacheServiceTests.CacheAsync_ShouldForceRefresh [120 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheServiceTests.CacheAsync_ShouldExpireCache_WhenTtlElapsed [1 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheServiceTests.CacheAsync_ShouldFail_WhenModelMissing [< 1 ms]
+  Passed Osm.Pipeline.Tests.Evidence.EvidenceCacheServiceTests.CacheAsync_ShouldReuseExistingCache [3 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheServiceTests.CacheAsync_ShouldProduceDeterministicKeys [4 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheServiceTests.CacheAsync_ShouldRebuildCache_WhenRefreshRequested [7 ms]
+  Passed Osm.Pipeline.Tests.EvidenceCacheServiceTests.CacheAsync_ShouldInvalidateCache_WhenMetadataDiffers [4 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SnapshotJsonBuilderTests.Build_ShouldWriteSnapshotJson [202 ms]
+  Passed Osm.Pipeline.Tests.Runtime.FullExportRunManifestTests.ComputeTiming_ReturnsExpectedDuration [287 ms]
+  Passed Osm.Pipeline.Tests.ModuleFilterConsistencyTests.ConfigurationDefaults_AreRespected_WhenOverridesMissing [47 ms]
+  Passed Osm.Pipeline.Tests.ModuleFilterConsistencyTests.CliOverrides_AreAppliedConsistently [4 ms]
+  Passed Osm.Pipeline.Tests.ModuleFilterConsistencyTests.ValidationOverrideErrors_SurfaceAcrossAllServices [1 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtApplicationServiceTests.RunAsync_DoesNotUseSqlDynamicDataProvider_WhenExtractionDisabled [44 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtApplicationServiceTests.RunAsync_PropagatesDeferJunctionTablesSetting(overrideValue: null, configurationValue: null, expected: False) [4 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtApplicationServiceTests.RunAsync_PropagatesDeferJunctionTablesSetting(overrideValue: null, configurationValue: True, expected: True) [11 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UserMatchingEngineTests.Execute_MatchesRegexCapture [18 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UserMatchingEngineTests.Execute_MatchesCaseInsensitiveEmail [1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UserMatchingEngineTests.Execute_ReturnsEmpty_WhenNoOrphans [< 1 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtApplicationServiceTests.RunAsync_PropagatesDeferJunctionTablesSetting(overrideValue: False, configurationValue: True, expected: False) [1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UserMatchingEngineTests.Execute_MatchesExactAttribute [< 1 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtApplicationServiceTests.RunAsync_PropagatesDeferJunctionTablesSetting(overrideValue: True, configurationValue: False, expected: True) [21 ms]
+  Passed Osm.Pipeline.Tests.Runtime.FullExportRunManifestTests.Create_IncludesUatUsersArtifactsAndStage [68 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtApplicationServiceTests.RunAsync_ComposesPipelineRequestFromDependencies [7 ms]
+Starting test execution, please wait...
+[xUnit.net 00:00:01.62]   Finished:    Osm.Validation.Tests
+  Passed Osm.Pipeline.Tests.UatUsers.UserMatchingEngineTests.Execute_DoesNotAssignFallbackWhenTargetOutsideRoster [35 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UserMatchingEngineTests.Execute_AssignsFallbackRoundRobin [6 ms]
+  Passed Osm.Pipeline.Tests.NamingOverridesBinderTests.Bind_MergesOverridesWithConfiguration [4 ms]
+  Passed Osm.Pipeline.Tests.NamingOverridesBinderTests.Bind_ReturnsFailureForInvalidAssignment [< 1 ms]
+  Passed Osm.Pipeline.Tests.Evidence.CacheEntryCreatorTests.CreateAsync_ShouldPersistManifestAndEvaluation [1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.LoadUatUserInventoryStepTests.ExecuteAsync_ThrowsWhenInventoryEmpty [6 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtApplicationServiceTests.RunAsync_UsesSqlDynamicDataProvider_WhenDatasetMissingAndConnectionAvailable [22 ms]
+  Passed Osm.Pipeline.Tests.EmissionCoverageCalculatorTests.Compute_ReportsUnsupportedIndexes [644 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.UniqueIndexDecision_DisablesWhenDuplicatesInEvidenceMode [2 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.UniqueIndexDecision_RespectsUniquenessToggle [2 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyTests.AggressiveMode_ShouldRequireRemediationWhenNullsExist [1 ms]
+  Passed Osm.Validation.Tests.Opportunities.TighteningOpportunitiesAnalyzerTests.Analyze_marks_unique_with_remediation_when_required [85 ms]
+  Passed Osm.Validation.Tests.Opportunities.TighteningOpportunitiesAnalyzerTests.Analyze_collates_composite_unique_evidence [2 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMonotonicityTests.NullabilityMonotonicWhenNullsDecrease [985 ms]
+  Passed Osm.Validation.Tests.Policy.TighteningPolicyMonotonicityTests.ForeignKeyCreationMonotonicWhenOrphansClear [51 ms]
+
+[xUnit.net 00:00:01.82]   Discovered:  Osm.Smo.Tests
+Test Run Successful.
+Total tests: 127
+     Passed: 127
+[xUnit.net 00:00:01.83]   Starting:    Osm.Smo.Tests
+ Total time: 2.2820 Seconds
+[xUnit.net 00:00:01.88]     Osm.Smo.Tests.SmoObjectGraphFactoryTests.CreateTable_marks_untrusted_foreign_keys_as_not_checked [SKIP]
+[xUnit.net 00:00:01.89]       SQL Server is not available. Ensure SQL Server is running locally or via Docker.
+[xUnit.net 00:00:01.89]     Osm.Smo.Tests.SmoObjectGraphFactoryTests.CreateTable_emits_all_columns_for_composite_foreign_keys [SKIP]
+[xUnit.net 00:00:01.89]       SQL Server is not available. Ensure SQL Server is running locally or via Docker.
+[xUnit.net 00:00:01.89]     Osm.Smo.Tests.SmoObjectGraphFactoryTests.CreateTable_uses_smo_index_type_when_system_index_is_in_scope [SKIP]
+[xUnit.net 00:00:01.89]       SQL Server is not available. Ensure SQL Server is running locally or via Docker.
+  Passed Osm.Pipeline.Tests.UatUsers.LoadUatUserInventoryStepTests.ExecuteAsync_LoadsAllowedUsers [48 ms]
+  Passed Osm.Pipeline.Tests.EmissionCoverageCalculatorTests.Compute_UsesSnapshotColumnCounts [24 ms]
+  Passed Osm.Pipeline.Tests.ExtractModelApplicationServiceTests.RunAsync_PropagatesOutputPathToPipelineRequest [2 ms]
+  Passed Osm.Pipeline.Tests.ExtractModelApplicationServiceTests.RunAsync_PrefersCliOverridesOverConfiguration [12 ms]
+  Passed Tests.Osm.Pipeline.Tests.Profiling.MultiEnvironmentProfileReportTests.Create_generates_actionable_findings [209 ms]
+  Passed Osm.Pipeline.Tests.ExtractModelApplicationServiceTests.RunAsync_UsesConfigurationModulesWhenOverridesMissing [1 ms]
+  Passed Tests.Osm.Pipeline.Tests.Profiling.MultiEnvironmentProfileReportTests.Create_surfaces_cross_environment_standardization_gaps [75 ms]
+  Passed Osm.Emission.Tests.DynamicEntityInsertGeneratorTests.GenerateScripts_IncludesStaticSeedRowsAndSorts [1 ms]
+  Passed Osm.Emission.Tests.DynamicEntityInsertGeneratorTests.GenerateScripts_OrdersTablesByForeignKeyDependencies [< 1 ms]
+  Passed Osm.Emission.Tests.DynamicEntityInsertGeneratorTests.GenerateScripts_RespectsBatchSize [< 1 ms]
+  Passed Osm.Emission.Tests.DynamicEntityInsertGeneratorTests.GenerateScripts_SortsTablesByModuleAndName [< 1 ms]
+  Passed Osm.Emission.Tests.SsdtEmitterTests.EmitAsync_writes_per_table_artifacts_using_mock_file_system [555 ms]
+A total of 1 test files matched the specified pattern.
+  Skipped Osm.Smo.Tests.SmoObjectGraphFactoryTests.CreateTable_marks_untrusted_foreign_keys_as_not_checked [1 ms]
+  Skipped Osm.Smo.Tests.SmoObjectGraphFactoryTests.CreateTable_emits_all_columns_for_composite_foreign_keys [1 ms]
+  Skipped Osm.Smo.Tests.SmoObjectGraphFactoryTests.CreateTable_uses_smo_index_type_when_system_index_is_in_scope [1 ms]
+[xUnit.net 00:00:01.91]     Osm.Smo.Tests.SmoObjectGraphFactoryTests.CreateTable_populates_columns_indexes_and_foreign_keys [SKIP]
+[xUnit.net 00:00:01.91]       SQL Server is not available. Ensure SQL Server is running locally or via Docker.
+[xUnit.net 00:00:01.91]     Osm.Smo.Tests.SmoObjectGraphFactoryTests.CreateTable_respects_naming_overrides_for_referenced_tables [SKIP]
+[xUnit.net 00:00:01.91]       SQL Server is not available. Ensure SQL Server is running locally or via Docker.
+  Skipped Osm.Smo.Tests.SmoObjectGraphFactoryTests.CreateTable_populates_columns_indexes_and_foreign_keys [1 ms]
+  Skipped Osm.Smo.Tests.SmoObjectGraphFactoryTests.CreateTable_respects_naming_overrides_for_referenced_tables [1 ms]
+  Passed Osm.Smo.Tests.MsDescriptionResolverTests.ResolveAttributeMetadata_falls_back_to_description [6 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.StatementBatchFormatterTests.JoinStatements_inserts_go_batches_and_normalizes_whitespace [16 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.StatementBatchFormatterTests.NormalizeWhitespace_trims_trailing_spaces [< 1 ms]
+  Passed Osm.Smo.Tests.MsDescriptionResolverTests.ResolveEntityMetadata_prefers_ms_description_property [6 ms]
+  Passed Osm.Smo.Tests.MsDescriptionResolverTests.ResolveIndex_uses_extended_property_value [5 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.IdentifierFormatterTests.ResolveConstraintName_swaps_original_table_name_with_effective_name [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.IdentifierFormatterTests.QuoteIdentifier_uses_square_brackets_and_escapes_closing_bracket [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.IdentifierFormatterTests.QuoteIdentifier_uses_double_quotes_when_strategy_is_double_quote [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.IndexScriptBuilderTests.BuildDisableIndexStatement_targets_table_and_index [26 ms]
+  Passed Osm.Smo.Tests.SmoRenameLensTests.Project_applies_naming_overrides [32 ms]
+  Passed Osm.Smo.Tests.TypeMapping.TypeMappingRuleSetTests.NumericRules_DefaultToFallbackPrecisionAndRespectOverrides [32 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.ConstraintFormatterTests.FormatPrimaryKeyConstraints_reflows_primary_key_body [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.IndexScriptBuilderTests.BuildCreateIndexStatement_skips_default_index_options_and_storage_clause(isUnique: True) [7 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.IndexScriptBuilderTests.BuildCreateIndexStatement_skips_default_index_options_and_storage_clause(isUnique: False) [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.ConstraintFormatterTests.FormatForeignKeyConstraints_omits_default_clauses_when_both_are_no_action [6 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.ConstraintFormatterTests.FormatForeignKeyConstraints_preserves_explicit_update_and_delete_clauses [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.ConstraintFormatterTests.FormatForeignKeyConstraints_reflows_segments_and_appends_trust_comment [1 ms]
+  Passed Osm.Smo.Tests.ConstraintNameNormalizerTests.Normalize_ForeignKey_ReplacesTableSuffixWhenFullPhysicalNameNotInConstraintName [44 ms]
+  Passed Osm.Smo.Tests.ConstraintNameNormalizerTests.Normalize_ForeignKey_HandlesTablesWithSingleUnderscore [< 1 ms]
+  Passed Osm.Smo.Tests.ForeignKeyNameFactoryTests.CreateEvidenceName_RebuildsLogicalNameWhenEvidenceExceedsLimit [44 ms]
+  Passed Osm.Smo.Tests.ConstraintNameNormalizerTests.Normalize_ForeignKey_WorksWithStandardNaming [< 1 ms]
+  Passed Osm.Smo.Tests.ForeignKeyNameFactoryTests.CreateEvidenceName_TruncatesRebuiltNameWithHashWhenStillTooLong [2 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.CreateTableFormatterTests.FormatCreateTableScript_reflows_inline_defaults_constraints_and_primary_keys [2 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.CreateTableFormatterTests.FormatCreateTableScript_preserves_trust_comment_when_lookup_marks_foreign_key_as_not_trusted [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.CreateTableFormatterTests.FormatCreateTableScript_skips_reflow_when_normalization_is_disabled [1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.CreateTableStatementBuilderTests.BuildCreateTableStatement_inlines_single_column_primary_key [36 ms]
+  Passed Osm.Smo.Tests.TypeMapping.TypeMappingRuleSetTests.UnicodeTextRules_HonorOnDiskDefaultsAndOverrides [19 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_UsesMaxForVarBinaryWhenLengthAtOrAboveThreshold(declaredLength: 2000) [10 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_UsesMaxForVarBinaryWhenLengthAtOrAboveThreshold(declaredLength: 4096) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMapping.TypeMappingRuleSetTests.ExternalRules_ParseParametersAndHonorOverrides [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.CreateTableStatementBuilderTests.BuildCreateTableStatement_WritesDecimalPrecisionBeforeScale [2 ms]
+  Passed Osm.Smo.Tests.TypeMapping.TypeMappingRuleSetTests.BinaryRules_ApplyThresholdOverrides [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsOutSystemsRuntimeTypes(runtimeType: "rtDate", expected: Date) [1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsOutSystemsRuntimeTypes(runtimeType: "rtBoolean", expected: Bit) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsOutSystemsRuntimeTypes(runtimeType: "rtInteger", expected: Int) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsOutSystemsRuntimeTypes(runtimeType: "Integer", expected: Int) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsOutSystemsRuntimeTypes(runtimeType: "rtLongInteger", expected: BigInt) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsOutSystemsRuntimeTypes(runtimeType: "rtDateTime", expected: DateTime) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsPhoneToVarChar(runtimeType: "rtPhoneNumber") [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsPhoneToVarChar(runtimeType: "rtPhone") [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_UsesMaxForUnicodeWhenLengthAtOrAboveThreshold(declaredLength: 4000) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_UsesMaxForUnicodeWhenLengthAtOrAboveThreshold(declaredLength: 2000) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsBinaryDataToVarBinary [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsIdentifierToBigInt(dataType: "Identifier") [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsIdentifierToBigInt(dataType: "rtIdentifier") [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_UsesExternalDatabaseTypeForUnicode [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsTextualRuntimeTypesWithLength(declaredLength: 2001) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsTextualRuntimeTypesWithLength(declaredLength: 2000) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsTextualRuntimeTypesWithLength(declaredLength: 200) [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsEmailToVarChar [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_DoesNotCoerceDateRuntimeTypesToDateTime [< 1 ms]
+[xUnit.net 00:00:01.77]     Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing [FAIL]
+[xUnit.net 00:00:01.77]       Assert.Null() Failure: Value is not null
+[xUnit.net 00:00:01.77]       Expected: null
+[xUnit.net 00:00:01.77]       Actual:   LoadHarnessOptions { ConnectionString = Server=Test;, SafeScriptPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/Build/safe.sql, RemediationScriptPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/Build/remediation.sql, StaticSeedScriptPaths = System.Collections.Immutable.ImmutableArray`1[System.String], DynamicInsertScriptPaths = System.Collections.Immutable.ImmutableArray`1[System.String], ReportOutputPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/load-harness.report.json, CommandTimeoutSeconds =  }
+[xUnit.net 00:00:01.77]       Stack Trace:
+[xUnit.net 00:00:01.78]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs(92,0): at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing()
+[xUnit.net 00:00:01.78]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs(93,0): at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing()
+[xUnit.net 00:00:01.78]         --- End of stack trace from previous location ---
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_FallsBackToAttributeLengthWhenOnDiskMissing [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_UsesDecimalPrecisionAndScaleFromOnDiskMetadata [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_MapsCurrencyToDecimalWithDefaultScale [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_UsesExternalDatabaseTypeForMaxUnicode [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_UsesMaxForUnicodeWhenLengthIsMinusOne [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_UsesOnDiskUnicodeLength [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.IndexScriptBuilderTests.BuildCreateIndexStatement_skips_none_data_compression_settings [28 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.CreateTableStatementBuilderTests.AddForeignKeys_attaches_constraints_and_tracks_trust [16 ms]
+[xUnit.net 00:00:00.43]   Discovering: Osm.Documentation.Tests
+  Passed Osm.Pipeline.Tests.Evidence.CacheRequestNormalizerTests.TryNormalizeAsync_ShouldReturnErrorWhenRootMissing [2 ms]
+  Passed Tests.Osm.Pipeline.Tests.Profiling.MultiEnvironmentProfileReportTests.Create_normalizes_table_name_mappings_prior_to_validation [43 ms]
+  Passed Osm.Pipeline.Tests.Profiling.TableMetadataLoaderTests.LoadRowCountsAsync_BuildsExpectedSql [146 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UserMapLoaderTests.Load_ThrowsOnDuplicateSourceUserIds [< 1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UserMapLoaderTests.Load_ParsesCsv [1 ms]
+  Passed Osm.Pipeline.Tests.Evidence.CacheEntryEvaluatorTests.EvaluateExistingEntryAsync_ShouldReuseCacheWhenManifestValid [1 ms]
+  Passed Osm.Pipeline.Tests.Evidence.CacheEntryEvaluatorTests.DetermineMissingCacheReasonAsync_ShouldDetectMetadataMismatch [1 ms]
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/bin/Debug/net9.0/Osm.Pipeline.Integration.Tests.dll (.NETCoreApp,Version=v9.0)
+  Passed Osm.Pipeline.Tests.Evidence.CacheEntryEvaluatorTests.EvaluateExistingEntryAsync_ShouldRespectRefreshRequests [< 1 ms]
+  Passed Osm.Pipeline.Tests.Evidence.CacheEntryEvaluatorTests.EvaluateExistingEntryAsync_ShouldDeleteCacheWhenArtifactsMismatch [6 ms]
+  Passed Osm.Pipeline.Tests.Evidence.CacheMetadataBuilderTests.BuildOutcomeMetadata_ShouldMergeReasonAndBaseMetadata [< 1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.SqlFormattingTests.QuoteIdentifier_DoublesClosingBrackets(input: "EndsWith]", expected: "[EndsWith]]]") [< 1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.SqlFormattingTests.QuoteIdentifier_DoublesClosingBrackets(input: "User]Name", expected: "[User]]Name]") [< 1 ms]
+  Passed Osm.Pipeline.Tests.Evidence.CacheRequestNormalizerTests.TryNormalizeAsync_ShouldComputeDeterministicKey [24 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.SqlFormattingTests.SqlStringLiteral_FallsBackToEmptyLiteral(value: "") [3 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.SqlFormattingTests.SqlStringLiteral_FallsBackToEmptyLiteral(value: null) [< 1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.SqlFormattingTests.QuoteIdentifier_FallsBackToEmptyBrackets(input: null) [4 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.SqlFormattingTests.QuoteIdentifier_FallsBackToEmptyBrackets(input: "") [< 1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.SqlFormattingTests.SqlStringLiteral_DoublesApostrophesAndWraps(value: "O'Brian", expected: "'O''Brian'") [< 1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.SqlFormattingTests.SqlStringLiteral_DoublesApostrophesAndWraps(value: "Value with 'quote'", expected: "'Value with ''quote'''") [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.AdvancedSqlMetadataOrchestratorTests.ExecuteAsync_ShouldPropagateMetadataFailure [1 ms]
+  Passed Osm.Pipeline.Tests.Profiling.TableMetadataLoaderTests.LoadColumnMetadataAsync_BuildsExpectedSql [65 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.AdvancedSqlMetadataOrchestratorTests.ExecuteAsync_ShouldReturnSnapshotAndModulesWithoutEntities [61 ms]
+  Passed Osm.Smo.Tests.SmoColumnBuilderTests.BuildColumns_normalizes_boolean_word_defaults_to_bit_literals [32 ms]
+  Passed Osm.Smo.Tests.EntityEmissionContextTests.GetPreferredIdentifier_prefers_active_identifier [28 ms]
+  Passed Osm.Smo.Tests.EntityEmissionContextTests.GetPreferredIdentifier_uses_fallback_when_active_missing [< 1 ms]
+  Passed Osm.Smo.Tests.EntityEmissionIndexTests.TryResolveReference_prefers_schema_match_for_physical_name [27 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.IndexScriptBuilderTests.BuildCreateIndexStatement_includes_filter_and_compression_options [100 ms]
+  Passed Osm.Smo.Tests.SmoDataTypeExtensionsTests.GetDeclaredPrecision_PassthroughForNonDecimal [< 1 ms]
+  Passed Osm.Pipeline.Tests.FixtureDataProfilerTests.CaptureAsync_ShouldReturnSnapshot_WhenFixtureExists [1 ms]
+  Passed Osm.Pipeline.Tests.FixtureDataProfilerTests.CaptureAsync_ShouldSurfaceIgnoreForeignKeyReality [< 1 ms]
+  Passed Osm.Pipeline.Tests.FixtureDataProfilerTests.CaptureAsync_ShouldPreserveExternalSchemaAndUniqueSignals [1 ms]
+  Passed Osm.Pipeline.Tests.FixtureDataProfilerTests.CaptureAsync_ShouldPreservePhysicalMetadataFlags [1 ms]
+  Passed Osm.Pipeline.Tests.FixtureDataProfilerTests.CaptureAsync_ShouldReturnFailure_WhenFixtureMissing [< 1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.AnalyzeForeignKeyValuesStepTests.LoadsSnapshotWhenAvailable [41 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.ValidateUserMapStepTests.ExecuteAsync_ThrowsWhenMappingMissingTargetUserId [4 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.ValidateUserMapStepTests.ExecuteAsync_ThrowsWhenSourceMissingFromQaInventory [1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.AnalyzeForeignKeyValuesStepTests.CollectsCountsAndIdentifiesOrphans [6 ms]
+  Passed Osm.Pipeline.Tests.Evidence.EvidenceDescriptorCollectorTests.CollectAsync_ShouldDescribeExistingArtifacts [< 1 ms]
+  Passed Osm.Pipeline.Tests.Evidence.EvidenceDescriptorCollectorTests.CollectAsync_ShouldReturnFailure_WhenModelMissing [< 1 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.ValidateUserMapStepTests.ExecuteAsync_ThrowsWhenOrphanMissingFromMap [13 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.ValidateUserMapStepTests.ExecuteAsync_ThrowsWhenTargetMissingFromAllowedList [11 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.SqlScriptEmitterTests.EmitsOneUpdateBlockPerCatalogEntry [121 ms]
+[xUnit.net 00:00:00.61]   Discovered:  Osm.Documentation.Tests
+[xUnit.net 00:00:00.61]   Starting:    Osm.Documentation.Tests
+VSTest version 17.14.1 (arm64)
+  Passed Osm.Pipeline.Tests.UatUsers.SqlScriptEmitterTests.EmitsUniqueIdentifierScriptWhenGuidsPresent [33 ms]
+  Passed Osm.Pipeline.Tests.ApplicationEvidenceCacheOptionsTests.DmmCompare_UsesConfigurationCacheOptions_WhenOverridesMissing [3 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.ValidateUserMapStepTests.ExecuteAsync_ThrowsWhenDuplicateSourceUserIdsDetected [42 ms]
+  Passed Osm.Pipeline.Tests.ApplicationEvidenceCacheOptionsTests.BuildSsdt_UsesConfigurationCacheOptions_WhenOverridesMissing [2 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.ValidateUserMapStepTests.ExecuteAsync_LogsSuccessWhenMappingsValid [2 ms]
+  Passed Osm.Pipeline.Tests.ApplicationEvidenceCacheOptionsTests.DmmCompare_UsesOverrideCacheOptions_WhenProvided [1 ms]
+  Passed Osm.Pipeline.Tests.PipelineApplicationServiceBaseTests.CreateCacheOptions_WhenCacheRootAvailable_UsesConfiguration [< 1 ms]
+  Passed Osm.Pipeline.Tests.ApplicationEvidenceCacheOptionsTests.BuildSsdt_UsesOverrideCacheOptions_WhenProvided [1 ms]
+
+  Passed Osm.Pipeline.Tests.PipelineApplicationServiceBaseTests.EnsureSuccessOrFlushAsync_WhenResultSucceeds_SkipsFlush [1 ms]
+  Passed Osm.Pipeline.Tests.PipelineApplicationServiceBaseTests.ResolveOutputDirectory_WhenOverrideMissing_UsesDefault [< 1 ms]
+  Passed Osm.Pipeline.Tests.PipelineApplicationServiceBaseTests.EnsureSuccessOrFlushAsync_WhenResultFails_FlushesMetadata [1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_SelfReferencingTable_IsValid [73 ms]
+  Passed Osm.Pipeline.Tests.ApplicationEvidenceCacheOptionsTests.BuildSsdt_SkipsEvidenceCache_WhenRootMissing [13 ms]
+  Passed Osm.Pipeline.Tests.PipelineApplicationServiceBaseTests.RequirePath_WhenOverrideAndFallbackMissing_ReturnsValidationError [2 ms]
+  Passed Osm.Pipeline.Tests.AnalyzeApplicationServiceTests.RunAsync_DispatchesRequestWithResolvedPaths [6 ms]
+  Passed Osm.Pipeline.Tests.SqlDataProfilerCommandBuilderTests.BuildTableFilterClause_ReturnsFalseClause_WhenTableListEmpty [16 ms]
+  Passed Osm.Pipeline.Tests.SqlDataProfilerCommandBuilderTests.BuildTableFilterClause_AddsParametersForEachTable [4 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.Create_ShouldThrow_WhenSampleSizeNotPositive(sampleSize: -5) [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_MixedChildBeforeParentAndMissingParent_ReturnsInvalid [33 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.Create_ShouldThrow_WhenSampleSizeNotPositive(sampleSize: 0) [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_SingleEntityNoRelationships_ReturnsValid [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.SqlProfilerOptions_Default_ShouldUseDefaultSampling [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.SqlProfilerLimits_ShouldThrow_WhenTimeoutNotPositive [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.SqlProfilerLimits_ShouldThrow_WhenMaxRowsNotPositive(maxRows: 0) [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.SqlProfilerLimits_ShouldThrow_WhenMaxRowsNotPositive(maxRows: -1) [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.Create_ShouldThrow_WhenThresholdNotPositive(threshold: -1) [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.Create_ShouldThrow_WhenThresholdNotPositive(threshold: 0) [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.Create_ShouldReturnOptions_WhenValuesValid [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.SqlProfilerLimits_Default_ShouldExposeExpectedValues [1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.Default_ShouldExposeExpectedValues [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.SqlProfilerOptions_ShouldThrow_WhenConcurrencyInvalid(concurrency: 0) [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlSamplingOptionsTests.SqlProfilerOptions_ShouldThrow_WhenConcurrencyInvalid(concurrency: -4) [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_TwoWayCycle_DetectsViolation [8 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_UnnamedForeignKey_ShowsPlaceholder [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_MultipleFksToSameParent_CountsAllCorrectly [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_LargeNumberOfEntities_PerformsWell [3 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_ParentNotInOrderedList_ReportsMissingParentViolation [4 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_ComplexHierarchy_ReturnsValid [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_CorrectParentBeforeChild_ReturnsValid [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_GrandchildBeforeGrandparent_DetectsViolation [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_MultipleIndependentTrees_ReturnsValid [9 ms]
+[xUnit.net 00:00:00.72]   Finished:    Osm.Documentation.Tests
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_MultipleChildBeforeParentViolations_ReturnsAllViolations [3 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_DefaultImmutableArray_ReturnsValidWithZeroCounts [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_MultipleMissingParents_CountsAllMissing [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_EmptyInput_ReturnsValidWithZeroCounts [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_ChildBeforeParent_ReturnsInvalidWithViolation [2 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_CountsMetricsAccurately [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_CaseInsensitiveTableNameLookup_WorksCorrectly [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_WithNamingOverrides_ResolvesCorrectly [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_TableNotInModel_SkipsEntity [24 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_RelationshipWithEmptyActualConstraints_Ignored [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_NonForeignKeyRelationship_Ignored [< 1 ms]
+  Passed Osm.Pipeline.Tests.TopologicalOrderingValidatorTests.Validate_WithNamingOverrides_DetectsViolations [9 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.ModelUserSchemaGraphFactoryTests.Create_FallsBackToModelWhenDatasetHasNoJson [104 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.ModelUserSchemaGraphFactoryTests.Create_UsesDatasetJsonWhenAvailable [31 ms]
+  Passed Osm.Pipeline.Tests.DmmComparePipelineTests.HandleAsync_uses_fixture_profile_strategy_via_bootstrapper [1 s]
+  Passed Osm.Pipeline.Tests.Configuration.TighteningSectionReaderTests.ReadAsync_WhenInlineSectionPresent_OverridesFileOptions [1 s]
+  Passed Osm.Pipeline.Tests.CaptureProfilePipelineTests.HandleAsync_captures_fixture_profile_and_writes_manifest [1 s]
+  Passed Osm.Pipeline.Tests.CaptureProfilePipelineTests.HandleAsync_returns_failure_when_model_missing [< 1 ms]
+  Passed Osm.Pipeline.Tests.CaptureProfilePipelineTests.HandleAsync_returns_failure_when_output_missing [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlExtraction.SnapshotJsonBuilderTests.Build_ToFile_ShouldPersistSnapshot [710 ms]
+  Passed Osm.Pipeline.Tests.ExtractModelApplicationServiceTests.RunAsync_FlushesMetadataLogWhenEntriesRecorded [509 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtEmissionStepTests.ExecuteAsync_logs_smo_model_creation_metadata [299 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtEmissionStepTests.ExecuteAsync_records_emission_and_persistence_metadata [24 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldMatchLegacyJsonSnapshot [1 s]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.CreateCommand_ShouldSortAndDeduplicateModules [< 1 ms]
+  Passed FullExportDocumentationTests.Readme_links_contract_from_cli_summary_and_ssdt_section [3 ms]
+  Passed FullExportDocumentationTests.UatUsersVerbDocs_call_out_full_export_manifest_expectations [< 1 ms]
+  Passed FullExportDocumentationTests.FullExportContract_spells_out_ssdt_playbook [1 ms]
+  Passed FullExportDocumentationTests.Readme_quickstart_documents_full_export_uat_users_bundle [< 1 ms]
+
+Test Run Successful.
+Total tests: 4
+     Passed: 4
+ Total time: 1.5638 Seconds
+  Passed Osm.Smo.Tests.SmoDataTypeExtensionsTests.GetDeclaredPrecision_ReturnsRequestedPrecisionForDecimal [< 1 ms]
+  Passed Osm.Smo.Tests.EntityEmissionIndexTests.TryResolveReference_uses_module_logical_match_when_physical_missing [47 ms]
+  Passed Osm.Smo.Tests.TypeMapping.TypeMappingPolicyLoaderTests.Load_UsesDefaultOverrideWhenMappingMissing [< 1 ms]
+  Passed Osm.Smo.Tests.TypeMapping.TypeMappingPolicyLoaderTests.Load_AppliesAttributeOverrides [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.ExtendedPropertyScriptBuilderTests.BuildExtendedPropertyScripts_emits_table_and_column_descriptions [17 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.ExtendedPropertyScriptBuilderTests.BuildExtendedPropertyScripts_escapes_single_quotes_in_descriptions [< 1 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.ExtendedPropertyScriptBuilderTests.BuildExtendedPropertyScripts_emits_index_descriptions [3 ms]
+  Passed Osm.Smo.Tests.PerTableEmission.ExtendedPropertyScriptBuilderTests.BuildExtendedPropertyScripts_skips_when_no_descriptions [3 ms]
+  Passed Osm.Smo.Tests.PerTableWriterTests.Generate_respects_identifier_quote_strategy [549 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldFailWhenEntityArrayIsNull [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldPropagateMetadataFailure [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.CreateCommand_ShouldRejectNullModule [< 1 ms]
+  Passed Osm.Pipeline.Tests.TighteningAnalysisPipelineTests.HandleAsync_WritesOutputs [1 s]
+  Passed Osm.Pipeline.Tests.PipelineRequestContextBuilderTests.FlushMetadataAsync_WritesFileWhenLogHasEntries [284 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtEmissionStepTests.ExecuteAsync_returns_failure_when_ssdt_emitter_fails [147 ms]
+  Passed Osm.Pipeline.Tests.PipelineRequestContextBuilderTests.Build_ComposesResolvedContext [1 ms]
+  Passed Osm.Pipeline.Tests.PipelineRequestContextBuilderTests.FlushMetadataAsync_DoesNotWriteWhenLogEmpty [4 ms]
+  Passed Osm.Pipeline.Tests.PolicyDecisionLogWriterTests.WriteAsync_EmitsModuleRollupsAndTogglePrecedence [1 s]
+  Passed Osm.Pipeline.Tests.FullExportApplicationServiceTests.RunAsync_ReusesExistingModel_WhenReuseSignalProvided [1 s]
+  Passed Osm.Pipeline.Tests.FullExportApplicationServiceTests.RunAsync_UsesConfigurationSynchronizationModeWhenOverrideMissing [2 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtEmissionStepTests.ExecuteAsync_returns_failure_when_opportunity_writer_fails [14 ms]
+  Passed Osm.Pipeline.Tests.FullExportApplicationServiceTests.RunAsync_UsesSchemaApplyOverrideSynchronizationMode [4 ms]
+  Passed Osm.Pipeline.Tests.FullExportApplicationServiceTests.RunAsync_ReturnsFailureWhenUatUsersPipelineFails [< 1 ms]
+  Passed Osm.Pipeline.Tests.FullExportApplicationServiceTests.RunAsync_ExecutesUatUsersPipelineUsingConfigurationDefaults [1 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_unexpected_table [1 s]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_missing_index_when_feature_enabled [73 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_unexpected_column [131 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Parser_captures_composite_foreign_keys [15 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_nullability_difference [79 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_accepts_equivalent_type_spacing_and_casing [16 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_missing_column [22 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_column_order_difference [8 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_extended_property_drift_when_feature_enabled [105 ms]
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.LoadHarness.Integration.Tests/bin/Debug/net9.0/Osm.LoadHarness.Integration.Tests.dll (.NETCoreApp,Version=v9.0)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+VSTest version 17.14.1 (arm64)
+
+  Passed Osm.Smo.Tests.PerTableWriterTests.Generate_inlines_foreign_keys_with_referencing_columns [1 ms]
+  Passed Osm.Smo.Tests.SmoColumnBuilderTests.BuildColumns_aligns_reference_types_and_defaults [728 ms]
+  Passed Osm.Smo.Tests.SmoForeignKeyBuilderTests.BuildForeignKeys_emits_fallback_when_no_evidence [765 ms]
+  Passed Osm.Smo.Tests.SmoIndexBuilderTests.BuildIndexes_orders_unique_indexes_before_non_unique [835 ms]
+  Passed Osm.Smo.Tests.SmoIndexBuilderTests.BuildIndexes_honors_platform_auto_toggle [< 1 ms]
+  Passed Osm.Smo.Tests.SmoIndexBuilderTests.BuildIndexes_generates_primary_and_unique_metadata [5 ms]
+  Passed Osm.Smo.Tests.SmoForeignKeyBuilderTests.BuildForeignKeys_respects_policy_and_reality [38 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Create_filters_inactive_columns_and_preserves_default_metadata [809 ms]
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+  Passed Osm.Smo.Tests.PerTableEmission.CreateTableStatementBuilderTests.AddForeignKeys_emits_all_columns_for_composite_relationship [801 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Build_excludes_platform_auto_indexes_when_disabled [9 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Build_enforces_unique_even_when_remediation_required [3 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Build_applies_custom_index_naming_prefixes [10 ms]
+  Passed Osm.Smo.Tests.PerTableWriterTests.Generate_includes_ms_description_extended_properties [312 ms]
+  Passed Osm.Smo.Tests.PerTableWriterTests.Generate_includes_configured_header_when_enabled [3 ms]
+  Passed Osm.Smo.Tests.PerTableWriterTests.Generate_preserves_column_order_from_model [3 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Build_uses_physical_identifiers_when_logical_names_differ [29 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Create_projects_rename_overrides_into_rename_lens [49 ms]
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.17]   Discovering: Osm.Etl.Integration.Tests
+[xUnit.net 00:00:00.25]   Discovered:  Osm.Etl.Integration.Tests
+[xUnit.net 00:00:00.25]   Starting:    Osm.Etl.Integration.Tests
+  Failed Osm.Cli.Tests.Commands.CommandConsoleTests.EmitBuildSsdtSummary_WritesCompactBlock [44 ms]
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "\nSSDT build summary:\n  Output: /tmp/outpu"···
+Not found: "Dynamic insert mode: PerEntity"
+  Stack Trace:
+     at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitBuildSsdtSummary_WritesCompactBlock() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs:line 685
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Passed Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_BindsUatUsersIdempotentFlag [12 ms]
+  Passed Osm.Cli.Tests.Commands.CommandConsoleTests.EmitNamingOverrideTemplate_SuppressesOutputWhenNoDuplicates [67 ms]
+  Passed Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_WhenUatUsersEnabledRequiresUatInventory [127 ms]
+  Failed Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing [246 ms]
+  Error Message:
+   Assert.Null() Failure: Value is not null
+Expected: null
+Actual:   LoadHarnessOptions { ConnectionString = Server=Test;, SafeScriptPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/Build/safe.sql, RemediationScriptPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/Build/remediation.sql, StaticSeedScriptPaths = System.Collections.Immutable.ImmutableArray`1[System.String], DynamicInsertScriptPaths = System.Collections.Immutable.ImmutableArray`1[System.String], ReportOutputPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/load-harness.report.json, CommandTimeoutSeconds =  }
+  Stack Trace:
+     at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs:line 92
+   at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs:line 93
+--- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_BindsUatUsersOverridesWhenEnabled [33 ms]
+  Passed Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_WhenUatUsersEnabledRequiresQaInventory [11 ms]
+[xUnit.net 00:00:00.32]     Osm.Etl.Integration.Tests.SqlExtractionParityTests.ExtractModel_ShouldMatchEdgeCaseFixture [SKIP]
+[xUnit.net 00:00:00.32]       Docker engine is unavailable. Details: Connection failed
+[xUnit.net 00:00:00.33]     Osm.Etl.Integration.Tests.SqlExtractionParityTests.ExtractModel_WithInvalidPassword_ShouldReturnMetadataFailure [SKIP]
+[xUnit.net 00:00:00.33]       Docker engine is unavailable. Details: Connection failed
+[xUnit.net 00:00:00.33]     Osm.Etl.Integration.Tests.SqlExtractionParityTests.AdvancedSqlExecutor_ShouldSurfaceTimeoutMessage [SKIP]
+[xUnit.net 00:00:00.33]       Docker engine is unavailable. Details: Connection failed
+[xUnit.net 00:00:00.33]     Osm.Etl.Integration.Tests.StaticSeedScriptExecutionTests.StaticSeedScript_WithCaseSensitiveColumnNames_ExecutesSuccessfully [SKIP]
+[xUnit.net 00:00:00.33]       Docker engine is unavailable. Details: Connection failed
+[xUnit.net 00:00:03.10]     Osm.Smo.Tests.SmoModelFactoryTests.CreateSmoTables_materializes_detached_smo_objects [SKIP]
+[xUnit.net 00:00:03.10]       SQL Server is not available. Ensure SQL Server is running locally or via Docker.
+[xUnit.net 00:00:03.10]     Osm.Smo.Tests.SmoModelFactoryTests.Create_includes_ossys_user_supplemental_table_with_expected_shape [SKIP]
+[xUnit.net 00:00:03.10]       SQL Server is not available. Ensure SQL Server is running locally or via Docker.
+[xUnit.net 00:00:03.10]     Osm.Smo.Tests.SmoModelFactoryTests.Create_aligns_model_with_all_policy_decisions [SKIP]
+[xUnit.net 00:00:03.10]       SQL Server is not available. Ensure SQL Server is running locally or via Docker.
+  Passed Osm.Pipeline.Tests.FullExportApplicationServiceTests.RunAsync_SkipsUatUsersWhenDisabled [3 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtEmissionStepTests.ExecuteAsync_returns_failure_when_decision_log_writer_fails [9 ms]
+  Passed Osm.Pipeline.Tests.UatUsers.UatUsersPipelineScenarioTests.PipelineProducesArtifactsAndPersistsSnapshot [359 ms]
+  Passed Osm.Pipeline.Tests.Configuration.TighteningSectionReaderTests.ReadAsync_WhenDocumentContainsPolicy_TreatsConfigurationAsLegacy [199 ms]
+  Passed Osm.Pipeline.Tests.FullExportApplicationServiceTests.RunAsync_ReturnsFailureWhenSchemaGraphFactoryFails [1 ms]
+  Passed Osm.Pipeline.Tests.Configuration.TighteningSectionReaderTests.ReadAsync_WhenTighteningPathResolves_DeserializesOptionsFromFile [2 ms]
+  Passed Osm.Pipeline.Tests.OpportunityLogWriterTests.WriteAsync_PersistsDeterministicArtifacts [1 s]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.SqlValidationStep_returns_failure_when_scripts_invalid [1 s]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineTests.ExecuteAsync_emits_manifest_seed_and_cache [2 s]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Create_respects_policy_decisions_for_edge_case_fixture [149 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Create_matches_edge_case_fixture_scripts [31 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Build_respects_platform_auto_index_toggle [9 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Create_marks_foreign_keys_as_not_checked_when_evidence_is_untrusted [69 ms]
+  Skipped Osm.Smo.Tests.SmoModelFactoryTests.CreateSmoTables_materializes_detached_smo_objects [1 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Build_uses_supplemental_entities_for_missing_foreign_key_targets [2 ms]
+  Skipped Osm.Smo.Tests.SmoModelFactoryTests.Create_includes_ossys_user_supplemental_table_with_expected_shape [1 ms]
+  Skipped Osm.Smo.Tests.SmoModelFactoryTests.Create_aligns_model_with_all_policy_decisions [1 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Build_applies_unique_decisions_from_policy [8 ms]
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+[xUnit.net 00:00:03.21]   Finished:    Osm.Smo.Tests
+[xUnit.net 00:00:03.16]   Finished:    Osm.Emission.Tests
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Build_maps_on_disk_default_and_check_constraints [4 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Build_handles_duplicate_logical_entity_names_across_modules [1 ms]
+  Passed Osm.Smo.Tests.SmoModelFactoryTests.Build_aligns_reference_column_types_with_target_identifiers [93 ms]
+
+  Passed Osm.Emission.Tests.SsdtEmitterTests.EmitAsync_end_to_end_fixture_snapshot [2 s]
+  Passed Osm.Emission.Tests.SsdtEmitterTests.EmitAsync_requires_non_empty_output_directory(outputDirectory: "") [1 ms]
+  Passed Osm.Emission.Tests.SsdtEmitterTests.EmitAsync_requires_non_empty_output_directory(outputDirectory: "   ") [< 1 ms]
+  Passed Osm.Emission.Tests.SsdtEmitterTests.EmitAsync_requires_non_empty_output_directory(outputDirectory: null) [< 1 ms]
+  Passed Osm.Emission.Tests.SsdtEmitterTests.EmitAsync_foreign_keys_are_emitted_with_check_when_trusted [34 ms]
+  Passed Osm.Emission.Tests.SsdtEmitterTests.EmitAsync_is_idempotent_for_edge_case_fixture [25 ms]
+
+Test Run Successful.
+Total tests: 108
+     Passed: 100
+    Skipped: 8
+Test Run Successful.
+Total tests: 54
+     Passed: 54
+[xUnit.net 00:00:00.10]   Discovering: Osm.Pipeline.Integration.Tests
+ Total time: 3.7591 Seconds
+ Total time: 3.7675 Seconds
+  Passed Osm.Pipeline.Tests.SsdtMatrixTests.BuildSsdtMatrixCaseProducesExpectedArtifacts(testCase: MatrixCase { Name = unique-index, Model = model.micro-unique.json, Profile = profiling/profile.micro-unique.json, Expected = emission-matrix/unique-index, Entity = MatrixEntity { Module = M, Schema = dbo, Table = OSUSR_U_USER }, Predicates = System.Collections.Generic.List`1[System.String], StaticData =  }) [2 s]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineTests.HandleAsync_uses_sql_profile_strategy_via_bootstrapper [6 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineTests.HandleAsync_returns_failure_when_sql_validation_reports_errors [24 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineTests.HandleAsync_returns_failure_when_model_path_missing [1 ms]
+  Passed Osm.Pipeline.Tests.SsdtMatrixTests.BuildSsdtMatrixCaseProducesExpectedArtifacts(testCase: MatrixCase { Name = unique-index-on-disk, Model = model.micro-unique-operator.json, Profile = profiling/profile.empty.json, Expected = emission-matrix/unique-index-on-disk, Entity = MatrixEntity { Module = Operator, Schema = dbo, Table = OSUSR_OP_OPERATORPROFILE }, Predicates = System.Collections.Generic.List`1[System.String], StaticData =  }) [65 ms]
+  Passed Osm.Pipeline.Tests.SsdtMatrixTests.BuildSsdtMatrixCaseProducesExpectedArtifacts(testCase: MatrixCase { Name = composite-default, Model = model.micro-unique-composite.json, Profile = profiling/profile.micro-unique-composite.json, Expected = emission-matrix/composite-default, Entity = MatrixEntity { Module = M, Schema = dbo, Table = OSUSR_A_ORDERALLOCATION }, Predicates = System.Collections.Generic.List`1[System.String], StaticData =  }) [78 ms]
+  Passed Osm.Pipeline.Tests.DmmComparePipelineTests.HandleAsync_reports_table_file_layout_differences [912 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.StaticSeedStep_emits_master_seed_when_enabled [185 ms]
+[xUnit.net 00:00:03.24]   Finished:    Osm.Dmm.Tests
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_primary_key_difference [103 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_honors_entity_name_overrides [137 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_honors_module_scoped_entity_name_overrides_with_sanitized_module_name [144 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_missing_unique_constraint_when_indexes_enabled [72 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_missing_table [108 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Parser_captures_primary_keys_added_via_alter_table [29 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_data_type_difference [86 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_foreign_key_drift_when_feature_enabled [23 ms]
+  Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_returns_match_for_equivalent_dmm_script [23 ms]
+Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.LoadHarness.Tests/bin/Debug/net9.0/Osm.LoadHarness.Tests.dll (.NETCoreApp,Version=v9.0)
+
+Test Run Successful.
+Total tests: 23
+     Passed: 23
+ Total time: 3.8540 Seconds
+[xUnit.net 00:00:00.21]   Discovered:  Osm.Pipeline.Integration.Tests
+[xUnit.net 00:00:00.21]   Starting:    Osm.Pipeline.Integration.Tests
+[xUnit.net 00:00:03.23]     Osm.Cli.Tests.Extraction.ConfigurableConnectionTests.ExtractModel_ShouldWriteJsonUsingFixtureExecutor [FAIL]
+[xUnit.net 00:00:03.23]       Assert.True() Failure
+[xUnit.net 00:00:03.23]       Expected: True
+[xUnit.net 00:00:03.23]       Actual:   False
+[xUnit.net 00:00:03.23]       Stack Trace:
+[xUnit.net 00:00:03.23]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Extraction/ConfigurableConnectionTests.cs(34,0): at Osm.Cli.Tests.Extraction.ConfigurableConnectionTests.ExtractModel_ShouldWriteJsonUsingFixtureExecutor()
+[xUnit.net 00:00:03.23]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+VSTest version 17.14.1 (arm64)
+
+[xUnit.net 00:00:00.05]   Discovering: Osm.LoadHarness.Integration.Tests
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.38]     Osm.Pipeline.Integration.Tests.SqlClientAdvancedSqlExecutorIntegrationTests.ExecuteAsync_ShouldMatchAdvancedSqlFixture [SKIP]
+[xUnit.net 00:00:00.38]       Docker engine is unavailable. Details: Connection failed
+[xUnit.net 00:00:00.38]     Osm.Pipeline.Integration.Tests.SqlClientAdvancedSqlExecutorIntegrationTests.ExecuteAsync_ShouldHonorCommandTimeout [SKIP]
+[xUnit.net 00:00:00.38]       Docker engine is unavailable. Details: Connection failed
+[xUnit.net 00:00:00.38]     Osm.Pipeline.Integration.Tests.SqlDynamicEntityDataProviderIntegrationTests.ExtractAsync_ShouldPopulateDatasetAndEmitDynamicScripts [SKIP]
+[xUnit.net 00:00:00.38]       Docker engine is unavailable. Details: Connection failed
+[xUnit.net 00:00:00.38]     Osm.Pipeline.Integration.Tests.SqlDynamicEntityDataProviderIntegrationTests.ExtractAsync_WithAutoLoadParentMode_EnqueuesStaticSeedParents [SKIP]
+[xUnit.net 00:00:00.38]       Docker engine is unavailable. Details: Connection failed
+[xUnit.net 00:00:00.43]     Osm.Pipeline.Integration.Tests.SqlDynamicEntityDataProviderIntegrationTests.ExtractAsync_WithValidationParentMode_FailsWhenStaticSeedParentsMissing [SKIP]
+[xUnit.net 00:00:00.43]       Docker engine is unavailable. Details: Connection failed
+[xUnit.net 00:00:00.21]   Discovered:  Osm.LoadHarness.Integration.Tests
+[xUnit.net 00:00:03.57]     Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers [FAIL]
+[xUnit.net 00:00:03.58]       Retained memory (69289968 bytes) exceeded threshold (43996008 bytes).
+[xUnit.net 00:00:03.58]       Stack Trace:
+[xUnit.net 00:00:03.58]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs(680,0): at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers()
+[xUnit.net 00:00:03.58]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:00.47]     Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldRemoveSupersededEntries_WhenModuleSelectionShrinks [FAIL]
+[xUnit.net 00:00:00.47]       Expected superset.IsSuccess to be true, but found False.
+[xUnit.net 00:00:00.47]       Stack Trace:
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.XUnit2TestFramework.Throw(String message)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+[xUnit.net 00:00:00.22]   Starting:    Osm.LoadHarness.Integration.Tests
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
+[xUnit.net 00:00:00.47]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(194,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldRemoveSupersededEntries_WhenModuleSelectionShrinks()
+[xUnit.net 00:00:00.47]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:00.47]     Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldEvictCache_WhenMetadataChanges [FAIL]
+[xUnit.net 00:00:00.47]       Expected baseline.IsSuccess to be true, but found False.
+[xUnit.net 00:00:00.47]       Stack Trace:
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.XUnit2TestFramework.Throw(String message)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
+[xUnit.net 00:00:00.47]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(139,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldEvictCache_WhenMetadataChanges()
+[xUnit.net 00:00:00.47]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:00.47]     Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldCreateAndReuseCacheEntries [FAIL]
+[xUnit.net 00:00:00.47]       Expected first.IsSuccess to be true, but found False.
+[xUnit.net 00:00:00.47]       Stack Trace:
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.XUnit2TestFramework.Throw(String message)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+[xUnit.net 00:00:00.47]            at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
+[xUnit.net 00:00:00.47]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(47,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldCreateAndReuseCacheEntries()
+[xUnit.net 00:00:00.47]         --- End of stack trace from previous location ---
+  Passed Osm.Pipeline.Tests.DmmComparePipelineTests.HandleAsync_confirms_parity_and_writes_diff [93 ms]
+  Passed Osm.Pipeline.Tests.SsdtMatrixTests.BuildSsdtMatrixCaseProducesExpectedArtifacts(testCase: MatrixCase { Name = fk-ignore, Model = model.micro-fk-ignore.json, Profile = profiling/profile.micro-fk-ignore.json, Expected = emission-matrix/fk-ignore, Entity = MatrixEntity { Module = M, Schema = dbo, Table = OSUSR_B }, Predicates = System.Collections.Generic.List`1[System.String], StaticData =  }) [96 ms]
+  Passed Osm.Pipeline.Tests.SsdtMatrixTests.BuildSsdtMatrixCaseProducesExpectedArtifacts(testCase: MatrixCase { Name = temporal-audit, Model = model.matrix.temporal.json, Profile = profiling/profile.matrix.temporal.json, Expected = emission-matrix/temporal-audit, Entity = MatrixEntity { Module = Matrix, Schema = dbo, Table = OSUSR_M_TEMPORALORDER }, Predicates = System.Collections.Generic.List`1[System.String], StaticData = static-data/static-entities.matrix.temporal.json }) [124 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.TelemetryPackagingStep_creates_archive_with_expected_artifacts [191 ms]
+  Failed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers [1 s]
+  Error Message:
+   Retained memory (69289968 bytes) exceeded threshold (43996008 bytes).
+  Stack Trace:
+     at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs:line 680
+--- End of stack trace from previous location ---
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWriteFailureSnapshotWhenMetadataReaderFails [58 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.SqlValidationStep_records_summary_for_valid_scripts [166 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.BootstrapStep_populates_state_and_logs_request [8 ms]
+  Skipped Osm.Pipeline.Integration.Tests.SqlClientAdvancedSqlExecutorIntegrationTests.ExecuteAsync_ShouldMatchAdvancedSqlFixture [1 ms]
+  Skipped Osm.Pipeline.Integration.Tests.SqlClientAdvancedSqlExecutorIntegrationTests.ExecuteAsync_ShouldHonorCommandTimeout [1 ms]
+  Skipped Osm.Pipeline.Integration.Tests.SqlDynamicEntityDataProviderIntegrationTests.ExtractAsync_ShouldPopulateDatasetAndEmitDynamicScripts [1 ms]
+  Skipped Osm.Pipeline.Integration.Tests.SqlDynamicEntityDataProviderIntegrationTests.ExtractAsync_WithAutoLoadParentMode_EnqueuesStaticSeedParents [1 ms]
+  Passed Osm.Pipeline.Integration.Tests.SqlDynamicEntityDataProviderIntegrationTests.DynamicInsertGenerator_DefersJunctionTablesWhenRequested [52 ms]
+  Skipped Osm.Pipeline.Integration.Tests.SqlDynamicEntityDataProviderIntegrationTests.ExtractAsync_WithValidationParentMode_FailsWhenStaticSeedParentsMissing [1 ms]
+  Failed Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldRemoveSupersededEntries_WhenModuleSelectionShrinks [86 ms]
+  Error Message:
+   Expected superset.IsSuccess to be true, but found False.
+  Stack Trace:
+     at FluentAssertions.Execution.XUnit2TestFramework.Throw(String message)
+   at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+   at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+   at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
+   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldRemoveSupersededEntries_WhenModuleSelectionShrinks() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 194
+--- End of stack trace from previous location ---
+  Failed Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldEvictCache_WhenMetadataChanges [2 ms]
+  Error Message:
+   Expected baseline.IsSuccess to be true, but found False.
+  Stack Trace:
+     at FluentAssertions.Execution.XUnit2TestFramework.Throw(String message)
+   at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+   at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+   at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
+   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldEvictCache_WhenMetadataChanges() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 139
+--- End of stack trace from previous location ---
+  Failed Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldCreateAndReuseCacheEntries [1 ms]
+  Error Message:
+   Expected first.IsSuccess to be true, but found False.
+  Stack Trace:
+     at FluentAssertions.Execution.XUnit2TestFramework.Throw(String message)
+   at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+   at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+   at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
+   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldCreateAndReuseCacheEntries() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 47
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:00.48]     Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldExpireEntries_WhenTtlElapsed [FAIL]
+[xUnit.net 00:00:00.48]       Expected first.IsSuccess to be true, but found False.
+[xUnit.net 00:00:00.48]       Stack Trace:
+[xUnit.net 00:00:00.48]            at FluentAssertions.Execution.XUnit2TestFramework.Throw(String message)
+[xUnit.net 00:00:00.48]            at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+[xUnit.net 00:00:00.48]            at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+[xUnit.net 00:00:00.48]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+[xUnit.net 00:00:00.48]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+[xUnit.net 00:00:00.48]            at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+[xUnit.net 00:00:00.48]            at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
+[xUnit.net 00:00:00.48]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(99,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldExpireEntries_WhenTtlElapsed()
+[xUnit.net 00:00:00.48]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:00.48]   Finished:    Osm.Pipeline.Integration.Tests
+[xUnit.net 00:00:00.29]     Osm.LoadHarness.Integration.Tests.LoadHarnessRunnerIntegrationTests.RunAsync_ReplaysScriptsAndWritesReport [SKIP]
+[xUnit.net 00:00:00.29]       Docker engine is unavailable. Details: Connection failed
+  Failed Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldExpireEntries_WhenTtlElapsed [1 ms]
+  Error Message:
+   Expected first.IsSuccess to be true, but found False.
+  Stack Trace:
+     at FluentAssertions.Execution.XUnit2TestFramework.Throw(String message)
+   at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+   at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+   at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
+   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldExpireEntries_WhenTtlElapsed() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 99
+--- End of stack trace from previous location ---
+
+[xUnit.net 00:00:00.30]   Finished:    Osm.LoadHarness.Integration.Tests
+Test Run Failed.
+Total tests: 10
+     Passed: 1
+     Failed: 4
+    Skipped: 5
+[xUnit.net 00:00:03.66]     Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWarnWhenDuplicateAttributeColumnsPresent [FAIL]
+[xUnit.net 00:00:03.66]       Assert.True() Failure
+[xUnit.net 00:00:03.66]       Expected: True
+[xUnit.net 00:00:03.66]       Actual:   False
+[xUnit.net 00:00:03.66]       Stack Trace:
+[xUnit.net 00:00:03.66]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs(566,0): at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWarnWhenDuplicateAttributeColumnsPresent()
+[xUnit.net 00:00:03.66]         --- End of stack trace from previous location ---
+ Total time: 1.1159 Seconds
+     1>Project "/Users/dannydyer/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (1) is building "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/Osm.Pipeline.Integration.Tests.csproj" (22) on node 7 (VSTest target(s)).
+    22>_VSTestConsole:
+         MSB4181: The "VSTestTask" task returned false but did not log an error.
+    22>Done Building Project "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/Osm.Pipeline.Integration.Tests.csproj" (VSTest target(s)) -- FAILED.
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.EvidenceCacheStep_persists_result_and_records_metadata [4 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldEmitEmptyArraysWhenEntityFilteredOut [48 ms]
+  Failed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWarnWhenDuplicateAttributeColumnsPresent [38 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWarnWhenDuplicateAttributeColumnsPresent() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs:line 566
+--- End of stack trace from previous location ---
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.CreateCommand_ShouldRejectEmptyModule [< 1 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldExposeUserReferencesWhenSystemModulesExcluded [9 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldMarkLegacyTypeGuidEncodedReference [4 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.EmissionStep_writes_manifest_and_decision_log [81 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWriteMetadataSnapshotWhenPathProvided [36 ms]
+  Skipped Osm.LoadHarness.Integration.Tests.LoadHarnessRunnerIntegrationTests.RunAsync_ReplaysScriptsAndWritesReport [1 ms]
+
+Test Run Successful.
+Total tests: 1
+    Skipped: 1
+ Total time: 0.8763 Seconds
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
+[xUnit.net 00:00:00.05]   Discovering: Osm.LoadHarness.Tests
+[xUnit.net 00:00:00.07]   Discovered:  Osm.LoadHarness.Tests
+[xUnit.net 00:00:00.07]   Starting:    Osm.LoadHarness.Tests
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.StaticSeedStep_OrdersTablesByForeignKeyDependencies [44 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldPersistJsonToFilePath [8 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldReturnModelAndJson [2 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldHandleEmptyModuleSnapshot [27 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldSurfaceWarningsForModulesWithoutEntities [5 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.PolicyStep_synthesizes_decision_report [37 ms]
+  Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldSupportCustomDestinationStream [7 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.DynamicInsertStep_emits_single_file_when_requested [104 ms]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.DynamicInsertStep_uses_topological_order_for_sanitized_dataset [15 ms]
+[xUnit.net 00:00:00.17]   Finished:    Osm.LoadHarness.Tests
+  Passed Osm.LoadHarness.Tests.DynamicScriptQueueTests.WriteAsync_PreservesDynamicCategoriesInReport [47 ms]
+  Passed Osm.LoadHarness.Tests.DynamicScriptQueueTests.BuildScriptQueue_AppendsDynamicScripts [3 ms]
+
+Test Run Successful.
+Total tests: 2
+     Passed: 2
+[xUnit.net 00:00:01.37]   Finished:    Osm.Etl.Integration.Tests
+ Total time: 0.5908 Seconds
+  Skipped Osm.Etl.Integration.Tests.SqlExtractionParityTests.ExtractModel_ShouldMatchEdgeCaseFixture [1 ms]
+  Skipped Osm.Etl.Integration.Tests.SqlExtractionParityTests.ExtractModel_WithInvalidPassword_ShouldReturnMetadataFailure [1 ms]
+  Skipped Osm.Etl.Integration.Tests.SqlExtractionParityTests.AdvancedSqlExecutor_ShouldSurfaceTimeoutMessage [1 ms]
+  Skipped Osm.Etl.Integration.Tests.StaticSeedScriptExecutionTests.StaticSeedScript_WithCaseSensitiveColumnNames_ExecutesSuccessfully [1 ms]
+  Passed Osm.Etl.Integration.Tests.EmissionPipelineTests.BuildSsdtPipeline_MatchesEdgeCaseFixtures [995 ms]
+  Passed Osm.Etl.Integration.Tests.EmissionPipelineTests.BuildSsdtPipeline_WithRenamesMatchesFixtures [40 ms]
+
+Test Run Successful.
+Total tests: 6
+     Passed: 2
+    Skipped: 4
+ Total time: 2.2664 Seconds
+[xUnit.net 00:00:04.16]   Finished:    Osm.Pipeline.Tests
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.StaticSeedStep_disambiguates_colliding_sanitized_module_names [71 ms]
+  Passed Osm.Pipeline.Tests.SchemaDataApplierLoadTests.ApplyAsync_streams_large_batches_within_memory_budget [2 s]
+  Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.StaticSeedStep_generates_seed_scripts [84 ms]
+  Passed Osm.Pipeline.Tests.Performance.SqlDataProfilerPerformanceTests.CaptureAsync_ShouldRespectConcurrencyGate_ForLargeEntityGrid [2 s]
+
+Test Run Failed.
+Total tests: 384
+     Passed: 382
+     Failed: 2
+ Total time: 4.7391 Seconds
+     1>Project "/Users/dannydyer/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (1) is building "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/Osm.Pipeline.Tests.csproj" (10) on node 2 (VSTest target(s)).
+    10>_VSTestConsole:
+         MSB4181: The "VSTestTask" task returned false but did not log an error.
+    10>Done Building Project "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/Osm.Pipeline.Tests.csproj" (VSTest target(s)) -- FAILED.
+  Passed Osm.Cli.Tests.FilesystemPermissionTests.BuildSsdt_fails_when_output_directory_is_read_only [2 s]
+  Failed Osm.Cli.Tests.Extraction.ConfigurableConnectionTests.ExtractModel_ShouldWriteJsonUsingFixtureExecutor [2 s]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Osm.Cli.Tests.Extraction.ConfigurableConnectionTests.ExtractModel_ShouldWriteJsonUsingFixtureExecutor() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Extraction/ConfigurableConnectionTests.cs:line 34
+--- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.CliIntegrationTests.DmmCompare_writes_diff_artifact_when_drift_detected [3 s]
+  Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_ShouldWriteEvidenceCacheManifest [863 ms]
+  Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_UsesCliConfigurationDefaults [754 ms]
+  Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_honors_rename_table_overrides [842 ms]
+  Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_AppliesModuleFilterFromConfiguration [695 ms]
+[xUnit.net 00:00:08.56]     Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_and_dmm_compare_complete_successfully [FAIL]
+[xUnit.net 00:00:08.56]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:08.56]       Expected: 6
+[xUnit.net 00:00:08.56]       Actual:   5
+[xUnit.net 00:00:08.56]       Stack Trace:
+[xUnit.net 00:00:08.56]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs(73,0): at Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_and_dmm_compare_complete_successfully()
+[xUnit.net 00:00:08.56]         --- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_honors_entity_override_from_configuration [746 ms]
+  Failed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_and_dmm_compare_complete_successfully [766 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 6
+Actual:   5
+  Stack Trace:
+     at Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_and_dmm_compare_complete_successfully() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs:line 73
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:09.65]     Osm.Cli.Tests.CliIntegrationTests.Profile_command_captures_fixture_snapshot [FAIL]
+[xUnit.net 00:00:09.65]       System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
+[xUnit.net 00:00:09.65]       Stack Trace:
+[xUnit.net 00:00:09.65]            at System.Text.Json.JsonElement.GetProperty(String propertyName)
+[xUnit.net 00:00:09.65]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs(130,0): at Osm.Cli.Tests.CliIntegrationTests.Profile_command_captures_fixture_snapshot()
+[xUnit.net 00:00:09.65]         --- End of stack trace from previous location ---
+  Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_AppliesModuleFilterFromCli [751 ms]
+  Failed Osm.Cli.Tests.CliIntegrationTests.Profile_command_captures_fixture_snapshot [343 ms]
+  Error Message:
+   System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
+  Stack Trace:
+     at System.Text.Json.JsonElement.GetProperty(String propertyName)
+   at Osm.Cli.Tests.CliIntegrationTests.Profile_command_captures_fixture_snapshot() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs:line 130
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:10.47]   Finished:    Osm.Cli.Tests
+  Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_AllowsEnvironmentOverrides [815 ms]
+
+Test Run Failed.
+Total tests: 88
+     Passed: 77
+     Failed: 11
+ Total time: 11.1521 Seconds
+     1>Project "/Users/dannydyer/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (1) is building "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Osm.Cli.Tests.csproj" (17) on node 8 (VSTest target(s)).
+    17>_VSTestConsole:
+         MSB4181: The "VSTestTask" task returned false but did not log an error.
+    17>Done Building Project "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Osm.Cli.Tests.csproj" (VSTest target(s)) -- FAILED.
+     1>Done Building Project "/Users/dannydyer/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (VSTest target(s)) -- FAILED.
+
+Build FAILED.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:12.40
