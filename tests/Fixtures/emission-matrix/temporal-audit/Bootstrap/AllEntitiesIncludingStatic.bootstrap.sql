@@ -1,5 +1,5 @@
 --------------------------------------------------------------------------------
--- M1.0 Bootstrap Snapshot: All Entities (Static + Regular)
+-- Bootstrap Snapshot: All Entities (Static + Regular)
 -- Generated: 2025-11-19 17:49:07 UTC
 -- Total Entities: 1
 -- Ordering: Alphabetical fallback
@@ -61,9 +61,9 @@ WHEN NOT MATCHED THEN INSERT ([Id], [Status], [AuditId], [ValidFrom], [ValidTo])
 
 GO
 
-PRINT '[M1.0] Bootstrap: Completed entity 1/1: dbo.OSUSR_M_TEMPORALORDER (1 rows)';
+PRINT 'Bootstrap: Completed entity 1/1: dbo.OSUSR_M_TEMPORALORDER (1 rows)';
 GO
 
 --------------------------------------------------------------------------------
--- M1.0 Bootstrap Snapshot Complete: 1 entities loaded
+-- Bootstrap Snapshot Complete: 1 entities loaded
 --------------------------------------------------------------------------------

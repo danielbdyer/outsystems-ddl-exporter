@@ -15,7 +15,7 @@ using Osm.Smo;
 namespace Osm.Pipeline.Orchestration;
 
 /// <summary>
-/// M1.0: Generates a bootstrap snapshot containing ALL entities (static + regular) in global topological order.
+/// Generates a bootstrap snapshot containing ALL entities (static + regular) in global topological order.
 /// This file is used for first-time SSDT deployment to ensure correct FK dependency ordering across module boundaries.
 /// </summary>
 public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInsertsGenerated, BootstrapSnapshotGenerated>
@@ -40,7 +40,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
         var model = state.Bootstrap.FilteredModel
             ?? throw new InvalidOperationException("Pipeline bootstrap step must execute before bootstrap snapshot generation.");
 
-        // Combine static + regular entities (as per M1.0 spec)
+        // Combine static + regular entities
         var staticEntities = state.StaticSeedData.IsDefaultOrEmpty
             ? ImmutableArray<StaticEntityTableData>.Empty
             : state.StaticSeedData;
@@ -82,22 +82,30 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
                 BootstrapEntityCount: 0));
         }
 
-        // Apply global topological sort (no module partitioning - critical for M1.0)
+        // Apply global topological sort (no module partitioning)
         var sortOptions = state.Request.DeferJunctionTables
             ? new EntityDependencySortOptions(true)
             : EntityDependencySortOptions.Default;
+
+        // Get circular dependency options for manual ordering
+        var circularDepsOptions = state.Request.CircularDependencyOptions ?? CircularDependencyOptions.Empty;
 
         var ordering = EntityDependencySorter.SortByForeignKeys(
             allEntities,
             model,
             state.Request.Scope.SmoOptions.NamingOverrides,
-            sortOptions);
+            sortOptions,
+            circularDepsOptions);
 
         var orderedEntities = ordering.Tables;
 
+        // Validate topological ordering and extract cycle diagnostics
+        var validator = new TopologicalOrderingValidator();
+        var validation = validator.Validate(orderedEntities, model, state.Request.Scope.SmoOptions.NamingOverrides, circularDepsOptions);
+
         // Generate bootstrap snapshot script with observability
         var validationOverrides = state.Request.Scope.ModuleFilter.ValidationOverrides;
-        var bootstrapScript = GenerateBootstrapScript(orderedEntities, ordering, model, validationOverrides);
+        var bootstrapScript = GenerateBootstrapScript(orderedEntities, ordering, validation, model, validationOverrides);
 
         // Write to Bootstrap directory
         var bootstrapDirectory = Path.Combine(state.Request.OutputDirectory, "Bootstrap");
@@ -154,20 +162,104 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
     private string GenerateBootstrapScript(
         ImmutableArray<StaticEntityTableData> orderedEntities,
         EntityDependencySorter.EntityDependencyOrderingResult ordering,
+        TopologicalValidationResult validation,
         OsmModel model,
         ModuleValidationOverrides validationOverrides)
     {
         var builder = new StringBuilder();
 
-        // Header with metadata (M1.0 observability requirement)
+        // Header with metadata
         builder.AppendLine("--------------------------------------------------------------------------------");
-        builder.AppendLine("-- M1.0 Bootstrap Snapshot: All Entities (Static + Regular)");
+        builder.AppendLine("-- Bootstrap Snapshot: All Entities (Static + Regular)");
         builder.AppendLine($"-- Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
         builder.AppendLine($"-- Total Entities: {orderedEntities.Length}");
         builder.AppendLine($"-- Ordering: {(ordering.TopologicalOrderingApplied ? "Global topological order (FK-aware)" : "Alphabetical fallback")}");
         builder.AppendLine($"-- Mode: {ordering.Mode.ToMetadataValue()}");
 
-        if (ordering.CycleDetected)
+        // Emit detailed cycle diagnostics if detected
+        if (validation.CycleDetected && !validation.Cycles.IsDefaultOrEmpty)
+        {
+            builder.AppendLine("--");
+
+            var hasAllowedCycles = validation.Cycles.Any(c => c.IsAllowed);
+            var hasDisallowedCycles = validation.Cycles.Any(c => !c.IsAllowed);
+
+            if (hasDisallowedCycles)
+            {
+                builder.AppendLine("-- ⚠️  CIRCULAR DEPENDENCY DETECTED");
+            }
+            else
+            {
+                builder.AppendLine("-- ℹ️  ALLOWED CIRCULAR DEPENDENCY (Manual Ordering Applied)");
+            }
+
+            builder.AppendLine("--");
+
+            foreach (var cycle in validation.Cycles)
+            {
+                if (cycle.IsAllowed)
+                {
+                    builder.AppendLine($"--   ✓ ALLOWED Cycle: {cycle.CyclePath}");
+                    builder.AppendLine("--     Manual ordering override active");
+                }
+                else
+                {
+                    builder.AppendLine($"--   ⚠️  DISALLOWED Cycle: {cycle.CyclePath}");
+                }
+
+                builder.AppendLine("--");
+                builder.AppendLine("--   Tables Involved:");
+                foreach (var table in cycle.TablesInCycle)
+                {
+                    builder.AppendLine($"--     - {table}");
+                }
+
+                builder.AppendLine("--");
+                builder.AppendLine("--   Foreign Keys in Cycle:");
+                foreach (var fk in cycle.ForeignKeys)
+                {
+                    builder.AppendLine($"--     - {fk.ConstraintName}: {fk.SourceTable}.{fk.SourceColumn} → {fk.TargetTable}.{fk.TargetColumn}");
+                    builder.AppendLine($"--       Nullable: {(fk.IsNullable ? "YES ✓" : "NO")}");
+                    builder.AppendLine($"--       Delete Rule: {fk.DeleteRule}");
+                }
+
+                if (!cycle.IsAllowed)
+                {
+                    builder.AppendLine("--");
+                    builder.AppendLine("--   Recommendation:");
+                    var hasNullableFK = cycle.ForeignKeys.Any(fk => fk.IsNullable);
+                    if (hasNullableFK)
+                    {
+                        var nullableFKs = cycle.ForeignKeys.Where(fk => fk.IsNullable).Select(fk => fk.ConstraintName);
+                        builder.AppendLine($"--     Cycle can be handled with phased loading (nullable FKs: {string.Join(", ", nullableFKs)})");
+                        builder.AppendLine("--     Strategy: INSERT with NULL → INSERT dependents → UPDATE with FK values");
+                    }
+                    else
+                    {
+                        builder.AppendLine("--     ⚠️  All FKs are NOT NULL - circular reference cannot be resolved without schema changes");
+                        builder.AppendLine("--     Consider making at least one FK nullable to enable phased loading");
+                    }
+
+                    var hasCascade = cycle.ForeignKeys.Any(fk => fk.DeleteRule.Contains("CASCADE", StringComparison.OrdinalIgnoreCase));
+                    if (hasCascade)
+                    {
+                        builder.AppendLine("--     🚨 WARNING: CASCADE delete detected in circular dependency - may cause unexpected data loss!");
+                    }
+                }
+
+                builder.AppendLine("--");
+            }
+
+            if (!hasAllowedCycles)
+            {
+                builder.AppendLine("--   Note: Alphabetical fallback ordering applied - FK order not guaranteed");
+            }
+            else
+            {
+                builder.AppendLine("--   Note: Manual ordering applied from CircularDependencyOptions configuration");
+            }
+        }
+        else if (ordering.CycleDetected)
         {
             builder.AppendLine("-- WARNING: Circular dependencies detected - alphabetical fallback applied");
         }
@@ -184,7 +276,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
             var entity = orderedEntities[i];
             var definition = entity.Definition;
 
-            // Topological position comment (M1.0 observability requirement)
+            // Topological position comment
             builder.AppendLine($"-- Entity: {definition.LogicalName} ({definition.Schema}.{definition.PhysicalName})");
             builder.AppendLine($"-- Module: {definition.Module}");
             builder.AppendLine($"-- Topological Order: {i + 1} of {orderedEntities.Length}");
@@ -194,15 +286,15 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
             var mergeScript = _sqlBuilder.BuildBlock(entity, StaticSeedSynchronizationMode.ValidateThenApply, validationOverrides);
             builder.AppendLine(mergeScript);
 
-            // Diagnostic PRINT statement (M1.0 observability requirement)
-            builder.AppendLine($"PRINT '[M1.0] Bootstrap: Completed entity {i + 1}/{orderedEntities.Length}: {definition.Schema}.{definition.PhysicalName} ({entity.Rows.Length} rows)';");
+            // Diagnostic PRINT statement
+            builder.AppendLine($"PRINT 'Bootstrap: Completed entity {i + 1}/{orderedEntities.Length}: {definition.Schema}.{definition.PhysicalName} ({entity.Rows.Length} rows)';");
             builder.AppendLine("GO");
             builder.AppendLine();
         }
 
         // Footer
         builder.AppendLine("--------------------------------------------------------------------------------");
-        builder.AppendLine($"-- M1.0 Bootstrap Snapshot Complete: {orderedEntities.Length} entities loaded");
+        builder.AppendLine($"-- Bootstrap Snapshot Complete: {orderedEntities.Length} entities loaded");
         builder.AppendLine("--------------------------------------------------------------------------------");
 
         return builder.ToString();

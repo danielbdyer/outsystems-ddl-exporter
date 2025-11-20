@@ -19,8 +19,8 @@ namespace Osm.Pipeline.Integration.Tests;
 
 public sealed class EvidenceCacheCoordinatorIntegrationTests
 {
-    private static readonly string ModelPath = Path.GetFullPath("tests/Fixtures/model.edge-case.json");
-    private static readonly string ProfilePath = Path.GetFullPath("tests/Fixtures/profiling/profile.edge-case.json");
+    private static readonly string ModelPath = FixtureFile.GetPath("model.edge-case.json");
+    private static readonly string ProfilePath = FixtureFile.GetPath("profiling/profile.edge-case.json");
 
     [Fact]
     public async Task CacheAsync_ShouldCreateAndReuseCacheEntries()
@@ -210,7 +210,7 @@ public sealed class EvidenceCacheCoordinatorIntegrationTests
         Directory.Exists(subset.Value.CacheDirectory).Should().BeTrue();
 
         var persisted = subsetLog.Build().Entries.Single(entry => entry.Step == "evidence.cache.persisted");
-        persisted.Metadata.Should().Contain(new KeyValuePair<string, string?>("evaluation.reason", "moduleSelection.changed"));
+        persisted.Metadata.Should().Contain(new KeyValuePair<string, string?>("evaluation.reason", "module.selection.changed"));
     }
 
     private static EvidenceCachePipelineOptions CreateCacheOptions(

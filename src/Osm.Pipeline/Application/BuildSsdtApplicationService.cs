@@ -274,7 +274,7 @@ public sealed class BuildSsdtApplicationService : PipelineApplicationServiceBase
             staticSeedParents = verificationResult.Value;
         }
 
-        var assemblyResult = _assembler.Assemble(new BuildSsdtRequestAssemblerContext(
+        var assemblyResult = await _assembler.AssembleAsync(new BuildSsdtRequestAssemblerContext(
             context.Configuration,
             input.Overrides,
             context.ModuleFilter,

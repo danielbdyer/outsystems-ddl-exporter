@@ -9,7 +9,7 @@ using Osm.Domain.Abstractions;
 namespace Osm.Pipeline.Orchestration;
 
 /// <summary>
-/// M1.0: Generates PostDeployment-Bootstrap.sql template for SSDT projects.
+/// Generates PostDeployment-Bootstrap.sql template for SSDT projects.
 /// This template includes guard logic to conditionally apply bootstrap snapshot on first deployment.
 /// </summary>
 public sealed class BuildSsdtPostDeploymentTemplateStep : IBuildSsdtStep<BootstrapSnapshotGenerated, PostDeploymentTemplateGenerated>
@@ -81,7 +81,7 @@ public sealed class BuildSsdtPostDeploymentTemplateStep : IBuildSsdtStep<Bootstr
 
         // Header
         builder.AppendLine("--------------------------------------------------------------------------------");
-        builder.AppendLine("-- M1.0 PostDeployment Bootstrap Script");
+        builder.AppendLine("-- PostDeployment Bootstrap Script");
         builder.AppendLine($"-- Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
         builder.AppendLine("-- Usage: Copy this file to your SSDT project's PostDeployment folder");
         builder.AppendLine("--------------------------------------------------------------------------------");

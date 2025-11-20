@@ -26,6 +26,7 @@ internal sealed class VerbOptionRegistry
     private readonly Option<string?> _profilerProviderOption = new("--profiler-provider", "Profiler provider to use (fixture or sql).");
     private readonly Option<string?> _staticDataOption = new("--static-data", "Path to static data fixture.");
     private readonly Option<string?> _renameTableOption = new("--rename-table", "Rename tables using source=Override syntax.");
+    private readonly Option<string?> _circularDepsConfigOption = new("--circular-deps-config", "Path to circular dependency configuration JSON file.");
     private readonly Option<DynamicInsertOutputMode> _dynamicInsertModeOption = new(
         "--dynamic-insert-mode",
         () => DynamicInsertOutputMode.PerEntity,
@@ -109,6 +110,7 @@ internal sealed class VerbOptionRegistry
             .AddOption(_staticDataOption)
             .AddOption(_buildOutputOption)
             .AddOption(_renameTableOption)
+            .AddOption(_circularDepsConfigOption)
             .AddOption(_globalOptions.MaxDegreeOfParallelism)
             .AddOption(_buildSqlMetadataOption)
             .AddOption(_extractModelInlineOption)
@@ -250,6 +252,7 @@ internal sealed class VerbOptionRegistry
             parseResult.GetValueForOption(_renameTableOption),
             parseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
             parseResult.GetValueForOption(_buildSqlMetadataOption),
+            parseResult.GetValueForOption(_circularDepsConfigOption),
             parseResult.GetValueForOption(_extractModelInlineOption),
             dynamicInsertMode,
             staticParentMode,

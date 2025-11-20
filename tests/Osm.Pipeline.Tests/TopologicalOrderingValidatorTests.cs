@@ -12,7 +12,7 @@ namespace Osm.Pipeline.Tests;
 
 /// <summary>
 /// Comprehensive test suite for TopologicalOrderingValidator.
-/// Tests M1.2 validation logic for detecting ordering violations.
+/// Tests validation logic for detecting ordering violations.
 /// </summary>
 public sealed class TopologicalOrderingValidatorTests
 {
@@ -436,6 +436,14 @@ public sealed class TopologicalOrderingValidatorTests
         Assert.Equal("OSUSR_A", violation.ChildTable);  // A is the problem (comes before its parent)
         Assert.Equal("OSUSR_B", violation.ParentTable); // B is A's parent
         Assert.Equal("ChildBeforeParent", violation.ViolationType);
+
+        // NEW: Verify cycle diagnostic information
+        Assert.Single(result.Cycles);
+        var cycle = result.Cycles[0];
+        Assert.Contains("OSUSR_A", cycle.TablesInCycle);
+        Assert.Contains("OSUSR_B", cycle.TablesInCycle);
+        Assert.NotEmpty(cycle.CyclePath);
+        Assert.NotEmpty(cycle.ForeignKeys);
     }
 
     [Fact]
