@@ -14,6 +14,8 @@ using Osm.Pipeline.Configuration;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Pipeline.UatUsers;
+using Osm.Pipeline.ModelIngestion;
+using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.Application;
 
@@ -42,6 +44,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
     private readonly IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult> _buildService;
     private readonly SchemaApplyOrchestrator _schemaApplyOrchestrator;
     private readonly IModelJsonDeserializer _modelDeserializer;
+    private readonly IModelIngestionService _modelIngestionService;
     private readonly IUatUsersPipelineRunner _uatUsersRunner;
     private readonly FullExportCoordinator _coordinator;
     private static readonly OutsystemsMetadataSnapshot PlaceholderMetadataSnapshot = new(
@@ -76,6 +79,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         IApplicationService<BuildSsdtApplicationInput, BuildSsdtApplicationResult> buildService,
         SchemaApplyOrchestrator schemaApplyOrchestrator,
         IModelJsonDeserializer modelDeserializer,
+        IModelIngestionService modelIngestionService,
         IUatUsersPipelineRunner uatUsersRunner,
         FullExportCoordinator coordinator)
     {
@@ -84,6 +88,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         _buildService = buildService ?? throw new ArgumentNullException(nameof(buildService));
         _schemaApplyOrchestrator = schemaApplyOrchestrator ?? throw new ArgumentNullException(nameof(schemaApplyOrchestrator));
         _modelDeserializer = modelDeserializer ?? throw new ArgumentNullException(nameof(modelDeserializer));
+        _modelIngestionService = modelIngestionService ?? throw new ArgumentNullException(nameof(modelIngestionService));
         _uatUsersRunner = uatUsersRunner ?? throw new ArgumentNullException(nameof(uatUsersRunner));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
     }
@@ -113,6 +118,14 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         }
 
         var moduleFilterOptions = moduleFilterOptionsResult.Value;
+
+        var sqlOptionsResult = SqlOptionsResolver.Resolve(configuration, input.Sql);
+        if (sqlOptionsResult.IsFailure)
+        {
+            return Result<FullExportApplicationResult>.Failure(sqlOptionsResult.Errors);
+        }
+
+        var resolvedSqlOptions = sqlOptionsResult.Value;
 
         if ((extractOverrides.Modules is null || extractOverrides.Modules.Count == 0) && moduleFilter.Modules.Count > 0)
         {
@@ -156,16 +169,31 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
                     "Model reuse was requested but no model path was provided. Supply --model or configure model.path.");
             }
 
-            extractStage = _ => Task.FromResult(CreateReuseExtractionResult(
-                reusePathCandidate!,
-                includeSystemModules,
-                includeInactiveModules,
-                moduleFilterOptions.ValidationOverrides));
+            extractStage = async _ => await HydrateExtractionAsync(
+                CreateReuseExtractionResult(
+                    reusePathCandidate!,
+                    includeSystemModules,
+                    includeInactiveModules,
+                    moduleFilterOptions.ValidationOverrides),
+                moduleFilterOptions.ValidationOverrides,
+                resolvedSqlOptions,
+                cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            extractStage = cancellationToken1 => _extractService
-                .RunAsync(extractInput!, cancellationToken1);
+            extractStage = async cancellationToken1 =>
+            {
+                var extractionResult = await _extractService
+                    .RunAsync(extractInput!, cancellationToken1)
+                    .ConfigureAwait(false);
+
+                return await HydrateExtractionAsync(
+                        extractionResult,
+                        moduleFilterOptions.ValidationOverrides,
+                        resolvedSqlOptions,
+                        cancellationToken1)
+                    .ConfigureAwait(false);
+            };
         }
 
         var profileOverridesLocal = profileOverrides;
@@ -532,6 +560,85 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         return new DateTimeOffset(exportedAtUtc, TimeSpan.Zero);
     }
 
+    private async Task<Result<ExtractModelApplicationResult>> HydrateExtractionAsync(
+        Result<ExtractModelApplicationResult> extractionResult,
+        ModuleValidationOverrides validationOverrides,
+        ResolvedSqlOptions sqlOptions,
+        CancellationToken cancellationToken)
+    {
+        if (extractionResult.IsFailure)
+        {
+            return extractionResult;
+        }
+
+        return await HydrateExtractionAsync(
+                extractionResult.Value,
+                validationOverrides,
+                sqlOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<Result<ExtractModelApplicationResult>> HydrateExtractionAsync(
+        ExtractModelApplicationResult extractionResult,
+        ModuleValidationOverrides validationOverrides,
+        ResolvedSqlOptions sqlOptions,
+        CancellationToken cancellationToken)
+    {
+        var extraction = extractionResult.ExtractionResult;
+        var modelPath = extraction.JsonPayload.FilePath ?? extractionResult.OutputPath;
+        if (string.IsNullOrWhiteSpace(modelPath))
+        {
+            return ValidationError.Create(
+                "pipeline.fullExport.model.hydration.pathMissing",
+                "Extracted model path is required to hydrate foreign key metadata. Provide extract.outputPath or persist the extraction payload.");
+        }
+
+        var sqlMetadataOptions = CreateSqlMetadataOptions(sqlOptions);
+        if (sqlMetadataOptions is null)
+        {
+            return extractionResult;
+        }
+
+        var normalizedPath = Path.GetFullPath(modelPath);
+        if (!File.Exists(normalizedPath))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(normalizedPath)!);
+            await using var outputStream = File.Create(normalizedPath);
+            await extraction.JsonPayload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
+        }
+
+        var warnings = new List<string>(extraction.Warnings);
+        var ingestionOptions = new ModelIngestionOptions(
+            validationOverrides,
+            MissingSchemaFallback: null,
+            SqlMetadata: sqlMetadataOptions);
+
+        var hydratedModelResult = await _modelIngestionService
+            .LoadFromFileAsync(normalizedPath, warnings, cancellationToken, ingestionOptions)
+            .ConfigureAwait(false);
+
+        if (hydratedModelResult.IsFailure)
+        {
+            return Result<ExtractModelApplicationResult>.Failure(hydratedModelResult.Errors);
+        }
+
+        var hydratedModel = hydratedModelResult.Value;
+        var hydratedExtraction = new ModelExtractionResult(
+            hydratedModel,
+            ModelJsonPayload.FromFile(normalizedPath),
+            extraction.ExtractedAtUtc,
+            warnings,
+            extraction.Metadata,
+            extraction.Dataset);
+
+        return Result<ExtractModelApplicationResult>.Success(
+            new ExtractModelApplicationResult(
+                hydratedExtraction,
+                extractionResult.OutputPath,
+                extractionResult.ModelWasReused));
+    }
+
     private static string? ResolveModelPath(
         BuildSsdtOverrides buildOverrides,
         CaptureProfileOverrides profileOverrides,
@@ -548,6 +655,26 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         }
 
         return extraction.OutputPath;
+    }
+
+    private static ModelIngestionSqlMetadataOptions? CreateSqlMetadataOptions(ResolvedSqlOptions sqlOptions)
+    {
+        if (sqlOptions is null || string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
+        {
+            return null;
+        }
+
+        var authentication = sqlOptions.Authentication;
+        var connectionOptions = new SqlConnectionOptions(
+            authentication.Method,
+            authentication.TrustServerCertificate,
+            authentication.ApplicationName,
+            authentication.AccessToken);
+
+        return new ModelIngestionSqlMetadataOptions(
+            sqlOptions.ConnectionString,
+            connectionOptions,
+            sqlOptions.CommandTimeoutSeconds);
     }
 
     private static SchemaApplyOptions ResolveSchemaApplyOptions(
