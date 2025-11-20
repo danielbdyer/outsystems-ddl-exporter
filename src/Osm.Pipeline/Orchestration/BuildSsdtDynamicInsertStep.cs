@@ -89,15 +89,17 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
             state.Bootstrap.FilteredModel,
             namingOverrides,
             sortOptions);
-        var scripts = _generator.GenerateScripts(
+
+        var artifacts = _generator.GenerateArtifacts(
             dataset,
             state.StaticSeedData,
             model: state.Bootstrap.FilteredModel,
             namingOverrides: namingOverrides,
             sortOptions: sortOptions);
+
         var dynamicOrderApplied = ordering.TopologicalOrderingApplied;
         var dynamicOrderingMode = ordering.Mode;
-        if (scripts.IsDefaultOrEmpty || scripts.Length == 0)
+        if (artifacts.IsDefaultOrEmpty || artifacts.Length == 0)
         {
             state.Log.Record(
                 "dynamicData.insert.skipped",
@@ -140,12 +142,12 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
         {
             DynamicInsertOutputMode.PerEntity => await WritePerEntityScriptsAsync(
                 outputRoot!,
-                scripts,
+                artifacts,
                 state.Request.Scope.SmoOptions.SanitizeModuleNames,
                 state.Log,
                 cancellationToken).ConfigureAwait(false),
             DynamicInsertOutputMode.SingleFile => ImmutableArray.Create(
-                await WriteSingleFileScriptAsync(outputRoot!, scripts, cancellationToken).ConfigureAwait(false)),
+                await WriteSingleFileScriptAsync(outputRoot!, artifacts, cancellationToken).ConfigureAwait(false)),
             _ => throw new InvalidOperationException($"Unsupported dynamic insert output mode: {state.Request.DynamicInsertOutputMode}.")
         };
 
@@ -157,7 +159,7 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                     "outputs.dynamicInsertPaths",
                     scriptPaths.IsDefaultOrEmpty || scriptPaths.Length == 0 ? string.Empty : string.Join(";", scriptPaths))
                 .WithValue("outputs.dynamicInsertMode", state.Request.DynamicInsertOutputMode.ToString())
-                .WithCount("tables", scripts.Length)
+                .WithCount("tables", artifacts.Length)
                 .WithCount("ordering.nodes", ordering.NodeCount)
                 .WithCount("ordering.edges", ordering.EdgeCount)
                 .WithCount("ordering.missingEdges", ordering.MissingEdgeCount)
@@ -193,19 +195,19 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
 
     private static async Task<ImmutableArray<string>> WritePerEntityScriptsAsync(
         string outputRoot,
-        ImmutableArray<DynamicEntityInsertScript> scripts,
+        ImmutableArray<DynamicEntityInsertArtifact> artifacts,
         bool sanitizeModules,
         PipelineExecutionLogBuilder log,
         CancellationToken cancellationToken)
     {
         var recordedModules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var scriptPaths = ImmutableArray.CreateBuilder<string>(scripts.Length);
+        var scriptPaths = ImmutableArray.CreateBuilder<string>(artifacts.Length);
 
-        foreach (var script in scripts)
+        foreach (var artifact in artifacts)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var moduleName = script.Definition.Module ?? "<unknown>";
+            var moduleName = artifact.Definition.Module ?? "<unknown>";
             var sanitized = sanitizeModules ? ModuleNameSanitizer.Sanitize(moduleName) : moduleName;
             var directoryName = ResolveModuleDirectoryName(
                 moduleName,
@@ -217,9 +219,13 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
             var moduleDirectory = Path.Combine(outputRoot, directoryName);
             Directory.CreateDirectory(moduleDirectory);
 
-            var fileName = $"{script.Definition.PhysicalName}.dynamic.sql";
+            var fileName = $"{artifact.Definition.PhysicalName}.dynamic.sql";
             var filePath = Path.Combine(moduleDirectory, fileName);
-            await File.WriteAllTextAsync(filePath, script.Script, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+
+            await using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
+            await using var writer = new StreamWriter(stream, Utf8NoBom);
+            await artifact.WriteAsync(writer, cancellationToken).ConfigureAwait(false);
+
             scriptPaths.Add(filePath);
         }
 
@@ -260,27 +266,28 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
 
     private static async Task<string> WriteSingleFileScriptAsync(
         string outputRoot,
-        ImmutableArray<DynamicEntityInsertScript> scripts,
+        ImmutableArray<DynamicEntityInsertArtifact> artifacts,
         CancellationToken cancellationToken)
     {
         var filePath = Path.Combine(outputRoot, "DynamicData.all.dynamic.sql");
-        var builder = new StringBuilder();
 
-        builder.AppendLine("--------------------------------------------------------------------------------");
-        builder.AppendLine("-- Consolidated dynamic entity INSERT replay script");
-        builder.AppendLine($"-- Tables: {scripts.Length}");
-        builder.AppendLine("--------------------------------------------------------------------------------");
-        builder.AppendLine();
+        await using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
+        await using var writer = new StreamWriter(stream, Utf8NoBom);
 
-        foreach (var script in scripts)
+        await writer.WriteLineAsync("--------------------------------------------------------------------------------").ConfigureAwait(false);
+        await writer.WriteLineAsync("-- Consolidated dynamic entity INSERT replay script").ConfigureAwait(false);
+        await writer.WriteLineAsync($"-- Tables: {artifacts.Length}").ConfigureAwait(false);
+        await writer.WriteLineAsync("--------------------------------------------------------------------------------").ConfigureAwait(false);
+        await writer.WriteLineAsync().ConfigureAwait(false);
+
+        foreach (var artifact in artifacts)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            builder.AppendLine(script.Script.TrimEnd());
-            builder.AppendLine();
+            await artifact.WriteAsync(writer, cancellationToken).ConfigureAwait(false);
+            await writer.WriteLineAsync().ConfigureAwait(false);
         }
 
-        await File.WriteAllTextAsync(filePath, builder.ToString(), Utf8NoBom, cancellationToken).ConfigureAwait(false);
         return filePath;
     }
 
