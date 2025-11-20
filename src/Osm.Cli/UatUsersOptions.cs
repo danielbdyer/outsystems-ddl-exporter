@@ -28,6 +28,8 @@ public sealed class UatUsersOptions
         UserFallbackAssignmentMode fallbackMode,
         IEnumerable<string>? fallbackTargets,
         bool idempotentEmission,
+        bool verifyArtifacts,
+        string? verificationReportPath,
         UatUsersOptionOrigins? origins = null)
     {
         ModelPath = string.IsNullOrWhiteSpace(modelPath) ? null : Path.GetFullPath(modelPath.Trim());
@@ -64,6 +66,10 @@ public sealed class UatUsersOptions
         FallbackMode = fallbackMode;
         FallbackTargets = UserMatchingConfigurationHelper.NormalizeFallbackTargets(fallbackTargets);
         IdempotentEmission = idempotentEmission;
+        VerifyArtifacts = verifyArtifacts;
+        VerificationReportPath = string.IsNullOrWhiteSpace(verificationReportPath)
+            ? null
+            : Path.GetFullPath(verificationReportPath.Trim());
         Origins = origins ?? UatUsersOptionOrigins.None;
     }
 
@@ -104,6 +110,10 @@ public sealed class UatUsersOptions
     public ImmutableArray<UserIdentifier> FallbackTargets { get; }
 
     public bool IdempotentEmission { get; }
+
+    public bool VerifyArtifacts { get; }
+
+    public string? VerificationReportPath { get; }
 
     public UatUsersOptionOrigins Origins { get; }
 

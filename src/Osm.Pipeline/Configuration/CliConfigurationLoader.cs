@@ -566,6 +566,24 @@ public sealed class CliConfigurationLoader
             idempotentEmission = parsedIdempotentEmission;
         }
 
+        bool? verifyArtifacts = null;
+        if (element.TryGetProperty("verifyArtifacts", out var verifyArtifactsElement)
+            && ConfigurationJsonHelpers.TryParseBoolean(verifyArtifactsElement, out var parsedVerifyArtifacts))
+        {
+            verifyArtifacts = parsedVerifyArtifacts;
+        }
+
+        string? verificationReportPath = null;
+        if (element.TryGetProperty("verificationReportPath", out var verificationReportPathElement)
+            && verificationReportPathElement.ValueKind == JsonValueKind.String)
+        {
+            var value = verificationReportPathElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                verificationReportPath = value;
+            }
+        }
+
         configuration = new UatUsersConfiguration(
             ModelPath: modelPath,
             FromLiveMetadata: fromLive,
@@ -584,7 +602,9 @@ public sealed class CliConfigurationLoader
             MatchingRegexPattern: matchingRegex,
             FallbackAssignment: fallbackMode,
             FallbackTargets: fallbackTargets,
-            IdempotentEmission: idempotentEmission);
+            IdempotentEmission: idempotentEmission,
+            VerifyArtifacts: verifyArtifacts,
+            VerificationReportPath: verificationReportPath);
         return true;
     }
 

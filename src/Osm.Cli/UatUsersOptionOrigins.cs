@@ -19,7 +19,9 @@ public sealed record UatUsersOptionOrigins(
     bool FallbackModeFromConfiguration,
     bool FallbackTargetsFromConfiguration,
     bool ConnectionStringFromConfiguration,
-    bool IdempotentEmissionFromConfiguration)
+    bool IdempotentEmissionFromConfiguration,
+    bool VerifyArtifactsFromConfiguration,
+    bool VerificationReportPathFromConfiguration)
 {
     public static UatUsersOptionOrigins None { get; } = new(
         ModelPathFromConfiguration: false,
@@ -40,5 +42,7 @@ public sealed record UatUsersOptionOrigins(
         FallbackModeFromConfiguration: false,
         FallbackTargetsFromConfiguration: false,
         ConnectionStringFromConfiguration: false,
-        IdempotentEmissionFromConfiguration: false);
+        IdempotentEmissionFromConfiguration: false,
+        VerifyArtifactsFromConfiguration: false,
+        VerificationReportPathFromConfiguration: false);
 }

@@ -10,6 +10,7 @@ using Osm.Domain.Abstractions;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.UatUsers;
+using Osm.Pipeline.UatUsers.Verification;
 
 namespace Osm.Cli;
 
@@ -131,6 +132,14 @@ public sealed class UatUsersCommand : IUatUsersCommand
             {
                 configurationFields.Add("IdempotentEmission");
             }
+            if (options.Origins.VerifyArtifactsFromConfiguration)
+            {
+                configurationFields.Add("VerifyArtifacts");
+            }
+            if (options.Origins.VerificationReportPathFromConfiguration)
+            {
+                configurationFields.Add("VerificationReportPath");
+            }
 
             if (configurationFields.Count > 0)
             {
@@ -235,6 +244,39 @@ public sealed class UatUsersCommand : IUatUsersCommand
             await pipeline.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("uat-users artifacts written to {Path}.", Path.Combine(artifacts.Root, "uat-users"));
+
+            // Optional verification phase (M2.1)
+            if (options.VerifyArtifacts)
+            {
+                _logger.LogInformation("Running verification on generated artifacts.");
+                var verifier = new UatUsersVerifier();
+                var verificationContext = await verifier.VerifyAsync(
+                    artifacts.Root,
+                    options.QaUserInventoryPath,
+                    options.UatUserInventoryPath).ConfigureAwait(false);
+
+                var reportGenerator = new UatUsersVerificationReportGenerator();
+                var report = reportGenerator.GenerateReport(verificationContext, artifacts.Root);
+
+                var reportPath = options.VerificationReportPath
+                    ?? Path.Combine(artifacts.Root, "uat-users", "verification-report.json");
+
+                await reportGenerator.WriteReportAsync(report, reportPath).ConfigureAwait(false);
+
+                _logger.LogInformation(
+                    "Verification {Status}. Report written to {ReportPath}.",
+                    report.OverallStatus,
+                    reportPath);
+
+                if (!verificationContext.IsValid)
+                {
+                    _logger.LogWarning(
+                        "Verification found {Count} discrepancy/discrepancies. Review {ReportPath} for details.",
+                        report.Discrepancies.Length,
+                        reportPath);
+                }
+            }
+
             return 0;
         }
         catch (OperationCanceledException)

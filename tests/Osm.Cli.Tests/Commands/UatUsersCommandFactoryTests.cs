@@ -194,7 +194,9 @@ public class UatUsersCommandFactoryTests
                 MatchingRegexPattern: "^qa_(?<target>.*)$",
                 FallbackAssignment: UserFallbackAssignmentMode.SingleTarget,
                 FallbackTargets: new[] { "400" },
-                IdempotentEmission: true)
+                IdempotentEmission: true,
+                VerifyArtifacts: null,
+                VerificationReportPath: null)
         };
 
         var (options, exitCode) = await InvokeAsync("uat-users", configuration);
