@@ -17,6 +17,7 @@ using Osm.Pipeline.DynamicData;
 using Osm.Pipeline.Mediation;
 using Osm.Pipeline.Orchestration;
 using Osm.Pipeline.Profiling;
+using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Smo;
@@ -294,7 +295,7 @@ public sealed class FullExportPipelineTests
         Assert.NotNull(uatRunner.LastRequest);
         Assert.Equal(buildRequest.OutputDirectory, uatRunner.LastRequest!.OutputDirectory);
         Assert.Same(schemaGraphFactory.GraphToReturn, uatRunner.LastRequest!.SchemaGraph);
-        Assert.Same(extractResult, schemaGraphFactory.LastExtraction);
+        Assert.Same(result.Value.Extraction, schemaGraphFactory.LastExtraction);
         var entries = result.Value.ExecutionLog.Entries;
         Assert.Contains(entries, entry => entry.Step == "fullExport.uatUsers.completed");
     }
@@ -386,6 +387,54 @@ public sealed class FullExportPipelineTests
         Assert.Null(uatRunner.LastRequest);
         var entries = result.Value.ExecutionLog.Entries;
         Assert.Contains(entries, entry => entry.Step == "fullExport.uatUsers.skipped");
+    }
+
+    [Fact]
+    public async Task HandleAsync_hydrates_extraction_before_downstream_stages()
+    {
+        var dispatcher = new StubCommandDispatcher();
+        var schemaApplier = new FakeSchemaDataApplier();
+        var orchestrator = new SchemaApplyOrchestrator(schemaApplier);
+        var uatRunner = new RecordingUatUsersRunner();
+        var hydrator = new RecordingModelIngestionService();
+        var schemaGraphFactory = new RecordingSchemaGraphFactory();
+        var pipeline = CreatePipeline(dispatcher, orchestrator, uatRunner, schemaGraphFactory, hydrator);
+
+        var (extractRequest, extractResult) = CreateExtractionArtifacts();
+        var (captureRequest, captureResult) = CreateCaptureArtifacts();
+        var (buildRequest, buildResult) = CreateBuildArtifacts();
+
+        var hydratedModel = ModelFixtures.LoadModel("model.edge-case.json");
+        hydrator.ModelToReturn = hydratedModel;
+        uatRunner.Result = Result<UatUsersApplicationResult>.Success(new UatUsersApplicationResult(true, null, ImmutableArray<string>.Empty));
+
+        dispatcher.Register<ExtractModelPipelineRequest, ModelExtractionResult>((_, _) => Task.FromResult(Result<ModelExtractionResult>.Success(extractResult)));
+        dispatcher.Register<CaptureProfilePipelineRequest, CaptureProfilePipelineResult>((_, _) => Task.FromResult(Result<CaptureProfilePipelineResult>.Success(captureResult)));
+        dispatcher.Register<BuildSsdtPipelineRequest, BuildSsdtPipelineResult>((_, _) => Task.FromResult(Result<BuildSsdtPipelineResult>.Success(buildResult)));
+
+        var uatOptions = new UatUsersPipelineOptions(
+            Enabled: true,
+            UserSchema: "dbo",
+            UserTable: "User",
+            UserIdColumn: "Id",
+            IncludeColumns: Array.Empty<string>(),
+            UserMapPath: null,
+            UatUserInventoryPath: "uat.csv",
+            QaUserInventoryPath: "qa.csv",
+            SnapshotPath: null,
+            UserEntityIdentifier: null);
+
+        var request = new FullExportPipelineRequest(extractRequest, captureRequest, buildRequest, SchemaApplyOptions.Disabled, uatOptions);
+        var outcome = await pipeline.HandleAsync(request);
+
+        Assert.True(outcome.IsSuccess);
+        var result = outcome.Value;
+        Assert.Equal(Path.GetFullPath(extractResult.JsonPayload.FilePath!), hydrator.LastPath);
+        Assert.NotNull(hydrator.LastOptions?.SqlMetadata);
+        Assert.Equal(extractRequest.SqlOptions.ConnectionString, hydrator.LastOptions!.SqlMetadata!.ConnectionString);
+        Assert.Same(hydratedModel, result.Extraction.Model);
+        Assert.Same(hydratedModel, schemaGraphFactory.LastExtraction!.Model);
+        Assert.NotNull(uatRunner.LastRequest);
     }
 
     private static (ExtractModelPipelineRequest Request, ModelExtractionResult Result) CreateExtractionArtifacts()
@@ -586,7 +635,8 @@ public sealed class FullExportPipelineTests
         StubCommandDispatcher dispatcher,
         SchemaApplyOrchestrator orchestrator,
         IUatUsersPipelineRunner uatRunner,
-        IModelUserSchemaGraphFactory? schemaGraphFactory = null)
+        IModelUserSchemaGraphFactory? schemaGraphFactory = null,
+        IModelIngestionService? modelIngestionService = null)
     {
         var coordinator = new FullExportCoordinator(schemaGraphFactory ?? new ModelUserSchemaGraphFactory());
         return new FullExportPipeline(
@@ -594,6 +644,7 @@ public sealed class FullExportPipelineTests
             orchestrator,
             uatRunner,
             coordinator,
+            modelIngestionService ?? new RecordingModelIngestionService(),
             TimeProvider.System,
             NullLogger<FullExportPipeline>.Instance);
     }
@@ -608,6 +659,26 @@ public sealed class FullExportPipelineTests
         {
             LastExtraction = extraction;
             return Result<ModelSchemaGraph>.Success(GraphToReturn ?? new ModelSchemaGraph(extraction.Model));
+        }
+    }
+
+    private sealed class RecordingModelIngestionService : IModelIngestionService
+    {
+        public string? LastPath { get; private set; }
+
+        public ModelIngestionOptions? LastOptions { get; private set; }
+
+        public OsmModel ModelToReturn { get; set; } = ModelFixtures.LoadModel("model.edge-case.json");
+
+        public Task<Result<OsmModel>> LoadFromFileAsync(
+            string modelPath,
+            ICollection<string>? warnings = null,
+            CancellationToken cancellationToken = default,
+            ModelIngestionOptions? options = null)
+        {
+            LastPath = Path.GetFullPath(modelPath);
+            LastOptions = options;
+            return Task.FromResult(Result<OsmModel>.Success(ModelToReturn));
         }
     }
 

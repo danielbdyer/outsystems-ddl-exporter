@@ -235,7 +235,7 @@ public sealed class TopologicalOrderingValidator
                         SourceColumn: "UnhydratedColumn",
                         TargetColumn: "UnhydratedColumn",
                         IsNullable: false,
-                        DeleteRule: "Unknown");
+                        DeleteRule: "UnhydratedColumn");
                 }
 
                 // Find the relationship that matches this FK
@@ -251,7 +251,7 @@ public sealed class TopologicalOrderingValidator
                         SourceColumn: "UnhydratedColumn",
                         TargetColumn: "UnhydratedColumn",
                         IsNullable: false,
-                        DeleteRule: "Unknown");
+                        DeleteRule: "UnhydratedColumn");
                 }
 
                 var constraint = relationship.ActualConstraints.First(c =>

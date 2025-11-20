@@ -10,6 +10,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Mediation;
+using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.SqlExtraction;
 using Osm.Pipeline.UatUsers;
@@ -97,6 +98,7 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
     private readonly SchemaApplyOrchestrator _schemaApplyOrchestrator;
     private readonly IUatUsersPipelineRunner _uatUsersRunner;
     private readonly FullExportCoordinator _coordinator;
+    private readonly IModelIngestionService _modelIngestionService;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<FullExportPipeline> _logger;
 
@@ -105,6 +107,7 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
         SchemaApplyOrchestrator schemaApplyOrchestrator,
         IUatUsersPipelineRunner uatUsersRunner,
         FullExportCoordinator coordinator,
+        IModelIngestionService modelIngestionService,
         TimeProvider timeProvider,
         ILogger<FullExportPipeline> logger)
     {
@@ -112,6 +115,7 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
         _schemaApplyOrchestrator = schemaApplyOrchestrator ?? throw new ArgumentNullException(nameof(schemaApplyOrchestrator));
         _uatUsersRunner = uatUsersRunner ?? throw new ArgumentNullException(nameof(uatUsersRunner));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _modelIngestionService = modelIngestionService ?? throw new ArgumentNullException(nameof(modelIngestionService));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -140,7 +144,15 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
                 return extractionResult;
             }
 
-            var extraction = extractionResult.Value;
+            var hydratedExtractionResult = await HydrateExtractionAsync(extractionResult.Value, request, log, ct)
+                .ConfigureAwait(false);
+
+            if (hydratedExtractionResult.IsFailure)
+            {
+                return hydratedExtractionResult;
+            }
+
+            var extraction = hydratedExtractionResult.Value;
             log.Record(
                 "fullExport.extract.completed",
                 "Model extraction completed successfully.",
@@ -149,7 +161,7 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
                     .WithCount("warnings", extraction.Warnings.Count)
                     .Build());
 
-            return extractionResult;
+            return Result<ModelExtractionResult>.Success(extraction);
         });
 
         var profileStage = new Func<ModelExtractionResult, CancellationToken, Task<Result<CaptureProfilePipelineResult>>>(async (extraction, ct) =>
@@ -322,6 +334,89 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
         return UserMatchingConfigurationHelper
             .NormalizeFallbackTargets(targets)
             .ToArray();
+    }
+
+    private async Task<Result<ModelExtractionResult>> HydrateExtractionAsync(
+        ModelExtractionResult extraction,
+        FullExportPipelineRequest request,
+        PipelineExecutionLogBuilder log,
+        CancellationToken cancellationToken)
+    {
+        var modelPath = extraction.JsonPayload.FilePath ?? request.ExtractModel.OutputPath;
+        if (string.IsNullOrWhiteSpace(modelPath))
+        {
+            return ValidationError.Create(
+                "pipeline.fullExport.model.hydration.pathMissing",
+                "Extracted model path is required to hydrate foreign key metadata. Provide extract.outputPath or persist the extraction payload.");
+        }
+
+        var sqlMetadataOptions = CreateSqlMetadataOptions(request.ExtractModel.SqlOptions);
+        if (sqlMetadataOptions is null)
+        {
+            _logger.LogWarning("Skipping FK hydration: SQL metadata connection string is not configured.");
+            return extraction;
+        }
+
+        var normalizedPath = Path.GetFullPath(modelPath);
+        if (!File.Exists(normalizedPath))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(normalizedPath)!);
+            await using var outputStream = File.Create(normalizedPath);
+            await extraction.JsonPayload.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
+        }
+
+        var warnings = new List<string>(extraction.Warnings);
+        var ingestionOptions = new ModelIngestionOptions(
+            request.Build.Scope.ModuleFilter.ValidationOverrides,
+            MissingSchemaFallback: null,
+            SqlMetadata: sqlMetadataOptions);
+
+        var hydratedModelResult = await _modelIngestionService
+            .LoadFromFileAsync(normalizedPath, warnings, cancellationToken, ingestionOptions)
+            .ConfigureAwait(false);
+
+        if (hydratedModelResult.IsFailure)
+        {
+            LogFailure(log, "fullExport.extract.hydrationFailed", "Model hydration with SQL metadata failed.", hydratedModelResult.Errors);
+            return Result<ModelExtractionResult>.Failure(hydratedModelResult.Errors);
+        }
+
+        log.Record(
+            "fullExport.extract.hydrationCompleted",
+            "Hydrated foreign key metadata using SQL metadata.",
+            new PipelineLogMetadataBuilder()
+                .WithCount("warnings", warnings.Count)
+                .WithPath("model.path", normalizedPath)
+                .Build());
+
+        var hydratedModel = hydratedModelResult.Value;
+        return new ModelExtractionResult(
+            hydratedModel,
+            ModelJsonPayload.FromFile(normalizedPath),
+            extraction.ExtractedAtUtc,
+            warnings,
+            extraction.Metadata,
+            extraction.Dataset);
+    }
+
+    private static ModelIngestionSqlMetadataOptions? CreateSqlMetadataOptions(ResolvedSqlOptions sqlOptions)
+    {
+        if (sqlOptions is null || string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
+        {
+            return null;
+        }
+
+        var authentication = sqlOptions.Authentication;
+        var connectionOptions = new SqlConnectionOptions(
+            authentication.Method,
+            authentication.TrustServerCertificate,
+            authentication.ApplicationName,
+            authentication.AccessToken);
+
+        return new ModelIngestionSqlMetadataOptions(
+            sqlOptions.ConnectionString,
+            connectionOptions,
+            sqlOptions.CommandTimeoutSeconds);
     }
 
     private void LogFailure(
