@@ -33,7 +33,8 @@ public sealed class TopologicalOrderingValidator
                 TotalEntities: 0,
                 TotalForeignKeys: 0,
                 MissingEdges: 0,
-                CycleDetected: false);
+                CycleDetected: false,
+                Cycles: ImmutableArray<CycleDiagnostic>.Empty);
         }
 
         if (model is null || model.Modules.IsDefaultOrEmpty)
@@ -44,7 +45,8 @@ public sealed class TopologicalOrderingValidator
                 TotalEntities: orderedTables.Length,
                 TotalForeignKeys: 0,
                 MissingEdges: 0,
-                CycleDetected: false);
+                CycleDetected: false,
+                Cycles: ImmutableArray<CycleDiagnostic>.Empty);
         }
 
         namingOverrides ??= NamingOverrideOptions.Empty;
@@ -137,13 +139,95 @@ public sealed class TopologicalOrderingValidator
 
         var cycleDetected = violations.Any(v => v.ViolationType == "ChildBeforeParent");
 
+        // Extract cycle diagnostics if cycles were detected
+        var cycles = cycleDetected
+            ? ExtractCycleDiagnostics(violations, entityLookup, orderedTables)
+            : ImmutableArray<CycleDiagnostic>.Empty;
+
         return new TopologicalValidationResult(
             IsValid: violations.Count == 0 || violations.All(v => v.ViolationType == "MissingParent"),
             Violations: violations.ToImmutable(),
             TotalEntities: orderedTables.Length,
             TotalForeignKeys: totalFks,
             MissingEdges: missingEdges,
-            CycleDetected: cycleDetected);
+            CycleDetected: cycleDetected,
+            Cycles: cycles);
+    }
+
+    private static ImmutableArray<CycleDiagnostic> ExtractCycleDiagnostics(
+        ImmutableArray<OrderingViolation>.Builder violations,
+        IReadOnlyDictionary<string, EntityModel> entityLookup,
+        ImmutableArray<StaticEntityTableData> orderedTables)
+    {
+        // For now, return a simple diagnostic showing which tables have violations
+        // This is a starting point - we'll enhance to show actual cycle paths
+        var cycleViolations = violations.Where(v => v.ViolationType == "ChildBeforeParent").ToArray();
+
+        if (cycleViolations.Length == 0)
+        {
+            return ImmutableArray<CycleDiagnostic>.Empty;
+        }
+
+        // Group violations into potential cycles
+        var tablesInCycle = cycleViolations
+            .SelectMany(v => new[] { v.ChildTable, v.ParentTable })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
+
+        var fkInfo = cycleViolations
+            .Select(v =>
+            {
+                // Extract FK metadata from entity model
+                if (!entityLookup.TryGetValue(v.ChildTable, out var entity))
+                {
+                    return new ForeignKeyInCycle(
+                        ConstraintName: v.ForeignKeyName,
+                        SourceTable: v.ChildTable,
+                        TargetTable: v.ParentTable,
+                        SourceColumn: "Unknown",
+                        TargetColumn: "Unknown",
+                        IsNullable: false,
+                        DeleteRule: "Unknown");
+                }
+
+                // Find the relationship that matches this FK
+                var relationship = entity.Relationships.FirstOrDefault(r =>
+                    r.ActualConstraints.Any(c => c.Name == v.ForeignKeyName));
+
+                if (relationship == null)
+                {
+                    return new ForeignKeyInCycle(
+                        ConstraintName: v.ForeignKeyName,
+                        SourceTable: v.ChildTable,
+                        TargetTable: v.ParentTable,
+                        SourceColumn: "Unknown",
+                        TargetColumn: "Unknown",
+                        IsNullable: false,
+                        DeleteRule: "Unknown");
+                }
+
+                var constraint = relationship.ActualConstraints.First(c => c.Name == v.ForeignKeyName);
+                var sourceAttr = entity.Attributes.FirstOrDefault(a =>
+                    a.LogicalName.Value == relationship.ViaAttribute.Value);
+
+                return new ForeignKeyInCycle(
+                    ConstraintName: v.ForeignKeyName,
+                    SourceTable: v.ChildTable,
+                    TargetTable: v.ParentTable,
+                    SourceColumn: sourceAttr?.ColumnName.Value ?? "Unknown",
+                    TargetColumn: constraint.Columns.FirstOrDefault()?.ReferencedColumn ?? "Unknown",
+                    IsNullable: sourceAttr?.IsMandatory == false,
+                    DeleteRule: constraint.OnDeleteAction);
+            })
+            .ToImmutableArray();
+
+        // Build cycle path (simplified - just show tables involved)
+        var cyclePath = string.Join(" → ", tablesInCycle) + " → " + tablesInCycle[0];
+
+        return ImmutableArray.Create(new CycleDiagnostic(
+            TablesInCycle: tablesInCycle,
+            CyclePath: cyclePath,
+            ForeignKeys: fkInfo));
     }
 }
 
@@ -156,7 +240,8 @@ public sealed record TopologicalValidationResult(
     int TotalEntities,
     int TotalForeignKeys,
     int MissingEdges,
-    bool CycleDetected);
+    bool CycleDetected,
+    ImmutableArray<CycleDiagnostic> Cycles);
 
 /// <summary>
 /// Represents a single ordering violation (child-before-parent, missing parent, etc).
@@ -168,3 +253,23 @@ public sealed record OrderingViolation(
     int ChildPosition,
     int ParentPosition,
     string ViolationType); // "ChildBeforeParent", "MissingParent", "Cycle"
+
+/// <summary>
+/// Diagnostic information about a detected circular dependency cycle.
+/// </summary>
+public sealed record CycleDiagnostic(
+    ImmutableArray<string> TablesInCycle,
+    string CyclePath,
+    ImmutableArray<ForeignKeyInCycle> ForeignKeys);
+
+/// <summary>
+/// Foreign key metadata within a circular dependency.
+/// </summary>
+public sealed record ForeignKeyInCycle(
+    string ConstraintName,
+    string SourceTable,
+    string TargetTable,
+    string SourceColumn,
+    string TargetColumn,
+    bool IsNullable,
+    string DeleteRule);

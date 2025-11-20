@@ -95,9 +95,13 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
 
         var orderedEntities = ordering.Tables;
 
+        // M1.2: Validate topological ordering and extract cycle diagnostics
+        var validator = new TopologicalOrderingValidator();
+        var validation = validator.Validate(orderedEntities, model, state.Request.Scope.SmoOptions.NamingOverrides);
+
         // Generate bootstrap snapshot script with observability
         var validationOverrides = state.Request.Scope.ModuleFilter.ValidationOverrides;
-        var bootstrapScript = GenerateBootstrapScript(orderedEntities, ordering, model, validationOverrides);
+        var bootstrapScript = GenerateBootstrapScript(orderedEntities, ordering, validation, model, validationOverrides);
 
         // Write to Bootstrap directory
         var bootstrapDirectory = Path.Combine(state.Request.OutputDirectory, "Bootstrap");
@@ -154,6 +158,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
     private string GenerateBootstrapScript(
         ImmutableArray<StaticEntityTableData> orderedEntities,
         EntityDependencySorter.EntityDependencyOrderingResult ordering,
+        TopologicalValidationResult validation,
         OsmModel model,
         ModuleValidationOverrides validationOverrides)
     {
@@ -167,7 +172,58 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
         builder.AppendLine($"-- Ordering: {(ordering.TopologicalOrderingApplied ? "Global topological order (FK-aware)" : "Alphabetical fallback")}");
         builder.AppendLine($"-- Mode: {ordering.Mode.ToMetadataValue()}");
 
-        if (ordering.CycleDetected)
+        // M1.2: Emit detailed cycle diagnostics if detected
+        if (validation.CycleDetected && !validation.Cycles.IsDefaultOrEmpty)
+        {
+            builder.AppendLine("--");
+            builder.AppendLine("-- ⚠️  CIRCULAR DEPENDENCY DETECTED");
+            builder.AppendLine("--");
+
+            foreach (var cycle in validation.Cycles)
+            {
+                builder.AppendLine($"--   Cycle Path: {cycle.CyclePath}");
+                builder.AppendLine("--");
+                builder.AppendLine("--   Tables Involved:");
+                foreach (var table in cycle.TablesInCycle)
+                {
+                    builder.AppendLine($"--     - {table}");
+                }
+
+                builder.AppendLine("--");
+                builder.AppendLine("--   Foreign Keys in Cycle:");
+                foreach (var fk in cycle.ForeignKeys)
+                {
+                    builder.AppendLine($"--     - {fk.ConstraintName}: {fk.SourceTable}.{fk.SourceColumn} → {fk.TargetTable}.{fk.TargetColumn}");
+                    builder.AppendLine($"--       Nullable: {(fk.IsNullable ? "YES ✓" : "NO")}");
+                    builder.AppendLine($"--       Delete Rule: {fk.DeleteRule}");
+                }
+
+                builder.AppendLine("--");
+                builder.AppendLine("--   Recommendation:");
+                var hasNullableFK = cycle.ForeignKeys.Any(fk => fk.IsNullable);
+                if (hasNullableFK)
+                {
+                    var nullableFKs = cycle.ForeignKeys.Where(fk => fk.IsNullable).Select(fk => fk.ConstraintName);
+                    builder.AppendLine($"--     Cycle can be handled with phased loading (nullable FKs: {string.Join(", ", nullableFKs)})");
+                    builder.AppendLine("--     Strategy: INSERT with NULL → INSERT dependents → UPDATE with FK values");
+                }
+                else
+                {
+                    builder.AppendLine("--     ⚠️  All FKs are NOT NULL - circular reference cannot be resolved without schema changes");
+                    builder.AppendLine("--     Consider making at least one FK nullable to enable phased loading");
+                }
+
+                var hasCascade = cycle.ForeignKeys.Any(fk => fk.DeleteRule.Contains("CASCADE", StringComparison.OrdinalIgnoreCase));
+                if (hasCascade)
+                {
+                    builder.AppendLine("--     🚨 WARNING: CASCADE delete detected in circular dependency - may cause unexpected data loss!");
+                }
+            }
+
+            builder.AppendLine("--");
+            builder.AppendLine("--   Note: Alphabetical fallback ordering applied - FK order not guaranteed");
+        }
+        else if (ordering.CycleDetected)
         {
             builder.AppendLine("-- WARNING: Circular dependencies detected - alphabetical fallback applied");
         }
