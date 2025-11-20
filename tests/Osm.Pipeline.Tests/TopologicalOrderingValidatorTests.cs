@@ -12,7 +12,7 @@ namespace Osm.Pipeline.Tests;
 
 /// <summary>
 /// Comprehensive test suite for TopologicalOrderingValidator.
-/// Tests M1.2 validation logic for detecting ordering violations.
+/// Tests validation logic for detecting ordering violations.
 /// </summary>
 public sealed class TopologicalOrderingValidatorTests
 {

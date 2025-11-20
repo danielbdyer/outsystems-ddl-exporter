@@ -9,7 +9,6 @@ namespace Osm.Pipeline.Orchestration;
 /// <summary>
 /// Validates topological ordering of entities after FK-based sorting.
 /// Detects child-before-parent violations, missing edges, and cycles.
-/// Part of M1.2: Topological Ordering Validation.
 /// </summary>
 public sealed class TopologicalOrderingValidator
 {

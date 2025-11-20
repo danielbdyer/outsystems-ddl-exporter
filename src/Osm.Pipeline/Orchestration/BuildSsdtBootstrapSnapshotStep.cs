@@ -15,7 +15,7 @@ using Osm.Smo;
 namespace Osm.Pipeline.Orchestration;
 
 /// <summary>
-/// M1.0: Generates a bootstrap snapshot containing ALL entities (static + regular) in global topological order.
+/// Generates a bootstrap snapshot containing ALL entities (static + regular) in global topological order.
 /// This file is used for first-time SSDT deployment to ensure correct FK dependency ordering across module boundaries.
 /// </summary>
 public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInsertsGenerated, BootstrapSnapshotGenerated>
@@ -40,7 +40,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
         var model = state.Bootstrap.FilteredModel
             ?? throw new InvalidOperationException("Pipeline bootstrap step must execute before bootstrap snapshot generation.");
 
-        // Combine static + regular entities (as per M1.0 spec)
+        // Combine static + regular entities
         var staticEntities = state.StaticSeedData.IsDefaultOrEmpty
             ? ImmutableArray<StaticEntityTableData>.Empty
             : state.StaticSeedData;
@@ -82,12 +82,12 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
                 BootstrapEntityCount: 0));
         }
 
-        // Apply global topological sort (no module partitioning - critical for M1.0)
+        // Apply global topological sort (no module partitioning)
         var sortOptions = state.Request.DeferJunctionTables
             ? new EntityDependencySortOptions(true)
             : EntityDependencySortOptions.Default;
 
-        // M1.3: Get circular dependency options for manual ordering
+        // Get circular dependency options for manual ordering
         var circularDepsOptions = state.Request.CircularDependencyOptions ?? CircularDependencyOptions.Empty;
 
         var ordering = EntityDependencySorter.SortByForeignKeys(
@@ -99,7 +99,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
 
         var orderedEntities = ordering.Tables;
 
-        // M1.2/M1.3: Validate topological ordering and extract cycle diagnostics
+        // Validate topological ordering and extract cycle diagnostics
         var validator = new TopologicalOrderingValidator();
         var validation = validator.Validate(orderedEntities, model, state.Request.Scope.SmoOptions.NamingOverrides, circularDepsOptions);
 
@@ -168,15 +168,15 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
     {
         var builder = new StringBuilder();
 
-        // Header with metadata (M1.0 observability requirement)
+        // Header with metadata
         builder.AppendLine("--------------------------------------------------------------------------------");
-        builder.AppendLine("-- M1.0 Bootstrap Snapshot: All Entities (Static + Regular)");
+        builder.AppendLine("-- Bootstrap Snapshot: All Entities (Static + Regular)");
         builder.AppendLine($"-- Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
         builder.AppendLine($"-- Total Entities: {orderedEntities.Length}");
         builder.AppendLine($"-- Ordering: {(ordering.TopologicalOrderingApplied ? "Global topological order (FK-aware)" : "Alphabetical fallback")}");
         builder.AppendLine($"-- Mode: {ordering.Mode.ToMetadataValue()}");
 
-        // M1.2/M1.3: Emit detailed cycle diagnostics if detected
+        // Emit detailed cycle diagnostics if detected
         if (validation.CycleDetected && !validation.Cycles.IsDefaultOrEmpty)
         {
             builder.AppendLine("--");
@@ -276,7 +276,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
             var entity = orderedEntities[i];
             var definition = entity.Definition;
 
-            // Topological position comment (M1.0 observability requirement)
+            // Topological position comment
             builder.AppendLine($"-- Entity: {definition.LogicalName} ({definition.Schema}.{definition.PhysicalName})");
             builder.AppendLine($"-- Module: {definition.Module}");
             builder.AppendLine($"-- Topological Order: {i + 1} of {orderedEntities.Length}");
@@ -286,15 +286,15 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
             var mergeScript = _sqlBuilder.BuildBlock(entity, StaticSeedSynchronizationMode.ValidateThenApply, validationOverrides);
             builder.AppendLine(mergeScript);
 
-            // Diagnostic PRINT statement (M1.0 observability requirement)
-            builder.AppendLine($"PRINT '[M1.0] Bootstrap: Completed entity {i + 1}/{orderedEntities.Length}: {definition.Schema}.{definition.PhysicalName} ({entity.Rows.Length} rows)';");
+            // Diagnostic PRINT statement
+            builder.AppendLine($"PRINT 'Bootstrap: Completed entity {i + 1}/{orderedEntities.Length}: {definition.Schema}.{definition.PhysicalName} ({entity.Rows.Length} rows)';");
             builder.AppendLine("GO");
             builder.AppendLine();
         }
 
         // Footer
         builder.AppendLine("--------------------------------------------------------------------------------");
-        builder.AppendLine($"-- M1.0 Bootstrap Snapshot Complete: {orderedEntities.Length} entities loaded");
+        builder.AppendLine($"-- Bootstrap Snapshot Complete: {orderedEntities.Length} entities loaded");
         builder.AppendLine("--------------------------------------------------------------------------------");
 
         return builder.ToString();
