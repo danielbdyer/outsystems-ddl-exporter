@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Osm.Emission;
 using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
@@ -15,7 +18,7 @@ public sealed class DynamicEntityInsertGeneratorTests
     private static readonly SqlLiteralFormatter Formatter = new();
 
     [Fact]
-    public void GenerateScripts_IncludesStaticSeedRowsAndSorts()
+    public async Task GenerateArtifacts_IncludesStaticSeedRowsAndSorts()
     {
         var definition = CreateDefinition("App", "dbo", "ENTITIES", "Entities", isIdentity: false);
         var datasetRows = ImmutableArray.Create(
@@ -30,21 +33,21 @@ public sealed class DynamicEntityInsertGeneratorTests
 
         var generator = new DynamicEntityInsertGenerator(Formatter);
 
-        var scripts = generator.GenerateScripts(dataset, staticSeeds);
+        var artifacts = generator.GenerateArtifacts(dataset, staticSeeds);
 
-        Assert.Single(scripts);
-        var script = scripts[0];
-        Assert.Contains("INSERT INTO [dbo].[Entities] WITH (TABLOCK)", script.Script, System.StringComparison.Ordinal);
-        var alphaIndex = script.Script.IndexOf("(1, N'Alpha')", System.StringComparison.Ordinal);
-        var betaIndex = script.Script.IndexOf("(2, N'Beta')", System.StringComparison.Ordinal);
-        var gammaIndex = script.Script.IndexOf("(3, N'Gamma')", System.StringComparison.Ordinal);
+        Assert.Single(artifacts);
+        var script = await GetScriptAsync(artifacts[0]);
+        Assert.Contains("INSERT INTO [dbo].[Entities] WITH (TABLOCK)", script, System.StringComparison.Ordinal);
+        var alphaIndex = script.IndexOf("(1, N'Alpha')", System.StringComparison.Ordinal);
+        var betaIndex = script.IndexOf("(2, N'Beta')", System.StringComparison.Ordinal);
+        var gammaIndex = script.IndexOf("(3, N'Gamma')", System.StringComparison.Ordinal);
         Assert.True(alphaIndex >= 0, "Expected batch row for key 1.");
         Assert.True(betaIndex > alphaIndex, "Expected rows ordered by primary key after deduplication.");
         Assert.True(gammaIndex > betaIndex, "Expected rows ordered by primary key after deduplication.");
     }
 
     [Fact]
-    public void GenerateScripts_RespectsBatchSize()
+    public async Task GenerateArtifacts_RespectsBatchSize()
     {
         var definition = CreateDefinition("App", "dbo", "BULK", "BulkEntities", isIdentity: true);
         var rows = Enumerable.Range(1, 12)
@@ -55,10 +58,10 @@ public sealed class DynamicEntityInsertGeneratorTests
         var generator = new DynamicEntityInsertGenerator(Formatter);
         var options = new DynamicEntityInsertGenerationOptions(batchSize: 5);
 
-        var scripts = generator.GenerateScripts(dataset, ImmutableArray<StaticEntityTableData>.Empty, options);
+        var artifacts = generator.GenerateArtifacts(dataset, ImmutableArray<StaticEntityTableData>.Empty, options);
 
-        Assert.Single(scripts);
-        var script = scripts[0].Script;
+        Assert.Single(artifacts);
+        var script = await GetScriptAsync(artifacts[0]);
         // Expect three INSERT batches due to batch size (5 + 5 + 2)
         var insertCount = script.Split("INSERT INTO", System.StringSplitOptions.RemoveEmptyEntries).Length - 1;
         Assert.Equal(3, insertCount);
@@ -67,7 +70,7 @@ public sealed class DynamicEntityInsertGeneratorTests
     }
 
     [Fact]
-    public void GenerateScripts_BatchesLargeDatasetsWithoutRepeatedEnumeration()
+    public async Task GenerateArtifacts_BatchesLargeDatasetsWithoutRepeatedEnumeration()
     {
         var definition = CreateDefinition("App", "dbo", "LARGE", "LargeEntities", isIdentity: false);
         const int rowCount = 2345;
@@ -81,17 +84,17 @@ public sealed class DynamicEntityInsertGeneratorTests
         var generator = new DynamicEntityInsertGenerator(Formatter);
         var options = new DynamicEntityInsertGenerationOptions(batchSize);
 
-        var scripts = generator.GenerateScripts(dataset, ImmutableArray<StaticEntityTableData>.Empty, options);
+        var artifacts = generator.GenerateArtifacts(dataset, ImmutableArray<StaticEntityTableData>.Empty, options);
 
-        Assert.Single(scripts);
-        var script = scripts[0].Script;
+        Assert.Single(artifacts);
+        var script = await GetScriptAsync(artifacts[0]);
         var batchCount = script.Split("PRINT 'Applying batch", System.StringSplitOptions.RemoveEmptyEntries).Length - 1;
         var expectedBatches = (int)System.Math.Ceiling(rowCount / (double)batchSize);
         Assert.Equal(expectedBatches, batchCount);
     }
 
     [Fact]
-    public void GenerateScripts_SortsTablesByModuleAndName()
+    public void GenerateArtifacts_SortsTablesByModuleAndName()
     {
         var alpha = CreateDefinition("Alpha", "dbo", "ONE", "One", isIdentity: false);
         var beta = CreateDefinition("Beta", "dbo", "TWO", "Two", isIdentity: false);
@@ -100,15 +103,15 @@ public sealed class DynamicEntityInsertGeneratorTests
             new StaticEntityTableData(alpha, ImmutableArray.Create(StaticEntityRow.Create(new object?[] { 1, "A" })))));
 
         var generator = new DynamicEntityInsertGenerator(Formatter);
-        var scripts = generator.GenerateScripts(dataset, ImmutableArray<StaticEntityTableData>.Empty);
+        var artifacts = generator.GenerateArtifacts(dataset, ImmutableArray<StaticEntityTableData>.Empty);
 
-        Assert.Equal(2, scripts.Length);
-        Assert.Equal("Alpha", scripts[0].Definition.Module);
-        Assert.Equal("Beta", scripts[1].Definition.Module);
+        Assert.Equal(2, artifacts.Length);
+        Assert.Equal("Alpha", artifacts[0].Definition.Module);
+        Assert.Equal("Beta", artifacts[1].Definition.Module);
     }
 
     [Fact]
-    public void GenerateScripts_OrdersTablesByForeignKeyDependencies()
+    public void GenerateArtifacts_OrdersTablesByForeignKeyDependencies()
     {
         var parentDefinition = new StaticEntitySeedTableDefinition(
             "Sample",
@@ -181,15 +184,15 @@ public sealed class DynamicEntityInsertGeneratorTests
         var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
 
         var generator = new DynamicEntityInsertGenerator(Formatter);
-        var scripts = generator.GenerateScripts(dataset, ImmutableArray<StaticEntityTableData>.Empty, model: model);
+        var artifacts = generator.GenerateArtifacts(dataset, ImmutableArray<StaticEntityTableData>.Empty, model: model);
 
-        Assert.Equal(2, scripts.Length);
-        Assert.Equal("Parent", scripts[0].Definition.LogicalName);
-        Assert.Equal("Child", scripts[1].Definition.LogicalName);
+        Assert.Equal(2, artifacts.Length);
+        Assert.Equal("Parent", artifacts[0].Definition.LogicalName);
+        Assert.Equal("Child", artifacts[1].Definition.LogicalName);
     }
 
     [Fact]
-    public void GenerateScripts_EmitsSelfReferencingParentsBeforeChildren()
+    public async Task GenerateArtifacts_EmitsSelfReferencingParentsBeforeChildren()
     {
         var definition = new StaticEntitySeedTableDefinition(
             "Sample",
@@ -246,16 +249,23 @@ public sealed class DynamicEntityInsertGeneratorTests
         var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
 
         var generator = new DynamicEntityInsertGenerator(Formatter);
-        var scripts = generator.GenerateScripts(dataset, ImmutableArray<StaticEntityTableData>.Empty, model: model);
+        var artifacts = generator.GenerateArtifacts(dataset, ImmutableArray<StaticEntityTableData>.Empty, model: model);
 
-        Assert.Single(scripts);
-        var script = scripts[0].Script;
+        Assert.Single(artifacts);
+        var script = await GetScriptAsync(artifacts[0]);
         var rootIndex = script.IndexOf("(10, NULL, N'Root')", StringComparison.Ordinal);
         var childIndex = script.IndexOf("(5, 10, N'Child')", StringComparison.Ordinal);
 
         Assert.True(rootIndex >= 0, "Expected script to include the root row.");
         Assert.True(childIndex >= 0, "Expected script to include the child row.");
         Assert.True(rootIndex < childIndex, "Expected parent row to precede child row for self-referencing hierarchy.");
+    }
+
+    private static async Task<string> GetScriptAsync(DynamicEntityInsertArtifact artifact)
+    {
+        using var writer = new StringWriter();
+        await artifact.WriteAsync(writer, CancellationToken.None);
+        return writer.ToString();
     }
 
     private static StaticEntitySeedTableDefinition CreateDefinition(
