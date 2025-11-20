@@ -9,19 +9,19 @@
   "ForeignKeysCreatedCount": 1,
   "ColumnRationales": {
     "PK": 4,
-    "DELETE_RULE_IGNORE": 1,
-    "DATA_NO_NULLS": 10,
-    "DEFAULT_PRESENT": 2,
-    "UNIQUE_NO_NULLS": 2,
+    "FK_ENFORCED": 1,
     "MANDATORY": 10,
+    "DELETE_RULE_IGNORE": 1,
+    "DEFAULT_PRESENT": 2,
+    "DATA_NO_NULLS": 10,
     "PHYSICAL_NOT_NULL": 4,
-    "DATA_HAS_ORPHANS": 1,
     "PROFILE_MISSING": 1,
-    "FK_ENFORCED": 1
+    "DATA_HAS_ORPHANS": 1,
+    "UNIQUE_NO_NULLS": 2
   },
   "UniqueIndexRationales": {
-    "UNIQUE_NO_NULLS": 2,
-    "PHYSICAL_UNIQUE_KEY": 2
+    "PHYSICAL_UNIQUE_KEY": 2,
+    "UNIQUE_NO_NULLS": 2
   },
   "ForeignKeyRationales": {
     "DELETE_RULE_IGNORE": 1,
@@ -29,27 +29,29 @@
     "DATA_HAS_ORPHANS": 1
   },
   "ModuleRollups": {
-    "ExtBilling": {
+    "Ops": {
       "ColumnCount": 3,
       "TightenedColumnCount": 2,
       "RemediationColumnCount": 0,
-      "UniqueIndexCount": 1,
-      "UniqueIndexesEnforcedCount": 1,
+      "UniqueIndexCount": 0,
+      "UniqueIndexesEnforcedCount": 0,
       "UniqueIndexesRequireRemediationCount": 0,
-      "ForeignKeyCount": 0,
+      "ForeignKeyCount": 1,
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
         "PK": 1,
-        "DATA_NO_NULLS": 2,
-        "UNIQUE_NO_NULLS": 1,
         "MANDATORY": 2,
-        "PHYSICAL_NOT_NULL": 1
+        "DELETE_RULE_IGNORE": 1,
+        "DEFAULT_PRESENT": 1,
+        "DATA_NO_NULLS": 2,
+        "PHYSICAL_NOT_NULL": 1,
+        "DATA_HAS_ORPHANS": 1
       },
-      "UniqueIndexRationales": {
-        "UNIQUE_NO_NULLS": 1,
-        "PHYSICAL_UNIQUE_KEY": 1
-      },
-      "ForeignKeyRationales": {}
+      "UniqueIndexRationales": {},
+      "ForeignKeyRationales": {
+        "DELETE_RULE_IGNORE": 1,
+        "DATA_HAS_ORPHANS": 1
+      }
     },
     "AppCore": {
       "ColumnCount": 9,
@@ -62,73 +64,59 @@
       "ForeignKeysCreatedCount": 1,
       "ColumnRationales": {
         "PK": 2,
-        "DATA_NO_NULLS": 6,
-        "DEFAULT_PRESENT": 1,
-        "UNIQUE_NO_NULLS": 1,
+        "FK_ENFORCED": 1,
         "MANDATORY": 6,
+        "DEFAULT_PRESENT": 1,
+        "DATA_NO_NULLS": 6,
         "PHYSICAL_NOT_NULL": 2,
         "PROFILE_MISSING": 1,
-        "FK_ENFORCED": 1
+        "UNIQUE_NO_NULLS": 1
       },
       "UniqueIndexRationales": {
-        "UNIQUE_NO_NULLS": 1,
-        "PHYSICAL_UNIQUE_KEY": 1
+        "PHYSICAL_UNIQUE_KEY": 1,
+        "UNIQUE_NO_NULLS": 1
       },
       "ForeignKeyRationales": {
         "DB_CONSTRAINT_PRESENT": 1
       }
     },
-    "Ops": {
+    "ExtBilling": {
       "ColumnCount": 3,
       "TightenedColumnCount": 2,
       "RemediationColumnCount": 0,
-      "UniqueIndexCount": 0,
-      "UniqueIndexesEnforcedCount": 0,
+      "UniqueIndexCount": 1,
+      "UniqueIndexesEnforcedCount": 1,
       "UniqueIndexesRequireRemediationCount": 0,
-      "ForeignKeyCount": 1,
+      "ForeignKeyCount": 0,
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
         "PK": 1,
-        "DELETE_RULE_IGNORE": 1,
-        "DATA_NO_NULLS": 2,
-        "DEFAULT_PRESENT": 1,
         "MANDATORY": 2,
+        "DATA_NO_NULLS": 2,
         "PHYSICAL_NOT_NULL": 1,
-        "DATA_HAS_ORPHANS": 1
+        "UNIQUE_NO_NULLS": 1
       },
-      "UniqueIndexRationales": {},
-      "ForeignKeyRationales": {
-        "DELETE_RULE_IGNORE": 1,
-        "DATA_HAS_ORPHANS": 1
-      }
+      "UniqueIndexRationales": {
+        "PHYSICAL_UNIQUE_KEY": 1,
+        "UNIQUE_NO_NULLS": 1
+      },
+      "ForeignKeyRationales": {}
     }
   },
   "TogglePrecedence": {
-    "mocking.profileMockFolder": {
-      "Value": null,
-      "Source": 0
-    },
-    "policy.mode": {
-      "Value": "EvidenceGated",
-      "Source": 0
-    },
     "remediation.maxRowsDefaultBackfill": {
       "Value": 100000,
       "Source": 0
     },
-    "remediation.generatePreScripts": {
-      "Value": true,
-      "Source": 0
-    },
-    "mocking.useProfileMockFolder": {
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
       "Value": false,
       "Source": 0
     },
-    "policy.nullBudget": {
-      "Value": 0,
+    "mocking.profileMockFolder": {
+      "Value": null,
       "Source": 0
     },
-    "foreignKeys.allowCrossSchema": {
+    "mocking.useProfileMockFolder": {
       "Value": false,
       "Source": 0
     },
@@ -136,23 +124,7 @@
       "Value": true,
       "Source": 0
     },
-    "remediation.sentinels.date": {
-      "Value": "1900-01-01",
-      "Source": 0
-    },
-    "foreignKeys.enableCreation": {
-      "Value": true,
-      "Source": 0
-    },
-    "foreignKeys.allowCrossCatalog": {
-      "Value": false,
-      "Source": 0
-    },
-    "remediation.sentinels.text": {
-      "Value": "",
-      "Source": 0
-    },
-    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+    "foreignKeys.allowNoCheckCreation": {
       "Value": false,
       "Source": 0
     },
@@ -160,8 +132,40 @@
       "Value": "0",
       "Source": 0
     },
+    "remediation.sentinels.text": {
+      "Value": "",
+      "Source": 0
+    },
+    "remediation.generatePreScripts": {
+      "Value": true,
+      "Source": 0
+    },
+    "foreignKeys.enableCreation": {
+      "Value": true,
+      "Source": 0
+    },
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
+    },
     "uniqueness.enforceMultiColumn": {
       "Value": true,
+      "Source": 0
+    },
+    "remediation.sentinels.date": {
+      "Value": "1900-01-01",
+      "Source": 0
+    },
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
+      "Source": 0
+    },
+    "foreignKeys.allowCrossSchema": {
+      "Value": false,
+      "Source": 0
+    },
+    "policy.nullBudget": {
+      "Value": 0,
       "Source": 0
     }
   },
@@ -382,6 +386,7 @@
       "Table": "OSUSR_ABC_CUSTOMER",
       "Column": "CITYID",
       "CreateConstraint": true,
+      "ScriptWithNoCheck": false,
       "Rationales": [
         "DB_CONSTRAINT_PRESENT"
       ],
@@ -392,6 +397,7 @@
       "Table": "OSUSR_XYZ_JOBRUN",
       "Column": "TRIGGEREDBYUSERID",
       "CreateConstraint": false,
+      "ScriptWithNoCheck": false,
       "Rationales": [
         "DATA_HAS_ORPHANS",
         "DELETE_RULE_IGNORE"
