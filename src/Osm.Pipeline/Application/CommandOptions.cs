@@ -56,6 +56,7 @@ public sealed record BuildSsdtOverrides(
     string? RenameOverrides,
     int? MaxDegreeOfParallelism,
     string? SqlMetadataOutputPath,
+    string? CircularDepsConfig = null,
     bool ExtractModelInline = false,
     DynamicInsertOutputMode? DynamicInsertMode = null,
     StaticSeedParentHandlingMode? StaticSeedParentMode = null,

@@ -865,6 +865,38 @@ OutSystems modules frequently reference **system** or **external** tables (for e
 
 Store these JSON files in your repo (for example under `config/supplemental/`) so every team member and CI run resolves the same definitions.
 
+### Circular dependency configuration
+
+When the exporter detects circular dependencies between tables (e.g., `User.OrganizationId` → `Organization.Id` and `Organization.CreatedBy` → `User.Id`), you can explicitly allow and control the load order using a circular dependency configuration file. See [M1.3: Circular Dependency Allowlist](docs/M1.3-circular-dependency-allowlist.md) for comprehensive documentation.
+
+**Quick example** (`config/circular-deps.json`):
+
+```json
+{
+  "allowedCycles": [
+    {
+      "tableOrdering": [
+        {"tableName": "OSUSR_ORGANIZATION", "position": 100},
+        {"tableName": "OSUSR_USER", "position": 200}
+      ]
+    }
+  ],
+  "strictMode": false
+}
+```
+
+**CLI flag**:
+```bash
+dotnet run --project src/Osm.Cli \
+  build-ssdt \
+  --model model.json \
+  --profile profile.json \
+  --circular-deps-config config/circular-deps.json \
+  --out ./out
+```
+
+The configuration uses **z-index-style positioning** (lower numbers load first) to explicitly control table load order when cycles are unavoidable. The validator checks that allowed cycles have nullable FKs to support phased loading (INSERT with NULL → INSERT dependents → UPDATE with FK values).
+
 **Precedence**
 
 When resolving inputs, the CLI honours the following order: CLI flag ➝ environment variable ➝ CLI config file ➝ built-in defaults.
@@ -898,6 +930,7 @@ When resolving inputs, the CLI honours the following order: CLI flag ➝ environ
   * `--exclude-system-modules` / `--include-system-modules` — toggle whether system modules participate when the filter is empty.
   * `--only-active-modules` / `--include-inactive-modules` — drop inactive modules entirely (active-only by default when the flag is present).
   * `--config <appsettings.json>` — optional CLI configuration (model/profile defaults, cache root, tightening overrides).
+  * `--circular-deps-config <circular-deps.json>` — optional circular dependency allowlist configuration with manual table ordering (see [M1.3 documentation](docs/M1.3-circular-dependency-allowlist.md)).
   * `--out <directory>` — emission root (`./out` by default).
   * `--cache-root <directory>` / `--refresh-cache` — evidence cache control for model/profile/DMM/config artifacts.
   * `--rename-table schema.table=Override` — rename the emitted table/constraint identifiers (separate multiple overrides with `;` or `,`).

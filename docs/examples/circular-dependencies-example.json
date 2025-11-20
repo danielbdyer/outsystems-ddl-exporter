@@ -1,0 +1,34 @@
+{
+  "$schema": "Example configuration for handling circular dependencies",
+  "$comment": "Allows circular dependencies with explicit z-index-style ordering",
+  "allowedCycles": [
+    {
+      "tableOrdering": [
+        {
+          "tableName": "OSUSR_ORGANIZATION",
+          "position": 100,
+          "$comment": "Load Organization first (lower position = earlier)"
+        },
+        {
+          "tableName": "OSUSR_USER",
+          "position": 200,
+          "$comment": "Load User second - can reference Organization"
+        }
+      ]
+    },
+    {
+      "tableOrdering": [
+        {
+          "tableName": "OSUSR_PRODUCT",
+          "position": 300
+        },
+        {
+          "tableName": "OSUSR_CATEGORY",
+          "position": 400
+        }
+      ]
+    }
+  ],
+  "strictMode": false,
+  "$comment": "strictMode: When true, fail export on ANY cycle (even if allowed). Default: false"
+}

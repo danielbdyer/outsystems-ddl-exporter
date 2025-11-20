@@ -31,7 +31,7 @@ public sealed class BuildSsdtRequestAssemblerTests
         TableNameMappings: ImmutableArray<TableNameMappingConfiguration>.Empty);
 
     [Fact]
-    public void Assemble_PrefersOverrideProfilerProvider()
+    public async Task Assemble_PrefersOverrideProfilerProvider()
     {
         var assembler = new BuildSsdtRequestAssembler();
         var configuration = CreateConfiguration(
@@ -48,7 +48,7 @@ public sealed class BuildSsdtRequestAssemblerTests
 
         var context = CreateContext(configuration, overrides, DefaultSqlOptions, modelPath: "model.json", outputDirectory: "out");
 
-        var result = assembler.Assemble(context);
+        var result = await assembler.AssembleAsync(context);
         Assert.True(result.IsSuccess);
         var assembly = result.Value;
         Assert.Equal("override-provider", assembly.ProfilerProvider);
@@ -58,7 +58,7 @@ public sealed class BuildSsdtRequestAssemblerTests
     }
 
     [Fact]
-    public void Assemble_ComposesCacheMetadata()
+    public async Task Assemble_ComposesCacheMetadata()
     {
         var assembler = new BuildSsdtRequestAssembler();
         var configuration = CreateConfiguration(
@@ -89,7 +89,7 @@ public sealed class BuildSsdtRequestAssemblerTests
             staticSeedParentMode: StaticSeedParentHandlingMode.ValidateStaticSeedApplication,
             deferJunctionTables: true);
 
-        var result = assembler.Assemble(context);
+        var result = await assembler.AssembleAsync(context);
         Assert.True(result.IsSuccess);
         var cache = result.Value.Request.EvidenceCache;
         Assert.NotNull(cache);
@@ -124,7 +124,7 @@ public sealed class BuildSsdtRequestAssemblerTests
     }
 
     [Fact]
-    public void Assemble_UsesProvidedStaticDataProvider()
+    public async Task Assemble_UsesProvidedStaticDataProvider()
     {
         var assembler = new BuildSsdtRequestAssembler();
         var configuration = CreateConfiguration();
@@ -147,7 +147,7 @@ public sealed class BuildSsdtRequestAssemblerTests
             outputDirectory: "out",
             staticDataProvider: provider);
 
-        var result = assembler.Assemble(context);
+        var result = await assembler.AssembleAsync(context);
 
         Assert.True(result.IsSuccess);
         Assert.Same(provider, result.Value.Request.StaticDataProvider);

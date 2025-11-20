@@ -1,0 +1,17 @@
+{
+  "allowedCycles": [
+    {
+      "tableOrdering": [
+        {
+          "tableName": "OSUSR_ORGANIZATION",
+          "position": 100
+        },
+        {
+          "tableName": "OSUSR_USER",
+          "position": 200
+        }
+      ]
+    }
+  ],
+  "strictMode": false
+}
