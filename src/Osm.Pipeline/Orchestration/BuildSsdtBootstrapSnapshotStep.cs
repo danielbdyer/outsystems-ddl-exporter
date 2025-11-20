@@ -87,17 +87,21 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
             ? new EntityDependencySortOptions(true)
             : EntityDependencySortOptions.Default;
 
+        // M1.3: Get circular dependency options for manual ordering
+        var circularDepsOptions = state.Request.CircularDependencyOptions ?? CircularDependencyOptions.Empty;
+
         var ordering = EntityDependencySorter.SortByForeignKeys(
             allEntities,
             model,
             state.Request.Scope.SmoOptions.NamingOverrides,
-            sortOptions);
+            sortOptions,
+            circularDepsOptions);
 
         var orderedEntities = ordering.Tables;
 
-        // M1.2: Validate topological ordering and extract cycle diagnostics
+        // M1.2/M1.3: Validate topological ordering and extract cycle diagnostics
         var validator = new TopologicalOrderingValidator();
-        var validation = validator.Validate(orderedEntities, model, state.Request.Scope.SmoOptions.NamingOverrides);
+        var validation = validator.Validate(orderedEntities, model, state.Request.Scope.SmoOptions.NamingOverrides, circularDepsOptions);
 
         // Generate bootstrap snapshot script with observability
         var validationOverrides = state.Request.Scope.ModuleFilter.ValidationOverrides;

@@ -181,6 +181,7 @@ public sealed class TopologicalOrderingValidator
         // Check if this cycle is allowed
         var isAllowed = circularDependencyOptions.IsCycleAllowed(tablesInCycle);
 
+        // Extract FK metadata
         var fkInfo = cycleViolations
             .Select(v =>
             {
@@ -231,12 +232,28 @@ public sealed class TopologicalOrderingValidator
         // Build cycle path (simplified - just show tables involved)
         var cyclePath = string.Join(" → ", tablesInCycle) + " → " + tablesInCycle[0];
 
+        // Validate that allowed cycles have nullable FKs for phased loading
+        string? allowanceReason = null;
+        if (isAllowed)
+        {
+            var hasNullableFk = fkInfo.Any(fk => fk.IsNullable);
+            if (hasNullableFk)
+            {
+                allowanceReason = "Manual ordering configured with nullable FK support for phased loading";
+            }
+            else
+            {
+                // Allowed cycle but no nullable FKs - this is a configuration warning
+                allowanceReason = "WARNING: Manual ordering configured but no nullable FKs found - phased loading may fail";
+            }
+        }
+
         return ImmutableArray.Create(new CycleDiagnostic(
             TablesInCycle: tablesInCycle,
             CyclePath: cyclePath,
             ForeignKeys: fkInfo,
             IsAllowed: isAllowed,
-            AllowanceReason: isAllowed ? "Manual ordering configured" : null));
+            AllowanceReason: allowanceReason));
     }
 }
 
