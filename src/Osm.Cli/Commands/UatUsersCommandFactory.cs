@@ -59,6 +59,8 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
         AllowMultipleArgumentsPerToken = true
     };
     private readonly Option<bool> _idempotentEmissionOption = new("--idempotent-emission", () => false, "Only rewrite artifacts when their contents change.");
+    private readonly Option<bool> _verifyOption = new("--verify", () => false, "Run verification on generated artifacts and emit a verification report.");
+    private readonly Option<string?> _verificationReportOption = new("--verification-report", "Path for the verification report JSON file (defaults to {artifacts-root}/uat-users/verification-report.json).");
 
     public UatUsersCommandFactory(
         IServiceScopeFactory scopeFactory,
@@ -91,7 +93,9 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             _matchingRegexOption,
             _fallbackModeOption,
             _fallbackTargetOption,
-            _idempotentEmissionOption
+            _idempotentEmissionOption,
+            _verifyOption,
+            _verificationReportOption
         };
 
         _idempotentEmissionOption.AddAlias("--uat-users-idempotent-emission");
@@ -188,6 +192,18 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
             : configuration.IdempotentEmission ?? false;
         var idempotentFromConfig = !idempotentSpecified && configuration.IdempotentEmission.HasValue;
 
+        var verifySpecified = parseResult.HasOption(_verifyOption);
+        var verifyArtifacts = verifySpecified
+            ? parseResult.GetValueForOption(_verifyOption)
+            : configuration.VerifyArtifacts ?? false;
+        var verifyFromConfig = !verifySpecified && configuration.VerifyArtifacts.HasValue;
+
+        var (verificationReportPath, verificationReportFromConfig) = ResolveStringOption(
+            parseResult,
+            _verificationReportOption,
+            configuration.VerificationReportPath,
+            null);
+
         UserMatchingStrategy matchingStrategy;
         UserFallbackAssignmentMode fallbackMode;
         try
@@ -271,6 +287,8 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
                 fallbackMode,
                 fallbackTargets,
                 idempotentEmission,
+                verifyArtifacts,
+                verificationReportPath,
                 new UatUsersOptionOrigins(
                     ModelPathFromConfiguration: modelFromConfig,
                     FromLiveMetadataFromConfiguration: fromLiveFromConfig,
@@ -290,7 +308,9 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
                     FallbackModeFromConfiguration: fallbackModeFromConfig,
                     FallbackTargetsFromConfiguration: fallbackTargetsFromConfig,
                     ConnectionStringFromConfiguration: connectionFromConfig,
-                    IdempotentEmissionFromConfiguration: idempotentFromConfig));
+                    IdempotentEmissionFromConfiguration: idempotentFromConfig,
+                    VerifyArtifactsFromConfiguration: verifyFromConfig,
+                    VerificationReportPathFromConfiguration: verificationReportFromConfig));
         }
         catch (Exception ex) when (ex is ArgumentException or FormatException)
         {

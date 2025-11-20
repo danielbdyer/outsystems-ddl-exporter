@@ -253,7 +253,9 @@ public sealed class FullExportApplicationServiceTests
                 MatchingRegexPattern: null,
                 FallbackAssignment: UserFallbackAssignmentMode.Ignore,
                 FallbackTargets: Array.Empty<string>(),
-                IdempotentEmission: true)
+                IdempotentEmission: true,
+                VerifyArtifacts: null,
+                VerificationReportPath: null)
         };
 
         var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
@@ -349,7 +351,9 @@ public sealed class FullExportApplicationServiceTests
                 MatchingRegexPattern: null,
                 FallbackAssignment: UserFallbackAssignmentMode.Ignore,
                 FallbackTargets: Array.Empty<string>(),
-                IdempotentEmission: null)
+                IdempotentEmission: null,
+                VerifyArtifacts: null,
+                VerificationReportPath: null)
         };
 
         var configurationContext = new CliConfigurationContext(configuration, ConfigPath: null);
