@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 
@@ -94,6 +95,7 @@ public static class EntityDependencySorter
 
         var lookup = TableLookup.Create(nodes);
         var entityLookup = BuildEntityIdentityLookup(model);
+        var entityByTable = BuildEntityLookup(model);
         var classification = options.DeferJunctionTables
             ? JunctionTableClassifier.Classify(model, nodes, lookup, namingOverrides)
             : JunctionTableClassification.Disabled;
@@ -120,9 +122,69 @@ public static class EntityDependencySorter
                 Mode: EntityDependencyOrderingMode.Alphabetical);
         }
 
-        var ordered = TopologicalSort(nodes, edges, indegree, comparer, classification, circularDependencyOptions);
+        var indegreeSnapshot = new Dictionary<TableKey, int>(indegree, comparer);
+        var ordered = TopologicalSort(
+            nodes,
+            edges,
+            new Dictionary<TableKey, int>(indegreeSnapshot, comparer),
+            comparer,
+            classification,
+            circularDependencyOptions);
         var cycleDetected = ordered.Length != nodes.Count;
         var fallbackApplied = false;
+
+        if (cycleDetected && ShouldAttemptAutomaticCycleResolution(circularDependencyOptions))
+        {
+            var remainingKeys = nodes.Keys
+                .Where(key => ordered.All(table => !TableKey.Equals(table.Definition, key)))
+                .ToArray();
+
+            var (autoCycles, edgesToRemove) = DetectAsymmetricCycles(
+                remainingKeys,
+                edges,
+                comparer,
+                nodes,
+                entityByTable);
+
+            if (!autoCycles.IsDefaultOrEmpty && edgesToRemove.Count > 0)
+            {
+                var mergedOptions = MergeCircularDependencyOptions(circularDependencyOptions, autoCycles);
+
+                var adjustedEdges = CloneEdges(edges, comparer);
+                var adjustedIndegree = new Dictionary<TableKey, int>(indegreeSnapshot, comparer);
+                var removedEdges = 0;
+
+                foreach (var (target, dependent) in edgesToRemove)
+                {
+                    if (!adjustedEdges.TryGetValue(target, out var dependents))
+                    {
+                        continue;
+                    }
+
+                    if (dependents.Remove(dependent))
+                    {
+                        adjustedIndegree[dependent] = Math.Max(0, adjustedIndegree[dependent] - 1);
+                        removedEdges++;
+                    }
+                }
+
+                var retried = TopologicalSort(
+                    nodes,
+                    adjustedEdges,
+                    adjustedIndegree,
+                    comparer,
+                    classification,
+                    mergedOptions);
+
+                if (retried.Length == nodes.Count)
+                {
+                    ordered = retried;
+                    cycleDetected = false;
+                    graphStats = graphStats with { EdgeCount = Math.Max(0, graphStats.EdgeCount - removedEdges) };
+                    circularDependencyOptions = mergedOptions;
+                }
+            }
+        }
 
         if (cycleDetected)
         {
@@ -378,6 +440,13 @@ public static class EntityDependencySorter
             : EntityDependencyOrderingMode.Alphabetical;
     }
 
+    private static bool ShouldAttemptAutomaticCycleResolution(CircularDependencyOptions? circularDependencyOptions)
+    {
+        return circularDependencyOptions is null ||
+               circularDependencyOptions.AllowedCycles.IsDefaultOrEmpty ||
+               circularDependencyOptions.AllowedCycles.Length == 0;
+    }
+
     private static IReadOnlyDictionary<TableKey, EntityIdentity> BuildEntityIdentityLookup(OsmModel model)
     {
         var comparer = new TableKeyComparer();
@@ -393,6 +462,265 @@ public static class EntityDependencySorter
         }
 
         return lookup;
+    }
+
+    private static IReadOnlyDictionary<TableKey, EntityModel> BuildEntityLookup(OsmModel model)
+    {
+        var comparer = new TableKeyComparer();
+        var lookup = new Dictionary<TableKey, EntityModel>(comparer);
+
+        foreach (var module in model.Modules)
+        {
+            foreach (var entity in module.Entities)
+            {
+                var key = TableKey.From(entity.Schema.Value, entity.PhysicalName.Value);
+                if (!lookup.ContainsKey(key))
+                {
+                    lookup[key] = entity;
+                }
+            }
+        }
+
+        return lookup;
+    }
+
+    private static Dictionary<TableKey, HashSet<TableKey>> CloneEdges(
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+        TableKeyComparer comparer)
+    {
+        var clone = new Dictionary<TableKey, HashSet<TableKey>>(comparer);
+        foreach (var (key, neighbors) in edges)
+        {
+            clone[key] = new HashSet<TableKey>(neighbors, comparer);
+        }
+
+        return clone;
+    }
+
+    private static (ImmutableArray<AllowedCycle> AllowedCycles, List<(TableKey Target, TableKey Dependent)> EdgesToRemove)
+        DetectAsymmetricCycles(
+            IReadOnlyCollection<TableKey> remainingKeys,
+            IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+            TableKeyComparer comparer,
+            IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
+            IReadOnlyDictionary<TableKey, EntityModel> entityLookup)
+    {
+        if (remainingKeys.Count == 0 || entityLookup.Count == 0)
+        {
+            return (ImmutableArray<AllowedCycle>.Empty, new List<(TableKey, TableKey)>());
+        }
+
+        var components = FindStronglyConnectedComponents(remainingKeys, edges, comparer);
+        var detectedCycles = ImmutableArray.CreateBuilder<AllowedCycle>();
+        var edgesToRemove = new List<(TableKey Target, TableKey Dependent)>();
+
+        foreach (var component in components.Where(static component => component.Count == 2))
+        {
+            var pair = component.ToArray();
+
+            if (!TryGetRelationshipMetadata(pair[0], pair[1], entityLookup, nodes, out var firstToSecond) ||
+                !TryGetRelationshipMetadata(pair[1], pair[0], entityLookup, nodes, out var secondToFirst))
+            {
+                continue;
+            }
+
+            var firstStrength = ClassifyRelationship(firstToSecond);
+            var secondStrength = ClassifyRelationship(secondToFirst);
+
+            if ((firstStrength == RelationshipStrength.Weak && secondStrength == RelationshipStrength.Cascade) ||
+                (firstStrength == RelationshipStrength.Cascade && secondStrength == RelationshipStrength.Weak))
+            {
+                var parentKey = firstStrength == RelationshipStrength.Weak ? pair[0] : pair[1];
+                var childKey = firstStrength == RelationshipStrength.Cascade ? pair[0] : pair[1];
+
+                var allowedCycle = CreateAutoCycle(parentKey, childKey, nodes);
+                if (allowedCycle is not null)
+                {
+                    detectedCycles.Add(allowedCycle);
+                    edgesToRemove.Add((childKey, parentKey));
+                }
+            }
+        }
+
+        return (detectedCycles.ToImmutable(), edgesToRemove);
+    }
+
+    private static ImmutableArray<ImmutableHashSet<TableKey>> FindStronglyConnectedComponents(
+        IReadOnlyCollection<TableKey> nodes,
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+        TableKeyComparer comparer)
+    {
+        var index = 0;
+        var nodeIndex = new Dictionary<TableKey, int>(comparer);
+        var lowLink = new Dictionary<TableKey, int>(comparer);
+        var stack = new Stack<TableKey>();
+        var onStack = new HashSet<TableKey>(comparer);
+        var components = ImmutableArray.CreateBuilder<ImmutableHashSet<TableKey>>();
+        var nodeSet = new HashSet<TableKey>(nodes, comparer);
+
+        foreach (var node in nodes)
+        {
+            if (!nodeIndex.ContainsKey(node))
+            {
+                StrongConnect(node);
+            }
+        }
+
+        return components.ToImmutable();
+
+        void StrongConnect(TableKey node)
+        {
+            nodeIndex[node] = index;
+            lowLink[node] = index;
+            index++;
+            stack.Push(node);
+            onStack.Add(node);
+
+            if (edges.TryGetValue(node, out var neighbors))
+            {
+                foreach (var neighbor in neighbors.Where(nodeSet.Contains))
+                {
+                    if (!nodeIndex.ContainsKey(neighbor))
+                    {
+                        StrongConnect(neighbor);
+                        lowLink[node] = Math.Min(lowLink[node], lowLink[neighbor]);
+                    }
+                    else if (onStack.Contains(neighbor))
+                    {
+                        lowLink[node] = Math.Min(lowLink[node], nodeIndex[neighbor]);
+                    }
+                }
+            }
+
+            if (lowLink[node] != nodeIndex[node])
+            {
+                return;
+            }
+
+            var componentBuilder = ImmutableHashSet.CreateBuilder(comparer);
+            TableKey current;
+            do
+            {
+                current = stack.Pop();
+                onStack.Remove(current);
+                componentBuilder.Add(current);
+            }
+            while (!comparer.Equals(current, node));
+
+            components.Add(componentBuilder.ToImmutable());
+        }
+    }
+
+    private static bool TryGetRelationshipMetadata(
+        TableKey source,
+        TableKey target,
+        IReadOnlyDictionary<TableKey, EntityModel> entityLookup,
+        IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
+        out RelationshipMetadata metadata)
+    {
+        if (!entityLookup.TryGetValue(source, out var entity))
+        {
+            metadata = default!;
+            return false;
+        }
+
+        var relationship = entity.Relationships
+            .FirstOrDefault(rel => string.Equals(rel.TargetPhysicalName.Value, target.Table, StringComparison.OrdinalIgnoreCase));
+
+        if (relationship is null || relationship.ActualConstraints.IsDefaultOrEmpty)
+        {
+            metadata = default!;
+            return false;
+        }
+
+        var viaAttribute = entity.Attributes.FirstOrDefault(attribute =>
+            string.Equals(attribute.LogicalName.Value, relationship.ViaAttribute.Value, StringComparison.OrdinalIgnoreCase));
+
+        if (viaAttribute is null)
+        {
+            metadata = default!;
+            return false;
+        }
+
+        var constraint = relationship.ActualConstraints[0];
+        var sourceName = !string.IsNullOrWhiteSpace(nodes[source].Definition.PhysicalName)
+            ? nodes[source].Definition.PhysicalName!
+            : nodes[source].Definition.EffectiveName ?? source.Table;
+
+        metadata = new RelationshipMetadata(
+            sourceName,
+            constraint.OnDeleteAction,
+            viaAttribute.OnDisk.IsNullable ?? false);
+        return true;
+    }
+
+    private static RelationshipStrength ClassifyRelationship(RelationshipMetadata metadata)
+    {
+        if (metadata.IsNullable && IsDeleteRule(metadata.DeleteRule, "NO_ACTION", "SET_NULL"))
+        {
+            return RelationshipStrength.Weak;
+        }
+
+        if (IsDeleteRule(metadata.DeleteRule, "CASCADE"))
+        {
+            return RelationshipStrength.Cascade;
+        }
+
+        return RelationshipStrength.Other;
+    }
+
+    private static bool IsDeleteRule(string deleteRule, params string[] expected)
+    {
+        return expected.Any(rule => string.Equals(deleteRule, rule, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static AllowedCycle? CreateAutoCycle(
+        TableKey parentKey,
+        TableKey childKey,
+        IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes)
+    {
+        var parentName = nodes[parentKey].Definition.PhysicalName ?? nodes[parentKey].Definition.EffectiveName ?? parentKey.Table;
+        var childName = nodes[childKey].Definition.PhysicalName ?? nodes[childKey].Definition.EffectiveName ?? childKey.Table;
+
+        var parentOrdering = TableOrdering.Create(parentName, 100);
+        var childOrdering = TableOrdering.Create(childName, 200);
+
+        if (!parentOrdering.IsSuccess || !childOrdering.IsSuccess)
+        {
+            return null;
+        }
+
+        var allowedCycle = AllowedCycle.Create(ImmutableArray.Create(parentOrdering.Value, childOrdering.Value));
+        return allowedCycle.IsSuccess ? allowedCycle.Value : null;
+    }
+
+    private static CircularDependencyOptions MergeCircularDependencyOptions(
+        CircularDependencyOptions? existing,
+        ImmutableArray<AllowedCycle> detectedCycles)
+    {
+        var existingCycles = existing?.AllowedCycles ?? ImmutableArray<AllowedCycle>.Empty;
+        var strictMode = existing?.StrictMode ?? false;
+        var mergedCycles = existingCycles.AddRange(detectedCycles);
+        var mergedResult = CircularDependencyOptions.Create(mergedCycles, strictMode);
+
+        if (mergedResult.IsSuccess)
+        {
+            return mergedResult.Value;
+        }
+
+        return existing ?? CircularDependencyOptions.Empty;
+    }
+
+    private sealed record RelationshipMetadata(
+        string SourceTable,
+        string DeleteRule,
+        bool IsNullable);
+
+    private enum RelationshipStrength
+    {
+        Other,
+        Weak,
+        Cascade
     }
 
     private sealed record TableKey(string Schema, string Table)
