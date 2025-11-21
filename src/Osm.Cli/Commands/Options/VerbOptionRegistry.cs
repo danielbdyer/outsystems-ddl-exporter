@@ -175,6 +175,7 @@ internal sealed class VerbOptionRegistry
             .AddOption(_staticDataOption)
             .AddOption(_fullExportBuildOutput)
             .AddOption(_renameTableOption)
+            .AddOption(_circularDepsConfigOption)
             .AddOption(_globalOptions.MaxDegreeOfParallelism)
             .AddOption(_fullExportBuildSqlMetadataOption)
             .AddOption(_dynamicInsertModeOption)
@@ -289,6 +290,8 @@ internal sealed class VerbOptionRegistry
             dynamicInsertMode = parseResult.GetValueForOption(_dynamicInsertModeOption);
         }
 
+        var circularDepsConfig = parseResult.GetValueForOption(_circularDepsConfigOption);
+
         var buildOverrides = new BuildSsdtOverrides(
             modelPath,
             parseResult.GetValueForOption(_profileOption),
@@ -298,6 +301,7 @@ internal sealed class VerbOptionRegistry
             parseResult.GetValueForOption(_renameTableOption),
             parseResult.GetValueForOption(_globalOptions.MaxDegreeOfParallelism),
             parseResult.GetValueForOption(_fullExportBuildSqlMetadataOption),
+            CircularDepsConfig: circularDepsConfig,
             DynamicInsertMode: dynamicInsertMode,
             StaticSeedParentMode: parseResult.GetValueForOption(_staticSeedParentModeOption),
             DeferJunctionTables: parseResult.HasOption(_deferJunctionTablesOption)
