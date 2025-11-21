@@ -220,6 +220,60 @@ public class FullExportCommandFactoryTests
     }
 
     [Fact]
+    public async Task Invoke_ForwardsCircularDepsConfigToBuildOverrides()
+    {
+        using var tempDir = new TempDirectory();
+
+        var loadHarnessRunner = new FakeLoadHarnessRunner();
+        var configuration = CliConfiguration.Empty;
+        var applicationResult = CreateFullExportApplicationResult(tempDir.Path, "Server=Test;");
+        var verbResult = new FullExportVerbResult(
+            new CliConfigurationContext(configuration, "config.json"),
+            applicationResult);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICliConfigurationService>(new StubConfigurationService());
+        services.AddSingleton<CliGlobalOptions>();
+        services.AddSingleton<ModuleFilterOptionBinder>();
+        services.AddSingleton<CacheOptionBinder>();
+        services.AddSingleton<SqlOptionBinder>();
+        services.AddSingleton<TighteningOptionBinder>();
+        services.AddSingleton<SchemaApplyOptionBinder>();
+        services.AddSingleton<UatUsersOptionBinder>();
+        services.AddVerbOptionRegistryForTesting();
+        services.AddSingleton<ILoadHarnessRunner>(loadHarnessRunner);
+        services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
+        var fakeVerb = new FakeFullExportVerb(verbResult);
+        services.AddSingleton<IVerbRegistry>(_ => new FakeVerbRegistry(fakeVerb));
+        services.AddSingleton<FullExportCommandFactory>();
+
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<FullExportCommandFactory>();
+        var command = factory.Create();
+        var root = new RootCommand { command };
+        var parser = new CommandLineBuilder(root).UseDefaults().Build();
+
+        var circularDepsPath = Path.Combine(tempDir.Path, "circular-deps.json");
+        var args = string.Join(
+            ' ',
+            "full-export",
+            "--model",
+            "model.json",
+            "--profile",
+            "profile.json",
+            "--build-out",
+            tempDir.Path,
+            "--circular-deps-config",
+            circularDepsPath);
+
+        var exitCode = await parser.InvokeAsync(args);
+
+        Assert.Equal(0, exitCode);
+        Assert.NotNull(fakeVerb.LastOptions);
+        Assert.Equal(circularDepsPath, fakeVerb.LastOptions!.Overrides.Build.CircularDepsConfig);
+    }
+
+    [Fact]
     public async Task Invoke_BindsUatUsersIdempotentFlag()
     {
         using var tempDir = new TempDirectory();
