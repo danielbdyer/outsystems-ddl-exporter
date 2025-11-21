@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
@@ -588,24 +589,38 @@ public sealed class EntityDependencySorterTests
             ImmutableArray.Create(AllowedCycle.Create(ImmutableArray.Create(parentOrdering, auditOrdering)).Value),
             strictMode: false).Value;
 
+        var diagnostics = new List<string>();
+
         var ordering = EntityDependencySorter.SortByForeignKeys(
             tables,
             model,
             namingOverrides: null,
             options: null,
-            circularDependencyOptions);
+            circularDependencyOptions,
+            diagnostics);
 
-        Assert.False(ordering.TopologicalOrderingApplied);
-        Assert.True(ordering.CycleDetected);
-        Assert.True(ordering.AlphabeticalFallbackApplied);
-        Assert.Equal(EntityDependencyOrderingMode.Alphabetical, ordering.Mode);
+        Assert.True(ordering.TopologicalOrderingApplied);
+        Assert.False(ordering.CycleDetected);
+        Assert.False(ordering.AlphabeticalFallbackApplied);
+        Assert.Equal(EntityDependencyOrderingMode.Topological, ordering.Mode);
         Assert.Equal(2, ordering.NodeCount);
-        Assert.Equal(2, ordering.EdgeCount);
+        Assert.Equal(1, ordering.EdgeCount);
         Assert.Equal(0, ordering.MissingEdgeCount);
         Assert.Collection(
             ordering.Tables,
-            first => Assert.Equal("Audit", first.Definition.LogicalName),
-            second => Assert.Equal("Parent", second.Definition.LogicalName));
+            first => Assert.Equal("Parent", first.Definition.LogicalName),
+            second => Assert.Equal("Audit", second.Definition.LogicalName));
+
+        Assert.Collection(
+            diagnostics,
+            first => Assert.Equal(
+                "Skipping automatic asymmetric cycle detection because manual cycle ordering overrides are configured.",
+                first),
+            second => Assert.Equal(
+                "Manual cycle ordering configured; attempting to resolve 1 strongly connected component(s).",
+                second),
+            third => Assert.Equal("Manual ordering identified 1 backward edge(s) to remove.", third),
+            fourth => Assert.Equal("Manual ordering successfully resolved the detected cycle(s).", fourth));
     }
 
     [Fact]

@@ -20,15 +20,16 @@ public enum EntityDependencyOrderingMode
     JunctionDeferred
 }
 
-public static class EntityDependencySorter
-{
-    public static EntityDependencyOrderingResult SortByForeignKeys(
-        IReadOnlyList<StaticEntityTableData> tables,
-        OsmModel? model,
-        NamingOverrideOptions? namingOverrides = null,
-        EntityDependencySortOptions? options = null,
-        CircularDependencyOptions? circularDependencyOptions = null)
+    public static class EntityDependencySorter
     {
+        public static EntityDependencyOrderingResult SortByForeignKeys(
+            IReadOnlyList<StaticEntityTableData> tables,
+            OsmModel? model,
+            NamingOverrideOptions? namingOverrides = null,
+            EntityDependencySortOptions? options = null,
+            CircularDependencyOptions? circularDependencyOptions = null,
+            ICollection<string>? diagnostics = null)
+        {
         if (tables is null)
         {
             throw new ArgumentNullException(nameof(tables));
@@ -132,8 +133,22 @@ public static class EntityDependencySorter
             circularDependencyOptions);
         var cycleDetected = ordered.Length != nodes.Count;
         var fallbackApplied = false;
+        var stronglyConnectedComponents = ImmutableArray<ImmutableHashSet<TableKey>>.Empty;
 
-        if (cycleDetected && ShouldAttemptAutomaticCycleResolution(circularDependencyOptions))
+        var autoResolutionAllowed = ShouldAttemptAutomaticCycleResolution(circularDependencyOptions);
+
+        if (cycleDetected && !autoResolutionAllowed)
+        {
+            diagnostics?.Add(
+                "Skipping automatic asymmetric cycle detection because manual cycle ordering overrides are configured.");
+        }
+
+        if (cycleDetected)
+        {
+            stronglyConnectedComponents = FindStronglyConnectedComponents(nodes.Keys, edges, comparer);
+        }
+
+        if (cycleDetected && autoResolutionAllowed)
         {
             var remainingKeys = nodes.Keys
                 .Where(key => ordered.All(table => !TableKey.Equals(table.Definition, key)))
@@ -182,6 +197,61 @@ public static class EntityDependencySorter
                     cycleDetected = false;
                     graphStats = graphStats with { EdgeCount = Math.Max(0, graphStats.EdgeCount - removedEdges) };
                     circularDependencyOptions = mergedOptions;
+                }
+            }
+        }
+
+        if (cycleDetected &&
+            !stronglyConnectedComponents.IsDefaultOrEmpty &&
+            stronglyConnectedComponents.Length > 0 &&
+            circularDependencyOptions is { AllowedCycles.IsDefaultOrEmpty: false, AllowedCycles.Length: > 0 })
+        {
+            diagnostics?.Add(
+                $"Manual cycle ordering configured; attempting to resolve {stronglyConnectedComponents.Length} strongly connected component(s).");
+
+            var edgesToBreak = IdentifyEdgesToBreakFromManualOrdering(
+                stronglyConnectedComponents.Select(component => component.ToHashSet(comparer)).ToList(),
+                edges,
+                circularDependencyOptions);
+
+            diagnostics?.Add(edgesToBreak.Count > 0
+                ? $"Manual ordering identified {edgesToBreak.Count} backward edge(s) to remove."
+                : "Manual ordering did not identify any backward edges to remove.");
+
+            if (edgesToBreak.Count > 0)
+            {
+                var adjustedEdges = CloneEdges(edges, comparer);
+                var adjustedIndegree = new Dictionary<TableKey, int>(indegreeSnapshot, comparer);
+                var removedEdges = 0;
+
+                foreach (var (target, dependent) in edgesToBreak)
+                {
+                    if (!adjustedEdges.TryGetValue(target, out var dependents))
+                    {
+                        continue;
+                    }
+
+                    if (dependents.Remove(dependent))
+                    {
+                        adjustedIndegree[dependent] = Math.Max(0, adjustedIndegree[dependent] - 1);
+                        removedEdges++;
+                    }
+                }
+
+                var retried = TopologicalSort(
+                    nodes,
+                    adjustedEdges,
+                    adjustedIndegree,
+                    comparer,
+                    classification,
+                    circularDependencyOptions);
+
+                if (retried.Length == nodes.Count)
+                {
+                    ordered = retried;
+                    cycleDetected = false;
+                    graphStats = graphStats with { EdgeCount = Math.Max(0, graphStats.EdgeCount - removedEdges) };
+                    diagnostics?.Add("Manual ordering successfully resolved the detected cycle(s).");
                 }
             }
         }
@@ -495,6 +565,52 @@ public static class EntityDependencySorter
         }
 
         return clone;
+    }
+
+    private static List<(TableKey Target, TableKey Dependent)> IdentifyEdgesToBreakFromManualOrdering(
+        List<HashSet<TableKey>> stronglyConnectedComponents,
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+        CircularDependencyOptions circularDependencyOptions)
+    {
+        var edgesToBreak = new List<(TableKey Target, TableKey Dependent)>();
+
+        foreach (var component in stronglyConnectedComponents)
+        {
+            foreach (var node in component)
+            {
+                var sourcePosition = circularDependencyOptions.GetManualPosition(node.Table);
+                if (sourcePosition is null)
+                {
+                    continue;
+                }
+
+                if (!edges.TryGetValue(node, out var dependents))
+                {
+                    continue;
+                }
+
+                foreach (var dependent in dependents)
+                {
+                    if (!component.Contains(dependent))
+                    {
+                        continue;
+                    }
+
+                    var targetPosition = circularDependencyOptions.GetManualPosition(dependent.Table);
+                    if (targetPosition is null)
+                    {
+                        continue;
+                    }
+
+                    if (sourcePosition.Value > targetPosition.Value)
+                    {
+                        edgesToBreak.Add((node, dependent));
+                    }
+                }
+            }
+        }
+
+        return edgesToBreak;
     }
 
     private static (ImmutableArray<AllowedCycle> AllowedCycles, List<(TableKey Target, TableKey Dependent)> EdgesToRemove)
