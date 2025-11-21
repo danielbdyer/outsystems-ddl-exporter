@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
@@ -64,6 +65,18 @@ public sealed class TopologicalOrderingValidator
                 e => namingOverrides.GetEffectiveTableName(e.Schema.Value, e.PhysicalName.Value, e.LogicalName.Value, e.Module.Value),
                 e => e,
                 StringComparer.OrdinalIgnoreCase);
+
+        // Build a secondary lookup keyed by physical table name so cycle diagnostics can
+        // resolve entities when violations store physical identifiers instead of effective names.
+        var physicalEntityLookup = model.Modules
+            .SelectMany(m => m.Entities)
+            .SelectMany(e => new[]
+            {
+                new { Key = e.PhysicalName.Value, Entity = e },
+                new { Key = $"{e.Schema.Value}.{e.PhysicalName.Value}", Entity = e }
+            })
+            .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Entity, StringComparer.OrdinalIgnoreCase);
 
         // Build position lookup: EffectiveName -> Index
         // Use EffectiveName which has naming overrides already applied by the sorter
@@ -155,13 +168,17 @@ public sealed class TopologicalOrderingValidator
             }
         }
 
-        var cycleDetected = violations.Any(v => v.ViolationType == "ChildBeforeParent");
-
         // Extract cycle diagnostics if cycles were detected
         circularDependencyOptions ??= CircularDependencyOptions.Empty;
-        var cycles = cycleDetected
-            ? ExtractCycleDiagnostics(violations, entityLookup, orderedTables, circularDependencyOptions)
-            : ImmutableArray<CycleDiagnostic>.Empty;
+        var cycles = ExtractCycleDiagnostics(
+            violations,
+            entityLookup,
+            physicalEntityLookup,
+            orderedTables,
+            circularDependencyOptions,
+            out var resolvedCycle);
+
+        var cycleDetected = resolvedCycle;
 
         return new TopologicalValidationResult(
             IsValid: violations.Count == 0 || violations.All(v => v.ViolationType == "MissingParent"),
@@ -200,15 +217,21 @@ public sealed class TopologicalOrderingValidator
     private static ImmutableArray<CycleDiagnostic> ExtractCycleDiagnostics(
         ImmutableArray<OrderingViolation>.Builder violations,
         IReadOnlyDictionary<string, EntityModel> entityLookup,
+        IReadOnlyDictionary<string, EntityModel> physicalEntityLookup,
         ImmutableArray<StaticEntityTableData> orderedTables,
-        CircularDependencyOptions circularDependencyOptions)
+        CircularDependencyOptions circularDependencyOptions,
+        out bool resolvedCycle)
     {
+        const string unhydratedColumn = "UnhydratedColumn";
+        const string lookupFailed = "LookupFailed";
+
         // For now, return a simple diagnostic showing which tables have violations
         // This is a starting point - we'll enhance to show actual cycle paths
         var cycleViolations = violations.Where(v => v.ViolationType == "ChildBeforeParent").ToArray();
 
         if (cycleViolations.Length == 0)
         {
+            resolvedCycle = false;
             return ImmutableArray<CycleDiagnostic>.Empty;
         }
 
@@ -226,21 +249,21 @@ public sealed class TopologicalOrderingValidator
             .Select(v =>
             {
                 // Extract FK metadata from entity model
-                if (!entityLookup.TryGetValue(v.ChildTable, out var entity))
+                if (!TryResolveEntity(v.ChildTable, entityLookup, physicalEntityLookup, out var entity))
                 {
                     return new ForeignKeyInCycle(
                         ConstraintName: v.ForeignKeyName,
                         SourceTable: v.ChildTable,
                         TargetTable: v.ParentTable,
-                        SourceColumn: "UnhydratedColumn",
-                        TargetColumn: "UnhydratedColumn",
+                        SourceColumn: lookupFailed,
+                        TargetColumn: lookupFailed,
                         IsNullable: false,
-                        DeleteRule: "UnhydratedColumn");
+                        DeleteRule: lookupFailed);
                 }
 
                 // Find the relationship that matches this FK
                 var relationship = entity.Relationships.FirstOrDefault(r =>
-                    r.ActualConstraints.Any(c => c.Name == v.ForeignKeyName && HasValidConstraint(c)));
+                    r.ActualConstraints.Any(c => NamesMatch(c.Name, v.ForeignKeyName) && HasValidConstraint(c)));
 
                 if (relationship == null)
                 {
@@ -248,27 +271,47 @@ public sealed class TopologicalOrderingValidator
                         ConstraintName: v.ForeignKeyName,
                         SourceTable: v.ChildTable,
                         TargetTable: v.ParentTable,
-                        SourceColumn: "UnhydratedColumn",
-                        TargetColumn: "UnhydratedColumn",
+                        SourceColumn: unhydratedColumn,
+                        TargetColumn: unhydratedColumn,
                         IsNullable: false,
-                        DeleteRule: "UnhydratedColumn");
+                        DeleteRule: unhydratedColumn);
                 }
 
                 var constraint = relationship.ActualConstraints.First(c =>
-                    c.Name == v.ForeignKeyName && HasValidConstraint(c));
-                var sourceAttr = entity.Attributes.FirstOrDefault(a =>
-                    a.LogicalName.Value == relationship.ViaAttribute.Value);
+                    NamesMatch(c.Name, v.ForeignKeyName) && HasValidConstraint(c));
+                var firstColumn = constraint.Columns.FirstOrDefault(c =>
+                    !string.IsNullOrWhiteSpace(c.OwnerColumn) &&
+                    !string.IsNullOrWhiteSpace(c.ReferencedColumn));
+
+                var sourceColumnName = firstColumn?.OwnerColumn?.Trim();
+                var targetColumnName = firstColumn?.ReferencedColumn?.Trim();
+                var sourceAttr = string.IsNullOrWhiteSpace(sourceColumnName)
+                    ? null
+                    : entity.Attributes.FirstOrDefault(a =>
+                        string.Equals(a.ColumnName.Value, sourceColumnName, StringComparison.OrdinalIgnoreCase));
 
                 return new ForeignKeyInCycle(
                     ConstraintName: v.ForeignKeyName,
                     SourceTable: v.ChildTable,
                     TargetTable: v.ParentTable,
-                    SourceColumn: sourceAttr?.ColumnName.Value ?? "UnhydratedColumn",
-                    TargetColumn: constraint.Columns.FirstOrDefault()?.ReferencedColumn ?? "UnhydratedColumn",
+                    SourceColumn: sourceColumnName ?? sourceAttr?.ColumnName.Value ?? unhydratedColumn,
+                    TargetColumn: targetColumnName ?? unhydratedColumn,
                     IsNullable: sourceAttr?.IsMandatory == false,
-                    DeleteRule: constraint.OnDeleteAction);
+                    DeleteRule: constraint.OnDeleteAction ?? string.Empty);
             })
             .ToImmutableArray();
+
+        var hasResolvedConstraint = fkInfo.Any(fk =>
+            !string.Equals(fk.SourceColumn, lookupFailed, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(fk.TargetColumn, lookupFailed, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(fk.SourceColumn, unhydratedColumn, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(fk.TargetColumn, unhydratedColumn, StringComparison.OrdinalIgnoreCase));
+
+        if (!hasResolvedConstraint)
+        {
+            resolvedCycle = false;
+            return ImmutableArray<CycleDiagnostic>.Empty;
+        }
 
         // Build cycle path (simplified - just show tables involved)
         var cyclePath = string.Join(" → ", tablesInCycle) + " → " + tablesInCycle[0];
@@ -289,6 +332,8 @@ public sealed class TopologicalOrderingValidator
             }
         }
 
+        resolvedCycle = true;
+
         return ImmutableArray.Create(new CycleDiagnostic(
             TablesInCycle: tablesInCycle,
             CyclePath: cyclePath,
@@ -296,6 +341,31 @@ public sealed class TopologicalOrderingValidator
             IsAllowed: isAllowed,
             AllowanceReason: allowanceReason));
     }
+
+    private static bool TryResolveEntity(
+        string key,
+        IReadOnlyDictionary<string, EntityModel> entityLookup,
+        IReadOnlyDictionary<string, EntityModel> physicalEntityLookup,
+        [NotNullWhen(true)] out EntityModel? entity)
+    {
+        var trimmed = key?.Trim() ?? string.Empty;
+
+        if (entityLookup.TryGetValue(trimmed, out entity))
+        {
+            return true;
+        }
+
+        if (physicalEntityLookup.TryGetValue(trimmed, out entity))
+        {
+            return true;
+        }
+
+        entity = null!;
+        return false;
+    }
+
+    private static bool NamesMatch(string? left, string? right) =>
+        string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
