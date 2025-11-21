@@ -28,10 +28,14 @@ public sealed record FullExportCoordinatorResult<TExtraction, TProfile, TBuild>(
 public sealed class FullExportCoordinator
 {
     private readonly IModelUserSchemaGraphFactory _schemaGraphFactory;
+    private readonly ITaskProgressAccessor _progressAccessor;
 
-    public FullExportCoordinator(IModelUserSchemaGraphFactory schemaGraphFactory)
+    public FullExportCoordinator(
+        IModelUserSchemaGraphFactory schemaGraphFactory,
+        ITaskProgressAccessor? progressAccessor = null)
     {
         _schemaGraphFactory = schemaGraphFactory ?? throw new ArgumentNullException(nameof(schemaGraphFactory));
+        _progressAccessor = progressAccessor ?? new TaskProgressAccessor();
     }
 
     public async Task<Result<FullExportCoordinatorResult<TExtraction, TProfile, TBuild>>> ExecuteAsync<TExtraction, TProfile, TBuild>(
@@ -68,35 +72,46 @@ public sealed class FullExportCoordinator
             throw new ArgumentException("Extraction result selector must be provided.", nameof(request));
         }
 
+        var progress = _progressAccessor.Progress;
+        using var task = progress?.Start("Full Export: Initializing", 5);
+
+        task?.Description("Full Export: Extracting Model");
         var extractionResult = await request.ExtractAsync(cancellationToken).ConfigureAwait(false);
         if (extractionResult.IsFailure)
         {
             return Result<FullExportCoordinatorResult<TExtraction, TProfile, TBuild>>.Failure(extractionResult.Errors);
         }
+        task?.Increment(1);
 
         var extraction = extractionResult.Value;
 
+        task?.Description("Full Export: Profiling Data");
         var profileResult = await request.ProfileAsync(extraction, cancellationToken).ConfigureAwait(false);
         if (profileResult.IsFailure)
         {
             return Result<FullExportCoordinatorResult<TExtraction, TProfile, TBuild>>.Failure(profileResult.Errors);
         }
+        task?.Increment(1);
 
         var profile = profileResult.Value;
 
+        task?.Description("Full Export: Building SSDT Project");
         var buildResult = await request.BuildAsync(extraction, profile, cancellationToken).ConfigureAwait(false);
         if (buildResult.IsFailure)
         {
             return Result<FullExportCoordinatorResult<TExtraction, TProfile, TBuild>>.Failure(buildResult.Errors);
         }
+        task?.Increment(1);
 
         var build = buildResult.Value;
 
+        task?.Description("Full Export: Applying Schema");
         var applyResult = await request.ApplyAsync(build, cancellationToken).ConfigureAwait(false);
         if (applyResult.IsFailure)
         {
             return Result<FullExportCoordinatorResult<TExtraction, TProfile, TBuild>>.Failure(applyResult.Errors);
         }
+        task?.Increment(1);
 
         var apply = applyResult.Value;
         var uatUsersOutcome = UatUsersApplicationResult.Disabled;
@@ -104,6 +119,7 @@ public sealed class FullExportCoordinator
 
         if (request.RunUatUsersAsync is { } uatUsersAsync)
         {
+            task?.Description("Full Export: Processing UAT Users");
             var extractionModel = request.ExtractionResultSelector(extraction)
                 ?? throw new InvalidOperationException("Extraction result selector returned null.");
 
@@ -124,6 +140,7 @@ public sealed class FullExportCoordinator
 
             uatUsersOutcome = uatUsersResult.Value;
         }
+        task?.Increment(1);
 
         return new FullExportCoordinatorResult<TExtraction, TProfile, TBuild>(
             extraction,

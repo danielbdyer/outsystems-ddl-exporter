@@ -16,12 +16,17 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
 {
     private readonly IModelJsonDeserializer _deserializer;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly ITaskProgressAccessor _progressAccessor;
     private readonly ILogger<ExtractModelPipeline> _logger;
 
-    public ExtractModelPipeline(IModelJsonDeserializer deserializer, ILoggerFactory loggerFactory)
+    public ExtractModelPipeline(
+        IModelJsonDeserializer deserializer,
+        ILoggerFactory loggerFactory,
+        ITaskProgressAccessor? progressAccessor = null)
     {
         _deserializer = deserializer ?? throw new ArgumentNullException(nameof(deserializer));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _progressAccessor = progressAccessor ?? new TaskProgressAccessor();
         _logger = _loggerFactory.CreateLogger<ExtractModelPipeline>();
     }
 
@@ -150,7 +155,8 @@ public sealed class ExtractModelPipeline : ICommandHandler<ExtractModelPipelineR
             _loggerFactory.CreateLogger<SqlClientOutsystemsMetadataReader>(),
             commandExecutor: null,
             contractOverrides: sqlOptions.MetadataContract,
-            loggerFactory: _loggerFactory);
+            loggerFactory: _loggerFactory,
+            progressAccessor: _progressAccessor);
 
         return Result<IOutsystemsMetadataReader>.Success(reader);
     }

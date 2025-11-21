@@ -14,6 +14,7 @@ using Osm.Cli.Commands;
 using Osm.Cli.Commands.Binders;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Cli;
 using Osm.LoadHarness;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
@@ -42,6 +43,8 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<TighteningOptionBinder>();
                     services.AddSingleton<SchemaApplyOptionBinder>();
                     services.AddSingleton<UatUsersOptionBinder>();
+                    services.AddSingleton<ITaskProgressAccessor, TaskProgressAccessor>();
+                    services.AddSingleton<IProgressRunner>(new NoOpProgressRunner());
                     services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<BuildSsdtCommandFactory>();
@@ -74,6 +77,8 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<TighteningOptionBinder>();
                     services.AddSingleton<SchemaApplyOptionBinder>();
                     services.AddSingleton<UatUsersOptionBinder>();
+                    services.AddSingleton<ITaskProgressAccessor, TaskProgressAccessor>();
+                    services.AddSingleton<IProgressRunner>(new NoOpProgressRunner());
                     services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<DmmCompareCommandFactory>();
@@ -107,6 +112,8 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<TighteningOptionBinder>();
                     services.AddSingleton<SchemaApplyOptionBinder>();
                     services.AddSingleton<UatUsersOptionBinder>();
+                    services.AddSingleton<ITaskProgressAccessor, TaskProgressAccessor>();
+                    services.AddSingleton<IProgressRunner>(new NoOpProgressRunner());
                     services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<IVerbRegistry>(_ => new SingleVerbRegistry(verb));
                     services.AddSingleton<ExtractModelCommandFactory>();
@@ -186,6 +193,8 @@ public class PipelineCommandFactorySharedTests
                     services.AddSingleton<TighteningOptionBinder>();
                     services.AddSingleton<SchemaApplyOptionBinder>();
                     services.AddSingleton<UatUsersOptionBinder>();
+                    services.AddSingleton<ITaskProgressAccessor, TaskProgressAccessor>();
+                    services.AddSingleton<IProgressRunner>(new NoOpProgressRunner());
                     services.AddVerbOptionRegistryForTesting();
                     services.AddSingleton<ILoadHarnessRunner, NullLoadHarnessRunner>();
                     services.AddSingleton<LoadHarnessReportWriter>(_ => new LoadHarnessReportWriter(new FileSystem()));
@@ -388,6 +397,11 @@ public class PipelineCommandFactorySharedTests
         {
             return Task.FromResult(LoadHarnessReport.Empty());
         }
+    }
+
+    private sealed class NoOpProgressRunner : IProgressRunner
+    {
+        public Task RunAsync(IServiceProvider services, Func<Task> action) => action();
     }
 
     private sealed class TestPipelineRun : IPipelineRun

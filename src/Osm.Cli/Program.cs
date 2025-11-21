@@ -9,12 +9,15 @@ using Osm.Cli;
 using Osm.Cli.Commands;
 using Osm.Cli.Commands.Binders;
 using Osm.Cli.Commands.Options;
+using Osm.Domain.Abstractions;
 using Osm.LoadHarness;
 using Osm.Pipeline.Runtime;
 using Osm.Pipeline.Runtime.Verbs;
 
 var hostBuilder = Host.CreateApplicationBuilder(args);
 hostBuilder.Services.AddLogging(static builder => builder.AddSimpleConsole());
+hostBuilder.Services.AddSingleton<ITaskProgressAccessor, TaskProgressAccessor>();
+hostBuilder.Services.AddSingleton<IProgressRunner, SpectreProgressRunner>();
 hostBuilder.Services.AddPipeline();
 hostBuilder.Services.AddSingleton<CliGlobalOptions>();
 hostBuilder.Services.AddSingleton<ModuleFilterOptionBinder>();

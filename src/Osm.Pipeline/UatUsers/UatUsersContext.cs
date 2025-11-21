@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using Osm.Domain.Abstractions;
 using Osm.Pipeline.Sql;
 
 namespace Osm.Pipeline.UatUsers;
@@ -46,7 +47,7 @@ public sealed class UatUsersContext
         IEnumerable<UserIdentifier>? fallbackTargets = null,
         bool idempotentEmission = false,
         int? concurrency = null,
-        IProgress<(int Completed, int Total)>? progress = null)
+        ITaskProgressAccessor? progressAccessor = null)
     {
         SchemaGraph = schemaGraph ?? throw new ArgumentNullException(nameof(schemaGraph));
         Artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
@@ -111,7 +112,7 @@ public sealed class UatUsersContext
                 .ToImmutableArray();
         IdempotentEmission = idempotentEmission;
         Concurrency = concurrency ?? 4;
-        Progress = progress;
+        ProgressAccessor = progressAccessor;
     }
 
     public IUserSchemaGraph SchemaGraph { get; }
@@ -296,6 +297,6 @@ public sealed class UatUsersContext
 
     public int Concurrency { get; }
 
-    public IProgress<(int Completed, int Total)>? Progress { get; }
+    public ITaskProgressAccessor? ProgressAccessor { get; }
 
 }

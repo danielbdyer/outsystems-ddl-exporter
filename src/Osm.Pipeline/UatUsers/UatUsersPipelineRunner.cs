@@ -25,11 +25,16 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
 {
     private readonly ILogger<UatUsersPipelineRunner> _logger;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly ITaskProgressAccessor _progressAccessor;
 
-    public UatUsersPipelineRunner(ILogger<UatUsersPipelineRunner> logger, ILoggerFactory loggerFactory)
+    public UatUsersPipelineRunner(
+        ILogger<UatUsersPipelineRunner> logger,
+        ILoggerFactory loggerFactory,
+        ITaskProgressAccessor? progressAccessor = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _progressAccessor = progressAccessor ?? new TaskProgressAccessor();
     }
 
     public async Task<Result<UatUsersApplicationResult>> RunAsync(
@@ -137,7 +142,8 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 fallbackAssignment: fallbackAssignment,
                 fallbackTargets: fallbackTargets,
                 idempotentEmission: request.Overrides.IdempotentEmission,
-                concurrency: request.Overrides.Concurrency);
+                concurrency: request.Overrides.Concurrency,
+                progressAccessor: _progressAccessor);
 
             var pipeline = new UatUsersPipeline(_loggerFactory);
             _logger.LogInformation(

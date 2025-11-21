@@ -4,6 +4,8 @@ using System.CommandLine.Invocation;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Osm.Pipeline.Runtime;
+using Spectre.Console;
+using Osm.Domain.Abstractions;
 
 namespace Osm.Cli.Commands;
 
@@ -60,27 +62,32 @@ internal abstract class PipelineCommandFactory<TVerbOptions, TPayload> : IComman
 
         using var scope = _scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
-        var registry = services.GetRequiredService<IVerbRegistry>();
-        var verb = registry.Get(VerbName);
+        var runner = services.GetRequiredService<IProgressRunner>();
 
-        var options = BindOptions(context);
-        var run = await verb.RunAsync(options!, context.GetCancellationToken()).ConfigureAwait(false);
-
-        if (!run.IsSuccess)
+        await runner.RunAsync(services, async () =>
         {
-            await OnRunFailedAsync(context, run).ConfigureAwait(false);
-            context.ExitCode = GetFailureExitCode(run);
-            return;
-        }
+            var registry = services.GetRequiredService<IVerbRegistry>();
+            var verb = registry.Get(VerbName);
 
-        if (run.Payload is not TPayload payload)
-        {
-            CommandConsole.WriteErrorLine(context.Console, UnexpectedPayloadMessage);
-            context.ExitCode = 1;
-            return;
-        }
+            var options = BindOptions(context);
+            var run = await verb.RunAsync(options!, context.GetCancellationToken()).ConfigureAwait(false);
 
-        var exitCode = await OnRunSucceededAsync(context, payload).ConfigureAwait(false);
-        context.ExitCode = exitCode;
+            if (!run.IsSuccess)
+            {
+                await OnRunFailedAsync(context, run).ConfigureAwait(false);
+                context.ExitCode = GetFailureExitCode(run);
+                return;
+            }
+
+            if (run.Payload is not TPayload payload)
+            {
+                CommandConsole.WriteErrorLine(context.Console, UnexpectedPayloadMessage);
+                context.ExitCode = 1;
+                return;
+            }
+
+            var exitCode = await OnRunSucceededAsync(context, payload).ConfigureAwait(false);
+            context.ExitCode = exitCode;
+        });
     }
 }

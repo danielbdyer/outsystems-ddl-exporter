@@ -94,12 +94,16 @@ public sealed class AnalyzeForeignKeyValuesStep : IPipelineStep<UatUsersContext>
 
             var completedCount = 0;
             IProgress<int>? progress = null;
-            if (context.Progress is not null)
+            var taskProgress = context.ProgressAccessor?.Progress;
+            using var task = taskProgress?.Start("Analyzing FK Values", context.UserFkCatalog.Count);
+
+            if (task is not null)
             {
                 progress = new Progress<int>(increment =>
                 {
                     var completed = Interlocked.Add(ref completedCount, increment);
-                    context.Progress.Report((completed, context.UserFkCatalog.Count));
+                    task.Increment(increment);
+                    task.Description($"Analyzing FK Values ({completed}/{context.UserFkCatalog.Count})");
                 });
             }
 
