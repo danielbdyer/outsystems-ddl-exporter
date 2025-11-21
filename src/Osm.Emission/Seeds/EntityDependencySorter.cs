@@ -653,7 +653,7 @@ public enum EntityDependencyOrderingMode
                 if (allowedCycle is not null)
                 {
                     detectedCycles.Add(allowedCycle);
-                    edgesToRemove.Add((childKey, parentKey));
+                    edgesToRemove.Add((parentKey, childKey));
                 }
             }
         }
