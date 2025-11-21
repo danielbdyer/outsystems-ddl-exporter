@@ -366,6 +366,249 @@ public sealed class EntityDependencySorterTests
     }
 
     [Fact]
+    public void SortByForeignKeys_AutoDetectsAsymmetricAuditCycle()
+    {
+        var parentDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Parent",
+            "dbo",
+            "OSUSR_SAMPLE_PARENT",
+            "OSUSR_SAMPLE_PARENT",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("LatestAuditId", "LATESTAUDITID", "LatestAuditId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: true)));
+
+        var auditDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Audit",
+            "dbo",
+            "OSUSR_SAMPLE_AUDIT",
+            "OSUSR_SAMPLE_AUDIT",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
+
+        var tables = ImmutableArray.Create(
+            new StaticEntityTableData(auditDefinition, ImmutableArray<StaticEntityRow>.Empty),
+            new StaticEntityTableData(parentDefinition, ImmutableArray<StaticEntityRow>.Empty));
+
+        var parentRelationship = RelationshipModel.Create(
+            new AttributeName("LatestAuditId"),
+            new EntityName("Audit"),
+            new TableName("OSUSR_SAMPLE_AUDIT"),
+            deleteRuleCode: "NO_ACTION",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_PARENT_AUDIT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_AUDIT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("LATESTAUDITID", "LatestAuditId", "ID", "Id", 0) })
+            }).Value;
+
+        var auditRelationship = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_AUDIT_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_PARENT",
+                    onDeleteAction: "CASCADE",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("PARENTID", "ParentId", "ID", "Id", 0) })
+            }).Value;
+
+        var parentEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true, onDiskNullable: false),
+                CreateAttribute("LatestAuditId", "LATESTAUDITID", onDiskNullable: true)
+            },
+            relationships: new[] { parentRelationship }).Value;
+
+        var auditEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Audit"),
+            new TableName("OSUSR_SAMPLE_AUDIT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true, onDiskNullable: false),
+                CreateAttribute("ParentId", "PARENTID", onDiskNullable: false)
+            },
+            relationships: new[] { auditRelationship }).Value;
+
+        var module = ModuleModel.Create(
+            new ModuleName("Sample"),
+            isSystemModule: false,
+            isActive: true,
+            entities: new[] { parentEntity, auditEntity }).Value;
+
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var ordering = EntityDependencySorter.SortByForeignKeys(tables, model);
+
+        Assert.True(ordering.TopologicalOrderingApplied);
+        Assert.False(ordering.CycleDetected);
+        Assert.False(ordering.AlphabeticalFallbackApplied);
+        Assert.Equal(EntityDependencyOrderingMode.Topological, ordering.Mode);
+        Assert.Equal(2, ordering.NodeCount);
+        Assert.Equal(1, ordering.EdgeCount);
+        Assert.Equal(0, ordering.MissingEdgeCount);
+        Assert.Collection(
+            ordering.Tables,
+            first => Assert.Equal("Parent", first.Definition.LogicalName),
+            second => Assert.Equal("Audit", second.Definition.LogicalName));
+    }
+
+    [Fact]
+    public void SortByForeignKeys_SkipsAutoDetectionWhenManualCyclesExist()
+    {
+        var parentDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Parent",
+            "dbo",
+            "OSUSR_SAMPLE_PARENT",
+            "OSUSR_SAMPLE_PARENT",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("LatestAuditId", "LATESTAUDITID", "LatestAuditId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: true)));
+
+        var auditDefinition = new StaticEntitySeedTableDefinition(
+            "Sample",
+            "Audit",
+            "dbo",
+            "OSUSR_SAMPLE_AUDIT",
+            "OSUSR_SAMPLE_AUDIT",
+            ImmutableArray.Create(
+                new StaticEntitySeedColumn("Id", "ID", "Id", "int", null, null, null, IsPrimaryKey: true, IsIdentity: false, IsNullable: false),
+                new StaticEntitySeedColumn("ParentId", "PARENTID", "ParentId", "int", null, null, null, IsPrimaryKey: false, IsIdentity: false, IsNullable: false)));
+
+        var tables = ImmutableArray.Create(
+            new StaticEntityTableData(auditDefinition, ImmutableArray<StaticEntityRow>.Empty),
+            new StaticEntityTableData(parentDefinition, ImmutableArray<StaticEntityRow>.Empty));
+
+        var parentRelationship = RelationshipModel.Create(
+            new AttributeName("LatestAuditId"),
+            new EntityName("Audit"),
+            new TableName("OSUSR_SAMPLE_AUDIT"),
+            deleteRuleCode: "NO_ACTION",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_PARENT_AUDIT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_AUDIT",
+                    onDeleteAction: "NO_ACTION",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("LATESTAUDITID", "LatestAuditId", "ID", "Id", 0) })
+            }).Value;
+
+        var auditRelationship = RelationshipModel.Create(
+            new AttributeName("ParentId"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            deleteRuleCode: "Cascade",
+            hasDatabaseConstraint: true,
+            actualConstraints: new[]
+            {
+                RelationshipActualConstraint.Create(
+                    "FK_AUDIT_PARENT",
+                    referencedSchema: "dbo",
+                    referencedTable: "OSUSR_SAMPLE_PARENT",
+                    onDeleteAction: "CASCADE",
+                    onUpdateAction: "NO_ACTION",
+                    new[] { RelationshipActualConstraintColumn.Create("PARENTID", "ParentId", "ID", "Id", 0) })
+            }).Value;
+
+        var parentEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Parent"),
+            new TableName("OSUSR_SAMPLE_PARENT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true, onDiskNullable: false),
+                CreateAttribute("LatestAuditId", "LATESTAUDITID", onDiskNullable: true)
+            },
+            relationships: new[] { parentRelationship }).Value;
+
+        var auditEntity = EntityModel.Create(
+            new ModuleName("Sample"),
+            new EntityName("Audit"),
+            new TableName("OSUSR_SAMPLE_AUDIT"),
+            new SchemaName("dbo"),
+            catalog: null,
+            isStatic: true,
+            isExternal: false,
+            isActive: true,
+            attributes: new[]
+            {
+                CreateAttribute("Id", "ID", isIdentifier: true, onDiskNullable: false),
+                CreateAttribute("ParentId", "PARENTID", onDiskNullable: false)
+            },
+            relationships: new[] { auditRelationship }).Value;
+
+        var module = ModuleModel.Create(
+            new ModuleName("Sample"),
+            isSystemModule: false,
+            isActive: true,
+            entities: new[] { parentEntity, auditEntity }).Value;
+
+        var model = OsmModel.Create(DateTime.UtcNow, new[] { module }).Value;
+
+        var parentOrdering = TableOrdering.Create(parentDefinition.PhysicalName!, 100).Value;
+        var auditOrdering = TableOrdering.Create(auditDefinition.PhysicalName!, 200).Value;
+        var circularDependencyOptions = CircularDependencyOptions.Create(
+            ImmutableArray.Create(AllowedCycle.Create(ImmutableArray.Create(parentOrdering, auditOrdering)).Value),
+            strictMode: false).Value;
+
+        var ordering = EntityDependencySorter.SortByForeignKeys(
+            tables,
+            model,
+            namingOverrides: null,
+            options: null,
+            circularDependencyOptions);
+
+        Assert.False(ordering.TopologicalOrderingApplied);
+        Assert.True(ordering.CycleDetected);
+        Assert.True(ordering.AlphabeticalFallbackApplied);
+        Assert.Equal(EntityDependencyOrderingMode.Alphabetical, ordering.Mode);
+        Assert.Equal(2, ordering.NodeCount);
+        Assert.Equal(2, ordering.EdgeCount);
+        Assert.Equal(0, ordering.MissingEdgeCount);
+        Assert.Collection(
+            ordering.Tables,
+            first => Assert.Equal("Audit", first.Definition.LogicalName),
+            second => Assert.Equal("Parent", second.Definition.LogicalName));
+    }
+
+    [Fact]
     public void SortByForeignKeys_ResolvesSanitizedEffectiveNames()
     {
         var parentDefinition = new StaticEntitySeedTableDefinition(
@@ -584,8 +827,22 @@ public sealed class EntityDependencySorterTests
             third => Assert.Equal("Bridge", third.Definition.LogicalName));
     }
 
-    private static AttributeModel CreateAttribute(string logicalName, string columnName, bool isIdentifier = false)
+    private static AttributeModel CreateAttribute(string logicalName, string columnName, bool isIdentifier = false, bool? onDiskNullable = null)
     {
+        var onDisk = onDiskNullable is null
+            ? AttributeOnDiskMetadata.Empty
+            : AttributeOnDiskMetadata.Create(
+                onDiskNullable,
+                sqlType: null,
+                maxLength: null,
+                precision: null,
+                scale: null,
+                collation: null,
+                isIdentity: null,
+                isComputed: null,
+                computedDefinition: null,
+                defaultDefinition: null);
+
         return AttributeModel.Create(
             new AttributeName(logicalName),
             new ColumnName(columnName),
@@ -596,6 +853,6 @@ public sealed class EntityDependencySorterTests
             isActive: true,
             reality: new AttributeReality(null, null, null, null, IsPresentButInactive: false),
             metadata: AttributeMetadata.Empty,
-            onDisk: AttributeOnDiskMetadata.Empty).Value;
+            onDisk: onDisk).Value;
     }
 }
