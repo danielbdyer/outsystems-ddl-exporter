@@ -132,6 +132,12 @@ public static class EntityDependencySorter
             circularDependencyOptions);
         var cycleDetected = ordered.Length != nodes.Count;
         var fallbackApplied = false;
+        var stronglyConnectedComponents = ImmutableArray<ImmutableHashSet<TableKey>>.Empty;
+
+        if (cycleDetected)
+        {
+            stronglyConnectedComponents = FindStronglyConnectedComponents(nodes.Keys, edges, comparer);
+        }
 
         if (cycleDetected && ShouldAttemptAutomaticCycleResolution(circularDependencyOptions))
         {
@@ -182,6 +188,53 @@ public static class EntityDependencySorter
                     cycleDetected = false;
                     graphStats = graphStats with { EdgeCount = Math.Max(0, graphStats.EdgeCount - removedEdges) };
                     circularDependencyOptions = mergedOptions;
+                }
+            }
+        }
+
+        if (cycleDetected &&
+            !stronglyConnectedComponents.IsDefaultOrEmpty &&
+            stronglyConnectedComponents.Length > 0 &&
+            circularDependencyOptions is { AllowedCycles.IsDefaultOrEmpty: false, AllowedCycles.Length: > 0 })
+        {
+            var edgesToBreak = IdentifyEdgesToBreakFromManualOrdering(
+                stronglyConnectedComponents.Select(component => component.ToHashSet(comparer)).ToList(),
+                edges,
+                circularDependencyOptions);
+
+            if (edgesToBreak.Count > 0)
+            {
+                var adjustedEdges = CloneEdges(edges, comparer);
+                var adjustedIndegree = new Dictionary<TableKey, int>(indegreeSnapshot, comparer);
+                var removedEdges = 0;
+
+                foreach (var (target, dependent) in edgesToBreak)
+                {
+                    if (!adjustedEdges.TryGetValue(target, out var dependents))
+                    {
+                        continue;
+                    }
+
+                    if (dependents.Remove(dependent))
+                    {
+                        adjustedIndegree[dependent] = Math.Max(0, adjustedIndegree[dependent] - 1);
+                        removedEdges++;
+                    }
+                }
+
+                var retried = TopologicalSort(
+                    nodes,
+                    adjustedEdges,
+                    adjustedIndegree,
+                    comparer,
+                    classification,
+                    circularDependencyOptions);
+
+                if (retried.Length == nodes.Count)
+                {
+                    ordered = retried;
+                    cycleDetected = false;
+                    graphStats = graphStats with { EdgeCount = Math.Max(0, graphStats.EdgeCount - removedEdges) };
                 }
             }
         }
@@ -497,6 +550,52 @@ public static class EntityDependencySorter
         return clone;
     }
 
+    private static List<(TableKey Target, TableKey Dependent)> IdentifyEdgesToBreakFromManualOrdering(
+        List<HashSet<TableKey>> stronglyConnectedComponents,
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+        CircularDependencyOptions circularDependencyOptions)
+    {
+        var edgesToBreak = new List<(TableKey Target, TableKey Dependent)>();
+
+        foreach (var component in stronglyConnectedComponents)
+        {
+            foreach (var node in component)
+            {
+                var sourcePosition = circularDependencyOptions.GetManualPosition(node.Table);
+                if (sourcePosition is null)
+                {
+                    continue;
+                }
+
+                if (!edges.TryGetValue(node, out var dependents))
+                {
+                    continue;
+                }
+
+                foreach (var dependent in dependents)
+                {
+                    if (!component.Contains(dependent))
+                    {
+                        continue;
+                    }
+
+                    var targetPosition = circularDependencyOptions.GetManualPosition(dependent.Table);
+                    if (targetPosition is null)
+                    {
+                        continue;
+                    }
+
+                    if (sourcePosition.Value > targetPosition.Value)
+                    {
+                        edgesToBreak.Add((node, dependent));
+                    }
+                }
+            }
+        }
+
+        return edgesToBreak;
+    }
+
     private static (ImmutableArray<AllowedCycle> AllowedCycles, List<(TableKey Target, TableKey Dependent)> EdgesToRemove)
         DetectAsymmetricCycles(
             IReadOnlyCollection<TableKey> remainingKeys,
@@ -537,7 +636,7 @@ public static class EntityDependencySorter
                 if (allowedCycle is not null)
                 {
                     detectedCycles.Add(allowedCycle);
-                    edgesToRemove.Add((childKey, parentKey));
+                    edgesToRemove.Add((parentKey, childKey));
                 }
             }
         }
