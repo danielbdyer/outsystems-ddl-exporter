@@ -21,6 +21,7 @@ internal sealed class MetadataSnapshotRunner : IMetadataSnapshotDiagnostics
     private readonly IReadOnlyList<IResultSetProcessor> _processors;
     private readonly SqlExecutionOptions _options;
     private readonly ILogger<MetadataSnapshotRunner> _logger;
+    private readonly ITaskProgressAccessor _progressAccessor;
     private MetadataRowSnapshot? _lastFailureRowSnapshot;
 
     public MetadataSnapshotRunner(
@@ -28,12 +29,14 @@ internal sealed class MetadataSnapshotRunner : IMetadataSnapshotDiagnostics
         IDbCommandExecutor commandExecutor,
         IEnumerable<IResultSetProcessor> processors,
         SqlExecutionOptions options,
-        ILogger<MetadataSnapshotRunner>? logger = null)
+        ILogger<MetadataSnapshotRunner>? logger = null,
+        ITaskProgressAccessor? progressAccessor = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _commandExecutor = commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? NullLogger<MetadataSnapshotRunner>.Instance;
+        _progressAccessor = progressAccessor ?? new TaskProgressAccessor();
 
         if (processors is null)
         {
@@ -98,10 +101,15 @@ internal sealed class MetadataSnapshotRunner : IMetadataSnapshotDiagnostics
 
             var context = new ResultSetProcessingContext(reader, accumulator);
 
+            var progress = _progressAccessor.Progress;
+            using var task = progress?.Start("Extracting Metadata", _processors.Count);
+
             for (var i = 0; i < _processors.Count; i++)
             {
                 var processor = _processors[i];
+                task?.Description($"Extracting Metadata: {processor.Name}");
                 var rowCount = await processor.ProcessAsync(context, cancellationToken).ConfigureAwait(false);
+                task?.Increment(1);
 
                 if (i < _processors.Count - 1)
                 {

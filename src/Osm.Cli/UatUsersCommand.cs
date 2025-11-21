@@ -24,15 +24,18 @@ public sealed class UatUsersCommand : IUatUsersCommand
     private readonly IModelIngestionService _modelIngestionService;
     private readonly ILogger<UatUsersCommand> _logger;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly ITaskProgressAccessor _progressAccessor;
 
     public UatUsersCommand(
         IModelIngestionService modelIngestionService,
         ILogger<UatUsersCommand> logger,
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null,
+        ITaskProgressAccessor? progressAccessor = null)
     {
         _modelIngestionService = modelIngestionService ?? throw new ArgumentNullException(nameof(modelIngestionService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+        _progressAccessor = progressAccessor ?? new TaskProgressAccessor();
     }
 
     public async Task<int> ExecuteAsync(UatUsersOptions options, CancellationToken cancellationToken)
@@ -217,7 +220,7 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 Path.Combine(artifacts.Root, "uat-users"),
                 userMapPath,
                 sourceFingerprint);
-            using var progressBar = new ConsoleProgressBar();
+
             var context = new UatUsersContext(
                 schemaGraph,
                 artifacts,
@@ -240,7 +243,7 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 options.FallbackTargets,
                 options.IdempotentEmission,
                 options.Concurrency,
-                progress: progressBar);
+                progressAccessor: _progressAccessor);
 
             var pipeline = new UatUsersPipeline(_loggerFactory);
             _logger.LogInformation("Invoking uat-users pipeline.");

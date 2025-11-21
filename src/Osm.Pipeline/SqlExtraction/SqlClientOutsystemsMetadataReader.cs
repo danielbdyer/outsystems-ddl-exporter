@@ -24,7 +24,8 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
         ILogger<SqlClientOutsystemsMetadataReader>? logger = null,
         IDbCommandExecutor? commandExecutor = null,
         MetadataContractOverrides? contractOverrides = null,
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null,
+        ITaskProgressAccessor? progressAccessor = null)
     {
         if (connectionFactory is null)
         {
@@ -46,7 +47,8 @@ public sealed class SqlClientOutsystemsMetadataReader : IOutsystemsMetadataReade
             executor,
             processors,
             _options,
-            runnerLogger);
+            runnerLogger,
+            progressAccessor);
 
         LogContractOverrides();
     }
