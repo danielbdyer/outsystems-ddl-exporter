@@ -20,15 +20,16 @@ public enum EntityDependencyOrderingMode
     JunctionDeferred
 }
 
-public static class EntityDependencySorter
-{
-    public static EntityDependencyOrderingResult SortByForeignKeys(
-        IReadOnlyList<StaticEntityTableData> tables,
-        OsmModel? model,
-        NamingOverrideOptions? namingOverrides = null,
-        EntityDependencySortOptions? options = null,
-        CircularDependencyOptions? circularDependencyOptions = null)
+    public static class EntityDependencySorter
     {
+        public static EntityDependencyOrderingResult SortByForeignKeys(
+            IReadOnlyList<StaticEntityTableData> tables,
+            OsmModel? model,
+            NamingOverrideOptions? namingOverrides = null,
+            EntityDependencySortOptions? options = null,
+            CircularDependencyOptions? circularDependencyOptions = null,
+            ICollection<string>? diagnostics = null)
+        {
         if (tables is null)
         {
             throw new ArgumentNullException(nameof(tables));
@@ -134,12 +135,20 @@ public static class EntityDependencySorter
         var fallbackApplied = false;
         var stronglyConnectedComponents = ImmutableArray<ImmutableHashSet<TableKey>>.Empty;
 
+        var autoResolutionAllowed = ShouldAttemptAutomaticCycleResolution(circularDependencyOptions);
+
+        if (cycleDetected && !autoResolutionAllowed)
+        {
+            diagnostics?.Add(
+                "Skipping automatic asymmetric cycle detection because manual cycle ordering overrides are configured.");
+        }
+
         if (cycleDetected)
         {
             stronglyConnectedComponents = FindStronglyConnectedComponents(nodes.Keys, edges, comparer);
         }
 
-        if (cycleDetected && ShouldAttemptAutomaticCycleResolution(circularDependencyOptions))
+        if (cycleDetected && autoResolutionAllowed)
         {
             var remainingKeys = nodes.Keys
                 .Where(key => ordered.All(table => !TableKey.Equals(table.Definition, key)))
@@ -197,10 +206,17 @@ public static class EntityDependencySorter
             stronglyConnectedComponents.Length > 0 &&
             circularDependencyOptions is { AllowedCycles.IsDefaultOrEmpty: false, AllowedCycles.Length: > 0 })
         {
+            diagnostics?.Add(
+                $"Manual cycle ordering configured; attempting to resolve {stronglyConnectedComponents.Length} strongly connected component(s).");
+
             var edgesToBreak = IdentifyEdgesToBreakFromManualOrdering(
                 stronglyConnectedComponents.Select(component => component.ToHashSet(comparer)).ToList(),
                 edges,
                 circularDependencyOptions);
+
+            diagnostics?.Add(edgesToBreak.Count > 0
+                ? $"Manual ordering identified {edgesToBreak.Count} backward edge(s) to remove."
+                : "Manual ordering did not identify any backward edges to remove.");
 
             if (edgesToBreak.Count > 0)
             {
@@ -235,6 +251,7 @@ public static class EntityDependencySorter
                     ordered = retried;
                     cycleDetected = false;
                     graphStats = graphStats with { EdgeCount = Math.Max(0, graphStats.EdgeCount - removedEdges) };
+                    diagnostics?.Add("Manual ordering successfully resolved the detected cycle(s).");
                 }
             }
         }
