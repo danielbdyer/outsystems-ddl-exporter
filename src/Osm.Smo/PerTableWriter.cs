@@ -89,10 +89,18 @@ public sealed class PerTableWriter
         var columnNameMap = BuildColumnNameMap(table);
 
         var statement = _createTableStatementBuilder.BuildCreateTableStatement(table, effectiveTableName, options);
-        var inlineForeignKeys = _createTableStatementBuilder.AddForeignKeys(statement, table, effectiveTableName, options, out var foreignKeyTrustLookup);
+        var inlineForeignKeys = _createTableStatementBuilder.AddForeignKeys(statement, table, effectiveTableName, options, out var foreignKeyTrustLookup, out var deferredNoCheckForeignKeys);
         var tableScript = Script(statement, foreignKeyTrustLookup, options.Format);
 
         var statements = new List<string> { tableScript };
+
+        // Emit deferred NOCHECK foreign keys as separate ALTER TABLE statements
+        if (!deferredNoCheckForeignKeys.IsDefaultOrEmpty)
+        {
+            var noCheckStatements = _createTableStatementBuilder.BuildNoCheckForeignKeyStatements(table, effectiveTableName, deferredNoCheckForeignKeys, options);
+            statements.AddRange(noCheckStatements);
+        }
+
         var indexNames = ImmutableArray.CreateBuilder<string>();
 
         if (!options.EmitBareTableOnly)
