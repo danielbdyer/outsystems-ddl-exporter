@@ -499,12 +499,14 @@ Then Split for Emission:
 │    - Nullability config (isMandatory → NOT NULL)   │
 │    - Deferred FK constraints (WITH NOCHECK)        │
 │    - Type mappings (money → INT precision)         │
-│    - UAT-users generation (see M2.* docs)          │
+│    - UAT-users discovery (FK catalog + orphan map) │
+│      ↳ Application: Stage 5 (INSERT) or Stage 6 (UPDATE)
 │  Principles:                                        │
 │    - Model + data = source of truth                │
 │    - App warns operator, requires explicit sign-off│
 │    - NO automatic coercion (e.g., no auto NOT NULL)│
 │    - Ordering matters (must preserve dependencies) │
+│    - Some transforms discovered here, applied later│
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
@@ -693,7 +695,7 @@ These are transforms we **know exist**, but this list is incomplete:
 | Type mappings | Money → INT precision, numbers → different precision | Possibly | Unknown |
 | Length coercion | NVARCHAR/VARCHAR over threshold → MAX | Yes (no longer used?) | Unknown |
 | Module name overrides | Handle duplicate entity names (OutSystems allows, SQL doesn't) | Yes (moduleNameOverrides) | Before emission |
-| UAT-users generation | Generate user data for UAT environments | Yes (M2.* docs) | Unknown |
+| **UAT-users transformation** | **Transform user FK values: QA IDs → UAT IDs (dual-mode, see §UAT-Users)** | **Yes (inventories + mapping)** | **After FK discovery, before/during emission** |
 | Column/table remapping | Rename tables/columns across environments | Yes (naming overrides) | Before emission |
 
 **Unknown unknowns**: There are almost certainly more transforms we haven't listed.
@@ -742,6 +744,174 @@ When we get to execution planning, we need a **dedicated phase**:
 5. Create transform registry with ordering metadata
 
 This is a **risky, meticulous phase** - we can't rush it.
+
+---
+
+## 🔄 UAT-Users: A Dual-Mode Transform
+
+### What UAT-Users Solves
+
+**Problem**: QA→UAT data promotion when user IDs differ between environments.
+
+- QA database has users with IDs [100, 101, 102, ...]
+- UAT database has users with IDs [200, 201, 202, ...]
+- Tables have FK columns referencing User.Id (CreatedBy, UpdatedBy, AssignedTo, etc.)
+- **Can't just copy data** - orphan FK violations (100 doesn't exist in UAT)
+
+**Solution**: Transform user FK values during data migration.
+
+### The Two Operating Modes
+
+UAT-users is a **Stage 3 Business Logic Transform** that can be **applied in two different ways**:
+
+#### Mode 1: Pre-Transformed INSERTs (Recommended - Stage 5 Application)
+
+**Pipeline flow**:
+```
+Stage 0: EXTRACT-MODEL
+Stage 1: ENTITY SELECTION
+Stage 2: DATABASE SNAPSHOT FETCH
+Stage 3: BUSINESS LOGIC TRANSFORMS
+  ├─ UAT-Users Discovery:
+  │    - Discover FK catalog (all columns referencing User.Id)
+  │    - Load QA user inventory (from Service Center export)
+  │    - Load UAT user inventory (from Service Center export)
+  │    - Identify orphans (QA users not in UAT)
+  │    - Load user mapping (orphan → UAT user)
+  │    - Build TransformationContext
+  └─ (other transforms...)
+Stage 4: TOPOLOGICAL SORT
+Stage 5: EMISSION
+  └─ Apply TransformationContext during INSERT generation
+      - For each user FK column, transform value: orphan ID → UAT ID
+      - Generate INSERT scripts with UAT-ready values
+Stage 6: INSERTION STRATEGY APPLICATION
+```
+
+**Result**: `DynamicData/**/*.dynamic.sql` files contain pre-transformed data
+- No orphan IDs present
+- All user FKs reference valid UAT users
+- **Load directly to UAT** - no post-processing needed
+
+**Benefits**:
+- ✅ Faster (bulk INSERT vs row-by-row UPDATE)
+- ✅ Simpler deployment (single operation, not load-then-transform)
+- ✅ Atomic (no mid-execution inconsistency)
+- ✅ Idempotent (reload from source scripts anytime)
+
+#### Mode 2: UPDATE Scripts (Legacy/Verification - Stage 6 Application)
+
+**Pipeline flow**:
+```
+Stage 0-4: (same as Mode 1)
+Stage 5: EMISSION
+  └─ Generate INSERT scripts WITHOUT transformation (QA IDs preserved)
+Stage 6: INSERTION STRATEGY APPLICATION
+  └─ Generate separate UPDATE script to transform in-place
+      - 02_apply_user_remap.sql with CASE blocks
+      - WHERE clauses target only orphan IDs
+      - WHERE IS NOT NULL guards (preserve NULLs)
+```
+
+**Result**: Two-step deployment
+1. Load INSERT scripts (contains QA user IDs)
+2. Run UPDATE script (transforms QA IDs → UAT IDs in-place)
+
+**Use Cases**:
+- ✅ Legacy UAT database migration (data already loaded with QA IDs)
+- ✅ Verification artifact (cross-validate transformation logic)
+- ✅ Proof of correctness (compare INSERT vs UPDATE modes)
+
+### Required Configuration
+
+UAT-users requires **additional inputs** beyond standard pipeline config:
+
+1. **QA User Inventory** (`--qa-user-inventory ./qa_users.csv`)
+   - CSV export from Service Center: `Id, Username, EMail, Name, External_Id, Is_Active, Creation_Date, Last_Login`
+   - Defines the source user roster (all QA users)
+
+2. **UAT User Inventory** (`--uat-user-inventory ./uat_users.csv`)
+   - Same schema as QA inventory
+   - Defines the target user roster (approved UAT users)
+
+3. **User Mapping** (`--user-map ./uat_user_map.csv`)
+   - Defines orphan → target transformations
+   - Format: `SourceUserId, TargetUserId, Rationale`
+   - Can be auto-generated via matching strategies (case-insensitive email, regex, etc.)
+
+### Where It Fits in Pipeline Unification
+
+**Stage 3: Business Logic Transforms** (Discovery Phase)
+- Discover FK catalog (which columns reference User table)
+- Load inventories and mapping
+- Validate mapping (source in QA, target in UAT, no duplicates)
+- Build TransformationContext
+
+**Application varies by mode**:
+- **INSERT mode (recommended)**: Applied during Stage 5 (Emission)
+- **UPDATE mode (legacy)**: Applied during Stage 6 (Insertion Strategy)
+
+### Ordering Dependencies
+
+**Must happen AFTER**:
+- FK catalog discovery (need to know which columns to transform)
+- Database snapshot fetch (need data to transform)
+
+**Must happen BEFORE** (INSERT mode):
+- INSERT script generation (transformations applied during emission)
+
+**Independent of**:
+- Other Stage 3 transforms (nullability, deferred FKs, type mappings)
+- Topological sort (doesn't change entity ordering, just values)
+
+### Full-Export Integration
+
+```bash
+# Pre-transformed INSERT mode (recommended)
+dotnet run --project src/Osm.Cli -- full-export \
+  --mock-advanced-sql tests/Fixtures/extraction/advanced-sql.manifest.json \
+  --profile-out ./out/profiles \
+  --build-out ./out/uat-export \
+  --enable-uat-users \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --user-map ./uat_user_map.csv
+
+# Result: DynamicData/**/*.dynamic.sql contains UAT-ready data
+# Just load to UAT - no UPDATE step needed
+```
+
+### Standalone Mode (UPDATE Generation)
+
+```bash
+# Standalone uat-users verb (for verification or legacy migration)
+dotnet run --project src/Osm.Cli -- uat-users \
+  --model ./_artifacts/model.json \
+  --connection-string "Server=uat;Database=UAT;..." \
+  --uat-user-inventory ./uat_users.csv \
+  --qa-user-inventory ./qa_users.csv \
+  --out ./uat-users-artifacts
+
+# Result: 02_apply_user_remap.sql with UPDATE statements
+# Use as verification artifact or apply to existing UAT database
+```
+
+### Implementation Status
+
+**Documented in**: `docs/verbs/uat-users.md`, `docs/implementation-specs/M2.*`
+
+**Current State**:
+- ✅ UPDATE mode fully implemented (standalone `uat-users` verb)
+- 🚧 INSERT mode in progress (M2.2 - transformation during INSERT generation)
+- 🚧 Verification framework (M2.1, M2.3 - automated validation)
+- 🚧 Integration tests (M2.4 - comprehensive edge case coverage)
+
+**Key Architectural Insight**:
+UAT-users reveals that **transforms can have multiple application strategies**. The *discovery* (what to transform) belongs in Stage 3, but the *application* (when to transform) can vary:
+- Stage 5 application: Transform during emission (INSERT mode)
+- Stage 6 application: Transform post-emission (UPDATE mode)
+
+This pattern may apply to other transforms too (e.g., type mappings could be pre-computed or applied dynamically).
 
 ---
 
@@ -825,7 +995,7 @@ This will help future agents/developers understand **where to put new logic** wi
 - **InsertionStrategy**: How to apply data (INSERT/MERGE/etc.)
 - **DatabaseSnapshot**: Cached fetch of metadata (OSSYS_*) + statistics (sys.*) + data (OSUSR_*)
 - **AllEntities**: The union of all selected entities (static + regular + any others in scope)
-- **BusinessLogicTransforms**: Stage for nullability tightening, deferred FKs, UAT-users, remapping
+- **BusinessLogicTransforms**: Stage for nullability tightening, deferred FKs, UAT-users (dual-mode), remapping
 
 ---
 
@@ -847,6 +1017,7 @@ We need alignment on:
    - We DON'T know all transforms yet (discovery during implementation)
    - We DON'T know ordering dependencies yet (document as we find them)
    - We WILL NOT redesign, only consolidate existing behavior
+   - ✅ UAT-Users researched and integrated (dual-mode transform, see §UAT-Users)
    - Dedicated excavation phase required in execution plan
 
 ### Once We Have Alignment
