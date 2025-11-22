@@ -37,7 +37,10 @@ internal sealed class ProfilerRunner
 
         context.LogProfilingStarted();
 
-        var captureResult = await context.Request.ProfileCaptureAsync(context.FilteredModel, cancellationToken)
+        var captureResult = await context.Request.ProfileCaptureAsync(
+            context.FilteredModel,
+            context.SupplementalEntities,
+            cancellationToken)
             .ConfigureAwait(false);
 
         if (captureResult.IsFailure)
