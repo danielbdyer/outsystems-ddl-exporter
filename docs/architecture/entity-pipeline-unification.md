@@ -691,6 +691,8 @@ These are transforms we **know exist**, but this list is incomplete:
 | Nullability tightening | isMandatory → NOT NULL (with operator approval) | Yes (validation overrides) | Unknown |
 | Deferred FK constraints | Add WITH NOCHECK for orphaned FKs | Yes (profiling results) | After FK detection |
 | Type mappings | Money → INT precision, numbers → different precision | Possibly | Unknown |
+| Length coercion | NVARCHAR/VARCHAR over threshold → MAX | Yes (no longer used?) | Unknown |
+| Module name overrides | Handle duplicate entity names (OutSystems allows, SQL doesn't) | Yes (moduleNameOverrides) | Before emission |
 | UAT-users generation | Generate user data for UAT environments | Yes (M2.* docs) | Unknown |
 | Column/table remapping | Rename tables/columns across environments | Yes (naming overrides) | Before emission |
 
@@ -740,6 +742,63 @@ When we get to execution planning, we need a **dedicated phase**:
 5. Create transform registry with ordering metadata
 
 This is a **risky, meticulous phase** - we can't rush it.
+
+---
+
+## 🎨 Emission Aesthetics vs. Business Logic Transforms
+
+### The Distinction (Unclear Boundary)
+
+During excavation, we've discovered operations that don't clearly fit "Business Logic Transforms" (Stage 3). They're more about **how we format SQL output** than **what data/structure to emit**.
+
+**Examples of Emission Aesthetics**:
+- CREATE TABLE formatting (tabs, indentation, spacing)
+- FK constraints inline with ON DELETE/ON UPDATE clauses
+- Show only non-default settings (collation, character encoding)
+- Transform DEFAULT constraints to remove surrounding parentheses
+- Naming conventions: defaults unnamed, PKs/FKs named
+- Drop triggers with empty predicates (optimization)
+- Index ordering: UNIQUE INDEXES before regular INDEXES
+- Use logical names instead of physical names (human-readable)
+- Inline referenced entity/attribute names into FK/PK/IX/UIX definitions (DBA-style)
+
+### Open Question: Where Do These Belong?
+
+**Option A: Stage 5 (Emission) concerns**
+- These are formatting choices made during SQL script generation
+- They don't change WHAT is emitted, just HOW it looks
+- Stage 5 already handles file organization, why not also formatting?
+
+**Option B: Each stage has optional "aesthetic transforms"**
+- Not elevated to first-class Transforms (Stage 3)
+- But each stage can have formatting/optimization logic
+- Example: Stage 4 (sort) might reorder indexes, Stage 5 (emit) formats them
+
+**Option C: Some are Transforms, some are Emission**
+- Module name overrides → Transform (changes structure)
+- Inline FK names → Emission aesthetic (just formatting)
+- Hard to draw the line
+
+### Current Thinking
+
+**Not sure yet.** Need to discover more during excavation to see natural groupings.
+
+**What we know**:
+- Business Logic Transforms (Stage 3) = changes to data/structure/constraints
+- Emission Aesthetics = formatting, naming, readability choices
+- Some operations blur the line (module name overrides?)
+
+**Strategy**: Document all operations we find, group them logically as patterns emerge.
+
+### Building Critical Mass
+
+As we discover more operations, we'll:
+1. Document each one (what, why, where in codebase)
+2. Tag as: Transform / Aesthetic / Unclear
+3. Look for patterns in groupings
+4. Let natural categories emerge (don't force premature abstraction)
+
+This will help future agents/developers understand **where to put new logic** without violating the architecture.
 
 ---
 
