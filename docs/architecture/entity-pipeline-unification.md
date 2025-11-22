@@ -16,9 +16,9 @@ The codebase has evolved **four separate implementations** of what is fundamenta
 
 1. **Static Seeds** (`BuildSsdtStaticSeedStep`)
    - Scope: Entities where `DataKind = 'staticEntity'`
-   - Emission: One file or per-entity
+   - Emission: Monolithic or per-module
    - Insertion: MERGE (upsert on each deployment)
-   - Topological Sort: Only static entities
+   - Topological Sort: Only static entities (scoped subset)
 
 2. **Bootstrap** (`BuildSsdtBootstrapSnapshotStep`)
    - Scope: All entities with data (static + regular)
@@ -94,25 +94,27 @@ How should the sorted entities be written to disk?
    - Example: `Bootstrap/AllEntitiesIncludingStatic.bootstrap.sql`
    - Use case: Simple deployment, guaranteed correct order
 
-2. **Per-Module**: One file per module (all entities in that module)
-   - Example: `ModuleA/data.sql`, `ModuleB/data.sql`
-   - Use case: Module-level organization
-   - **Constraint**: Topological sort must still span ALL modules (can't sort within module only)
+2. **Multiple Files with .sqlproj Ordering**: Emit many files, reference them in topological order
+   - Example: `ModuleA/Table1.sql`, `ModuleA/Table2.sql`, `StaticSeeds.sqlproj` (references files in sorted order)
+   - Use case: Granular version control while preserving dependencies
+   - **How it works**: Files can be organized however (per-module, per-entity), but .sqlproj lists them in topological order
+   - **Key insight**: Organization is arbitrary, ORDER is defined by .sqlproj
 
-3. **Per-Entity**: One file per entity
-   - Example: `ModuleA/Table1.sql`, `ModuleA/Table2.sql`
-   - Use case: Granular version control
-   - **Constraint**: Must be referenced in correct order (via `.sqlproj` or similar)
+**Per-Module Emission is NOT Supported**:
+- You cannot sort "within each module independently"
+- Topological sort MUST span all entities (cross-module dependencies exist!)
+- But you CAN organize files by module, as long as .sqlproj orders them correctly
 
-**Current Problem**:
-- Static Seeds: Supports monolithic or per-entity (configurable)
-- Bootstrap: Hardcoded to monolithic only
-- DynamicData: Supports per-entity or single file (redundant)
+**Current State**:
+- Static Seeds: Supports monolithic or per-module (per-module is problematic!)
+- Bootstrap: Monolithic only (correct)
+- DynamicData: Per-entity or single file (redundant, to be deleted)
 
 **Vision**:
+- **Option A**: Monolithic (simple, guaranteed correct)
+- **Option B**: Multiple files + .sqlproj (organizational flexibility with ordering guarantee)
 - Emission strategy is **independent** of scope and sort
 - Chosen **after** topological sort completes
-- Configurable per use case
 
 ---
 
@@ -153,33 +155,59 @@ How should the SQL scripts modify the target database?
 
 ---
 
-## 🧩 The Hidden Fourth Dimension: DATA SOURCE
+## 🧩 The Extract-Model Integration Problem
 
-Where does the entity data come from?
+### Current State: Two-Step Manual Process
 
-**Current Sources**:
-1. **Extraction from live database** (`SqlDynamicEntityDataProvider`)
-   - Hits OSSYS_* tables + actual data tables
-   - Used by: Bootstrap, DynamicData
+Users currently run **two separate commands**:
 
-2. **Inline data in model JSON** (static entity data embedded in model)
-   - Stored in model files
-   - Used by: Static Seeds
+```bash
+# Step 1: Extract model metadata from live database
+$ osm extract-model --output model.extracted.json
 
-3. **Supplemental JSON files** (`ossys-user.json`)
-   - Hand-crafted or extracted separately
-   - Used by: Supplemental mechanism
+# Step 2: Feed extracted model into build/export
+$ osm build-ssdt --model model.extracted.json
+$ osm full-export --model model.extracted.json
+```
 
-4. **Profiling results** (metadata only, no row data)
-   - Statistics like null counts, FK orphans
-   - Used by: Profile validation
+**Problems**:
+- Manual orchestration required
+- Model file passed around as artifact
+- No caching or reuse between runs
+- Extract-model feels like a separate concern, not integrated
 
-**The Convergence**: All sources produce the same shape: `StaticEntityTableData`
+### Where Entity Data Comes From
 
-**Vision**:
-- Data source is **abstracted**
-- Pipeline doesn't care if data came from live DB, JSON file, or inline
-- Enables "mix and match" (e.g., static entities from model + User from live DB)
+**There is only ONE data source: The live database.**
+
+When we say "entity with data", we mean:
+- The entity has a physical table in the database
+- Data was extracted from that table via `SELECT * FROM [table]`
+- No data is stored inline in model JSON (model JSON is **metadata only**)
+
+**Confusion to clear up**:
+- ❌ Model JSON does NOT contain row data
+- ❌ Static seeds do NOT have "inline data"
+- ✅ ALL data comes from database extraction
+- ✅ Model JSON contains only structure (schema, relationships, indexes)
+
+### Vision: Integrated Extract-Model
+
+**Extract-model should be integrated into the pipeline**, not a separate manual step:
+
+```bash
+# ONE command, extract-model happens automatically
+$ osm build-ssdt --connection-string "..."
+
+# Model is cached as artifact, reused across runs
+# User doesn't manually pass model.json around
+```
+
+**How it fits**:
+- Extract-model becomes **Stage 0** of the unified pipeline
+- Model cached to disk (e.g., `.cache/model-snapshot.json`)
+- Subsequent runs reuse cache if database schema unchanged
+- User can still provide pre-extracted model if desired (for offline scenarios)
 
 ---
 
@@ -191,13 +219,11 @@ A **unified Entity Data Pipeline** where:
 
 ```
 EntityPipeline.Execute(
-    scope: EntitySelector.FromModules(["ModuleA", "ModuleB"])
-                         .Include("ServiceCenter", ["User"]),
+    connectionString: "Server=...",
 
-    dataSource: MergedDataSource([
-        InlineModelData,
-        LiveDatabaseExtraction(connectionString)
-    ]),
+    scope: EntitySelector.FromModules(["ModuleA", "ModuleB"])
+                         .Include("ServiceCenter", ["User"])
+                         .Where(e => e.IsStatic),  // For static seeds
 
     emission: EmissionStrategy.Monolithic("output/bootstrap.sql"),
 
@@ -205,7 +231,12 @@ EntityPipeline.Execute(
 
     sort: TopologicalSort.Global(
         circularDependencies: config.AllowedCycles
-    )
+    ),
+
+    transform: BusinessLogicTransforms([
+        NullabilityTightening,  // isMandatory → NOT NULL
+        DeferredForeignKeys     // WITH NOCHECK for orphaned FKs
+    ])
 )
 ```
 
@@ -245,49 +276,52 @@ EntityPipeline.Execute(
 
 ### Current State
 
-Three separate callsites hitting OSSYS_* tables:
+Three separate callsites hitting the database:
 
 1. **Extract-Model** (`SqlModelExtractionService`)
    - Purpose: Build OsmModel (schema, relationships, indexes)
    - SQL: `outsystems_metadata_rowsets.sql`
+   - Hits: `OSSYS_*` system tables (metadata)
    - What it gets: Entity structure, relationships, indexes
-   - Frequency: Once per pipeline run
+   - Frequency: Once per pipeline run (currently manual)
 
 2. **Profile** (`SqlDataProfiler`)
    - Purpose: Gather statistics (null counts, FK orphans, uniqueness violations)
    - SQL: Multiple targeted queries
+   - Hits: `OSSYS_*` metadata + `sys.*` system tables
    - What it gets: Data quality metrics
    - Frequency: Once per pipeline run
 
 3. **Export Data** (`SqlDynamicEntityDataProvider`)
    - Purpose: Extract actual row data
    - SQL: `SELECT * FROM [table]` queries
+   - Hits: `OSUSR_*` / `dbo.*` data tables
    - What it gets: Actual row data for each entity
    - Frequency: Once per entity
 
 **The Problem**:
-- Same tables (`ossys_Entity`, `ossys_Entity_Attr`, etc.) queried 3+ times
-- Similar WHERE clauses (module filters, active entities)
-- Different SELECT projections
+- `OSSYS_*` tables queried 2-3 times with similar WHERE clauses
+- Model extraction and profiling both hit metadata tables
+- No caching or reuse between operations
 
-### The Metadata Primitive
+### The DatabaseSnapshot Primitive
 
-**Vision**: A single `MetadataSnapshot` that captures everything in one fetch:
+**Vision**: A single `DatabaseSnapshot` that captures both metadata and data in one coordinated fetch:
 
 ```csharp
-public sealed class MetadataSnapshot
+public sealed class DatabaseSnapshot
 {
-    // Raw metadata (one fetch from OSSYS_*)
+    // Metadata from OSSYS_* tables (extract-model output)
     public ImmutableArray<EntityStructure> Entities { get; }
     public ImmutableArray<RelationshipStructure> Relationships { get; }
     public ImmutableArray<IndexStructure> Indexes { get; }
     public ImmutableArray<TriggerStructure> Triggers { get; }
 
-    // Data (if requested)
-    public ImmutableDictionary<TableKey, EntityData> Data { get; }
-
-    // Statistics (if requested)
+    // Statistics from profiling (sys.* + OSSYS_* analysis)
     public ImmutableDictionary<TableKey, EntityStatistics> Statistics { get; }
+
+    // Actual row data from OSUSR_* tables
+    public ImmutableDictionary<TableKey, EntityData> Data { get; }
 
     // Derived views (lazy, cached)
     public OsmModel ToModel() => /* project to model structure */;
@@ -298,23 +332,25 @@ public sealed class MetadataSnapshot
 
 **Fetch Options**:
 ```csharp
-var snapshot = await MetadataFetcher.FetchAsync(
+var snapshot = await DatabaseFetcher.FetchAsync(
+    connectionString: "...",
     selector: EntitySelector.FromModules(...),
     options: new FetchOptions
     {
-        IncludeStructure = true,  // Always needed
-        IncludeStatistics = true, // For profiling
-        IncludeRowData = true,    // For export
+        IncludeStructure = true,  // Extract-model (OSSYS_* metadata)
+        IncludeStatistics = true, // Profiling (data quality metrics)
+        IncludeRowData = true,    // Export (actual OSUSR_* table data)
     },
-    cache: DiskCache("./cache/metadata")
+    cache: DiskCache("./.cache/database-snapshot")
 );
 ```
 
 **Benefits**:
-- One SQL round-trip instead of 3+
-- Cached to disk (reusable across runs)
-- Different pipelines get different views of same data
-- Invalidate cache when model changes
+- `OSSYS_*` tables hit once instead of 2-3 times
+- Coordinated fetch of metadata + statistics + data
+- Cached to disk (reusable across runs, survives restarts)
+- Different pipelines consume different slices of same snapshot
+- Invalidate cache when database schema changes (checksum-based)
 
 ---
 
@@ -426,56 +462,79 @@ Then Split for Emission:
 
 ```
 ┌─────────────────────────────────────────────────────┐
+│  Stage 0: EXTRACT-MODEL (Integrated)                │
+│  Input: Connection string, module filters           │
+│  Operation: Query OSSYS_* for metadata              │
+│  Output: OsmModel (cached to disk)                  │
+│  Cache: .cache/model-snapshot.json                  │
+└─────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────┐
 │  Stage 1: ENTITY SELECTION                          │
 │  Input: EntitySelector configuration                │
 │  Output: Set of entities to process                 │
 │  Examples:                                          │
-│    - All entities from [ModuleA, ModuleB]          │
-│    - Static entities only                          │
-│    - ServiceCenter::User + all from ModuleA        │
+│    - All entities: EntitySelector.All()            │
+│    - Static only: EntitySelector.Where(IsStatic)   │
+│    - Specific: Include("ServiceCenter", ["User"]) │
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
-│  Stage 2: METADATA + DATA FETCH                     │
-│  Input: Selected entities                           │
-│  Operation: Fetch from MetadataSnapshot (cached)    │
-│  Output: Complete entity metadata + data            │
-│  Options:                                           │
-│    - Include statistics? (for profiling)           │
-│    - Include row data? (for export)                │
+│  Stage 2: DATABASE SNAPSHOT FETCH                   │
+│  Input: Selected entities, connection string        │
+│  Operation: Fetch from DatabaseSnapshot (cached)    │
+│  Output: Metadata + statistics + row data           │
+│  Sources:                                           │
+│    - OSSYS_* metadata (if not cached from Stage 0) │
+│    - sys.* statistics (profiling metrics)          │
+│    - OSUSR_* data tables (actual rows)             │
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
-│  Stage 3: TOPOLOGICAL SORT                          │
+│  Stage 3: BUSINESS LOGIC TRANSFORMS                 │
+│  Input: Raw database snapshot                       │
+│  Operation: Apply business rules and corrections    │
+│  Output: Transformed entity definitions              │
+│  Transforms:                                        │
+│    - Nullability tightening (isMandatory → NOT NULL)│
+│    - Deferred FK constraints (WITH NOCHECK)        │
+│    - UAT-users generation (see M2.* docs)          │
+│    - Column/table remapping                        │
+└─────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────┐
+│  Stage 4: TOPOLOGICAL SORT                          │
 │  Input: All selected entities (with FK metadata)    │
 │  Operation: Build dependency graph, detect cycles   │
 │  Output: Globally ordered list of entities          │
+│  Scope: ALWAYS spans all selected entities          │
 │  Handles:                                           │
 │    - Cross-module dependencies                     │
-│    - Circular dependencies (with config)           │
+│    - Circular dependencies (manual config)         │
 │    - Mixed static/regular entities                 │
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
-│  Stage 4: EMISSION                                  │
+│  Stage 5: EMISSION                                  │
 │  Input: Sorted entities + emission strategy         │
 │  Operation: Generate SQL scripts                    │
 │  Output: Files organized by strategy                │
 │  Strategies:                                        │
-│    - Monolithic: One big file                      │
-│    - Per-Module: One file per module               │
-│    - Per-Entity: One file per entity + .sqlproj    │
+│    - Monolithic: One file (preserves sort order)   │
+│    - Multiple files + .sqlproj (references in order)│
+│  Note: Per-module emission NOT supported            │
+│        (breaks topological dependencies)            │
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
-│  Stage 5: INSERTION STRATEGY APPLICATION            │
+│  Stage 6: INSERTION STRATEGY APPLICATION            │
 │  Input: SQL scripts + insertion config              │
 │  Operation: Format as INSERT, MERGE, etc.           │
 │  Output: Deployment-ready SQL                       │
 │  Options:                                           │
 │    - INSERT (one-time load)                        │
 │    - MERGE (upsert on redeploy)                    │
-│    - Batch size, conflict handling                 │
+│    - Batch size (default: 1000)                    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -494,103 +553,104 @@ Then Split for Emission:
 
 ---
 
-## 🤔 Open Ontological Questions
+## ✅ Resolved Ontological Questions
 
 ### Q1: What IS an "entity with data"?
 
-When we say "Bootstrap includes all entities with data", what does that mean?
+**ANSWER**: An entity where data was extracted from its physical table in the database.
 
-**Option A**: Entity has static data defined in model JSON
-**Option B**: Entity has rows in the live database
-**Option C**: Entity is explicitly configured to include data
-**Option D**: Some combination of above
+- ✅ **Option B**: Entity has rows in the live database (extracted via `SELECT *`)
+- ❌ Not Option A: No data is stored inline in model JSON
+- ❌ Not Option C: Not explicitly configured
 
-**Current behavior**: Unclear, seems to be "entities where data was extracted"
-
-**Proposed**: Make this explicit in EntitySelector:
-```csharp
-EntitySelector.FromModules(["ModuleA"])
-              .WhereDataAvailable() // Only entities with data
-```
+**Implementation**: When pipeline runs, it queries each entity's table. If rows exist, the entity "has data". Simple.
 
 ---
 
-### Q2: How do we unify "data sources"?
+### Q2: Where does entity data come from?
 
-Entities can have data from:
-- Inline in model JSON (static seeds)
-- Extracted from live DB (bootstrap)
-- Loaded from supplemental JSON files (ossys-user.json)
+**ANSWER**: There is only ONE data source - the live database.
 
-**Should these be**:
-- **Option A**: Different pipelines (current state)
-- **Option B**: Merged into one dataset before sorting
-- **Option C**: Layered (static data as base, overlay live data)
+- ✅ ALL data comes from `LiveDatabaseExtraction`
+- ❌ NO inline data in model JSON (model JSON is metadata only)
+- ❌ NO supplemental JSON files with data (ossys-user.json will be deprecated)
 
-**Proposed**: Merge into one dataset, with priority rules:
-1. If entity has inline data, use that
-2. Else if entity has extracted data, use that
-3. Else if entity has supplemental data, use that
+**Confusion cleared**: I was wrong about "merged data sources". There's just one source: the database.
 
 ---
 
 ### Q3: What is the relationship between "static entity" and "has data"?
 
-**Observation**:
-- Static entities (`DataKind = 'staticEntity'`) are entities with reference/configuration data
-- They typically have data defined in the model
-- But regular entities can ALSO have data (extracted from live DB)
+**ANSWER**: They are orthogonal concerns.
 
-**Are these**:
-- **Orthogonal**: Static-ness is a categorization, data availability is independent
-- **Correlated**: Static entities always have data, regular entities usually don't
-- **Definitional**: Static entities are DEFINED as "entities with data in model"
+- **Static Entity**: `DataKind = 'staticEntity'` (compile-time optimization, like enhanced enums)
+- **Has Data**: Entity table contains rows (runtime state)
+- **Independence**: Both static and regular entities CAN have data or not
+  - A static entity might have 0 rows (just created)
+  - A regular entity might have 1000 rows (actively used)
 
-**Current code**: Treats them as separate concepts
-**Proposed**: Keep them orthogonal, but provide convenience selectors
+**Key insight**: Static-ness is a metamodel property. Data availability is a runtime property.
 
 ---
 
 ### Q4: How granular should EntitySelector be?
 
-**Current**: Module-level selection with optional entity filter
-**Proposed**: How flexible should this be?
+**ANSWER**: Option B (per-module control) + helper predicates
 
-**Option A - Simple**:
+**Required API**:
 ```csharp
-EntitySelector.FromModules(["ModuleA", "ModuleB"])
-```
-
-**Option B - Per-Module Control**:
-```csharp
+// Option B: Per-module control
 EntitySelector
     .Include("ModuleA", all: true)
     .Include("ServiceCenter", only: ["User"])
+
+// Plus helper predicates
+EntitySelector.Where(e => e.IsStatic)  // For static seeds
+EntitySelector.All()                    // For bootstrap, uat-users
 ```
 
-**Option C - Predicate-Based**:
-```csharp
-EntitySelector
-    .Where(e => e.IsStatic)
-    .OrWhere(e => e.Module == "ServiceCenter" && e.Name == "User")
-```
+**Use cases**:
+- `All()` → Model extraction, table emission, bootstrap, uat-users
+- `Where(IsStatic)` → Static seeds
+- `Include("ServiceCenter", ["User"])` → Supplemental replacement
 
-**Recommendation**: Start with Option B (per-module control), can evolve to Option C later if needed.
+**Rationale**: Option C (full predicate-based) is overkill. Option B covers all current needs.
 
 ---
 
 ### Q5: Should topological sort be configurable per emission strategy?
 
-**Current thought**: No - sort is always global, emission is just how we organize output
+**ANSWER**: No. Sort is ALWAYS global. Emission is just file organization.
 
-**But consider**:
-- Per-module emission might WANT module-scoped sort (for module independence)
-- But this breaks cross-module FK dependencies!
+**Two valid emission approaches**:
+1. **Monolithic**: One file, entities in sorted order
+2. **Multiple files + .sqlproj**: Files organized arbitrarily (per-module, per-entity), but .sqlproj lists them in sorted order
 
-**Resolution**:
-- Sort is ALWAYS global (correct semantics)
-- Emission is ALWAYS a projection of the sorted list
-- If per-module emission, we emit modules in dependency order, entities within each module in sorted order
+**Per-module sorting is NOT supported** (breaks cross-module FK dependencies).
+
+**Example**:
+```
+Sorted order: [User, Post, Comment, Module1Table, Module2Table]
+
+Emission Option 1 (Monolithic):
+  bootstrap.sql → contains all 5 entities in order
+
+Emission Option 2 (.sqlproj):
+  ServiceCenter/User.sql
+  ModuleA/Post.sql
+  ModuleA/Comment.sql
+  ModuleB/Module1Table.sql
+  ModuleB/Module2Table.sql
+
+  bootstrap.sqlproj → references files in sorted order:
+    <Build Include="ServiceCenter/User.sql" />
+    <Build Include="ModuleA/Post.sql" />
+    <Build Include="ModuleA/Comment.sql" />
+    <Build Include="ModuleB/Module1Table.sql" />
+    <Build Include="ModuleB/Module2Table.sql" />
+```
+
+**Key insight**: File organization (directory structure) is cosmetic. Execution order (topological) is semantic.
 
 ---
 
@@ -612,11 +672,12 @@ EntitySelector
 
 ### What We Introduce
 
-- **EntitySelector**: Configuration for selecting which entities to include
-- **EmissionStrategy**: How to organize output files (monolithic/per-module/per-entity)
+- **EntitySelector**: Configuration for selecting which entities to include (replaces supplemental mechanism)
+- **EmissionStrategy**: How to organize output files (monolithic / multiple files + .sqlproj)
 - **InsertionStrategy**: How to apply data (INSERT/MERGE/etc.)
-- **MetadataSnapshot**: Cached fetch of all metadata from OSSYS_* tables
+- **DatabaseSnapshot**: Cached fetch of metadata (OSSYS_*) + statistics (sys.*) + data (OSUSR_*)
 - **AllEntities**: The union of all selected entities (static + regular + any others in scope)
+- **BusinessLogicTransforms**: Stage for nullability tightening, deferred FKs, UAT-users, remapping
 
 ---
 
@@ -626,11 +687,13 @@ EntitySelector
 
 We need alignment on:
 
-1. **The Three Dimensions**: Are Scope, Emission, Insertion the right ontology?
-2. **The Unified Pipeline**: Does the 5-stage model make sense?
-3. **Supplemental Elimination**: Agree that EntitySelector replaces supplemental concept?
-4. **Topological Sort Scope**: Confirm it should ALWAYS span all selected entities?
-5. **Metadata Primitive**: Is MetadataSnapshot the right abstraction?
+1. **The Three Dimensions + Transform**: Are Scope, Emission, Insertion, + BusinessLogicTransforms the right ontology?
+2. **The Unified Pipeline**: Does the 7-stage model make sense (Stage 0: extract-model integration, Stage 3: transforms, Stage for UAT-users)?
+3. **Supplemental Elimination**: ✅ ALIGNED - EntitySelector replaces supplemental concept
+4. **Topological Sort Scope**: ✅ ALIGNED - ALWAYS spans all selected entities
+5. **DatabaseSnapshot Primitive**: Is this the right abstraction (metadata + statistics + data)?
+6. **Extract-Model Integration**: Should it be Stage 0 (automatic, cached) instead of separate manual step?
+7. **Business Logic Preservation**: Have we captured critical transforms (nullability, deferred FKs, UAT-users)?
 
 ### Once We Have Alignment
 
