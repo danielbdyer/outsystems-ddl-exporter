@@ -26,6 +26,12 @@ internal static class SmoTriggerBuilder
                 continue;
             }
 
+            // Skip triggers with missing definitions (e.g., encrypted triggers)
+            if (string.IsNullOrWhiteSpace(trigger.Definition))
+            {
+                continue;
+            }
+
             builder.Add(new SmoTriggerDefinition(
                 SmoNormalization.NormalizeWhitespace(trigger.Name.Value) ?? trigger.Name.Value,
                 context.Entity.Schema.Value,

@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
 using Osm.Json;
 using Osm.Pipeline.ModelIngestion;
 using Osm.Pipeline.Orchestration;
@@ -34,7 +35,7 @@ public class DmmComparePipelineTests
         var bootstrapper = new FakePipelineBootstrapper(async (_, request, token) =>
         {
             Assert.Equal(profilePath, request.Telemetry.ProfilingStartMetadata["paths.profile"]);
-            var captureResult = await request.ProfileCaptureAsync(default!, token);
+            var captureResult = await request.ProfileCaptureAsync(default!, ImmutableArray<EntityModel>.Empty, token);
             Assert.True(captureResult.IsSuccess);
 
             var error = ValidationError.Create("test.bootstrap.stop", "Bootstrapper halted pipeline for verification.");

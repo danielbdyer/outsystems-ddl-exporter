@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Osm.Domain.Model;
 using Osm.Pipeline.Profiling;
 using Osm.Pipeline.Sql;
 using Osm.Pipeline.Tests.Profiling;
@@ -24,6 +25,7 @@ public sealed class SqlDataProfilerPerformanceTests
         var profiler = new SqlDataProfiler(
             new NullConnectionFactory(),
             definition.Model,
+            ImmutableArray<EntityModel>.Empty,
             options,
             metadataLoader,
             planBuilder,
@@ -51,6 +53,7 @@ public sealed class SqlDataProfilerPerformanceTests
         var profiler = new SqlDataProfiler(
             new NullConnectionFactory(),
             definition.Model,
+            ImmutableArray<EntityModel>.Empty,
             options,
             metadataLoader,
             planBuilder,

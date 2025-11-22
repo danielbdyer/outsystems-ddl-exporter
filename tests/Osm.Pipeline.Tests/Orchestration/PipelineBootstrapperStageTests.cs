@@ -163,7 +163,7 @@ public sealed class PipelineBootstrapperStageTests
         var model = ModelFixtures.LoadModel("model.edge-case.json");
         var profile = ProfileFixtures.LoadSnapshot("profiling/profile.edge-case.json");
         var insightGenerator = new FakeInsightGenerator();
-        var context = CreateContext(profileCapture: (_, _) => Task.FromResult(Result<ProfileCaptureResult>.Success(new ProfileCaptureResult(profile, MultiEnvironmentProfileReport.Empty))));
+        var context = CreateContext(profileCapture: (_, _, _) => Task.FromResult(Result<ProfileCaptureResult>.Success(new ProfileCaptureResult(profile, MultiEnvironmentProfileReport.Empty))));
         context.RecordRequestTelemetry();
         context.SetModel(model, Array.Empty<string>());
         context.SetFilteredModel(model);
@@ -184,7 +184,7 @@ public sealed class PipelineBootstrapperStageTests
     public async Task ProfilerRunner_PropagatesFailures()
     {
         var model = ModelFixtures.LoadModel("model.edge-case.json");
-        var context = CreateContext(profileCapture: (_, _) => Task.FromResult(Result<ProfileCaptureResult>.Failure(ValidationError.Create("profiling.failed", "failed"))));
+        var context = CreateContext(profileCapture: (_, _, _) => Task.FromResult(Result<ProfileCaptureResult>.Failure(ValidationError.Create("profiling.failed", "failed"))));
         context.RecordRequestTelemetry();
         context.SetModel(model, Array.Empty<string>());
         context.SetFilteredModel(model);
@@ -199,7 +199,7 @@ public sealed class PipelineBootstrapperStageTests
     private static BootstrapPipelineContext CreateContext(
         ModuleFilterOptions? filter = null,
         SupplementalModelOptions? supplemental = null,
-        Func<OsmModel, CancellationToken, Task<Result<ProfileCaptureResult>>>? profileCapture = null,
+        Func<OsmModel, ImmutableArray<EntityModel>, CancellationToken, Task<Result<ProfileCaptureResult>>>? profileCapture = null,
         OsmModel? inlineModel = null,
         ImmutableArray<string> inlineWarnings = default)
     {
@@ -215,7 +215,7 @@ public sealed class PipelineBootstrapperStageTests
             filter ?? ModuleFilterOptions.IncludeAll,
             supplemental ?? SupplementalModelOptions.Default,
             telemetry,
-            profileCapture ?? ((_, _) => Task.FromResult(Result<ProfileCaptureResult>.Failure(ValidationError.Create("profiling.unused", "Profiling not configured for test.")))),
+            profileCapture ?? ((_, _, _) => Task.FromResult(Result<ProfileCaptureResult>.Failure(ValidationError.Create("profiling.unused", "Profiling not configured for test.")))),
             PipelineBootstrapperTestDefaults.SqlOptions,
             inlineModel,
             inlineWarnings);
@@ -261,7 +261,7 @@ public sealed class PipelineBootstrapperIntegrationTests
             filterOptions,
             SupplementalModelOptions.Default,
             telemetry,
-            (_, _) => Task.FromResult(Result<ProfileCaptureResult>.Success(new ProfileCaptureResult(profile, MultiEnvironmentProfileReport.Empty))),
+            (_, _, _) => Task.FromResult(Result<ProfileCaptureResult>.Success(new ProfileCaptureResult(profile, MultiEnvironmentProfileReport.Empty))),
             PipelineBootstrapperTestDefaults.SqlOptions,
             InlineModel: null,
             ModelWarnings: default);

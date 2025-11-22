@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
@@ -45,7 +46,18 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
             ? ImmutableArray<StaticEntityTableData>.Empty
             : state.StaticSeedData;
         var regularEntities = state.Request.DynamicDataset?.Tables ?? ImmutableArray<StaticEntityTableData>.Empty;
-        var allEntities = staticEntities.Concat(regularEntities).ToImmutableArray();
+        
+        // Query supplemental entity data (e.g., ossys_User) from SQL if supplementals are present
+        var supplementalEntities = await QuerySupplementalDataAsync(state, cancellationToken).ConfigureAwait(false);
+        if (supplementalEntities.IsFailure)
+        {
+            return Result<BootstrapSnapshotGenerated>.Failure(supplementalEntities.Errors);
+        }
+        
+        var allEntities = staticEntities
+            .Concat(regularEntities)
+            .Concat(supplementalEntities.Value)
+            .ToImmutableArray();
 
         if (allEntities.Length == 0)
         {
@@ -134,6 +146,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
                 .WithCount("entities.total", orderedEntities.Length)
                 .WithCount("entities.static", staticEntities.Length)
                 .WithCount("entities.regular", regularEntities.Length)
+                .WithCount("entities.supplemental", supplementalEntities.Value.Length)
                 .WithValue("ordering.topologicalOrderApplied", ordering.TopologicalOrderingApplied ? "true" : "false")
                 .WithValue("ordering.mode", ordering.Mode.ToMetadataValue())
                 .WithCount("ordering.nodes", ordering.NodeCount)
@@ -293,12 +306,12 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
             builder.AppendLine($"-- Topological Order: {i + 1} of {orderedEntities.Length}");
             builder.AppendLine();
 
-            // Generate MERGE statement (reuse existing StaticSeedSqlBuilder)
-            var mergeScript = _sqlBuilder.BuildBlock(entity, StaticSeedSynchronizationMode.ValidateThenApply, validationOverrides);
-            builder.AppendLine(mergeScript);
+            // Generate INSERT statement (NonDestructive mode for fast bootstrap on fresh database)
+            var insertScript = _sqlBuilder.BuildBlock(entity, StaticSeedSynchronizationMode.NonDestructive, validationOverrides);
+            builder.AppendLine(insertScript);
 
             // Diagnostic PRINT statement
-            builder.AppendLine($"PRINT 'Bootstrap: Completed entity {i + 1}/{orderedEntities.Length}: {definition.Schema}.{definition.PhysicalName} ({entity.Rows.Length} rows)';");
+            builder.AppendLine($"PRINT 'Bootstrap: Completed entity {i + 1}/{orderedEntities.Length}: {definition.Schema}.{definition.EffectiveName} ({entity.Rows.Length} rows)';");
             builder.AppendLine("GO");
             builder.AppendLine();
         }
@@ -309,5 +322,67 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
         builder.AppendLine("--------------------------------------------------------------------------------");
 
         return builder.ToString();
+    }
+
+    private async Task<Result<ImmutableArray<StaticEntityTableData>>> QuerySupplementalDataAsync(
+        DynamicInsertsGenerated state,
+        CancellationToken cancellationToken)
+    {
+        var supplementalEntities = state.Bootstrap.SupplementalEntities;
+        if (supplementalEntities.IsDefaultOrEmpty)
+        {
+            return Result<ImmutableArray<StaticEntityTableData>>.Success(ImmutableArray<StaticEntityTableData>.Empty);
+        }
+
+        // Build table definitions for supplementals
+        var definitions = new List<StaticEntitySeedTableDefinition>();
+        foreach (var entity in supplementalEntities)
+        {
+            var columns = entity.Attributes
+                .Select(attr => new StaticEntitySeedColumn(
+                    attr.LogicalName.Value,
+                    attr.ColumnName.Value,
+                    attr.ColumnName.Value, // Use physical column name for emission
+                    attr.DataType,
+                    attr.Length,
+                    attr.Precision,
+                    attr.Scale,
+                    attr.IsIdentifier,
+                    attr.OnDisk?.IsIdentity ?? false,
+                    attr.OnDisk?.IsNullable ?? !attr.IsMandatory))
+                .ToImmutableArray();
+
+            definitions.Add(new StaticEntitySeedTableDefinition(
+                entity.Module.Value,
+                entity.LogicalName.Value,
+                entity.Schema.Value,
+                entity.PhysicalName.Value, // Physical name for querying from SQL
+                entity.LogicalName.Value, // Logical name for emission (dbo.User not dbo.ossys_User)
+                columns));
+        }
+
+        if (definitions.Count == 0)
+        {
+            return Result<ImmutableArray<StaticEntityTableData>>.Success(ImmutableArray<StaticEntityTableData>.Empty);
+        }
+
+        // Use the static data provider to query supplemental data from SQL
+        var dataProvider = state.Request.StaticDataProvider;
+        if (dataProvider is null)
+        {
+            state.Log.Record(
+                "bootstrap.supplemental.skipped",
+                $"Skipping supplemental data extraction - no static data provider available. Supplementals will be DDL-only (no INSERT statements).");
+
+            return Result<ImmutableArray<StaticEntityTableData>>.Success(ImmutableArray<StaticEntityTableData>.Empty);
+        }
+
+        var dataResult = await dataProvider.GetDataAsync(definitions, cancellationToken).ConfigureAwait(false);
+        if (dataResult.IsFailure)
+        {
+            return Result<ImmutableArray<StaticEntityTableData>>.Failure(dataResult.Errors);
+        }
+
+        return Result<ImmutableArray<StaticEntityTableData>>.Success(dataResult.Value.ToImmutableArray());
     }
 }

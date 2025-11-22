@@ -101,8 +101,20 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
 
         var primaryLabel = allocator.Allocate(primaryEntry.Label, out var primaryAdjusted);
 
+        var supplementalEntities = request.SupplementalEntities.IsDefault
+            ? ImmutableArray<EntityModel>.Empty
+            : request.SupplementalEntities;
+
         var primaryConnectionFactory = _connectionFactoryFactory(primaryEntry.ConnectionString, connectionOptions);
-        var primaryProfiler = new SqlDataProfiler(primaryConnectionFactory, model, primaryProfilerOptions, request.SqlMetadataLog);
+        var primaryProfiler = new SqlDataProfiler(
+            primaryConnectionFactory,
+            model,
+            supplementalEntities,
+            primaryProfilerOptions,
+            null,
+            null,
+            null,
+            request.SqlMetadataLog);
         var primaryEnvironment = new MultiTargetSqlDataProfiler.ProfilerEnvironment(
             primaryLabel,
             primaryProfiler,
@@ -120,7 +132,15 @@ public sealed class DataProfilerFactory : IDataProfilerFactory
             var parsed = ParseEnvironmentEntry(entry!, defaultLabel);
             var label = allocator.Allocate(parsed.Label, out var adjusted);
             var factory = _connectionFactoryFactory(parsed.ConnectionString, connectionOptions);
-            var environmentProfiler = new SqlDataProfiler(factory, model, secondaryProfilerOptions, request.SqlMetadataLog);
+            var environmentProfiler = new SqlDataProfiler(
+                factory,
+                model,
+                supplementalEntities,
+                secondaryProfilerOptions,
+                null,
+                null,
+                null,
+                request.SqlMetadataLog);
             secondaryEnvironments.Add(new MultiTargetSqlDataProfiler.ProfilerEnvironment(
                 label,
                 environmentProfiler,

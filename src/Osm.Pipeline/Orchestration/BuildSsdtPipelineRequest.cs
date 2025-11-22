@@ -1,4 +1,6 @@
+using System.Collections.Immutable;
 using Osm.Domain.Configuration;
+using Osm.Domain.Model;
 using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Smo;
@@ -23,4 +25,5 @@ public sealed record BuildSsdtPipelineRequest(
     DynamicInsertOutputMode DynamicInsertOutputMode = DynamicInsertOutputMode.PerEntity,
     SqlMetadataLog? SqlMetadataLog = null,
     bool DeferJunctionTables = false,
-    CircularDependencyOptions? CircularDependencyOptions = null) : ICommand<BuildSsdtPipelineResult>;
+    CircularDependencyOptions? CircularDependencyOptions = null,
+    ImmutableArray<EntityModel> SupplementalEntities = default) : ICommand<BuildSsdtPipelineResult>;
