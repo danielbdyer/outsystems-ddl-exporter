@@ -115,7 +115,7 @@ public class CreateTableStatementBuilderTests
 
         var builder = new CreateTableStatementBuilder(_identifierFormatter);
         var statement = builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
-        var foreignKeyNames = builder.AddForeignKeys(statement, table, "Order", SmoBuildOptions.Default, out var trustLookup);
+        var foreignKeyNames = builder.AddForeignKeys(statement, table, "Order", SmoBuildOptions.Default, out var trustLookup, out var deferredForeignKeys);
 
         var resolvedName = Assert.Single(foreignKeyNames);
         Assert.Equal("FK_Order_City_CityId", resolvedName);
@@ -139,7 +139,7 @@ public class CreateTableStatementBuilderTests
 
         var builder = new CreateTableStatementBuilder(_identifierFormatter);
         var statement = builder.BuildCreateTableStatement(childTable, childTable.Name, options);
-        var foreignKeyNames = builder.AddForeignKeys(statement, childTable, childTable.Name, options, out _);
+        var foreignKeyNames = builder.AddForeignKeys(statement, childTable, childTable.Name, options, out _, out _);
 
         var resolvedName = Assert.Single(foreignKeyNames);
         Assert.Equal("FK_Child_Parent_ParentId_TenantId", resolvedName);
