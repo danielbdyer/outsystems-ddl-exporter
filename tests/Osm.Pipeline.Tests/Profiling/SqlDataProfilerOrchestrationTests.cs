@@ -72,7 +72,7 @@ public sealed class SqlDataProfilerOrchestrationTests
         var metadataLoader = new StubMetadataLoader(metadata, rowCounts);
         var planBuilder = new StubPlanBuilder(plan);
         var queryExecutor = new StubQueryExecutor(results);
-        var profiler = new SqlDataProfiler(new NullConnectionFactory(), model, SqlProfilerOptions.Default, metadataLoader, planBuilder, queryExecutor);
+        var profiler = new SqlDataProfiler(new NullConnectionFactory(), model, ImmutableArray<EntityModel>.Empty, SqlProfilerOptions.Default, metadataLoader, planBuilder, queryExecutor);
 
         var snapshot = await profiler.CaptureAsync(CancellationToken.None);
 
@@ -170,7 +170,7 @@ public sealed class SqlDataProfilerOrchestrationTests
             [("dbo", "OSUSR_C_CHILD")] = plan
         });
         var queryExecutor = new StubQueryExecutor(results);
-        var profiler = new SqlDataProfiler(new NullConnectionFactory(), model, SqlProfilerOptions.Default, metadataLoader, planBuilder, queryExecutor);
+        var profiler = new SqlDataProfiler(new NullConnectionFactory(), model, ImmutableArray<EntityModel>.Empty, SqlProfilerOptions.Default, metadataLoader, planBuilder, queryExecutor);
 
         var snapshot = await profiler.CaptureAsync(CancellationToken.None);
 
@@ -225,6 +225,7 @@ public sealed class SqlDataProfilerOrchestrationTests
         var profiler = new SqlDataProfiler(
             new NullConnectionFactory(),
             model,
+            ImmutableArray<EntityModel>.Empty,
             options,
             metadataLoader,
             planBuilder,
