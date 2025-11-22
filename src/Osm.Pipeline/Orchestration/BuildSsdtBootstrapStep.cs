@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
@@ -37,7 +38,7 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
             request.Scope.ModuleFilter,
             request.Scope.SupplementalModels,
             telemetry,
-            (model, token) => CaptureProfileAsync(request, model, token),
+            (model, supplementals, token) => CaptureProfileAsync(request, model, supplementals, token),
             request.Scope.SqlOptions,
             request.Scope.InlineModel,
             request.Scope.ModelWarnings);
@@ -86,9 +87,13 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
     private async Task<Result<ProfileCaptureResult>> CaptureProfileAsync(
         BuildSsdtPipelineRequest request,
         OsmModel model,
+        ImmutableArray<EntityModel> supplementalEntities,
         CancellationToken cancellationToken)
     {
-        var profilerResult = _profilerFactory.Create(request, model);
+        // Update request with supplemental entities so profiler can profile them
+        var requestWithSupplementals = request with { SupplementalEntities = supplementalEntities };
+        
+        var profilerResult = _profilerFactory.Create(requestWithSupplementals, model);
         if (profilerResult.IsFailure)
         {
             return Result<ProfileCaptureResult>.Failure(profilerResult.Errors);
