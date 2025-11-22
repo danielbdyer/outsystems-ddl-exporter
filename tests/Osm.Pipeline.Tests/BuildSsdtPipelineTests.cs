@@ -96,7 +96,7 @@ public class BuildSsdtPipelineTests
             Assert.Equal("fixture", request.Telemetry.ProfilingStartMetadata["profiling.provider"]);
 
             var model = LoadModel(request.ModelPath);
-            var captureResult = await request.ProfileCaptureAsync(model, token);
+            var captureResult = await request.ProfileCaptureAsync(model, ImmutableArray<EntityModel>.Empty, token);
             Assert.True(captureResult.IsSuccess);
 
             var error = ValidationError.Create("test.bootstrap.stop", "Bootstrapper halted pipeline for verification.");
@@ -140,7 +140,7 @@ public class BuildSsdtPipelineTests
             Assert.Equal("sql", request.Telemetry.ProfilingStartMetadata["profiling.provider"]);
 
             var model = LoadModel(request.ModelPath);
-            var captureResult = await request.ProfileCaptureAsync(model, token);
+            var captureResult = await request.ProfileCaptureAsync(model, ImmutableArray<EntityModel>.Empty, token);
             Assert.True(captureResult.IsFailure);
             var captureError = Assert.Single(captureResult.Errors);
             Assert.Equal("pipeline.buildSsdt.sql.connectionString.missing", captureError.Code);
