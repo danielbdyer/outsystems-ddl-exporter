@@ -23,6 +23,7 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly OsmModel _model;
+    private readonly ImmutableArray<EntityModel> _supplementalEntities;
     private readonly SqlProfilerOptions _options;
     private readonly ForeignKeyMappingResolver _foreignKeyResolver;
     private readonly ITableMetadataLoader _metadataLoader;
@@ -38,6 +39,7 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
         : this(
             connectionFactory,
             model,
+            ImmutableArray<EntityModel>.Empty,
             options ?? SqlProfilerOptions.Default,
             null,
             null,
@@ -49,6 +51,7 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
     internal SqlDataProfiler(
         IDbConnectionFactory connectionFactory,
         OsmModel model,
+        ImmutableArray<EntityModel> supplementalEntities,
         SqlProfilerOptions options,
         ITableMetadataLoader? metadataLoader,
         IProfilingPlanBuilder? planBuilder,
@@ -57,6 +60,7 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _model = model ?? throw new ArgumentNullException(nameof(model));
+        _supplementalEntities = supplementalEntities;
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _metadataLog = metadataLog;
         _foreignKeyResolver = new ForeignKeyMappingResolver(_model, _options.NamingOverrides);
@@ -76,6 +80,7 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
 
             var metadata = await _metadataLoader.LoadColumnMetadataAsync(connection, tables, cancellationToken).ConfigureAwait(false);
             var rowCounts = await _metadataLoader.LoadRowCountsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
+            
             var plans = _planBuilder.BuildPlans(
                 metadata,
                 rowCounts,
@@ -153,9 +158,8 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
             var compositeProfiles = new List<CompositeUniqueCandidateProfile>();
             var foreignKeys = new List<ForeignKeyReality>();
 
-            foreach (var module in _model.Modules)
-            {
-                foreach (var entity in module.Entities)
+            // Process all entities: extracted model + supplemental entities
+            foreach (var (module, entity) in GetAllEntities())
                 {
                     var schema = entity.Schema.Value;
                     var table = entity.PhysicalName.Value;
@@ -358,7 +362,6 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
                         }
                     }
                 }
-            }
 
             return ProfileSnapshot.Create(columnProfiles, uniqueProfiles, compositeProfiles, foreignKeys);
         }
@@ -372,12 +375,54 @@ public sealed class SqlDataProfiler : IDataProfiler, ITableNameMappingProvider
 
     ImmutableArray<TableNameMapping> ITableNameMappingProvider.TableNameMappings => _options.TableNameMappings;
 
+    /// <summary>
+    /// Returns all entities that need profiling: extracted model entities + supplemental entities.
+    /// Supplemental entities use a synthetic module for iteration purposes.
+    /// </summary>
+    private IEnumerable<(ModuleModel Module, EntityModel Entity)> GetAllEntities()
+    {
+        // Yield all entities from extracted model
+        foreach (var module in _model.Modules)
+        {
+            foreach (var entity in module.Entities)
+            {
+                yield return (module, entity);
+            }
+        }
+
+        // Yield supplemental entities with synthetic module context
+        if (!_supplementalEntities.IsDefaultOrEmpty)
+        {
+            foreach (var entity in _supplementalEntities)
+            {
+                // Use entity's own module designation for profiling
+                var syntheticModule = new ModuleModel(
+                    entity.Module,
+                    false, // IsSystemModule
+                    true,  // IsActive
+                    ImmutableArray.Create(entity),
+                    ImmutableArray<ExtendedProperty>.Empty);
+                yield return (syntheticModule, entity);
+            }
+        }
+    }
+
     private IReadOnlyCollection<(string Schema, string Table)> CollectTables()
     {
         var tables = new HashSet<(string Schema, string Table)>(TableKeyComparer.Instance);
+        
         foreach (var entity in _model.Modules.SelectMany(static module => module.Entities))
         {
             tables.Add((entity.Schema.Value, entity.PhysicalName.Value));
+        }
+
+        // Include supplemental entities (e.g., ossys_User for FK resolution)
+        if (!_supplementalEntities.IsDefaultOrEmpty)
+        {
+            foreach (var entity in _supplementalEntities)
+            {
+                tables.Add((entity.Schema.Value, entity.PhysicalName.Value));
+            }
         }
 
         if (_options.AllowMissingTables && !_options.TableNameMappings.IsDefaultOrEmpty)
