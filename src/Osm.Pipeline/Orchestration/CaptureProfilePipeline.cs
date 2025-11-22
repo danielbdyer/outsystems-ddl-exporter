@@ -136,7 +136,7 @@ public sealed class CaptureProfilePipeline : ICommandHandler<CaptureProfilePipel
             request.Scope.ModuleFilter,
             request.Scope.SupplementalModels,
             telemetry,
-            (model, token) => CaptureProfileAsync(request, model, token),
+            (model, supplementals, token) => CaptureProfileAsync(request, model, token),
             request.Scope.SqlOptions,
             request.Scope.InlineModel,
             request.Scope.ModelWarnings);
