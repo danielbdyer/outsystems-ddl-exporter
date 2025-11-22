@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Osm.Domain.Configuration;
@@ -10,23 +11,27 @@ namespace Osm.Emission.Seeds;
 
 public sealed class StaticSeedSqlBuilder
 {
+    private const int DefaultBatchSize = 1000;
     private readonly SqlLiteralFormatter _literalFormatter;
     private readonly IdentifierFormatter _identifierFormatter;
     private readonly SmoFormatOptions _formatOptions;
+    private readonly int _batchSize;
 
     public StaticSeedSqlBuilder(SqlLiteralFormatter literalFormatter)
-        : this(literalFormatter, new IdentifierFormatter(), SmoFormatOptions.Default)
+        : this(literalFormatter, new IdentifierFormatter(), SmoFormatOptions.Default, DefaultBatchSize)
     {
     }
 
     internal StaticSeedSqlBuilder(
         SqlLiteralFormatter literalFormatter,
         IdentifierFormatter identifierFormatter,
-        SmoFormatOptions formatOptions)
+        SmoFormatOptions formatOptions,
+        int batchSize = DefaultBatchSize)
     {
         _literalFormatter = literalFormatter ?? throw new ArgumentNullException(nameof(literalFormatter));
         _identifierFormatter = identifierFormatter ?? throw new ArgumentNullException(nameof(identifierFormatter));
         _formatOptions = formatOptions ?? throw new ArgumentNullException(nameof(formatOptions));
+        _batchSize = batchSize > 0 ? batchSize : DefaultBatchSize;
     }
 
     public string BuildBlock(
@@ -73,9 +78,10 @@ public sealed class StaticSeedSqlBuilder
             if (synchronizationMode == StaticSeedSynchronizationMode.ValidateThenApply)
             {
                 builder.AppendLine($"IF EXISTS (SELECT 1 FROM {targetIdentifier})");
-                builder.AppendLine("BEGIN");
+                builder.AppendLine("BEGIN;");
                 builder.AppendLine($"    THROW 50000, '{driftErrorMessage}', 1;");
-                builder.AppendLine("END;");
+                builder.AppendLine("END");
+                builder.AppendLine("GO");
                 builder.AppendLine();
             }
 
@@ -83,43 +89,53 @@ public sealed class StaticSeedSqlBuilder
             return builder.ToString();
         }
 
-        if (synchronizationMode == StaticSeedSynchronizationMode.ValidateThenApply)
+        var hasIdentity = definition.Columns.Any(column => column.IsIdentity);
+
+        // Check if we need to batch this table
+        var requiresBatching = rows.Length > _batchSize;
+        if (requiresBatching)
         {
-            builder.AppendLine("IF EXISTS (");
-            builder.Append("    SELECT ");
-            builder.AppendLine(sourceProjection);
-            builder.AppendLine("    FROM");
-            builder.AppendLine("    (");
-            AppendValuesClause(builder, tableData, "        ");
-            builder.Append("    ) AS Source (");
-            builder.Append(columnList);
-            builder.AppendLine(")");
-            builder.AppendLine("    EXCEPT");
-            builder.Append("    SELECT ");
-            builder.AppendLine(targetProjection);
-            builder.AppendLine($"    FROM {targetIdentifier} AS Existing");
-            builder.AppendLine(")");
-            builder.AppendLine("    OR EXISTS (");
-            builder.Append("    SELECT ");
-            builder.AppendLine(targetProjection);
-            builder.AppendLine($"    FROM {targetIdentifier} AS Existing");
-            builder.AppendLine("    EXCEPT");
-            builder.Append("    SELECT ");
-            builder.AppendLine(sourceProjection);
-            builder.AppendLine("    FROM");
-            builder.AppendLine("    (");
-            AppendValuesClause(builder, tableData, "        ");
-            builder.Append("    ) AS Source (");
-            builder.Append(columnList);
-            builder.AppendLine(")");
-            builder.AppendLine(")");
-            builder.AppendLine("BEGIN");
-            builder.AppendLine($"    THROW 50000, '{driftErrorMessage}', 1;");
-            builder.AppendLine("END;");
+            builder.AppendLine($"-- Note: Large table with {rows.Length} rows will be processed in batches of {_batchSize}");
             builder.AppendLine();
         }
 
-        var hasIdentity = definition.Columns.Any(column => column.IsIdentity);
+        if (synchronizationMode == StaticSeedSynchronizationMode.ValidateThenApply)
+        {
+            builder.AppendLine($"IF EXISTS (SELECT 1 FROM {targetIdentifier})");
+            builder.AppendLine("    AND (EXISTS (");
+            builder.Append("        SELECT ");
+            builder.AppendLine(sourceProjection);
+            builder.AppendLine("        FROM");
+            builder.AppendLine("        (");
+            AppendValuesClause(builder, tableData, "            ");
+            builder.Append("        ) AS Source (");
+            builder.Append(columnList);
+            builder.AppendLine(")");
+            builder.AppendLine("        EXCEPT");
+            builder.Append("        SELECT ");
+            builder.AppendLine(targetProjection);
+            builder.AppendLine($"        FROM {targetIdentifier} AS Existing");
+            builder.AppendLine("    )");
+            builder.AppendLine("    OR EXISTS (");
+            builder.Append("        SELECT ");
+            builder.AppendLine(targetProjection);
+            builder.AppendLine($"        FROM {targetIdentifier} AS Existing");
+            builder.AppendLine("        EXCEPT");
+            builder.Append("        SELECT ");
+            builder.AppendLine(sourceProjection);
+            builder.AppendLine("        FROM");
+            builder.AppendLine("        (");
+            AppendValuesClause(builder, tableData, "            ");
+            builder.Append("        ) AS Source (");
+            builder.Append(columnList);
+            builder.AppendLine(")");
+            builder.AppendLine("    ))");
+            builder.AppendLine("BEGIN;");
+            builder.AppendLine($"    THROW 50000, '{driftErrorMessage}', 1;");
+            builder.AppendLine("END");
+            builder.AppendLine("GO");
+            builder.AppendLine();
+        }
 
         if (hasIdentity)
         {
@@ -128,14 +144,7 @@ public sealed class StaticSeedSqlBuilder
             builder.AppendLine();
         }
 
-        builder.AppendLine($"MERGE INTO {targetIdentifier} AS Target");
-        builder.AppendLine("USING");
-        builder.AppendLine("(");
-        AppendValuesClause(builder, tableData, "    ");
-        builder.Append(") AS Source (");
-        builder.Append(columnList);
-        builder.AppendLine(")");
-
+        // Determine primary and updatable columns
         var primaryColumns = definition.Columns.Where(column => column.IsPrimaryKey).ToArray();
         if (primaryColumns.Length == 0)
         {
@@ -149,17 +158,99 @@ public sealed class StaticSeedSqlBuilder
             }
 
             // If override allows missing PK, use all columns as matching criteria (fallback behavior)
-            // This allows MERGE to work by matching on all columns
             primaryColumns = definition.Columns.ToArray();
         }
 
-        builder.Append("    ON ");
-            builder.AppendLine(string.Join(
-                " AND ",
-                primaryColumns.Select(column =>
-                    $"Target.{QuoteColumn(column.EffectiveColumnName)} = Source.{QuoteColumn(column.EffectiveColumnName)}")));
-
         var updatableColumns = definition.Columns.Where(column => !column.IsPrimaryKey).ToArray();
+
+        // Generate INSERT or MERGE statements (batched if necessary)
+        if (requiresBatching)
+        {
+            var batches = PartitionRows(rows, _batchSize).ToArray();
+            for (var batchIndex = 0; batchIndex < batches.Length; batchIndex++)
+            {
+                var batch = batches[batchIndex];
+                var batchData = StaticEntityTableData.Create(definition, batch);
+                
+                builder.AppendLine($"PRINT 'Applying batch {batchIndex + 1}/{batches.Length} for {targetIdentifier} ({batch.Length} rows)';");
+                builder.AppendLine();
+                
+                if (synchronizationMode == StaticSeedSynchronizationMode.NonDestructive)
+                {
+                    AppendInsertStatement(builder, batchData, targetIdentifier, columnNames, columnList);
+                }
+                else
+                {
+                    AppendMergeStatement(builder, batchData, targetIdentifier, columnNames, columnList, 
+                        primaryColumns, updatableColumns, synchronizationMode);
+                }
+            }
+        }
+        else
+        {
+            if (synchronizationMode == StaticSeedSynchronizationMode.NonDestructive)
+            {
+                AppendInsertStatement(builder, tableData, targetIdentifier, columnNames, columnList);
+            }
+            else
+            {
+                AppendMergeStatement(builder, tableData, targetIdentifier, columnNames, columnList,
+                    primaryColumns, updatableColumns, synchronizationMode);
+            }
+        }
+
+        if (hasIdentity)
+        {
+            builder.AppendLine($"SET IDENTITY_INSERT {targetIdentifier} OFF;");
+            builder.AppendLine("GO");
+        }
+
+        return builder.ToString();
+    }
+
+    private void AppendInsertStatement(
+        StringBuilder builder,
+        StaticEntityTableData tableData,
+        string targetIdentifier,
+        string[] columnNames,
+        string columnList)
+    {
+        builder.Append("INSERT INTO ");
+        builder.Append(targetIdentifier);
+        builder.Append(" (");
+        builder.Append(columnList);
+        builder.AppendLine(")");
+        AppendValuesClause(builder, tableData, "");
+        builder.AppendLine(";");
+        builder.AppendLine();
+        builder.AppendLine("GO");
+        builder.AppendLine();
+    }
+
+    private void AppendMergeStatement(
+        StringBuilder builder,
+        StaticEntityTableData tableData,
+        string targetIdentifier,
+        string[] columnNames,
+        string columnList,
+        StaticEntitySeedColumn[] primaryColumns,
+        StaticEntitySeedColumn[] updatableColumns,
+        StaticSeedSynchronizationMode synchronizationMode)
+    {
+        builder.AppendLine($"MERGE INTO {targetIdentifier} AS Target");
+        builder.AppendLine("USING");
+        builder.AppendLine("(");
+        AppendValuesClause(builder, tableData, "    ");
+        builder.Append(") AS Source (");
+        builder.Append(columnList);
+        builder.AppendLine(")");
+
+        builder.Append("    ON ");
+        builder.AppendLine(string.Join(
+            " AND ",
+            primaryColumns.Select(column =>
+                $"Target.{QuoteColumn(column.EffectiveColumnName)} = Source.{QuoteColumn(column.EffectiveColumnName)}")));
+
         if (updatableColumns.Length > 0)
         {
             builder.AppendLine("WHEN MATCHED THEN UPDATE SET");
@@ -180,7 +271,7 @@ public sealed class StaticSeedSqlBuilder
         }
 
         builder.Append("WHEN NOT MATCHED THEN INSERT (");
-        builder.Append(string.Join(", ", definition.Columns.Select(column => QuoteColumn(column.EffectiveColumnName))));
+        builder.Append(string.Join(", ", tableData.Definition.Columns.Select(column => QuoteColumn(column.EffectiveColumnName))));
         builder.AppendLine(")");
         builder.Append("    VALUES (");
         builder.Append(string.Join(", ", columnNames.Select(name => $"Source.{name}")));
@@ -193,15 +284,36 @@ public sealed class StaticSeedSqlBuilder
 
         builder.AppendLine();
         builder.AppendLine("GO");
+        builder.AppendLine();
+    }
 
-        if (hasIdentity)
+    private static ImmutableArray<StaticEntityRow>[] PartitionRows(
+        ImmutableArray<StaticEntityRow> rows,
+        int batchSize)
+    {
+        if (rows.IsDefaultOrEmpty)
         {
-            builder.AppendLine();
-            builder.AppendLine($"SET IDENTITY_INSERT {targetIdentifier} OFF;");
-            builder.AppendLine("GO");
+            return Array.Empty<ImmutableArray<StaticEntityRow>>();
         }
 
-        return builder.ToString();
+        var batchCount = (rows.Length + batchSize - 1) / batchSize;
+        var result = new ImmutableArray<StaticEntityRow>[batchCount];
+
+        for (var i = 0; i < batchCount; i++)
+        {
+            var start = i * batchSize;
+            var length = Math.Min(batchSize, rows.Length - start);
+            var builder = ImmutableArray.CreateBuilder<StaticEntityRow>(length);
+
+            for (var j = 0; j < length; j++)
+            {
+                builder.Add(rows[start + j]);
+            }
+
+            result[i] = builder.MoveToImmutable();
+        }
+
+        return result;
     }
 
     private string QuoteColumn(string columnName)
