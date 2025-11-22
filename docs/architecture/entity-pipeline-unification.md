@@ -233,10 +233,9 @@ EntityPipeline.Execute(
         circularDependencies: config.AllowedCycles
     ),
 
-    transform: BusinessLogicTransforms([
-        NullabilityTightening,  // isMandatory → NOT NULL
-        DeferredForeignKeys     // WITH NOCHECK for orphaned FKs
-    ])
+    // Transform stage: Preserve existing business logic
+    // NOTE: This is a CONCEPTUAL stage - exact shape TBD via excavation
+    transform: config.BusinessLogicTransforms
 )
 ```
 
@@ -491,15 +490,21 @@ Then Split for Emission:
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
-│  Stage 3: BUSINESS LOGIC TRANSFORMS                 │
+│  Stage 3: BUSINESS LOGIC TRANSFORMS (Excavation)    │
 │  Input: Raw database snapshot                       │
 │  Operation: Apply business rules and corrections    │
 │  Output: Transformed entity definitions              │
-│  Transforms:                                        │
-│    - Nullability tightening (isMandatory → NOT NULL)│
+│  ⚠️  CAUTION: Exact transforms TBD via discovery   │
+│  Known examples (non-exhaustive):                   │
+│    - Nullability config (isMandatory → NOT NULL)   │
 │    - Deferred FK constraints (WITH NOCHECK)        │
+│    - Type mappings (money → INT precision)         │
 │    - UAT-users generation (see M2.* docs)          │
-│    - Column/table remapping                        │
+│  Principles:                                        │
+│    - Model + data = source of truth                │
+│    - App warns operator, requires explicit sign-off│
+│    - NO automatic coercion (e.g., no auto NOT NULL)│
+│    - Ordering matters (must preserve dependencies) │
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
@@ -654,6 +659,90 @@ Emission Option 2 (.sqlproj):
 
 ---
 
+## ⚠️ The Business Logic Transform Challenge
+
+### Why This is Scary
+
+Stage 3 (Business Logic Transforms) is **conceptual**, not prescriptive. We know this stage **exists** in the current codebase, but:
+
+- ❌ We don't know ALL the transforms that happen
+- ❌ We don't know the ORDERING dependencies between transforms
+- ❌ We don't know all the EDGE CASES and special handling
+- ✅ We know we need to **excavate**, not design from scratch
+
+### Excavation, Not Design
+
+**Approach**: During implementation, we will:
+
+1. **Discover transforms** as we encounter them in the codebase
+2. **Document each one** when found (what, why, when, dependencies)
+3. **Preserve existing behavior** - don't redesign, just consolidate
+4. **Test extensively** - each transform needs regression coverage
+5. **Make each transform independently runnable** (for debuggability)
+
+**Anti-pattern**: Trying to enumerate all transforms upfront and design an abstraction around them.
+
+### Known Examples (Non-Exhaustive)
+
+These are transforms we **know exist**, but this list is incomplete:
+
+| Transform | What it does | Config-driven? | Order-sensitive? |
+|-----------|--------------|----------------|------------------|
+| Nullability tightening | isMandatory → NOT NULL (with operator approval) | Yes (validation overrides) | Unknown |
+| Deferred FK constraints | Add WITH NOCHECK for orphaned FKs | Yes (profiling results) | After FK detection |
+| Type mappings | Money → INT precision, numbers → different precision | Possibly | Unknown |
+| UAT-users generation | Generate user data for UAT environments | Yes (M2.* docs) | Unknown |
+| Column/table remapping | Rename tables/columns across environments | Yes (naming overrides) | Before emission |
+
+**Unknown unknowns**: There are almost certainly more transforms we haven't listed.
+
+### Critical Principles (DO NOT VIOLATE)
+
+1. **Model + data = source of truth**
+   - The application does NOT invent data
+   - The application does NOT silently fix inconsistencies
+
+2. **Warn, don't auto-fix**
+   - If isMandatory but column is nullable → WARN operator
+   - Operator provides explicit config approval for NOT NULL
+   - ❌ NEVER auto-coerce based on "no NULLs observed in data"
+
+3. **Profiling is informational, not prescriptive**
+   - Profiling finds issues (null counts, FK orphans)
+   - Operator decides how to handle issues (WITH NOCHECK, fix data, override config)
+   - "Cautious mode" prevents automatic coercion
+
+4. **Preserve debuggability**
+   - Each transform should be independently toggleable
+   - Each transform should be independently runnable (for testing)
+   - Transforms should log what they're doing (observability)
+
+### The Ordering Problem
+
+**We don't know the full dependency graph of transforms.**
+
+Example questions we can't answer yet:
+- Must type mapping happen before nullability tightening?
+- Must UAT-users happen before or after FK detection?
+- Can column remapping happen in parallel with type mapping?
+
+**Strategy**: During excavation, **document dependencies as we discover them**.
+
+### Work Plan Implication
+
+When we get to execution planning, we need a **dedicated phase**:
+
+**"Phase X: Business Logic Transform Excavation"**
+1. Audit codebase for all transform logic
+2. Document each transform (inputs, outputs, config, dependencies)
+3. Extract into isolated, testable units
+4. Build regression test suite
+5. Create transform registry with ordering metadata
+
+This is a **risky, meticulous phase** - we can't rush it.
+
+---
+
 ## 📝 Terminology Decisions
 
 ### What We Keep
@@ -687,13 +776,19 @@ Emission Option 2 (.sqlproj):
 
 We need alignment on:
 
-1. **The Three Dimensions + Transform**: Are Scope, Emission, Insertion, + BusinessLogicTransforms the right ontology?
-2. **The Unified Pipeline**: Does the 7-stage model make sense (Stage 0: extract-model integration, Stage 3: transforms, Stage for UAT-users)?
+1. **The Three Dimensions + Transform**: ✅ ALIGNED (with nervous caveats on Transform) - Are Scope, Emission, Insertion the right core dimensions?
+2. **The Unified Pipeline**: ✅ ALIGNED (conceptually) - Does the 7-stage model make sense?
 3. **Supplemental Elimination**: ✅ ALIGNED - EntitySelector replaces supplemental concept
 4. **Topological Sort Scope**: ✅ ALIGNED - ALWAYS spans all selected entities
-5. **DatabaseSnapshot Primitive**: Is this the right abstraction (metadata + statistics + data)?
-6. **Extract-Model Integration**: Should it be Stage 0 (automatic, cached) instead of separate manual step?
-7. **Business Logic Preservation**: Have we captured critical transforms (nullability, deferred FKs, UAT-users)?
+5. **DatabaseSnapshot Primitive**: ✅ ALIGNED - Right abstraction (metadata + statistics + data)
+6. **Extract-Model Integration**: ✅ ALIGNED - Stage 0 (automatic, cached), each step independently runnable
+7. **Business Logic Transforms**: ⚠️ EXCAVATION REQUIRED
+   - We agree Stage 3 exists conceptually
+   - We agree on principles (model = truth, warn don't auto-fix, preserve debuggability)
+   - We DON'T know all transforms yet (discovery during implementation)
+   - We DON'T know ordering dependencies yet (document as we find them)
+   - We WILL NOT redesign, only consolidate existing behavior
+   - Dedicated excavation phase required in execution plan
 
 ### Once We Have Alignment
 
