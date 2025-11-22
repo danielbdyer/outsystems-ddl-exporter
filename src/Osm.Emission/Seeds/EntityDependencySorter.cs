@@ -8,7 +8,8 @@ using Osm.Domain.Model;
 
 namespace Osm.Emission.Seeds;
 
-public sealed record EntityDependencySortOptions(bool DeferJunctionTables)
+public sealed record EntityDependencySortOptions(
+    bool DeferJunctionTables)
 {
     public static EntityDependencySortOptions Default { get; } = new(false);
 }
@@ -22,6 +23,8 @@ public enum EntityDependencyOrderingMode
 
     public static class EntityDependencySorter
     {
+        private static readonly TableKeyComparer KeyComparer = new();
+
         public static EntityDependencyOrderingResult SortByForeignKeys(
             IReadOnlyList<StaticEntityTableData> tables,
             OsmModel? model,
@@ -73,8 +76,7 @@ public enum EntityDependencyOrderingMode
 
         options ??= EntityDependencySortOptions.Default;
 
-        var comparer = new TableKeyComparer();
-        var nodes = new Dictionary<TableKey, StaticEntityTableData>(comparer);
+        var nodes = new Dictionary<TableKey, StaticEntityTableData>(KeyComparer);
 
         foreach (var table in materialized)
         {
@@ -87,10 +89,10 @@ public enum EntityDependencyOrderingMode
 
         var edges = nodes.Keys.ToDictionary(
             static key => key,
-            _ => new HashSet<TableKey>(comparer),
-            comparer);
+            _ => new HashSet<TableKey>(KeyComparer),
+            KeyComparer);
 
-        var indegree = nodes.Keys.ToDictionary(static key => key, _ => 0, comparer);
+        var indegree = nodes.Keys.ToDictionary(static key => key, _ => 0, KeyComparer);
 
         namingOverrides ??= NamingOverrideOptions.Empty;
 
@@ -105,7 +107,6 @@ public enum EntityDependencyOrderingMode
             nodes,
             edges,
             indegree,
-            comparer,
             namingOverrides,
             lookup,
             entityLookup);
@@ -123,12 +124,11 @@ public enum EntityDependencyOrderingMode
                 Mode: EntityDependencyOrderingMode.Alphabetical);
         }
 
-        var indegreeSnapshot = new Dictionary<TableKey, int>(indegree, comparer);
+        var indegreeSnapshot = new Dictionary<TableKey, int>(indegree, KeyComparer);
         var ordered = TopologicalSort(
             nodes,
             edges,
-            new Dictionary<TableKey, int>(indegreeSnapshot, comparer),
-            comparer,
+            new Dictionary<TableKey, int>(indegreeSnapshot, KeyComparer),
             classification,
             circularDependencyOptions);
         var cycleDetected = ordered.Length != nodes.Count;
@@ -145,7 +145,7 @@ public enum EntityDependencyOrderingMode
 
         if (cycleDetected)
         {
-            stronglyConnectedComponents = FindStronglyConnectedComponents(nodes.Keys, edges, comparer);
+            stronglyConnectedComponents = TarjanScc.FindStronglyConnectedComponents(nodes.Keys, edges, KeyComparer);
         }
 
         if (cycleDetected && autoResolutionAllowed)
@@ -157,7 +157,6 @@ public enum EntityDependencyOrderingMode
             var (autoCycles, edgesToRemove) = DetectAsymmetricCycles(
                 remainingKeys,
                 edges,
-                comparer,
                 nodes,
                 entityByTable);
 
@@ -165,8 +164,8 @@ public enum EntityDependencyOrderingMode
             {
                 var mergedOptions = MergeCircularDependencyOptions(circularDependencyOptions, autoCycles);
 
-                var adjustedEdges = CloneEdges(edges, comparer);
-                var adjustedIndegree = new Dictionary<TableKey, int>(indegreeSnapshot, comparer);
+                var adjustedEdges = CloneEdges(edges);
+                var adjustedIndegree = new Dictionary<TableKey, int>(indegreeSnapshot, KeyComparer);
                 var removedEdges = 0;
 
                 foreach (var (target, dependent) in edgesToRemove)
@@ -187,7 +186,6 @@ public enum EntityDependencyOrderingMode
                     nodes,
                     adjustedEdges,
                     adjustedIndegree,
-                    comparer,
                     classification,
                     mergedOptions);
 
@@ -210,7 +208,7 @@ public enum EntityDependencyOrderingMode
                 $"Manual cycle ordering configured; attempting to resolve {stronglyConnectedComponents.Length} strongly connected component(s).");
 
             var edgesToBreak = IdentifyEdgesToBreakFromManualOrdering(
-                stronglyConnectedComponents.Select(component => component.ToHashSet(comparer)).ToList(),
+                stronglyConnectedComponents.Select(component => component.ToHashSet(KeyComparer)).ToList(),
                 edges,
                 circularDependencyOptions);
 
@@ -220,8 +218,8 @@ public enum EntityDependencyOrderingMode
 
             if (edgesToBreak.Count > 0)
             {
-                var adjustedEdges = CloneEdges(edges, comparer);
-                var adjustedIndegree = new Dictionary<TableKey, int>(indegreeSnapshot, comparer);
+                var adjustedEdges = CloneEdges(edges);
+                var adjustedIndegree = new Dictionary<TableKey, int>(indegreeSnapshot, KeyComparer);
                 var removedEdges = 0;
 
                 foreach (var (target, dependent) in edgesToBreak)
@@ -242,7 +240,6 @@ public enum EntityDependencyOrderingMode
                     nodes,
                     adjustedEdges,
                     adjustedIndegree,
-                    comparer,
                     classification,
                     circularDependencyOptions);
 
@@ -294,7 +291,6 @@ public enum EntityDependencyOrderingMode
         IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
         IDictionary<TableKey, HashSet<TableKey>> edges,
         IDictionary<TableKey, int> indegree,
-        TableKeyComparer comparer,
         NamingOverrideOptions namingOverrides,
         TableLookup lookup,
         IReadOnlyDictionary<TableKey, EntityIdentity> entityLookup)
@@ -374,7 +370,7 @@ public enum EntityDependencyOrderingMode
                             continue;
                         }
 
-                        if (comparer.Equals(sourceKey, targetKey))
+                        if (KeyComparer.Equals(sourceKey, targetKey))
                         {
                             continue;
                         }
@@ -398,7 +394,6 @@ public enum EntityDependencyOrderingMode
         IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
         IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
         IDictionary<TableKey, int> indegree,
-        TableKeyComparer comparer,
         JunctionTableClassification classification,
         CircularDependencyOptions? circularDependencyOptions)
     {
@@ -519,8 +514,7 @@ public enum EntityDependencyOrderingMode
 
     private static IReadOnlyDictionary<TableKey, EntityIdentity> BuildEntityIdentityLookup(OsmModel model)
     {
-        var comparer = new TableKeyComparer();
-        var lookup = new Dictionary<TableKey, EntityIdentity>(comparer);
+        var lookup = new Dictionary<TableKey, EntityIdentity>(KeyComparer);
 
         foreach (var module in model.Modules)
         {
@@ -536,8 +530,7 @@ public enum EntityDependencyOrderingMode
 
     private static IReadOnlyDictionary<TableKey, EntityModel> BuildEntityLookup(OsmModel model)
     {
-        var comparer = new TableKeyComparer();
-        var lookup = new Dictionary<TableKey, EntityModel>(comparer);
+        var lookup = new Dictionary<TableKey, EntityModel>(KeyComparer);
 
         foreach (var module in model.Modules)
         {
@@ -555,13 +548,12 @@ public enum EntityDependencyOrderingMode
     }
 
     private static Dictionary<TableKey, HashSet<TableKey>> CloneEdges(
-        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
-        TableKeyComparer comparer)
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges)
     {
-        var clone = new Dictionary<TableKey, HashSet<TableKey>>(comparer);
+        var clone = new Dictionary<TableKey, HashSet<TableKey>>(KeyComparer);
         foreach (var (key, neighbors) in edges)
         {
-            clone[key] = new HashSet<TableKey>(neighbors, comparer);
+            clone[key] = new HashSet<TableKey>(neighbors, KeyComparer);
         }
 
         return clone;
@@ -617,7 +609,6 @@ public enum EntityDependencyOrderingMode
         DetectAsymmetricCycles(
             IReadOnlyCollection<TableKey> remainingKeys,
             IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
-            TableKeyComparer comparer,
             IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
             IReadOnlyDictionary<TableKey, EntityModel> entityLookup)
     {
@@ -626,34 +617,48 @@ public enum EntityDependencyOrderingMode
             return (ImmutableArray<AllowedCycle>.Empty, new List<(TableKey, TableKey)>());
         }
 
-        var components = FindStronglyConnectedComponents(remainingKeys, edges, comparer);
+        var components = TarjanScc.FindStronglyConnectedComponents(remainingKeys, edges, KeyComparer);
         var detectedCycles = ImmutableArray.CreateBuilder<AllowedCycle>();
         var edgesToRemove = new List<(TableKey Target, TableKey Dependent)>();
 
-        foreach (var component in components.Where(static component => component.Count == 2))
+        foreach (var component in components.Where(component => component.Count >= 2))
         {
-            var pair = component.ToArray();
-
-            if (!TryGetRelationshipMetadata(pair[0], pair[1], entityLookup, nodes, out var firstToSecond) ||
-                !TryGetRelationshipMetadata(pair[1], pair[0], entityLookup, nodes, out var secondToFirst))
+            if (component.Count == 2)
             {
-                continue;
-            }
+                // Handle simple 2-node cycles with existing logic
+                var pair = component.ToArray();
 
-            var firstStrength = ClassifyRelationship(firstToSecond);
-            var secondStrength = ClassifyRelationship(secondToFirst);
-
-            if ((firstStrength == RelationshipStrength.Weak && secondStrength == RelationshipStrength.Cascade) ||
-                (firstStrength == RelationshipStrength.Cascade && secondStrength == RelationshipStrength.Weak))
-            {
-                var parentKey = firstStrength == RelationshipStrength.Weak ? pair[0] : pair[1];
-                var childKey = firstStrength == RelationshipStrength.Cascade ? pair[0] : pair[1];
-
-                var allowedCycle = CreateAutoCycle(parentKey, childKey, nodes);
-                if (allowedCycle is not null)
+                if (!TryGetRelationshipMetadata(pair[0], pair[1], entityLookup, nodes, out var firstToSecond) ||
+                    !TryGetRelationshipMetadata(pair[1], pair[0], entityLookup, nodes, out var secondToFirst))
                 {
-                    detectedCycles.Add(allowedCycle);
-                    edgesToRemove.Add((parentKey, childKey));
+                    continue;
+                }
+
+                var firstStrength = ClassifyRelationship(firstToSecond);
+                var secondStrength = ClassifyRelationship(secondToFirst);
+
+                if ((firstStrength == RelationshipStrength.Weak && secondStrength == RelationshipStrength.Cascade) ||
+                    (firstStrength == RelationshipStrength.Cascade && secondStrength == RelationshipStrength.Weak))
+                {
+                    var parentKey = firstStrength == RelationshipStrength.Weak ? pair[0] : pair[1];
+                    var childKey = firstStrength == RelationshipStrength.Cascade ? pair[0] : pair[1];
+
+                    var allowedCycle = CreateAutoCycle(parentKey, childKey, nodes);
+                    if (allowedCycle is not null)
+                    {
+                        detectedCycles.Add(allowedCycle);
+                        edgesToRemove.Add((parentKey, childKey));
+                    }
+                }
+            }
+            else
+            {
+                // Handle large multi-node cycles
+                var result = ResolveMultiNodeCycle(component, edges, nodes, entityLookup);
+                if (result.HasValue)
+                {
+                    detectedCycles.Add(result.Value.AllowedCycle);
+                    edgesToRemove.AddRange(result.Value.EdgesToRemove);
                 }
             }
         }
@@ -661,54 +666,329 @@ public enum EntityDependencyOrderingMode
         return (detectedCycles.ToImmutable(), edgesToRemove);
     }
 
-    private static ImmutableArray<ImmutableHashSet<TableKey>> FindStronglyConnectedComponents(
-        IReadOnlyCollection<TableKey> nodes,
-        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
-        TableKeyComparer comparer)
+    private static (AllowedCycle AllowedCycle, ImmutableArray<(TableKey Source, TableKey Target)> EdgesToRemove)? 
+        ResolveMultiNodeCycle(
+            ImmutableHashSet<TableKey> component,
+            IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+            IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
+            IReadOnlyDictionary<TableKey, EntityModel> entityLookup)
     {
-        var index = 0;
-        var nodeIndex = new Dictionary<TableKey, int>(comparer);
-        var lowLink = new Dictionary<TableKey, int>(comparer);
-        var stack = new Stack<TableKey>();
-        var onStack = new HashSet<TableKey>(comparer);
-        var components = ImmutableArray.CreateBuilder<ImmutableHashSet<TableKey>>();
-        var nodeSet = new HashSet<TableKey>(nodes, comparer);
-
-        foreach (var node in nodes)
+        // Find all weak edges in the cycle
+        var weakEdges = FindWeakEdgesInComponent(component, edges, entityLookup, nodes);
+        
+        if (weakEdges.Count == 0)
         {
-            if (!nodeIndex.ContainsKey(node))
+            return null;
+        }
+
+        // Find minimum set of weak edges to break the cycle
+        var edgesToBreak = FindMinimumFeedbackArcSet(component, weakEdges, edges);
+        
+        if (edgesToBreak.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        // Generate topological ordering for the cycle
+        var ordering = GenerateTopologicalOrdering(component, edgesToBreak, edges, nodes);
+        
+        if (ordering.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var allowedCycle = AllowedCycle.Create(ordering);
+        if (!allowedCycle.IsSuccess)
+        {
+            return null;
+        }
+
+        return (allowedCycle.Value, edgesToBreak);
+    }
+
+    private static List<(TableKey Source, TableKey Target)> FindWeakEdgesInComponent(
+        ImmutableHashSet<TableKey> component,
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+        IReadOnlyDictionary<TableKey, EntityModel> entityLookup,
+        IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
+        Func<TableKey, TableKey, IReadOnlyDictionary<TableKey, StaticEntityTableData>, int>? edgePriorityFunc = null)
+    {
+        var weakEdges = new List<(TableKey Source, TableKey Target)>();
+
+        foreach (var source in component)
+        {
+            if (!edges.TryGetValue(source, out var targets))
             {
-                StrongConnect(node);
+                continue;
+            }
+
+            foreach (var target in targets.Where(component.Contains))
+            {
+                if (TryGetRelationshipMetadata(source, target, entityLookup, nodes, out var metadata) &&
+                    ClassifyRelationship(metadata) == RelationshipStrength.Weak)
+                {
+                    weakEdges.Add((source, target));
+                }
             }
         }
 
-        return components.ToImmutable();
-
-        void StrongConnect(TableKey node)
+        // Apply optional prioritization heuristic (e.g., domain-specific naming patterns)
+        if (edgePriorityFunc is not null)
         {
-            nodeIndex[node] = index;
-            lowLink[node] = index;
-            index++;
-            stack.Push(node);
-            onStack.Add(node);
+            weakEdges.Sort((a, b) =>
+            {
+                var aScore = edgePriorityFunc(a.Source, a.Target, nodes);
+                var bScore = edgePriorityFunc(b.Source, b.Target, nodes);
+                return bScore.CompareTo(aScore); // Higher score = higher priority
+            });
+        }
+
+        return weakEdges;
+    }
+
+    private static ImmutableArray<(TableKey Source, TableKey Target)> FindMinimumFeedbackArcSet(
+        ImmutableHashSet<TableKey> component,
+        List<(TableKey Source, TableKey Target)> weakEdges,
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges)
+    {
+        // Try progressively larger subsets until we find one that breaks all cycles
+        for (var subsetSize = 1; subsetSize <= weakEdges.Count; subsetSize++)
+        {
+            foreach (var subset in GetCombinations(weakEdges, subsetSize))
+            {
+                if (IsAcyclicAfterRemoval(component, subset, edges))
+                {
+                    return subset.ToImmutableArray();
+                }
+            }
+        }
+
+        // Fallback: remove all weak edges (guaranteed to work if component was only held together by weak edges)
+        return weakEdges.ToImmutableArray();
+    }
+
+    private static IEnumerable<List<(TableKey Source, TableKey Target)>> GetCombinations(
+        List<(TableKey Source, TableKey Target)> items,
+        int size)
+    {
+        if (size == 0)
+        {
+            yield return new List<(TableKey, TableKey)>();
+            yield break;
+        }
+
+        if (size > items.Count)
+        {
+            yield break;
+        }
+
+        // Generate combinations recursively
+        for (var i = 0; i <= items.Count - size; i++)
+        {
+            var item = items[i];
+            if (size == 1)
+            {
+                yield return new List<(TableKey, TableKey)> { item };
+            }
+            else
+            {
+                foreach (var rest in GetCombinations(items.Skip(i + 1).ToList(), size - 1))
+                {
+                    var combination = new List<(TableKey, TableKey)> { item };
+                    combination.AddRange(rest);
+                    yield return combination;
+                }
+            }
+        }
+    }
+
+    private static bool IsAcyclicAfterRemoval(
+        ImmutableHashSet<TableKey> component,
+        List<(TableKey Source, TableKey Target)> edgesToRemove,
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges)
+    {
+        // Clone edges and remove the candidate edges
+        var testEdges = new Dictionary<TableKey, HashSet<TableKey>>(KeyComparer);
+        foreach (var node in component)
+        {
+            if (edges.TryGetValue(node, out var targets))
+            {
+                testEdges[node] = new HashSet<TableKey>(targets.Where(component.Contains), KeyComparer);
+            }
+            else
+            {
+                testEdges[node] = new HashSet<TableKey>(KeyComparer);
+            }
+        }
+
+        foreach (var (source, target) in edgesToRemove)
+        {
+            if (testEdges.TryGetValue(source, out var targets))
+            {
+                targets.Remove(target);
+            }
+        }
+
+        // Check if the result is acyclic using SCC
+        var sccs = TarjanScc.FindStronglyConnectedComponents(component, testEdges, KeyComparer);
+        return sccs.All(static scc => scc.Count == 1);
+    }
+
+    private static ImmutableArray<TableOrdering> GenerateTopologicalOrdering(
+        ImmutableHashSet<TableKey> component,
+        ImmutableArray<(TableKey Source, TableKey Target)> edgesToBreak,
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+        IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes)
+    {
+        // Create modified graph with weak edges removed
+        var adjustedEdges = new Dictionary<TableKey, HashSet<TableKey>>(KeyComparer);
+        foreach (var node in component)
+        {
+            if (edges.TryGetValue(node, out var targets))
+            {
+                adjustedEdges[node] = new HashSet<TableKey>(targets.Where(component.Contains), KeyComparer);
+            }
+            else
+            {
+                adjustedEdges[node] = new HashSet<TableKey>(KeyComparer);
+            }
+        }
+
+        foreach (var (source, target) in edgesToBreak)
+        {
+            if (adjustedEdges.TryGetValue(source, out var targets))
+            {
+                targets.Remove(target);
+            }
+        }
+
+        // Compute topological levels using BFS
+        var levels = new Dictionary<TableKey, int>(KeyComparer);
+        var inDegree = new Dictionary<TableKey, int>(KeyComparer);
+        
+        foreach (var node in component)
+        {
+            inDegree[node] = 0;
+        }
+
+        foreach (var (node, targets) in adjustedEdges)
+        {
+            foreach (var target in targets)
+            {
+                inDegree[target] = inDegree[target] + 1;
+            }
+        }
+
+        var queue = new Queue<TableKey>();
+        foreach (var node in component.Where(node => inDegree[node] == 0))
+        {
+            queue.Enqueue(node);
+            levels[node] = 0;
+        }
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            var currentLevel = levels[current];
+
+            if (!adjustedEdges.TryGetValue(current, out var targets))
+            {
+                continue;
+            }
+
+            foreach (var target in targets)
+            {
+                inDegree[target] = inDegree[target] - 1;
+                if (inDegree[target] == 0)
+                {
+                    queue.Enqueue(target);
+                    levels[target] = currentLevel + 1;
+                }
+            }
+        }
+
+        // If not all nodes were assigned levels, we still have a cycle (shouldn't happen)
+        if (levels.Count != component.Count)
+        {
+            return ImmutableArray<TableOrdering>.Empty;
+        }
+
+        // Generate TableOrdering with positions based on levels
+        var orderings = ImmutableArray.CreateBuilder<TableOrdering>();
+        const int positionBase = 100;
+        const int positionStep = 100;
+
+        foreach (var (table, level) in levels.OrderBy(static kvp => kvp.Value).ThenBy(kvp => kvp.Key.Table))
+        {
+            var tableName = nodes[table].Definition.PhysicalName ?? 
+                           nodes[table].Definition.EffectiveName ?? 
+                           table.Table;
+            var position = positionBase + (level * positionStep);
+            var ordering = TableOrdering.Create(tableName, position);
+            if (ordering.IsSuccess)
+            {
+                orderings.Add(ordering.Value);
+            }
+        }
+
+        return orderings.ToImmutable();
+    }
+
+    /// <summary>
+    /// Tarjan's strongly connected components algorithm - pure graph utility.
+    /// Extracted for reusability and testability.
+    /// </summary>
+    private static class TarjanScc
+    {
+        public static ImmutableArray<ImmutableHashSet<TableKey>> FindStronglyConnectedComponents(
+            IReadOnlyCollection<TableKey> nodes,
+            IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+            TableKeyComparer comparer)
+        {
+            var state = new TarjanState(comparer, new HashSet<TableKey>(nodes, comparer));
+            var components = ImmutableArray.CreateBuilder<ImmutableHashSet<TableKey>>();
+
+            foreach (var node in nodes)
+            {
+                if (!state.NodeIndex.ContainsKey(node))
+                {
+                    StrongConnect(node, edges, state, components, comparer);
+                }
+            }
+
+            return components.ToImmutable();
+        }
+
+        private static void StrongConnect(
+            TableKey node,
+            IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+            TarjanState state,
+            ImmutableArray<ImmutableHashSet<TableKey>>.Builder components,
+            TableKeyComparer comparer)
+        {
+            state.NodeIndex[node] = state.Index;
+            state.LowLink[node] = state.Index;
+            state.Index++;
+            state.Stack.Push(node);
+            state.OnStack.Add(node);
 
             if (edges.TryGetValue(node, out var neighbors))
             {
-                foreach (var neighbor in neighbors.Where(nodeSet.Contains))
+                foreach (var neighbor in neighbors.Where(state.NodeSet.Contains))
                 {
-                    if (!nodeIndex.ContainsKey(neighbor))
+                    if (!state.NodeIndex.ContainsKey(neighbor))
                     {
-                        StrongConnect(neighbor);
-                        lowLink[node] = Math.Min(lowLink[node], lowLink[neighbor]);
+                        StrongConnect(neighbor, edges, state, components, comparer);
+                        state.LowLink[node] = Math.Min(state.LowLink[node], state.LowLink[neighbor]);
                     }
-                    else if (onStack.Contains(neighbor))
+                    else if (state.OnStack.Contains(neighbor))
                     {
-                        lowLink[node] = Math.Min(lowLink[node], nodeIndex[neighbor]);
+                        state.LowLink[node] = Math.Min(state.LowLink[node], state.NodeIndex[neighbor]);
                     }
                 }
             }
 
-            if (lowLink[node] != nodeIndex[node])
+            if (state.LowLink[node] != state.NodeIndex[node])
             {
                 return;
             }
@@ -717,13 +997,31 @@ public enum EntityDependencyOrderingMode
             TableKey current;
             do
             {
-                current = stack.Pop();
-                onStack.Remove(current);
+                current = state.Stack.Pop();
+                state.OnStack.Remove(current);
                 componentBuilder.Add(current);
             }
             while (!comparer.Equals(current, node));
 
             components.Add(componentBuilder.ToImmutable());
+        }
+
+        private sealed class TarjanState
+        {
+            public int Index;
+            public readonly Dictionary<TableKey, int> NodeIndex;
+            public readonly Dictionary<TableKey, int> LowLink;
+            public readonly Stack<TableKey> Stack = new();
+            public readonly HashSet<TableKey> OnStack;
+            public readonly HashSet<TableKey> NodeSet;
+
+            public TarjanState(TableKeyComparer comparer, HashSet<TableKey> nodeSet)
+            {
+                NodeIndex = new Dictionary<TableKey, int>(comparer);
+                LowLink = new Dictionary<TableKey, int>(comparer);
+                OnStack = new HashSet<TableKey>(comparer);
+                NodeSet = nodeSet;
+            }
         }
     }
 
@@ -905,8 +1203,7 @@ public enum EntityDependencyOrderingMode
 
         public static TableLookup Create(IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes)
         {
-            var comparer = new TableKeyComparer();
-            var effectiveLookup = new Dictionary<TableKey, TableKey>(comparer);
+            var effectiveLookup = new Dictionary<TableKey, TableKey>(KeyComparer);
             var moduleLookup = new Dictionary<ModuleEntityKey, TableKey>(ModuleEntityKeyComparer.Instance);
 
             foreach (var (key, table) in nodes)
@@ -1072,8 +1369,7 @@ public enum EntityDependencyOrderingMode
                 return JunctionTableClassification.Disabled;
             }
 
-            var comparer = new TableKeyComparer();
-            var junctions = new HashSet<TableKey>(comparer);
+            var junctions = new HashSet<TableKey>(KeyComparer);
 
             foreach (var module in model.Modules)
             {
