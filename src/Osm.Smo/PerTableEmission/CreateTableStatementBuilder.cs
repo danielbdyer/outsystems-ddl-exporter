@@ -110,7 +110,8 @@ internal sealed class CreateTableStatementBuilder
         SmoTableDefinition table,
         string effectiveTableName,
         SmoBuildOptions options,
-        out ImmutableDictionary<string, bool> foreignKeyTrustLookup)
+        out ImmutableDictionary<string, bool> foreignKeyTrustLookup,
+        out ImmutableArray<SmoForeignKeyDefinition> deferredNoCheckForeignKeys)
     {
         if (statement is null)
         {
@@ -135,11 +136,13 @@ internal sealed class CreateTableStatementBuilder
         if (options.EmitBareTableOnly || table.ForeignKeys.Length == 0 || statement.Definition is null)
         {
             foreignKeyTrustLookup = ImmutableDictionary<string, bool>.Empty;
+            deferredNoCheckForeignKeys = ImmutableArray<SmoForeignKeyDefinition>.Empty;
             return ImmutableArray<string>.Empty;
         }
 
         var builder = ImmutableArray.CreateBuilder<string>(table.ForeignKeys.Length);
         var trustBuilder = ImmutableDictionary.CreateBuilder<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var deferredBuilder = ImmutableArray.CreateBuilder<SmoForeignKeyDefinition>();
         var columnLookup = new Dictionary<string, ColumnDefinition>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var columnDefinition in statement.Definition.ColumnDefinitions)
@@ -184,6 +187,13 @@ internal sealed class CreateTableStatementBuilder
                 constraint.ReferencedTableColumns.Add(_identifierFormatter.CreateIdentifier(referencedColumn, options.Format));
             }
 
+            // Skip inline constraints for NOCHECK FKs - they must be emitted as separate ALTER TABLE statements
+            if (foreignKey.IsNoCheck)
+            {
+                deferredBuilder.Add(foreignKey);
+                continue;
+            }
+
             if (foreignKey.Columns.Length == 1 &&
                 columnLookup.TryGetValue(foreignKey.Columns[0], out var inlineColumn) &&
                 inlineColumn is not null)
@@ -197,7 +207,75 @@ internal sealed class CreateTableStatementBuilder
         }
 
         foreignKeyTrustLookup = trustBuilder.ToImmutable();
+        deferredNoCheckForeignKeys = deferredBuilder.ToImmutable();
         return builder.ToImmutable();
+    }
+
+    public ImmutableArray<string> BuildNoCheckForeignKeyStatements(
+        SmoTableDefinition table,
+        string effectiveTableName,
+        ImmutableArray<SmoForeignKeyDefinition> deferredForeignKeys,
+        SmoBuildOptions options)
+    {
+        if (table is null)
+        {
+            throw new ArgumentNullException(nameof(table));
+        }
+
+        if (effectiveTableName is null)
+        {
+            throw new ArgumentNullException(nameof(effectiveTableName));
+        }
+
+        if (options is null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
+
+        if (deferredForeignKeys.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var statements = ImmutableArray.CreateBuilder<string>(deferredForeignKeys.Length);
+
+        foreach (var foreignKey in deferredForeignKeys)
+        {
+            var referencedTableName = options.NamingOverrides.GetEffectiveTableName(
+                foreignKey.ReferencedSchema,
+                foreignKey.ReferencedTable,
+                foreignKey.ReferencedLogicalTable,
+                foreignKey.ReferencedModule);
+
+            var foreignKeyName = _identifierFormatter.ResolveConstraintName(
+                foreignKey.Name,
+                table.Name,
+                table.LogicalName,
+                effectiveTableName);
+
+            var schemaIdentifier = _identifierFormatter.QuoteIdentifier(table.Schema, options.Format);
+            var tableIdentifier = _identifierFormatter.QuoteIdentifier(effectiveTableName, options.Format);
+            var constraintIdentifier = _identifierFormatter.QuoteIdentifier(foreignKeyName, options.Format);
+            var referencedSchemaIdentifier = _identifierFormatter.QuoteIdentifier(foreignKey.ReferencedSchema, options.Format);
+            var referencedTableIdentifier = _identifierFormatter.QuoteIdentifier(referencedTableName, options.Format);
+
+            var columnList = string.Join(", ", foreignKey.Columns.Select(c => _identifierFormatter.QuoteIdentifier(c, options.Format)));
+            var referencedColumnList = string.Join(", ", foreignKey.ReferencedColumns.Select(c => _identifierFormatter.QuoteIdentifier(c, options.Format)));
+
+            var deleteClause = string.Empty;
+            var deleteAction = MapDeleteActionToString(foreignKey.DeleteAction);
+            if (!string.Equals(deleteAction, "NO ACTION", StringComparison.OrdinalIgnoreCase))
+            {
+                deleteClause = $" ON DELETE {deleteAction}";
+            }
+
+            var statement = $"ALTER TABLE {schemaIdentifier}.{tableIdentifier}  WITH NOCHECK ADD CONSTRAINT {constraintIdentifier}{Environment.NewLine}" +
+                           $"    FOREIGN KEY ({columnList}) REFERENCES {referencedSchemaIdentifier}.{referencedTableIdentifier} ({referencedColumnList}){deleteClause}";
+
+            statements.Add(statement);
+        }
+
+        return statements.ToImmutable();
     }
 
     private ColumnDefinition BuildColumnDefinition(
@@ -461,5 +539,13 @@ internal sealed class CreateTableStatementBuilder
         ForeignKeyAction.Cascade => DeleteUpdateAction.Cascade,
         ForeignKeyAction.SetNull => DeleteUpdateAction.SetNull,
         _ => DeleteUpdateAction.NoAction,
+    };
+
+    private static string MapDeleteActionToString(ForeignKeyAction action) => action switch
+    {
+        ForeignKeyAction.Cascade => "CASCADE",
+        ForeignKeyAction.SetNull => "SET NULL",
+        ForeignKeyAction.SetDefault => "SET DEFAULT",
+        _ => "NO ACTION",
     };
 }
