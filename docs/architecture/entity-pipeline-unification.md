@@ -162,137 +162,419 @@ How should the SQL scripts modify the target database?
 
 ---
 
-## 🧩 The Extract-Model Integration Problem
+## 🎛️ Configuration as Parameterization: The Unification Mechanism
 
-### Current State: Two-Step Manual Process
+The three dimensions aren't abstract concepts - they're **implemented via configuration primitives** that already exist in the codebase.
 
-Users currently run **two separate commands**:
+### The Configuration Primitives ✅ Already Exist
 
-```bash
-# Step 1: Extract model metadata from live database
-$ osm extract-model --output model.extracted.json
+**Critical Insight**: The mechanism for parameterizing the unified pipeline is ALREADY BUILT. We don't need to design it from scratch.
 
-# Step 2: Feed extracted model into build/export
-$ osm build-ssdt --model model.extracted.json
-$ osm full-export --model model.extracted.json
+| Dimension | Configuration Primitive | Location | What It Controls |
+|-----------|------------------------|----------|------------------|
+| **SCOPE** | `ModuleFilterOptions` | `src/Osm.Domain/Configuration/ModuleFilterOptions.cs` | Which entities to process |
+| | `EntityFilters` ✅ | `ModuleFilterOptions.cs:32, 116-153` | **Per-module, per-entity selection** |
+| | `IncludeSystemModules` | `ModuleFilterOptions.cs:28` | Include/exclude system modules |
+| | `IncludeInactiveModules` | `ModuleFilterOptions.cs:30` | Include/exclude inactive modules |
+| **EMISSION** | `EmissionStrategy` (implicit) | Via `GroupByModule`, `EmitMasterFile` flags | How to organize output files |
+| | `NamingOverrideOptions` | `src/Osm.Domain/Configuration/NamingOverrideOptions.cs` | Table/column name remapping |
+| **INSERTION** | `StaticSeedSynchronizationMode` | `src/Osm.Emission/Seeds/StaticSeedSqlBuilder.cs` | MERGE vs INSERT behavior |
+| | `DynamicEntityInsertGenerationOptions` | `src/Osm.Emission/DynamicEntityInsertGenerator.cs` | Batch size, INSERT options |
+| **CROSS-CUTTING** | `CircularDependencyOptions` | `src/Osm.Domain/Configuration/CircularDependencyOptions.cs` | Manual cycle resolution |
+| | `TighteningOptions` | `src/Osm.Domain/Configuration/TighteningOptions.cs` | Nullability, validation overrides |
+| | `ModuleValidationOverrides` | `src/Osm.Domain/Configuration/ModuleValidationOverrides.cs` | Per-module validation rules |
+
+### EntityFilters: The Existing Primitive ✅ (Incomplete Implementation)
+
+**Discovery**: `ModuleFilterOptions.EntityFilters` provides the exact capability described in the North Star vision.
+
+**What Exists** (`ModuleFilterSectionReader.cs:65-78`):
+```json
+{
+  "model": {
+    "modules": [
+      {
+        "name": "ServiceCenter",
+        "entities": ["User", "Tenant"]  // ← Per-entity selection!
+      },
+      {
+        "name": "MyModule",
+        "entities": []  // ← All entities from module
+      }
+    ]
+  }
+}
 ```
 
-**Problems**:
-- Manual orchestration required
-- Model file passed around as artifact
-- No caching or reuse between runs
-- Extract-model feels like a separate concern, not integrated
+**What Works**:
+- ✅ Configuration parsing (JSON → `ModuleFilterOptions`)
+- ✅ Module filtering in `ModuleFilterRunner` (`PipelineBootstrapper.cs:119`)
+- ✅ Entity list validation
 
-### Where Entity Data Comes From
+**What's Incomplete** ✅ Verified:
+- ⚠️ **SQL query filtering not implemented** - `extract-model` command doesn't respect EntityFilters
+- ⚠️ **Validation issues cascade** - Filtering ServiceCenter to `["User"]` still validates ALL ServiceCenter entities
+- ⚠️ **Supplemental mechanism still needed** - EntityFilters exists but not fully integrated end-to-end
 
-**There is only ONE data source: The live database.**
+**Unification Implication**:
+- EntityFilters is the RIGHT primitive (correct API shape)
+- BUT requires completion: SQL query generation, validation scope, full pipeline integration
+- Supplemental is NOT redundant yet - it's a workaround for EntityFilters' incomplete implementation
+- Once EntityFilters is complete, Supplemental becomes obsolete
 
-When we say "entity with data", we mean:
-- The entity has a physical table in the database
-- Data was extracted from that table via `SELECT * FROM [table]`
-- No data is stored inline in model JSON (model JSON is **metadata only**)
+### Configuration Flow: CLI → Pipeline
 
-**Confusion to clear up**:
-- ❌ Model JSON does NOT contain row data
-- ❌ Static seeds do NOT have "inline data"
-- ✅ ALL data comes from database extraction
-- ✅ Model JSON contains only structure (schema, relationships, indexes)
+The configuration system demonstrates how parameterization translates to pipeline execution:
 
-### Vision: Integrated Extract-Model
-
-**Extract-model should be integrated into the pipeline**, not a separate manual step:
-
-```bash
-# ONE command, extract-model happens automatically
-$ osm build-ssdt --connection-string "..."
-
-# Model is cached as artifact, reused across runs
-# User doesn't manually pass model.json around
+```
+CLI Arguments / appsettings.json
+        ↓
+CliConfigurationLoader (parses JSON sections)
+        ↓
+BuildSsdtRequestAssembler (assembles pipeline request)
+        ↓
+ModuleFilterOptions + TighteningOptions + CircularDependencyOptions + ...
+        ↓
+PipelineBootstrapper (applies filters, loads model)
+        ↓
+BuildSsdtPipeline (executes stages with config-driven behavior)
 ```
 
-**How it fits**:
-- Extract-model becomes **Stage 0** of the unified pipeline
-- Model cached to disk (e.g., `.cache/model-snapshot.json`)
-- Subsequent runs reuse cache if database schema unchanged
-- User can still provide pre-extracted model if desired (for offline scenarios)
+**Key Files**:
+- `CliConfiguration.cs` - Root configuration object
+- `ModuleFilterSectionReader.cs` - Parses `model.modules` section
+- `TighteningSectionReader.cs` - Parses `tightening` section
+- `BuildSsdtRequestAssembler.cs` - Translates config → pipeline request
+- `PipelineBootstrapper.cs` - Executes config-driven filtering/loading
+
+### Functional Composition: The Unification Strategy
+
+**Pattern Discovery**: The codebase already uses functional composition for type-safe pipeline orchestration.
+
+**`IBuildSsdtStep<TInput, TOutput>` Interface** (`IBuildSsdtStep.cs:7-10`):
+```csharp
+public interface IBuildSsdtStep<in TInput, TNextState>
+{
+    Task<Result<TNextState>> ExecuteAsync(TInput state, CancellationToken cancellationToken = default);
+}
+```
+
+**Monadic Chaining** (`BuildSsdtPipeline.cs:83-95`):
+```csharp
+var finalStateResult = await _bootstrapStep
+    .ExecuteAsync(initialized, cancellationToken)
+    .BindAsync((bootstrap, token) => _evidenceCacheStep.ExecuteAsync(bootstrap, token), cancellationToken)
+    .BindAsync((decisions, token) => _emissionStep.ExecuteAsync(decisions, token), cancellationToken)
+    // ... chain continues
+```
+
+**Why This Matters**:
+- ✅ **Type safety**: Each step's output type matches next step's input type
+- ✅ **Composability**: Steps can be reordered, skipped, or replaced
+- ✅ **Early termination**: `Result<T>` monad short-circuits on failure
+- ✅ **Functional purity**: Each step is a pure transformation (input state → output state)
+
+**Extraction Pattern**: Bootstrap demonstrates the correct pattern. To unify:
+1. Extract the pattern (IBuildSsdtStep interface, monadic chaining)
+2. Make each stage configurable (driven by config primitives above)
+3. Compose stages differently for different use cases (StaticSeeds vs Bootstrap vs future pipelines)
+
+---
+
+## 🔧 Stage -1: Request Assembly (Configuration → Primitives)
+
+**Purpose**: Translate CLI arguments and configuration files into first-class pipeline primitives.
+
+**Location**: `BuildSsdtRequestAssembler.cs`
+
+**What It Does**:
+1. **Loads Configuration** - Parses `appsettings.json` sections
+2. **Resolves Dependencies** - Cross-references between config sections (e.g., profiling + tightening)
+3. **Validates Configuration** - Ensures config is well-formed before pipeline starts
+4. **Constructs Pipeline Request** - Creates `BuildSsdtPipelineRequest` with all options populated
+
+**Key Primitives Built**:
+- `ModuleFilterOptions` (from `model.modules` section)
+- `TighteningOptions` (from `tightening` section)
+- `ResolvedSqlOptions` (connection string, timeouts)
+- `CircularDependencyOptions` (from `circularDependencies` config file)
+- `NamingOverrideOptions` (from `namingOverrides` section)
+- `SmoBuildOptions` (formatting, naming conventions)
+- `EvidenceCacheOptions` (cache invalidation metadata)
+
+**State Progression**:
+```
+CliArguments + appsettings.json
+        ↓
+BuildSsdtRequestAssemblerContext (raw config)
+        ↓
+BuildSsdtRequestAssembly (validated pipeline request)
+        ↓
+BuildSsdtPipelineRequest (ready for execution)
+```
+
+**Critical Files**:
+- `BuildSsdtRequestAssembler.cs:52-100` - Main assembly logic
+- `ModuleFilterSectionReader.cs:9-150` - Parses module filters
+- `TighteningSectionReader.cs` - Parses tightening options
+- `CacheMetadataBuilder.cs` - Creates cache fingerprint
+- `EvidenceCacheOptionsFactory.cs` - Builds cache options
+
+**Why Stage -1**:
+- Happens BEFORE any pipeline execution
+- Configuration is the FIRST parameterization point
+- Shape of config should mirror shape of unified pipeline primitives
+
+---
+
+## 📦 Stage 0: Pipeline Bootstrapping
+
+**Purpose**: Unified entry point that prepares the execution environment for all pipeline implementations.
+
+**Location**: `PipelineBootstrapper.cs:49-143`
+
+**What It Does**:
+1. **Model Loading** - Load `OsmModel` from file or inline
+2. **Module Filtering** - Apply `ModuleFilterOptions` to select entities
+3. **Supplemental Loading** - Load additional entities (e.g., ServiceCenter::User)
+4. **Profiling** - Capture data quality metrics (null counts, FK orphans, uniqueness)
+
+**State Progression**:
+```
+BuildSsdtPipelineRequest
+        ↓
+ModelLoader → OsmModel (loaded from disk/inline)
+        ↓
+ModuleFilterRunner → OsmModel (filtered by modules)
+        ↓
+SupplementalLoader → OsmModel + SupplementalEntities
+        ↓
+ProfilerRunner → ProfileSnapshot (data quality metrics)
+        ↓
+PipelineBootstrapContext (ready for Stage 1)
+```
+
+**Critical Primitives**:
+- `ModelLoader` - Handles model ingestion (file → `OsmModel`)
+- `ModuleFilterRunner` - Applies `ModuleFilterOptions.EntityFilters` ⚠️ (incomplete)
+- `SupplementalLoader` - Loads entities from JSON files (workaround until EntityFilters complete)
+- `ProfilerRunner` - Coordinates profiling execution
+
+**Profiling Integration** ✅ Critical for Stage 3:
+- Profiling happens HERE (Stage 0), not during transforms
+- Results stored in `ProfileSnapshot`
+- Used by Stage 3 transforms (nullability tightening, deferred FKs, UAT-users detection)
+- **Ordering matters**: Profile must run before transforms that depend on it
+
+**Why Stage 0**:
+- ALL pipelines (StaticSeeds, Bootstrap, future unified) start here
+- This is where configuration becomes runtime state
+- Output (`PipelineBootstrapContext`) is the common foundation
+
+**Relationship to Extract-Model**:
+- Extract-model is a SEPARATE verb/pipeline (`ExtractModelPipeline.cs`)
+- Stage 0 LOADS an already-extracted model (from file or inline)
+- **Future vision**: Integrate extract-model as a pre-Stage 0 step with caching
+  - Extract model → cache to disk → Stage 0 loads cached model
+  - Invalidate cache on schema change (checksum-based)
+
+---
+
+## 🧩 Stage 1: Entity Selection
+
+**Purpose**: Determine which entities from the model will be processed by the pipeline.
+
+**Input**: `OsmModel` (filtered by modules from Stage 0)
+**Output**: Set of entities to process
+
+### Conceptual Operation
+
+This is not a binary "static vs. regular" - it's a **selection predicate** over the entity model.
+
+**Conceptual Options**:
+- **All entities from modules** (`modules: ["ModuleA", "ModuleB"]`)
+- **Filtered entities per module** (`ModuleA: all, ServiceCenter: [User only]`)
+- **Entities matching predicate** (`entity.IsStatic == true`)
+- **Entities with available data** (`hasData(entity)`)
+- **Custom combinations** (`static entities + ServiceCenter::User`)
+
+### Current Implementations
+
+1. **Static Seeds**: Hardcoded to `entity.IsStatic && entity.IsActive`
+   - Location: `StaticEntitySeedDefinitionBuilder.Build()`
+   - Scope: Only static entities
+
+2. **Bootstrap**: Hardcoded to `allEntitiesWithData`
+   - Combines: Static entities + Regular entities + Supplemental entities
+   - Scope: Everything with data
+   - ✅ Shows correct pattern (global selection)
+
+3. **DynamicData** (DEPRECATED): User-provided dataset
+   - No selection - entities explicitly provided by user
+
+### Existing Primitive: EntityFilters ⚠️ (Incomplete)
+
+**Discovery**: The primitive EXISTS but isn't fully implemented.
+
+**Configuration** (`ModuleFilterOptions.EntityFilters`):
+```csharp
+public ImmutableDictionary<string, ModuleEntityFilterOptions> EntityFilters { get; }
+```
+
+**JSON Shape** (`ModuleFilterSectionReader.cs:65-78`):
+```json
+{
+  "modules": [
+    {
+      "name": "ServiceCenter",
+      "entities": ["User", "Tenant"]  // ← Per-entity selection
+    }
+  ]
+}
+```
+
+**What Works**:
+- ✅ Config parsing → `ModuleFilterOptions.EntityFilters`
+- ✅ Runtime access via `ModuleFilterOptions.EntityFilters.TryGetValue(moduleName, out var filter)`
+
+**What's Missing** ✅ Verified:
+- ⚠️ **SQL query filtering** - `extract-model` doesn't respect EntityFilters when querying `OSSYS_*` tables
+- ⚠️ **Validation scope** - Filtering `ServiceCenter` to `["User"]` still validates ALL ServiceCenter entities
+- ⚠️ **Consistent application** - EntityFilters applied in some places (module filtering), ignored in others (SQL extraction)
+
+**Gap Analysis**:
+```
+Where EntityFilters WORKS:
+  ✅ ModuleFilterRunner (Stage 0) - filters in-memory OsmModel
+
+Where EntityFilters DOESN'T WORK:
+  ❌ SqlModelExtractionService - SQL queries fetch ALL entities from module
+  ❌ Validation - validates ALL entities even when filtered
+  ❌ Profiling - profiles ALL entities even when filtered
+```
+
+**Unification Path**:
+1. Complete EntityFilters implementation (SQL queries, validation, profiling)
+2. Deprecate Supplemental mechanism (redundant once EntityFilters complete)
+3. Use EntityFilters as THE primitive for entity selection
+
+**Current Workaround**: Supplemental entities loaded via JSON files because EntityFilters incomplete
 
 ---
 
 ## 🌟 The North Star Vision
 
-### Bootstrap Shows Us the Way ✅
+### What We've Discovered
 
-**Critical Insight**: `BuildSsdtBootstrapSnapshotStep` ALREADY demonstrates the unified pipeline pattern:
-- ✅ Global entity selection (static + regular + supplemental)
-- ✅ Global topological sort across all entity categories
-- ✅ Cycle diagnostics with CircularDependencyOptions
-- ✅ Monolithic emission preserving topological order
-- ✅ Configurable insertion strategy (NonDestructive mode = INSERT)
+The unified pipeline isn't a future vision - **most of it already exists**:
 
-**The Extraction Challenge**: Bootstrap is a **specific use case** (one-time INSERT of all data). We need to:
-1. **Extract the patterns** Bootstrap demonstrates (global sort, cycle handling, unified entity selection)
-2. **Create abstractions** that work for BOTH:
-   - Bootstrap (keep as-is: global INSERT for first-time deployment)
-   - StaticSeeds (needs same patterns: global sort, but MERGE instead of INSERT, filtered to static entities)
-3. **Parameterize** the pipeline (scope, emission, insertion become configuration, not separate implementations)
+**Configuration Primitives** ✅ Already Built:
+- `ModuleFilterOptions` (scope control)
+- `EntityFilters` (per-entity selection - incomplete implementation)
+- `CircularDependencyOptions` (cycle resolution)
+- `TighteningOptions` (transform configuration)
+- `NamingOverrideOptions` (naming transforms)
 
-**Anti-pattern**: Renaming everything to "Bootstrap" - that conflates the specific (Bootstrap use case) with the general (unified pipeline architecture).
+**Orchestration Pattern** ✅ Already Built:
+- `IBuildSsdtStep<TInput, TOutput>` interface
+- Monadic chaining (`.BindAsync()`)
+- Immutable state progression
+- Type-safe composition
+
+**Shared Primitives** ✅ Already Built:
+- `EntityDependencySorter` (universal topological sort)
+- `StaticEntityTableData` (universal data structure)
+- `PipelineBootstrapper` (unified entry point)
+- `BuildSsdtRequestAssembler` (config → primitives translation)
+
+**Bootstrap Pattern** ✅ Already Demonstrated:
+- Global entity selection (static + regular + supplemental)
+- Global topological sort across all categories
+- Configurable insertion (INSERT vs MERGE)
+- Cycle diagnostics via `TopologicalOrderingValidator`
 
 ### What Success Looks Like
 
-A **unified Entity Data Pipeline** where:
+**Conceptual API** (what the unified pipeline SHOULD feel like):
 
-```
+```csharp
 EntityPipeline.Execute(
+    // Stage -1: Configuration
+    config: new PipelineConfiguration
+    {
+        // Stage 0: Entity selection (driven by EntityFilters - needs completion)
+        Scope = EntityFilters.ForModules(["ModuleA", "ModuleB"])
+                            .Include("ServiceCenter", ["User"])  // ← EntityFilters API
+                            .Where(e => e.IsStatic),  // ← Optional predicate
+
+        // Stage 5: Emission strategy
+        Emission = EmissionStrategy.Monolithic("output/seeds.sql"),
+        // OR: EmissionStrategy.PerModule(outputDir, ".sqlproj ordering")
+
+        // Stage 6: Insertion strategy
+        Insertion = InsertionStrategy.Merge(conflictResolution: MergeOnPrimaryKey),
+        // OR: InsertionStrategy.Insert(NonDestructive)
+
+        // Stage 4: Topological sort (always global)
+        CircularDependencies = CircularDependencyOptions.FromFile("cycles.json"),
+
+        // Stage 3: Business logic transforms (profiling-informed)
+        Transforms = new TransformOptions
+        {
+            Tightening = TighteningOptions.FromFile("tightening.json"),
+            NamingOverrides = NamingOverrideOptions.FromFile("naming.json"),
+            UatUsers = UatUsersOptions.FromInventories("qa-users.json", "uat-users.json")
+        }
+    },
+
+    // Execution context
     connectionString: "Server=...",
-
-    scope: EntitySelector.FromModules(["ModuleA", "ModuleB"])
-                         .Include("ServiceCenter", ["User"])
-                         .Where(e => e.IsStatic),  // For static seeds
-
-    emission: EmissionStrategy.Monolithic("output/bootstrap.sql"),
-
-    insertion: InsertionStrategy.Insert(batchSize: 1000),
-
-    sort: TopologicalSort.Global(
-        circularDependencies: config.AllowedCycles
-    ),
-
-    // Transform stage: Preserve existing business logic
-    // NOTE: This is a CONCEPTUAL stage - exact shape TBD via excavation
-    transform: config.BusinessLogicTransforms
-)
+    outputDirectory: "output/",
+    cancellationToken: ct
+);
 ```
 
-### What Gets Eliminated
-
-1. **No more "Supplemental" concept**
-   - ServiceCenter::User is just an entity selected via `EntitySelector`
-   - No separate loading mechanism
-   - Automatically included in topological sort
-
-2. **No more "DynamicData" folder**
-   - Redundant with Bootstrap
-   - Was a misnomer from day one
-
-3. **No more triple-fetching metadata**
-   - One fetch to OSSYS_* tables
-   - Cached snapshot
-   - Different pipelines consume different slices
-
-4. **No more fragmented topological sorts**
-   - One unified graph spanning ALL selected entities
-   - Static/regular/supplemental all sorted together
-   - Cycles resolved once with full context
+**Key Characteristics**:
+- ✅ **Composable** - Mix and match configurations for different use cases
+- ✅ **Type-safe** - Compile-time guarantees via `IBuildSsdtStep` pattern
+- ✅ **Functional** - Immutable configuration, pure transformations
+- ✅ **Observable** - State progression visible via monadic chaining
 
 ### What Gets Unified
 
-| Current Name | Becomes | Configuration |
-|--------------|---------|---------------|
-| Static Seeds | `EntityPipeline` | `scope: Static, insertion: MERGE` |
-| Bootstrap | `EntityPipeline` | `scope: AllWithData, insertion: INSERT, emission: Monolithic` |
-| DynamicData | **DELETED** | (redundant) |
-| Supplemental | **DELETED** | (use `EntitySelector.Include()`) |
+| Current Implementation | Becomes | Configuration |
+|------------------------|---------|---------------|
+| **StaticSeedStep** | `EntityPipeline.Execute()` | `Scope = IsStatic, Insertion = MERGE` |
+| **BootstrapSnapshot** | `EntityPipeline.Execute()` | `Scope = All, Insertion = INSERT` |
+| **DynamicData** | ❌ **DELETE** | Redundant with configurable scope |
+| **Supplemental** | Part of `EntityFilters` | `Include("ServiceCenter", ["User"])` once EntityFilters complete |
+
+### What Gets Completed
+
+**EntityFilters** (exists but incomplete):
+1. ✅ **Already works**: Config parsing, in-memory filtering
+2. ⚠️ **Needs work**: SQL query filtering, validation scope, profiling scope
+3. 🎯 **End state**: Fully integrated per-entity selection across entire pipeline
+
+**Extraction Steps**:
+1. Extract `IBuildSsdtStep` pattern from Bootstrap → configurable steps
+2. Complete EntityFilters implementation (SQL, validation, profiling)
+3. Parameterize StaticSeeds to use EntityFilters instead of hardcoded `IsStatic`
+4. Deprecate Supplemental mechanism (redundant once EntityFilters complete)
+5. Delete DynamicData (fully redundant)
+
+### What Stays the Same
+
+**Post-Emission Steps** - Already generic:
+- `.sqlproj` generation
+- SQL validation
+- PostDeployment guards
+- Telemetry packaging
+
+**Business Logic Transforms** - Preserve existing behavior:
+- Extract from current implementations (excavation, not design)
+- Make independently runnable (observability)
+- Drive via configuration (TighteningOptions, NamingOverrideOptions, etc.)
 
 ---
 
@@ -698,6 +980,188 @@ Emission Option 2 (.sqlproj):
 ```
 
 **Key insight**: File organization (directory structure) is cosmetic. Execution order (topological) is semantic.
+
+---
+
+## 📋 Post-Emission Steps (Orthogonal to Entity Pipeline)
+
+**Purpose**: Steps that happen AFTER entity data SQL generation but are part of the full deployment pipeline.
+
+**Key Insight**: These steps are **orthogonal** to entity pipeline unification - they consume the output of Stage 6 but don't affect entity processing logic.
+
+### Current Steps (`BuildSsdtPipeline.cs:88-94`)
+
+**State Progression**:
+```
+... → StaticSeeds → DynamicInserts → BootstrapSnapshot →
+    BuildSsdtSqlProjectStep →
+    BuildSsdtPostDeploymentTemplateStep →
+    BuildSsdtSqlValidationStep →
+    BuildSsdtTelemetryPackagingStep
+```
+
+1. **BuildSsdtSqlProjectStep** (`BuildSsdtSqlProjectStep.cs`)
+   - **Purpose**: Generate `.sqlproj` file that references all emitted SQL files
+   - **Input**: List of emitted SQL file paths
+   - **Output**: `.sqlproj` XML with ordered `<Build Include="..." />` entries
+   - **Why it matters**: .sqlproj defines execution order for SSDT deployment
+
+2. **BuildSsdtSqlValidationStep** (`BuildSsdtSqlValidationStep.cs`)
+   - **Purpose**: Validate generated SQL syntax using SQL Server parser
+   - **Input**: Emitted SQL files
+   - **Output**: Validation report (syntax errors, warnings)
+   - **Why it matters**: Catch SQL errors before deployment attempt
+
+3. **BuildSsdtPostDeploymentTemplateStep** (`BuildSsdtPostDeploymentTemplateStep.cs`)
+   - **Purpose**: Generate PostDeployment.sql with one-time execution guards
+   - **Input**: List of seed/data scripts
+   - **Output**: PostDeployment.sql that checks if data already exists
+   - **Why it matters**: Prevents re-running bootstrap INSERTs on existing data
+
+4. **BuildSsdtTelemetryPackagingStep** (`BuildSsdtTelemetryPackagingStep.cs`)
+   - **Purpose**: Package execution metadata (fingerprints, timing, warnings)
+   - **Input**: Pipeline execution log
+   - **Output**: Telemetry JSON artifacts
+   - **Why it matters**: Diagnostics, reproducibility, auditing
+
+### Unification Implication
+
+**These steps DON'T need unification** - they're already generic:
+- ✅ They consume SQL files (don't care if from StaticSeeds, Bootstrap, or future unified pipeline)
+- ✅ They're composable (can be included/excluded via pipeline configuration)
+- ✅ They use the IBuildSsdtStep interface (already following orchestration pattern)
+
+**Future consideration**: Treat as **plugins** - optional steps that can be enabled/disabled via configuration.
+
+---
+
+## ⚙️ Orchestration Mechanics: Functional Composition Pattern
+
+**Purpose**: Understand HOW the pipeline stages compose together (the mechanism for unification).
+
+### The IBuildSsdtStep Interface
+
+**Definition** (`IBuildSsdtStep.cs:7-10`):
+```csharp
+public interface IBuildSsdtStep<in TInput, TNextState>
+{
+    Task<Result<TNextState>> ExecuteAsync(TInput state, CancellationToken cancellationToken = default);
+}
+```
+
+**Key Properties**:
+- **Generic over input AND output** - Each step declares its contract
+- **Returns `Result<T>`** - Monad for error handling (success or failure, no exceptions)
+- **Immutable state** - Each step produces NEW state, doesn't mutate input
+- **Async** - Supports I/O-bound operations (database queries, file writes)
+
+### State Progression Pattern
+
+The pipeline is a **series of state transformations**:
+
+```
+PipelineInitialized
+    ↓ (BuildSsdtBootstrapStep)
+BootstrapCompleted
+    ↓ (BuildSsdtEvidenceCacheStep)
+EvidenceCacheCompleted
+    ↓ (BuildSsdtPolicyDecisionStep)
+PolicyDecisionCompleted
+    ↓ (BuildSsdtEmissionStep)
+EmissionCompleted
+    ↓ (BuildSsdtStaticSeedStep)
+StaticSeedsCompleted
+    ↓ (BuildSsdtDynamicInsertStep)
+DynamicInsertsCompleted
+    ↓ (BuildSsdtBootstrapSnapshotStep)
+BootstrapSnapshotCompleted
+    ↓ (BuildSsdtPostDeploymentTemplateStep)
+PostDeploymentCompleted
+    ↓ (BuildSsdtTelemetryPackagingStep)
+TelemetryPackagingCompleted
+```
+
+**Each state is a record**:
+- Contains all data from previous stages (immutable accumulation)
+- Adds new data from current stage
+- Passed to next stage as input
+
+**Example** (`BuildSsdtPipelineStates.cs`):
+```csharp
+public sealed record BootstrapCompleted(
+    PipelineInitialized Initialized,  // ← Carries forward
+    OsmModel FilteredModel,            // ← Added by bootstrap
+    ProfileSnapshot Profile            // ← Added by bootstrap
+);
+
+public sealed record EvidenceCacheCompleted(
+    BootstrapCompleted Bootstrap,      // ← Carries forward
+    EvidenceCacheResult CacheResult    // ← Added by this stage
+);
+```
+
+### Monadic Chaining (`BindAsync`)
+
+**Implementation** (`BuildSsdtPipeline.cs:83-95`):
+```csharp
+var finalStateResult = await _bootstrapStep
+    .ExecuteAsync(initialized, cancellationToken)
+    .BindAsync((bootstrap, token) => _evidenceCacheStep.ExecuteAsync(bootstrap, token), cancellationToken)
+    .BindAsync((policy, token) => _emissionStep.ExecuteAsync(policy, token), cancellationToken)
+    // ... continues
+    .ConfigureAwait(false);
+```
+
+**What `BindAsync` Does**:
+- If previous step returns `Result.Success(value)` → calls next function with `value`
+- If previous step returns `Result.Failure(errors)` → short-circuits, skips remaining steps
+- Returns aggregated `Result<TFinal>` at the end
+
+**Functional Programming Properties**:
+- ✅ **Referential transparency** - Same input → same output
+- ✅ **Composition** - Small functions compose into larger ones
+- ✅ **Error propagation** - Failures bubble up automatically (no try/catch)
+- ✅ **Type safety** - Compiler enforces correct state progression
+
+### Why This Matters for Unification
+
+**Bootstrap demonstrates the correct pattern**. To extract it:
+
+1. **Identify shared stages**:
+   - Stage 0 (Bootstrapping) - shared
+   - Stage 1-6 (entity pipeline) - configurable
+   - Post-emission steps - shared
+
+2. **Parameterize the differences**:
+   - Stage 1 (selection) - driven by `EntityFilters` config
+   - Stage 5 (emission) - driven by `EmissionStrategy` config
+   - Stage 6 (insertion) - driven by `InsertionMode` config
+
+3. **Compose different pipelines**:
+   ```csharp
+   // StaticSeeds pipeline
+   pipeline = bootstrapStep
+       .BindAsync(StaticSeedsSelectionStep)  // ← filters to IsStatic
+       .BindAsync(FetchDataStep)
+       .BindAsync(TopologicalSortStep)
+       .BindAsync(MergeEmissionStep);        // ← MERGE mode
+
+   // Bootstrap pipeline
+   pipeline = bootstrapStep
+       .BindAsync(AllEntitiesSelectionStep)  // ← all entities
+       .BindAsync(FetchDataStep)
+       .BindAsync(TopologicalSortStep)
+       .BindAsync(InsertEmissionStep);       // ← INSERT mode
+
+   // Future unified pipeline
+   pipeline = bootstrapStep
+       .BindAsync(ConfigurableSelectionStep)  // ← driven by EntityFilters
+       .BindAsync(FetchDataStep)
+       .BindAsync(TopologicalSortStep)
+       .BindAsync(ConfigurableEmissionStep);  // ← driven by config
+   ```
+
+**Key Insight**: The orchestration pattern ALREADY EXISTS. We don't need to design it - we need to **extract configurable steps** and **compose them via configuration**.
 
 ---
 
