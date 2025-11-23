@@ -105,252 +105,1112 @@ These three dimensions are **orthogonal** - changing one doesn't constrain the o
 
 **Stages are orthogonal to use cases.** Every pipeline flows through the same stages, but different use cases participate differently in each stage. Some stages are mandatory (protected citizens), some are optional, some are skipped entirely depending on the use case.
 
-This section provides rich detail on each stage: what happens, what's required, what's optional, and how different use cases participate.
+This section provides comprehensive detail on every constituent operation within each stage - going beyond the high-level stage names to reveal the actual work being performed at the operation level.
 
 ---
 
-### The Complete Stage Flow (Visual Architecture)
+### Stage 0: Extract-Model (Optional - Database Metadata Extraction)
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Stage 0: EXTRACT-MODEL (Optional - can be manual/auto)     │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│  Input:  --connection-string OR --model (pre-extracted)     │
-│  Operation: Query OSSYS_* system tables for metadata        │
-│  Output: OsmModel (schema, relationships, indexes)          │
-│  Cache:  .cache/model.json (checksum-based invalidation)    │
-│                                                              │
-│  Participation:                                              │
-│    • extract-model verb: PRIMARY (this IS the operation)    │
-│    • build-ssdt/full-export: AUTO (or skip if --model)      │
-│    • Offline: SKIP (provide pre-extracted model)            │
-└──────────────────────────────────────────────────────────────┘
-                           ↓
-┌──────────────────────────────────────────────────────────────┐
-│  Stage 1: SELECTION (Mandatory - always happens)            │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│  Input:  ModuleFilterOptions, EntityFilters (if wired)      │
-│  Operation: Apply selection predicate to entity catalog     │
-│  Output: Set of selected entities (may be empty)            │
-│                                                              │
-│  Selection Criteria by Use Case:                            │
-│    • extract-model:       AllModules                         │
-│    • build-ssdt schema:   AllModules                         │
-│    • build-ssdt data:     Where(IsStatic)                    │
-│    • Bootstrap:           AllWithData (static + regular)     │
-│    • full-export:         AllModules                         │
-│                                                              │
-│  Protected Citizen: EntitySelector (must produce a set)     │
-└──────────────────────────────────────────────────────────────┘
-                           ↓
-┌──────────────────────────────────────────────────────────────┐
-│  Stage 2: FETCH (Mandatory - partial participation)         │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│  Input:  Selected entities, --connection-string, FetchOpts   │
-│  Operation: Query database for metadata/statistics/data     │
-│  Output: DatabaseSnapshot (metadata + statistics + data)    │
-│  Cache:  .cache/database-snapshot.json (optional)           │
-│                                                              │
-│  Fetch Matrix (what gets fetched):                          │
-│                   │ Metadata  │ Statistics │ Data           │
-│    extract-model  │    ✓      │     ✗      │  ✗             │
-│    build-schema   │    ✓      │     ✓      │  ✗             │
-│    build-data     │    ✓      │     ✓      │  ✓ (selected)  │
-│    Bootstrap      │    ✓      │     ✓      │  ✓ (all+data)  │
-│    full-export    │    ✓      │     ✓      │  ✓ (all)       │
-│                                                              │
-│  Sources:                                                    │
-│    • OSSYS_* tables → Metadata (schema, relationships)      │
-│    • sys.* tables   → Statistics (profiling, FK orphans)    │
-│    • OSUSR_* tables → Data (actual row data)                │
-│                                                              │
-│  Protected Citizen: DatabaseSnapshot (must fetch something) │
-└──────────────────────────────────────────────────────────────┘
-                           ↓
-┌──────────────────────────────────────────────────────────────┐
-│  Stage 3: TRANSFORM (Optional - config-driven)              │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│  Input:  DatabaseSnapshot, config.Transforms                │
-│  Operation: Apply business logic transformations            │
-│  Output: Transformed metadata + data + execution log        │
-│                                                              │
-│  Transform Examples (non-exhaustive):                       │
-│    • EntitySeedDeterminizer    (normalize data)             │
-│    • TypeMappingPolicy         (data type transforms)       │
-│    • NullabilityEvaluator      (tightening recommendations) │
-│    • UAT-Users Discovery       (FK catalog, orphan map)     │
-│    • Module name collision     (disambiguate duplicates)    │
-│    • Deferred FK emission      (WITH NOCHECK for orphans)   │
-│                                                              │
-│  Principles:                                                 │
-│    • Model + data = source of truth (no silent fixes)       │
-│    • Warn, don't auto-fix (operator approval required)      │
-│    • Profiling is informational (operator decides action)   │
-│    • Ordering matters (dependency-aware composition)        │
-│                                                              │
-│  Protected Citizen: NONE (all transforms optional)          │
-└──────────────────────────────────────────────────────────────┘
-                           ↓
-┌──────────────────────────────────────────────────────────────┐
-│  Stage 4: ORDER (Conditional - data pipelines only)         │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│  Input:  All selected entities, FK metadata                 │
-│  Operation: Topological sort by FK dependencies             │
-│  Output: Globally ordered entity list + cycle warnings      │
-│                                                              │
-│  Participation Decision Tree:                               │
-│    ┌─ Data emission? ──→ YES ──→ PARTICIPATE (mandatory)   │
-│    └─ Schema emission? ─→ NO  ──→ SKIP (emit in fetch order│
-│                                                              │
-│  Participation Matrix:                                       │
-│    • extract-model:       SKIP (no data, no ordering)       │
-│    • build-ssdt schema:   SKIP (DDL order-independent)      │
-│    • build-ssdt data:     PARTICIPATE (MUST sort for data)  │
-│    • Bootstrap:           PARTICIPATE (global sort)         │
-│    • full-export:         PARTICIPATE (sort once, reuse)    │
-│                                                              │
-│  Critical Nuance:                                            │
-│    • Sort scope ALWAYS global (all selected entities)       │
-│    • Cross-category FKs respected (static ↔ regular)        │
-│    • Filter after sort (not before - Vector 3, §15)         │
-│                                                              │
-│  Protected Citizen (data only): EntityDependencySorter      │
-└──────────────────────────────────────────────────────────────┘
-                           ↓
-┌──────────────────────────────────────────────────────────────┐
-│  Stage 5: EMIT (Mandatory - compositional)                  │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│  Input:  Transformed entities, EmissionStrategy, SmoOpts    │
-│  Operation: Generate SQL artifacts + diagnostics            │
-│  Output: Artifact files (schema/data/diagnostics)           │
-│                                                              │
-│  Artifact Types (compositional):                            │
-│    • Schema (DDL):     CREATE TABLE per module/entity       │
-│    • Data (DML):       INSERT/MERGE (topologically ordered) │
-│    • Diagnostics:      Profiling, validation, cycles, logs  │
-│                                                              │
-│  Emission Composition by Use Case:                          │
-│    • extract-model:  model.json + diagnostics               │
-│    • build-ssdt:     schema + StaticSeeds + diagnostics     │
-│    • full-export:    schema + [StaticSeeds, Bootstrap] +    │
-│                      diagnostics                            │
-│                                                              │
-│  File Organization Strategies:                              │
-│    • Monolithic:      One file (preserves sort order)       │
-│    • Per-Module:      Module folders + .sqlproj ordering    │
-│    • Per-Entity:      Entity files + .sqlproj (future)      │
-│                                                              │
-│  Protected Citizen: MUST emit something (can't skip)        │
-└──────────────────────────────────────────────────────────────┘
-                           ↓
-┌──────────────────────────────────────────────────────────────┐
-│  Stage 6: APPLY (Mandatory spec - execution optional)       │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│  Input:  Generated SQL scripts, InsertionStrategy           │
-│  Operation: Define application semantics (or none)          │
-│  Output: Deployment result or export confirmation           │
-│                                                              │
-│  Insertion Strategies:                                       │
-│    • SchemaOnly:       Deploy DDL, no data                   │
-│    • INSERT:           One-time load (NonDestructive mode)   │
-│    • MERGE:            Upsert on PK (idempotent)             │
-│    • TRUNCATE+INSERT:  Replace all data (destructive)        │
-│    • None:             Export-only (no database modify)      │
-│                                                              │
-│  Application Matrix:                                         │
-│    • extract-model:       None (export model.json)           │
-│    • build-ssdt schema:   SchemaOnly (DDL deployment)        │
-│    • build-ssdt data:     MERGE (upsert static seeds)        │
-│    • Bootstrap:           INSERT (one-time, NonDestructive)  │
-│    • full-export:         Combined OR None (export-only)     │
-│                                                              │
-│  Protected Citizen: InsertionStrategy (must specify, even   │
-│                     if "none" for export-only scenarios)    │
-└──────────────────────────────────────────────────────────────┘
-                           ↓
-                      ✓ COMPLETE
-```
+**Purpose**: Query OutSystems system tables (OSSYS_*) to retrieve complete database schema metadata.
+
+**Sub-Operations:**
+
+**0.1. Connection Establishment**
+- Parse connection string
+- Validate SQL Server connectivity
+- Test permissions (must have SELECT on OSSYS_* tables)
+- Establish connection pool
+
+**0.2. Schema Discovery**
+- Query `OSSYS_ENTITY` → Extract entity definitions (physical names, logical names, DataKind)
+- Query `OSSYS_ENTITY_ATTR` → Extract attribute definitions (data types, nullability, length, precision)
+- Query `OSSYS_RELATIONSHIP` → Extract foreign key relationships (source → target mappings)
+- Query `OSSYS_INDEX` → Extract index definitions (columns, uniqueness, clustering)
+- Query `OSSYS_TRIGGER` (if applicable) → Extract trigger definitions
+
+**0.3. Metadata Parsing**
+- Convert OutSystems metamodel (OSSYS_* tables) → OsmModel structure
+- Resolve physical table names (`OSUSR_xxx_TableName` or `dbo.TableName`)
+- Map attribute types (OutSystems types → SQL types via TypeMappingPolicy)
+- Build relationship graph (FK source/target entity resolution)
+
+**0.4. Model Validation**
+- Validate referential integrity (all FK targets exist)
+- Detect orphaned relationships (FK references non-existent entity)
+- Validate index column references (all indexed columns exist)
+- Check for duplicate physical names (collision detection)
+
+**0.5. Caching (if enabled)**
+- Compute schema checksum (hash of OSSYS_* row versions or structure)
+- Serialize OsmModel → JSON
+- Write to `.cache/model.json`
+- Store checksum for future invalidation
+
+**0.6. Output**
+- `ExtractionCompleted` state containing:
+  - `OsmModel` (complete schema structure)
+  - `ExtractionMetrics` (query durations, row counts, validation warnings)
+
+**Use Case Participation:**
+- **extract-model verb**: PRIMARY operation (all sub-operations)
+- **build-ssdt/full-export**: AUTO (can skip if `--model` provided, uses cache if valid)
+- **Offline scenarios**: SKIP entirely (user provides pre-extracted model)
+
+**Current Status:**
+- Currently manual (user runs `extract-model`, then passes `--model` to other verbs)
+- **Vector 5 (§17)**: Integrate as automatic Stage 0 with checksum-based caching
 
 ---
 
-### Stage Orchestration Patterns
+### Stage 1: Selection (Entity Scope Determination)
 
-**Pattern 1: Full Pipeline (full-export)**
-```
-Stage 0 (auto) → Stage 1 → Stage 2 (full fetch) → Stage 3 (all transforms) →
-Stage 4 (global sort) → Stage 5 (schema + data + diagnostics) → Stage 6 (combined or none)
-```
+**Purpose**: Determine which entities participate in this pipeline invocation based on selection criteria.
 
-**Pattern 2: Schema-Only (build-ssdt modules)**
-```
-Stage 0 (auto/manual) → Stage 1 → Stage 2 (metadata + stats only) →
-Stage 3 (type mapping, nullability) → Stage 4 (SKIP) →
-Stage 5 (schema + diagnostics) → Stage 6 (SchemaOnly)
-```
+**Sub-Operations:**
 
-**Pattern 3: Data-Only (build-ssdt static seeds)**
-```
-Stage 0 (auto/manual) → Stage 1 (where IsStatic) → Stage 2 (metadata + stats + data) →
-Stage 3 (determinizer, FK preflight) → Stage 4 (topological sort - WRONG: scoped, should be global) →
-Stage 5 (StaticSeeds data + diagnostics) → Stage 6 (MERGE)
-```
+**1.1. Parse Selection Configuration**
+- Read `ModuleFilterOptions` from config/CLI
+- Read `EntityFilters` (if wired - currently incomplete)
+- Parse include/exclude module lists
+- Parse per-module entity filters (e.g., `ServiceCenter: [User]`)
 
-**Pattern 4: Extract-Only (extract-model verb)**
-```
-Stage 0 (PRIMARY - this IS the verb) → Stage 1 (AllModules) → Stage 2 (metadata only) →
-Stage 3 (minimal) → Stage 4 (SKIP) → Stage 5 (model.json + diagnostics) → Stage 6 (None)
-```
+**1.2. Build Entity Catalog**
+- Extract all entities from OsmModel
+- Group by module
+- Annotate with metadata (IsStatic, HasData flag if known)
 
-**Pattern 5: UAT Migration (full-export with UAT-Users)**
-```
-Stage 0 (auto) → Stage 1 → Stage 2 (full fetch) →
-Stage 3 (all transforms + UAT-Users Discovery) → Stage 4 (global sort) →
-Stage 5 (schema + data + diagnostics - UAT-Users applied during INSERT gen) →
-Stage 6 (combined or none)
-```
+**1.3. Apply Module Filter**
+- If include list specified → Select only included modules
+- If exclude list specified → Remove excluded modules
+- If neither → Select all modules (default)
+
+**1.4. Apply Entity Filter (if wired)**
+- For each module with `EntityFilters` specified:
+  - If `entities: []` → Include all entities from module
+  - If `entities: ["User", "Role"]` → Include only listed entities
+- **Current**: EntityFilters exists but not wired (Stage 2 fetch ignores it)
+
+**1.5. Apply Predicate Filter**
+- If selection predicate specified (e.g., `Where(IsStatic)`):
+  - Evaluate predicate against each entity
+  - Filter entity set to matching entities
+- Common predicates:
+  - `Where(e => e.IsStatic)` → StaticSeeds use case
+  - `AllWithData()` → Bootstrap use case (requires Stage 2 data check)
+
+**1.6. Validate Selection**
+- Check if selection is empty (warn if intentional, error if likely misconfiguration)
+- Check for typos in module/entity names (fuzzy matching suggestions)
+- Validate EntityFilter references (ensure specified entities exist in module)
+
+**1.7. Output**
+- `SelectionCompleted` state containing:
+  - `SelectedEntities` (ImmutableHashSet<EntityKey>)
+  - `SelectionCriteria` (what filters were applied)
+  - Metrics (total entities, filtered entities, filter duration)
+
+**Use Case Participation:**
+
+| Use Case | Selection Criteria | Entity Count (typical) |
+|----------|-------------------|----------------------|
+| extract-model | AllModules | 300-500 entities |
+| build-ssdt schema | AllModules | 300-500 entities |
+| build-ssdt data (StaticSeeds) | Where(IsStatic) | 50-150 entities |
+| Bootstrap | AllWithData | 300-500 entities |
+| full-export | AllModules | 300-500 entities |
+
+**Current Status:**
+- Selection criteria hardcoded in each implementation (not parameterized)
+- **Vector 1 (§13)**: Wire EntityFilters into all consumers (extraction, validation, profiling)
 
 ---
 
-### Stage Dependencies and Prerequisites
+### Stage 2: Fetch (Database Snapshot Acquisition)
 
-**Stage 0 Dependencies:**
-- Requires: Database connection OR pre-extracted model file
-- Produces: OsmModel (schema metadata)
-- Can be skipped: YES (if `--model` provided)
+**Purpose**: Retrieve metadata, statistics, and/or data for selected entities from the database.
 
-**Stage 1 Dependencies:**
-- Requires: Entity catalog (from Stage 0 or previous state)
-- Produces: Selected entity set
-- Can be skipped: NO (always happens, even if implicit "select all")
+**This is the MOST COMPLEX fetch stage - has 3 major sub-stages with partial participation.**
 
-**Stage 2 Dependencies:**
-- Requires: Selected entities (from Stage 1), database connection (if fetching)
-- Produces: DatabaseSnapshot (metadata + statistics + data)
-- Can be skipped: NO (must fetch something, even if cached)
-- Can be partial: YES (FetchOptions controls what to fetch)
+---
 
-**Stage 3 Dependencies:**
-- Requires: DatabaseSnapshot (from Stage 2), transform configuration
-- Produces: Transformed entities + execution log
-- Can be skipped: Effectively YES (no mandatory transforms)
-- Ordering matters: YES (transforms have dependency graph - Vector 6, §18)
+#### Stage 2.1: Metadata Fetch (Structure Acquisition)
 
-**Stage 4 Dependencies:**
-- Requires: FK metadata (from Stage 2), CircularDependencyOptions
-- Produces: Topologically ordered entity list
-- Can be skipped: YES (schema emission skips, data emission participates)
-- Scope requirement: ALWAYS global (all selected entities), never scoped to category
+**Purpose**: Query OSSYS_* tables to retrieve schema metadata for selected entities.
 
-**Stage 5 Dependencies:**
-- Requires: Entities (transformed from Stage 3, ordered from Stage 4 if data), EmissionStrategy
-- Produces: SQL artifacts (schema/data/diagnostics)
-- Can be skipped: NO (must emit something)
-- Composition: Multiple artifact types in single stage (schema + data + diagnostics)
+**Sub-Operations:**
 
-**Stage 6 Dependencies:**
-- Requires: Generated SQL (from Stage 5), InsertionStrategy
-- Produces: Deployment result or export confirmation
-- Can be skipped: Execution can be skipped (export-only), but strategy must be specified
+**2.1.1. If Stage 0 Executed → Skip**
+- Metadata already available in `ExtractionCompleted.Model`
+- Reuse existing OsmModel structure
+
+**2.1.2. If Stage 0 Skipped (--model provided) → Load**
+- Deserialize JSON model file → OsmModel
+- Validate deserialization (checksum, schema version)
+- No database query needed
+
+**2.1.3. If Partial Fetch Needed → Query**
+- Query OSSYS_* tables scoped to selected entities only
+- **NOTE**: Current implementation always fetches all entities (EntityFilters not wired)
+- Build OsmModel subset
+
+**2.1.4. Relationship Graph Construction**
+- Parse all foreign key relationships
+- Build directed graph (entity A → entity B if A has FK to B)
+- Identify self-referential FKs (entity → self)
+- Detect circular FK chains (User ↔ Role, etc.)
+
+**Output**: `Metadata` (OsmModel for selected entities)
+
+---
+
+#### Stage 2.2: Statistics Fetch (Profiling & Data Quality Metrics)
+
+**Purpose**: Query `sys.*` system tables and OSSYS_* metadata to gather statistics for data quality analysis.
+
+**Sub-Operations:**
+
+**2.2.1. Row Count Profiling**
+- For each selected entity:
+  - Query `SELECT COUNT(*) FROM [table]`
+  - Store row count (used for "has data" determination)
+
+**2.2.2. Null Count Profiling**
+- For each attribute marked `isMandatory` in model:
+  - Query `SELECT COUNT(*) FROM [table] WHERE [column] IS NULL`
+  - Detect violations (mandatory column with NULLs)
+  - Log warnings for NullabilityEvaluator
+
+**2.2.3. Foreign Key Orphan Detection**
+- For each FK relationship:
+  - Query `SELECT COUNT(*) FROM [sourceTable] WHERE [fkColumn] NOT IN (SELECT [pkColumn] FROM [targetTable])`
+  - Detect orphaned FK values (references to non-existent rows)
+  - Store orphan counts (used for deferred FK decisions)
+
+**2.2.4. Uniqueness Violation Detection**
+- For each unique index/constraint:
+  - Query `SELECT [columns], COUNT(*) FROM [table] GROUP BY [columns] HAVING COUNT(*) > 1`
+  - Detect duplicate values in unique constraints
+  - Log violations for validation stage
+
+**2.2.5. Data Type Overflow Detection (optional)**
+- For each numeric column:
+  - Query `SELECT MIN([column]), MAX([column]) FROM [table]`
+  - Detect potential overflows if type mapping changes
+
+**2.2.6. Statistics Aggregation**
+- Collect all metrics into `EntityStatistics` per table
+- Compute global statistics (total rows, total violations, etc.)
+
+**Output**: `Statistics` (ImmutableDictionary<TableKey, EntityStatistics>)
+
+**Current Status:**
+- Profiling queries all entities (EntityFilters not wired)
+- **Vector 1 (§13)**: Scope profiling queries to selected entities only
+
+---
+
+#### Stage 2.3: Data Fetch (Actual Row Data Extraction)
+
+**Purpose**: Query OSUSR_* tables to extract actual row data for entities.
+
+**Sub-Operations:**
+
+**2.3.1. Determine Which Entities Have Data**
+- From Stage 2.2 row count profiling:
+  - If `COUNT(*) > 0` → Entity has data
+  - If `COUNT(*) = 0` → Entity has no data (skip data fetch)
+
+**2.3.2. For Each Entity With Data:**
+
+**2.3.2.1. Build SELECT Query**
+- Enumerate all columns in entity definition
+- Apply naming overrides (logical name → physical name)
+- Build: `SELECT [col1], [col2], ... FROM [schema].[table]`
+
+**2.3.2.2. Execute Query**
+- Execute with streaming (avoid loading all rows into memory)
+- Read rows in batches (e.g., 10,000 rows at a time)
+- Apply column type conversions (SQL type → C# type)
+
+**2.3.2.3. Normalize Data**
+- Convert `UNIQUEIDENTIFIER` → string (for deterministic serialization)
+- Convert `DATETIME` → ISO-8601 string
+- Handle NULLs (explicit null representation)
+- Normalize whitespace (trim trailing spaces for CHAR columns)
+
+**2.3.2.4. Store Row Data**
+- Create `EntityData` structure:
+  - `Rows`: ImmutableArray<ImmutableDictionary<string, object?>>
+  - `Schema`: Column names and types
+  - `RowCount`: Total rows fetched
+
+**2.3.3. Handle Supplemental Entities (if applicable)**
+- Query supplemental JSON files (e.g., `ossys-user.json`)
+- Parse JSON → EntityData structure
+- Merge with database-fetched data
+- **NOTE**: Supplemental workaround for EntityFilters not being wired
+
+**2.3.4. Data Aggregation**
+- Collect all entity data into `ImmutableDictionary<TableKey, EntityData>`
+
+**Output**: `Data` (row data for all selected entities with data)
+
+**Current Status:**
+- Data fetch queries all entities with data (EntityFilters not wired for scope)
+- **Vector 1 (§13)**: Scope data fetch to selected entities only
+
+---
+
+#### Stage 2.4: DatabaseSnapshot Assembly
+
+**Purpose**: Combine metadata, statistics, and data into unified snapshot structure.
+
+**Sub-Operations:**
+
+**2.4.1. Construct DatabaseSnapshot**
+- Combine results from Stages 2.1, 2.2, 2.3:
+  ```csharp
+  public sealed class DatabaseSnapshot {
+      public ImmutableArray<EntityStructure> Entities;        // From 2.1
+      public ImmutableArray<RelationshipStructure> Relationships;  // From 2.1
+      public ImmutableDictionary<TableKey, EntityStatistics> Statistics;  // From 2.2
+      public ImmutableDictionary<TableKey, EntityData> Data;  // From 2.3
+  }
+  ```
+
+**2.4.2. Cache Snapshot (if enabled)**
+- Serialize DatabaseSnapshot → JSON
+- Write to `.cache/database-snapshot.json`
+- Store checksum (for invalidation)
+
+**2.4.3. Output**
+- `FetchCompleted` state containing:
+  - `DatabaseSnapshot` (unified metadata + stats + data)
+  - `FetchMetrics` (query counts, durations, rows fetched)
+
+**Partial Fetch Matrix** (what gets fetched by use case):
+
+| Use Case | Metadata | Statistics | Data |
+|----------|----------|-----------|------|
+| extract-model | ✓ (OSSYS_*) | ✗ | ✗ |
+| build-ssdt schema | ✓ | ✓ (profiling) | ✗ |
+| build-ssdt data | ✓ | ✓ | ✓ (static entities only) |
+| Bootstrap | ✓ | ✓ | ✓ (all entities with data) |
+| full-export | ✓ | ✓ | ✓ (all entities) |
+
+**Current Status:**
+- Triple-fetch redundancy (OSSYS_* queried 2-3 times in separate steps)
+- No unified DatabaseSnapshot abstraction
+- **Vector 7 (§24)**: Eliminate triple-fetch with DatabaseSnapshot primitive
+
+---
+
+### Stage 3: Transform (Business Logic Application)
+
+**Purpose**: Apply business logic transformations to fetched data/metadata before emission.
+
+**No universally protected citizens - all transforms are optional or configuration-driven.**
+
+This stage contains **12+ distinct transforms** with complex ordering dependencies.
+
+---
+
+#### Stage 3.1: Pre-Sort Transforms (Execute Before Topological Sort)
+
+These transforms modify data or metadata that affects dependency ordering.
+
+---
+
+**Transform 3.1.1: EntitySeedDeterminizer.Normalize**
+
+**Purpose**: Ensure deterministic row ordering within each entity (stable sort for reproducibility).
+
+**Location**: `BuildSsdtStaticSeedStep.cs:78`
+
+**Sub-Operations:**
+- For each entity's row data:
+  - Sort rows by primary key (ascending)
+  - If composite PK → Sort by PK columns in definition order
+  - If no PK → Sort by all columns lexicographically (warning: non-deterministic)
+- Normalize data types (e.g., trim whitespace, normalize case for certain types)
+
+**Output**: Normalized `ImmutableArray<StaticEntityTableData>` with stable row ordering
+
+**Configuration**: Not configurable (always runs for StaticSeeds, Bootstrap)
+
+**Use Cases**: StaticSeeds, Bootstrap
+
+---
+
+**Transform 3.1.2: Module Name Collision Handling**
+
+**Purpose**: Disambiguate duplicate module names with numeric suffixes.
+
+**Location**: `BuildSsdtStaticSeedStep.cs:196-231`
+
+**Sub-Operations:**
+- Build set of all module names in selected entities
+- For each module name:
+  - Count occurrences (should be 1)
+  - If > 1 occurrence → Append suffix: `ModuleName`, `ModuleName_2`, `ModuleName_3`, etc.
+- Update entity definitions with disambiguated module names
+
+**Output**: Entities with unique module names (no collisions)
+
+**Configuration**: Not configurable (always runs when needed)
+
+**Use Cases**: All use cases (schema + data)
+
+---
+
+**Transform 3.1.3: Supplemental Physical→Logical Name Remapping**
+
+**Purpose**: Transform physical table names (e.g., `ossys_User`) → logical names (e.g., `User`).
+
+**Location**: `BuildSsdtBootstrapSnapshotStep.cs:338-361`
+
+**Sub-Operations:**
+- For each supplemental entity:
+  - Lookup logical name from supplemental config
+  - Replace physical name in entity definition
+  - Update FK references (if any FK points to supplemental entity)
+
+**Output**: Entities with consistent naming (logical names only)
+
+**Configuration**: Not configurable (only applies to supplemental entities)
+
+**Use Cases**: Bootstrap (when supplementals present)
+
+**Deprecation Note**: Supplemental workaround goes away when EntityFilters wired (Vector 1)
+
+---
+
+#### Stage 3.2: Type and Schema Transforms
+
+These transforms modify data types, nullability, or schema structure.
+
+---
+
+**Transform 3.2.1: TypeMappingPolicy**
+
+**Purpose**: Apply complex data type transformations (OutSystems types → SQL types with OnDisk overrides).
+
+**Location**: `TypeMappingPolicy.cs`, `TypeMappingRule.cs`, `config/type-mapping.default.json`
+
+**Sub-Operations:**
+- Load type mapping rules from `type-mapping.json` (or defaults)
+- For each attribute in each entity:
+  - Lookup attribute type (e.g., `Money`, `Integer`, `Text`)
+  - Apply mapping rule → SQL type (e.g., `Money` → `DECIMAL(18,2)` or `INT` depending on precision)
+  - Handle OnDisk overrides (model says `INT`, database has `BIGINT` → keep BIGINT)
+  - Handle external types (custom SQL types defined in config)
+- Update entity definitions with mapped types
+
+**Output**: Entities with SQL-ready data types
+
+**Configuration**: `type-mapping.json` (configurable rules)
+
+**Use Cases**: All schema emission (build-ssdt schema, full-export schema)
+
+---
+
+**Transform 3.2.2: NullabilityEvaluator**
+
+**Purpose**: Policy-driven nullability tightening (recommend NOT NULL based on isMandatory + profiling data).
+
+**Location**: `NullabilityEvaluator.cs`, `TighteningPolicy.cs`
+
+**Sub-Operations:**
+- Load TighteningOptions from config
+- For each attribute marked `isMandatory` in model:
+  - Check profiling statistics (any NULLs observed?)
+  - If NULLs observed → WARNING (model says mandatory, data has NULLs)
+    - Check validation overrides (operator explicitly approved NOT NULL?)
+    - If approved → Tighten to NOT NULL (emit DDL with NOT NULL)
+    - If not approved → Keep nullable (emit warning)
+  - If no NULLs observed → RECOMMENDATION (safe to tighten to NOT NULL)
+    - Check TighteningPolicy (auto-tighten enabled?)
+    - If enabled → Tighten to NOT NULL
+    - If disabled → Keep nullable, log recommendation
+
+**Output**: Entities with tightened nullability (where safe and approved)
+
+**Configuration**: `TighteningOptions`, `ValidationOverrides` (per-attribute approvals)
+
+**Use Cases**: All schema emission
+
+**Critical Principle**: NEVER auto-coerce. Always warn operator, require explicit approval.
+
+---
+
+**Transform 3.2.3: Deferred FK Constraint Detection**
+
+**Purpose**: Detect FK constraints with orphaned data → Emit as deferred (WITH NOCHECK).
+
+**Location**: `CreateTableStatementBuilder.cs:190-195, 214-249`
+
+**Sub-Operations:**
+- For each FK constraint:
+  - Check profiling statistics (any orphans detected in Stage 2.2.3?)
+  - If orphans > 0 → Mark FK as `IsNoCheck = true`
+    - Emit FK as separate ALTER TABLE ADD CONSTRAINT WITH NOCHECK statement
+    - Add comment: `-- WARNING: [N] orphaned rows detected`
+  - If orphans == 0 → Emit FK inline in CREATE TABLE (normal)
+
+**Output**: Entities with FK constraints marked for deferred emission
+
+**Configuration**: Profiling results (data-driven decision)
+
+**Use Cases**: All schema emission
+
+---
+
+#### Stage 3.3: UAT-Users Transform (Dual-Mode)
+
+**Purpose**: Transform user FK values for QA→UAT data migration.
+
+**This is the MOST COMPLEX transform - has discovery phase (Stage 3) and application phase (Stage 5 or 6).**
+
+---
+
+**Transform 3.3.1: UAT-Users Discovery (Stage 3 - Always Happens First)**
+
+**Location**: UAT-users verb integration into full-export
+
+**Sub-Operations:**
+
+**3.3.1.1. FK Catalog Discovery**
+- Scan all entities for FK relationships
+- Identify all FK columns referencing User table:
+  - `CreatedBy`, `UpdatedBy`, `AssignedTo`, `OwnerId`, etc.
+- Build FK catalog: `[(SourceTable, SourceColumn, TargetTable="User", TargetColumn="Id")]`
+- Deduplicate catalog (same column may appear in multiple tables)
+
+**3.3.1.2. User Inventory Loading**
+- Load QA user inventory (from `./qa_users.csv` - Service Center export)
+  - Schema: `Id, Username, EMail, Name, External_Id, Is_Active, Creation_Date, Last_Login`
+  - Parse CSV → `ImmutableArray<UserRecord>`
+  - Validate: No duplicate IDs, all required fields present
+- Load UAT user inventory (from `./uat_users.csv`)
+  - Same schema
+  - Parse CSV → `ImmutableArray<UserRecord>`
+  - Validate: No duplicate IDs, all required fields present
+
+**3.3.1.3. Orphan Detection**
+- For each FK column in catalog:
+  - Query distinct user IDs: `SELECT DISTINCT [fkColumn] FROM [table] WHERE [fkColumn] IS NOT NULL`
+  - For each distinct user ID:
+    - Check if ID exists in UAT user inventory
+    - If NOT in UAT → Mark as orphan (QA user ID not in UAT roster)
+
+**3.3.1.4. User Mapping Loading**
+- Load user mapping (from `./uat_user_map.csv`)
+  - Schema: `SourceUserId, TargetUserId, Rationale`
+  - Parse CSV → `ImmutableDictionary<int, int>` (QA ID → UAT ID)
+- Validate mapping:
+  - All SourceUserIds must be in QA inventory
+  - All TargetUserIds must be in UAT inventory
+  - No duplicate SourceUserIds
+
+**3.3.1.5. Matching Strategy (optional auto-mapping)**
+- If matching strategy enabled (e.g., `case-insensitive-email`):
+  - For each orphan without manual mapping:
+    - Try to find UAT user by email match (case-insensitive)
+    - If match found → Add to mapping (with rationale: "Auto-matched by email")
+    - If no match → Fallback strategy (single user, round-robin, or leave unmapped)
+
+**3.3.1.6. Mapping Validation**
+- For each orphan:
+  - Check if mapping exists
+  - If missing mapping → ERROR (halt pipeline - operator must provide mapping)
+- Log mapping statistics:
+  - Total orphans, mapped count, unmapped count, auto-matched count, manual count
+
+**3.3.1.7. Build TransformationContext**
+- Create `TransformationContext`:
+  - FK catalog (which columns to transform)
+  - Orphan mapping (QA ID → UAT ID)
+  - Inventories (for reference)
+
+**Output**: `TransformationContext` (passed to Stage 5 or 6 for application)
+
+**Configuration**: `--enable-uat-users`, `--qa-user-inventory`, `--uat-user-inventory`, `--user-map`
+
+**Use Cases**: full-export with UAT-users enabled
+
+---
+
+**Transform 3.3.2: UAT-Users Application - INSERT Mode (Stage 5 - During Emission)**
+
+**Purpose**: Transform user FK values DURING INSERT script generation (pre-transformed INSERTs).
+
+**Location**: `DynamicEntityInsertGenerator` (M2.2 implementation)
+
+**Sub-Operations:**
+- For each entity being emitted:
+  - Check if entity has user FK columns (lookup in FK catalog)
+  - If yes:
+    - For each row:
+      - For each user FK column:
+        - Read current value (QA user ID or NULL)
+        - If NULL → Keep NULL (don't transform)
+        - If value is orphan (in mapping) → Replace with UAT user ID
+        - If value is not orphan → Keep as-is (already valid UAT user)
+      - Emit INSERT statement with transformed values
+
+**Output**: INSERT scripts with UAT-ready user FK values
+
+**Use Cases**: full-export with UAT-users (INSERT mode - RECOMMENDED)
+
+---
+
+**Transform 3.3.3: UAT-Users Application - UPDATE Mode (Stage 6 - Post-Emission)**
+
+**Purpose**: Generate UPDATE scripts to transform user FKs after data load (legacy/verification mode).
+
+**Location**: Standalone `uat-users` verb
+
+**Sub-Operations:**
+- For each FK column in catalog:
+  - Generate UPDATE statement:
+    ```sql
+    UPDATE [table]
+    SET [fkColumn] = CASE
+        WHEN [fkColumn] = [orphan1] THEN [uatUser1]
+        WHEN [fkColumn] = [orphan2] THEN [uatUser2]
+        ...
+    END
+    WHERE [fkColumn] IN ([orphan1], [orphan2], ...)
+      AND [fkColumn] IS NOT NULL
+    ```
+- Emit to `02_apply_user_remap.sql`
+
+**Output**: UPDATE script for post-load transformation
+
+**Use Cases**: Legacy UAT migration (data already loaded with QA IDs), verification artifact
+
+---
+
+#### Stage 3.4: Post-Sort, Pre-Emit Transforms
+
+These transforms execute after topological sort but before emission.
+
+---
+
+**Transform 3.4.1: StaticSeedForeignKeyPreflight.Analyze**
+
+**Purpose**: FK orphan detection and ordering violation detection (data quality check).
+
+**Location**: `BuildSsdtStaticSeedStep.cs:90`
+
+**Sub-Operations:**
+- For each FK relationship:
+  - Check if target entity is in selected entity set
+  - If target NOT selected → WARNING (FK will fail - missing referenced entity)
+  - Check if any rows have FK values pointing to non-existent target rows
+  - If orphans detected → WARNING (data quality issue)
+- Log all violations for operator review
+
+**Output**: Preflight report (warnings logged to diagnostics)
+
+**Configuration**: Not configurable (always runs for StaticSeeds)
+
+**Use Cases**: StaticSeeds
+
+---
+
+**Transform 3.4.2: TopologicalOrderingValidator**
+
+**Purpose**: Enhanced cycle diagnostics with FK analysis, nullable detection, CASCADE warnings.
+
+**Location**: `BuildSsdtBootstrapSnapshotStep.cs:115-127, 186-325`
+
+**Sub-Operations:**
+- For each detected cycle in topological sort:
+  - Analyze cycle path (entity A → B → C → A)
+  - For each FK in cycle:
+    - Check if FK is nullable (can break cycle by setting NULL)
+    - Check if FK has ON DELETE CASCADE (potential data loss risk)
+    - Check if cycle is allowed (in CircularDependencyOptions)
+  - If cycle allowed → Log informational message
+  - If cycle NOT allowed → ERROR (halt pipeline)
+- Generate diagnostic report:
+  - Cycle paths (visualize: A → B → C → A)
+  - Suggested resolutions (which FK to make nullable, etc.)
+
+**Output**: Cycle diagnostics report (warnings/errors logged)
+
+**Configuration**: `CircularDependencyOptions` (explicitly allowed cycles)
+
+**Use Cases**: Bootstrap, full-export
+
+**Current Status**: Only in Bootstrap, needs extraction for StaticSeeds (Vector 3, §15)
+
+---
+
+### Stage 4: Order (Topological Sort by FK Dependencies)
+
+**Purpose**: Build dependency graph from FK relationships and produce globally ordered entity list.
+
+**Protected Citizen (for data pipelines)**: EntityDependencySorter (mandatory when emitting data).
+
+**Critical Nuance**: Schema emission (DDL) SKIPS this stage. Data emission (DML) PARTICIPATES.
+
+---
+
+#### Stage 4.1: Dependency Graph Construction
+
+**Sub-Operations:**
+
+**4.1.1. Extract FK Relationships**
+- From DatabaseSnapshot (or OsmModel):
+  - For each FK relationship:
+    - Source entity, target entity
+    - FK column name, target PK column name
+    - Nullability, ON DELETE/UPDATE behavior
+
+**4.1.2. Build Directed Graph**
+- Create adjacency list:
+  - For each entity:
+    - List of entities it depends on (outgoing edges = FKs from this entity)
+    - List of entities that depend on it (incoming edges = FKs to this entity)
+
+**4.1.3. Handle Self-Referential FKs**
+- Detect entity → self relationships (e.g., `Employee.ManagerId` → `Employee.Id`)
+- Mark as self-referential (don't create cycle error)
+
+**4.1.4. Apply Manual Ordering (CircularDependencyOptions)**
+- Load CircularDependencyOptions from config
+- For each manually ordered FK:
+  - Override natural dependency (treat A → B as if B → A for ordering purposes)
+  - Used to break cycles: User ↔ Role (manually order: Role before User)
+
+---
+
+#### Stage 4.2: Topological Sort Execution
+
+**Sub-Operations:**
+
+**4.2.1. Kahn's Algorithm (or DFS-based)**
+- Initialize:
+  - Compute in-degree for each entity (count of incoming FKs)
+  - Create queue of entities with in-degree == 0 (no dependencies)
+- While queue not empty:
+  - Dequeue entity E
+  - Add E to sorted list
+  - For each entity D that depends on E:
+    - Decrement in-degree of D
+    - If in-degree of D == 0 → Enqueue D
+- If sorted list length < entity count → Cycle detected
+
+**4.2.2. Cycle Detection**
+- If sorted list incomplete → Remaining entities form cycles
+- Extract cycle paths:
+  - Use DFS to find strongly connected components
+  - Build cycle visualization (A → B → C → A)
+
+**4.2.3. Defer Junction Tables (optional)**
+- If `DeferJunctionTables` option enabled:
+  - Detect junction tables (entities with only FK columns + PK)
+  - Move junction tables to END of sorted list (after all referenced entities)
+  - Reason: Junction tables can be loaded last without breaking FKs
+
+**4.2.4. Alphabetical Fallback**
+- If topological sort fails (cycles detected, not allowed):
+  - Fall back to alphabetical ordering (warning: may cause FK violations)
+  - OR halt pipeline (recommended)
+
+---
+
+#### Stage 4.3: Post-Sort Validation
+
+**Sub-Operations:**
+
+**4.3.1. Verify FK Ordering**
+- For each FK relationship:
+  - Check that target entity appears BEFORE source entity in sorted list
+  - If not → ERROR (sort algorithm failure or cycle not handled)
+
+**4.3.2. Log Ordering Metrics**
+- Total entities sorted
+- Topological ordering applied (yes/no)
+- Cycles detected (count, paths)
+- Manual orderings applied (count)
+
+---
+
+#### Stage 4.4: Output
+
+- `OrderCompleted` state containing:
+  - `TopologicalOrder` (ImmutableArray<EntityKey> in dependency-safe order)
+  - `Cycles` (ImmutableArray<CycleWarning> with paths and suggestions)
+  - `OrderingMode` (Topological, Alphabetical, or Manual)
+
+**Participation Decision Tree:**
+
+```
+Is this a data emission pipeline (INSERT/MERGE)?
+  ├─ YES → PARTICIPATE (Stage 4 mandatory - sort is required)
+  └─ NO (schema emission only) → SKIP (emit in fetch order - DDL order-independent)
+```
+
+**Participation Matrix:**
+
+| Use Case | Participates? | Sort Scope | Why |
+|----------|--------------|------------|-----|
+| extract-model | NO (SKIP) | N/A | No data, just metadata export |
+| build-ssdt schema | NO (SKIP) | N/A | DDL order-independent |
+| build-ssdt data (StaticSeeds) | YES | Static entities only (WRONG) | Should be global (Vector 3) |
+| Bootstrap | YES | ALL entities (CORRECT) | Global sort across all categories |
+| full-export | YES | ALL entities | Global sort (reused for multiple data outputs) |
+
+**Critical Issue (Current):**
+- StaticSeeds sorts only static entities (scoped sort)
+- Misses cross-category FK dependencies (regular entity → static entity)
+- **Vector 3 (§15)**: Unify sort scope to ALWAYS be global (all selected entities)
+
+---
+
+### Stage 5: Emit (Artifact Generation)
+
+**Purpose**: Generate SQL artifacts (schema DDL, data DML, diagnostics) from ordered/transformed entities.
+
+**Protected Citizen**: MUST emit something (cannot skip entirely).
+
+**This is the MOST COMPLEX emission stage - has 3 major sub-stages (Schema, Data, Diagnostics).**
+
+---
+
+#### Stage 5.1: Schema Emission (DDL Generation)
+
+**Purpose**: Generate CREATE TABLE statements for entity schema.
+
+---
+
+**Sub-Stage 5.1.1: Per-Entity DDL Generation**
+
+**For Each Entity:**
+
+**5.1.1.1. Build CREATE TABLE Statement**
+- Table name (physical name with schema: `[dbo].[TableName]`)
+- Column definitions:
+  - For each attribute:
+    - Column name (physical name)
+    - Data type (from TypeMappingPolicy transform)
+    - Nullability (from NullabilityEvaluator transform)
+    - Default value (if specified)
+    - Identity (if auto-increment)
+- Primary key constraint:
+  - Inline or separate ALTER TABLE statement
+  - Naming: `PK_TableName` or unnamed
+- Unique constraints:
+  - For each unique index
+  - Naming: `UQ_TableName_ColumnName` or unnamed
+- Check constraints:
+  - For each check constraint (if any)
+- Foreign key constraints:
+  - Inline or separate ALTER TABLE statement
+  - WITH CHECK or WITH NOCHECK (from deferred FK transform)
+  - ON DELETE/UPDATE behavior
+  - Naming: `FK_SourceTable_TargetTable` or unnamed
+
+**5.1.1.2. Format SQL**
+- Apply CreateTableFormatter:
+  - Indentation (tabs vs spaces, configurable)
+  - Line breaks (column per line, constraints on separate lines)
+  - Whitespace normalization
+- Apply SmoNormalization:
+  - Remove redundant parentheses from DEFAULT constraints
+  - Normalize SQL expressions
+
+**5.1.1.3. Add Comments**
+- Header comment:
+  - `-- Table: [LogicalName]`
+  - `-- Module: [ModuleName]`
+  - `-- Generated: [Timestamp]`
+- Column comments (if metadata available):
+  - `-- [ColumnName]: [Description]`
+
+**Output (per entity)**: CREATE TABLE script (string)
+
+---
+
+**Sub-Stage 5.1.2: File Organization (Per-Module)**
+
+**5.1.2.1. Group Entities by Module**
+- For each module:
+  - Collect all entities in module
+  - Sort entities within module (alphabetical or fetch order)
+
+**5.1.2.2. Create Module Directories**
+- Create `Modules/[ModuleName]/` directory
+- Handle module name collisions (from Transform 3.1.2)
+- Sanitize module names (if configured): Remove spaces, special characters
+
+**5.1.2.3. Write Entity Files**
+- For each entity in module:
+  - Write to `Modules/[ModuleName]/[EntityName].table.sql`
+  - Use UTF-8 encoding, no BOM
+
+**5.1.2.4. Generate .sqlproj File**
+- Create `Modules.sqlproj` (MSBuild project file)
+- Add references to all entity files:
+  ```xml
+  <Build Include="ModuleA/Entity1.table.sql" />
+  <Build Include="ModuleA/Entity2.table.sql" />
+  <Build Include="ModuleB/Entity1.table.sql" />
+  ```
+- Files listed in **module order, then entity order** (NOT topological - schema emission doesn't need FK ordering)
+
+**Output**: Schema files (Modules/**/*.table.sql, Modules.sqlproj)
+
+---
+
+#### Stage 5.2: Data Emission (DML Generation)
+
+**Purpose**: Generate INSERT/MERGE statements for entity data (topologically ordered).
+
+---
+
+**Sub-Stage 5.2.1: Per-Entity Data Script Generation**
+
+**For Each Entity (in topological order from Stage 4):**
+
+**5.2.1.1. Batch Data into Chunks**
+- Divide rows into batches (default: 1000 rows per batch)
+- Reason: SQL Server has limits (e.g., max 1000 rows in VALUES clause for some versions)
+
+**5.2.1.2. Generate INSERT Statements (if InsertionStrategy = INSERT)**
+- For each batch:
+  - Build `INSERT INTO [table] ([col1], [col2], ...) VALUES`
+  - For each row:
+    - Format values:
+      - Strings → `'escaped value'` (with quote escaping)
+      - NULLs → `NULL`
+      - GUIDs → `'guid-string'`
+      - Dates → `'YYYY-MM-DD HH:MM:SS'`
+    - Append `(val1, val2, ...),`
+  - Remove trailing comma, add semicolon
+
+**5.2.1.3. Generate MERGE Statements (if InsertionStrategy = MERGE)**
+- For each batch:
+  - Build `MERGE [table] AS target USING (VALUES ...) AS source ON target.PK = source.PK`
+  - WHEN MATCHED → UPDATE SET ...
+  - WHEN NOT MATCHED → INSERT VALUES ...
+  - Semicolon terminator
+
+**5.2.1.4. Apply UAT-Users Transform (INSERT mode - if enabled)**
+- If TransformationContext present (from Stage 3.3.1):
+  - For each row:
+    - For each user FK column (from FK catalog):
+      - Read current value
+      - If value is orphan (in mapping) → Replace with UAT user ID
+      - Emit transformed value in INSERT statement
+
+**5.2.1.5. Add Comments**
+- Header comment:
+  - `-- Entity: [EntityName] ([RowCount] rows)`
+  - `-- Module: [ModuleName]`
+- Batch comment (if multiple batches):
+  - `-- Batch 1/5 (rows 1-1000)`
+
+**Output (per entity)**: INSERT/MERGE script (string)
+
+---
+
+**Sub-Stage 5.2.2: File Organization**
+
+**Option A: Monolithic (Bootstrap, StaticSeeds default)**
+- Concatenate all entity scripts into single file
+- Entities appear in topological order (FK-safe)
+- Write to `Bootstrap/Bootstrap.sql` or `StaticSeeds/StaticSeeds.sql`
+
+**Option B: Per-Module (StaticSeeds optional - BROKEN)**
+- Group entities by module
+- For each module:
+  - Write to `StaticSeeds/[ModuleName].seed.sql`
+- **Problem**: No .sqlproj ordering, breaks cross-module FK dependencies
+- **Fix (Vector 2, §14)**: Generate .sqlproj with topological ordering
+
+**Option C: Per-Entity (future)**
+- For each entity:
+  - Write to `Data/[ModuleName]/[EntityName].data.sql`
+- Generate .sqlproj with topological ordering
+- NOT IMPLEMENTED YET
+
+**Output**: Data files (Bootstrap.sql, StaticSeeds.sql, or per-module files)
+
+---
+
+#### Stage 5.3: Diagnostic Emission
+
+**Purpose**: Generate profiling reports, validation logs, cycle diagnostics, transform execution logs.
+
+---
+
+**Sub-Stage 5.3.1: Profiling Report Generation**
+
+**5.3.1.1. Collect Profiling Statistics** (from Stage 2.2)
+- For each entity:
+  - Row count
+  - Null counts per column
+  - FK orphan counts
+  - Uniqueness violation counts
+
+**5.3.1.2. Format as CSV**
+- Columns: `Module, Entity, RowCount, NullViolations, FKOrphans, UniquenessViolations`
+- Write to `Diagnostics/profiling-report.csv`
+
+**5.3.1.3. Format as JSON** (optional, for automation)
+- Structured JSON with nested objects per entity
+- Write to `Diagnostics/profiling-report.json`
+
+---
+
+**Sub-Stage 5.3.2: Validation Results Log**
+
+**5.3.2.1. Collect Validation Warnings/Errors**
+- From NullabilityEvaluator: Mandatory columns with NULLs
+- From StaticSeedForeignKeyPreflight: FK orphans, missing referenced entities
+- From TopologicalOrderingValidator: Cycles, ordering issues
+
+**5.3.2.2. Format as Structured Log**
+- For each validation result:
+  - Severity (INFO, WARNING, ERROR)
+  - Message
+  - Entity/column affected
+  - Suggested resolution
+- Write to `Diagnostics/validation-results.log`
+
+---
+
+**Sub-Stage 5.3.3: Cycle Diagnostics**
+
+**5.3.3.1. Collect Cycle Warnings** (from Stage 4)
+- For each detected cycle:
+  - Cycle path (A → B → C → A)
+  - FK details (which FKs form the cycle)
+  - Nullable FKs (which could break cycle)
+  - Manual ordering applied (from CircularDependencyOptions)
+
+**5.3.3.2. Format as Text Report**
+- Header: "Topological Ordering Diagnostics"
+- For each cycle:
+  - Visualize cycle path
+  - List suggested resolutions
+- Write to `Diagnostics/cycles.txt`
+
+---
+
+**Sub-Stage 5.3.4: Transform Execution Log**
+
+**5.3.4.1. Collect Transform Metrics** (from Stage 3)
+- For each transform that executed:
+  - Transform name
+  - Execution duration
+  - Warnings emitted
+  - Entities affected
+
+**5.3.4.2. Format as Structured Log**
+- Columns: `Transform, Duration, Warnings, EntitiesAffected`
+- Write to `Diagnostics/transform-execution.log`
+
+---
+
+**Sub-Stage 5.3.5: Pipeline Manifest**
+
+**5.3.5.1. Collect Pipeline Invocation Record**
+- Input parameters:
+  - Connection string (sanitized - no password)
+  - Selection criteria
+  - Emission strategy
+  - Insertion strategy
+  - Enabled transforms
+- Output artifacts:
+  - List of all generated files (paths)
+  - Row counts per file
+  - File sizes
+- Execution metrics:
+  - Total duration
+  - Per-stage durations
+  - Memory usage
+
+**5.3.5.2. Format as JSON**
+- Structured JSON for CI/CD integration
+- Write to `Diagnostics/pipeline-manifest.json`
+
+---
+
+**Output**: Diagnostic artifacts (CSV, JSON, TXT, LOG files in Diagnostics/)
+
+---
+
+### Stage 6: Apply (Insertion Semantics Definition)
+
+**Purpose**: Define how generated SQL modifies the target database (or specify export-only).
+
+**Protected Citizen**: InsertionStrategy must be specified (even if "None" for export-only).
+
+**NOTE**: This stage defines semantics, but doesn't necessarily execute deployment (execution is optional).
+
+---
+
+#### Stage 6.1: Insertion Strategy Selection
+
+**Sub-Operations:**
+
+**6.1.1. Parse InsertionStrategy from Config/CLI**
+- Read `--insertion-strategy` flag or config
+- Validate strategy:
+  - SchemaOnly → Schema emission only (no data)
+  - INSERT → One-time data load (NonDestructive mode)
+  - MERGE → Upsert on PK (idempotent)
+  - TRUNCATE+INSERT → Clear table then load
+  - None → Export-only (no database modification)
+
+**6.1.2. Validate Strategy Against Emitted Artifacts**
+- If InsertionStrategy = INSERT but no data emitted → WARNING (nothing to insert)
+- If InsertionStrategy = SchemaOnly but no schema emitted → ERROR (inconsistency)
+
+---
+
+#### Stage 6.2: Application Execution (Optional)
+
+**Sub-Operations:**
+
+**6.2.1. If InsertionStrategy = None → SKIP**
+- No deployment, just export artifacts
+- Log: "Export-only mode, no database modification"
+
+**6.2.2. If InsertionStrategy != None → Execute (Optional)**
+- **NOTE**: Current implementation generates scripts, doesn't auto-deploy
+- User manually executes scripts against target database
+- **Future**: Could add auto-deploy with `--deploy` flag
+
+**6.2.3. Log Application Intent**
+- Log which InsertionStrategy specified
+- Log estimated impact:
+  - Row count to insert/merge
+  - Schema changes (tables created, columns altered)
+  - Estimated deployment duration
+
+---
+
+#### Stage 6.3: Output
+
+- `ApplicationCompleted` state containing:
+  - `DeploymentResult` (null if export-only, or execution result if deployed)
+  - `ApplicationMetrics` (estimated impact, actual impact if deployed)
+
+**Application Matrix:**
+
+| Use Case | InsertionStrategy | Execution |
+|----------|------------------|-----------|
+| extract-model | None | SKIP (export model.json) |
+| build-ssdt schema | SchemaOnly | Optional (deploy DDL) |
+| build-ssdt data (StaticSeeds) | MERGE (on PK, batch 1000) | Optional (deploy MERGE) |
+| Bootstrap | INSERT (NonDestructive, batch 1000) | Optional (deploy INSERT) |
+| full-export | Combined OR None | SKIP (export-only typical) |
 
 ---
 
@@ -412,402 +1272,65 @@ public record ApplicationCompleted(
 
 ---
 
-### § 4. Stage 0: Extract-Model (OPTIONAL - Can be Manual or Automatic)
+### Stage Orchestration Patterns
 
-**Purpose**: Retrieve database metadata (schema, relationships, indexes) from live database.
-
-**What Happens:**
-- Query OSSYS_* system tables (OSSYS_ENTITY, OSSYS_ENTITY_ATTR, OSSYS_RELATIONSHIP, OSSYS_INDEX)
-- Parse OutSystems metamodel into OsmModel structure
-- Cache to disk (`.cache/model.json` or user-specified path)
-- Checksum-based invalidation (re-extract when schema changes)
-
-**Protected Citizens:**
-- SqlModelExtractionService (queries OSSYS_* tables)
-- OsmModel (metamodel structure)
-
-**Optional Elements:**
-- Caching (can skip cache, always extract fresh)
-- Offline mode (user provides pre-extracted model via `--model` flag)
-
-**Configuration Inputs:**
-- `--connection-string` (live extraction) OR `--model` (offline mode)
-- `--output` (cache location)
-
-**Output State:**
-- `ExtractionCompleted` (contains OsmModel + extraction metadata)
-
-**Use Case Participation:**
-- **extract-model verb**: This IS the primary operation (extract + emit model JSON)
-- **build-ssdt**: Can auto-extract (Stage 0) or accept pre-extracted model (`--model` override)
-- **full-export**: Can auto-extract (Stage 0) or accept pre-extracted model
-- **Offline scenarios**: Skip Stage 0, provide pre-extracted model
-
-**Current Status:**
-- Currently manual (user runs `extract-model` then passes `--model` to other verbs)
-- Vector 5 (§17): Integrate as automatic Stage 0 with caching
-
-**Partial Participation Example:**
+**Pattern 1: Full Pipeline (full-export)**
 ```
-extract-model:  Stage 0 (FULL) → Emit → Done
-build-ssdt:     Stage 0 (auto) → Selection → Fetch → ... (or skip Stage 0 if --model provided)
+Stage 0 (auto) → Stage 1 (AllModules) → Stage 2 (full fetch: metadata + stats + data) →
+Stage 3 (all transforms) → Stage 4 (global topological sort) →
+Stage 5 (emit: schema + StaticSeeds + Bootstrap + diagnostics) → Stage 6 (None - export-only)
+```
+
+**Pattern 2: Schema-Only (build-ssdt modules)**
+```
+Stage 0 (auto/manual) → Stage 1 (AllModules) → Stage 2 (partial fetch: metadata + stats only) →
+Stage 3 (type mapping, nullability) → Stage 4 (SKIP - no data ordering) →
+Stage 5 (emit: schema + diagnostics) → Stage 6 (SchemaOnly - optional deploy)
+```
+
+**Pattern 3: Data-Only (build-ssdt static seeds)**
+```
+Stage 0 (auto/manual) → Stage 1 (Where(IsStatic)) → Stage 2 (full fetch: metadata + stats + data) →
+Stage 3 (determinizer, FK preflight) → Stage 4 (topological sort - WRONG: scoped, should be global) →
+Stage 5 (emit: StaticSeeds data + diagnostics) → Stage 6 (MERGE - optional deploy)
+```
+
+**Pattern 4: Extract-Only (extract-model verb)**
+```
+Stage 0 (PRIMARY - this IS the verb) → Stage 1 (AllModules) → Stage 2 (partial fetch: metadata only) →
+Stage 3 (minimal transforms) → Stage 4 (SKIP) → Stage 5 (emit: model.json + diagnostics) →
+Stage 6 (None - export-only)
+```
+
+**Pattern 5: UAT Migration (full-export with UAT-Users)**
+```
+Stage 0 (auto) → Stage 1 (AllModules) → Stage 2 (full fetch) →
+Stage 3 (all transforms + UAT-Users Discovery) → Stage 4 (global sort) →
+Stage 5 (emit: schema + [StaticSeeds, Bootstrap with UAT-transformed user FKs] + diagnostics) →
+Stage 6 (None - export-only, or Combined if deploying)
 ```
 
 ---
 
-### § 5. Stage 1: Selection
+### Summary: Total Constituent Operations
 
-**Purpose**: Determine which entities participate in this pipeline invocation.
+**Stage 0**: 6 sub-operations (connection, discovery, parsing, validation, caching, output)
 
-**What Happens:**
-- Evaluate selection criteria (all modules, static-only, filtered per-module)
-- Apply EntitySelector predicate to full entity catalog
-- Produce set of selected entities (may be empty)
-- Selection always happens (even if "select all" is implicit)
+**Stage 1**: 7 sub-operations (parse config, build catalog, apply filters, validate, output)
 
-**Protected Citizens:**
-- EntitySelector (currently fragmented as ModuleFilterOptions)
-- Selection must produce a set (even if empty set is valid)
+**Stage 2**: 14+ sub-operations across 4 sub-stages (metadata, statistics, data, assembly)
 
-**Optional Elements:**
-- Filtering per-module (EntityFilters) - currently not wired
-- Predicate-based selection (e.g., `Where(e => e.IsStatic)`)
+**Stage 3**: 12+ distinct transforms, each with multiple sub-operations
 
-**Configuration Inputs:**
-- `ModuleFilterOptions` (which modules to include/exclude)
-- `EntityFilters` (per-module entity lists) - currently incomplete
-- Implicit selection (e.g., Bootstrap selects "all with data", StaticSeeds selects "static only")
+**Stage 4**: 12 sub-operations across 4 sub-stages (graph construction, sort execution, validation, output)
 
-**Output State:**
-- `SelectionCompleted` (contains selected entity set + selection criteria)
+**Stage 5**: 40+ sub-operations across 3 major sub-stages (schema, data, diagnostics)
 
-**Use Case Participation:**
-- **extract-model**: Select ALL modules (need full schema)
-- **build-ssdt schema**: Select ALL modules (emit schema for all entities)
-- **build-ssdt data** (StaticSeeds): Select WHERE(IsStatic) (only static entities)
-- **Bootstrap**: Select AllWithData (static + regular entities that have data)
-- **full-export**: Select ALL modules (schema + data for everything)
+**Stage 6**: 6 sub-operations (strategy selection, validation, execution, output)
 
-**Current Status:**
-- Selection criteria hardcoded in each implementation
-- EntityFilters exists but not wired (Vector 1, §13)
-
-**Participation Matrix:**
-
-| Use Case | Selection Criteria |
-|----------|-------------------|
-| extract-model | AllModules |
-| build-ssdt schema | AllModules |
-| build-ssdt data (StaticSeeds) | Where(IsStatic) |
-| Bootstrap | AllWithData |
-| full-export | AllModules |
+**Total**: 100+ atomic constituent operations across the 7 major stages.
 
 ---
-
-### § 6. Stage 2: Fetch
-
-**Purpose**: Retrieve metadata, statistics, and/or data for selected entities from database.
-
-**What Happens:**
-- Query OSSYS_* tables for metadata (if not already extracted in Stage 0)
-- Query sys.* tables for statistics (profiling: null counts, FK orphans)
-- Query OSUSR_* tables for data (`SELECT * FROM [table]`)
-- Construct DatabaseSnapshot (unified fetch result)
-- Cache to disk (optional, for performance)
-
-**Protected Citizens:**
-- DatabaseSnapshot (unified metadata + statistics + data)
-- Fetching must happen (even if cached/partial)
-
-**Optional Elements:**
-- Partial fetch (IncludeStructure, IncludeStatistics, IncludeRowData flags)
-- Caching (DiskCache for DatabaseSnapshot)
-- Profiling (can skip statistics if not needed)
-
-**Configuration Inputs:**
-- `--connection-string` (database to query)
-- `FetchOptions` (what to fetch: structure/statistics/data)
-- `--cache` (cache location)
-
-**Output State:**
-- `FetchCompleted` (contains DatabaseSnapshot + fetch metrics)
-
-**Use Case Participation:**
-- **extract-model**: Fetch ONLY metadata (OSSYS_*), no statistics, no data
-- **build-ssdt schema**: Fetch metadata + statistics (for profiling), no data
-- **build-ssdt data** (StaticSeeds): Fetch metadata + statistics + data (for static entities)
-- **Bootstrap**: Fetch metadata + statistics + data (for all entities with data)
-- **full-export**: Fetch metadata + statistics + data (complete fetch)
-
-**Current Status:**
-- Triple-fetch redundancy (OSSYS_* queried 2-3 times)
-- No DatabaseSnapshot abstraction (Vector 7, §24)
-
-**Partial Fetch Matrix:**
-
-| Use Case | Metadata (OSSYS_*) | Statistics (sys.*) | Data (OSUSR_*) |
-|----------|-------------------|-------------------|----------------|
-| extract-model | ✓ | ✗ | ✗ |
-| build-ssdt schema | ✓ | ✓ | ✗ |
-| build-ssdt data | ✓ | ✓ | ✓ (static only) |
-| Bootstrap | ✓ | ✓ | ✓ (all with data) |
-| full-export | ✓ | ✓ | ✓ (all entities) |
-
----
-
-### § 7. Stage 3: Transform
-
-**Purpose**: Apply business logic transformations to fetched data/metadata before emission.
-
-**What Happens:**
-- Run configured transforms in dependency order
-- Each transform: `Input State → Transformed State`
-- Transforms can modify data (UAT-Users), metadata (TypeMappingPolicy), or both
-- No universally protected citizens (all transforms optional or conditional)
-
-**Protected Citizens:**
-- **NONE** - All transforms are optional or configuration-driven
-- Transform composition engine (ensures ordering constraints respected)
-
-**Optional Elements:**
-- EntitySeedDeterminizer (normalize data)
-- TypeMappingPolicy (data type transformations)
-- NullabilityEvaluator (tightening recommendations)
-- UAT-Users Discovery (FK catalog + orphan detection)
-- Module name collision handling
-- Supplemental physical→logical remapping
-
-**Configuration Inputs:**
-- `config.Transforms` (which transforms enabled)
-- Transform-specific config (TighteningOptions, CircularDependencyOptions, UAT-Users inventories)
-
-**Output State:**
-- `TransformCompleted` (contains transformed metadata + data + transform execution log)
-
-**Use Case Participation:**
-- **extract-model**: Minimal transforms (just metadata normalization)
-- **build-ssdt schema**: Type mapping, nullability evaluation (affects DDL generation)
-- **build-ssdt data** (StaticSeeds): Full transform set (determinization, FK preflight, etc.)
-- **Bootstrap**: Full transform set + TopologicalOrderingValidator
-- **full-export with UAT-Users**: Full transform set + UAT-Users Discovery
-
-**Current Status:**
-- Transforms scattered across implementations (not consolidated)
-- Ordering dependencies unclear (Vector 6, §18 - comprehensive excavation required)
-
-**Transform Participation Matrix:**
-
-| Transform | extract-model | build-ssdt schema | build-ssdt data | Bootstrap | full-export+UAT |
-|-----------|--------------|------------------|----------------|-----------|----------------|
-| EntitySeedDeterminizer | ✗ | ✗ | ✓ | ✓ | ✓ |
-| TypeMappingPolicy | ✗ | ✓ | ✓ | ✓ | ✓ |
-| NullabilityEvaluator | ✗ | ✓ | ✓ | ✓ | ✓ |
-| UAT-Users Discovery | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Module name collision | ✗ | ✓ | ✓ | ✓ | ✓ |
-
----
-
-### § 8. Stage 4: Order
-
-**Purpose**: Topologically sort entities by foreign key dependencies to ensure correct emission order.
-
-**What Happens:**
-- Build dependency graph from FK relationships
-- Topological sort (Kahn's algorithm or DFS-based)
-- Detect circular dependencies (validate against CircularDependencyOptions)
-- Produce globally ordered entity list
-
-**Protected Citizens:**
-- **EntityDependencySorter** (for data emission pipelines - MANDATORY)
-- Topological sort is NON-NEGOTIABLE when emitting data (FK dependencies are absolute)
-
-**Critical Nuance:**
-- **Data emission**: Ordering MANDATORY (INSERT/MERGE must be FK-ordered)
-- **Schema emission**: Ordering SKIPPED (CREATE TABLE order-independent, emit in fetch order)
-
-**Optional Elements:**
-- TopologicalOrderingValidator (enhanced cycle diagnostics - currently Bootstrap only)
-- CircularDependencyOptions (allowed cycles configuration)
-- StaticSeedForeignKeyPreflight (orphan detection)
-
-**Configuration Inputs:**
-- `CircularDependencyOptions` (explicitly allowed cycles)
-- FK metadata (from DatabaseSnapshot)
-
-**Output State:**
-- `OrderCompleted` (contains topologically sorted entity list + cycle warnings)
-
-**Use Case Participation:**
-- **extract-model**: SKIP (no ordering needed for metadata export)
-- **build-ssdt schema**: SKIP (DDL order-independent, emit in fetch order)
-- **build-ssdt data** (StaticSeeds): PARTICIPATE (topological sort MANDATORY for data)
-- **Bootstrap**: PARTICIPATE (global topological sort across all entities)
-- **full-export**: PARTICIPATE (sort once, use for both StaticSeeds and Bootstrap data)
-
-**Current Status:**
-- StaticSeeds sorts only static entities (incorrect - misses cross-category FKs)
-- Bootstrap sorts globally (correct - Vector 3, §15)
-- TopologicalOrderingValidator only in Bootstrap (needs extraction)
-
-**Participation Matrix:**
-
-| Use Case | Topological Sort? | Scope |
-|----------|------------------|-------|
-| extract-model | ✗ SKIP | N/A |
-| build-ssdt schema | ✗ SKIP | N/A (emit in fetch order) |
-| build-ssdt data (StaticSeeds) | ✓ PARTICIPATE | Static entities only (WRONG - needs global) |
-| Bootstrap | ✓ PARTICIPATE | ALL entities (CORRECT - global sort) |
-| full-export | ✓ PARTICIPATE | ALL entities (global sort) |
-
----
-
-### § 9. Stage 5: Emit
-
-**Purpose**: Generate SQL artifacts (schema DDL, data DML, diagnostics) from ordered/transformed entities.
-
-**What Happens:**
-- Generate CREATE TABLE statements (schema emission)
-- Generate INSERT/MERGE statements (data emission, using topological order)
-- Generate profiling reports, validation logs (diagnostic emission)
-- Organize files (monolithic, per-module, per-entity)
-- Generate .sqlproj (if per-module organization)
-
-**Protected Citizens:**
-- **Some artifact type must be emitted** (schema, data, or diagnostics)
-- Cannot skip emission entirely (must produce output)
-
-**Optional Elements:**
-- Schema emission (CreateTableStatementBuilder)
-- Data emission (INSERT/MERGE generators)
-- Diagnostic emission (profiling reports, validation logs)
-- File organization strategy (monolithic vs per-module vs per-file)
-
-**Configuration Inputs:**
-- `EmissionStrategy` (what to emit, how to organize)
-- `SmoFormatOptions` (formatting preferences)
-- Output paths (--build-out, --profile-out)
-
-**Output State:**
-- `EmissionCompleted` (contains artifact paths + emission metrics)
-
-**Use Case Participation:**
-- **extract-model**: Emit model JSON + diagnostics (no SQL)
-- **build-ssdt schema**: Emit CREATE TABLE (per-module) + diagnostics
-- **build-ssdt data** (StaticSeeds): Emit MERGE statements + diagnostics
-- **Bootstrap**: Emit INSERT statements + diagnostics
-- **full-export**: Emit schema + StaticSeeds + Bootstrap + diagnostics (compositional)
-
-**Current Status:**
-- Schema and data treated as separate pipelines (no unified abstraction)
-- Diagnostic emission ad-hoc (not integrated into EmissionStrategy)
-- Vector 2 (§14): Extract unified EmissionStrategy
-- Vector 7 (§19): Unify schema and data emission
-
-**Emission Matrix:**
-
-| Use Case | Schema (DDL) | Data (DML) | Diagnostics |
-|----------|-------------|-----------|-------------|
-| extract-model | ✗ | ✗ | model.json |
-| build-ssdt schema | ✓ (per-module) | ✗ | profiling |
-| build-ssdt data | ✗ | ✓ MERGE (StaticSeeds) | profiling |
-| Bootstrap | ✗ | ✓ INSERT (all entities) | cycles, profiling |
-| full-export | ✓ (per-module) | ✓ MERGE + INSERT | comprehensive |
-
-**Compositional Emission Examples:**
-
-```
-extract-model:  Emit(model + diagnostics)
-build-ssdt:     Emit(schema + StaticSeeds + diagnostics)
-full-export:    Emit(schema + [StaticSeeds, Bootstrap] + diagnostics)
-```
-
----
-
-### § 10. Stage 6: Apply
-
-**Purpose**: Define how generated SQL modifies the target database (or if it's export-only).
-
-**What Happens:**
-- Specify insertion semantics (INSERT, MERGE, TRUNCATE+INSERT)
-- Specify batch size (performance tuning)
-- Specify mode flags (NonDestructive, idempotent, etc.)
-- OR specify "none" (export-only, no target database modification)
-
-**Protected Citizens:**
-- **InsertionStrategy must be specified** (even if "none" for export-only)
-
-**Optional Elements:**
-- Actual deployment (can generate scripts without deploying)
-- Batch size tuning (default: 1000 rows)
-- Mode flags (NonDestructive, idempotent)
-
-**Configuration Inputs:**
-- `InsertionStrategy` (INSERT/MERGE/TRUNCATE+INSERT/schema-only/none)
-- Batch size (--batch-size)
-- Mode flags (--non-destructive)
-
-**Output State:**
-- `ApplicationCompleted` (contains deployment result or export confirmation)
-
-**Use Case Participation:**
-- **extract-model**: Apply = None (export model JSON, no database modification)
-- **build-ssdt schema**: Apply = SchemaOnly (deploy DDL, no data)
-- **build-ssdt data** (StaticSeeds): Apply = MERGE (upsert on PK)
-- **Bootstrap**: Apply = INSERT NonDestructive (one-time load, fail on duplicates)
-- **full-export**: Apply = Combined (schema-only + MERGE + INSERT) OR None (export-only)
-
-**Current Status:**
-- Insertion strategy hardcoded in separate implementations
-- Vector 4 (§16): Parameterize InsertionStrategy
-
-**Application Matrix:**
-
-| Use Case | InsertionStrategy |
-|----------|------------------|
-| extract-model | None (export-only) |
-| build-ssdt schema | SchemaOnly |
-| build-ssdt data (StaticSeeds) | MERGE (on PK, batch 1000) |
-| Bootstrap | INSERT (NonDestructive, batch 1000) |
-| full-export | Combined OR None (export-only) |
-
----
-
-### § 11. Cross-Cutting: Diagnostic Logging
-
-**Diagnostic logging is BOTH orthogonal (happens at every stage) AND part of emission strategy (diagnostic artifacts).**
-
-**Real-Time Diagnostics** (orthogonal - every stage):
-- Spectre.Console progress bars (Stage N/6 with real-time feedback)
-- Console warnings/errors (operator-facing, immediate feedback)
-- Execution duration per stage (performance observability)
-
-**Persistent Diagnostics** (part of emission - Stage 5):
-- `profiling-report.csv` (data quality metrics)
-- `validation-results.log` (warnings, errors)
-- `cycles.txt` (topological diagnostics)
-- `transform-execution.log` (transform durations, warnings)
-- `pipeline-manifest.json` (full invocation record for CI/CD)
-
-**Per-Stage Diagnostic Output:**
-
-| Stage | Real-Time Output | Persistent Artifacts |
-|-------|-----------------|---------------------|
-| Stage 0: Extract | "Extracting metadata..." progress | model.json, extraction.log |
-| Stage 1: Select | "Selected 247 entities" | selection-criteria.json |
-| Stage 2: Fetch | "Fetched 1.2M rows in 8.3s" | fetch-metrics.json |
-| Stage 3: Transform | "TypeMappingPolicy: 120ms" | transform-execution.log |
-| Stage 4: Order | "Circular dependency: User ↔ Role" | cycles.txt |
-| Stage 5: Emit | "Emitted 247 tables" | profiling-report.csv, validation-results.log |
-| Stage 6: Apply | "Estimated impact: 1.2M rows" | deployment-summary.json |
-
-**Dual Nature:**
-- **Orthogonal**: Happens at every stage (real-time feedback, observability)
-- **Emission**: Diagnostic artifacts generated in Stage 5 (persistent, CI/CD integration)
-
-Both are first-class concerns - operator usability is not an afterthought.
-
----
-
 ## PART III: DIMENSIONAL DECOMPOSITION (The Axes of Variation)
 
 ### § 12. Axis 1: Selection (SCOPE)
