@@ -109,6 +109,309 @@ This section provides rich detail on each stage: what happens, what's required, 
 
 ---
 
+### The Complete Stage Flow (Visual Architecture)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Stage 0: EXTRACT-MODEL (Optional - can be manual/auto)     │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  Input:  --connection-string OR --model (pre-extracted)     │
+│  Operation: Query OSSYS_* system tables for metadata        │
+│  Output: OsmModel (schema, relationships, indexes)          │
+│  Cache:  .cache/model.json (checksum-based invalidation)    │
+│                                                              │
+│  Participation:                                              │
+│    • extract-model verb: PRIMARY (this IS the operation)    │
+│    • build-ssdt/full-export: AUTO (or skip if --model)      │
+│    • Offline: SKIP (provide pre-extracted model)            │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│  Stage 1: SELECTION (Mandatory - always happens)            │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  Input:  ModuleFilterOptions, EntityFilters (if wired)      │
+│  Operation: Apply selection predicate to entity catalog     │
+│  Output: Set of selected entities (may be empty)            │
+│                                                              │
+│  Selection Criteria by Use Case:                            │
+│    • extract-model:       AllModules                         │
+│    • build-ssdt schema:   AllModules                         │
+│    • build-ssdt data:     Where(IsStatic)                    │
+│    • Bootstrap:           AllWithData (static + regular)     │
+│    • full-export:         AllModules                         │
+│                                                              │
+│  Protected Citizen: EntitySelector (must produce a set)     │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│  Stage 2: FETCH (Mandatory - partial participation)         │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  Input:  Selected entities, --connection-string, FetchOpts   │
+│  Operation: Query database for metadata/statistics/data     │
+│  Output: DatabaseSnapshot (metadata + statistics + data)    │
+│  Cache:  .cache/database-snapshot.json (optional)           │
+│                                                              │
+│  Fetch Matrix (what gets fetched):                          │
+│                   │ Metadata  │ Statistics │ Data           │
+│    extract-model  │    ✓      │     ✗      │  ✗             │
+│    build-schema   │    ✓      │     ✓      │  ✗             │
+│    build-data     │    ✓      │     ✓      │  ✓ (selected)  │
+│    Bootstrap      │    ✓      │     ✓      │  ✓ (all+data)  │
+│    full-export    │    ✓      │     ✓      │  ✓ (all)       │
+│                                                              │
+│  Sources:                                                    │
+│    • OSSYS_* tables → Metadata (schema, relationships)      │
+│    • sys.* tables   → Statistics (profiling, FK orphans)    │
+│    • OSUSR_* tables → Data (actual row data)                │
+│                                                              │
+│  Protected Citizen: DatabaseSnapshot (must fetch something) │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│  Stage 3: TRANSFORM (Optional - config-driven)              │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  Input:  DatabaseSnapshot, config.Transforms                │
+│  Operation: Apply business logic transformations            │
+│  Output: Transformed metadata + data + execution log        │
+│                                                              │
+│  Transform Examples (non-exhaustive):                       │
+│    • EntitySeedDeterminizer    (normalize data)             │
+│    • TypeMappingPolicy         (data type transforms)       │
+│    • NullabilityEvaluator      (tightening recommendations) │
+│    • UAT-Users Discovery       (FK catalog, orphan map)     │
+│    • Module name collision     (disambiguate duplicates)    │
+│    • Deferred FK emission      (WITH NOCHECK for orphans)   │
+│                                                              │
+│  Principles:                                                 │
+│    • Model + data = source of truth (no silent fixes)       │
+│    • Warn, don't auto-fix (operator approval required)      │
+│    • Profiling is informational (operator decides action)   │
+│    • Ordering matters (dependency-aware composition)        │
+│                                                              │
+│  Protected Citizen: NONE (all transforms optional)          │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│  Stage 4: ORDER (Conditional - data pipelines only)         │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  Input:  All selected entities, FK metadata                 │
+│  Operation: Topological sort by FK dependencies             │
+│  Output: Globally ordered entity list + cycle warnings      │
+│                                                              │
+│  Participation Decision Tree:                               │
+│    ┌─ Data emission? ──→ YES ──→ PARTICIPATE (mandatory)   │
+│    └─ Schema emission? ─→ NO  ──→ SKIP (emit in fetch order│
+│                                                              │
+│  Participation Matrix:                                       │
+│    • extract-model:       SKIP (no data, no ordering)       │
+│    • build-ssdt schema:   SKIP (DDL order-independent)      │
+│    • build-ssdt data:     PARTICIPATE (MUST sort for data)  │
+│    • Bootstrap:           PARTICIPATE (global sort)         │
+│    • full-export:         PARTICIPATE (sort once, reuse)    │
+│                                                              │
+│  Critical Nuance:                                            │
+│    • Sort scope ALWAYS global (all selected entities)       │
+│    • Cross-category FKs respected (static ↔ regular)        │
+│    • Filter after sort (not before - Vector 3, §15)         │
+│                                                              │
+│  Protected Citizen (data only): EntityDependencySorter      │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│  Stage 5: EMIT (Mandatory - compositional)                  │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  Input:  Transformed entities, EmissionStrategy, SmoOpts    │
+│  Operation: Generate SQL artifacts + diagnostics            │
+│  Output: Artifact files (schema/data/diagnostics)           │
+│                                                              │
+│  Artifact Types (compositional):                            │
+│    • Schema (DDL):     CREATE TABLE per module/entity       │
+│    • Data (DML):       INSERT/MERGE (topologically ordered) │
+│    • Diagnostics:      Profiling, validation, cycles, logs  │
+│                                                              │
+│  Emission Composition by Use Case:                          │
+│    • extract-model:  model.json + diagnostics               │
+│    • build-ssdt:     schema + StaticSeeds + diagnostics     │
+│    • full-export:    schema + [StaticSeeds, Bootstrap] +    │
+│                      diagnostics                            │
+│                                                              │
+│  File Organization Strategies:                              │
+│    • Monolithic:      One file (preserves sort order)       │
+│    • Per-Module:      Module folders + .sqlproj ordering    │
+│    • Per-Entity:      Entity files + .sqlproj (future)      │
+│                                                              │
+│  Protected Citizen: MUST emit something (can't skip)        │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│  Stage 6: APPLY (Mandatory spec - execution optional)       │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  Input:  Generated SQL scripts, InsertionStrategy           │
+│  Operation: Define application semantics (or none)          │
+│  Output: Deployment result or export confirmation           │
+│                                                              │
+│  Insertion Strategies:                                       │
+│    • SchemaOnly:       Deploy DDL, no data                   │
+│    • INSERT:           One-time load (NonDestructive mode)   │
+│    • MERGE:            Upsert on PK (idempotent)             │
+│    • TRUNCATE+INSERT:  Replace all data (destructive)        │
+│    • None:             Export-only (no database modify)      │
+│                                                              │
+│  Application Matrix:                                         │
+│    • extract-model:       None (export model.json)           │
+│    • build-ssdt schema:   SchemaOnly (DDL deployment)        │
+│    • build-ssdt data:     MERGE (upsert static seeds)        │
+│    • Bootstrap:           INSERT (one-time, NonDestructive)  │
+│    • full-export:         Combined OR None (export-only)     │
+│                                                              │
+│  Protected Citizen: InsertionStrategy (must specify, even   │
+│                     if "none" for export-only scenarios)    │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+                      ✓ COMPLETE
+```
+
+---
+
+### Stage Orchestration Patterns
+
+**Pattern 1: Full Pipeline (full-export)**
+```
+Stage 0 (auto) → Stage 1 → Stage 2 (full fetch) → Stage 3 (all transforms) →
+Stage 4 (global sort) → Stage 5 (schema + data + diagnostics) → Stage 6 (combined or none)
+```
+
+**Pattern 2: Schema-Only (build-ssdt modules)**
+```
+Stage 0 (auto/manual) → Stage 1 → Stage 2 (metadata + stats only) →
+Stage 3 (type mapping, nullability) → Stage 4 (SKIP) →
+Stage 5 (schema + diagnostics) → Stage 6 (SchemaOnly)
+```
+
+**Pattern 3: Data-Only (build-ssdt static seeds)**
+```
+Stage 0 (auto/manual) → Stage 1 (where IsStatic) → Stage 2 (metadata + stats + data) →
+Stage 3 (determinizer, FK preflight) → Stage 4 (topological sort - WRONG: scoped, should be global) →
+Stage 5 (StaticSeeds data + diagnostics) → Stage 6 (MERGE)
+```
+
+**Pattern 4: Extract-Only (extract-model verb)**
+```
+Stage 0 (PRIMARY - this IS the verb) → Stage 1 (AllModules) → Stage 2 (metadata only) →
+Stage 3 (minimal) → Stage 4 (SKIP) → Stage 5 (model.json + diagnostics) → Stage 6 (None)
+```
+
+**Pattern 5: UAT Migration (full-export with UAT-Users)**
+```
+Stage 0 (auto) → Stage 1 → Stage 2 (full fetch) →
+Stage 3 (all transforms + UAT-Users Discovery) → Stage 4 (global sort) →
+Stage 5 (schema + data + diagnostics - UAT-Users applied during INSERT gen) →
+Stage 6 (combined or none)
+```
+
+---
+
+### Stage Dependencies and Prerequisites
+
+**Stage 0 Dependencies:**
+- Requires: Database connection OR pre-extracted model file
+- Produces: OsmModel (schema metadata)
+- Can be skipped: YES (if `--model` provided)
+
+**Stage 1 Dependencies:**
+- Requires: Entity catalog (from Stage 0 or previous state)
+- Produces: Selected entity set
+- Can be skipped: NO (always happens, even if implicit "select all")
+
+**Stage 2 Dependencies:**
+- Requires: Selected entities (from Stage 1), database connection (if fetching)
+- Produces: DatabaseSnapshot (metadata + statistics + data)
+- Can be skipped: NO (must fetch something, even if cached)
+- Can be partial: YES (FetchOptions controls what to fetch)
+
+**Stage 3 Dependencies:**
+- Requires: DatabaseSnapshot (from Stage 2), transform configuration
+- Produces: Transformed entities + execution log
+- Can be skipped: Effectively YES (no mandatory transforms)
+- Ordering matters: YES (transforms have dependency graph - Vector 6, §18)
+
+**Stage 4 Dependencies:**
+- Requires: FK metadata (from Stage 2), CircularDependencyOptions
+- Produces: Topologically ordered entity list
+- Can be skipped: YES (schema emission skips, data emission participates)
+- Scope requirement: ALWAYS global (all selected entities), never scoped to category
+
+**Stage 5 Dependencies:**
+- Requires: Entities (transformed from Stage 3, ordered from Stage 4 if data), EmissionStrategy
+- Produces: SQL artifacts (schema/data/diagnostics)
+- Can be skipped: NO (must emit something)
+- Composition: Multiple artifact types in single stage (schema + data + diagnostics)
+
+**Stage 6 Dependencies:**
+- Requires: Generated SQL (from Stage 5), InsertionStrategy
+- Produces: Deployment result or export confirmation
+- Can be skipped: Execution can be skipped (export-only), but strategy must be specified
+
+---
+
+### Cross-Stage State Flow (Immutable Composition)
+
+Each stage produces a new immutable state that includes everything from previous stages:
+
+```csharp
+// Stage 0 Output
+public record ExtractionCompleted(
+    OsmModel Model,
+    ExtractionMetrics Metrics
+);
+
+// Stage 1 Output (carries forward Stage 0)
+public record SelectionCompleted(
+    ExtractionCompleted Extraction,          // Carried forward
+    ImmutableHashSet<EntityKey> SelectedEntities,
+    SelectionCriteria Criteria
+);
+
+// Stage 2 Output (carries forward Stage 0 + 1)
+public record FetchCompleted(
+    SelectionCompleted Selection,            // Carried forward
+    DatabaseSnapshot Snapshot,
+    FetchMetrics Metrics
+);
+
+// Stage 3 Output (carries forward Stage 0 + 1 + 2)
+public record TransformCompleted(
+    FetchCompleted Fetch,                    // Carried forward
+    ImmutableArray<Transform> AppliedTransforms,
+    TransformExecutionLog Log
+);
+
+// Stage 4 Output (carries forward Stage 0 + 1 + 2 + 3)
+public record OrderCompleted(
+    TransformCompleted Transform,            // Carried forward
+    ImmutableArray<EntityKey> TopologicalOrder,
+    ImmutableArray<CycleWarning> Cycles
+);
+
+// Stage 5 Output (carries forward all previous)
+public record EmissionCompleted(
+    OrderCompleted Order,                    // Carried forward (or Transform if Stage 4 skipped)
+    ImmutableArray<ArtifactPath> Artifacts,
+    EmissionMetrics Metrics
+);
+
+// Stage 6 Output (carries forward all previous)
+public record ApplicationCompleted(
+    EmissionCompleted Emission,              // Carried forward
+    DeploymentResult? Result,                // null if export-only
+    ApplicationMetrics Metrics
+);
+```
+
+**Key Insight**: State flows forward immutably. Each stage sees everything that came before. No hidden mutations, no backtracking. Compiler enforces this via type system.
+
+---
+
 ### § 4. Stage 0: Extract-Model (OPTIONAL - Can be Manual or Automatic)
 
 **Purpose**: Retrieve database metadata (schema, relationships, indexes) from live database.
