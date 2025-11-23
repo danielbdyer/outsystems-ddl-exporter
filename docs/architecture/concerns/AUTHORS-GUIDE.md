@@ -225,27 +225,34 @@ concerns/*.md (Parts inventory - primitives catalog)
 ## 🔍 Key Insights Learned
 
 ### About EntityDependencySorter (Stage 4)
-- ✅ **Universal** - Used by all 3 pipelines (StaticSeeds, DynamicInsert, Bootstrap)
+- ✅ **Universal** - Used by 2 real implementations (StaticSeeds, Bootstrap)
+- ✅ **Also used by deprecated implementations** (DynamicData is DEPRECATED, Supplemental doesn't use sort)
 - ❌ **NOT broken** - Works perfectly on any entity set
 - ⚠️ **Problem**: Executed separately per pipeline (misses cross-category FKs)
 - ✅ **Solution**: Bootstrap demonstrates correct pattern (global sort on all entities)
 
 ### About MERGE vs INSERT (Stages 5+6)
-- ✅ **MERGE is shared** - Used by StaticSeeds AND Bootstrap (not static-entity-specific!)
-- ✅ **INSERT is pipeline-specific** - Only DynamicInsert uses it
-- ✅ **Both strategies needed** - Different use cases (idempotent vs. append-only)
+- ✅ **MERGE is StaticSeeds only** - Used exclusively by StaticSeeds (idempotent upsert)
+- ✅ **INSERT is Bootstrap primary** - Bootstrap uses INSERT for one-time load
+- ⚠️ **DynamicData is DEPRECATED** - Also uses INSERT, but redundant with Bootstrap (to be DELETED)
+- ✅ **Both strategies needed** - Different use cases (idempotent MERGE vs. one-time INSERT)
 - ✅ **One concern** - Both solve "how to insert data", belong in one doc
 
 ### About Data Structures (Stage 2)
-- ✅ **StaticEntityTableData is universal** - Used by all 3 pipelines despite "Static" name
+- ✅ **StaticEntityTableData is universal** - Used by both real implementations despite "Static" name
 - ✅ **Naming is misleading** - Many "Static" prefixed classes are actually universal
 - ✅ **Foundation for everything** - Must understand these before other stages
 
 ### About Bootstrap
 - ✅ **Proof of concept** - Already demonstrates unified pipeline pattern
 - ✅ **Combines all entities** - Static + regular in one global sort
-- ✅ **Uses MERGE** - Via StaticSeedSqlBuilder (same as StaticSeeds)
+- ✅ **Uses INSERT** - One-time load (not MERGE like StaticSeeds)
 - 💡 **Key insight**: Bootstrap IS the unified pipeline for all entities!
+
+### About DynamicData and Supplemental
+- ❌ **DynamicData is DEPRECATED** - Redundant with Bootstrap, misnomer, to be DELETED
+- ❌ **Supplemental to be DELETED** - Workaround for missing EntitySelector, will use EntitySelector.Include() instead
+- ✅ **Only 2 real implementations** - StaticSeeds (MERGE) and Bootstrap (INSERT)
 
 ---
 

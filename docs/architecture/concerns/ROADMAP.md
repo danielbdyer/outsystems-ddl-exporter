@@ -23,22 +23,24 @@ Each document represents what will likely become a **namespace or major class** 
 - **Future Class**: `TopologicalSorter` or `DependencyOrdering`
 - **Pipeline Stage**: Stage 4
 - **Primitives**:
-  - `EntityDependencySorter` (universal - all 3 pipelines)
+  - `EntityDependencySorter` (universal - 2 real implementations: StaticSeeds, Bootstrap)
   - `EntityDependencySortOptions`
   - `CircularDependencyOptions`
   - `TopologicalOrderingValidator` (Bootstrap only)
 - **Status**: ✅ Complete (~400 lines)
 - **Deliverable**: Understand topological ordering primitive
+- **Note**: DynamicData also uses this but is DEPRECATED (to be deleted)
 
 #### 02-insertion-strategies.md
 - **Future Interface**: `InsertionStrategy` with MERGE and INSERT implementations
 - **Pipeline Stages**: Stage 5 (Emission) + Stage 6 (Insertion)
 - **Primitives**:
-  - **MERGE**: `StaticSeedSqlBuilder` (StaticSeeds + Bootstrap)
-  - **INSERT**: `DynamicEntityInsertGenerator` (DynamicInsert)
+  - **MERGE**: `StaticSeedSqlBuilder` (StaticSeeds only - idempotent upsert)
+  - **INSERT**: `DynamicEntityInsertGenerator` (Bootstrap primary - one-time load)
   - Configuration: `StaticSeedSynchronizationMode`, `DynamicEntityInsertGenerationOptions`
 - **Status**: 🚧 In progress (MERGE complete ~330 lines, INSERT to be added)
 - **Deliverable**: Understand insertion strategy primitives (both MERGE and INSERT)
+- **Note**: DynamicData also uses INSERT but is DEPRECATED (redundant with Bootstrap, to be deleted)
 
 ---
 
@@ -48,15 +50,16 @@ Each document represents what will likely become a **namespace or major class** 
 - **Future Namespace**: `EntityData` or `DataStructures`
 - **Pipeline Stage**: Stage 2 (Database Snapshot Fetch)
 - **Primitives**:
-  - `StaticEntityTableData` (universal - all 3 pipelines, despite name!)
+  - `StaticEntityTableData` (universal - used by both real implementations, despite "Static" name!)
   - `StaticEntityRow` (universal)
   - `StaticEntitySeedTableDefinition` (shared by StaticSeeds + Bootstrap)
   - `StaticEntitySeedColumn` (shared by StaticSeeds + Bootstrap)
-  - `DynamicEntityDataset` (DynamicInsert + Bootstrap)
+  - `DynamicEntityDataset` (Bootstrap + deprecated DynamicData)
   - `EntitySeedDeterminizer` (deterministic ordering/normalization)
-- **Why needed**: These are universal data structures used by ALL pipelines - critical foundation
+- **Why needed**: These are universal data structures used by both real implementations - critical foundation
 - **Estimated size**: ~400-500 lines
 - **Deliverable**: Understand core entity data structures
+- **Note**: Only 2 real implementations to consider (StaticSeeds MERGE, Bootstrap INSERT); DynamicData and Supplemental are deprecated
 
 #### 04-data-providers.md (OPTIONAL - may not be needed)
 - **Future Class**: `DatabaseSnapshot` or merged into Stage 2
