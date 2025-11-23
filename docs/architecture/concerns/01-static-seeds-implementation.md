@@ -21,12 +21,63 @@ When implementing the unified pipeline, you'll need:
 | **Stage 5: Emission** | Drift detection pattern | `StaticSeedSqlBuilder.BuildBlock()` lines 86-100 | Optional validation before apply |
 | **Stage 6: Insertion** | MERGE semantics | `StaticSeedSynchronizationMode` enum + SQL | INSERT+UPDATE+DELETE in one statement |
 
-**Critical Realizations**:
-1. **Static Seeds is NOT special** - it's just `EntityPipeline` with specific parameters
-2. **MERGE logic is valuable** - Bootstrap/DynamicData use INSERT; preserve both
-3. **Topological sort is BROKEN** - currently static-only; must expand to ALL entities
-4. **Drift detection is unique** - preserve this as optional validation mode
-5. **Per-module emission is problematic** - breaks topological order with cross-module FKs
+**Critical Realizations** (✅ = Verified):
+1. ✅ **Static Seeds is NOT special** - it's just `EntityPipeline` with specific parameters
+2. ✅ **MERGE vs INSERT patterns** - Bootstrap/StaticSeeds use MERGE; DynamicData uses INSERT; preserve both
+3. ✅ **Topological sort is SHARED** - used by all 3 pipelines (StaticSeeds, DynamicData, Bootstrap); currently executed separately; unify into single global sort
+4. ✅ **FK Preflight Analysis is unique** - only StaticSeeds uses it; preserve as optional validation
+5. ✅ **Drift detection is unique** - ValidateThenApply mode only in StaticSeeds; preserve as optional
+6. ⚠️ **Per-module emission is problematic** - breaks topological order with cross-module FKs
+
+---
+
+## 📊 Current Implementation: Three Pipeline Steps
+
+**IMPORTANT**: There are currently THREE separate pipeline steps that handle entity data. Understanding their differences is critical for unification:
+
+### 1. BuildSsdtStaticSeedStep
+- **Purpose**: Generate MERGE scripts for static entities (`IsStatic == true`)
+- **Selection**: `StaticEntitySeedDefinitionBuilder` filters entities where `IsStatic == true`
+- **Data Source**: `IStaticEntityDataProvider` (SQL or fixture files)
+- **Insertion**: MERGE statements (via `StaticSeedSqlBuilder`)
+- **Ordering**: `EntityDependencySorter.SortByForeignKeys()` on static entities only
+- **Emission**: Per-module OR monolithic (configurable)
+- **Unique Features**: FK Preflight Analysis, Drift Detection (ValidateThenApply)
+- **File**: `src/Osm.Pipeline/Orchestration/BuildSsdtStaticSeedStep.cs`
+
+### 2. BuildSsdtDynamicInsertStep
+- **Purpose**: Generate INSERT scripts for user-provided or extracted data
+- **Selection**: User provides `DynamicEntityDataset` (any entities)
+- **Data Source**: `DynamicEntityDataset` from user or extraction process
+- **Insertion**: INSERT statements with batching (via `DynamicEntityInsertGenerator`)
+- **Ordering**: `EntityDependencySorter.SortByForeignKeys()` on dynamic data
+- **Emission**: Per-entity OR single file (configurable)
+- **Unique Features**: Self-referencing ordering logic, constraint disabling on cycles
+- **File**: `src/Osm.Pipeline/Orchestration/BuildSsdtDynamicInsertStep.cs`
+
+### 3. BuildSsdtBootstrapSnapshotStep
+- **Purpose**: Generate global bootstrap MERGE script for first-time SSDT deployment
+- **Selection**: ALL entities (static + regular combined)
+- **Data Source**: Combines `StaticSeedData` + `DynamicDataset`
+- **Insertion**: MERGE statements (via `StaticSeedSqlBuilder`)
+- **Ordering**: `EntityDependencySorter.SortByForeignKeys()` on **ALL** entities with global topological sort
+- **Emission**: Single monolithic file with global ordering
+- **Unique Features**: Cycle validation with diagnostics, manual ordering support
+- **File**: `src/Osm.Pipeline/Orchestration/BuildSsdtBootstrapSnapshotStep.cs`
+
+### Key Insight for Unification
+
+All three steps use:
+- ✅ Same topological sorter (`EntityDependencySorter.SortByForeignKeys()`)
+- ✅ Same data structure (`StaticEntityTableData` - despite the name!)
+- ✅ Same MERGE builder for Bootstrap + StaticSeeds (`StaticSeedSqlBuilder`)
+
+The ONLY differences are:
+1. **Entity Selection** (IsStatic filter vs. user-provided vs. all entities)
+2. **Insertion Strategy** (MERGE vs. INSERT)
+3. **Emission Strategy** (per-module vs. per-entity vs. monolithic)
+
+This proves the unified pipeline hypothesis: **All three are just parameterized variations of the same pipeline!**
 
 ---
 
@@ -43,7 +94,7 @@ When building the unified pipeline, **extract these behaviors** from Static Seed
 6. **Module name collision handling** (sanitization + disambiguation)
 
 ### ⚠️ Transform (Don't Copy)
-1. **Topological sort scoping** - Currently static-only; expand to ALL selected entities
+1. **Multiple separate topological sorts** - Currently each pipeline (StaticSeeds, DynamicData, Bootstrap) sorts independently; replace with single global sort
 2. **Data provider abstraction** - Merge into unified `DatabaseSnapshot.Fetch()`
 3. **Hardcoded `DataKind` filter** - Replace with `EntitySelector.Where(e => e.IsStatic)`
 
@@ -166,10 +217,17 @@ public static StaticSeedForeignKeyPreflightResult Analyze(
 
 ### Stage 4: TOPOLOGICAL SORT
 
-**Current Logic**: `EntityDependencySorter` - Static entities only
+**Current Logic**: `EntityDependencySorter` - SHARED across all pipelines ✅
 
 **Class**: `EntityDependencySorter`
 **File**: `src/Osm.Emission/Seeds/EntityDependencySorter.cs` (350+ lines)
+
+**Used By** (✅ Verified):
+1. ✅ `BuildSsdtStaticSeedStep` (line 82) - sorts static entities only
+2. ✅ `BuildSsdtDynamicInsertStep` (line 87) - sorts dynamic data
+3. ✅ `BuildSsdtBootstrapSnapshotStep` (line 93) - sorts ALL entities combined (static + regular)
+4. ✅ `StaticEntitySeedScriptGenerator` (line 49) - sorts static entities
+5. ✅ `DynamicEntityInsertGenerator` (line 231) - sorts dynamic data
 
 **Key Method to Extract**:
 ```csharp
@@ -177,36 +235,45 @@ public static EntityDependencyOrder SortByForeignKeys(
     IReadOnlyList<StaticEntityTableData> tables,
     OsmModel? model,
     NamingOverrides? namingOverrides = null,
-    EntityDependencySortOptions? options = null)
+    EntityDependencySortOptions? options = null,
+    CircularDependencyOptions? circularDependencyOptions = null)
 {
     // 1. Build FK dependency graph
     // 2. Detect cycles
-    // 3. Topological sort
+    // 3. Topological sort (Kahn's algorithm)
     // 4. Fall back to alphabetical if cycles
+    // 5. Support manual ordering overrides for known cycles
 }
 ```
 
 **Extract for Unified Pipeline**:
-- ✅ **Graph building algorithm** - Reuse for ALL entities (not just static)
+- ✅ **Graph building algorithm** - Already works for any entity set (proven by Bootstrap using it on ALL entities)
 - ✅ **Cycle detection** - Preserve this safety check
 - ✅ **Alphabetical fallback** - When cycles prevent sort
 - ✅ **Junction table deferral** - `DeferJunctionTables` option (lines 79-80 in `BuildSsdtStaticSeedStep.cs`)
+- ✅ **Manual ordering overrides** - `CircularDependencyOptions` for known safe cycles (used by Bootstrap)
 
 **Result Model to Generalize**:
 - `EntityDependencyOrder`:
   - `Tables` → `Entities` (broaden scope)
   - `TopologicalOrderingApplied` (bool)
   - `Mode` (Topological or Alphabetical)
-  - Metadata: `NodeCount`, `EdgeCount`, `CycleDetected`
+  - Metadata: `NodeCount`, `EdgeCount`, `CycleDetected`, `MissingEdgeCount`, `AlphabeticalFallbackApplied`
 
-**Critical Issue to Fix**:
-- **Current**: Sorts only static entities (misses cross-category FKs)
-- **Unified**: MUST sort ALL selected entities together
-- **Example**: Static entity references regular entity → current sort misses this
+**Issue with Multiple Separate Sorts**:
+- **Current**: Three pipelines each sort independently:
+  - BuildSsdtStaticSeedStep sorts static entities only
+  - BuildSsdtDynamicInsertStep sorts dynamic data only
+  - BuildSsdtBootstrapSnapshotStep sorts ALL entities (this is the correct pattern!)
+- **Problem**: Per-pipeline sorting misses cross-category FK dependencies
+- **Example**: If static entity references a regular entity, sorting static entities alone won't see that dependency
+- **Unified**: Follow Bootstrap's pattern - sort ALL selected entities together in one global topological order
 
 **Options to Preserve**:
 - `EntityDependencySortOptions`:
   - `DeferJunctionTables` (bool) - Delay M:N join tables in sort
+- `CircularDependencyOptions`:
+  - Manual ordering overrides for known safe cycles
 
 ---
 
@@ -235,9 +302,13 @@ public string Generate(tables, synchronizationMode, model, validationOverrides)
 - ✅ **Template wrapper** - Header/footer with transaction
 - ✅ **UTF-8 no BOM** encoding (line 15)
 
-#### SQL Block Builder
+#### SQL Block Builder (SHARED between Static Seeds and Bootstrap!) ✅
 **Class**: `StaticSeedSqlBuilder`
 **File**: `src/Osm.Emission/Seeds/StaticSeedSqlBuilder.cs` (431 lines)
+
+**Used By** (✅ Verified):
+1. ✅ `StaticEntitySeedScriptGenerator` (line 64) - wraps this for Static Seeds
+2. ✅ `BuildSsdtBootstrapSnapshotStep` (line 297) - directly generates MERGE for Bootstrap
 
 **Key Method** (lines 32-260):
 ```csharp
@@ -504,10 +575,11 @@ When building the unified pipeline, follow this extraction strategy:
 5. **Delete scaffolding** (BuildSsdtStaticSeedStep, etc.)
 
 ### Key Risks to Manage
-⚠️ **Topological sort expansion** - Most critical change
-- Current: Static entities only (misses cross-category FKs)
-- Future: ALL selected entities together
-- Risk: May discover new FK violations previously hidden
+⚠️ **Unifying multiple separate sorts into one global sort** - Most critical change
+- Current: Three pipelines sort independently (StaticSeeds, DynamicData, Bootstrap each sort their subset)
+- Bootstrap already demonstrates correct pattern: sorts ALL entities together
+- Future: Apply Bootstrap's pattern to unified pipeline
+- Risk: May discover new FK violations when cross-category dependencies are considered
 - Mitigation: Run FK preflight analysis first, warn operator
 
 ⚠️ **MERGE semantics preservation** - Must not break drift detection
@@ -531,8 +603,10 @@ When working on other concerns, refer back to Static Seeds for:
 - Example of per-module entity selection
 
 **From Topological Sort perspective**:
-- Static Seeds has working sort algorithm (but scoped wrong)
+- EntityDependencySorter is SHARED across all pipelines (StaticSeeds, DynamicData, Bootstrap)
+- Bootstrap demonstrates correct pattern: sorts ALL entities together
 - Cycle detection + alphabetical fallback pattern
+- Manual ordering overrides for known safe cycles (CircularDependencyOptions)
 
 **From Database Snapshot perspective**:
 - Static Seeds shows deterministic data fetching pattern
@@ -543,12 +617,14 @@ When working on other concerns, refer back to Static Seeds for:
 - Module name collision handling
 
 **From Insertion Strategies perspective**:
-- Static Seeds is the ONLY place with MERGE logic
-- Drift detection pattern unique to Static Seeds
+- StaticSeedSqlBuilder generates MERGE (shared by StaticSeeds + Bootstrap)
+- DynamicEntityInsertGenerator generates INSERT (used by DynamicData)
+- Drift detection pattern unique to Static Seeds (ValidateThenApply mode)
 
-**From Bootstrap perspective**:
-- Bootstrap uses INSERT, Static Seeds uses MERGE
-- Same pipeline structure, different parameters (proves unification thesis)
+**From Bootstrap perspective** (✅ Verified):
+- Bootstrap ALSO uses MERGE (via StaticSeedSqlBuilder at line 297)
+- Bootstrap combines ALL entities (static + regular) in single global sort
+- Bootstrap is proof-of-concept for unified pipeline!
 
 ---
 
@@ -575,26 +651,32 @@ When working on other concerns, refer back to Static Seeds for:
 
 The unified pipeline successfully replaces Static Seeds when:
 
-✅ **MERGE insertion works identically** - Existing SQL output byte-identical
+✅ **MERGE insertion works identically** - Existing SQL output byte-identical (StaticSeedSqlBuilder unchanged)
 ✅ **Drift detection preserved** - ValidateThenApply mode still catches unexpected data changes
-✅ **Topological sort expanded** - Now covers ALL entities (not just static)
-✅ **FK preflight analysis works** - Orphan detection runs on broader scope
+✅ **Global topological sort** - Follow Bootstrap's pattern: sort ALL selected entities together (not per-pipeline)
+✅ **FK preflight analysis works** - Orphan detection optionally runs on broader scope
 ✅ **All existing tests pass** - Zero regression in functionality
 ✅ **Per-module emission optional** - Supported (with warnings about limitations)
 ✅ **Module collision handling** - Sanitization + disambiguation still works
 
 **Definition of Done**:
-1. Can run: `EntityPipeline(scope: EntitySelector.Where(e => e.IsStatic), insertion: MERGE)`
-2. Output diff vs. old `BuildSsdtStaticSeedStep` shows only cosmetic differences
-3. All StaticSeedScriptExecutionTests pass against unified pipeline
-4. BuildSsdtStaticSeedStep deleted (no longer needed)
+1. Can run: `EntityPipeline(scope: EntitySelector.Where(e => e.IsStatic), insertion: MERGE, emission: PerModule)`
+2. Can run: `EntityPipeline(scope: EntitySelector.All(), insertion: MERGE, emission: Monolithic)` (replicates Bootstrap)
+3. Output diff vs. old `BuildSsdtStaticSeedStep` shows only cosmetic differences
+4. All StaticSeedScriptExecutionTests pass against unified pipeline
+5. BuildSsdtStaticSeedStep, BuildSsdtDynamicInsertStep, BuildSsdtBootstrapSnapshotStep all deleted (replaced by unified pipeline)
 
 ---
 
 ## 🔗 Related Documentation
 
 - **Primary**: `docs/architecture/entity-pipeline-unification.md` - North Star vision
-- **Next Concern**: `02-bootstrap-implementation.md` (similar pattern, INSERT instead of MERGE)
+- **Next Concern**: `02-bootstrap-implementation.md` (✅ uses MERGE like Static Seeds, NOT INSERT!)
+  - **Update**: Bootstrap analysis shows it ALREADY implements the unified pipeline pattern
+  - Combines static + regular entities
+  - Global topological sort
+  - MERGE via StaticSeedSqlBuilder
+- **Also Related**: `03-dynamic-data-implementation.md` (uses INSERT, not MERGE)
 - **Overlapping**: Topological Sort (Stage 4), Database Snapshot Fetch (Stage 2)
 
 **Implementation Specs** (when created):
@@ -605,17 +687,47 @@ The unified pipeline successfully replaces Static Seeds when:
 
 ---
 
-## 💡 Key Insights
+## 💡 Key Insights (✅ = Verified Against Codebase)
 
-1. **Static Seeds is proof of concept** - Shows that entity pipelines can be parameterized
-2. **MERGE is valuable** - Only place with upsert logic, must preserve
-3. **Topological sort is broken** - Scoped to static-only, misses cross-category FKs
-4. **Drift detection is unique** - No other pipeline has this, worth preserving
-5. **Per-module emission is problematic** - Breaks ordering, recommend deprecation
-6. **Triple-fetch is wasteful** - Static Seeds fetches separately from Bootstrap/Profile
-7. **Naming is scaffolding** - "Static" prefix everywhere, but nothing is inherently static-specific
+1. ✅ **Bootstrap is the proof-of-concept** - Already demonstrates unified pipeline pattern:
+   - Combines ALL entities (static + regular)
+   - Uses global topological sort
+   - Uses MERGE via StaticSeedSqlBuilder
+   - Shows that entity pipelines CAN be parameterized
 
-**The Big Realization**: If you removed all "Static" prefixes and made the `DataKind` filter a parameter, this pipeline would work for ANY entity set. That's the unified pipeline.
+2. ✅ **MERGE is shared** - StaticSeedSqlBuilder used by both StaticSeeds AND Bootstrap
+   - Not unique to static entities
+   - Provides upsert semantics (INSERT+UPDATE+DELETE)
+   - Must preserve in unified pipeline
+
+3. ✅ **Topological sort is already general-purpose** - EntityDependencySorter works for any entity set
+   - Used by StaticSeeds, DynamicData, AND Bootstrap
+   - Bootstrap proves it works on ALL entities combined
+   - Problem is not the algorithm, but running it separately per pipeline
+
+4. ✅ **FK Preflight Analysis is unique** - Only StaticSeeds uses it (BuildSsdtStaticSeedStep line 90)
+   - Worth preserving as optional validation
+   - Could be generalized to all entities
+
+5. ✅ **Drift detection is unique** - ValidateThenApply mode only in StaticSeeds
+   - EXCEPT query pattern for drift detection
+   - Worth preserving as optional mode
+
+6. ⚠️ **Per-module emission is problematic** - Breaks topological order when FKs cross modules
+   - Users rely on it, so must support
+   - Recommend deprecation with migration path
+
+7. ✅ **Naming is scaffolding** - "Static" prefix everywhere, but:
+   - StaticEntityTableData used by ALL pipelines (despite the name!)
+   - StaticSeedSqlBuilder used by StaticSeeds AND Bootstrap
+   - Nothing is inherently static-specific
+
+**The Big Realization** (✅ Validated):
+- Bootstrap ALREADY IS the unified pipeline for ALL entities!
+- It combines static + regular entities
+- Uses global topological sort
+- Generates MERGE statements
+- The "unified pipeline" already exists in BuildSsdtBootstrapSnapshotStep - we just need to parameterize it!
 
 ---
 
