@@ -12,8 +12,8 @@
 This document catalogs the **shared substrate** - the classes, methods, data structures, and patterns used across the three current entity pipeline implementations:
 
 1. **BuildSsdtStaticSeedStep** - Static entities with MERGE
-2. **BuildSsdtDynamicInsertStep** - User-provided data with INSERT
-3. **BuildSsdtBootstrapSnapshotStep** - All entities with MERGE
+2. **BuildSsdtDynamicInsertStep** - User-provided data with INSERT (**DEPRECATED** - redundant with Bootstrap)
+3. **BuildSsdtBootstrapSnapshotStep** - All entities (static + regular + supplemental) with INSERT
 
 Rather than describing how these pipelines work (the "recipe"), this document identifies **which primitives are shared vs. unique** (the "ingredients") to inform future unification efforts.
 
@@ -30,7 +30,7 @@ Rather than describing how these pipelines work (the "recipe"), this document id
 | **StaticSeedForeignKeyPreflight** | StaticSeeds only | `src/Osm.Emission/Seeds/StaticSeedForeignKeyPreflight.cs` | ❌ Unique |
 | **SqlStaticEntityDataProvider** | StaticSeeds only | `src/Osm.Pipeline/StaticData/StaticEntityDataProviders.cs` | ❌ Unique |
 | **EntitySeedDeterminizer** | StaticSeeds + Bootstrap | `src/Osm.Emission/Seeds/EntitySeedDeterminizer.cs` | ✅ **SHARED** |
-| **TopologicalOrderingValidator** | Bootstrap only | Used in `BuildSsdtBootstrapSnapshotStep.cs:103` | ❌ Unique |
+| **TopologicalOrderingValidator** | Bootstrap only | Used in `BuildSsdtBootstrapSnapshotStep.cs:115-127` | ❌ Unique (could be generalized) |
 
 ### Key Insight: Most Primitives Are Already Shared!
 
@@ -51,9 +51,9 @@ The three pipelines already share:
 
 1. ✅ **Shared substrate already exists** - Most primitives are already reused across pipelines
 2. ✅ **Naming is misleading** - "Static" prefixed classes used by all pipelines (e.g., `StaticEntityTableData`)
-3. ✅ **Two insertion strategies** - MERGE (StaticSeeds + Bootstrap) vs INSERT (DynamicInsert)
+3. ✅ **Two insertion strategies** - MERGE (StaticSeeds) vs INSERT (Bootstrap, DynamicInsert deprecated)
 4. ✅ **Topological sort is universal** - `EntityDependencySorter` used by all 3, but executed separately per pipeline
-5. ✅ **Bootstrap demonstrates unification** - Already combines all entities with global sort + MERGE
+5. ✅ **Bootstrap demonstrates unification** - Already combines all entities (static + regular + supplemental) with global sort + INSERT
 6. ✅ **Unique features are optional** - FK Preflight, Drift Detection, Topological Validation could all be parameterized
 7. ⚠️ **Per-pipeline sorting is problematic** - Each pipeline sorts independently, missing cross-category FK dependencies
 
@@ -83,15 +83,19 @@ The three pipelines already share:
 - **Unique Features**: Self-referencing ordering logic, constraint disabling on cycles
 - **File**: `src/Osm.Pipeline/Orchestration/BuildSsdtDynamicInsertStep.cs`
 
-### 3. BuildSsdtBootstrapSnapshotStep
-- **Purpose**: Generate global bootstrap MERGE script for first-time SSDT deployment
-- **Selection**: ALL entities (static + regular combined)
-- **Data Source**: Combines `StaticSeedData` + `DynamicDataset`
-- **Insertion**: MERGE statements (via `StaticSeedSqlBuilder`)
-- **Ordering**: `EntityDependencySorter.SortByForeignKeys()` on **ALL** entities with global topological sort
+### 3. BuildSsdtBootstrapSnapshotStep ✅ **DEMONSTRATES UNIFIED PATTERN**
+- **Purpose**: Generate global bootstrap INSERT script for first-time SSDT deployment
+- **Selection**: ALL entities (static + regular + supplemental combined) ✅ Verified at lines 50-60
+- **Data Source**: Combines `StaticSeedData` + `DynamicDataset` + `SupplementalEntities`
+- **Insertion**: INSERT statements in NonDestructive mode (via `StaticSeedSqlBuilder`) ✅ Verified at line 310
+- **Ordering**: `EntityDependencySorter.SortByForeignKeys()` on **ALL** entities with global topological sort ✅ Verified at lines 105-110
 - **Emission**: Single monolithic file with global ordering
-- **Unique Features**: Cycle validation with diagnostics, manual ordering support
+- **Unique Features**:
+  - ✅ **TopologicalOrderingValidator** - Enhanced cycle diagnostics (lines 115-127, 186-325)
+  - ✅ **CircularDependencyOptions** support for manual cycle resolution (line 103)
+  - ✅ **Supplemental entity integration** - ServiceCenter::User and others included in sort (lines 50-60, 327-387)
 - **File**: `src/Osm.Pipeline/Orchestration/BuildSsdtBootstrapSnapshotStep.cs`
+- **Key Insight**: This IS the unified pipeline pattern - extract these patterns for generalization!
 
 ### Key Insight for Unification
 
