@@ -323,51 +323,27 @@ private string BuildSelectStatement(StaticEntitySeedTableDefinition definition)
 
 ### Stage 5: EMISSION
 
-**Current Logic**: Script generation with multiple strategies
+Two different emission strategies exist across the pipelines:
 
-**Classes to Extract**:
+#### Primitive 1: `StaticSeedSqlBuilder` (✅ **SHARED** by StaticSeeds + Bootstrap)
+- **File**: `src/Osm.Emission/Seeds/StaticSeedSqlBuilder.cs` (431 lines)
+- **Used By**:
+  1. StaticSeeds via `StaticEntitySeedScriptGenerator` (line 64)
+  2. Bootstrap directly (line 297 in BuildSsdtBootstrapSnapshotStep.cs)
+- **Purpose**: Generates MERGE statements with optional drift detection
+- **Status**: ✅ **SHARED** MERGE emission primitive
 
-#### Script Generator
-**Class**: `StaticEntitySeedScriptGenerator`
-**File**: `src/Osm.Emission/Seeds/StaticEntitySeedScriptGenerator.cs` (129 lines)
-
-**Key Pattern**:
+**Key Method**: `BuildBlock(tableData, synchronizationMode, validationOverrides)`
 ```csharp
-public string Generate(tables, synchronizationMode, model, validationOverrides)
-{
-    // 1. Sort tables (line 49)
-    // 2. Build SQL blocks for each (line 64)
-    // 3. Wrap in template (line 67)
-}
+// Generates for each table:
+// 1. Header comments (module, entity, schema.table, topological position)
+// 2. Optional drift detection (ValidateThenApply mode):
+//    - EXCEPT query to detect unexpected changes
+//    - THROW error if drift found
+// 3. MERGE statement (INSERT + UPDATE + DELETE in one)
 ```
 
-**Extract**:
-- ✅ **Block-based emission** - Generate SQL per table, concatenate
-- ✅ **Template wrapper** - Header/footer with transaction
-- ✅ **UTF-8 no BOM** encoding (line 15)
-
-#### SQL Block Builder (SHARED between Static Seeds and Bootstrap!) ✅
-**Class**: `StaticSeedSqlBuilder`
-**File**: `src/Osm.Emission/Seeds/StaticSeedSqlBuilder.cs` (431 lines)
-
-**Used By** (✅ Verified):
-1. ✅ `StaticEntitySeedScriptGenerator` (line 64) - wraps this for Static Seeds
-2. ✅ `BuildSsdtBootstrapSnapshotStep` (line 297) - directly generates MERGE for Bootstrap
-
-**Key Method** (lines 32-260):
-```csharp
-public string BuildBlock(
-    StaticEntityTableData tableData,
-    StaticSeedSynchronizationMode synchronizationMode,
-    ModuleValidationOverrides? validationOverrides)
-{
-    // Generates:
-    // - Header comments (module, entity, schema.table)
-    // - MERGE statement (or drift check + MERGE)
-}
-```
-
-**MERGE Template to Extract** (crucial for Stage 6):
+**MERGE Template Pattern**:
 ```sql
 MERGE INTO [schema].[table] AS Target
 USING (VALUES (...), (...)) AS Source (col1, col2, ...)
@@ -377,26 +353,35 @@ WHEN NOT MATCHED BY TARGET THEN INSERT (col1, ...) VALUES (Source.col1, ...)
 WHEN NOT MATCHED BY SOURCE THEN DELETE;
 ```
 
-**Drift Detection Pattern to Preserve** (lines 86-100):
+**Drift Detection Pattern** (ValidateThenApply mode):
 ```sql
 IF EXISTS (
-    SELECT col1, col2 FROM (VALUES ...) AS Source
+    SELECT * FROM (VALUES ...) AS Source
     EXCEPT
-    SELECT col1, col2 FROM [schema].[table] AS Existing
-)
-BEGIN
-    THROW 50000, 'Drift detected', 1;
-END;
+    SELECT * FROM [schema].[table]
+) BEGIN THROW 50000, 'Drift detected', 1; END;
 ```
 
-**Extract for Unified Pipeline**:
-- ✅ **MERGE statement structure** - Core of `InsertionStrategy.Merge()`
-- ✅ **Drift detection** - Optional validation mode
-- ✅ **Header comment format** - Module/entity metadata
-- ✅ **Validation override integration** - Config-driven tweaks
+#### Primitive 2: `DynamicEntityInsertGenerator` (❌ DynamicInsert only)
+- **File**: `src/Osm.Emission/DynamicEntityInsertGenerator.cs` (784 lines)
+- **Used By**: DynamicInsert only (line 94 in BuildSsdtDynamicInsertStep.cs)
+- **Purpose**: Generates INSERT statements with batching and self-referencing logic
+- **Status**: ❌ Pipeline-specific INSERT emission
 
-#### Template Service
-**Class**: `StaticEntitySeedTemplateService`
+**Key Features**:
+- INSERT with batching (configurable batch size, default 1000 rows)
+- Self-referencing ordering logic (lines 303-556) - sorts rows within table for hierarchical FKs
+- Constraint disabling when cycles detected (line 245)
+- IDENTITY_INSERT handling
+- Deduplication by primary key
+
+#### Supporting Primitive: `StaticEntitySeedScriptGenerator` (StaticSeeds only)
+- **File**: `src/Osm.Emission/Seeds/StaticEntitySeedScriptGenerator.cs` (94 lines)
+- **Used By**: StaticSeeds only
+- **Purpose**: Wrapper around StaticSeedSqlBuilder with template service
+- **Status**: ❌ Thin wrapper (could be eliminated)
+
+**Pattern**: Sort → Build Blocks → Wrap in Template
 **File**: `src/Osm.Emission/Seeds/StaticEntitySeedTemplateService.cs`
 
 **Wrapper Pattern**:
@@ -447,39 +432,49 @@ if (seedOptions.GroupByModule)
 
 ---
 
-### Stage 6: INSERTION STRATEGY APPLICATION
+### Stage 6: INSERTION STRATEGY
 
-**Current Logic**: MERGE synchronization modes
+Two distinct insertion strategies exist:
 
-**Enum**: `StaticSeedSynchronizationMode`
-**File**: `src/Osm.Domain/Configuration/StaticSeedSynchronizationMode.cs`
+#### Strategy 1: MERGE (✅ SHARED by StaticSeeds + Bootstrap)
 
-**Values**:
-- `Apply` - Direct MERGE
-- `ValidateThenApply` - Drift check, then MERGE
+**Configuration Primitive**: `StaticSeedSynchronizationMode`
+- **File**: `src/Osm.Domain/Configuration/StaticSeedSynchronizationMode.cs`
+- **Used By**: StaticSeeds, Bootstrap
+- **Values**:
+  - `Apply` - Direct MERGE without validation
+  - `ValidateThenApply` - Drift check via EXCEPT query, then MERGE
+- **Status**: ✅ SHARED configuration enum
 
-**Extract for Unified Pipeline**:
-```csharp
-// Future InsertionStrategy
-InsertionStrategy.Merge(
-    mode: MergeMode.Upsert,  // INSERT + UPDATE + DELETE
-    validateFirst: true       // Drift detection
-)
-
-// vs.
-
-InsertionStrategy.Insert(
-    batchSize: 1000,
-    mode: InsertMode.BulkInsert
-)
-```
-
-**MERGE Characteristics to Preserve**:
-1. **Three-way operation**: INSERT + UPDATE + DELETE in one statement
+**MERGE Characteristics**:
+1. **Upsert semantics**: Three-way operation (INSERT + UPDATE + DELETE)
 2. **PK-based matching**: `ON Target.PK = Source.PK`
-3. **Idempotent**: Rerunning produces same result
-4. **Atomic**: Single transaction
-5. **Drift detection**: Optional pre-check via EXCEPT
+3. **Idempotent**: Rerunning produces identical result
+4. **Atomic**: Single transaction per table
+5. **Drift detection**: Optional pre-validation via EXCEPT query
+6. **Deletes orphans**: `WHEN NOT MATCHED BY SOURCE THEN DELETE`
+
+**Implemented By**: `StaticSeedSqlBuilder.BuildBlock()` (see Stage 5)
+
+#### Strategy 2: INSERT (❌ DynamicInsert only)
+
+**Implementation**: `DynamicEntityInsertArtifact.WriteAsync()`
+- **File**: `src/Osm.Emission/DynamicEntityInsertGenerator.cs` (lines 82-168)
+- **Used By**: DynamicInsert only
+- **Features**:
+  - Batched INSERTs (default 1000 rows per batch)
+  - IDENTITY_INSERT handling
+  - Optional constraint disabling (NOCHECK CONSTRAINT when cycles detected)
+  - No UPDATE or DELETE semantics
+- **Status**: ❌ Pipeline-specific
+
+**INSERT Characteristics**:
+1. **Append-only**: No UPDATE or DELETE
+2. **Batched**: Configurable batch size for performance
+3. **Not idempotent**: Rerunning may cause duplicates
+4. **Constraint handling**: Disables on cycles, re-enables after
+
+**Configuration**: `DynamicEntityInsertGenerationOptions.BatchSize`
 
 ---
 
