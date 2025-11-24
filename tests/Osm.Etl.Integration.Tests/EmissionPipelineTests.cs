@@ -255,7 +255,7 @@ public class EmissionPipelineTests
             emission.PerTableFiles,
             emission.IncludePlatformAutoIndexes,
             emission.SanitizeModuleNames,
-            emission.EmitBareTableOnly,
+            emission.EmitTableMode,
             emission.EmitTableHeaders,
             moduleParallelism,
             emission.NamingOverrides,
