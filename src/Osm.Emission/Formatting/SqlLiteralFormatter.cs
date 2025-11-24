@@ -51,7 +51,17 @@ public sealed class SqlLiteralFormatter
     }
 
     private static string EscapeUnicodeString(string value)
-        => value.Replace("'", "''", StringComparison.Ordinal);
+    {
+        // Escape single quotes for SQL string literals
+        var escaped = value.Replace("'", "''", StringComparison.Ordinal);
+        
+        // Escape control characters that break multi-line SQL statements
+        escaped = escaped.Replace("\r", "' + CHAR(13) + N'", StringComparison.Ordinal);
+        escaped = escaped.Replace("\n", "' + CHAR(10) + N'", StringComparison.Ordinal);
+        escaped = escaped.Replace("\t", "' + CHAR(9) + N'", StringComparison.Ordinal);
+        
+        return escaped;
+    }
 
     private static string FormatBinary(byte[] value)
     {
