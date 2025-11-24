@@ -57,7 +57,8 @@ public sealed class AdvancedSqlMetadataOrchestrator
             command.ModuleNames,
             command.IncludeSystemModules,
             command.IncludeInactiveModules,
-            command.OnlyActiveAttributes);
+            command.OnlyActiveAttributes,
+            command.EntityFilters);
 
         options.MetadataLog?.RecordRequest(
             "advancedSql.request",
@@ -67,6 +68,7 @@ public sealed class AdvancedSqlMetadataOrchestrator
                 includeSystem = request.IncludeSystemModules,
                 includeInactive = request.IncludeInactiveModules,
                 onlyActive = request.OnlyActiveAttributes,
+                entityFilters = request.EntityFilters,
             });
 
         var timer = Stopwatch.StartNew();
