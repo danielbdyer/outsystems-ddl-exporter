@@ -263,11 +263,36 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
             staticSeeds = staticSeedResult.Value;
         }
 
+        // Parse emitTableMode with backward compatibility for emitBareTableOnly
+        TableEmissionMode emitTableMode;
+        if (!string.IsNullOrWhiteSpace(document.Emission.EmitTableMode))
+        {
+            // New property takes precedence
+            if (!Enum.TryParse<TableEmissionMode>(document.Emission.EmitTableMode, ignoreCase: true, out emitTableMode))
+            {
+                return ValidationError.Create(
+                    "config.emission.emitTableMode.invalid",
+                    $"Invalid emitTableMode value '{document.Emission.EmitTableMode}'. Valid values are: BareOnly, FullOnly, Both.");
+            }
+        }
+        else if (document.Emission.EmitBareTableOnly.HasValue)
+        {
+            // Backward compatibility: emitBareTableOnly=true → BareOnly, false → FullOnly
+            emitTableMode = document.Emission.EmitBareTableOnly.Value
+                ? TableEmissionMode.BareOnly
+                : TableEmissionMode.FullOnly;
+        }
+        else
+        {
+            // Default to FullOnly if neither property is specified
+            emitTableMode = TableEmissionMode.FullOnly;
+        }
+
         var emissionResult = EmissionOptions.Create(
             document.Emission.PerTableFiles,
             document.Emission.IncludePlatformAutoIndexes,
             document.Emission.SanitizeModuleNames,
-            document.Emission.EmitBareTableOnly,
+            emitTableMode,
             document.Emission.EmitTableHeaders,
             document.Emission.ModuleParallelism,
             namingOverrides,
@@ -423,8 +448,11 @@ public sealed class TighteningOptionsDeserializer : ITighteningOptionsDeserializ
         [JsonPropertyName("sanitizeModuleNames")]
         public bool SanitizeModuleNames { get; init; }
 
+        [JsonPropertyName("emitTableMode")]
+        public string? EmitTableMode { get; init; }
+
         [JsonPropertyName("emitBareTableOnly")]
-        public bool EmitBareTableOnly { get; init; }
+        public bool? EmitBareTableOnly { get; init; }
 
         [JsonPropertyName("emitTableHeaders")]
         public bool EmitTableHeaders { get; init; }
