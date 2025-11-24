@@ -595,7 +595,7 @@ public sealed class FullExportApplicationServiceTests
             perTableFiles: true,
             includePlatformAutoIndexes: false,
             sanitizeModuleNames: true,
-            emitBareTableOnly: false,
+            emitTableMode: TableEmissionMode.FullOnly,
             emitTableHeaders: false,
             moduleParallelism: 1,
             namingOverrides: TighteningOptions.Default.Emission.NamingOverrides,

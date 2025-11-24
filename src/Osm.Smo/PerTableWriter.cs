@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
+using Osm.Domain.Configuration;
 using Osm.Smo.PerTableEmission;
 
 namespace Osm.Smo;
@@ -78,6 +79,17 @@ public sealed class PerTableWriter
             throw new ArgumentNullException(nameof(options));
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return GenerateInternal(table, options, tableHeaderItems, cancellationToken);
+    }
+
+    private PerTableWriteResult GenerateInternal(
+        SmoTableDefinition table,
+        SmoBuildOptions options,
+        IReadOnlyList<PerTableHeaderItem>? tableHeaderItems,
+        CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         var effectiveTableName = options.NamingOverrides.GetEffectiveTableName(
@@ -389,9 +401,16 @@ public sealed class PerTableWriter
         => Script(statement, null, format);
 }
 
+public enum TableEmissionVariant
+{
+    Bare,
+    Full
+}
+
 public sealed record PerTableWriteResult(
     string EffectiveTableName,
     string Script,
     ImmutableArray<string> IndexNames,
     ImmutableArray<string> ForeignKeyNames,
-    bool IncludesExtendedProperties);
+    bool IncludesExtendedProperties,
+    TableEmissionVariant Variant = TableEmissionVariant.Full);

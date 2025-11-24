@@ -288,7 +288,7 @@ public sealed class TighteningPolicyTests
             defaults.Emission.PerTableFiles,
             defaults.Emission.IncludePlatformAutoIndexes,
             defaults.Emission.SanitizeModuleNames,
-            defaults.Emission.EmitBareTableOnly,
+            defaults.Emission.EmitTableMode,
             defaults.Emission.EmitTableHeaders,
             defaults.Emission.ModuleParallelism,
             overridesResult.Value,

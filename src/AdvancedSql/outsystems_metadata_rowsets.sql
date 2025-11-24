@@ -3,7 +3,7 @@
    GOAL #1: emit 100% of module/entity/attribute/index fields in README schema,
    GOAL #2: reconcile ossys intent with sys.* physical reality.
    Inputs:
-     @ModuleNamesCsv (Text), @IncludeSystem (Boolean), @IncludeInactive (Boolean), @OnlyActiveAttributes (Boolean)
+     @ModuleNamesCsv (Text), @IncludeSystem (Boolean), @IncludeInactive (Boolean), @OnlyActiveAttributes (Boolean), @EntityFilterJson (Text)
    Output: JSON
    ============================================================================ */
 
@@ -25,6 +25,7 @@ DECLARE @ModuleNamesCsv NVARCHAR(MAX) = N'OutSystemsModule1_CS,OutSystemsModel2_
 DECLARE @IncludeSystem BIT = 1;
 DECLARE @IncludeInactive BIT = 0;
 DECLARE @OnlyActiveAttributes BIT = 1;
+DECLARE @EntityFilterJson NVARCHAR(MAX) = NULL; -- JSON: {"ServiceCenter": ["User"], "Employee_CS": ["Employee", "Supervisor"]}
 */
 
 /* --------------------------------------------------------------------------
@@ -66,6 +67,25 @@ INSERT INTO #ModuleNames(ModuleName)
 SELECT ModuleName
 FROM @ModuleTokens;
 
+-- Parse entity filters from JSON: {"ModuleName": ["Entity1", "Entity2"]}
+IF OBJECT_ID('tempdb..#EntityFilter') IS NOT NULL DROP TABLE #EntityFilter;
+CREATE TABLE #EntityFilter (
+    ModuleName NVARCHAR(256) COLLATE DATABASE_DEFAULT NOT NULL,
+    EntityName NVARCHAR(256) COLLATE DATABASE_DEFAULT NOT NULL,
+    INDEX IX_EntityFilter CLUSTERED (ModuleName, EntityName)
+);
+
+IF @EntityFilterJson IS NOT NULL AND NULLIF(LTRIM(RTRIM(@EntityFilterJson)), '') IS NOT NULL
+BEGIN
+    INSERT INTO #EntityFilter (ModuleName, EntityName)
+    SELECT 
+        moduleFilter.[key] AS ModuleName,
+        LTRIM(RTRIM(entityName.value)) AS EntityName
+    FROM OPENJSON(@EntityFilterJson) AS moduleFilter
+    CROSS APPLY OPENJSON(moduleFilter.value) AS entityName
+    WHERE NULLIF(LTRIM(RTRIM(entityName.value)), '') IS NOT NULL;
+END;
+
 -- 2) #E (espace) with module-level IncludeSystem filtering
 IF OBJECT_ID('tempdb..#E') IS NOT NULL DROP TABLE #E;
 SELECT
@@ -104,7 +124,14 @@ INTO #Ent
 FROM dbo.ossys_Entity en
 JOIN #E ON #E.EspaceId = en.[Espace_Id]
 WHERE (@IncludeSystem = 1 OR ISNULL(en.[Is_System],0) = 0)
-  AND (@IncludeInactive = 1 OR ISNULL(en.[Is_Active],1) = 1);
+  AND (@IncludeInactive = 1 OR ISNULL(en.[Is_Active],1) = 1)
+  AND (
+        -- No entity filter exists for this module, include all entities
+        NOT EXISTS (SELECT 1 FROM #EntityFilter ef JOIN #E e2 ON e2.EspaceName COLLATE DATABASE_DEFAULT = ef.ModuleName COLLATE DATABASE_DEFAULT WHERE e2.EspaceId = en.[Espace_Id])
+        -- OR entity is in the filter list for this module
+        OR EXISTS (SELECT 1 FROM #EntityFilter ef JOIN #E e2 ON e2.EspaceName COLLATE DATABASE_DEFAULT = ef.ModuleName COLLATE DATABASE_DEFAULT 
+                   WHERE e2.EspaceId = en.[Espace_Id] AND en.[Name] COLLATE DATABASE_DEFAULT = ef.EntityName COLLATE DATABASE_DEFAULT)
+      );
 CREATE CLUSTERED INDEX IX_Ent ON #Ent(EntityId);
 CREATE NONCLUSTERED INDEX IX_Ent_Espace ON #Ent(EspaceId) INCLUDE (PhysicalTableName);
 
@@ -534,21 +561,11 @@ WITH IdxColsKeys AS
 (
   SELECT ai.EntityId, ai.IndexName, ic.key_ordinal AS Ordinal, c.[name] AS PhysicalColumn,
          CAST(0 AS bit) AS IsIncluded,
-         CASE WHEN ic.is_descending_key = 1 THEN N'DESC' ELSE N'ASC' END AS Direction,
-         ROW_NUMBER() OVER (
-           PARTITION BY ai.object_id, ai.index_id, ic.column_id
-           ORDER BY ic.key_ordinal
-         ) AS rn
+         CASE WHEN ic.is_descending_key = 1 THEN N'DESC' ELSE N'ASC' END AS Direction
   FROM #AllIdx ai
   JOIN sys.index_columns ic ON ic.object_id = ai.object_id AND ic.index_id = ai.index_id
   JOIN sys.columns c        ON c.object_id = ai.object_id AND c.column_id = ic.column_id
   WHERE ic.is_included_column = 0
-),
-IdxColsKeysDedupe AS
-(
-  SELECT EntityId, IndexName, Ordinal, PhysicalColumn, IsIncluded, Direction
-  FROM IdxColsKeys
-  WHERE rn = 1  -- Deduplicate at source: only keep first occurrence of each column_id per index
 ),
 IdxColsIncl AS
 (
@@ -564,7 +581,7 @@ IdxColsIncl AS
 ),
 IdxColsAll AS
 (
-  SELECT * FROM IdxColsKeysDedupe
+  SELECT * FROM IdxColsKeys
   UNION ALL
   SELECT * FROM IdxColsIncl
 )
@@ -724,7 +741,7 @@ CREATE CLUSTERED INDEX IX_FkAttrJson ON #FkAttrJson(AttrId);
    Phase 2: Pre-aggregate JSON blobs
 ----------------------------------------------------------------------------*/
 
--- Attributes JSON per entity (with deduplication for attributes with same name+physical column)
+-- Attributes JSON per entity
 IF OBJECT_ID('tempdb..#AttrJson') IS NOT NULL DROP TABLE #AttrJson;
 SELECT
   en.EntityId,
@@ -776,21 +793,13 @@ SELECT
         (SELECT NULLIF(LTRIM(RTRIM(a.AttrDescription)), '') AS [description]
          FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
       END) AS [meta]
-    FROM (
-      SELECT *,
-             ROW_NUMBER() OVER (
-               PARTITION BY EntityId, AttrName, COALESCE(NULLIF(PhysicalColumnName, ''), NULLIF(DatabaseColumnName, ''), AttrName)
-               ORDER BY AttrIsActive DESC, IsMandatory DESC, AttrId
-             ) AS rn
-      FROM #Attr
-    ) a
+    FROM #Attr a
     LEFT JOIN #RefResolved r ON r.AttrId = a.AttrId
     LEFT JOIN #AttrHasFK h ON h.AttrId = a.AttrId
     LEFT JOIN #PhysColsPresent pc ON pc.AttrId = a.AttrId
     LEFT JOIN #ColumnReality cr ON cr.AttrId = a.AttrId
     LEFT JOIN #AttrCheckJson chk ON chk.AttrId = a.AttrId
     WHERE a.EntityId = en.EntityId
-      AND a.rn = 1  -- Keep only first occurrence: prefer active, then mandatory, then lowest AttrId
     ORDER BY CASE WHEN COALESCE(a.IsIdentifier, CASE WHEN a.AttrSSKey = en.PrimaryKeySSKey THEN 1 ELSE 0 END) = 1 THEN 0 ELSE 1 END,
              a.AttrName
     FOR JSON PATH
@@ -832,7 +841,7 @@ INTO #RelJson
 FROM #Ent en;
 CREATE CLUSTERED INDEX IX_RelJson ON #RelJson(EntityId);
 
--- Index columns JSON (with deduplication for exact duplicate columns)
+-- Index columns JSON
 IF OBJECT_ID('tempdb..#IdxColsJson') IS NOT NULL DROP TABLE #IdxColsJson;
 SELECT
   m.EntityId,
@@ -841,17 +850,8 @@ SELECT
     SELECT m2.HumanAttr AS [attribute], m2.PhysicalColumn AS [physicalColumn], m2.Ordinal AS [ordinal],
            CAST(m2.IsIncluded AS bit) AS [isIncluded],
            m2.Direction AS [direction]
-    FROM (
-      SELECT *,
-             ROW_NUMBER() OVER (
-               PARTITION BY EntityId, IndexName, PhysicalColumn, Ordinal, IsIncluded, Direction 
-               ORDER BY (SELECT NULL)
-             ) AS rn
-      FROM #IdxColsMapped
-    ) m2
-    WHERE m2.EntityId = m.EntityId 
-      AND m2.IndexName = m.IndexName
-      AND m2.rn = 1  -- Keep only first occurrence of exact duplicates
+    FROM #IdxColsMapped m2
+    WHERE m2.EntityId = m.EntityId AND m2.IndexName = m.IndexName
     ORDER BY m2.Ordinal
     FOR JSON PATH
   ), '[]') AS ColumnsJson
@@ -916,24 +916,7 @@ INTO #TriggerJson
 FROM #Ent en;
 CREATE CLUSTERED INDEX IX_TriggerJson ON #TriggerJson(EntityId);
 
--- Deduplicate entities by name within each module (prefer active, non-external, lowest ID)
-IF OBJECT_ID('tempdb..#EntDedupe') IS NOT NULL DROP TABLE #EntDedupe;
-SELECT *,
-       ROW_NUMBER() OVER (
-         PARTITION BY EspaceId, UPPER(EntityName)
-         ORDER BY EntityIsActive DESC, CAST(IsExternalEntity AS int) ASC, EntityId
-       ) AS rn
-INTO #EntDedupe
-FROM #Ent;
-CREATE CLUSTERED INDEX IX_EntDedupe ON #EntDedupe(EspaceId, EntityId);
-
--- Filter JSON tables to only include deduplicated entities
-DELETE aj FROM #AttrJson aj WHERE NOT EXISTS (SELECT 1 FROM #EntDedupe ed WHERE ed.EntityId = aj.EntityId AND ed.rn = 1);
-DELETE rj FROM #RelJson rj WHERE NOT EXISTS (SELECT 1 FROM #EntDedupe ed WHERE ed.EntityId = rj.EntityId AND ed.rn = 1);
-DELETE ij FROM #IdxJson ij WHERE NOT EXISTS (SELECT 1 FROM #EntDedupe ed WHERE ed.EntityId = ij.EntityId AND ed.rn = 1);
-DELETE tj FROM #TriggerJson tj WHERE NOT EXISTS (SELECT 1 FROM #EntDedupe ed WHERE ed.EntityId = tj.EntityId AND ed.rn = 1);
-
--- Module JSON (final assembly, with entity deduplication)
+-- Module JSON (final assembly)
 IF OBJECT_ID('tempdb..#ModuleJson') IS NOT NULL DROP TABLE #ModuleJson;
 SELECT
   e.EspaceName           AS [module.name],
@@ -956,14 +939,13 @@ SELECT
       JSON_QUERY(COALESCE(rj.RelationshipsJson, N'[]')) AS [relationships],
       JSON_QUERY(COALESCE(ij.IndexesJson, N'[]'))       AS [indexes],
       JSON_QUERY(COALESCE(tj.TriggersJson, N'[]'))      AS [triggers]
-    FROM #EntDedupe en
+    FROM #Ent en
     LEFT JOIN #PhysTbls pt  ON pt.EntityId = en.EntityId
     LEFT JOIN #AttrJson aj  ON aj.EntityId = en.EntityId
     LEFT JOIN #RelJson  rj  ON rj.EntityId = en.EntityId
     LEFT JOIN #IdxJson  ij  ON ij.EntityId = en.EntityId
     LEFT JOIN #TriggerJson tj ON tj.EntityId = en.EntityId
     WHERE en.EspaceId = e.EspaceId
-      AND en.rn = 1  -- Keep only first occurrence: prefer active, then non-external, then lowest EntityId
     ORDER BY en.EntityName
     FOR JSON PATH
   ), '[]') AS [module.entities]

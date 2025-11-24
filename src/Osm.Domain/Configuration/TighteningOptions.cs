@@ -61,7 +61,7 @@ public sealed record TighteningOptions
             perTableFiles: true,
             includePlatformAutoIndexes: false,
             sanitizeModuleNames: true,
-            emitBareTableOnly: false,
+            emitTableMode: TableEmissionMode.FullOnly,
             emitTableHeaders: false,
             moduleParallelism: 1,
             staticSeeds: StaticSeedOptions.Default).Value,
@@ -280,13 +280,20 @@ public sealed record RemediationSentinelOptions
     }
 }
 
+public enum TableEmissionMode
+{
+    BareOnly,
+    FullOnly,
+    Both
+}
+
 public sealed record EmissionOptions
 {
     private EmissionOptions(
         bool perTableFiles,
         bool includePlatformAutoIndexes,
         bool sanitizeModuleNames,
-        bool emitBareTableOnly,
+        TableEmissionMode emitTableMode,
         bool emitTableHeaders,
         int moduleParallelism,
         NamingOverrideOptions namingOverrides,
@@ -295,7 +302,7 @@ public sealed record EmissionOptions
         PerTableFiles = perTableFiles;
         IncludePlatformAutoIndexes = includePlatformAutoIndexes;
         SanitizeModuleNames = sanitizeModuleNames;
-        EmitBareTableOnly = emitBareTableOnly;
+        EmitTableMode = emitTableMode;
         EmitTableHeaders = emitTableHeaders;
         ModuleParallelism = moduleParallelism;
         NamingOverrides = namingOverrides;
@@ -308,7 +315,10 @@ public sealed record EmissionOptions
 
     public bool SanitizeModuleNames { get; }
 
-    public bool EmitBareTableOnly { get; }
+    public TableEmissionMode EmitTableMode { get; }
+
+    [Obsolete("Use EmitTableMode instead. This property returns true when EmitTableMode == TableEmissionMode.BareOnly for backward compatibility.")]
+    public bool EmitBareTableOnly => EmitTableMode == TableEmissionMode.BareOnly;
 
     public bool EmitTableHeaders { get; }
 
@@ -322,7 +332,7 @@ public sealed record EmissionOptions
         bool perTableFiles,
         bool includePlatformAutoIndexes,
         bool sanitizeModuleNames,
-        bool emitBareTableOnly,
+        TableEmissionMode emitTableMode,
         bool emitTableHeaders,
         int moduleParallelism,
         NamingOverrideOptions? namingOverrides = null,
@@ -339,7 +349,7 @@ public sealed record EmissionOptions
             perTableFiles,
             includePlatformAutoIndexes,
             sanitizeModuleNames,
-            emitBareTableOnly,
+            emitTableMode,
             emitTableHeaders,
             moduleParallelism,
             namingOverrides ?? NamingOverrideOptions.Empty,

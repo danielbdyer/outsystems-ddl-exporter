@@ -106,7 +106,7 @@ public sealed class TighteningSectionReaderTests
             ForeignKeyOptions.Create(enableCreation: true, allowCrossSchema: false, allowCrossCatalog: false).Value,
             UniquenessOptions.Create(true, true).Value,
             RemediationOptions.Create(true, RemediationSentinelOptions.Create("1", "sentinel", "2020-01-01").Value, 10).Value,
-            EmissionOptions.Create(true, false, true, false, false, 1, namingOverrides: NamingOverrideOptions.Empty, staticSeeds: StaticSeedOptions.Default).Value,
+            EmissionOptions.Create(true, false, true, TableEmissionMode.FullOnly, false, 1, namingOverrides: NamingOverrideOptions.Empty, staticSeeds: StaticSeedOptions.Default).Value,
             MockingOptions.Create(false, null).Value).Value;
     }
 

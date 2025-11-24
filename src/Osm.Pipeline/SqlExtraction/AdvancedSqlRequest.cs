@@ -9,12 +9,14 @@ public sealed class AdvancedSqlRequest
         ImmutableArray<ModuleName> moduleNames,
         bool includeSystemModules,
         bool includeInactiveModules,
-        bool onlyActiveAttributes)
+        bool onlyActiveAttributes,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? entityFilters = null)
     {
         ModuleNames = moduleNames;
         IncludeSystemModules = includeSystemModules;
         IncludeInactiveModules = includeInactiveModules;
         OnlyActiveAttributes = onlyActiveAttributes;
+        EntityFilters = entityFilters ?? ImmutableDictionary<string, IReadOnlyList<string>>.Empty;
     }
 
     public ImmutableArray<ModuleName> ModuleNames { get; }
@@ -24,4 +26,6 @@ public sealed class AdvancedSqlRequest
     public bool IncludeInactiveModules { get; }
 
     public bool OnlyActiveAttributes { get; }
+
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> EntityFilters { get; }
 }

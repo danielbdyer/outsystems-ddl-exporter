@@ -6,17 +6,20 @@ using Osm.Domain.Configuration;
 public sealed record SmoBuildOptions(
     string DefaultCatalogName,
     bool IncludePlatformAutoIndexes,
-    bool EmitBareTableOnly,
+    TableEmissionMode EmitTableMode,
     bool SanitizeModuleNames,
     int ModuleParallelism,
     NamingOverrideOptions NamingOverrides,
     SmoFormatOptions Format,
     PerTableHeaderOptions Header)
 {
+    [Obsolete("Use EmitTableMode instead. This property returns true when EmitTableMode == TableEmissionMode.BareOnly for backward compatibility.")]
+    public bool EmitBareTableOnly => EmitTableMode == TableEmissionMode.BareOnly;
+
     public static SmoBuildOptions Default { get; } = new(
         DefaultCatalogName: "OutSystems",
         IncludePlatformAutoIndexes: false,
-        EmitBareTableOnly: false,
+        EmitTableMode: TableEmissionMode.FullOnly,
         SanitizeModuleNames: true,
         ModuleParallelism: 1,
         NamingOverrides: NamingOverrideOptions.Empty,
@@ -26,7 +29,7 @@ public sealed record SmoBuildOptions(
     public static SmoBuildOptions FromEmission(EmissionOptions emission, bool applyNamingOverrides = true) => new(
         DefaultCatalogName: "OutSystems",
         emission.IncludePlatformAutoIndexes,
-        emission.EmitBareTableOnly,
+        emission.EmitTableMode,
         emission.SanitizeModuleNames,
         emission.ModuleParallelism,
         applyNamingOverrides ? emission.NamingOverrides : NamingOverrideOptions.Empty,

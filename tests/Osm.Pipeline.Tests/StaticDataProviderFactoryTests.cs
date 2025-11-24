@@ -41,7 +41,7 @@ public sealed class StaticDataProviderFactoryTests
             TighteningOptions.Default.Emission.PerTableFiles,
             TighteningOptions.Default.Emission.IncludePlatformAutoIndexes,
             TighteningOptions.Default.Emission.SanitizeModuleNames,
-            TighteningOptions.Default.Emission.EmitBareTableOnly,
+            TighteningOptions.Default.Emission.EmitTableMode,
             TighteningOptions.Default.Emission.EmitTableHeaders,
             TighteningOptions.Default.Emission.ModuleParallelism,
             TighteningOptions.Default.Emission.NamingOverrides,

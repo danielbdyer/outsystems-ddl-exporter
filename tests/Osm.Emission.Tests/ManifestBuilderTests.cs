@@ -29,7 +29,7 @@ public class ManifestBuilderTests
         var options = SmoBuildOptions.Default with
         {
             IncludePlatformAutoIndexes = true,
-            EmitBareTableOnly = true,
+            EmitTableMode = TableEmissionMode.BareOnly,
             ModuleParallelism = 4,
         };
 

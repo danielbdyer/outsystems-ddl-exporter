@@ -275,11 +275,15 @@ public sealed class StaticSeedSqlBuilder
         builder.AppendLine(")");
         builder.Append("    VALUES (");
         builder.Append(string.Join(", ", columnNames.Select(name => $"Source.{name}")));
-        builder.AppendLine(");");
+        builder.AppendLine(")");
 
         if (synchronizationMode == StaticSeedSynchronizationMode.Authoritative)
         {
             builder.AppendLine("WHEN NOT MATCHED BY SOURCE THEN DELETE;");
+        }
+        else
+        {
+            builder.AppendLine(";");
         }
 
         builder.AppendLine();

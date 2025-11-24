@@ -321,12 +321,14 @@ public sealed class ModelExtractionCommand
         ImmutableArray<ModuleName> moduleNames,
         bool includeSystemModules,
         bool includeInactiveModules,
-        bool onlyActiveAttributes)
+        bool onlyActiveAttributes,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? entityFilters = null)
     {
         ModuleNames = moduleNames;
         IncludeSystemModules = includeSystemModules;
         IncludeInactiveModules = includeInactiveModules;
         OnlyActiveAttributes = onlyActiveAttributes;
+        EntityFilters = entityFilters ?? ImmutableDictionary<string, IReadOnlyList<string>>.Empty;
     }
 
     public ImmutableArray<ModuleName> ModuleNames { get; }
@@ -337,11 +339,14 @@ public sealed class ModelExtractionCommand
 
     public bool OnlyActiveAttributes { get; }
 
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> EntityFilters { get; }
+
     public static Result<ModelExtractionCommand> Create(
         IEnumerable<string>? moduleNames,
         bool includeSystemModules,
         bool includeInactiveModules,
-        bool onlyActiveAttributes)
+        bool onlyActiveAttributes,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? entityFilters = null)
     {
         if (moduleNames is null)
         {
@@ -349,7 +354,8 @@ public sealed class ModelExtractionCommand
                 ImmutableArray<ModuleName>.Empty,
                 includeSystemModules,
                 includeInactiveModules,
-                onlyActiveAttributes);
+                onlyActiveAttributes,
+                entityFilters);
         }
 
         var modules = ImmutableArray.CreateBuilder<ModuleName>();
@@ -412,6 +418,6 @@ public sealed class ModelExtractionCommand
                 => string.Compare(left.Value, right.Value, StringComparison.OrdinalIgnoreCase)));
         }
 
-        return new ModelExtractionCommand(normalized, includeSystemModules, includeInactiveModules, onlyActiveAttributes);
+        return new ModelExtractionCommand(normalized, includeSystemModules, includeInactiveModules, onlyActiveAttributes, entityFilters);
     }
 }
