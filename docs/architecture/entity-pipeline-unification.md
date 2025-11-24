@@ -20,11 +20,14 @@ The codebase has evolved **four separate implementations** of what is fundamenta
    - Insertion: MERGE (upsert on each deployment)
    - Topological Sort: Only static entities (scoped subset)
 
-2. **Bootstrap** (`BuildSsdtBootstrapSnapshotStep`)
-   - Scope: All entities with data (static + regular)
+2. **Bootstrap** (`BuildSsdtBootstrapSnapshotStep`) - **✅ DEMONSTRATES UNIFIED PATTERN**
+   - Scope: All entities with data (static + regular + supplemental)
    - Emission: One monolithic file
-   - Insertion: INSERT (one-time load)
-   - Topological Sort: Static + regular entities
+   - Insertion: INSERT (one-time load, NonDestructive mode)
+   - Topological Sort: **Global across ALL entities** (static + regular + supplemental)
+   - **Advanced Features**: Enhanced cycle diagnostics, TopologicalOrderingValidator, CircularDependencyOptions support
+   - **Key Insight**: This implementation already shows the unified pipeline pattern working correctly
+   - **Location**: `src/Osm.Pipeline/Orchestration/BuildSsdtBootstrapSnapshotStep.cs`
 
 3. **DynamicData** (`BuildSsdtDynamicInsertStep`) - **DEPRECATED**
    - Scope: All entities with data
@@ -36,8 +39,10 @@ The codebase has evolved **four separate implementations** of what is fundamenta
 4. **Supplemental Entities** (`SupplementalEntityLoader`)
    - Scope: Individual entities (e.g., ServiceCenter::User)
    - Mechanism: Load from JSON files
-   - **Problem**: Not integrated into topological sort
-   - **Status**: Workaround for missing "select one entity from module" primitive
+   - **Status in StaticSeeds**: Not integrated into topological sort (fragmentation problem)
+   - **Status in Bootstrap**: ✅ ALREADY INTEGRATED - see `BuildSsdtBootstrapSnapshotStep.cs:50-60`
+   - **Future**: Workaround for missing "select one entity from module" primitive - to be replaced by EntitySelector
+   - **Deprecation Path**: Once EntitySelector supports `Include("ServiceCenter", ["User"])`, this mechanism is obsolete
 
 ### The Invariant Structure (Hidden Pattern)
 
@@ -59,6 +64,27 @@ All four implementations follow this pipeline:
 
 ---
 
+## 🧬 What a Pipeline IS
+
+The pipeline is **composition**. Not "uses composition" - IS composition.
+
+This truth is visible in `IBuildSsdtStep<TInput, TOutput>` (`IBuildSsdtStep.cs:7-10`):
+
+```csharp
+public interface IBuildSsdtStep<in TInput, TNextState>
+{
+    Task<Result<TNextState>> ExecuteAsync(TInput state, CancellationToken cancellationToken = default);
+}
+```
+
+Each step declares what it receives and what it produces. Steps chain via `.BindAsync()` - monadic composition where the output type of step N must match the input type of step N+1. The compiler enforces this. Type errors are ontological impossibilities.
+
+The pipeline is a series of state transformations: `PipelineInitialized → BootstrapCompleted → EvidenceCacheCompleted → ...` Each state carries forward everything from before, immutably, adding only what this step contributes.
+
+This pattern already exists. Bootstrap demonstrates it. StaticSeeds uses it. The unification isn't creating this - it's recognizing that **the code already knew**.
+
+---
+
 ## 📐 The Three Orthogonal Dimensions
 
 The fundamental operation can be **parameterized** across three independent dimensions:
@@ -74,14 +100,29 @@ This is not a binary "static vs. regular" - it's a **selection predicate** over 
 - **Entities with available data** (`hasData(entity)`)
 - **Custom combinations** (`static entities + ServiceCenter::User`)
 
+**The Reification**: This dimension already exists as `ModuleFilterOptions` (`src/Osm.Domain/Configuration/ModuleFilterOptions.cs`). The abstraction and the concrete are the same shape.
+
+Within it, `EntityFilters` - a dictionary mapping module names to entity lists - expresses "filtered entities per module" exactly:
+
+```json
+{
+  "modules": [
+    { "name": "ServiceCenter", "entities": ["User", "Tenant"] },
+    { "name": "MyModule", "entities": [] }
+  ]
+}
+```
+
+This primitive exists. Config parsing works. Runtime access works. Someone already saw this shape.
+
+**What's incomplete**: The wiring. SQL extraction ignores `EntityFilters`. Validation ignores it. Profiling ignores it. The API is correct; the integration is partial.
+
 **Current Problem**:
 - Static Seeds: Hardcoded to `entity.IsStatic`
 - Bootstrap: Hardcoded to `allEntitiesWithData`
-- Supplemental: Separate mechanism entirely
+- Supplemental: Workaround because `EntityFilters` isn't fully wired
 
-**Vision**:
-- One unified **EntitySelector** that can express any scope
-- No special cases for "supplemental" - just another way to select entities
+**The Path**: Complete `EntityFilters` (SQL queries, validation scope, profiling scope). Supplemental becomes obsolete. The primitive was always there.
 
 ---
 
@@ -100,21 +141,21 @@ How should the sorted entities be written to disk?
    - **How it works**: Files can be organized however (per-module, per-entity), but .sqlproj lists them in topological order
    - **Key insight**: Organization is arbitrary, ORDER is defined by .sqlproj
 
-**Per-Module Emission is NOT Supported**:
-- You cannot sort "within each module independently"
-- Topological sort MUST span all entities (cross-module dependencies exist!)
-- But you CAN organize files by module, as long as .sqlproj orders them correctly
+**Per-Module Emission EXISTS but is BROKEN** ✅ Verified in `BuildSsdtStaticSeedStep.cs:103-156`:
+- Current implementation: `GroupByModule` option creates separate files per module
+- **Problem**: Each module file doesn't coordinate FK ordering with other modules
+- **Why it breaks**: Cross-module dependencies (e.g., Module B references Module A) are not respected
+- **Root cause**: Files are organized by module boundary, but topological order is global
+- **Correct approach**: You CAN organize files by module, as long as .sqlproj orders them correctly
 
 **Current State**:
 - Static Seeds: Supports monolithic or per-module (per-module is problematic!)
 - Bootstrap: Monolithic only (correct)
 - DynamicData: Per-entity or single file (redundant, to be deleted)
 
-**Vision**:
-- **Option A**: Monolithic (simple, guaranteed correct)
-- **Option B**: Multiple files + .sqlproj (organizational flexibility with ordering guarantee)
-- Emission strategy is **independent** of scope and sort
-- Chosen **after** topological sort completes
+**The Reification**: Implicit in current code via `GroupByModule`, `EmitMasterFile` flags. Partially reified in `NamingOverrideOptions` (table/column remapping across environments). The full abstraction - `EmissionStrategy` - wants to exist but hasn't been extracted yet.
+
+**Vision**: Make emission strategy explicit. Monolithic or .sqlproj-ordered. Independent of scope and sort. Chosen after topological sort completes.
 
 ---
 
@@ -143,15 +184,14 @@ How should the SQL scripts modify the target database?
 - Merge key (usually primary key)
 - Conflict resolution strategy
 
+**The Reification**: `StaticSeedSynchronizationMode` (`StaticSeedSqlBuilder.cs`) and `DynamicEntityInsertGenerationOptions` (`DynamicEntityInsertGenerator.cs`) are this dimension, fragmented. MERGE logic exists. INSERT logic exists. They're separate implementations, not parameter variants.
+
 **Current Problem**:
 - Static Seeds: Hardcoded to MERGE
 - Bootstrap: Hardcoded to INSERT
-- No flexibility to change strategies
+- The mechanism exists; the abstraction doesn't
 
-**Vision**:
-- Insertion strategy is **configurable**
-- Different use cases can use different strategies
-- Same entity set can be emitted with INSERT (for bootstrap) OR MERGE (for refresh)
+**Vision**: Unify as `InsertionStrategy`. Same entity set, same topological order, different insertion semantics via configuration.
 
 ---
 
@@ -212,6 +252,24 @@ $ osm build-ssdt --connection-string "..."
 ---
 
 ## 🌟 The North Star Vision
+
+### Bootstrap Shows Us the Way ✅
+
+**Critical Insight**: `BuildSsdtBootstrapSnapshotStep` ALREADY demonstrates the unified pipeline pattern:
+- ✅ Global entity selection (static + regular + supplemental)
+- ✅ Global topological sort across all entity categories
+- ✅ Cycle diagnostics with CircularDependencyOptions
+- ✅ Monolithic emission preserving topological order
+- ✅ Configurable insertion strategy (NonDestructive mode = INSERT)
+
+**The Extraction Challenge**: Bootstrap is a **specific use case** (one-time INSERT of all data). We need to:
+1. **Extract the patterns** Bootstrap demonstrates (global sort, cycle handling, unified entity selection)
+2. **Create abstractions** that work for BOTH:
+   - Bootstrap (keep as-is: global INSERT for first-time deployment)
+   - StaticSeeds (needs same patterns: global sort, but MERGE instead of INSERT, filtered to static entities)
+3. **Parameterize** the pipeline (scope, emission, insertion become configuration, not separate implementations)
+
+**Anti-pattern**: Renaming everything to "Bootstrap" - that conflates the specific (Bootstrap use case) with the general (unified pipeline architecture).
 
 ### What Success Looks Like
 
@@ -411,16 +469,17 @@ var selector = EntitySelector.FromModules([
 
 ## 🔗 Topological Sort: The Unified Graph
 
-### Current Problem
+### Current Problem (Fragmentation)
 
 Topological sort happens **separately** in different contexts:
 
-1. **Static Seeds**: Sorts only static entities
-2. **Bootstrap**: Sorts static + regular entities
-3. **DynamicData**: Sorts all entities (redundant with Bootstrap)
-4. **Supplemental**: **NOT SORTED AT ALL** ← This is the bug
+1. **Static Seeds**: Sorts only static entities (scoped to static-only) ✅ Verified in `BuildSsdtStaticSeedStep.cs:82-86`
+2. **Bootstrap**: ✅ **CORRECT** - Sorts static + regular + supplemental entities globally (see `BuildSsdtBootstrapSnapshotStep.cs:105-110`)
+3. **DynamicData**: Sorts all entities (redundant with Bootstrap, DEPRECATED)
+4. **Supplemental in StaticSeeds context**: **NOT SORTED** ← This causes the fragmentation problem
 
-**Result**: FK violations when User isn't inserted before tables with CreatedBy/UpdatedBy
+**✅ Verified**: Supplementals ARE integrated in Bootstrap's global sort (see `BuildSsdtBootstrapSnapshotStep.cs:50-60`)
+**Problem**: StaticSeeds doesn't include supplementals, causing FK violations when StaticSeeds is run independently
 
 ### Why This is Wrong
 
@@ -431,7 +490,7 @@ Foreign keys **don't respect entity categories**:
 
 **If you sort separately**, you miss cross-category dependencies!
 
-### The Correct Model
+### The Correct Model ✅ ALREADY DEMONSTRATED IN BOOTSTRAP
 
 **One unified dependency graph** spanning ALL selected entities:
 
@@ -439,19 +498,33 @@ Foreign keys **don't respect entity categories**:
 Topological Sort Input:
     - All static entities in scope
     - All regular entities in scope
-    - All supplemental entities in scope (currently broken)
+    - All supplemental entities in scope
 
 Topological Sort Output:
     - One ordered list of ALL entities
     - Respects ALL FK dependencies (cross-category, cross-module)
-    - Cycles resolved with full context
+    - Cycles resolved with full context (via CircularDependencyOptions)
 
 Then Split for Emission:
     - Static seeds: Filter sorted list to static entities only
-    - Bootstrap: Use entire sorted list
+    - Bootstrap: Use entire sorted list ✅ THIS IS WHAT BOOTSTRAP DOES
 ```
 
 **Key Insight**: Sort first with complete graph, THEN filter for emission strategies.
+
+**✅ Bootstrap Proof**: `BuildSsdtBootstrapSnapshotStep.cs:57-60` shows the pattern:
+```csharp
+var allEntities = staticEntities
+    .Concat(regularEntities)
+    .Concat(supplementalEntities.Value)  // All categories unified
+    .ToImmutableArray();
+// Then sorted globally at line 105-110
+```
+
+**Extraction Pattern**: Bootstrap demonstrates the correct architecture; we need to:
+1. Extract the pattern (global sort across all entity categories)
+2. Create abstractions that work for both Bootstrap (specific use case) AND StaticSeeds (needs same pattern)
+3. Make it configurable (scope, emission, insertion are parameters, not separate implementations)
 
 ---
 
@@ -661,7 +734,7 @@ Emission Option 2 (.sqlproj):
 
 ---
 
-## ⚠️ The Business Logic Transform Challenge
+## ⚠️ The Business Logic Transform Challenge ⚠️ HIGH RISK AREA
 
 ### Why This is Scary
 
@@ -671,6 +744,8 @@ Stage 3 (Business Logic Transforms) is **conceptual**, not prescriptive. We know
 - ❌ We don't know the ORDERING dependencies between transforms
 - ❌ We don't know all the EDGE CASES and special handling
 - ✅ We know we need to **excavate**, not design from scratch
+
+**⚠️ RISK ASSESSMENT**: Initial codebase exploration reveals **MORE embedded transforms than originally documented**. This area requires careful, systematic excavation before any refactoring begins.
 
 ### Excavation, Not Design
 
@@ -684,21 +759,37 @@ Stage 3 (Business Logic Transforms) is **conceptual**, not prescriptive. We know
 
 **Anti-pattern**: Trying to enumerate all transforms upfront and design an abstraction around them.
 
-### Known Examples (Non-Exhaustive)
+### Known Examples (Non-Exhaustive) - Continuously Updated
 
-These are transforms we **know exist**, but this list is incomplete:
+These are transforms we **know exist**, but this list is incomplete and will be expanded during excavation:
 
-| Transform | What it does | Config-driven? | Order-sensitive? |
-|-----------|--------------|----------------|------------------|
-| Nullability tightening | isMandatory → NOT NULL (with operator approval) | Yes (validation overrides) | Unknown |
-| Deferred FK constraints | Add WITH NOCHECK for orphaned FKs | Yes (profiling results) | After FK detection |
-| Type mappings | Money → INT precision, numbers → different precision | Possibly | Unknown |
-| Length coercion | NVARCHAR/VARCHAR over threshold → MAX | Yes (no longer used?) | Unknown |
-| Module name overrides | Handle duplicate entity names (OutSystems allows, SQL doesn't) | Yes (moduleNameOverrides) | Before emission |
-| **UAT-users transformation** | **Transform user FK values: QA IDs → UAT IDs (dual-mode, see §UAT-Users)** | **Yes (inventories + mapping)** | **After FK discovery, before/during emission** |
-| Column/table remapping | Rename tables/columns across environments | Yes (naming overrides) | Before emission |
+| Transform | What it does | Location | Config-driven? | Order-sensitive? |
+|-----------|--------------|----------|----------------|------------------|
+| **EntitySeedDeterminizer.Normalize** | ✅ Deterministic ordering/normalization of entity data | `BuildSsdtStaticSeedStep.cs:78` | No | Before sort |
+| **StaticSeedForeignKeyPreflight.Analyze** | ✅ FK orphan detection and ordering violation detection | `BuildSsdtStaticSeedStep.cs:90` | No | After sort |
+| **Module name collision handling** | ✅ Disambiguate duplicate module names with suffix (e.g., Module_2) | `BuildSsdtStaticSeedStep.cs:196-231` | No | Before emission |
+| **Supplemental entity physical→logical remapping** | ✅ Transform ServiceCenter::ossys_User → ServiceCenter::User | `BuildSsdtBootstrapSnapshotStep.cs:338-361` | No | Before emission |
+| **TopologicalOrderingValidator** | ✅ Enhanced cycle diagnostics with FK analysis, nullable detection, CASCADE warnings | `BuildSsdtBootstrapSnapshotStep.cs:115-127, 186-325` | Yes (CircularDependencyOptions) | After sort |
+| **Deferred FK constraints (WITH NOCHECK)** | ✅ Emit FKs marked `IsNoCheck` as separate ALTER TABLE ADD CONSTRAINT WITH CHECK/NOCHECK statements | `CreateTableStatementBuilder.cs:190-195, 214-249` | Yes (profiling detects orphans) | After CREATE TABLE emission |
+| **TypeMappingPolicy** | ✅ Complex data type transformation system: attribute types → SQL types, handles OnDisk overrides, external types, precision/scale | `TypeMappingPolicy.cs`, `TypeMappingRule.cs`, `config/type-mapping.default.json` | Yes (type-mapping.json) | During CREATE TABLE generation |
+| **SmoNormalization.NormalizeSqlExpression** | ✅ Remove redundant outer parentheses from DEFAULT constraints and SQL expressions | `SmoNormalization.cs:17-49` | No | During emission |
+| **CreateTableFormatter** | ✅ Format inline DEFAULT and CONSTRAINT definitions, normalize whitespace in CREATE TABLE statements | `CreateTableFormatter.cs:76-94` | Yes (SmoFormatOptions) | During emission |
+| **NullabilityEvaluator** | ✅ Policy-driven nullability tightening: isMandatory + profiling data → NOT NULL recommendations | `NullabilityEvaluator.cs`, `TighteningPolicy.cs` | Yes (TighteningOptions, validation overrides) | During tightening analysis |
+| **UAT-users transformation** | **Transform user FK values: QA IDs → UAT IDs (dual-mode, see §UAT-Users)** | See §UAT-Users | **Yes (inventories + mapping)** | **After FK discovery, before/during emission** |
+| Column/table remapping (naming overrides) | ✅ Rename tables/columns across environments using effective names | `NamingOverrideOptions`, used throughout emission | Yes (naming overrides config) | Before emission |
 
-**Unknown unknowns**: There are almost certainly more transforms we haven't listed.
+**✅ Verified** = Found in codebase with file location and confirmed behavior
+**Unknown unknowns**: There are almost certainly more transforms we haven't listed - **continuous excavation required**
+
+### Additional Emission Aesthetics Discovered
+
+These don't change data/structure but affect SQL formatting:
+
+| Aesthetic Transform | What it does | Location |
+|---------------------|--------------|----------|
+| **ConstraintFormatter** | ✅ Format FK and PK constraint blocks, add WITH CHECK/NOCHECK annotations | `ConstraintFormatter.cs` |
+| **Whitespace normalization** | ✅ Normalize tabs, indentation, and spacing in generated SQL | `CreateTableFormatter.cs`, `SmoNormalization.cs:7-15` |
+| **Constraint naming resolution** | ✅ Resolve constraint names using logical vs physical table names | `IdentifierFormatter.ResolveConstraintName` |
 
 ### Critical Principles (DO NOT VIOLATE)
 
