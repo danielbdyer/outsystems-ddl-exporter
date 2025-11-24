@@ -264,6 +264,7 @@ internal sealed class CreateTableStatementBuilder
 
             var deleteClause = string.Empty;
             var deleteAction = MapDeleteActionToString(foreignKey.DeleteAction);
+            // TODO: Try to get SMO to build the below instead of concatenating it ourselves
             if (!string.Equals(deleteAction, "NO ACTION", StringComparison.OrdinalIgnoreCase))
             {
                 deleteClause = $" ON DELETE {deleteAction}";
@@ -273,6 +274,12 @@ internal sealed class CreateTableStatementBuilder
                            $"    FOREIGN KEY ({columnList}) REFERENCES {referencedSchemaIdentifier}.{referencedTableIdentifier} ({referencedColumnList}){deleteClause}";
 
             statements.Add(statement);
+
+            // If the FK should remain unchecked (untrusted), emit NOCHECK CONSTRAINT to disable it
+            if (foreignKey.IsNoCheck)
+            {
+                statements.Add($"ALTER TABLE {schemaIdentifier}.{tableIdentifier} NOCHECK CONSTRAINT {constraintIdentifier};");
+            }
         }
 
         return statements.ToImmutable();
