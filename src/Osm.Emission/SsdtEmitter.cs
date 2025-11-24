@@ -79,7 +79,13 @@ public sealed class SsdtEmitter
         try
         {
             _fileSystem.Directory.CreateDirectory(outputDirectory);
-            _fileSystem.Directory.CreateDirectory(_fileSystem.Path.Combine(outputDirectory, "Modules"));
+            _fileSystem.Directory.CreateDirectory(_fileSystem.Path.Combine(outputDirectory, TableEmissionPlanner.ModulesDirectory));
+            
+            // Create Modules.Bare directory for bare table variants (when emitTableMode = Both)
+            if (options.EmitTableMode == Osm.Domain.Configuration.TableEmissionMode.Both)
+            {
+                _fileSystem.Directory.CreateDirectory(_fileSystem.Path.Combine(outputDirectory, TableEmissionPlanner.BareModulesDirectory));
+            }
 
             var tableCount = model.Tables.Length;
             var columnCount = model.Tables.Sum(static table => table.Columns.Length);
