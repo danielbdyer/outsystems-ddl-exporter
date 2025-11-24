@@ -117,6 +117,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<OpportunityLogWriter>();
         services.AddSingleton<SqlLiteralFormatter>();
         services.AddSingleton<StaticSeedSqlBuilder>();
+        services.AddSingleton<PhasedDynamicEntityInsertGenerator>();
         services.AddSingleton<StaticEntitySeedTemplateService>();
         services.AddSingleton<StaticEntitySeedScriptGenerator>();
         services.AddSingleton<DynamicEntityInsertGenerator>();
