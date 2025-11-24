@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -236,6 +237,20 @@ internal sealed class MetadataSnapshotRunner : IMetadataSnapshotDiagnostics
         activeParam.DbType = DbType.Boolean;
         activeParam.Value = request.OnlyActiveAttributes;
         command.Parameters.Add(activeParam);
+
+        // Serialize entity filters to JSON
+        var entityFilterParam = command.CreateParameter();
+        entityFilterParam.ParameterName = "@EntityFilterJson";
+        entityFilterParam.DbType = DbType.String;
+        if (request.EntityFilters.Count > 0)
+        {
+            entityFilterParam.Value = JsonSerializer.Serialize(request.EntityFilters);
+        }
+        else
+        {
+            entityFilterParam.Value = DBNull.Value;
+        }
+        command.Parameters.Add(entityFilterParam);
 
         return command;
     }
