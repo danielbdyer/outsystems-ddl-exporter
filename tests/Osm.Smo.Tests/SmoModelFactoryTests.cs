@@ -627,7 +627,7 @@ public class SmoModelFactoryTests
         var options = new SmoBuildOptions(
             "OutSystems",
             IncludePlatformAutoIndexes: true,
-            EmitBareTableOnly: false,
+            EmitTableMode: TableEmissionMode.FullOnly,
             SanitizeModuleNames: true,
             ModuleParallelism: 1,
             NamingOverrides: NamingOverrideOptions.Empty,
