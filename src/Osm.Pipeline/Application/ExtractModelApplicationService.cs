@@ -127,11 +127,20 @@ public sealed class ExtractModelApplicationService : PipelineApplicationServiceB
             fixtureProvided);
 
         var commandModules = moduleNames.Length > 0 ? moduleNames : null;
+        
+        // Convert ModuleEntityFilterOptions to string list dictionary for SQL
+        var entityFiltersForSql = moduleFilter.EntityFilters.Count > 0
+            ? moduleFilter.EntityFilters.ToDictionary(
+                kvp => kvp.Key,
+                kvp => (IReadOnlyList<string>)kvp.Value.Names.ToArray())
+            : null;
+        
         var commandResult = ModelExtractionCommand.Create(
             commandModules,
             moduleFilter.IncludeSystemModules,
             moduleFilter.IncludeInactiveModules,
-            onlyActiveAttributes);
+            onlyActiveAttributes,
+            entityFiltersForSql);
         if (commandResult.IsFailure)
         {
             _logger.LogError(
