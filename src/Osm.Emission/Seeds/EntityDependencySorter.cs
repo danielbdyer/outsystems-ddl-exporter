@@ -154,11 +154,15 @@ public enum EntityDependencyOrderingMode
                 .Where(key => ordered.All(table => !TableKey.Equals(table.Definition, key)))
                 .ToArray();
 
+            diagnostics?.Add($"Auto-resolution: Found {remainingKeys.Length} remaining node(s) after initial topological sort.");
+
             var (autoCycles, edgesToRemove) = DetectAsymmetricCycles(
                 remainingKeys,
                 edges,
                 nodes,
                 entityByTable);
+
+            diagnostics?.Add($"Auto-resolution: Detected {autoCycles.Length} auto-cycle(s), identified {edgesToRemove.Count} edge(s) to remove.");
 
             if (!autoCycles.IsDefaultOrEmpty && edgesToRemove.Count > 0)
             {
@@ -191,30 +195,39 @@ public enum EntityDependencyOrderingMode
 
                 if (retried.Length == nodes.Count)
                 {
+                    diagnostics?.Add($"Auto-resolution succeeded! All {nodes.Count} table(s) ordered after removing {removedEdges} edge(s).");
                     ordered = retried;
                     cycleDetected = false;
                     graphStats = graphStats with { EdgeCount = Math.Max(0, graphStats.EdgeCount - removedEdges) };
                     circularDependencyOptions = mergedOptions;
+                }
+                else
+                {
+                    diagnostics?.Add($"Auto-resolution failed. Retry produced {retried.Length} of {nodes.Count} ordered table(s). {nodes.Count - retried.Length} table(s) remain in cycle(s).");
                 }
             }
         }
 
         if (cycleDetected &&
             !stronglyConnectedComponents.IsDefaultOrEmpty &&
-            stronglyConnectedComponents.Length > 0 &&
-            circularDependencyOptions is { AllowedCycles.IsDefaultOrEmpty: false, AllowedCycles.Length: > 0 })
+            stronglyConnectedComponents.Length > 0)
         {
+            // Always attempt intelligent cycle resolution (with or without manual config)
+            circularDependencyOptions ??= CircularDependencyOptions.Empty;
+            
             diagnostics?.Add(
-                $"Manual cycle ordering configured; attempting to resolve {stronglyConnectedComponents.Length} strongly connected component(s).");
+                $"Attempting intelligent cycle resolution for {stronglyConnectedComponents.Length} strongly connected component(s).");
 
             var edgesToBreak = IdentifyEdgesToBreakFromManualOrdering(
                 stronglyConnectedComponents.Select(component => component.ToHashSet(KeyComparer)).ToList(),
                 edges,
-                circularDependencyOptions);
+                circularDependencyOptions,
+                entityByTable,
+                nodes);
 
             diagnostics?.Add(edgesToBreak.Count > 0
-                ? $"Manual ordering identified {edgesToBreak.Count} backward edge(s) to remove."
-                : "Manual ordering did not identify any backward edges to remove.");
+                ? $"Intelligent ordering identified {edgesToBreak.Count} backward edge(s) to remove."
+                : "Intelligent ordering did not identify any backward edges to remove.");
 
             if (edgesToBreak.Count > 0)
             {
@@ -248,7 +261,11 @@ public enum EntityDependencyOrderingMode
                     ordered = retried;
                     cycleDetected = false;
                     graphStats = graphStats with { EdgeCount = Math.Max(0, graphStats.EdgeCount - removedEdges) };
-                    diagnostics?.Add("Manual ordering successfully resolved the detected cycle(s).");
+                    diagnostics?.Add("Intelligent ordering successfully resolved the detected cycle(s).");
+                }
+                else
+                {
+                    diagnostics?.Add($"Intelligent ordering partially resolved: {retried.Length}/{nodes.Count} tables ordered, cycle remains.");
                 }
             }
         }
@@ -275,6 +292,19 @@ public enum EntityDependencyOrderingMode
             fallbackApplied,
             classification);
 
+        // Convert SCCs to string arrays for external consumption
+        ImmutableArray<ImmutableArray<string>>? sccStrings = null;
+        if (!stronglyConnectedComponents.IsDefaultOrEmpty)
+        {
+            var builder = ImmutableArray.CreateBuilder<ImmutableArray<string>>(stronglyConnectedComponents.Length);
+            foreach (var scc in stronglyConnectedComponents)
+            {
+                var tableNames = scc.Select(key => $"{key.Schema}.{key.Table}").ToImmutableArray();
+                builder.Add(tableNames);
+            }
+            sccStrings = builder.ToImmutable();
+        }
+
         return new EntityDependencyOrderingResult(
             ordered,
             nodes.Count,
@@ -283,7 +313,8 @@ public enum EntityDependencyOrderingMode
             ModelAvailable: true,
             CycleDetected: cycleDetected,
             AlphabeticalFallbackApplied: fallbackApplied,
-            Mode: orderingMode);
+            Mode: orderingMode,
+            StronglyConnectedComponents: sccStrings);
     }
 
     private static DependencyGraphStatistics BuildDependencyGraph(
@@ -328,8 +359,52 @@ public enum EntityDependencyOrderingMode
 
                 foreach (var relationship in entity.Relationships)
                 {
+                    // For static entities (or entities without physical FK constraints),
+                    // fallback to using logical relationship metadata for topological ordering
                     if (relationship.ActualConstraints.IsDefaultOrEmpty)
                     {
+                        if (!string.IsNullOrWhiteSpace(relationship.TargetPhysicalName.Value))
+                        {
+                            var referencedSchema = entity.Schema.Value;
+                            var referencedPhysical = relationship.TargetPhysicalName.Value.Trim();
+                            var referencedKey = TableKey.From(referencedSchema, referencedPhysical);
+                            entityLookup.TryGetValue(referencedKey, out var targetIdentity);
+
+                            var targetLogical = targetIdentity?.LogicalName ?? relationship.TargetEntity.Value;
+                            var targetModule = targetIdentity?.Module;
+
+                            var targetCandidates = TableNameCandidates.Create(
+                                referencedPhysical,
+                                namingOverrides.GetEffectiveTableName(
+                                    referencedSchema,
+                                    referencedPhysical,
+                                    targetLogical,
+                                    targetModule));
+
+                            if (lookup.TryResolve(
+                                    referencedSchema,
+                                    targetCandidates,
+                                    targetModule,
+                                    targetLogical,
+                                    out var targetKey))
+                            {
+                                if (!KeyComparer.Equals(sourceKey, targetKey))
+                                {
+                                    var dependents = edges[targetKey];
+
+                                    if (dependents.Add(sourceKey))
+                                    {
+                                        indegree[sourceKey] = indegree[sourceKey] + 1;
+                                        edgeCount++;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                missingEdgeCount++;
+                            }
+                        }
+
                         continue;
                     }
 
@@ -562,47 +637,254 @@ public enum EntityDependencyOrderingMode
     private static List<(TableKey Target, TableKey Dependent)> IdentifyEdgesToBreakFromManualOrdering(
         List<HashSet<TableKey>> stronglyConnectedComponents,
         IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
-        CircularDependencyOptions circularDependencyOptions)
+        CircularDependencyOptions circularDependencyOptions,
+        IReadOnlyDictionary<TableKey, EntityModel> entityLookup,
+        IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes)
     {
         var edgesToBreak = new List<(TableKey Target, TableKey Dependent)>();
 
         foreach (var component in stronglyConnectedComponents)
         {
-            foreach (var node in component)
+            // Strategy 1: If manual positions exist, use them to identify backward edges
+            var hasManualPositions = component.Any(n => circularDependencyOptions.GetManualPosition(n.Table).HasValue);
+            
+            if (hasManualPositions)
             {
-                var sourcePosition = circularDependencyOptions.GetManualPosition(node.Table);
-                if (sourcePosition is null)
+                // Use position-based approach
+                var positionMap = BuildEffectivePositionMap(component, edges, circularDependencyOptions, entityLookup);
+                
+                foreach (var node in component)
                 {
-                    continue;
-                }
-
-                if (!edges.TryGetValue(node, out var dependents))
-                {
-                    continue;
-                }
-
-                foreach (var dependent in dependents)
-                {
-                    if (!component.Contains(dependent))
+                    if (!positionMap.TryGetValue(node, out var sourcePosition))
                     {
                         continue;
                     }
 
-                    var targetPosition = circularDependencyOptions.GetManualPosition(dependent.Table);
-                    if (targetPosition is null)
+                    if (!edges.TryGetValue(node, out var dependents))
                     {
                         continue;
                     }
 
-                    if (sourcePosition.Value > targetPosition.Value)
+                    foreach (var dependent in dependents)
                     {
-                        edgesToBreak.Add((node, dependent));
+                        if (!component.Contains(dependent))
+                        {
+                            continue;
+                        }
+
+                        if (!positionMap.TryGetValue(dependent, out var targetPosition))
+                        {
+                            continue;
+                        }
+
+                        if (sourcePosition > targetPosition)
+                        {
+                            edgesToBreak.Add((node, dependent));
+                        }
                     }
                 }
+            }
+            else
+            {
+                // Strategy 2: No manual positions - break weak edges preferentially
+                // This is the intelligent auto-resolution path
+                var componentSet = component.ToImmutableHashSet(KeyComparer);
+                var weakEdges = FindWeakEdgesInComponent(componentSet, edges, entityLookup, nodes);
+                edgesToBreak.AddRange(weakEdges);
             }
         }
 
         return edgesToBreak;
+    }
+
+    /// <summary>
+    /// Builds position map for cycle members using manual config where available,
+    /// and auto-generating positions for unconfigured tables based on relationship analysis.
+    /// 
+    /// Strategy:
+    /// 1. Use manual positions where provided
+    /// 2. For unconfigured tables, analyze relationship strength (nullable = weak)
+    /// 3. Compute dependency depth (how many strong dependencies does each table have?)
+    /// 4. Position tables with fewer strong dependencies earlier (they're more "foundational")
+    /// </summary>
+    private static Dictionary<TableKey, int> BuildEffectivePositionMap(
+        HashSet<TableKey> component,
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+        CircularDependencyOptions circularDependencyOptions,
+        IReadOnlyDictionary<TableKey, EntityModel> entityLookup)
+    {
+        var positionMap = new Dictionary<TableKey, int>(KeyComparer);
+
+        // First pass: collect all manual positions
+        var manualPositions = new List<(TableKey Key, int Position)>();
+        var maxManualPosition = -1;
+
+        foreach (var node in component)
+        {
+            var manualPos = circularDependencyOptions.GetManualPosition(node.Table);
+            if (manualPos.HasValue)
+            {
+                manualPositions.Add((node, manualPos.Value));
+                maxManualPosition = Math.Max(maxManualPosition, manualPos.Value);
+            }
+        }
+
+        // Add manual positions to map
+        foreach (var (key, position) in manualPositions)
+        {
+            positionMap[key] = position;
+        }
+
+        // For tables without manual positions, compute relationship-based ordering
+        var unconfiguredTables = component.Where(n => !positionMap.ContainsKey(n)).ToList();
+        
+        if (unconfiguredTables.Count > 0)
+        {
+            // Analyze relationship strength for each table
+            var tableScores = new Dictionary<TableKey, TableDependencyScore>(KeyComparer);
+            
+            foreach (var table in unconfiguredTables)
+            {
+                var score = ComputeDependencyScore(table, component, edges, entityLookup);
+                tableScores[table] = score;
+            }
+
+            // Sort by dependency score: tables with fewer/weaker dependencies come first
+            var sortedTables = unconfiguredTables
+                .OrderBy(t => tableScores[t].StrongDependencyCount)
+                .ThenBy(t => tableScores[t].TotalDependencyCount)
+                .ThenBy(t => t.Table, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // Assign positions starting after manual positions
+            var nextAutoPosition = maxManualPosition >= 0 ? maxManualPosition + 100 : 0;
+            
+            foreach (var table in sortedTables)
+            {
+                positionMap[table] = nextAutoPosition;
+                nextAutoPosition += 100;
+            }
+        }
+
+        return positionMap;
+    }
+
+    /// <summary>
+    /// Scores a table based on its dependencies within the cycle.
+    /// Tables with fewer/weaker dependencies should load first.
+    /// </summary>
+    private static TableDependencyScore ComputeDependencyScore(
+        TableKey table,
+        HashSet<TableKey> component,
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+        IReadOnlyDictionary<TableKey, EntityModel> entityLookup)
+    {
+        var strongDependencies = 0;
+        var weakDependencies = 0;
+
+        // edges[target] contains nodes that depend on target
+        // We need to find what THIS table depends on (reverse edges)
+        foreach (var (target, dependents) in edges)
+        {
+            if (!component.Contains(target))
+            {
+                continue; // Only care about dependencies within the cycle
+            }
+
+            if (!dependents.Contains(table))
+            {
+                continue; // This table doesn't depend on this target
+            }
+
+            // This table depends on 'target' - classify the relationship strength
+            if (entityLookup.TryGetValue(table, out var entity))
+            {
+                // Find the relationship from this entity to the target
+                var relationship = FindRelationshipToTarget(entity, target, entityLookup);
+                
+                if (relationship != null && TryExtractRelationshipMetadata(relationship, entity, table, out var metadata))
+                {
+                    var strength = ClassifyRelationship(metadata);
+                    
+                    if (strength == RelationshipStrength.Weak || strength == RelationshipStrength.CascadeWeak)
+                    {
+                        weakDependencies++;
+                    }
+                    else
+                    {
+                        strongDependencies++;
+                    }
+                }
+                else
+                {
+                    // Can't extract relationship metadata - assume strong to be conservative
+                    strongDependencies++;
+                }
+            }
+            else
+            {
+                // Can't find entity - assume strong to be conservative
+                strongDependencies++;
+            }
+        }
+
+        return new TableDependencyScore(strongDependencies, weakDependencies);
+    }
+
+    /// <summary>
+    /// Finds the relationship from source entity to a target table.
+    /// </summary>
+    private static RelationshipModel? FindRelationshipToTarget(
+        EntityModel sourceEntity,
+        TableKey targetKey,
+        IReadOnlyDictionary<TableKey, EntityModel> entityLookup)
+    {
+        if (!entityLookup.TryGetValue(targetKey, out var targetEntity))
+        {
+            return null;
+        }
+
+        return sourceEntity.Relationships.FirstOrDefault(r =>
+            r.TargetEntity.Value.Equals(targetEntity.LogicalName.Value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Extracts relationship metadata needed for strength classification.
+    /// </summary>
+    private static bool TryExtractRelationshipMetadata(
+        RelationshipModel relationship,
+        EntityModel entity,
+        TableKey source,
+        out RelationshipMetadata metadata)
+    {
+        if (relationship.ActualConstraints.IsDefaultOrEmpty)
+        {
+            metadata = default!;
+            return false;
+        }
+
+        var viaAttribute = entity.Attributes.FirstOrDefault(attribute =>
+            string.Equals(attribute.LogicalName.Value, relationship.ViaAttribute.Value, StringComparison.OrdinalIgnoreCase));
+
+        if (viaAttribute is null)
+        {
+            metadata = default!;
+            return false;
+        }
+
+        var constraint = relationship.ActualConstraints[0];
+        
+        metadata = new RelationshipMetadata(
+            source.Table,
+            constraint.OnDeleteAction,
+            viaAttribute.OnDisk.IsNullable ?? false);
+        
+        return true;
+    }
+
+    private readonly record struct TableDependencyScore(int StrongDependencyCount, int WeakDependencyCount)
+    {
+        public int TotalDependencyCount => StrongDependencyCount + WeakDependencyCount;
     }
 
     private static (ImmutableArray<AllowedCycle> AllowedCycles, List<(TableKey Target, TableKey Dependent)> EdgesToRemove)
@@ -637,17 +919,25 @@ public enum EntityDependencyOrderingMode
                 var firstStrength = ClassifyRelationship(firstToSecond);
                 var secondStrength = ClassifyRelationship(secondToFirst);
 
-                if ((firstStrength == RelationshipStrength.Weak && secondStrength == RelationshipStrength.Cascade) ||
-                    (firstStrength == RelationshipStrength.Cascade && secondStrength == RelationshipStrength.Weak))
+                // Auto-resolve if one edge is weak/cascadeWeak and the other is cascade/other
+                var firstIsBreakable = firstStrength == RelationshipStrength.Weak || firstStrength == RelationshipStrength.CascadeWeak;
+                var secondIsBreakable = secondStrength == RelationshipStrength.Weak || secondStrength == RelationshipStrength.CascadeWeak;
+                var firstIsStrong = firstStrength == RelationshipStrength.Cascade || firstStrength == RelationshipStrength.Other;
+                var secondIsStrong = secondStrength == RelationshipStrength.Cascade || secondStrength == RelationshipStrength.Other;
+
+                if ((firstIsBreakable && secondIsStrong) || (firstIsStrong && secondIsBreakable))
                 {
-                    var parentKey = firstStrength == RelationshipStrength.Weak ? pair[0] : pair[1];
-                    var childKey = firstStrength == RelationshipStrength.Cascade ? pair[0] : pair[1];
+                    var parentKey = firstIsBreakable ? pair[0] : pair[1];
+                    var childKey = firstIsStrong ? pair[0] : pair[1];
 
                     var allowedCycle = CreateAutoCycle(parentKey, childKey, nodes);
                     if (allowedCycle is not null)
                     {
                         detectedCycles.Add(allowedCycle);
-                        edgesToRemove.Add((parentKey, childKey));
+                        // Remove the weak edge: parentKey depends on childKey (the back-reference)
+                        // Edge semantics: edges[target] contains dependents, so edges[childKey] contains parentKey
+                        // We want to remove "parentKey depends on childKey", so remove from edges[childKey]
+                        edgesToRemove.Add((childKey, parentKey));
                     }
                 }
             }
@@ -673,8 +963,35 @@ public enum EntityDependencyOrderingMode
             IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes,
             IReadOnlyDictionary<TableKey, EntityModel> entityLookup)
     {
-        // Find all weak edges in the cycle
-        var weakEdges = FindWeakEdgesInComponent(component, edges, entityLookup, nodes);
+        // First, try to detect and break 2-node cycles within this large SCC
+        var twoNodeCycleEdges = DetectTwoNodeCyclesInComponent(component, edges, entityLookup, nodes);
+        if (twoNodeCycleEdges.Count > 0)
+        {
+            // Try breaking 2-node cycles first, then check if that resolves the entire SCC
+            var allEdgesToBreak = new List<(TableKey Source, TableKey Target)>();
+            
+            foreach (var edge in twoNodeCycleEdges)
+            {
+                allEdgesToBreak.Add(edge);
+            }
+            
+            // Check if breaking these edges resolves the cycle
+            if (IsAcyclicAfterRemoval(component, allEdgesToBreak, edges))
+            {
+                var twoNodeOrdering = GenerateTopologicalOrdering(component, allEdgesToBreak.ToImmutableArray(), edges, nodes);
+                if (!twoNodeOrdering.IsDefaultOrEmpty)
+                {
+                    var cycleForTwoNodes = AllowedCycle.Create(twoNodeOrdering);
+                    if (cycleForTwoNodes.IsSuccess)
+                    {
+                        return (cycleForTwoNodes.Value, allEdgesToBreak.ToImmutableArray());
+                    }
+                }
+            }
+        }
+        
+        // If 2-node resolution didn't work, try weak edges with CASCADE prioritization
+        var weakEdges = FindWeakEdgesInComponent(component, edges, entityLookup, nodes, ScoreEdgeForBreaking);
         
         if (weakEdges.Count == 0)
         {
@@ -706,6 +1023,95 @@ public enum EntityDependencyOrderingMode
         return (allowedCycle.Value, edgesToBreak);
     }
 
+    private static List<(TableKey Source, TableKey Target)> DetectTwoNodeCyclesInComponent(
+        ImmutableHashSet<TableKey> component,
+        IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
+        IReadOnlyDictionary<TableKey, EntityModel> entityLookup,
+        IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes)
+    {
+        var edgesToBreak = new List<(TableKey Source, TableKey Target)>();
+        var processed = new HashSet<(TableKey, TableKey)>();
+
+        foreach (var nodeA in component)
+        {
+            if (!edges.TryGetValue(nodeA, out var aTargets)) continue;
+
+            foreach (var nodeB in aTargets.Where(component.Contains))
+            {
+                // Check if B also has an edge back to A (forming a 2-node cycle)
+                if (!edges.TryGetValue(nodeB, out var bTargets) || !bTargets.Contains(nodeA)) continue;
+                
+                // Avoid processing the same cycle twice
+                if (processed.Contains((nodeB, nodeA))) continue;
+                processed.Add((nodeA, nodeB));
+                processed.Add((nodeB, nodeA));
+
+                // Classify both edges
+                if (!TryGetRelationshipMetadata(nodeA, nodeB, entityLookup, nodes, out var aToBMeta) ||
+                    !TryGetRelationshipMetadata(nodeB, nodeA, entityLookup, nodes, out var bToAMeta))
+                {
+                    continue;
+                }
+
+                var aToBStrength = ClassifyRelationship(aToBMeta);
+                var bToAStrength = ClassifyRelationship(bToAMeta);
+
+                // If one edge is breakable and the other is strong, break the weak one
+                var aToBBreakable = aToBStrength == RelationshipStrength.Weak || aToBStrength == RelationshipStrength.CascadeWeak;
+                var bToABreakable = bToAStrength == RelationshipStrength.Weak || bToAStrength == RelationshipStrength.CascadeWeak;
+
+                if (aToBBreakable && !bToABreakable)
+                {
+                    edgesToBreak.Add((nodeA, nodeB));
+                }
+                else if (bToABreakable && !aToBBreakable)
+                {
+                    edgesToBreak.Add((nodeB, nodeA));
+                }
+                else if (aToBBreakable && bToABreakable)
+                {
+                    // Both breakable - prefer breaking Weak over CascadeWeak
+                    if (aToBStrength == RelationshipStrength.Weak)
+                    {
+                        edgesToBreak.Add((nodeA, nodeB));
+                    }
+                    else
+                    {
+                        edgesToBreak.Add((nodeB, nodeA));
+                    }
+                }
+            }
+        }
+
+        return edgesToBreak;
+    }
+
+    private static int ScoreEdgeForBreaking(
+        TableKey source,
+        TableKey target,
+        IReadOnlyDictionary<TableKey, StaticEntityTableData> nodes)
+    {
+        var score = 0;
+        
+        // Prefer breaking edges where target has "History", "Audit", "Log", "Archive" in name
+        var targetName = target.Table.ToUpperInvariant();
+        if (targetName.Contains("HISTORY")) score += 100;
+        if (targetName.Contains("AUDIT")) score += 90;
+        if (targetName.Contains("LOG")) score += 80;
+        if (targetName.Contains("ARCHIVE")) score += 70;
+        if (targetName.Contains("VERSION")) score += 60;
+        
+        // Prefer breaking edges where source references target (source has FK to target)
+        // This is the "back-reference" pattern we want to break
+        if (nodes.ContainsKey(source) && nodes.ContainsKey(target) &&
+            source.Table.Contains(target.Table, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 50;
+        }
+        
+        return score;
+    }
+
     private static List<(TableKey Source, TableKey Target)> FindWeakEdgesInComponent(
         ImmutableHashSet<TableKey> component,
         IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges,
@@ -724,10 +1130,14 @@ public enum EntityDependencyOrderingMode
 
             foreach (var target in targets.Where(component.Contains))
             {
-                if (TryGetRelationshipMetadata(source, target, entityLookup, nodes, out var metadata) &&
-                    ClassifyRelationship(metadata) == RelationshipStrength.Weak)
+                if (TryGetRelationshipMetadata(source, target, entityLookup, nodes, out var metadata))
                 {
-                    weakEdges.Add((source, target));
+                    var strength = ClassifyRelationship(metadata);
+                    // Include Weak and CascadeWeak edges (but not Cascade or Other)
+                    if (strength == RelationshipStrength.Weak || strength == RelationshipStrength.CascadeWeak)
+                    {
+                        weakEdges.Add((source, target));
+                    }
                 }
             }
         }
@@ -751,11 +1161,23 @@ public enum EntityDependencyOrderingMode
         List<(TableKey Source, TableKey Target)> weakEdges,
         IReadOnlyDictionary<TableKey, HashSet<TableKey>> edges)
     {
+        // Safety limit: for ~260 entities, trying 50k combinations is reasonable
+        const int MaxCombinationsToTry = 50_000;
+        var combinationsTried = 0;
+        
         // Try progressively larger subsets until we find one that breaks all cycles
         for (var subsetSize = 1; subsetSize <= weakEdges.Count; subsetSize++)
         {
             foreach (var subset in GetCombinations(weakEdges, subsetSize))
             {
+                if (++combinationsTried > MaxCombinationsToTry)
+                {
+                    // Bailout: just remove all weak edges
+                    // This is safe because if we can't find a minimal set within 50k tries,
+                    // the cycle is complex enough that removing all weak edges is prudent
+                    return weakEdges.ToImmutableArray();
+                }
+                
                 if (IsAcyclicAfterRemoval(component, subset, edges))
                 {
                     return subset.ToImmutableArray();
@@ -1132,9 +1554,10 @@ public enum EntityDependencyOrderingMode
 
     private enum RelationshipStrength
     {
-        Other,
-        Weak,
-        Cascade
+        Weak,         // Nullable + NO_ACTION or SET_NULL
+        CascadeWeak,  // Nullable + CASCADE (can be broken but risky)
+        Cascade,      // NOT NULL + CASCADE delete (strong)
+        Other         // Everything else (NOT NULL + NO_ACTION)
     }
 
     private sealed record TableKey(string Schema, string Table)
@@ -1725,7 +2148,8 @@ public enum EntityDependencyOrderingMode
         bool ModelAvailable,
         bool CycleDetected,
         bool AlphabeticalFallbackApplied,
-        EntityDependencyOrderingMode Mode)
+        EntityDependencyOrderingMode Mode,
+        ImmutableArray<ImmutableArray<string>>? StronglyConnectedComponents = null)
     {
         public static EntityDependencyOrderingResult Empty(bool modelAvailable)
             => new(
