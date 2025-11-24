@@ -57,11 +57,19 @@ public sealed class ModelResolutionService : IModelResolutionService
             ? null
             : moduleFilter.Modules.Select(static module => module.Value);
 
+        // Convert ModuleEntityFilterOptions to string list dictionary for SQL
+        var entityFiltersForSql = moduleFilter.EntityFilters.Count > 0
+            ? moduleFilter.EntityFilters.ToDictionary(
+                kvp => kvp.Key,
+                kvp => (IReadOnlyList<string>)kvp.Value.Names.ToArray())
+            : null;
+
         var extractionCommandResult = ModelExtractionCommand.Create(
             moduleNames,
             moduleFilter.IncludeSystemModules,
             moduleFilter.IncludeInactiveModules,
-            onlyActiveAttributes: false);
+            onlyActiveAttributes: false,
+            entityFiltersForSql);
         if (extractionCommandResult.IsFailure)
         {
             return Result<ModelResolutionResult>.Failure(extractionCommandResult.Errors);
