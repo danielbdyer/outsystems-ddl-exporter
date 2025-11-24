@@ -26,4 +26,5 @@ public sealed record BuildSsdtPipelineRequest(
     SqlMetadataLog? SqlMetadataLog = null,
     bool DeferJunctionTables = false,
     CircularDependencyOptions? CircularDependencyOptions = null,
-    ImmutableArray<EntityModel> SupplementalEntities = default) : ICommand<BuildSsdtPipelineResult>;
+    ImmutableArray<EntityModel> SupplementalEntities = default,
+    bool PhasedLoadingEnabled = false) : ICommand<BuildSsdtPipelineResult>;
