@@ -2,231 +2,456 @@
 
 **Status**: DEFINITIVE - Architectural Manifesto
 **Date**: 2025-01-XX
-**Purpose**: To crystallize the "accidental architecture" into an explicit, compiler-enforced law. This document is not a proposal; it is a recognition of the system's emergent truth.
+**Scope**: The complete ontological and mechanical definition of the Unified Entity Pipeline.
+**Purpose**: To crystallize the "accidental architecture" into an explicit, compiler-enforced law. This is not a proposal; it is the recognition of the system's emergent truth.
 
 ---
 
-## 🏛️ PART I: THE REVELATION (Discovery Over Invention)
+# 🏛️ PREAMBLE: THE ZENITH INSIGHT
 
-We are not building a "V3" to fix V1 and V2. We are building V3 because the code *already knows* what it wants to be, and we finally have the language to name it.
+We are not building "V3" to fix V1 and V2. We are building V3 because the codebase has already evolved a superior architecture in secret, hidden within `BuildSsdtBootstrapSnapshotStep`.
 
-**The Zenith Insight**:
-`BuildSsdtBootstrapSnapshotStep` is not just a "bootstrap" tool. It is the **Unified Pipeline** in disguise.
-- It combines static and regular entities (Scope).
-- It executes a global topological sort across all categories (Order).
-- It uses `StaticSeedSqlBuilder` to generate MERGE/INSERT statements (Emission/Insertion).
-- It enforces Foreign Key correctness ignoring artificial boundaries.
+**The Revelation**:
+The `BuildSsdtBootstrapSnapshotStep` (src/Osm.Pipeline/Orchestration/BuildSsdtBootstrapSnapshotStep.cs) is not merely a "bootstrap" tool. It is the **Unified Pipeline** in disguise.
+1.  **Universal Scope**: It combines static, regular, and supplemental entities into a single set (lines 50-60).
+2.  **Global Order**: It executes a global topological sort across *all* categories, respecting true FK semantics (lines 105-110).
+3.  **Unified Emission**: It uses `StaticSeedSqlBuilder` (shared with StaticSeeds) to generate SQL (line 297).
+4.  **Correctness**: It proves that cross-category dependencies (Regular → Static) must be respected.
 
 **The Mandate**:
-We stop inventing "new" pipelines. We **excavate** this pattern, strip it of its hardcoded parameters, and elevate it to the system's singular spine.
+We stop inventing new pipelines. We **excavate** this pattern, strip it of its hardcoded parameters (Scope=`All`, Emission=`Monolithic`, Insertion=`Insert`), and elevate it to be the singular spine of the system.
 
 ---
 
-## 🧬 PART II: THE ONTOLOGY (Composition as Law)
+# 🧬 PART I: THE ONTOLOGY (Composition as Law)
 
-The core abstraction is not "The Pipeline." The core abstraction is **Composition**.
+The pipeline is not a "runner" or a "processor." The pipeline **IS** composition. It is a lawful chain of immutable state transformations where the type system enforces ontology.
 
-### § 1. The Monadic Spine
-The pipeline is a sequence of immutable state transitions. We do not "run" steps; we **bind** them.
+## § 1.1 The Monadic Spine
 
-**The Pattern**: Functional composition synthesized with Domain-Driven Design.
+We adopt a functional core within our Domain-Driven structure. The pipeline is modeled as a series of `Bind` operations on a `Result<T>` monad.
+
+**The Interface**:
 ```csharp
-// The Spine: A Lawful Chain of State
+// src/Osm.Pipeline/Orchestration/IBuildSsdtStep.cs
+public interface IBuildSsdtStep<in TInput, TNextState>
+{
+    Task<Result<TNextState>> ExecuteAsync(TInput state, CancellationToken token);
+}
+```
+
+**The Composition**:
+```csharp
+// The V3 Spine
 public async Task<Result<DeploymentResult>> Execute(PipelineContext initial)
 {
     return await initial
-        .Bind(ExtractModel)      // State 0 -> 1
-        .Bind(SelectEntities)    // State 1 -> 2
-        .Bind(FetchSnapshot)     // State 2 -> 3
-        .Bind(Transform)         // State 3 -> 4
-        .Bind(Order)             // State 4 -> 5
-        .Bind(Emit)              // State 5 -> 6
-        .Bind(Apply);            // State 6 -> 7
+        .Bind(ExtractModel)      // State 0: Context -> ExtractionCompleted
+        .Bind(SelectEntities)    // State 1: Extraction -> SelectionCompleted
+        .Bind(FetchSnapshot)     // State 2: Selection -> FetchCompleted
+        .Bind(Transform)         // State 3: Fetch -> TransformCompleted
+        .Bind(Order)             // State 4: Transform -> OrderCompleted
+        .Bind(Emit)              // State 5: Order -> EmissionCompleted
+        .Bind(Apply);            // State 6: Emission -> ApplicationCompleted
 }
 ```
-**Why this matters**: The compiler validates *meaning*. You cannot Emit (Stage 5) if you have not Ordered (Stage 4). You cannot Order if you have not Fetched (Stage 2). The ontology is enforced by the type system, not by runtime checks.
 
-### § 2. The 3D Coordinate Space
-Every verb in the system—`extract-model`, `build-ssdt`, `full-export`, `uat-users`—is simply a coordinate in a three-dimensional parameter space. Special cases are ontological errors.
+**Why this matters**:
+- **Immutability**: Each step produces a *new* state object. `FetchCompleted` cannot be mutated into `OrderCompleted`; it must be *transformed*.
+- **Linearity**: You cannot Emit (Stage 5) if you have not Ordered (Stage 4). The compiler forbids it because `Emit` demands `OrderCompleted` as input.
+- **Short-Circuiting**: If `Fetch` fails, `Transform` never runs. The `Result<T>` monad handles the error path invisible to the happy path.
 
-1.  **SCOPE (Selection)**
-    *   **Primitive**: `EntitySelector`
-    *   **Question**: "Who participates?"
-    *   **Coordinates**: `AllEntities`, `StaticOnly`, `SingleModule`, `Filtered(ServiceCenter::User)`
+## § 1.2 The Three Orthogonal Dimensions
 
-2.  **EMISSION (Artifacts)**
-    *   **Primitive**: `EmissionStrategy`
-    *   **Question**: "What is produced?"
-    *   **Coordinates**: `Schema(DDL)`, `Data(DML)`, `Diagnostics(Audit)`, `Combined`
+The universe of use cases is defined by a 3D coordinate space. Any specific verb is a point in this space.
 
-3.  **INSERTION (Semantics)**
-    *   **Primitive**: `InsertionStrategy`
-    *   **Question**: "How does it apply?"
-    *   **Coordinates**: `SchemaOnly`, `Insert(Append)`, `Merge(Upsert)`, `None(Verify)`
+### Dimension 1: SCOPE (Selection)
+**"Which entities participate?"**
+- **Primitive**: `EntitySelector`
+- **Reification**: `ModuleFilterOptions` + `EntityFilters`
+- **Coordinates**:
+    - `AllEntities`: The union of all modules (Bootstrap, Full-Export).
+    - `StaticOnly`: Entities where `DataKind=StaticEntity` (Legacy StaticSeeds).
+    - `SingleModule`: All entities in "ModuleA".
+    - `FilteredSubset`: Specific entities (e.g., `ServiceCenter::User`).
+
+### Dimension 2: EMISSION (Artifacts)
+**"What do we produce?"**
+- **Primitive**: `EmissionStrategy`
+- **Coordinates**:
+    - `Schema`: DDL (`CREATE TABLE`), organized by module, `.sqlproj`.
+    - `Data`: DML (`INSERT`/`MERGE`), topologically ordered.
+    - `Diagnostics`: CSV reports, logs, manifests.
+    - `Combined`: Any combination of the above.
+
+### Dimension 3: INSERTION (Semantics)
+**"How does it apply?"**
+- **Primitive**: `InsertionStrategy`
+- **Coordinates**:
+    - `SchemaOnly`: DDL application only.
+    - `Insert`: Append-only (Bootstrap).
+    - `Merge`: Upsert (StaticSeeds).
+    - `None`: Export/Verify only.
 
 ---
 
-## 📐 PART III: TYPED PHASE ALGEBRA (Lawful Skipping)
+# 📐 PART II: TYPED PHASE ALGEBRA (Lawful Skipping)
 
-V2 introduced the linear stage chain. V3 introduces **Lawful Partial Participation**.
+V2 introduced the linear chain. V3 introduces **Lawful Partial Participation**.
 
-Not every verb touches every stage. `extract-model` stops at Stage 0. `build-ssdt` (schema) skips Stage 4 (Order). How do we model this without `null` checks and runtime exceptions?
+Not every verb touches every stage.
+- `extract-model` stops at Stage 0.
+- `build-ssdt` (schema) skips Stage 4 (Order).
+- `uat-users` (standalone) starts at Stage 3 (Transform).
 
-**The Solution: Typed Phase Algebra**.
-The pipeline state is not a monolith; it is an accumulator of **Evidence**.
+How do we model this without `null` checks? **Typed Phase Algebra**.
+
+## § 2.1 The Evidence Pattern
+
+The Pipeline State is not a monolith. It is an accumulator of **Evidence**.
 
 ```csharp
-// The Context accumulates evidence, allowing lawful skips
-public record PipelineContext(
-    Evidence<OsmModel> Model,              // Required for Stage 1
-    Evidence<DatabaseSnapshot> Snapshot,   // Required for Stage 3
-    Evidence<TopologicalOrder> Order,      // Required for Data Emission
-    Evidence<ArtifactManifest> Artifacts   // Required for Application
+public record PipelineState(
+    // Mandatory: The foundation
+    OsmModel Model,
+
+    // Evidence: Optional proofs of work
+    Evidence<DatabaseSnapshot>? Snapshot,
+    Evidence<TopologicalOrder>? Order,
+    Evidence<TransformRegistry>? Transforms
 );
+
+public class Evidence<T>
+{
+    public T Value { get; }
+    public DateTimeTimestamp Timestamp { get; }
+    public Checksum Checksum { get; }
+}
 ```
 
-**The Principled Skip**:
-*   **Schema Emission** skips **Stage 4 (Order)**.
-    *   *Ontological Reason*: DDL is declarative. `CREATE TABLE` order is semantically irrelevant to the database engine (FKs are constraints, not imperatives).
-    *   *Constraint*: We still enforce **Deterministic Order** (e.g., Alphabetical) for diff-ability, but we do not pay the cost of Topological Sort.
-*   **Data Emission** cannot skip **Stage 4**.
-    *   *Ontological Reason*: DML is imperative. `INSERT` order is semantically vital.
-    *   *Compiler Check*: `EmissionStrategy.Data` accepts `Evidence<TopologicalOrder>`. `EmissionStrategy.Schema` accepts `Evidence<OsmModel>`.
+## § 2.2 The Skipping Laws
+
+A stage can be skipped *if and only if* its output Evidence is not required by a subsequent mandatory stage.
+
+**Case Study: Schema Emission**
+- **Requires**: `Evidence<OsmModel>` (to generate CREATE TABLE).
+- **Does NOT Require**: `Evidence<TopologicalOrder>` (DDL is declarative).
+- **Outcome**: The `Order` stage can be skipped. The compiler allows `SchemaEmission` to consume `FetchCompleted` directly (or even `ExtractionCompleted`).
+
+**Case Study: Data Emission**
+- **Requires**: `Evidence<TopologicalOrder>` (to generate FK-safe INSERTs).
+- **Outcome**: The `Order` stage is **mandatory**. The compiler *forbids* `DataEmission` from consuming a state that lacks `Evidence<TopologicalOrder>`.
 
 ---
 
-## 🛡️ PART IV: PROTECTED CITIZENS (Invariants)
+# 🛡️ PART III: PROTECTED CITIZENS (The Invariants)
 
-These are the load-bearing walls. If these move, the building collapses.
+These are the non-negotiable laws. If these move, the architecture fails.
 
-### 1. The Global Topological Sort
-**The Truth**: Foreign Keys do not care about your "Static" vs "Regular" distinction.
-**The Law**: For any Data Emission, the Topological Sort must be **GLOBAL**.
-*   *Correction*: `StaticSeeds` currently sorts only its own subset. This is incorrect. It must sort the *entire* graph (including Regular entities it references), and *then* filter the output.
-*   *Mechanism*: `Order(AllSelected)` -> `Filter(IsStatic)` -> `Emit`.
+## § 3.1 The Global Topological Sort
+**The Law**: For Data Emission, the sort is **ALWAYS GLOBAL**.
 
-### 2. The DatabaseSnapshot (Truth Substrate)
-**The Truth**: The world state must be atomic.
-**The Law**: One Fetch. One Snapshot.
-*   *Correction*: Eliminate the triple-fetch (Metadata vs Stats vs Data).
-*   *Mechanism*: A unified `DatabaseSnapshot` primitive that captures `OSSYS` metadata, `sys` profiling stats, and `OSUSR` data in a coordinated read. This snapshot is the *only* source of truth for Stages 3-6.
+**The Receipt**:
+- **Failure**: `StaticSeeds` currently sorts `staticEntities` only (`BuildSsdtStaticSeedStep.cs:82`). This misses dependencies where `Regular -> Static`.
+- **Success**: `Bootstrap` sorts `allEntities` (`BuildSsdtBootstrapSnapshotStep.cs:105`).
+- **V3 Mandate**: We *always* sort the global graph. For `StaticSeeds`, we sort everything, *then* filter the sorted list to keep only static entities. This preserves the relative order mandated by the global graph.
 
-### 3. EntityFilters Wiring
-**The Truth**: Selection happens at the source, not the sink.
-**The Law**: `EntitySelector` drives the Fetch queries.
-*   *Correction*: "Supplemental Entities" are a symptom of broken filtering. Once `EntitySelector` is wired into the `SqlModelExtractionService` and `SqlDataProfiler`, the concept of "Supplemental" evaporates. Service Center Users are just `EntitySelector.Include("ServiceCenter", "User")`.
+## § 3.2 The DatabaseSnapshot (Truth Substrate)
+**The Law**: One Fetch. One Truth.
 
----
+**The Problem (Triple-Fetch)**:
+1. `Extract-Model` queries `OSSYS_ENTITY`.
+2. `Profile` queries `OSSYS_ENTITY` + `sys.tables`.
+3. `Export` queries `OSUSR_Data`.
+Result: Race conditions, performance waste, disconnected state.
 
-## 🧪 PART V: THE TRANSFORM PRAXIS (Stage 3)
+**The V3 Solution**:
+```csharp
+public class DatabaseSnapshot
+{
+    public OsmModel Model { get; }           // Metadata
+    public EntityStatistics Stats { get; }   // Profiling
+    public EntityDataSet Data { get; }       // Rows
+}
+```
+We fetch this *once* (Stage 2). All subsequent stages (Transform, Order, Emit) read from this immutable snapshot.
 
-Stage 3 (Business Logic) is the "Highest Risk Seam." V2 named the risk; V3 solves it with a **Praxis**.
+## § 3.3 EntityFilters Wiring (Scope at Source)
+**The Law**: Selection happens at the Query, not the Filter.
 
-### The Taxonomy: Discovery vs. Application
-We decouple *knowing* from *doing*.
-
-1.  **Discovery Transforms (Stage 3)**
-    *   *Role*: The Analyst.
-    *   *Input*: `DatabaseSnapshot`.
-    *   *Output*: `TransformationContext` (Policies, Maps, Decisions).
-    *   *Examples*: `UatUsersDiscovery` (Building the ID map), `NullabilityEvaluator` (Deciding on NOT NULL).
-    *   *Invariant*: **Read-Only / Additive**. Never mutates the Snapshot.
-
-2.  **Application Transforms (Stages 5 & 6)**
-    *   *Role*: The Enforcer.
-    *   *Input*: `TransformationContext` + `EmissionStrategy`.
-    *   *Output*: Modified SQL.
-    *   *Examples*: `UatUsersApply` (Swapping IDs in INSERT values), `TypeMappingPolicy` (Changing `int` to `bigint` in DDL).
-
-### The Transform Registry
-We do not allow "hidden" logic. All transforms must be registered in a central **Transform Registry**.
-
-*   **Registration**: Explicit dependency graph (`[UatUsersDiscovery] -> requires [DatabaseSnapshot]`).
-*   **Coverage Proof**: A test suite that fails if the Registry does not match the execution plan.
-*   **Excavation**: We do not refactor Stage 3; we **excavate** it. We grep, trace, and move logic into the Registry one by one.
+**The Receipt**:
+- **Current**: `SqlModelExtractionService` fetches all modules (`SELECT * FROM OSSYS_ESPACE`).
+- **V3 Mandate**: Inject `EntitySelector` into the SQL generation.
+- **Benefit**: Performance (don't fetch metadata for 500 modules if you only want 1).
+- **Obsolescence**: The "Supplemental Entity" workaround (loading `ossys_User.json` manually) dies. We just include `ServiceCenter::User` in the Selector.
 
 ---
 
-## 📡 PART VI: DIAGNOSTICS (The 3 Planes)
+# 🏭 PART IV: THE STAGE ARCHITECTURE (Detailed)
 
-"Diagnostics" is not a stage. It is a **Hyperplane** cutting through the entire pipeline. V3 disentangles the three orthogonal channels:
+The 7 stages of the Unified Pipeline.
 
-1.  **Observability (The Cockpit)**
-    *   *Nature*: Ephemeral, Live, Human-Centric.
-    *   *Mechanism*: `Spectre.Console` Tasks.
-    *   *Contract*: "Tell me you are alive and how fast you are going."
+## Stage 0: EXTRACT (Model Acquisition)
+**Goal**: Obtain the Schema (`OsmModel`).
+- **Input**: Connection String OR Cache Path.
+- **Operation**:
+  - Query `OSSYS` tables (Entity, Attribute, Relationship, Index).
+  - OR deserialize `.cache/model.json`.
+- **Output**: `Evidence<OsmModel>`.
 
-2.  **Auditability (The Receipts)**
-    *   *Nature*: Durable, Structured, Compliance-Centric.
-    *   *Mechanism*: `EmissionStrategy.Diagnostics` (CSV, JSON).
-    *   *Contract*: "Prove that the decision to tighten `User.Email` to `NOT NULL` was based on valid evidence."
+## Stage 1: SELECT (Scope Definition)
+**Goal**: Determine the working set.
+- **Input**: `EntitySelector` (Config).
+- **Operation**:
+  - Apply Module filters (`Include/Exclude`).
+  - Apply Entity filters (`ServiceCenter: [User]`).
+  - Apply Predicates (`Where(IsStatic)`).
+- **Output**: `SelectedEntities` (Set<EntityKey>).
 
-3.  **Debuggability (The Trace)**
-    *   *Nature*: Verbose, Technical, Developer-Centric.
-    *   *Mechanism*: Structured Logging (`ILogger`).
-    *   *Contract*: "If you crash, tell me exactly which Transform failed and why."
+## Stage 2: FETCH (World State Capture)
+**Goal**: Hydrate the Snapshot.
+- **Input**: `SelectedEntities`.
+- **Operation**:
+  - **Metadata**: (Already have from Stage 0).
+  - **Stats**: Run `SELECT COUNT(*), COUNT(NULL)` on selected tables.
+  - **Data**: Run `SELECT *` on selected tables (if Data Emission required).
+- **Output**: `Evidence<DatabaseSnapshot>`.
 
-**The Synthesis**: A single event (e.g., "Cycle Detected") is routed to all three planes:
-*   *Observability*: A yellow warning icon on the console.
-*   *Auditability*: An entry in `cycles.txt` with the cycle path.
-*   *Debuggability*: A log entry with the full stack trace of the Sorter.
+## Stage 3: TRANSFORM (Discovery & Logic)
+**Goal**: Apply Business Logic / Policies.
+- **Input**: `DatabaseSnapshot`.
+- **Operation**: Run registered **Discovery Transforms**.
+  - `NullabilityEvaluator`: Check stats vs mandatory flag.
+  - `UatUsersDiscovery`: Build ID mapping.
+  - `TypeMappingPolicy`: Apply overrides.
+- **Output**: `TransformationContext` (Policies, Decisions).
+
+## Stage 4: ORDER (Topological Sort)
+**Goal**: Establish Emission Order.
+- **Input**: `DatabaseSnapshot` (Relationships).
+- **Operation**:
+  - Build Dependency Graph (Nodes=Entities, Edges=FKs).
+  - Detect Cycles (SCCs).
+  - Apply `CircularDependencyOptions` (Manual breaks).
+  - Kahn's Algorithm.
+- **Output**: `Evidence<TopologicalOrder>` (List<EntityKey>).
+
+## Stage 5: EMIT (Artifact Generation)
+**Goal**: Materialize Output.
+- **Input**: `TopologicalOrder` + `EmissionStrategy` + `TransformationContext`.
+- **Operation**:
+  - **Schema**: Generate `CREATE TABLE`. (Skips Order).
+  - **Data**: Generate `INSERT`/`MERGE`. (Uses Order).
+    - Apply **Application Transforms** here (e.g., swap User IDs).
+  - **Diagnostics**: Write reports.
+- **Output**: `ArtifactManifest` (List of files).
+
+## Stage 6: APPLY (Execution)
+**Goal**: Touch the Database.
+- **Input**: `ArtifactManifest` + `InsertionStrategy`.
+- **Operation**:
+  - `None`: Stop.
+  - `SchemaOnly`: Run DDL.
+  - `Insert`/`Merge`: Run DML scripts.
+- **Output**: `DeploymentResult`.
 
 ---
 
-## 🚀 PART VII: THE EXECUTION RUNWAY (Vectors)
+# 🧪 PART V: THE TRANSFORM PRAXIS
 
-This is the ordered sequence of operations to materialize V3.
+Stage 3 is the "Danger Zone." We manage it with a strict Praxis.
 
-### Phase 1: The Foundation (Scoping & Truth)
-1.  **Vector 0: Domain-Neutral Renaming**. Rename `StaticEntityTableData` → `EntityTableData`. Stop the semantic lie.
-2.  **Vector 1: EntityFilters Wiring**. Wire `EntitySelector` into Fetch/Profile. Deprecate "Supplemental" logic (it dies here).
-3.  **Vector 7: DatabaseSnapshot**. Implement the unified fetch. Solve Triple-Fetch. Cache results.
+## § 5.1 Taxonomy: Discovery vs. Application
 
-### Phase 2: The Spine (Ordering & Logic)
-4.  **Vector 3: Global Topo Sort**. Enforce the global sort invariant for all data paths. Fix `StaticSeeds` correctness.
-5.  **Transform Excavation**. Build the `TransformRegistry`. Move `TypeMapping`, `Nullability`, and `UatUsers` into the Discovery/Application taxonomy.
+We decouple *analysis* from *enforcement*.
 
-### Phase 3: The Output (Emission & Unification)
-6.  **Vector 2: EmissionStrategy**. Unify Schema (`.sqlproj`) and Data (`.sql`) emitters. Fix per-module data brokenness (or deprecate).
-7.  **Vector 4: InsertionStrategy**. Parameterize `Insert` vs `Merge`.
-8.  **Vector 5: Extract-Model Integration**. Make `extract-model` a lawful Stage 0 participant.
+| Feature | Discovery Transform (Stage 3) | Application Transform (Stage 5/6) |
+| :--- | :--- | :--- |
+| **Role** | The Analyst | The Enforcer |
+| **Input** | Snapshot (Read-Only) | Context + Strategy |
+| **Output** | `TransformationContext` | SQL / Artifacts |
+| **Example** | `UatUsersDiscovery` (Find Orphans) | `UatUsersApply` (Remap IDs) |
+| **Example** | `NullabilityEvaluator` (Suggest NOT NULL) | `TighteningEnforcer` (Emit NOT NULL) |
 
----
+## § 5.2 The Transform Registry
 
-## 🎯 PART VIII: THE MANIFESTO (The Final Form)
-
-When V3 is complete, we do not describe the system as "a collection of scripts." We describe it as:
-
-> **The OutSystems Entity Pipeline is a composable, type-safe state machine that transforms a raw Database Snapshot into deployment artifacts, strictly enforcing topological correctness for data while allowing deterministic flexibility for schema.**
-
-The code will look like this (and the compiler will ensure it):
+No hidden logic. Every transform is registered.
 
 ```csharp
-// The V3 Invocation: Clean, Composable, Correct
-await EntityPipeline.ExecuteAsync(
-    context: new PipelineContext()
-        .WithScope(EntitySelector.AllModules())
-        .WithTransforms(TransformRegistry.Default),
+public class TransformRegistry
+{
+    public void Register<T>(T transform, TransformPhase phase, params Type[] dependencies);
+}
 
-    // The "Zenith" of Composition
-    strategy: new PipelineStrategy(
-        // Stage 0: Truth
-        fetch: FetchStrategy.UnifiedSnapshot(cache: true),
-
-        // Stage 4: Law
-        order: OrderStrategy.GlobalTopological(),
-
-        // Stage 5: Artifacts
-        emit: EmissionStrategy.Combined(
-            Schema: new SchemaEmission("Modules/", Order.Deterministic),
-            Data:   new DataEmission("Bootstrap/", Order.Topological),
-            Audit:  new DiagnosticEmission("Reports/")
-        ),
-
-        // Stage 6: Action
-        apply: InsertionStrategy.Insert(NonDestructive)
-    )
-);
+// Usage
+registry.Register(new UatUsersDiscovery(), Phase.Discovery, dependsOn: typeof(DatabaseSnapshot));
+registry.Register(new NullabilityEvaluator(), Phase.Discovery, dependsOn: typeof(ProfileStats));
 ```
 
-This is the architecture that was always waiting to be found.
+## § 5.3 The Excavation Method
+We do not refactor Stage 3; we **excavate** it.
+1.  **Identify**: Find hidden logic (e.g., `EntitySeedDeterminizer`).
+2.  **Classify**: Is it Discovery or Application?
+3.  **Lift**: Move code into a dedicated class implementing `IDiscoveryTransform` or `IApplicationTransform`.
+4.  **Register**: Add to the Registry.
+5.  **Test**: Assert that the Registry contains the transform and execution order is preserved.
+
+**Known Fossils to Excavate**:
+- `EntitySeedDeterminizer.Normalize`
+- `Module name collision handling`
+- `Supplemental physical->logical remapping`
+- `TypeMappingPolicy`
+- `NullabilityEvaluator`
+- `StaticSeedForeignKeyPreflight`
+
+---
+
+# 📡 PART VI: DIAGNOSTICS (The Hyperplane)
+
+Diagnostics is a hyperplane cutting through all stages. We model 3 orthogonal channels.
+
+## Plane 1: Observability (Trust)
+*   **Medium**: `Spectre.Console`.
+*   **Content**: Live progress, "Alive" signals.
+*   **Example**:
+    ```
+    [Stage 4] Ordering Entities...
+       Nodes: 450
+       Edges: 1200
+       Cycles: 2 (Resolved)
+    ```
+
+## Plane 2: Auditability (Receipts)
+*   **Medium**: `EmissionStrategy` Artifacts.
+*   **Content**: Durable proof of correctness.
+*   **Artifacts**:
+    - `profiling-report.csv`: Row counts, nulls.
+    - `validation-results.log`: Why we allowed a cycle.
+    - `transform-manifest.json`: Which transforms ran and what they decided.
+
+## Plane 3: Debuggability (Trace)
+*   **Medium**: `ILogger` (Serilog).
+*   **Content**: Stack traces, verbose logic flow.
+*   **Example**: `[Debug] Cycle detected in SCC {User, Role}. Breaking edge User->Role based on Config.`
+
+---
+
+# 🚀 PART VII: THE EXECUTION RUNWAY (Vectors)
+
+The implementation plan, strictly ordered by dependency and risk.
+
+## Phase 1: Foundation (Scope & Truth)
+
+### Vector 0: Domain-Neutral Renaming
+*   **Goal**: Stop the semantic lie.
+*   **Action**: Rename `StaticEntityTableData` → `EntityTableData`. Rename `StaticSeedSqlBuilder` → `EntitySqlBuilder`.
+*   **Receipt**: `src/Osm.Emission/Seeds/StaticEntityTableData.cs`.
+
+### Vector 1: EntityFilters Wiring
+*   **Goal**: Precise Scope. Kill "Supplemental".
+*   **Action**: Pass `EntitySelector` to `SqlModelExtractionService`. Update queries to filter by Module/Entity.
+*   **Verification**: Extract *only* `ServiceCenter::User`.
+
+### Vector 7: DatabaseSnapshot
+*   **Goal**: Solve Triple-Fetch.
+*   **Action**: Create `DatabaseSnapshot` class. Orchestrate single fetch in Stage 2.
+*   **Dependency**: Vector 1 (need Selector to know what to fetch).
+
+## Phase 2: The Spine (Order & Logic)
+
+### Vector 3: Global Topo Sort
+*   **Goal**: Correctness for Data Emission.
+*   **Action**: Use `Bootstrap`'s global sort logic for *all* data pipelines.
+*   **Fix**: `StaticSeeds` pipeline must sort Global, then Filter Static.
+*   **Invariant**: `DataEmission` throws if `Order` is partial.
+
+### Vector 6: Transform Excavation
+*   **Goal**: Safe Business Logic.
+*   **Action**: Implement `TransformRegistry`. Lift known transforms.
+*   **Test**: `TransformRegistryTests` ensuring ordering.
+
+## Phase 3: Unification (Emission)
+
+### Vector 2: EmissionStrategy
+*   **Goal**: Unified Output.
+*   **Action**: Create `EmissionStrategy` abstract base. Implement `Schema`, `Data`, `Combined`.
+*   **Fix**: Per-module Data emission is broken (no .sqlproj). Add .sqlproj generation for Data, or deprecate per-module Data.
+
+### Vector 4: InsertionStrategy
+*   **Goal**: Unified Application.
+*   **Action**: Parameterize `Insert` (Bootstrap) vs `Merge` (StaticSeeds).
+
+### Vector 5: Extract-Model Integration
+*   **Goal**: UX Coherence.
+*   **Action**: Wire `extract-model` as Stage 0.
+
+---
+
+# 💻 PART VIII: THE UNIFIED INVOCATION (Code)
+
+The target state.
+
+```csharp
+// The V3 Definition
+public class EntityPipeline
+{
+    public async Task<Result<DeploymentResult>> ExecuteAsync(PipelineOptions options)
+    {
+        // 1. Build Context (Scope + Transforms)
+        var context = new PipelineContext()
+            .WithScope(options.Selector)
+            .WithTransforms(options.Registry);
+
+        // 2. Execute Spine
+        return await context
+            // Stage 0: Truth
+            .Bind(ctx => ExtractModel(ctx, options.Connection))
+
+            // Stage 1: Select
+            .Bind(SelectEntities)
+
+            // Stage 2: Fetch (The Snapshot)
+            .Bind(FetchSnapshot)
+
+            // Stage 3: Transform (Discovery)
+            .Bind(DiscoverTransforms)
+
+            // Stage 4: Order (Global Invariant)
+            .Bind(GlobalTopologicalSort)
+
+            // Stage 5: Emit (Strategy Pattern)
+            .Bind(ctx => EmitArtifacts(ctx, options.EmissionStrategy))
+
+            // Stage 6: Apply (Strategy Pattern)
+            .Bind(ctx => ApplyChanges(ctx, options.InsertionStrategy));
+    }
+}
+
+// Usage: Full Export
+var result = await pipeline.ExecuteAsync(new PipelineOptions {
+    Selector = EntitySelector.AllModules(),
+    EmissionStrategy = EmissionStrategy.Combined(
+        Schema: new SchemaEmission("Modules/", Order.Deterministic),
+        Data: new DataEmission("Bootstrap/", Order.Topological)
+    ),
+    InsertionStrategy = InsertionStrategy.Insert(NonDestructive),
+    Registry = TransformRegistry.Default
+});
+```
+
+---
+
+# 📉 APPENDIX: DEPRECATIONS & MIGRATIONS
+
+### Deprecations
+*   **Supplemental Entity Loading**: Replaced by `EntitySelector.Include()`.
+*   **DynamicData**: Replaced by `Bootstrap` (Unified Pipeline).
+*   **StaticSeeds (Legacy Pipeline)**: Replaced by Unified Pipeline with `Scope=Static`, `Insertion=Merge`.
+
+### Migrations
+*   **Config**: Convert `ModuleFilterOptions` to `EntitySelector` configuration.
+*   **Output**: `StaticSeeds` output remains byte-identical (verified by tests), but generation path changes.
+
+---
+
+**This is the architecture.** It is not an invention. It is the inevitable conclusion of the system's evolution.
