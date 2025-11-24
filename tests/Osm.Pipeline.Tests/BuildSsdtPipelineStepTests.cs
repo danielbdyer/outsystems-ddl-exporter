@@ -332,7 +332,7 @@ public class BuildSsdtPipelineStepTests
             defaults.Emission.PerTableFiles,
             defaults.Emission.IncludePlatformAutoIndexes,
             defaults.Emission.SanitizeModuleNames,
-            defaults.Emission.EmitBareTableOnly,
+            defaults.Emission.EmitTableMode,
             defaults.Emission.EmitTableHeaders,
             defaults.Emission.ModuleParallelism,
             defaults.Emission.NamingOverrides,
@@ -464,7 +464,10 @@ public class BuildSsdtPipelineStepTests
         var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
         var dynamicState = (await dynamicInsertStep.ExecuteAsync(seedState)).Value;
 
-        var bootstrapSnapshotStep = new BuildSsdtBootstrapSnapshotStep(new StaticSeedSqlBuilder(new SqlLiteralFormatter()));
+        var literalFormatter = new SqlLiteralFormatter();
+        var bootstrapSnapshotStep = new BuildSsdtBootstrapSnapshotStep(
+            new StaticSeedSqlBuilder(literalFormatter),
+            new PhasedDynamicEntityInsertGenerator(literalFormatter));
         var bootstrapSnapshotState = (await bootstrapSnapshotStep.ExecuteAsync(dynamicState)).Value;
 
         var postDeploymentTemplateStep = new BuildSsdtPostDeploymentTemplateStep();
