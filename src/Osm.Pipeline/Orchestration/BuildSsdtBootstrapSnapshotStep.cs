@@ -10,6 +10,7 @@ using Osm.Domain;
 using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Smo;
 
@@ -23,10 +24,14 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
 {
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
     private readonly StaticSeedSqlBuilder _sqlBuilder;
+    private readonly PhasedDynamicEntityInsertGenerator _phasedGenerator;
 
-    public BuildSsdtBootstrapSnapshotStep(StaticSeedSqlBuilder sqlBuilder)
+    public BuildSsdtBootstrapSnapshotStep(
+        StaticSeedSqlBuilder sqlBuilder,
+        PhasedDynamicEntityInsertGenerator phasedGenerator)
     {
         _sqlBuilder = sqlBuilder ?? throw new ArgumentNullException(nameof(sqlBuilder));
+        _phasedGenerator = phasedGenerator ?? throw new ArgumentNullException(nameof(phasedGenerator));
     }
 
     public async Task<Result<BootstrapSnapshotGenerated>> ExecuteAsync(
@@ -102,12 +107,23 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
         // Get circular dependency options for manual ordering
         var circularDepsOptions = state.Request.CircularDependencyOptions ?? CircularDependencyOptions.Empty;
 
+        var diagnostics = new List<string>();
         var ordering = EntityDependencySorter.SortByForeignKeys(
             allEntities,
             model,
             state.Request.Scope.SmoOptions.NamingOverrides,
             sortOptions,
-            circularDepsOptions);
+            circularDepsOptions,
+            diagnostics);
+
+        // Log diagnostics from auto-resolution
+        foreach (var diagnostic in diagnostics)
+        {
+            state.Log.Record(
+                "bootstrap.snapshot.auto-resolution-diagnostic",
+                diagnostic,
+                new PipelineLogMetadataBuilder().Build());
+        }
 
         var orderedEntities = ordering.Tables;
 
@@ -126,9 +142,36 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
                     .Build());
         }
 
+        // Emit cycle diagnostics if detected (even after auto-resolution attempts)
+        if (ordering.CycleDetected)
+        {
+            var hasSccData = ordering.StronglyConnectedComponents.HasValue &&
+                             !ordering.StronglyConnectedComponents.Value.IsDefaultOrEmpty;
+            
+            var cycleDetails = hasSccData
+                ? $"{ordering.StronglyConnectedComponents!.Value.Length} strongly connected component(s) detected: " +
+                  string.Join("; ", ordering.StronglyConnectedComponents.Value.Select(scc =>
+                      $"[{scc.Length} tables: {string.Join(", ", scc.Take(5))}{(scc.Length > 5 ? $" +{scc.Length - 5} more" : "")}]"))
+                : "Cycle detected but SCC details not available";
+
+            state.Log.Record(
+                "bootstrap.snapshot.cycle-detected",
+                ordering.AlphabeticalFallbackApplied
+                    ? $"ATTENTION: Circular dependencies detected and auto-resolution failed. Falling back to alphabetical ordering. {cycleDetails}"
+                    : $"Circular dependencies detected. {cycleDetails}",
+                new PipelineLogMetadataBuilder()
+                    .WithCount("ordering.scc.count", hasSccData ? ordering.StronglyConnectedComponents!.Value.Length : 0)
+                    .WithValue("ordering.fallback.applied", ordering.AlphabeticalFallbackApplied ? "true" : "false")
+                    .Build());
+        }
+
         // Generate bootstrap snapshot script with observability
         var validationOverrides = state.Request.Scope.ModuleFilter.ValidationOverrides;
-        var bootstrapScript = GenerateBootstrapScript(orderedEntities, ordering, validation, model, validationOverrides);
+        // TODO: Phased loading disabled pending further testing - use alphabetical fallback for now
+        var usePhasedLoading = false; // state.Request.PhasedLoadingEnabled && ordering.CycleDetected;
+        var bootstrapScript = usePhasedLoading
+            ? GeneratePhasedBootstrapScript(orderedEntities, ordering, validation, model, state.Request.Scope.SmoOptions.NamingOverrides)
+            : GenerateBootstrapScript(orderedEntities, ordering, validation, model, validationOverrides);
 
         // Write to Bootstrap directory
         var bootstrapDirectory = Path.Combine(state.Request.OutputDirectory, "Bootstrap");
@@ -181,6 +224,50 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
             BootstrapTopologicalOrderApplied: ordering.TopologicalOrderingApplied,
             BootstrapOrderingMode: ordering.Mode,
             BootstrapEntityCount: orderedEntities.Length));
+    }
+
+    private string GeneratePhasedBootstrapScript(
+        ImmutableArray<StaticEntityTableData> orderedEntities,
+        EntityDependencySorter.EntityDependencyOrderingResult ordering,
+        TopologicalValidationResult validation,
+        OsmModel model,
+        NamingOverrideOptions namingOverrides)
+    {
+        var builder = new StringBuilder();
+
+        // Header with phased loading metadata
+        builder.AppendLine("--------------------------------------------------------------------------------");
+        builder.AppendLine("-- Bootstrap Snapshot: Phased Loading Strategy (NULL→UPDATE)");
+        builder.AppendLine($"-- Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
+        builder.AppendLine($"-- Total Entities: {orderedEntities.Length}");
+        builder.AppendLine($"-- Strategy: Phased loading to resolve circular dependencies");
+        builder.AppendLine("--");
+        builder.AppendLine("-- Phase 1: INSERT with nullable FKs = NULL (mandatory-edge topological order)");
+        builder.AppendLine("-- Phase 2: UPDATE to populate nullable FK values after all tables exist");
+        builder.AppendLine("--");
+        builder.AppendLine("-- This eliminates the need for constraint disabling while respecting FK integrity.");
+        builder.AppendLine("--------------------------------------------------------------------------------");
+        builder.AppendLine();
+
+        // Generate phased script using PhasedDynamicEntityInsertGenerator
+        var dataset = new DynamicEntityDataset(orderedEntities);
+        var phasedScript = _phasedGenerator.Generate(
+            dataset,
+            model,
+            namingOverrides,
+            EntityDependencySortOptions.Default,
+            CircularDependencyOptions.Empty);
+
+        builder.Append(phasedScript.ToScript());
+
+        // Footer
+        builder.AppendLine();
+        builder.AppendLine("--------------------------------------------------------------------------------");
+        builder.AppendLine($"-- Bootstrap Snapshot Complete: {orderedEntities.Length} entities loaded");
+        builder.AppendLine($"-- Phased Loading: {(phasedScript.RequiresPhasing ? "ENABLED" : "NOT REQUIRED")}");
+        builder.AppendLine("--------------------------------------------------------------------------------");
+
+        return builder.ToString();
     }
 
     private string GenerateBootstrapScript(
@@ -250,24 +337,48 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
                 if (!cycle.IsAllowed)
                 {
                     builder.AppendLine("--");
-                    builder.AppendLine("--   Recommendation:");
+                    builder.AppendLine("--   Analysis:");
+                    
                     var hasNullableFK = cycle.ForeignKeys.Any(fk => fk.IsNullable);
-                    if (hasNullableFK)
+                    var hasCascade = cycle.ForeignKeys.Any(fk => fk.DeleteRule.Contains("CASCADE", StringComparison.OrdinalIgnoreCase));
+                    var hasStrongCycle = cycle.ForeignKeys.Any(fk => !fk.IsNullable || fk.DeleteRule.Contains("CASCADE", StringComparison.OrdinalIgnoreCase));
+                    
+                    // Count weak vs strong edges
+                    var foreignKeysList = cycle.ForeignKeys.ToList();
+                    var weakEdgeCount = foreignKeysList.Count(fk => fk.IsNullable && !fk.DeleteRule.Contains("CASCADE", StringComparison.OrdinalIgnoreCase));
+                    var strongEdgeCount = foreignKeysList.Count - weakEdgeCount;
+                    
+                    builder.AppendLine($"--     Weak edges (nullable, non-CASCADE): {weakEdgeCount}");
+                    builder.AppendLine($"--     Strong edges (NOT NULL or CASCADE): {strongEdgeCount}");
+                    builder.AppendLine("--");
+                    
+                    if (!hasNullableFK)
                     {
-                        var nullableFKs = cycle.ForeignKeys.Where(fk => fk.IsNullable).Select(fk => fk.ConstraintName);
-                        builder.AppendLine($"--     Cycle can be handled with phased loading (nullable FKs: {string.Join(", ", nullableFKs)})");
-                        builder.AppendLine("--     Strategy: INSERT with NULL → INSERT dependents → UPDATE with FK values");
+                        builder.AppendLine("--   Recommendation:");
+                        builder.AppendLine("--     ⚠️  All FKs are NOT NULL - circular reference cannot be auto-resolved");
+                        builder.AppendLine("--     Action Required: Make at least one FK nullable or provide manual cycle ordering");
+                    }
+                    else if (hasStrongCycle && cycle.TablesInCycle.Count() > 2)
+                    {
+                        builder.AppendLine("--   Recommendation:");
+                        builder.AppendLine("--     ⚠️  Cycle contains strong edges (NOT NULL or CASCADE) that form an unbreakable loop");
+                        builder.AppendLine("--     Auto-resolution failed: Alphabetical fallback applied - FK order not guaranteed");
+                        if (hasCascade)
+                        {
+                            builder.AppendLine("--     🚨 CASCADE deletes in cycle - phased loading strategy may cause data loss!");
+                        }
+                        builder.AppendLine("--     Action Required: Provide manual cycle ordering via CircularDependencyOptions");
                     }
                     else
                     {
-                        builder.AppendLine("--     ⚠️  All FKs are NOT NULL - circular reference cannot be resolved without schema changes");
-                        builder.AppendLine("--     Consider making at least one FK nullable to enable phased loading");
-                    }
-
-                    var hasCascade = cycle.ForeignKeys.Any(fk => fk.DeleteRule.Contains("CASCADE", StringComparison.OrdinalIgnoreCase));
-                    if (hasCascade)
-                    {
-                        builder.AppendLine("--     🚨 WARNING: CASCADE delete detected in circular dependency - may cause unexpected data loss!");
+                        builder.AppendLine("--   Recommendation:");
+                        var nullableFKs = cycle.ForeignKeys.Where(fk => fk.IsNullable).Select(fk => fk.ConstraintName);
+                        builder.AppendLine($"--     Cycle can be handled with phased loading (nullable FKs: {string.Join(", ", nullableFKs)})");
+                        builder.AppendLine("--     Strategy: INSERT with NULL → INSERT dependents → UPDATE with FK values");
+                        if (hasCascade)
+                        {
+                            builder.AppendLine("--     🚨 WARNING: CASCADE delete detected - verify phased loading strategy!");
+                        }
                     }
                 }
 
