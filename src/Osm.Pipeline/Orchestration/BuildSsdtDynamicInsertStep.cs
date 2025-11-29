@@ -20,10 +20,14 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     private readonly DynamicEntityInsertGenerator _generator;
+    private readonly PhasedDynamicEntityInsertGenerator _phasedGenerator;
 
-    public BuildSsdtDynamicInsertStep(DynamicEntityInsertGenerator generator)
+    public BuildSsdtDynamicInsertStep(
+        DynamicEntityInsertGenerator generator,
+        PhasedDynamicEntityInsertGenerator phasedGenerator)
     {
         _generator = generator ?? throw new ArgumentNullException(nameof(generator));
+        _phasedGenerator = phasedGenerator ?? throw new ArgumentNullException(nameof(phasedGenerator));
     }
 
     public async Task<Result<DynamicInsertsGenerated>> ExecuteAsync(
@@ -99,6 +103,17 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
             sortOptions: sortOptions,
             circularDependencyOptions: state.Request.CircularDependencyOptions);
 
+        var phasedDataset = artifacts
+            .Select(static artifact => artifact.ToTableData())
+            .ToImmutableArray();
+
+        var phasedScript = _phasedGenerator.Generate(
+            new DynamicEntityDataset(phasedDataset),
+            state.Bootstrap.FilteredModel,
+            namingOverrides,
+            sortOptions,
+            state.Request.CircularDependencyOptions);
+
         var dynamicOrderApplied = ordering.TopologicalOrderingApplied;
         var dynamicOrderingMode = ordering.Mode;
         if (artifacts.IsDefaultOrEmpty || artifacts.Length == 0)
@@ -149,7 +164,8 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 state.Log,
                 cancellationToken).ConfigureAwait(false),
             DynamicInsertOutputMode.SingleFile => ImmutableArray.Create(
-                await WriteSingleFileScriptAsync(outputRoot!, artifacts, cancellationToken).ConfigureAwait(false)),
+                await WriteSingleFileScriptAsync(outputRoot!, phasedScript, phasedDataset.Length, cancellationToken)
+                    .ConfigureAwait(false)),
             _ => throw new InvalidOperationException($"Unsupported dynamic insert output mode: {state.Request.DynamicInsertOutputMode}.")
         };
 
@@ -268,7 +284,8 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
 
     private static async Task<string> WriteSingleFileScriptAsync(
         string outputRoot,
-        ImmutableArray<DynamicEntityInsertArtifact> artifacts,
+        PhasedInsertScript phasedScript,
+        int tableCount,
         CancellationToken cancellationToken)
     {
         var filePath = Path.Combine(outputRoot, "DynamicData.all.dynamic.sql");
@@ -277,18 +294,15 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
         await using var writer = new StreamWriter(stream, Utf8NoBom);
 
         await writer.WriteLineAsync("--------------------------------------------------------------------------------").ConfigureAwait(false);
-        await writer.WriteLineAsync("-- Consolidated dynamic entity INSERT replay script").ConfigureAwait(false);
-        await writer.WriteLineAsync($"-- Tables: {artifacts.Length}").ConfigureAwait(false);
+        await writer.WriteLineAsync("-- Consolidated dynamic entity MERGE replay script (phased)").ConfigureAwait(false);
+        await writer.WriteLineAsync($"-- Tables: {tableCount}").ConfigureAwait(false);
+        await writer.WriteLineAsync("-- Phase 1: MERGE rows with nullable FK columns set to NULL").ConfigureAwait(false);
+        await writer.WriteLineAsync("-- Phase 2: UPDATE nullable FK columns after all rows exist").ConfigureAwait(false);
         await writer.WriteLineAsync("--------------------------------------------------------------------------------").ConfigureAwait(false);
         await writer.WriteLineAsync().ConfigureAwait(false);
 
-        foreach (var artifact in artifacts)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            await artifact.WriteAsync(writer, cancellationToken).ConfigureAwait(false);
-            await writer.WriteLineAsync().ConfigureAwait(false);
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        await writer.WriteAsync(phasedScript.ToScript().AsMemory(), cancellationToken).ConfigureAwait(false);
 
         return filePath;
     }

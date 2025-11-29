@@ -417,7 +417,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
             builder.AppendLine($"-- Topological Order: {i + 1} of {orderedEntities.Length}");
             builder.AppendLine();
 
-            // Generate INSERT statement (NonDestructive mode for fast bootstrap on fresh database)
+            // Generate MERGE statement (NonDestructive mode for idempotent bootstrap on fresh database)
             var insertScript = _sqlBuilder.BuildBlock(entity, StaticSeedSynchronizationMode.NonDestructive, validationOverrides);
             builder.AppendLine(insertScript);
 

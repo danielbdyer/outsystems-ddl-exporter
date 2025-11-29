@@ -79,6 +79,11 @@ public sealed class DynamicEntityInsertArtifact
 
     public StaticEntitySeedTableDefinition Definition => _definition;
 
+    public StaticEntityTableData ToTableData()
+    {
+        return new StaticEntityTableData(_definition, _rows);
+    }
+
     public async Task WriteAsync(TextWriter writer, CancellationToken cancellationToken)
     {
         if (writer is null)
