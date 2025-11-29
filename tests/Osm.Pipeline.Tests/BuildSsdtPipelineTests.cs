@@ -380,8 +380,10 @@ public class BuildSsdtPipelineTests
         var sqlProjectStep = new BuildSsdtSqlProjectStep();
         var validationStep = new BuildSsdtSqlValidationStep(sqlValidator ?? new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
-        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
         var literalFormatter = new SqlLiteralFormatter();
+        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(
+            new DynamicEntityInsertGenerator(literalFormatter),
+            new PhasedDynamicEntityInsertGenerator(literalFormatter));
         var bootstrapSnapshotStep = new BuildSsdtBootstrapSnapshotStep(
             new StaticSeedSqlBuilder(literalFormatter),
             new PhasedDynamicEntityInsertGenerator(literalFormatter));

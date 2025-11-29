@@ -147,8 +147,10 @@ public sealed class SsdtMatrixTests
         var sqlProjectStep = new BuildSsdtSqlProjectStep();
         var sqlValidationStep = new BuildSsdtSqlValidationStep(new SsdtSqlValidator());
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
-        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
         var literalFormatter = new SqlLiteralFormatter();
+        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(
+            new DynamicEntityInsertGenerator(literalFormatter),
+            new PhasedDynamicEntityInsertGenerator(literalFormatter));
         var bootstrapSnapshotStep = new BuildSsdtBootstrapSnapshotStep(
             new StaticSeedSqlBuilder(literalFormatter),
             new PhasedDynamicEntityInsertGenerator(literalFormatter));

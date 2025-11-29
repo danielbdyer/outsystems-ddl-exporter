@@ -163,7 +163,7 @@ public sealed class StaticSeedSqlBuilder
 
         var updatableColumns = definition.Columns.Where(column => !column.IsPrimaryKey).ToArray();
 
-        // Generate INSERT or MERGE statements (batched if necessary)
+        // Generate MERGE statements (batched if necessary)
         if (requiresBatching)
         {
             var batches = PartitionRows(rows, _batchSize).ToArray();
@@ -175,28 +175,32 @@ public sealed class StaticSeedSqlBuilder
                 builder.AppendLine($"PRINT 'Applying batch {batchIndex + 1}/{batches.Length} for {targetIdentifier} ({batch.Length} rows)';");
                 builder.AppendLine();
                 
-                if (synchronizationMode == StaticSeedSynchronizationMode.NonDestructive)
-                {
-                    AppendInsertStatement(builder, batchData, targetIdentifier, columnNames, columnList);
-                }
-                else
-                {
-                    AppendMergeStatement(builder, batchData, targetIdentifier, columnNames, columnList, 
-                        primaryColumns, updatableColumns, synchronizationMode);
-                }
+                AppendMergeStatement(
+                    builder,
+                    batchData,
+                    targetIdentifier,
+                    columnNames,
+                    columnList,
+                    primaryColumns,
+                    synchronizationMode == StaticSeedSynchronizationMode.NonDestructive
+                        ? Array.Empty<StaticEntitySeedColumn>()
+                        : updatableColumns,
+                    synchronizationMode);
             }
         }
         else
         {
-            if (synchronizationMode == StaticSeedSynchronizationMode.NonDestructive)
-            {
-                AppendInsertStatement(builder, tableData, targetIdentifier, columnNames, columnList);
-            }
-            else
-            {
-                AppendMergeStatement(builder, tableData, targetIdentifier, columnNames, columnList,
-                    primaryColumns, updatableColumns, synchronizationMode);
-            }
+            AppendMergeStatement(
+                builder,
+                tableData,
+                targetIdentifier,
+                columnNames,
+                columnList,
+                primaryColumns,
+                synchronizationMode == StaticSeedSynchronizationMode.NonDestructive
+                    ? Array.Empty<StaticEntitySeedColumn>()
+                    : updatableColumns,
+                synchronizationMode);
         }
 
         if (hasIdentity)
@@ -206,25 +210,6 @@ public sealed class StaticSeedSqlBuilder
         }
 
         return builder.ToString();
-    }
-
-    private void AppendInsertStatement(
-        StringBuilder builder,
-        StaticEntityTableData tableData,
-        string targetIdentifier,
-        string[] columnNames,
-        string columnList)
-    {
-        builder.Append("INSERT INTO ");
-        builder.Append(targetIdentifier);
-        builder.Append(" (");
-        builder.Append(columnList);
-        builder.AppendLine(")");
-        AppendValuesClause(builder, tableData, "");
-        builder.AppendLine(";");
-        builder.AppendLine();
-        builder.AppendLine("GO");
-        builder.AppendLine();
     }
 
     private void AppendMergeStatement(

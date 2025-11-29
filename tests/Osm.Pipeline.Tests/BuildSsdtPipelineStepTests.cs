@@ -461,10 +461,12 @@ public class BuildSsdtPipelineStepTests
         var staticSeedStep = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
         var seedState = (await staticSeedStep.ExecuteAsync(validatedState)).Value;
 
-        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
+        var literalFormatter = new SqlLiteralFormatter();
+        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(
+            new DynamicEntityInsertGenerator(literalFormatter),
+            new PhasedDynamicEntityInsertGenerator(literalFormatter));
         var dynamicState = (await dynamicInsertStep.ExecuteAsync(seedState)).Value;
 
-        var literalFormatter = new SqlLiteralFormatter();
         var bootstrapSnapshotStep = new BuildSsdtBootstrapSnapshotStep(
             new StaticSeedSqlBuilder(literalFormatter),
             new PhasedDynamicEntityInsertGenerator(literalFormatter));
@@ -555,7 +557,10 @@ public class BuildSsdtPipelineStepTests
             }
         };
 
-        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
+        var literalFormatter = new SqlLiteralFormatter();
+        var dynamicInsertStep = new BuildSsdtDynamicInsertStep(
+            new DynamicEntityInsertGenerator(literalFormatter),
+            new PhasedDynamicEntityInsertGenerator(literalFormatter));
         var dynamicStateResult = await dynamicInsertStep.ExecuteAsync(singleFileSeedState);
 
         Assert.True(dynamicStateResult.IsSuccess);
@@ -566,8 +571,10 @@ public class BuildSsdtPipelineStepTests
         Assert.True(File.Exists(scriptPath));
 
         var content = await File.ReadAllTextAsync(scriptPath);
-        Assert.Contains("-- Consolidated dynamic entity INSERT replay script", content);
-        Assert.Contains("INSERT INTO", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("-- Consolidated dynamic entity MERGE replay script", content);
+        Assert.Contains("PHASE 1", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PHASE 2", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("MERGE", content, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -576,7 +583,10 @@ public class BuildSsdtPipelineStepTests
         using var output = new TempDirectory();
         var fixture = CreateSanitizedDynamicFixture();
         var seedState = CreateStaticSeedsGeneratedState(output.Path, fixture.Model, fixture.Dataset, fixture.NamingOverrides);
-        var step = new BuildSsdtDynamicInsertStep(new DynamicEntityInsertGenerator(new SqlLiteralFormatter()));
+        var literalFormatter = new SqlLiteralFormatter();
+        var step = new BuildSsdtDynamicInsertStep(
+            new DynamicEntityInsertGenerator(literalFormatter),
+            new PhasedDynamicEntityInsertGenerator(literalFormatter));
 
         var result = await step.ExecuteAsync(seedState);
 

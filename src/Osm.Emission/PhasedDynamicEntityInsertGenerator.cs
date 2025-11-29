@@ -3,15 +3,16 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
-using Osm.Emission.Formatting;
 using Osm.Emission.Seeds;
+using Osm.Emission.Formatting;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
+using EntityDependencyOrderingResult = Osm.Emission.Seeds.EntityDependencySorter.EntityDependencyOrderingResult;
 
 namespace Osm.Emission;
 
 /// <summary>
-/// Generates dynamic entity INSERT statements using phased loading strategy
+/// Generates dynamic entity MERGE statements using phased loading strategy
 /// to resolve circular dependencies without disabling constraints.
 /// 
 /// Strategy:
@@ -30,7 +31,7 @@ public sealed class PhasedDynamicEntityInsertGenerator
     }
 
     /// <summary>
-    /// Generates phased INSERT scripts for a dataset with circular dependencies.
+    /// Generates phased MERGE scripts for a dataset with circular dependencies.
     /// </summary>
     public PhasedInsertScript Generate(
         DynamicEntityDataset dataset,
@@ -58,15 +59,16 @@ public sealed class PhasedDynamicEntityInsertGenerator
 
         if (!ordering.CycleDetected)
         {
-            // No cycles - just emit standard INSERTs
-            return GenerateStandardInserts(ordering.Tables, model);
+            // No cycles - just emit standard MERGEs
+            return GenerateStandardMerges(ordering.Tables, model);
         }
 
         // Cycles detected - use phased loading
-        return GeneratePhasedInserts(ordering.Tables, model, namingOverrides);
+        var cycleTableSet = BuildCycleTableSet(ordering);
+        return GeneratePhasedMerges(ordering.Tables, model, namingOverrides, cycleTableSet);
     }
 
-    private PhasedInsertScript GenerateStandardInserts(
+    private PhasedInsertScript GenerateStandardMerges(
         ImmutableArray<StaticEntityTableData> tables,
         OsmModel? model)
     {
@@ -74,8 +76,9 @@ public sealed class PhasedDynamicEntityInsertGenerator
 
         foreach (var table in tables)
         {
-            var insertSql = GenerateInsertForTable(table, model, null);
-            inserts.Add(insertSql);
+            var keyColumns = GetKeyColumns(table.Definition.Columns);
+            var mergeSql = GenerateMergeForTable(table, keyColumns, model, null);
+            inserts.Add(mergeSql);
         }
 
         return new PhasedInsertScript(
@@ -84,36 +87,55 @@ public sealed class PhasedDynamicEntityInsertGenerator
             RequiresPhasing: false);
     }
 
-    private PhasedInsertScript GeneratePhasedInserts(
+    private PhasedInsertScript GeneratePhasedMerges(
         ImmutableArray<StaticEntityTableData> tables,
         OsmModel? model,
-        NamingOverrideOptions namingOverrides)
+        NamingOverrideOptions namingOverrides,
+        HashSet<string> cycleTables)
     {
         var phaseOneInserts = new List<string>();
         var phaseTwoUpdates = new List<string>();
 
         // Build entity lookup for FK analysis
         var entityLookup = BuildEntityLookup(model);
+        var restrictToExplicitCycleSet = cycleTables.Count > 0;
 
         foreach (var table in tables)
         {
-            if (!entityLookup.TryGetValue(table.Definition.PhysicalName, out var entity))
+            var keyColumns = GetKeyColumns(table.Definition.Columns);
+
+            var physicalName = table.Definition.PhysicalName ?? table.Definition.LogicalName;
+            var qualifiedName = string.IsNullOrWhiteSpace(table.Definition.Schema)
+                ? physicalName
+                : $"{table.Definition.Schema}.{physicalName}";
+            var tableInCycle = !restrictToExplicitCycleSet ||
+                (!string.IsNullOrWhiteSpace(physicalName) && cycleTables.Contains(physicalName)) ||
+                (!string.IsNullOrWhiteSpace(qualifiedName) && cycleTables.Contains(qualifiedName));
+
+            var lookupKey = table.Definition.PhysicalName ?? table.Definition.LogicalName;
+
+            if (string.IsNullOrWhiteSpace(lookupKey) || !entityLookup.TryGetValue(lookupKey, out var entity))
             {
-                // No metadata - emit standard INSERT
-                phaseOneInserts.Add(GenerateInsertForTable(table, model, null));
+                // No metadata - emit standard MERGE
+                phaseOneInserts.Add(GenerateMergeForTable(table, keyColumns, model, null));
+                continue;
+            }
+
+            if (!tableInCycle)
+            {
+                phaseOneInserts.Add(GenerateMergeForTable(table, keyColumns, model, columnsToNull: null));
                 continue;
             }
 
             // Identify nullable FKs that should be NULLed in phase 1
-            var nullableFKColumns = IdentifyNullableFKColumns(entity, tables, entityLookup);
-
-            // Phase 1: INSERT with nullable FKs = NULL
-            phaseOneInserts.Add(GenerateInsertForTable(table, model, nullableFKColumns));
+            var nullableFKColumns = IdentifyNullableFKColumns(entity, cycleTables, restrictToExplicitCycleSet);
+            // Phase 1: MERGE with nullable FKs = NULL
+            phaseOneInserts.Add(GenerateMergeForTable(table, keyColumns, model, nullableFKColumns));
 
             // Phase 2: UPDATE nullable FKs
             if (nullableFKColumns.Count > 0)
             {
-                var updateSql = GenerateUpdateForNullableFKs(table, entity, nullableFKColumns);
+                var updateSql = GenerateUpdateForNullableFKs(table, keyColumns, nullableFKColumns);
                 if (!string.IsNullOrEmpty(updateSql))
                 {
                     phaseTwoUpdates.Add(updateSql);
@@ -129,13 +151,10 @@ public sealed class PhasedDynamicEntityInsertGenerator
 
     private HashSet<string> IdentifyNullableFKColumns(
         EntityModel entity,
-        ImmutableArray<StaticEntityTableData> tables,
-        IReadOnlyDictionary<string, EntityModel> entityLookup)
+        HashSet<string> tablesInCycle,
+        bool restrictToCycle)
     {
         var nullableFKColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // Get table names in the cycle
-        var tablesInCycle = tables.Select(t => t.Definition.PhysicalName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var relationship in entity.Relationships)
         {
@@ -146,7 +165,16 @@ public sealed class PhasedDynamicEntityInsertGenerator
             }
 
             // Only care about relationships to tables in the cycle
-            if (!tablesInCycle.Contains(relationship.TargetPhysicalName.Value))
+            var targetPhysicalName = relationship.TargetPhysicalName.Value;
+            var targetQualifiedName = string.IsNullOrWhiteSpace(entity.Schema.Value)
+                ? targetPhysicalName
+                : $"{entity.Schema.Value}.{targetPhysicalName}";
+
+            var targetInCycle = !restrictToCycle ||
+                tablesInCycle.Contains(targetPhysicalName) ||
+                tablesInCycle.Contains(targetQualifiedName);
+
+            if (!targetInCycle)
             {
                 continue;
             }
@@ -165,13 +193,16 @@ public sealed class PhasedDynamicEntityInsertGenerator
         return nullableFKColumns;
     }
 
-    private string GenerateInsertForTable(
+    private string GenerateMergeForTable(
         StaticEntityTableData table,
+        StaticEntitySeedColumn[] keyColumns,
         OsmModel? model,
         HashSet<string>? columnsToNull)
     {
+        _ = model; // Reserved for future metadata-driven merge predicate enhancements
+
         var sb = new StringBuilder();
-        sb.AppendLine($"-- INSERT: {table.Definition.Schema}.{table.Definition.PhysicalName}");
+        sb.AppendLine($"-- MERGE: {table.Definition.Schema}.{table.Definition.PhysicalName}");
 
         if (table.Rows.IsDefaultOrEmpty)
         {
@@ -182,43 +213,50 @@ public sealed class PhasedDynamicEntityInsertGenerator
         var schema = table.Definition.Schema;
         var tableName = table.Definition.PhysicalName;
         var columns = table.Definition.Columns;
+        var columnList = string.Join(", ", columns.Select(c => $"[{c.ColumnName}]"));
+        var keyPredicate = string.Join(" AND ", keyColumns.Select(c => $"Target.[{c.ColumnName}] = Source.[{c.ColumnName}]"));
+        var hasIdentity = columns.Any(column => column.IsIdentity);
 
-        foreach (var row in table.Rows)
+        if (hasIdentity)
         {
-            sb.Append($"INSERT INTO [{schema}].[{tableName}] (");
-            sb.Append(string.Join(", ", columns.Select(c => $"[{c.ColumnName}]")));
-            sb.AppendLine(") VALUES (");
-
-            var values = new List<string>();
-            for (int i = 0; i < columns.Length; i++)
-            {
-                var column = columns[i];
-                var cellValue = i < row.Values.Length ? row.Values[i] : null;
-
-                // If this column should be NULLed in phase 1, emit NULL
-                if (columnsToNull != null && columnsToNull.Contains(column.ColumnName))
-                {
-                    values.Add("NULL");
-                }
-                else
-                {
-                    values.Add(_literalFormatter.FormatValue(cellValue));
-                }
-            }
-
-            sb.AppendLine("  " + string.Join(", ", values));
-            sb.AppendLine(");");
+            sb.AppendLine($"SET IDENTITY_INSERT [{schema}].[{tableName}] ON;");
+            sb.AppendLine("GO");
+            sb.AppendLine();
         }
 
+        AppendSourceCtes(sb, table, columnList, columnsToNull);
+
+        var sourceName = columnsToNull is { Count: > 0 }
+            ? "PhaseOneSource"
+            : "SourceRows";
+
+        sb.AppendLine($"MERGE INTO [{schema}].[{tableName}] AS Target");
+        sb.AppendLine($"USING {sourceName} AS Source");
+        sb.AppendLine();
+        sb.AppendLine($"    ON {keyPredicate}");
+        sb.AppendLine("WHEN NOT MATCHED THEN INSERT (");
+        sb.AppendLine($"    {columnList}");
+        sb.AppendLine(")");
+        sb.AppendLine("    VALUES (");
+        sb.AppendLine($"    {string.Join(", ", columns.Select(c => $"Source.[{c.ColumnName}]"))}");
+        sb.AppendLine(");");
+        sb.AppendLine();
         sb.AppendLine("GO");
         sb.AppendLine();
+
+        if (hasIdentity)
+        {
+            sb.AppendLine($"SET IDENTITY_INSERT [{schema}].[{tableName}] OFF;");
+            sb.AppendLine("GO");
+            sb.AppendLine();
+        }
 
         return sb.ToString();
     }
 
     private string GenerateUpdateForNullableFKs(
         StaticEntityTableData table,
-        EntityModel entity,
+        StaticEntitySeedColumn[] keyColumns,
         HashSet<string> nullableColumns)
     {
         if (table.Rows.IsDefaultOrEmpty || nullableColumns.Count == 0)
@@ -232,49 +270,33 @@ public sealed class PhasedDynamicEntityInsertGenerator
         var schema = table.Definition.Schema;
         var tableName = table.Definition.PhysicalName;
         var columns = table.Definition.Columns;
+        var nullableColumnList = columns
+            .Where(column => nullableColumns.Contains(column.ColumnName))
+            .Select(column => column.ColumnName)
+            .ToArray();
 
-        // Find PK columns for WHERE clause
-        var pkColumns = entity.Attributes
-            .Where(a => a.IsIdentifier)
-            .Select(a => a.ColumnName.Value)
-            .ToList();
-
-        if (pkColumns.Count == 0)
+        if (nullableColumnList.Length == 0)
         {
-            sb.AppendLine("-- (no PK found - cannot generate UPDATE)");
-            return sb.ToString();
+            return string.Empty;
         }
 
-        foreach (var row in table.Rows)
-        {
-            var setClause = new List<string>();
-            var whereClause = new List<string>();
+        var columnList = string.Join(", ", columns.Select(c => $"[{c.ColumnName}]"));
+        var keyPredicate = string.Join(" AND ", keyColumns.Select(c => $"Target.[{c.ColumnName}] = Source.[{c.ColumnName}]"));
 
-            for (int i = 0; i < columns.Length; i++)
-            {
-                var column = columns[i];
-                var cellValue = i < row.Values.Length ? row.Values[i] : null;
+        sb.Append("WITH SourceRows (");
+        sb.Append(columnList);
+        sb.AppendLine(") AS");
+        sb.AppendLine("(");
+        AppendValuesClause(sb, table, "    ");
+        sb.AppendLine(")");
+        sb.AppendLine();
 
-                if (pkColumns.Contains(column.ColumnName, StringComparer.OrdinalIgnoreCase))
-                {
-                    // PK column - use in WHERE clause
-                    whereClause.Add($"[{column.ColumnName}] = {_literalFormatter.FormatValue(cellValue)}");
-                }
-                else if (nullableColumns.Contains(column.ColumnName))
-                {
-                    // Nullable FK - SET to actual value
-                    setClause.Add($"[{column.ColumnName}] = {_literalFormatter.FormatValue(cellValue)}");
-                }
-            }
-
-            if (setClause.Count > 0 && whereClause.Count > 0)
-            {
-                sb.AppendLine($"UPDATE [{schema}].[{tableName}]");
-                sb.AppendLine($"SET {string.Join(", ", setClause)}");
-                sb.AppendLine($"WHERE {string.Join(" AND ", whereClause)};");
-            }
-        }
-
+        sb.AppendLine("UPDATE Target");
+        sb.AppendLine($"SET {string.Join(", ", nullableColumnList.Select(column => $"[{column}] = Source.[{column}]")).Trim()}");
+        sb.AppendLine($"FROM [{schema}].[{tableName}] AS Target");
+        sb.AppendLine("JOIN SourceRows AS Source");
+        sb.AppendLine($"    ON {keyPredicate};");
+        sb.AppendLine();
         sb.AppendLine("GO");
         sb.AppendLine();
 
@@ -300,10 +322,130 @@ public sealed class PhasedDynamicEntityInsertGenerator
 
         return lookup;
     }
+
+    private static HashSet<string> BuildCycleTableSet(EntityDependencyOrderingResult ordering)
+    {
+        if (ordering.StronglyConnectedComponents is null || ordering.StronglyConnectedComponents.Value.IsDefaultOrEmpty)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var component in ordering.StronglyConnectedComponents.Value)
+        {
+            if (component.Length < 2)
+            {
+                continue;
+            }
+
+            foreach (var name in component)
+            {
+                set.Add(name);
+
+                var separatorIndex = name.IndexOf('.', StringComparison.Ordinal);
+                if (separatorIndex > 0 && separatorIndex < name.Length - 1)
+                {
+                    set.Add(name[(separatorIndex + 1)..]);
+                }
+            }
+        }
+
+        return set;
+    }
+
+    private static StaticEntitySeedColumn[] GetKeyColumns(ImmutableArray<StaticEntitySeedColumn> columns)
+    {
+        var keyColumns = columns.Where(c => c.IsPrimaryKey).ToArray();
+
+        if (keyColumns.Length == 0)
+        {
+            keyColumns = columns.ToArray();
+        }
+
+        return keyColumns;
+    }
+
+    private void AppendValuesClause(StringBuilder builder, StaticEntityTableData table, string indent)
+    {
+        builder.Append(indent);
+        builder.AppendLine("VALUES");
+
+        var definition = table.Definition;
+        var rows = table.Rows;
+        for (var i = 0; i < rows.Length; i++)
+        {
+            var row = rows[i];
+            builder.Append(indent);
+            builder.Append("    (");
+            for (var j = 0; j < definition.Columns.Length; j++)
+            {
+                if (j > 0)
+                {
+                    builder.Append(", ");
+                }
+
+                builder.Append(_literalFormatter.FormatValue(row.Values[j]));
+            }
+
+            builder.Append(')');
+            if (i < rows.Length - 1)
+            {
+                builder.Append(',');
+            }
+
+            builder.AppendLine();
+        }
+    }
+
+    private void AppendSourceCtes(
+        StringBuilder builder,
+        StaticEntityTableData table,
+        string columnList,
+        HashSet<string>? columnsToNull)
+    {
+        builder.Append("WITH SourceRows (");
+        builder.Append(columnList);
+        builder.AppendLine(") AS");
+        builder.AppendLine("(");
+        AppendValuesClause(builder, table, "    ");
+        builder.AppendLine(")");
+
+        if (columnsToNull is { Count: > 0 })
+        {
+            builder.AppendLine(", PhaseOneSource AS");
+            builder.AppendLine("(");
+            builder.AppendLine("    SELECT");
+
+            var columns = table.Definition.Columns;
+            for (var i = 0; i < columns.Length; i++)
+            {
+                var column = columns[i];
+                var projection = columnsToNull.Contains(column.ColumnName)
+                    ? $"CASE WHEN 1 = 0 THEN SourceRows.[{column.ColumnName}] ELSE NULL END AS [{column.ColumnName}]"
+                    : $"SourceRows.[{column.ColumnName}]";
+
+                builder.Append("        ");
+                builder.Append(projection);
+
+                if (i < columns.Length - 1)
+                {
+                    builder.Append(',');
+                }
+
+                builder.AppendLine();
+            }
+
+            builder.AppendLine("    FROM SourceRows");
+            builder.AppendLine(")");
+        }
+
+        builder.AppendLine();
+    }
 }
 
 /// <summary>
-/// Result of phased INSERT generation.
+/// Result of phased MERGE generation.
 /// </summary>
 public sealed record PhasedInsertScript(
     ImmutableArray<string> PhaseOneInserts,
@@ -320,7 +462,7 @@ public sealed record PhasedInsertScript(
         var sb = new StringBuilder();
 
         sb.AppendLine("--------------------------------------------------------------------------------");
-        sb.AppendLine("-- PHASE 1: INSERT with nullable FKs = NULL");
+        sb.AppendLine("-- PHASE 1: MERGE with nullable FKs = NULL");
         sb.AppendLine("--------------------------------------------------------------------------------");
         sb.AppendLine();
 
