@@ -9,8 +9,8 @@
   "ForeignKeysCreatedCount": 0,
   "ColumnRationales": {
     "MANDATORY": 2,
-    "PROFILE_MISSING": 2,
-    "PK": 1
+    "PK": 1,
+    "PROFILE_MISSING": 2
   },
   "UniqueIndexRationales": {
     "PHYSICAL_UNIQUE_KEY": 2
@@ -28,8 +28,8 @@
       "ForeignKeysCreatedCount": 0,
       "ColumnRationales": {
         "MANDATORY": 2,
-        "PROFILE_MISSING": 2,
-        "PK": 1
+        "PK": 1,
+        "PROFILE_MISSING": 2
       },
       "UniqueIndexRationales": {
         "PHYSICAL_UNIQUE_KEY": 2
@@ -38,40 +38,36 @@
     }
   },
   "TogglePrecedence": {
-    "remediation.sentinels.date": {
-      "Value": "1900-01-01",
-      "Source": 0
-    },
-    "policy.mode": {
-      "Value": "EvidenceGated",
-      "Source": 0
-    },
-    "remediation.generatePreScripts": {
-      "Value": true,
-      "Source": 0
-    },
-    "remediation.sentinels.text": {
-      "Value": "",
-      "Source": 0
-    },
     "policy.nullBudget": {
       "Value": 0,
-      "Source": 0
-    },
-    "uniqueness.enforceSingleColumn": {
-      "Value": true,
-      "Source": 0
-    },
-    "mocking.useProfileMockFolder": {
-      "Value": false,
       "Source": 0
     },
     "uniqueness.enforceMultiColumn": {
       "Value": true,
       "Source": 0
     },
+    "remediation.sentinels.date": {
+      "Value": "1900-01-01",
+      "Source": 0
+    },
+    "remediation.sentinels.text": {
+      "Value": "",
+      "Source": 0
+    },
+    "mocking.useProfileMockFolder": {
+      "Value": false,
+      "Source": 0
+    },
     "foreignKeys.enableCreation": {
       "Value": true,
+      "Source": 0
+    },
+    "mocking.profileMockFolder": {
+      "Value": null,
+      "Source": 0
+    },
+    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
+      "Value": false,
       "Source": 0
     },
     "foreignKeys.allowNoCheckCreation": {
@@ -82,24 +78,28 @@
       "Value": "0",
       "Source": 0
     },
-    "foreignKeys.allowCrossCatalog": {
-      "Value": false,
+    "remediation.generatePreScripts": {
+      "Value": true,
       "Source": 0
     },
-    "mocking.profileMockFolder": {
-      "Value": null,
+    "foreignKeys.allowCrossCatalog": {
+      "Value": false,
       "Source": 0
     },
     "remediation.maxRowsDefaultBackfill": {
       "Value": 100000,
       "Source": 0
     },
+    "policy.mode": {
+      "Value": "EvidenceGated",
+      "Source": 0
+    },
     "foreignKeys.allowCrossSchema": {
       "Value": false,
       "Source": 0
     },
-    "foreignKeys.treatMissingDeleteRuleAsIgnore": {
-      "Value": false,
+    "uniqueness.enforceSingleColumn": {
+      "Value": true,
       "Source": 0
     }
   },

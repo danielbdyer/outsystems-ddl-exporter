@@ -386,33 +386,8 @@ public sealed record FullExportRunManifest(
             throw new ArgumentNullException(nameof(result));
         }
 
-        var pipelineResult = result.PipelineResult;
-        if (pipelineResult.DynamicInsertScriptPaths.IsDefaultOrEmpty)
-        {
-            return null;
-        }
-
-        var timing = ComputeTiming(pipelineResult.ExecutionLog);
-        var artifacts = ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.OrdinalIgnoreCase);
-        var scriptCount = pipelineResult.DynamicInsertScriptPaths.Length.ToString(CultureInfo.InvariantCulture);
-        artifacts["scriptCount"] = scriptCount;
-        artifacts["scripts"] = string.Join(";", pipelineResult.DynamicInsertScriptPaths);
-        var dynamicInsertRoot = ResolveDynamicInsertRoot(pipelineResult);
-        if (!string.IsNullOrWhiteSpace(dynamicInsertRoot))
-        {
-            artifacts["root"] = dynamicInsertRoot;
-        }
-
-        artifacts["ordering"] = pipelineResult.DynamicInsertOrderingMode.ToMetadataValue();
-        artifacts["mode"] = pipelineResult.DynamicInsertOutputMode.ToString();
-
-        return new FullExportStageManifest(
-            Name: "dynamic-insert",
-            StartedAtUtc: timing.StartedAtUtc,
-            CompletedAtUtc: timing.CompletedAtUtc,
-            Duration: timing.Duration,
-            Warnings: ImmutableArray<string>.Empty,
-            Artifacts: artifacts.ToImmutable());
+        _ = result;
+        return null;
     }
 
     private static void AddPathIfPresent(
@@ -508,26 +483,7 @@ public sealed record FullExportRunManifest(
         {
             throw new ArgumentNullException(nameof(pipelineResult));
         }
-
-        if (pipelineResult.DynamicInsertScriptPaths.IsDefaultOrEmpty)
-        {
-            return null;
-        }
-
-        var directories = pipelineResult.DynamicInsertScriptPaths
-            .Where(static path => !string.IsNullOrWhiteSpace(path))
-            .Select(static path => Path.GetDirectoryName(path))
-            .Where(static directory => !string.IsNullOrWhiteSpace(directory))
-            .Select(static directory => NormalizeDirectory(directory!))
-            .ToArray();
-
-        if (directories.Length == 0)
-        {
-            return null;
-        }
-
-        var common = FindCommonDirectoryPrefix(directories);
-        return string.IsNullOrWhiteSpace(common) ? directories[0] : common;
+        return null;
     }
 
     private static bool IsStaticSeedArtifact(PipelineArtifact artifact)

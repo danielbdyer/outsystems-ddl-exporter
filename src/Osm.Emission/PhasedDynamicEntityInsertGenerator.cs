@@ -59,11 +59,9 @@ public sealed class PhasedDynamicEntityInsertGenerator
 
         if (!ordering.CycleDetected)
         {
-            // No cycles - just emit standard MERGEs
             return GenerateStandardMerges(ordering.Tables, model);
         }
 
-        // Cycles detected - use phased loading
         var cycleTableSet = BuildCycleTableSet(ordering);
         return GeneratePhasedMerges(ordering.Tables, model, namingOverrides, cycleTableSet);
     }
@@ -213,8 +211,8 @@ public sealed class PhasedDynamicEntityInsertGenerator
         var schema = table.Definition.Schema;
         var tableName = table.Definition.PhysicalName;
         var columns = table.Definition.Columns;
-        var columnList = string.Join(", ", columns.Select(c => $"[{c.ColumnName}]"));
-        var keyPredicate = string.Join(" AND ", keyColumns.Select(c => $"Target.[{c.ColumnName}] = Source.[{c.ColumnName}]"));
+        var columnList = string.Join(", ", columns.Select(c => $"[{GetEffectiveColumnName(c)}]"));
+        var keyPredicate = string.Join(" AND ", keyColumns.Select(c => $"Target.[{GetEffectiveColumnName(c)}] = Source.[{GetEffectiveColumnName(c)}]"));
         var hasIdentity = columns.Any(column => column.IsIdentity);
 
         if (hasIdentity)
@@ -238,7 +236,7 @@ public sealed class PhasedDynamicEntityInsertGenerator
         sb.AppendLine($"    {columnList}");
         sb.AppendLine(")");
         sb.AppendLine("    VALUES (");
-        sb.AppendLine($"    {string.Join(", ", columns.Select(c => $"Source.[{c.ColumnName}]"))}");
+        sb.AppendLine($"    {string.Join(", ", columns.Select(c => $"Source.[{GetEffectiveColumnName(c)}]"))}");
         sb.AppendLine(");");
         sb.AppendLine();
         sb.AppendLine("GO");
@@ -271,8 +269,9 @@ public sealed class PhasedDynamicEntityInsertGenerator
         var tableName = table.Definition.PhysicalName;
         var columns = table.Definition.Columns;
         var nullableColumnList = columns
-            .Where(column => nullableColumns.Contains(column.ColumnName))
-            .Select(column => column.ColumnName)
+            .Where(column => nullableColumns.Contains(column.ColumnName) ||
+                             nullableColumns.Contains(column.EffectiveColumnName))
+            .Select(column => GetEffectiveColumnName(column))
             .ToArray();
 
         if (nullableColumnList.Length == 0)
@@ -280,8 +279,8 @@ public sealed class PhasedDynamicEntityInsertGenerator
             return string.Empty;
         }
 
-        var columnList = string.Join(", ", columns.Select(c => $"[{c.ColumnName}]"));
-        var keyPredicate = string.Join(" AND ", keyColumns.Select(c => $"Target.[{c.ColumnName}] = Source.[{c.ColumnName}]"));
+        var columnList = string.Join(", ", columns.Select(c => $"[{GetEffectiveColumnName(c)}]"));
+        var keyPredicate = string.Join(" AND ", keyColumns.Select(c => $"Target.[{GetEffectiveColumnName(c)}] = Source.[{GetEffectiveColumnName(c)}]"));
 
         sb.Append("WITH SourceRows (");
         sb.Append(columnList);
@@ -421,9 +420,11 @@ public sealed class PhasedDynamicEntityInsertGenerator
             for (var i = 0; i < columns.Length; i++)
             {
                 var column = columns[i];
-                var projection = columnsToNull.Contains(column.ColumnName)
-                    ? $"CASE WHEN 1 = 0 THEN SourceRows.[{column.ColumnName}] ELSE NULL END AS [{column.ColumnName}]"
-                    : $"SourceRows.[{column.ColumnName}]";
+                var effectiveName = GetEffectiveColumnName(column);
+                var projection = columnsToNull.Contains(column.ColumnName) ||
+                                 columnsToNull.Contains(column.EffectiveColumnName)
+                    ? $"CASE WHEN 1 = 0 THEN SourceRows.[{effectiveName}] ELSE NULL END AS [{effectiveName}]"
+                    : $"SourceRows.[{effectiveName}]";
 
                 builder.Append("        ");
                 builder.Append(projection);
@@ -441,6 +442,13 @@ public sealed class PhasedDynamicEntityInsertGenerator
         }
 
         builder.AppendLine();
+    }
+
+    private static string GetEffectiveColumnName(StaticEntitySeedColumn column)
+    {
+        return string.IsNullOrWhiteSpace(column.EffectiveColumnName)
+            ? column.ColumnName
+            : column.EffectiveColumnName;
     }
 }
 

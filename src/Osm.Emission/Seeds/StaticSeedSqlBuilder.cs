@@ -182,9 +182,7 @@ public sealed class StaticSeedSqlBuilder
                     columnNames,
                     columnList,
                     primaryColumns,
-                    synchronizationMode == StaticSeedSynchronizationMode.NonDestructive
-                        ? Array.Empty<StaticEntitySeedColumn>()
-                        : updatableColumns,
+                    updatableColumns,
                     synchronizationMode);
             }
         }
@@ -197,9 +195,7 @@ public sealed class StaticSeedSqlBuilder
                 columnNames,
                 columnList,
                 primaryColumns,
-                synchronizationMode == StaticSeedSynchronizationMode.NonDestructive
-                    ? Array.Empty<StaticEntitySeedColumn>()
-                    : updatableColumns,
+                updatableColumns,
                 synchronizationMode);
         }
 

@@ -75,8 +75,7 @@ public sealed class FullExportRunManifestTests
 
         var dynamicArtifacts = ImmutableArray.Create(
             new FullExportManifestArtifact("model-json", "/tmp/model.json", "application/json"),
-            new FullExportManifestArtifact("full-export-manifest", "/tmp/full-export.manifest.json", "application/json"),
-            new FullExportManifestArtifact("dynamic-insert", "/tmp/DynamicData/App/Entity.dynamic.sql", "application/sql"));
+            new FullExportManifestArtifact("full-export-manifest", "/tmp/full-export.manifest.json", "application/json"));
         var staticArtifacts = ImmutableArray.Create(
             new FullExportManifestArtifact("static-seed", "/tmp/Seeds/StaticEntities.seed.sql", "application/sql"));
 
@@ -109,11 +108,10 @@ public sealed class FullExportRunManifestTests
         Assert.True(root.GetProperty("StaticSeedArtifactsIncludedInDynamic").GetBoolean());
 
         var dynamicElement = root.GetProperty("DynamicArtifacts");
-        Assert.Equal(3, dynamicElement.GetArrayLength());
+        Assert.Equal(2, dynamicElement.GetArrayLength());
         Assert.Equal("model-json", dynamicElement[0].GetProperty("Name").GetString());
         Assert.Equal("/tmp/model.json", dynamicElement[0].GetProperty("Path").GetString());
         Assert.Equal("full-export-manifest", dynamicElement[1].GetProperty("Name").GetString());
-        Assert.Equal("dynamic-insert", dynamicElement[2].GetProperty("Name").GetString());
 
         var staticElement = root.GetProperty("StaticSeedArtifacts");
         Assert.Single(staticElement.EnumerateArray());
@@ -240,24 +238,13 @@ public sealed class FullExportRunManifestTests
         Assert.True(staticSeedStage.Artifacts.TryGetValue("scripts", out var seedScripts));
         Assert.Equal(string.Join(";", staticSeedPaths), seedScripts);
 
-        var dynamicInsertStage = Assert.Single(manifest.Stages, stage => stage.Name == "dynamic-insert");
-        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("root", out var stageDynamicRoot));
-        var expectedDynamicRoot = Path.GetFullPath(Path.Combine(dynamicRoot, "DynamicData", "ModuleA"));
-        Assert.Equal(expectedDynamicRoot, Path.GetFullPath(stageDynamicRoot!));
-        Assert.Equal(
-            expectedDynamicRoot,
-            Path.GetFullPath(FullExportRunManifest.ResolveDynamicInsertRoot(build.PipelineResult)!));
-        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("ordering", out var insertOrdering));
-        Assert.Equal("alphabetical", insertOrdering);
-        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("mode", out var insertMode));
-        Assert.Equal("PerEntity", insertMode);
-        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("scriptCount", out var insertCount));
-        Assert.Equal("1", insertCount);
-        Assert.True(dynamicInsertStage.Artifacts.TryGetValue("scripts", out var insertScripts));
-        Assert.Equal(string.Join(";", build.PipelineResult.DynamicInsertScriptPaths), insertScripts);
-
-        var dynamicFiles = Directory.GetFiles(dynamicRoot, "*", SearchOption.AllDirectories);
-        Assert.DoesNotContain(dynamicFiles, path => Path.GetFullPath(path).StartsWith(seedRootFullPath, StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(manifest.Stages, stage => stage.Name == "dynamic-insert");
+        Assert.Null(FullExportRunManifest.ResolveDynamicInsertRoot(build.PipelineResult));
+        if (Directory.Exists(dynamicRoot))
+        {
+            var dynamicFiles = Directory.GetFiles(dynamicRoot, "*", SearchOption.AllDirectories);
+            Assert.DoesNotContain(dynamicFiles, path => Path.GetFullPath(path).StartsWith(seedRootFullPath, StringComparison.OrdinalIgnoreCase));
+        }
 
         var staticFiles = Directory.GetFiles(seedRoot, "*", SearchOption.AllDirectories)
             .Select(static path => Path.GetFullPath(path))

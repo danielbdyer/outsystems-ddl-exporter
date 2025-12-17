@@ -212,11 +212,19 @@ public enum EntityDependencyOrderingMode
             !stronglyConnectedComponents.IsDefaultOrEmpty &&
             stronglyConnectedComponents.Length > 0)
         {
-            // Always attempt intelligent cycle resolution (with or without manual config)
+            // Always attempt intelligent/manual cycle resolution (with or without manual config)
             circularDependencyOptions ??= CircularDependencyOptions.Empty;
-            
-            diagnostics?.Add(
-                $"Attempting intelligent cycle resolution for {stronglyConnectedComponents.Length} strongly connected component(s).");
+
+            if (!autoResolutionAllowed)
+            {
+                diagnostics?.Add(
+                    $"Manual cycle ordering configured; attempting to resolve {stronglyConnectedComponents.Length} strongly connected component(s).");
+            }
+            else
+            {
+                diagnostics?.Add(
+                    $"Attempting intelligent cycle resolution for {stronglyConnectedComponents.Length} strongly connected component(s).");
+            }
 
             var edgesToBreak = IdentifyEdgesToBreakFromManualOrdering(
                 stronglyConnectedComponents.Select(component => component.ToHashSet(KeyComparer)).ToList(),
@@ -226,8 +234,12 @@ public enum EntityDependencyOrderingMode
                 nodes);
 
             diagnostics?.Add(edgesToBreak.Count > 0
-                ? $"Intelligent ordering identified {edgesToBreak.Count} backward edge(s) to remove."
-                : "Intelligent ordering did not identify any backward edges to remove.");
+                ? (autoResolutionAllowed
+                    ? $"Intelligent ordering identified {edgesToBreak.Count} backward edge(s) to remove."
+                    : $"Manual ordering identified {edgesToBreak.Count} backward edge(s) to remove.")
+                : (autoResolutionAllowed
+                    ? "Intelligent ordering did not identify any backward edges to remove."
+                    : "Manual ordering did not identify any backward edges to remove."));
 
             if (edgesToBreak.Count > 0)
             {
@@ -261,7 +273,9 @@ public enum EntityDependencyOrderingMode
                     ordered = retried;
                     cycleDetected = false;
                     graphStats = graphStats with { EdgeCount = Math.Max(0, graphStats.EdgeCount - removedEdges) };
-                    diagnostics?.Add("Intelligent ordering successfully resolved the detected cycle(s).");
+                    diagnostics?.Add(autoResolutionAllowed
+                        ? "Intelligent ordering successfully resolved the detected cycle(s)."
+                        : "Manual ordering successfully resolved the detected cycle(s).");
                 }
                 else
                 {

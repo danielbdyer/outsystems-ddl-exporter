@@ -29,7 +29,9 @@ WHEN MATCHED THEN UPDATE SET
     Target.[ValidFrom] = Source.[ValidFrom],
     Target.[ValidTo] = Source.[ValidTo]
 WHEN NOT MATCHED THEN INSERT ([Id], [Status], [AuditId], [ValidFrom], [ValidTo])
-    VALUES (Source.[Id], Source.[Status], Source.[AuditId], Source.[ValidFrom], Source.[ValidTo]);
+    VALUES (Source.[Id], Source.[Status], Source.[AuditId], Source.[ValidFrom], Source.[ValidTo])
+;
 
 GO
+
 

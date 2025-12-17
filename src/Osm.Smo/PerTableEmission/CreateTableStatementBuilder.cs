@@ -133,7 +133,7 @@ internal sealed class CreateTableStatementBuilder
             throw new ArgumentNullException(nameof(options));
         }
 
-        if (options.EmitBareTableOnly || table.ForeignKeys.Length == 0 || statement.Definition is null)
+        if (table.ForeignKeys.Length == 0 || statement.Definition is null)
         {
             foreignKeyTrustLookup = ImmutableDictionary<string, bool>.Empty;
             deferredNoCheckForeignKeys = ImmutableArray<SmoForeignKeyDefinition>.Empty;
