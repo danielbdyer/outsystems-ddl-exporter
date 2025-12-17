@@ -1561,6 +1561,2372 @@ Now that you have the translation layer:
 
 ---
 
+Let me map the optimal sequence based on dependencies and team needs:
+
+**Foundation Layer (enables everything else):**
+- Section 4: State-Based Modeling → Section 5: Anatomy of SSDT Project
+
+**Conceptual Consolidation (thread content, needs structuring):**
+- Sections 6-12: Pre/Post Scripts, Idempotency, Referential Integrity, Refactorlog, Safety, Multi-Phase, CDC
+
+**Execution Layer (the "how to do it"):**
+- Section 17: Multi-Phase Pattern Templates → Section 19: Anti-Patterns Gallery
+
+**Process Layer (the human workflow):**
+- Section 20: OutSystems → External Entities Workflow → Section 21: Local Dev Setup → Section 22: Change/Release Process
+
+**Tools Layer (quick reference):**
+- Section 18: Decision Aids
+
+**Reference Layer (lookup material):**
+- Remaining sections (Standards, Templates, Glossary, etc.)
+
+Let me begin.
+
+---
+
+# 4. State-Based Modeling vs. Imperative Migrations
+
+---
+
+## The Core Idea
+
+In OutSystems, when you changed an entity, you were implicitly saying: *"Here's what I want it to become."* OutSystems figured out how to get there.
+
+SSDT works the same way — but makes it explicit.
+
+**Imperative approach (what you might expect):**
+```sql
+-- "Do these steps in this order"
+ALTER TABLE dbo.Person ADD MiddleName NVARCHAR(50) NULL;
+ALTER TABLE dbo.Person ALTER COLUMN Email NVARCHAR(200);
+ALTER TABLE dbo.Person DROP COLUMN LegacyId;
+```
+
+**Declarative approach (what SSDT actually does):**
+```sql
+-- "Here's what the table should look like"
+CREATE TABLE [dbo].[Person]
+(
+    PersonId INT IDENTITY(1,1) NOT NULL,
+    FirstName NVARCHAR(100) NOT NULL,
+    MiddleName NVARCHAR(50) NULL,           -- Added
+    LastName NVARCHAR(100) NOT NULL,
+    Email NVARCHAR(200) NOT NULL,           -- Widened
+    -- LegacyId removed
+    CONSTRAINT [PK_Person] PRIMARY KEY CLUSTERED (PersonId)
+)
+```
+
+You write the second version. SSDT compares it to the target database and generates the first version automatically.
+
+---
+
+## Why This Matters
+
+### You Describe End State, Not Transitions
+
+Your `.sql` files aren't scripts to run. They're declarations of what the schema *should be*.
+
+When you edit a table definition:
+- You're not writing an ALTER statement
+- You're changing the declared end state
+- SSDT computes the delta between current and desired
+- SSDT generates whatever DDL is needed to close the gap
+
+**Practical implication:** Stop thinking "what command do I run?" Start thinking "what should this table look like when I'm done?"
+
+### The .sql File IS the Schema
+
+In imperative migration systems (like Entity Framework migrations or Flyway), you have:
+- Migration files: the steps to get from version N to version N+1
+- Maybe a snapshot: what the schema looks like now
+
+In SSDT, you have:
+- Table definitions: what each table looks like, period
+- The history lives in git, not in the schema itself
+
+**Your `dbo.Person.sql` file is the source of truth.** It represents the current desired state of that table. Git history shows how it evolved.
+
+### SSDT Computes the Delta
+
+When you deploy, SSDT:
+
+1. Reads your project (desired state)
+2. Connects to target database (current state)
+3. Compares them
+4. Generates a deployment script (the delta)
+5. Executes that script
+
+```
+┌─────────────────┐      ┌─────────────────┐
+│  SSDT Project   │      │ Target Database │
+│  (desired)      │      │ (current)       │
+└────────┬────────┘      └────────┬────────┘
+         │                        │
+         │    ┌───────────────┐   │
+         └───►│   Compare     │◄──┘
+              └───────┬───────┘
+                      │
+                      ▼
+              ┌───────────────┐
+              │ Generated     │
+              │ Deploy Script │
+              │ (the delta)   │
+              └───────┬───────┘
+                      │
+                      ▼
+              ┌───────────────┐
+              │ Execute       │
+              │ (database     │
+              │  transformed) │
+              └───────────────┘
+```
+
+**This means:** The same project deployed to different databases generates different scripts. A fresh database gets `CREATE TABLE`. An existing database with the table gets `ALTER TABLE` (or nothing, if it matches).
+
+---
+
+## What You Do vs. What SSDT Generates
+
+| You do this... | SSDT generates this... |
+|----------------|------------------------|
+| Add a column to table definition | `ALTER TABLE ... ADD ...` |
+| Remove a column from table definition | `ALTER TABLE ... DROP COLUMN ...` |
+| Change column type in definition | `ALTER TABLE ... ALTER COLUMN ...` |
+| Create new table file | `CREATE TABLE ...` |
+| Delete table file | `DROP TABLE ...` (if `DropObjectsNotInSource=True`) |
+| Rename via refactorlog | `EXEC sp_rename ...` |
+| Add constraint to definition | `ALTER TABLE ... ADD CONSTRAINT ...` |
+
+You never write ALTER statements. You edit declarations. SSDT translates.
+
+---
+
+## When the Abstraction Leaks
+
+The declarative model is powerful but not omniscient. SSDT's generated script is *correct* but not always *optimal* or *safe*.
+
+### SSDT Doesn't Know Your Data
+
+SSDT sees schema, not rows. It will happily generate:
+
+```sql
+ALTER TABLE dbo.Person ALTER COLUMN Email NVARCHAR(50) NOT NULL
+```
+
+It doesn't know that you have 10,000 rows with emails longer than 50 characters, or 500 rows with NULL emails.
+
+**Your job:** Validate data fits before deploying changes that constrain it.
+
+### SSDT Doesn't Know Your Intentions
+
+If you rename a column by editing the file directly:
+
+```sql
+-- Before
+FirstName NVARCHAR(100)
+
+-- After (you just changed the text)
+GivenName NVARCHAR(100)
+```
+
+SSDT sees: "FirstName is gone. GivenName is new."
+
+SSDT generates:
+```sql
+ALTER TABLE dbo.Person DROP COLUMN FirstName
+ALTER TABLE dbo.Person ADD GivenName NVARCHAR(100)
+```
+
+Data in FirstName? Gone.
+
+**Your job:** Use the refactorlog for renames so SSDT knows it's identity-preserving, not drop-and-create.
+
+### SSDT Optimizes for Correctness, Not Performance
+
+SSDT will generate a working script, but not necessarily the fastest one. For example:
+
+- Adding a NOT NULL column with a default might do it in a way that rewrites the whole table
+- Changing a clustered index might rebuild everything
+- Reordering columns (if `IgnoreColumnOrder=False`) triggers a full table rebuild
+
+**Your job:** Review generated scripts, especially for large tables. Know when to override with manual scripts.
+
+---
+
+## The Review Discipline
+
+Because SSDT generates scripts from your declarations, you must review what it generates before deploying to production.
+
+**For Tier 1 changes:** Skim the generated script. Verify it's doing what you expect.
+
+**For Tier 2+ changes:** Read carefully. Check for:
+- Unexpected DROP statements
+- Table rebuilds (look for temp table creation)
+- Large data movements
+- Constraint validations on big tables
+
+**How to see the generated script:**
+
+1. **In Visual Studio:** Right-click project → Schema Compare → compare to target → view script
+2. **In pipeline:** Most SSDT pipelines save the generated script as an artifact
+3. **Using SqlPackage:** `SqlPackage /Action:Script /SourceFile:project.dacpac /TargetConnectionString:...`
+
+**The rule:** Never deploy to production without reviewing the generated script. The abstraction is not trustworthy without inspection.
+
+---
+
+## Mental Model Summary
+
+| Imperative (migrations) | Declarative (SSDT) |
+|-------------------------|---------------------|
+| Write migration scripts | Edit table definitions |
+| Migrations accumulate forever | Current state is the only truth |
+| Order of migrations matters | Order doesn't matter — just the end state |
+| Rollback = write reverse migration | Rollback = restore previous definition (SSDT computes reverse) |
+| You control exactly what runs | You control the outcome; SSDT controls the path |
+| Risk: migrations diverge from reality | Risk: generated script surprises you |
+
+**The shift:** You stop thinking "what steps do I take?" and start thinking "what should exist when I'm done?"
+
+---
+
+## Connecting to What You Know
+
+If OutSystems's 1-Click Publish felt like magic, SSDT is the same magic made visible.
+
+OutSystems compared your model to the database and made changes. You just didn't see the comparison or the generated SQL.
+
+SSDT does the same thing, but:
+- You see the model (your `.sql` files)
+- You can see the comparison (Schema Compare)
+- You can see the generated SQL (deployment script)
+- You control whether it runs (publish with review)
+
+More visibility. More control. More responsibility.
+
+---
+
+# 5. Anatomy of an SSDT Project
+
+---
+
+## What You're Looking At
+
+When you open the SSDT project in Visual Studio, you'll see a folder structure that represents your database schema. Every object in the database has a corresponding file.
+
+```
+/DatabaseProject.sqlproj          ← Project file (MSBuild, settings)
+/DatabaseProject.refactorlog      ← Rename tracking
+/DatabaseProject.publish.xml       ← Publish profile(s)
+
+/Security/
+    Schemas.sql                   ← Schema definitions (dbo, audit, etc.)
+    Roles.sql                     ← Database roles
+    Users.sql                     ← Database users
+
+/Tables/
+    /dbo/
+        dbo.Customer.sql          ← Each table is one file
+        dbo.Order.sql
+        dbo.OrderLine.sql
+        dbo.Product.sql
+    /audit/
+        audit.ChangeLog.sql
+
+/Views/
+    /dbo/
+        dbo.vw_ActiveCustomer.sql
+        dbo.vw_OrderSummary.sql
+
+/Stored Procedures/
+    /dbo/
+        dbo.usp_GetCustomerOrders.sql
+
+/Functions/
+    /dbo/
+        dbo.fn_CalculateTotal.sql
+
+/Indexes/                          ← Optional: can be inline or separate
+    IX_Order_CustomerId.sql
+
+/Synonyms/
+    dbo.LegacyCustomer.sql
+
+/Scripts/
+    /PreDeployment/
+        PreDeployment.sql         ← Master pre-deployment script
+    /PostDeployment/
+        PostDeployment.sql        ← Master post-deployment script
+        /Migrations/
+            001_BackfillMiddleName.sql
+            002_SeedStatusCodes.sql
+        /ReferenceData/
+            SeedCountries.sql
+            SeedProductTypes.sql
+        /OneTime/
+            Release_2025.02_Fixes.sql
+
+/Snapshots/                        ← Optional: dacpac versions for comparison
+    DatabaseProject_v1.0.dacpac
+```
+
+---
+
+## File-to-Object Mapping
+
+Every database object gets its own file. One file, one object.
+
+### Tables
+
+```sql
+-- /Tables/dbo/dbo.Customer.sql
+
+CREATE TABLE [dbo].[Customer]
+(
+    [CustomerId] INT IDENTITY(1,1) NOT NULL,
+    [FirstName] NVARCHAR(100) NOT NULL,
+    [LastName] NVARCHAR(100) NOT NULL,
+    [Email] NVARCHAR(200) NOT NULL,
+    [CreatedAt] DATETIME2(7) NOT NULL CONSTRAINT [DF_Customer_CreatedAt] DEFAULT (SYSUTCDATETIME()),
+    [IsActive] BIT NOT NULL CONSTRAINT [DF_Customer_IsActive] DEFAULT (1),
+    
+    CONSTRAINT [PK_Customer] PRIMARY KEY CLUSTERED ([CustomerId]),
+    CONSTRAINT [UQ_Customer_Email] UNIQUE ([Email])
+)
+```
+
+**Note:** Constraints, defaults, and the primary key are defined inline. This keeps everything about the table in one place.
+
+### Foreign Keys
+
+Can be inline or separate. We prefer inline for clarity:
+
+```sql
+-- /Tables/dbo/dbo.Order.sql
+
+CREATE TABLE [dbo].[Order]
+(
+    [OrderId] INT IDENTITY(1,1) NOT NULL,
+    [CustomerId] INT NOT NULL,
+    [OrderDate] DATE NOT NULL,
+    [TotalAmount] DECIMAL(18,2) NOT NULL,
+    
+    CONSTRAINT [PK_Order] PRIMARY KEY CLUSTERED ([OrderId]),
+    CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) 
+        REFERENCES [dbo].[Customer]([CustomerId])
+)
+```
+
+### Indexes
+
+Can be inline (in table file) or separate files. Separate is cleaner for complex indexes:
+
+```sql
+-- /Indexes/IX_Order_CustomerId.sql
+
+CREATE NONCLUSTERED INDEX [IX_Order_CustomerId]
+ON [dbo].[Order]([CustomerId])
+INCLUDE ([OrderDate], [TotalAmount])
+```
+
+### Views
+
+```sql
+-- /Views/dbo/dbo.vw_ActiveCustomer.sql
+
+CREATE VIEW [dbo].[vw_ActiveCustomer]
+AS
+SELECT 
+    CustomerId,
+    FirstName,
+    LastName,
+    Email,
+    CreatedAt
+FROM dbo.Customer
+WHERE IsActive = 1
+```
+
+### Stored Procedures
+
+```sql
+-- /Stored Procedures/dbo/dbo.usp_GetCustomerOrders.sql
+
+CREATE PROCEDURE [dbo].[usp_GetCustomerOrders]
+    @CustomerId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    SELECT 
+        o.OrderId,
+        o.OrderDate,
+        o.TotalAmount
+    FROM dbo.[Order] o
+    WHERE o.CustomerId = @CustomerId
+    ORDER BY o.OrderDate DESC;
+END
+```
+
+---
+
+## The .sqlproj File
+
+This is the MSBuild project file. It defines:
+
+- What files are included in the project
+- Target SQL Server version
+- Build settings
+- Database references
+
+**Key settings you'll see:**
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="...">
+  <PropertyGroup>
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql150DatabaseSchemaProvider</DSP>  <!-- SQL 2019 -->
+    <TargetDatabaseSet>True</TargetDatabaseSet>
+    <DefaultCollation>SQL_Latin1_General_CP1_CI_AS</DefaultCollation>
+    <DefaultFilegroup>PRIMARY</DefaultFilegroup>
+    
+    <!-- Build behavior -->
+    <TreatTSqlWarningsAsErrors>True</TreatTSqlWarningsAsErrors>
+  </PropertyGroup>
+  
+  <!-- File includes -->
+  <ItemGroup>
+    <Build Include="Tables\dbo\dbo.Customer.sql" />
+    <Build Include="Tables\dbo\dbo.Order.sql" />
+    <!-- etc. -->
+  </ItemGroup>
+  
+  <!-- Pre/Post deployment scripts -->
+  <ItemGroup>
+    <PreDeploy Include="Scripts\PreDeployment\PreDeployment.sql" />
+    <PostDeploy Include="Scripts\PostDeployment\PostDeployment.sql" />
+  </ItemGroup>
+</Project>
+```
+
+**You usually don't edit this directly.** Visual Studio maintains it when you add/remove files.
+
+---
+
+## The Publish Profile (.publish.xml)
+
+This defines *how* to deploy and *what settings* to use. You'll have different profiles for different environments.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="...">
+  <PropertyGroup>
+    <TargetConnectionString>Data Source=localhost;Initial Catalog=MyDatabase;Integrated Security=True</TargetConnectionString>
+    
+    <!-- Critical safety settings -->
+    <BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss>
+    <DropObjectsNotInSource>False</DropObjectsNotInSource>
+    
+    <!-- Behavior settings -->
+    <IgnoreColumnOrder>True</IgnoreColumnOrder>
+    <GenerateSmartDefaults>False</GenerateSmartDefaults>
+    <AllowIncompatiblePlatform>False</AllowIncompatiblePlatform>
+    <IgnorePermissions>True</IgnorePermissions>
+    
+    <!-- What to include -->
+    <IncludeCompositeObjects>True</IncludeCompositeObjects>
+    <IncludeTransactionalScripts>True</IncludeTransactionalScripts>
+  </PropertyGroup>
+</Project>
+```
+
+**Environment-specific profiles:**
+
+| Profile | BlockOnPossibleDataLoss | DropObjectsNotInSource | GenerateSmartDefaults |
+|---------|-------------------------|------------------------|-----------------------|
+| Local.publish.xml | True | True | True |
+| Dev.publish.xml | True | True | True |
+| Test.publish.xml | True | True | False |
+| UAT.publish.xml | True | False | False |
+| Prod.publish.xml | True | False | False |
+
+---
+
+## The Refactorlog
+
+The `.refactorlog` file tracks renames so SSDT knows when you're renaming vs. dropping-and-creating.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Operations Version="1.0" xmlns="...">
+  <Operation Name="Rename Refactor" Key="abc123..." ChangeDateTime="2025-01-15T10:30:00">
+    <Property Name="ElementName" Value="[dbo].[Customer].[FirstName]" />
+    <Property Name="ElementType" Value="SqlSimpleColumn" />
+    <Property Name="ParentElementName" Value="[dbo].[Customer]" />
+    <Property Name="ParentElementType" Value="SqlTable" />
+    <Property Name="NewName" Value="GivenName" />
+  </Operation>
+</Operations>
+```
+
+**Critical rules:**
+- Never delete refactorlog entries
+- Always use GUI rename (or manually add entries)
+- Protect during merges — refactorlog conflicts can cause data loss if resolved incorrectly
+
+---
+
+## Pre-Deployment and Post-Deployment Scripts
+
+These are SQL scripts that run before and after SSDT applies the schema changes.
+
+**PreDeployment.sql:** Runs first. Use for:
+- Dropping dependencies that block schema changes
+- Preparing data for transformations
+- Anything that must happen *before* the schema changes
+
+**PostDeployment.sql:** Runs last. Use for:
+- Data migrations
+- Seeding reference data
+- Backfilling new columns
+- Any data work that depends on the new schema existing
+
+**Structure:**
+
+```sql
+-- /Scripts/PostDeployment/PostDeployment.sql
+
+/*
+Post-Deployment Script
+This script runs after schema changes are applied.
+Use SQLCMD :r to include other scripts.
+*/
+
+PRINT 'Starting post-deployment scripts...'
+
+-- Permanent migrations (idempotent)
+:r .\Migrations\001_BackfillMiddleName.sql
+:r .\Migrations\002_SeedStatusCodes.sql
+
+-- Reference data (idempotent)
+:r .\ReferenceData\SeedCountries.sql
+:r .\ReferenceData\SeedProductTypes.sql
+
+-- One-time scripts for this release (remove after prod deploy)
+:r .\OneTime\Release_2025.02_Fixes.sql
+
+PRINT 'Post-deployment complete.'
+```
+
+The `:r` syntax is SQLCMD — it includes another file inline.
+
+---
+
+## Database References
+
+If your project references objects in other databases (or linked servers), you need database references.
+
+**Same-server reference:**
+
+```xml
+<ArtifactReference Include="..\OtherDatabase\OtherDatabase.dacpac">
+  <DatabaseVariableLiteralValue>OtherDatabase</DatabaseVariableLiteralValue>
+</ArtifactReference>
+```
+
+**Linked server / external reference:**
+
+```xml
+<ArtifactReference Include="ExternalDB.dacpac">
+  <DatabaseVariableLiteralValue>LinkedServer.ExternalDB</DatabaseVariableLiteralValue>
+  <SuppressMissingDependenciesErrors>True</SuppressMissingDependenciesErrors>
+</ArtifactReference>
+```
+
+Without references, SSDT will fail to build if you reference objects it can't find.
+
+---
+
+## Build vs. Deploy
+
+These are different operations:
+
+### Build
+
+**What happens:**
+- Compiles the project
+- Validates syntax
+- Checks referential integrity (do FKs point to real tables?)
+- Produces a `.dacpac` file
+
+**When it runs:**
+- Every time you build in Visual Studio
+- In CI pipeline on every commit
+
+**What it catches:**
+- Syntax errors
+- Missing references (FK to non-existent table)
+- Type mismatches
+- Duplicate object names
+
+**What it doesn't catch:**
+- Data issues (NULLs in a column you're making NOT NULL)
+- Runtime performance
+- Blocking behavior
+
+### Deploy (Publish)
+
+**What happens:**
+- Takes the `.dacpac` (desired state)
+- Connects to target database (current state)
+- Computes the delta
+- Generates deployment script
+- Executes the script (or just generates, depending on settings)
+
+**When it runs:**
+- Manually from Visual Studio (Publish)
+- In CD pipeline on merge to main
+- Via SqlPackage command line
+
+**What it catches:**
+- Data violations (constraint failures)
+- Permission issues
+- Timeout/blocking (if it takes too long)
+
+---
+
+## Navigating the Project: Quick Reference
+
+| I need to... | Go to... |
+|--------------|----------|
+| See/edit a table structure | `/Tables/{schema}/{schema}.{TableName}.sql` |
+| Add a new table | Create file in `/Tables/{schema}/`, add to project |
+| Add a column | Edit the table's `.sql` file, add the column |
+| Add an index | Create in `/Indexes/` or add inline to table file |
+| Add a view | Create file in `/Views/{schema}/` |
+| Add seed data | Add to post-deployment script in `/Scripts/PostDeployment/Migrations/` |
+| See deployment settings | Open `.publish.xml` files |
+| Find rename history | Check `.refactorlog` |
+| See what's in the project | Open `.sqlproj` in text editor, or view in Solution Explorer |
+
+---
+
+## Your First Navigation Exercise
+
+Before making any changes, orient yourself:
+
+1. **Open the project in Visual Studio**
+2. **Expand the Tables folder** — browse a few table definitions
+3. **Find a table with foreign keys** — see how they're defined
+4. **Open PostDeployment.sql** — see how it's structured
+5. **Open a publish profile** — review the settings
+6. **Build the project** — verify it compiles
+7. **Do a Schema Compare** — compare your project to your local database
+
+This gives you a mental map before you start making changes.
+
+---
+
+# 6. Pre-Deployment and Post-Deployment Scripts
+
+---
+
+## When Declarative Isn't Enough
+
+SSDT's declarative model handles structure beautifully. But databases have *data*, and data often needs transformation that SSDT can't express declaratively.
+
+**SSDT can:**
+- Add a column
+- Change a column's type
+- Add a constraint
+
+**SSDT cannot:**
+- Know what value to put in a new NOT NULL column for existing rows
+- Transform existing data from one format to another
+- Seed reference data
+- Clean up orphan records before adding an FK
+
+That's what pre-deployment and post-deployment scripts are for.
+
+---
+
+## The Execution Order
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  1. PRE-DEPLOYMENT SCRIPT                                               │
+│     - Runs BEFORE any schema changes                                    │
+│     - Database is still in "old" state                                  │
+│     - Use for: preparing data, dropping blockers                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│  2. SCHEMA CHANGES (SSDT-generated)                                     │
+│     - All the ALTER TABLE, CREATE INDEX, etc.                           │
+│     - Database transitions from old state to new state                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│  3. POST-DEPLOYMENT SCRIPT                                              │
+│     - Runs AFTER schema changes complete                                │
+│     - Database is now in "new" state                                    │
+│     - Use for: data migration, seeding, backfill                        │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Pre-Deployment Scripts
+
+### When to Use
+
+Pre-deployment scripts run *before* SSDT changes the schema. Use them when:
+
+- **Something blocks the schema change:** A constraint or index prevents the ALTER
+- **Data must be cleaned first:** You need to remove violating rows before adding a constraint
+- **Dependencies must be dropped:** A view or proc must be dropped before the column it references
+
+### Examples
+
+**Backfill NULLs before adding NOT NULL constraint:**
+
+```sql
+-- PreDeployment.sql (or included file)
+
+-- We're about to make MiddleName NOT NULL
+-- First, backfill any existing NULLs
+PRINT 'Pre-deployment: Backfilling NULL MiddleName values...'
+
+IF EXISTS (SELECT 1 FROM dbo.Person WHERE MiddleName IS NULL)
+BEGIN
+    UPDATE dbo.Person 
+    SET MiddleName = '' 
+    WHERE MiddleName IS NULL
+    
+    PRINT 'Backfilled ' + CAST(@@ROWCOUNT AS VARCHAR) + ' rows.'
+END
+ELSE
+BEGIN
+    PRINT 'No NULL MiddleName values found — skipping.'
+END
+GO
+```
+
+**Remove orphan data before adding FK:**
+
+```sql
+-- We're about to add FK_Order_Customer
+-- First, clean up any orphan orders
+PRINT 'Pre-deployment: Removing orphan orders...'
+
+DELETE FROM dbo.[Order]
+WHERE CustomerId NOT IN (SELECT CustomerId FROM dbo.Customer)
+
+PRINT 'Removed ' + CAST(@@ROWCOUNT AS VARCHAR) + ' orphan orders.'
+GO
+```
+
+### Structure
+
+Keep pre-deployment scripts lean. They should:
+- Do only what's necessary to unblock the schema change
+- Be idempotent (safe to run multiple times)
+- Print progress for debugging
+
+---
+
+## Post-Deployment Scripts
+
+### When to Use
+
+Post-deployment scripts run *after* SSDT has changed the schema. Use them when:
+
+- **Data needs migration:** Converting data from old format to new
+- **New columns need values:** Populating a new column from existing data
+- **Reference data needs seeding:** Lookup tables need their initial values
+- **One-time fixes:** Corrections that apply to this release only
+
+### The Hybrid Structure
+
+We use a structured approach that balances auditability with cleanliness:
+
+```
+/Scripts/PostDeployment/
+    PostDeployment.sql              ← Master script (includes others)
+    /Migrations/                    ← Permanent, idempotent
+        001_BackfillCreatedAt.sql
+        002_PopulateStatusLookup.sql
+        003_MigrateAddressData.sql
+    /ReferenceData/                 ← Permanent, idempotent
+        SeedCountries.sql
+        SeedStatusCodes.sql
+        SeedProductTypes.sql
+    /OneTime/                       ← Removed after prod deploy
+        Release_2025.02_DataFixes.sql
+```
+
+**Master script:**
+
+```sql
+-- PostDeployment.sql
+
+/*
+Post-Deployment Script
+======================
+This file runs after schema deployment completes.
+Add new migration scripts using :r includes.
+All scripts must be idempotent.
+*/
+
+PRINT '========================================'
+PRINT 'Starting post-deployment scripts'
+PRINT '========================================'
+
+-- Permanent migrations (idempotent, cumulative)
+PRINT 'Running migrations...'
+:r .\Migrations\001_BackfillCreatedAt.sql
+:r .\Migrations\002_PopulateStatusLookup.sql
+:r .\Migrations\003_MigrateAddressData.sql
+
+-- Reference data (idempotent)
+PRINT 'Seeding reference data...'
+:r .\ReferenceData\SeedCountries.sql
+:r .\ReferenceData\SeedStatusCodes.sql
+:r .\ReferenceData\SeedProductTypes.sql
+
+-- One-time scripts for current release
+-- Remove these after successful prod deployment
+PRINT 'Running one-time release scripts...'
+:r .\OneTime\Release_2025.02_DataFixes.sql
+
+PRINT '========================================'
+PRINT 'Post-deployment complete'
+PRINT '========================================'
+GO
+```
+
+### Migration Scripts (Permanent)
+
+These stay in the project forever. They must be idempotent — safe to run multiple times.
+
+**Example: Backfill a new column**
+
+```sql
+-- /Migrations/001_BackfillCreatedAt.sql
+
+/*
+Migration: Backfill CreatedAt column
+Ticket: JIRA-1234
+Author: Danny
+Date: 2025-01-15
+
+This migration populates the new CreatedAt column for existing records.
+Uses OrderDate as a proxy where available, otherwise uses a default.
+*/
+
+PRINT 'Migration 001: Backfill CreatedAt...'
+
+IF EXISTS (SELECT 1 FROM dbo.[Order] WHERE CreatedAt IS NULL)
+BEGIN
+    UPDATE dbo.[Order]
+    SET CreatedAt = ISNULL(OrderDate, '2020-01-01')
+    WHERE CreatedAt IS NULL
+    
+    PRINT '  Updated ' + CAST(@@ROWCOUNT AS VARCHAR) + ' rows.'
+END
+ELSE
+BEGIN
+    PRINT '  No NULL CreatedAt values — skipping.'
+END
+GO
+```
+
+**Example: Seed a lookup table**
+
+```sql
+-- /ReferenceData/SeedStatusCodes.sql
+
+/*
+Reference Data: Order Status codes
+*/
+
+PRINT 'Seeding OrderStatus reference data...'
+
+-- Use MERGE for idempotent upsert
+MERGE INTO dbo.OrderStatus AS target
+USING (VALUES
+    (1, 'Pending', 1),
+    (2, 'Processing', 2),
+    (3, 'Shipped', 3),
+    (4, 'Delivered', 4),
+    (5, 'Cancelled', 5)
+) AS source (StatusId, StatusName, SortOrder)
+ON target.StatusId = source.StatusId
+WHEN MATCHED THEN
+    UPDATE SET StatusName = source.StatusName, SortOrder = source.SortOrder
+WHEN NOT MATCHED THEN
+    INSERT (StatusId, StatusName, SortOrder)
+    VALUES (source.StatusId, source.StatusName, source.SortOrder);
+
+PRINT '  OrderStatus seeded/updated.'
+GO
+```
+
+### One-Time Scripts (Transient)
+
+These are for release-specific work. After successful production deployment, they're removed (moved to git history only).
+
+```sql
+-- /OneTime/Release_2025.02_DataFixes.sql
+
+/*
+One-Time Script: Release 2025.02 data corrections
+Remove after production deployment.
+
+Ticket: JIRA-1456
+Description: Fix incorrectly migrated phone numbers from legacy import
+*/
+
+PRINT 'One-time fix: Correcting phone number format...'
+
+UPDATE dbo.Customer
+SET PhoneNumber = '+1' + PhoneNumber
+WHERE PhoneNumber NOT LIKE '+%'
+  AND LEN(PhoneNumber) = 10
+
+PRINT '  Updated ' + CAST(@@ROWCOUNT AS VARCHAR) + ' phone numbers.'
+GO
+```
+
+---
+
+## Idempotency Patterns
+
+Every permanent script must be safe to run multiple times. Here's how:
+
+### Pattern 1: Check-Before-Act
+
+```sql
+-- Only update rows that need it
+IF EXISTS (SELECT 1 FROM dbo.Person WHERE MiddleName IS NULL)
+BEGIN
+    UPDATE dbo.Person SET MiddleName = '' WHERE MiddleName IS NULL
+END
+```
+
+### Pattern 2: MERGE for Upserts
+
+```sql
+-- Insert or update in one statement
+MERGE INTO dbo.Country AS target
+USING (VALUES ('US', 'United States'), ('CA', 'Canada')) AS source (Code, Name)
+ON target.CountryCode = source.Code
+WHEN MATCHED THEN UPDATE SET CountryName = source.Name
+WHEN NOT MATCHED THEN INSERT (CountryCode, CountryName) VALUES (source.Code, source.Name);
+```
+
+### Pattern 3: NOT EXISTS Guard
+
+```sql
+-- Only insert if not already there
+IF NOT EXISTS (SELECT 1 FROM dbo.Country WHERE CountryCode = 'US')
+BEGIN
+    INSERT INTO dbo.Country (CountryCode, CountryName) VALUES ('US', 'United States')
+END
+```
+
+### Pattern 4: Migration Tracking Table
+
+For complex migrations where simple checks aren't enough:
+
+```sql
+-- Check if this migration has run
+IF NOT EXISTS (SELECT 1 FROM dbo.MigrationHistory WHERE MigrationId = '003_MigrateAddressData')
+BEGIN
+    -- Do the migration work
+    -- ... complex operations ...
+    
+    -- Mark as complete
+    INSERT INTO dbo.MigrationHistory (MigrationId, ExecutedAt, ExecutedBy)
+    VALUES ('003_MigrateAddressData', SYSUTCDATETIME(), SYSTEM_USER)
+END
+```
+
+**The MigrationHistory table:**
+
+```sql
+CREATE TABLE [dbo].[MigrationHistory]
+(
+    MigrationId NVARCHAR(200) NOT NULL,
+    ExecutedAt DATETIME2(7) NOT NULL,
+    ExecutedBy NVARCHAR(128) NOT NULL,
+    CONSTRAINT PK_MigrationHistory PRIMARY KEY (MigrationId)
+)
+```
+
+### Testing Idempotency
+
+Before committing, ask: "If I run this twice, what happens?"
+
+- **Good:** Second run does nothing (conditions not met)
+- **Bad:** Second run fails (duplicate key)
+- **Worse:** Second run corrupts data (double-update)
+
+---
+
+## Common Mistakes
+
+| Mistake | What happens | Fix |
+|---------|--------------|-----|
+| Non-idempotent INSERT | Duplicate key error on second run | Use `IF NOT EXISTS` or `MERGE` |
+| UPDATE without WHERE | All rows updated, including already-correct ones | Add condition to skip already-updated rows |
+| Assuming column exists | Script fails if run before schema change | Use pre-deployment for schema-dependent work, post-deployment for new-schema work |
+| No progress output | Hard to debug when something fails | Add `PRINT` statements |
+| Giant single script | Hard to maintain, hard to debug | Break into focused, included files |
+
+---
+
+## Pre-Deployment vs. Post-Deployment Decision Guide
+
+| Scenario | Use | Why |
+|----------|-----|-----|
+| Backfill NULLs before NOT NULL constraint | Pre-deployment | Must happen before schema change |
+| Clean orphans before adding FK | Pre-deployment | Must happen before constraint exists |
+| Drop blocking index for column type change | Pre-deployment | Index prevents ALTER |
+| Populate new column from existing data | Post-deployment | New column must exist first |
+| Seed lookup table | Post-deployment | Table must exist first |
+| Transform data to new format | Post-deployment | New structure must exist |
+| One-time data fix | Post-deployment | Usually schema-independent |
+
+---
+
+Let me continue with the remaining consolidated Foundations sections.
+
+---
+
+# 7. Idempotency 101
+
+---
+
+## Why Idempotency Matters
+
+An idempotent operation produces the same result whether you run it once or many times.
+
+In the context of deployment scripts:
+- **Fresh environment:** Script runs for the first time, does the work
+- **Existing environment:** Script runs again, recognizes work is done, does nothing harmful
+- **Retry after failure:** Script runs again after a mid-deploy crash, completes without errors
+
+**Without idempotency:**
+- Fresh deploys work
+- Redeployments fail or corrupt data
+- You can't safely retry failed deployments
+
+---
+
+## The Core Patterns
+
+### Pattern 1: Existence Check (Most Common)
+
+Check if the work has already been done.
+
+```sql
+-- Adding data
+IF NOT EXISTS (SELECT 1 FROM dbo.Country WHERE CountryCode = 'US')
+BEGIN
+    INSERT INTO dbo.Country (CountryCode, CountryName) VALUES ('US', 'United States')
+END
+
+-- Updating data
+IF EXISTS (SELECT 1 FROM dbo.Person WHERE MiddleName IS NULL)
+BEGIN
+    UPDATE dbo.Person SET MiddleName = '' WHERE MiddleName IS NULL
+END
+
+-- Deleting data
+IF EXISTS (SELECT 1 FROM dbo.TempData WHERE ProcessedDate < '2024-01-01')
+BEGIN
+    DELETE FROM dbo.TempData WHERE ProcessedDate < '2024-01-01'
+END
+```
+
+### Pattern 2: MERGE (Upsert)
+
+Insert if missing, update if exists — in one atomic statement.
+
+```sql
+MERGE INTO dbo.OrderStatus AS target
+USING (VALUES
+    (1, 'Pending'),
+    (2, 'Active'),
+    (3, 'Complete')
+) AS source (Id, Name)
+ON target.StatusId = source.Id
+WHEN MATCHED THEN
+    UPDATE SET StatusName = source.Name
+WHEN NOT MATCHED THEN
+    INSERT (StatusId, StatusName) VALUES (source.Id, source.Name);
+```
+
+### Pattern 3: Conditional UPDATE with Filtering
+
+Update only rows that need it — don't touch already-correct rows.
+
+```sql
+-- Bad: Updates all rows, even if already correct
+UPDATE dbo.Customer SET IsActive = 1
+
+-- Good: Only updates rows that need changing
+UPDATE dbo.Customer SET IsActive = 1 WHERE IsActive = 0 OR IsActive IS NULL
+```
+
+### Pattern 4: Migration Tracking Table
+
+For complex, multi-step migrations that can't be easily checked.
+
+```sql
+IF NOT EXISTS (SELECT 1 FROM dbo.MigrationHistory WHERE MigrationId = 'MIG_2025.01_SplitAddress')
+BEGIN
+    -- Complex migration logic
+    INSERT INTO dbo.Address (CustomerId, Street, City, State, PostalCode)
+    SELECT CustomerId, AddressLine1, City, StateCode, ZipCode
+    FROM dbo.Customer
+    WHERE AddressLine1 IS NOT NULL
+    
+    -- Mark complete
+    INSERT INTO dbo.MigrationHistory (MigrationId, ExecutedAt, ExecutedBy)
+    VALUES ('MIG_2025.01_SplitAddress', SYSUTCDATETIME(), SYSTEM_USER)
+END
+```
+
+---
+
+## Testing Your Idempotency
+
+Before committing any script, run this mental test:
+
+1. **Run it once** — Does it do the intended work?
+2. **Run it again immediately** — Does it fail? Does it duplicate data? Does it do nothing?
+3. **Run it after partial completion** — If it failed mid-way, does re-running complete the work?
+
+**Automated check:** In your local dev process, deploy twice in a row. Both should succeed without errors.
+
+---
+
+## Common Idempotency Failures
+
+| Failure | Symptom | Fix |
+|---------|---------|-----|
+| Missing existence check | Duplicate key error | Add `IF NOT EXISTS` |
+| UPDATE without condition | Data changed on every run | Add `WHERE` clause filtering already-updated rows |
+| IDENTITY_INSERT conflicts | Insert fails on second run | Use existence check or MERGE |
+| Hardcoded values + auto-increment | Different IDs in different environments | Use explicit IDs for reference data, or use MERGE on natural key |
+| Cumulative operations | Values keep growing | Make the operation set to a specific value, not increment |
+
+---
+
+## Idempotency Checklist
+
+Before committing a pre/post-deployment script:
+
+- [ ] Wrapped in existence check or uses MERGE
+- [ ] UPDATEs filter to only rows needing change
+- [ ] INSERTs check for existing records
+- [ ] DELETEs can safely run when rows already gone
+- [ ] Tested by running deploy twice locally
+- [ ] Includes PRINT statements for observability
+
+---
+
+# 8. Referential Integrity Basics
+
+---
+
+## What Foreign Keys Actually Enforce
+
+A foreign key constraint says: "Every value in this column must exist in that other table's column."
+
+```sql
+CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) 
+    REFERENCES [dbo].[Customer]([CustomerId])
+```
+
+This means:
+- **INSERT to Order:** CustomerId must exist in Customer
+- **UPDATE Order.CustomerId:** New value must exist in Customer
+- **DELETE from Customer:** Fails if Orders reference that Customer (default behavior)
+
+---
+
+## The Dependency Graph
+
+Foreign keys create dependencies. Understanding the graph matters for:
+- **Insert order:** Parent must exist before child
+- **Delete order:** Children must be removed before parent
+- **Drop order:** Can't drop parent table if FKs point to it
+
+```
+Customer (parent)
+    │
+    └──► Order (child)
+            │
+            └──► OrderLine (grandchild)
+```
+
+**Insert:** Customer → Order → OrderLine (parent first)
+**Delete:** OrderLine → Order → Customer (children first)
+
+---
+
+## CASCADE Options
+
+You control what happens when a parent row is deleted or updated:
+
+| Option | On DELETE | On UPDATE |
+|--------|-----------|-----------|
+| `NO ACTION` (default) | Fail if children exist | Fail if children reference old value |
+| `CASCADE` | Delete all children automatically | Update all children automatically |
+| `SET NULL` | Set FK column to NULL in children | Set FK column to NULL |
+| `SET DEFAULT` | Set FK column to default value | Set FK column to default value |
+
+**Be cautious with CASCADE.** It's powerful but can cause surprising mass deletions.
+
+---
+
+## `WITH NOCHECK` and Trust
+
+When you add an FK to a table with existing data, SQL Server validates all rows. If orphans exist, it fails.
+
+You can skip validation:
+
+```sql
+ALTER TABLE dbo.[Order] WITH NOCHECK
+ADD CONSTRAINT FK_Order_Customer 
+FOREIGN KEY (CustomerId) REFERENCES dbo.Customer(CustomerId)
+```
+
+**But this creates an untrusted constraint:**
+- New rows are validated
+- Existing rows are not
+- Query optimizer ignores untrusted constraints (can't use them for optimization)
+
+**To regain trust:**
+
+```sql
+ALTER TABLE dbo.[Order] WITH CHECK CHECK CONSTRAINT FK_Order_Customer
+```
+
+This validates all existing rows and marks the constraint as trusted.
+
+---
+
+## Finding Orphan Data
+
+Before adding an FK, check for orphans:
+
+```sql
+-- Find orders with no matching customer
+SELECT o.OrderId, o.CustomerId
+FROM dbo.[Order] o
+LEFT JOIN dbo.Customer c ON o.CustomerId = c.CustomerId
+WHERE c.CustomerId IS NULL
+```
+
+---
+
+## SSDT and Referential Integrity
+
+SSDT validates referential integrity at **build time**. If you define an FK to a table that doesn't exist in your project, build fails.
+
+SSDT generates FK creation at **deploy time**. If orphan data exists, deploy fails (unless you use `WITH NOCHECK` via script).
+
+---
+
+# 9. The Refactorlog and Rename Discipline
+
+*(This section consolidates the refactorlog content from earlier in the thread)*
+
+---
+
+## What the Refactorlog Is
+
+The refactorlog is an XML file that tracks identity-preserving changes — specifically, renames.
+
+When you rename a column in SSDT using the GUI:
+- SSDT updates the column name in your `.sql` file
+- SSDT adds an entry to the refactorlog
+
+The refactorlog entry says: "This object used to be called X, now it's called Y. They're the same object."
+
+---
+
+## The Silent Catastrophe
+
+Without a refactorlog entry, SSDT interprets a rename as:
+- Old column: deleted
+- New column: created (fresh, empty)
+
+**Generated script without refactorlog:**
+```sql
+ALTER TABLE dbo.Person DROP COLUMN FirstName
+ALTER TABLE dbo.Person ADD GivenName NVARCHAR(100) NULL
+-- Data in FirstName? Gone.
+```
+
+**Generated script with refactorlog:**
+```sql
+EXEC sp_rename 'dbo.Person.FirstName', 'GivenName', 'COLUMN'
+-- Data preserved.
+```
+
+---
+
+## How to Rename Correctly
+
+### Method 1: GUI Rename (Preferred)
+
+1. In Solution Explorer or table designer, right-click the object
+2. Select Rename
+3. Enter new name
+4. SSDT updates the file AND adds refactorlog entry
+
+### Method 2: Manual Refactorlog Entry
+
+If you've already edited the file directly, you can manually add the entry:
+
+```xml
+<Operation Name="Rename Refactor" Key="[unique-guid]" ChangeDateTime="2025-01-15T10:30:00">
+  <Property Name="ElementName" Value="[dbo].[Person].[FirstName]" />
+  <Property Name="ElementType" Value="SqlSimpleColumn" />
+  <Property Name="ParentElementName" Value="[dbo].[Person]" />
+  <Property Name="ParentElementType" Value="SqlTable" />
+  <Property Name="NewName" Value="GivenName" />
+</Operation>
+```
+
+But this is error-prone. Use the GUI.
+
+---
+
+## Protecting the Refactorlog
+
+### Branch Merges
+
+When two branches rename different objects, both add refactorlog entries. Merge conflicts in XML can be tricky.
+
+**Resolution approach:**
+- Keep BOTH entries (they're independent operations)
+- Ensure GUIDs are unique
+- Validate by building after merge
+
+### Never Delete Entries
+
+Refactorlog entries are needed for fresh environment deployments. Deleting "old" entries means fresh deployments treat those renames as drop-and-create.
+
+**Even if the rename happened a year ago, keep the entry.**
+
+### CI Validation
+
+Consider adding a pipeline check:
+- Detect column name changes in `.sql` files
+- Verify corresponding refactorlog entry exists
+- Fail PR if rename detected without refactorlog
+
+---
+
+# 10. SSDT Deployment Safety
+
+*(This section consolidates the settings discussion from earlier)*
+
+---
+
+## The Publish Profile Settings That Matter
+
+Your publish profile (`.publish.xml`) controls deployment behavior. These settings are your safety net.
+
+---
+
+## `BlockOnPossibleDataLoss`
+
+**What it does:** If SSDT's generated script would drop a column containing data, drop a table with rows, or narrow a column, deployment fails instead of proceeding.
+
+**Setting:** `True` — always, every environment, non-negotiable.
+
+```xml
+<BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss>
+```
+
+**When it fires:**
+- Dropping a column that has data
+- Dropping a table that has rows
+- Narrowing a column that contains values too long for new size
+- Changing type in a way that can lose precision
+
+**What to do when it fires:**
+1. Stop. This is the system protecting you.
+2. Review the generated script — what's it trying to do?
+3. If the data loss is intentional, handle it explicitly in pre-deployment
+4. If unintentional, fix your schema change
+
+**Never set this to False for production deploys.** If you need to override, do it consciously via pre-deployment scripting, not by disabling the guard.
+
+---
+
+## `DropObjectsNotInSource`
+
+**What it does:** When `True`, objects in the target database that aren't in your SSDT project are dropped. When `False`, they're ignored.
+
+```xml
+<DropObjectsNotInSource>False</DropObjectsNotInSource>
+```
+
+**Recommendations:**
+
+| Environment | Setting | Rationale |
+|-------------|---------|-----------|
+| Dev | True | Keep it clean, catch issues early |
+| Test | True | Should match prod process |
+| UAT | False | Don't accidentally drop test fixtures |
+| Prod | **False** | Never auto-drop in prod |
+
+**For production:** If you want something gone, do it explicitly in the schema (delete the file) so it goes through PR review. Don't rely on SSDT's diff to clean up.
+
+---
+
+## `IgnoreColumnOrder`
+
+**What it does:** When `True`, SSDT ignores differences in column order. When `False`, it will reorder columns to match the definition.
+
+```xml
+<IgnoreColumnOrder>True</IgnoreColumnOrder>
+```
+
+**Keep this True.** Column order changes can trigger full table rebuilds for cosmetic benefit. Not worth it.
+
+---
+
+## `GenerateSmartDefaults`
+
+**What it does:** When adding a NOT NULL column, SSDT can auto-generate a default value to populate existing rows.
+
+```xml
+<GenerateSmartDefaults>False</GenerateSmartDefaults>
+```
+
+**Recommendation:**
+- `True` for dev (velocity)
+- `False` for test/UAT/prod (force explicit handling)
+
+Smart defaults can mask problems. You may not want empty strings or zeros silently backfilled.
+
+---
+
+## Settings Matrix by Environment
+
+| Setting | Dev | Test | UAT | Prod |
+|---------|-----|------|-----|------|
+| BlockOnPossibleDataLoss | True | True | True | **True** |
+| DropObjectsNotInSource | True | True | False | **False** |
+| IgnoreColumnOrder | True | True | True | True |
+| GenerateSmartDefaults | True | True | False | **False** |
+| AllowIncompatiblePlatform | False | False | False | False |
+| TreatTSqlWarningsAsErrors | False | True | True | True |
+
+---
+
+## The Settings as Last Line of Defense
+
+These settings are guardrails, not substitutes for good process.
+
+```
+Tier system (process) → catches most issues
+    ↓
+PR review → catches issues process missed
+    ↓
+Local testing → catches issues review missed
+    ↓
+Settings (BlockOnPossibleDataLoss, etc.) → catches what everything else missed
+```
+
+When a setting blocks you, that's the system working. Investigate, don't bypass.
+
+---
+
+I'll continue with Sections 11-12 (Multi-Phase Evolution and CDC), then move to the Execution Layer (Pattern Templates and Anti-Patterns), then Process.
+
+---
+
+# 11. Multi-Phase Evolution
+
+---
+
+## Why Some Changes Can't Be Atomic
+
+Some schema changes can't safely happen in a single deployment:
+
+- **Data dependencies:** New structure needs data from old structure
+- **Application coordination:** Old and new code must coexist during transition
+- **Risk management:** Each phase can be validated before proceeding
+- **CDC constraints:** Audit continuity requires careful sequencing
+
+**The fundamental pattern:** Create new → Migrate data → Remove old
+
+---
+
+## Phase-to-Release Mapping
+
+Not all phases can share a release. The question is: "Can we safely rollback if something goes wrong after this phase?"
+
+| Phase combination | Same release? | Rationale |
+|-------------------|---------------|-----------|
+| Create new structure + migrate data | Often yes | Rollback = drop new structure, data still in old |
+| Migrate data + drop old structure | **No** | Rollback impossible — old structure is gone |
+| Create + migrate | Maybe | Depends on data volume and complexity |
+| Anything touching CDC | Often separate | Need to verify capture instances are correct |
+
+**Rule of thumb:** If the phase is irreversible (data loss, structure removal), it should be a separate release with explicit verification before proceeding.
+
+---
+
+## Rollback Considerations
+
+At each phase, know your rollback:
+
+| Phase | Rollback approach |
+|-------|-------------------|
+| Created new column/table | Drop it |
+| Migrated data to new structure | Leave it (or delete if needed) |
+| Dropped old column/table | Restore from backup |
+| Changed CDC instance | Recreate old instance (with gap) |
+
+**Point of no return:** Once you drop the old structure, rollback requires backup restoration. Make sure you've validated before crossing that line.
+
+---
+
+## Multi-Phase Operations Catalog
+
+These operations typically require multi-phase treatment:
+
+| Operation | Why Multi-Phase | See Pattern |
+|-----------|-----------------|-------------|
+| Explicit data type conversion | Data must transform; old and new must coexist | 17.1 |
+| NULL → NOT NULL on populated table | Existing NULLs need values first | 17.2 |
+| Add/remove IDENTITY | Can't ALTER to add IDENTITY; requires table swap | 17.3 |
+| Add FK with orphan data | Need to clean data or use NOCHECK→trust sequence | 17.4 |
+| Safe column removal | Verify unused before dropping | 17.5 |
+| Table split | New structure + data migration + app coordination | 17.6 |
+| Table merge | Same as split, reverse direction | 17.7 |
+| Rename with compatibility | Old name must keep working during transition | 17.8 |
+| CDC-enabled table schema change | Capture instance management | 17.9 |
+
+---
+
+# 12. CDC and Schema Evolution
+
+*(Consolidating from earlier discussion)*
+
+---
+
+## The Core Constraint
+
+CDC capture instances are schema-bound. When you create a capture instance, it records the table's schema at that moment. Changes to the table don't automatically update the capture instance.
+
+**Operations requiring instance recreation:**
+- Add column (if you want it tracked)
+- Drop column
+- Rename column
+- Change data type
+
+**Operations that don't affect CDC:**
+- Add/modify/drop constraints
+- Add/modify/drop indexes
+- Changes to non-CDC-enabled tables
+
+---
+
+## Development Strategy: Accept Gaps
+
+In development, velocity matters more than audit completeness.
+
+**Approach:**
+1. Batch schema changes
+2. Disable CDC on affected tables before deploy
+3. Deploy schema changes
+4. Re-enable CDC after deploy
+
+**Automation template:**
+
+```sql
+-- Pre-deployment: Disable CDC on all tables
+DECLARE @sql NVARCHAR(MAX) = ''
+SELECT @sql += 'EXEC sys.sp_cdc_disable_table 
+    @source_schema = ''' + OBJECT_SCHEMA_NAME(source_object_id) + ''', 
+    @source_name = ''' + OBJECT_NAME(source_object_id) + ''', 
+    @capture_instance = ''' + capture_instance + ''';'
+FROM cdc.change_tables
+
+EXEC sp_executesql @sql
+
+-- [SSDT deployment happens]
+
+-- Post-deployment: Re-enable CDC (from your table list)
+-- ... enable scripts ...
+```
+
+**Accepted risks:**
+- History gaps during development
+- Change History feature shows incomplete data in dev/test
+- Building habits that need adjustment for production
+
+---
+
+## UAT Strategy: Communicate Gaps
+
+In UAT, clients will see the Change History feature. Set expectations.
+
+**Client messaging template:**
+
+> "The Change History feature tracks all modifications to records. During this testing phase:
+> 
+> 1. History starts from [date] — changes before that aren't captured.
+> 2. During deployments, there may be brief gaps when changes aren't recorded.
+> 3. New fields appear in history going forward only.
+> 
+> In production, we use a process that eliminates gaps."
+
+**Practices:**
+- Maintain a gap log
+- Notify before deployments
+- Smoke test Change History after each deploy
+
+---
+
+## Production Strategy: No Gaps
+
+In production, use the dual-instance pattern.
+
+**Phase sequence:**
+
+```
+Release N:
+1. Create new capture instance with new schema
+2. Apply schema change
+3. Both instances active — consumer reads from both
+
+Release N+1 (after retention window):
+4. Drop old capture instance
+5. Consumer reads only from new instance
+```
+
+**Consumer abstraction:**
+
+Your Change History code should query through an abstraction that:
+- Unions results from all active instances
+- Handles schema differences (missing columns in old instance)
+- Manages LSN ranges correctly
+
+---
+
+## CDC Table Registry
+
+Maintain a list of CDC-enabled tables. Check it before any schema change.
+
+**Query to find CDC-enabled tables:**
+
+```sql
+SELECT 
+    OBJECT_SCHEMA_NAME(source_object_id) AS SchemaName,
+    OBJECT_NAME(source_object_id) AS TableName,
+    capture_instance AS CaptureInstance,
+    create_date AS EnabledDate
+FROM cdc.change_tables
+ORDER BY SchemaName, TableName
+```
+
+**Before any schema change:** "Is this table on the list? If yes, follow CDC protocol."
+
+---
+
+Now let me continue with the Execution Layer — the Multi-Phase Pattern Templates and Anti-Patterns Gallery.
+
+---
+
+# 17. Multi-Phase Pattern Templates
+
+---
+
+## How to Use This Section
+
+Each pattern provides:
+- **When to use:** Conditions that trigger this pattern
+- **Phase sequence:** The ordered steps across releases
+- **Code templates:** Actual SQL for each phase
+- **Rollback notes:** How to reverse if needed
+- **Verification queries:** How to confirm each phase succeeded
+
+---
+
+## 17.1 Pattern: Explicit Conversion Data Type Change
+
+**When to use:** Changing a column's data type when SQL Server can't implicitly convert (e.g., VARCHAR → DATE, INT → UNIQUEIDENTIFIER)
+
+**Scenario:** Convert `PolicyDate` from `VARCHAR(10)` to `DATE`
+
+### Phase 1 (Release N): Add New Column
+
+```sql
+-- Declarative: Add to table definition
+[PolicyDateNew] DATE NULL,
+```
+
+### Phase 2 (Release N): Migrate Data (Post-Deployment)
+
+```sql
+-- PostDeployment script
+PRINT 'Migrating PolicyDate to DATE type...'
+
+UPDATE dbo.Policy
+SET PolicyDateNew = TRY_CONVERT(DATE, PolicyDate, 101)  -- MM/DD/YYYY format
+WHERE PolicyDateNew IS NULL
+  AND PolicyDate IS NOT NULL
+
+-- Log failures
+INSERT INTO dbo.MigrationLog (TableName, ColumnName, FailedValue, FailureReason)
+SELECT 'Policy', 'PolicyDate', PolicyDate, 'Invalid date format'
+FROM dbo.Policy
+WHERE PolicyDateNew IS NULL 
+  AND PolicyDate IS NOT NULL
+
+PRINT 'Migration complete. Check MigrationLog for failures.'
+```
+
+### Phase 3 (Release N+1): Application Transition
+
+Application code switches from `PolicyDate` to `PolicyDateNew`. Both columns exist during this phase.
+
+### Phase 4 (Release N+2): Remove Old, Rename New
+
+```sql
+-- Pre-deployment: Verify migration complete
+IF EXISTS (SELECT 1 FROM dbo.Policy WHERE PolicyDate IS NOT NULL AND PolicyDateNew IS NULL)
+BEGIN
+    RAISERROR('Migration incomplete — some PolicyDate values not converted', 16, 1)
+    RETURN
+END
+```
+
+```sql
+-- Declarative: Remove old column, rename new column (use refactorlog for rename)
+-- After this release:
+[PolicyDate] DATE NULL,  -- This is the renamed PolicyDateNew
+```
+
+**Rollback notes:**
+- Phase 1-2: Drop new column, no data loss
+- Phase 3: Revert application code
+- Phase 4: Requires backup restore (old column is gone)
+
+**Verification:**
+```sql
+-- After Phase 2: Check conversion success rate
+SELECT 
+    COUNT(*) AS TotalRows,
+    SUM(CASE WHEN PolicyDateNew IS NOT NULL THEN 1 ELSE 0 END) AS Converted,
+    SUM(CASE WHEN PolicyDateNew IS NULL AND PolicyDate IS NOT NULL THEN 1 ELSE 0 END) AS Failed
+FROM dbo.Policy
+```
+
+---
+
+## 17.2 Pattern: NULL → NOT NULL on Populated Table
+
+**When to use:** Making an existing nullable column required
+
+**Scenario:** Make `Customer.Email` NOT NULL
+
+### Phase 1 (Release N): Backfill (Pre-Deployment)
+
+```sql
+-- PreDeployment script
+PRINT 'Backfilling NULL emails...'
+
+-- Option A: Default value
+UPDATE dbo.Customer
+SET Email = 'unknown@placeholder.com'
+WHERE Email IS NULL
+
+-- Option B: Derive from other data
+UPDATE dbo.Customer
+SET Email = LOWER(FirstName) + '.' + LOWER(LastName) + '@unknown.com'
+WHERE Email IS NULL
+
+PRINT 'Backfill complete.'
+```
+
+### Phase 2 (Release N): Apply Constraint (Declarative)
+
+```sql
+-- Table definition change
+[Email] NVARCHAR(200) NOT NULL,  -- Changed from NULL
+```
+
+**If you must do it in one release:** Combine pre-deployment backfill with declarative constraint. SSDT will apply the constraint after pre-deployment runs.
+
+**Rollback notes:**
+- Change constraint back to NULL
+- Backfilled data remains (but that's usually fine)
+
+**Verification:**
+```sql
+-- Before Phase 2: Confirm no NULLs remain
+SELECT COUNT(*) AS NullEmailCount
+FROM dbo.Customer
+WHERE Email IS NULL
+-- Must be 0
+```
+
+---
+
+## 17.3 Pattern: Add/Remove IDENTITY Property
+
+**When to use:** Adding auto-increment to an existing column, or removing it
+
+**Scenario:** Convert `PolicyId INT` to `PolicyId INT IDENTITY(1,1)`
+
+You cannot `ALTER TABLE` to add IDENTITY. This requires a table swap.
+
+### Phase 1 (Release N): Create New Table (Pre-Deployment Script)
+
+```sql
+-- PreDeployment script
+PRINT 'Creating new Policy table with IDENTITY...'
+
+-- Create new table structure
+CREATE TABLE dbo.Policy_New
+(
+    PolicyId INT IDENTITY(1,1) NOT NULL,
+    PolicyNumber NVARCHAR(50) NOT NULL,
+    CustomerId INT NOT NULL,
+    -- ... all other columns ...
+    CONSTRAINT PK_Policy_New PRIMARY KEY CLUSTERED (PolicyId)
+)
+
+-- Copy data with IDENTITY_INSERT
+SET IDENTITY_INSERT dbo.Policy_New ON
+
+INSERT INTO dbo.Policy_New (PolicyId, PolicyNumber, CustomerId /*, ... */)
+SELECT PolicyId, PolicyNumber, CustomerId /*, ... */
+FROM dbo.Policy
+
+SET IDENTITY_INSERT dbo.Policy_New OFF
+
+-- Reseed to max + 1
+DECLARE @MaxId INT = (SELECT MAX(PolicyId) FROM dbo.Policy_New)
+DBCC CHECKIDENT ('dbo.Policy_New', RESEED, @MaxId)
+
+PRINT 'Data migrated to new table.'
+```
+
+### Phase 2 (Release N): Swap Tables (Pre-Deployment, continued)
+
+```sql
+-- Drop FKs pointing to old table
+ALTER TABLE dbo.Claim DROP CONSTRAINT FK_Claim_Policy
+-- ... other FKs ...
+
+-- Swap
+DROP TABLE dbo.Policy
+EXEC sp_rename 'dbo.Policy_New', 'Policy'
+
+-- Recreate FKs
+ALTER TABLE dbo.Claim ADD CONSTRAINT FK_Claim_Policy
+    FOREIGN KEY (PolicyId) REFERENCES dbo.Policy(PolicyId)
+
+PRINT 'Table swap complete.'
+```
+
+### Phase 3: Declarative Definition Matches
+
+Your declarative table definition now shows IDENTITY:
+
+```sql
+CREATE TABLE [dbo].[Policy]
+(
+    [PolicyId] INT IDENTITY(1,1) NOT NULL,
+    -- ...
+)
+```
+
+**Rollback notes:**
+- This is largely atomic if done in pre-deployment
+- Full rollback = restore from backup
+- Test thoroughly in lower environments
+
+**Verification:**
+```sql
+-- Confirm IDENTITY is set
+SELECT 
+    COLUMNPROPERTY(OBJECT_ID('dbo.Policy'), 'PolicyId', 'IsIdentity') AS IsIdentity
+-- Should be 1
+
+-- Confirm row counts match
+SELECT 
+    (SELECT COUNT(*) FROM dbo.Policy) AS NewCount
+-- Should match original
+```
+
+---
+
+## 17.4 Pattern: Add FK with Orphan Data
+
+**When to use:** Adding a foreign key when orphan records exist that you can't immediately delete
+
+**Scenario:** Add `FK_Order_Customer` but some orders have invalid `CustomerId` values
+
+### Phase 1 (Release N): Add FK as Untrusted
+
+```sql
+-- PostDeployment script (not declarative — SSDT doesn't support NOCHECK directly)
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_Order_Customer')
+BEGIN
+    ALTER TABLE dbo.[Order] WITH NOCHECK
+    ADD CONSTRAINT FK_Order_Customer 
+        FOREIGN KEY (CustomerId) REFERENCES dbo.Customer(CustomerId)
+    
+    PRINT 'FK created as untrusted.'
+END
+```
+
+### Phase 2 (Release N or N+1): Clean Orphan Data
+
+```sql
+-- PostDeployment script
+PRINT 'Cleaning orphan orders...'
+
+-- Option A: Delete orphans
+DELETE FROM dbo.[Order]
+WHERE CustomerId NOT IN (SELECT CustomerId FROM dbo.Customer)
+
+-- Option B: Create placeholder customer for orphans
+IF NOT EXISTS (SELECT 1 FROM dbo.Customer WHERE CustomerId = -1)
+BEGIN
+    SET IDENTITY_INSERT dbo.Customer ON
+    INSERT INTO dbo.Customer (CustomerId, FirstName, LastName, Email)
+    VALUES (-1, 'Unknown', 'Customer', 'orphan@placeholder.com')
+    SET IDENTITY_INSERT dbo.Customer OFF
+END
+
+UPDATE dbo.[Order]
+SET CustomerId = -1
+WHERE CustomerId NOT IN (SELECT CustomerId FROM dbo.Customer)
+
+PRINT 'Orphans handled.'
+```
+
+### Phase 3 (Release N+1 or N+2): Enable Trust
+
+```sql
+-- PostDeployment script
+PRINT 'Enabling FK trust...'
+
+ALTER TABLE dbo.[Order] WITH CHECK CHECK CONSTRAINT FK_Order_Customer
+
+PRINT 'FK is now trusted.'
+```
+
+### Phase 4: Declarative Definition
+
+Add the FK to your declarative table definition. SSDT will see it already exists and matches.
+
+```sql
+CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) 
+    REFERENCES [dbo].[Customer]([CustomerId])
+```
+
+**Verification:**
+```sql
+-- Check trust status
+SELECT name, is_not_trusted
+FROM sys.foreign_keys
+WHERE name = 'FK_Order_Customer'
+-- is_not_trusted should be 0 after Phase 3
+```
+
+---
+
+## 17.5 Pattern: Safe Column Removal (4-Phase)
+
+**When to use:** Removing a column safely with full verification
+
+**Scenario:** Remove `Customer.LegacyId` that's no longer used
+
+### Phase 1 (Release N): Soft Deprecate
+
+Document the deprecation. Optionally rename:
+
+```sql
+-- Declarative: Rename to signal deprecation
+[__deprecated_LegacyId] INT NULL,  -- Was LegacyId, use refactorlog
+```
+
+Or just add documentation/comments without schema change.
+
+### Phase 2 (Release N): Stop Writes
+
+Application code change — stop writing to this column. No schema change.
+
+### Phase 3 (Release N+1): Verify Unused
+
+```sql
+-- Verification query (run manually, not in deployment)
+-- Check for recent writes
+SELECT MAX(UpdatedAt) AS LastWrite
+FROM dbo.Customer
+WHERE LegacyId IS NOT NULL
+
+-- Check for code references (search codebase)
+-- Check for report/ETL references (ask stakeholders)
+```
+
+Only proceed when confident column is truly unused.
+
+### Phase 4 (Release N+2): Drop Column
+
+```sql
+-- Declarative: Remove from table definition
+-- Column is simply gone from the CREATE TABLE statement
+```
+
+**Rollback notes:**
+- Phase 1-3: Fully reversible
+- Phase 4: Requires backup restore
+
+---
+
+## 17.6 Pattern: Table Split (Vertical Partitioning)
+
+**When to use:** Extracting columns from one table into a new related table
+
+**Scenario:** Extract address columns from `Customer` into `CustomerAddress`
+
+### Phase 1 (Release N): Create New Table
+
+```sql
+-- Declarative: New table file
+CREATE TABLE [dbo].[CustomerAddress]
+(
+    [CustomerAddressId] INT IDENTITY(1,1) NOT NULL,
+    [CustomerId] INT NOT NULL,
+    [Street] NVARCHAR(200) NULL,
+    [City] NVARCHAR(100) NULL,
+    [State] NVARCHAR(50) NULL,
+    [PostalCode] NVARCHAR(20) NULL,
+    
+    CONSTRAINT [PK_CustomerAddress] PRIMARY KEY CLUSTERED ([CustomerAddressId]),
+    CONSTRAINT [FK_CustomerAddress_Customer] FOREIGN KEY ([CustomerId]) 
+        REFERENCES [dbo].[Customer]([CustomerId])
+)
+```
+
+### Phase 2 (Release N): Migrate Data (Post-Deployment)
+
+```sql
+-- PostDeployment script
+PRINT 'Migrating address data...'
+
+INSERT INTO dbo.CustomerAddress (CustomerId, Street, City, State, PostalCode)
+SELECT CustomerId, AddressStreet, AddressCity, AddressState, AddressPostalCode
+FROM dbo.Customer
+WHERE AddressStreet IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM dbo.CustomerAddress ca WHERE ca.CustomerId = dbo.Customer.CustomerId)
+
+PRINT 'Address data migrated.'
+```
+
+### Phase 3 (Multiple Releases): Application Transition
+
+Application gradually shifts from `Customer.AddressX` to `CustomerAddress.X`. This may take multiple releases.
+
+### Phase 4 (Release N+X): Drop Old Columns
+
+```sql
+-- Declarative: Remove address columns from Customer table definition
+-- Columns are simply gone
+```
+
+**Rollback notes:**
+- Phase 1-3: Drop new table, data still in original
+- Phase 4: Requires backup restore
+
+---
+
+## 17.9 Pattern: CDC-Enabled Table Schema Change (Production)
+
+**When to use:** Changing schema on a CDC-enabled table without audit gaps
+
+**Scenario:** Add `MiddleName` column to CDC-enabled `Employee` table
+
+### Phase 1 (Release N): Create New Capture Instance
+
+```sql
+-- PostDeployment script
+PRINT 'Creating new CDC capture instance for Employee...'
+
+-- Create new instance with new schema (after column is added)
+EXEC sys.sp_cdc_enable_table
+    @source_schema = 'dbo',
+    @source_name = 'Employee',
+    @capture_instance = 'dbo_Employee_v2',  -- Versioned name
+    @role_name = 'cdc_reader',
+    @supports_net_changes = 1
+
+PRINT 'New capture instance created. Both v1 and v2 are now active.'
+```
+
+### Phase 2 (Release N): Add Column (Declarative)
+
+```sql
+-- Table definition change
+[MiddleName] NVARCHAR(50) NULL,
+```
+
+The new capture instance (v2) tracks this column. The old instance (v1) doesn't know about it.
+
+### Phase 3 (Release N): Update Consumer Abstraction
+
+Change History code now queries both instances and unions results.
+
+### Phase 4 (Release N+1, after retention): Drop Old Instance
+
+```sql
+-- PostDeployment script (after retention period)
+PRINT 'Dropping old CDC capture instance...'
+
+EXEC sys.sp_cdc_disable_table
+    @source_schema = 'dbo',
+    @source_name = 'Employee',
+    @capture_instance = 'dbo_Employee_v1'
+
+PRINT 'Old capture instance dropped.'
+```
+
+**Rollback notes:**
+- Phase 1-3: Drop new instance, keep old
+- Phase 4: Cannot restore dropped instance (but data is beyond retention anyway)
+
+---
+
+# 19. Anti-Patterns Gallery
+
+---
+
+## 19.1 The Naked Rename
+
+**What it looks like:**
+
+Developer opens `dbo.Person.sql`, manually changes column name:
+
+```sql
+-- Before
+[FirstName] NVARCHAR(100) NOT NULL
+
+-- After (just edited the text)
+[GivenName] NVARCHAR(100) NOT NULL
+```
+
+**What happens:**
+
+SSDT sees: "FirstName is gone. GivenName is new."
+
+Generated script:
+```sql
+ALTER TABLE dbo.Person DROP COLUMN FirstName
+ALTER TABLE dbo.Person ADD GivenName NVARCHAR(100) NULL
+```
+
+All data in FirstName is lost.
+
+**The fix:**
+
+Always use SSDT's GUI rename (right-click → Rename). This creates a refactorlog entry that tells SSDT "these are the same column."
+
+**Visual cue:** If your `.refactorlog` file didn't change but a column name did, something is wrong.
+
+---
+
+## 19.2 The Optimistic NOT NULL
+
+**What it looks like:**
+
+Developer adds NOT NULL column without considering existing data:
+
+```sql
+-- Adding to table definition
+[MiddleName] NVARCHAR(50) NOT NULL,  -- No default!
+```
+
+**What happens:**
+
+- Build succeeds (SSDT doesn't know about your data)
+- Deploy fails: "Cannot insert NULL into column 'MiddleName'"
+- Or, with `GenerateSmartDefaults=True`, SSDT silently backfills empty strings
+
+**The fix:**
+
+Either:
+1. Add with a default: `NOT NULL CONSTRAINT DF_Person_MiddleName DEFAULT ('')`
+2. Add as NULL, backfill in post-deployment, then alter to NOT NULL in next release
+
+**Rule of thumb:** NOT NULL on existing table = think about existing rows first.
+
+---
+
+## 19.3 The Forgotten FK Check
+
+**What it looks like:**
+
+Developer adds FK without checking for orphan data:
+
+```sql
+CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) 
+    REFERENCES [dbo].[Customer]([CustomerId])
+```
+
+**What happens:**
+
+If any `Order.CustomerId` value doesn't exist in `Customer.CustomerId`:
+- Deploy fails with constraint violation
+- Or, if using `WITH NOCHECK`, constraint is untrusted (optimizer ignores it)
+
+**The fix:**
+
+Before adding FK, run:
+```sql
+SELECT o.OrderId, o.CustomerId
+FROM dbo.[Order] o
+LEFT JOIN dbo.Customer c ON o.CustomerId = c.CustomerId
+WHERE c.CustomerId IS NULL
+```
+
+Clean up orphans first, or use the WITH NOCHECK → clean → trust pattern.
+
+---
+
+## 19.4 The Ambitious Narrowing
+
+**What it looks like:**
+
+Developer narrows a column without checking data:
+
+```sql
+-- Before
+[Email] NVARCHAR(200)
+
+-- After
+[Email] NVARCHAR(100)  -- Narrowed!
+```
+
+**What happens:**
+
+- If any email is > 100 characters: Deploy fails (BlockOnPossibleDataLoss)
+- If BlockOnPossibleDataLoss is off: Data truncation, silent corruption
+
+**The fix:**
+
+Before narrowing, verify:
+```sql
+SELECT MAX(LEN(Email)) AS MaxLength, COUNT(*) AS OverLimit
+FROM dbo.Person
+WHERE LEN(Email) > 100  -- New limit
+```
+
+If data exceeds new limit, clean it first or reconsider the change.
+
+---
+
+## 19.5 The CDC Surprise
+
+**What it looks like:**
+
+Developer changes schema on CDC-enabled table without considering capture instance:
+
+```sql
+-- Just adds a column like normal
+[NewColumn] NVARCHAR(50) NULL,
+```
+
+**What happens:**
+
+- Column added to table
+- Existing capture instance doesn't include it
+- Change History won't show changes to NewColumn
+- Stale capture instance causes confusion
+
+**The fix:**
+
+Check if table is CDC-enabled first. If yes, follow CDC change protocol:
+- Development: Disable/re-enable CDC (accepting gap)
+- Production: Create new capture instance, manage dual-instance transition
+
+---
+
+## 19.6 The Refactorlog Cleanup
+
+**What it looks like:**
+
+Developer sees old refactorlog entries:
+"We renamed that column two years ago. Why is this still here? Cleaning it up."
+
+Deletes the entry.
+
+**What happens:**
+
+- Existing environments: Fine (column already renamed there)
+- Fresh environment deployment: SSDT treats the old rename as drop+create
+- Data loss in fresh environments
+
+**The fix:**
+
+Never delete refactorlog entries. They're needed for fresh environment deployments. They're small. Leave them.
+
+---
+
+## 19.7 The SELECT * View
+
+**What it looks like:**
+
+Developer creates view with SELECT *:
+
+```sql
+CREATE VIEW dbo.vw_AllCustomers
+AS
+SELECT * FROM dbo.Customer
+```
+
+**What happens:**
+
+- View created with columns that exist *at creation time*
+- Later: Column added to Customer
+- View doesn't automatically include new column
+- Queries against view miss data
+- Confusion: "I added the column, why isn't it showing?"
+
+**The fix:**
+
+Always enumerate columns explicitly:
+```sql
+CREATE VIEW dbo.vw_AllCustomers
+AS
+SELECT 
+    CustomerId,
+    FirstName,
+    LastName,
+    Email,
+    CreatedAt
+FROM dbo.Customer
+```
+
+When you add a column, you must update the view too. This is a feature — it forces you to consider whether the view should expose the new column.
+
+---
+
 # 20. The OutSystems → External Entities Workflow
 
 ---
