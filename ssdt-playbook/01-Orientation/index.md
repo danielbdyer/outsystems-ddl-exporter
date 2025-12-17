@@ -16,4 +16,4 @@ Welcome to the SSDT Playbook. Start here if you're new.
 
 ---
 
-Next: [Foundations](../02-foundations/index.md)
+Next: [Foundations](../02-Foundations/index.md)

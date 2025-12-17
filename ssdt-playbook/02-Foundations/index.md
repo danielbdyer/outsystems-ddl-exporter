@@ -28,4 +28,4 @@ Core concepts you need to understand before making changes.
 
 ---
 
-Previous: [Orientation](../01-orientation/index.md) | Next: [Operations](../03-operations/index.md)
+Previous: [Orientation](../01-Orientation/index.md) | Next: [Operations](../03-Operations/index.md)

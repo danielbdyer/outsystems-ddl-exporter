@@ -26,4 +26,4 @@ Workflows, setup, and procedures.
 
 ---
 
-Previous: [Operations](../03-operations/index.md) | Next: [Reference](../05-reference/index.md)
+Previous: [Operations](../03-Operations/index.md) | Next: [Reference](../05-Reference/index.md)

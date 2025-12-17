@@ -27,4 +27,4 @@ Lookup materials, standards, and templates.
 
 ---
 
-Previous: [Process](../04-process/index.md) | [Home](../index.md)
+Previous: [Process](../04-Process/index.md) | [Home](../index.md)

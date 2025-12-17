@@ -6,15 +6,15 @@ How to classify, execute, and review database changes.
 
 Start here to understand what tier your change is:
 
-- **Dimension Framework** _(coming soon)_ — How to classify any change
-- **Ownership Tiers** _(coming soon)_ — Who owns what level of risk
-- **SSDT Mechanism Axis** _(coming soon)_ — Declarative, scripted, or multi-phase
+- [Dimension Framework](13-Dimension-Framework.md) — How to classify any change
+- [Ownership Tiers](14-Ownership-Tiers.md) — Who owns what level of risk
+- [SSDT Mechanism Axis](15-SSDT-Mechanism-Axis.md) — Declarative, scripted, or multi-phase
 
 ## Operation Reference
 
 Detailed "how to" for every operation type:
 
-📁 [Operation Reference](16-operation-reference/index.md)
+📁 [Operation Reference](16-Operation-Reference/index.md)
 - Entities (Tables)
 - Attributes (Columns)
 - Keys and References
@@ -30,7 +30,7 @@ Detailed "how to" for every operation type:
 
 When changes require multiple releases:
 
-📁 [Multi-Phase Patterns](17-multi-phase-patterns/index.md)
+📁 [Multi-Phase Patterns](17-Multi-Phase-Patterns/index.md)
 - Explicit Type Conversion
 - NULL → NOT NULL
 - Identity Property Changes
@@ -53,4 +53,4 @@ When changes require multiple releases:
 
 ---
 
-Previous: [Foundations](../02-foundations/index.md) | Next: [Process](../04-process/index.md)
+Previous: [Foundations](../02-Foundations/index.md) | Next: [Process](../04-Process/index.md)
