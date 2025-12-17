@@ -64,10 +64,9 @@ public class FullExportDocumentationTests
         var doc = DocumentationFile.Read(Path.Combine("docs", "full-export-artifact-contract.md"));
 
         Assert.Contains("build.staticSeedRoot", doc, StringComparison.Ordinal);
-        Assert.Contains("build.dynamicInsertRoot", doc, StringComparison.Ordinal);
         Assert.Contains("build.sqlProjectPath", doc, StringComparison.Ordinal);
         Assert.Contains("Script.PostDeployment.sql", doc, StringComparison.Ordinal);
-        Assert.Contains("DynamicData", doc, StringComparison.Ordinal);
+        Assert.Contains("DynamicData (deprecated)", doc, StringComparison.Ordinal);
         Assert.Contains("tests/Fixtures/emission/edge-case", doc, StringComparison.Ordinal);
     }
 

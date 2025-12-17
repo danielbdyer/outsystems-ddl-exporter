@@ -55,8 +55,8 @@ entries:
 | --- | --- |
 | `build.staticSeedRoot` | Absolute path to the seed directory calculated from the emitted seed scripts. |
 | `build.staticSeedsInDynamicManifest` | Indicates whether seed artifacts are mirrored into the dynamic manifest list. |
-| `build.dynamicInsertRoot` | Directory containing dynamic replay scripts (one per entity) generated from live data. |
-| `build.dynamicInsertMode` | Emission mode used for dynamic inserts (`PerEntity` or `SingleFile`). |
+| `build.dynamicInsertRoot` | **Deprecated**. Previously pointed to dynamic replay scripts; now omitted/empty. |
+| `build.dynamicInsertMode` | **Deprecated**. Retained for backward compatibility; no dynamic scripts are emitted. |
 | `build.sqlProjectPath` | Full path to the synthesized `.sqlproj` that references the emitted modules and seed scripts. |
 
 ### UAT-Users Integration (Pre-Transformed Data)
@@ -275,38 +275,13 @@ into the SSDT repository:
 jq -r '.Metadata["build.staticSeedRoot"]' out/full-export/full-export.manifest.json
 ```
 
-### 2. Stage dynamic inserts for deployment pipelines
+### 2. DynamicData (deprecated)
 
-Dynamic insert scripts are generated beneath `build.dynamicInsertRoot`. The exporter
-supports two emission modes:
-
-* **PerEntity (default)** – one file per entity under
-  `<build-out>/DynamicData/<Module>/<Entity>.dynamic.sql`. Use this when you want
-  granular visibility or need to parallelize execution.
-* **SingleFile** – a consolidated `DynamicData.all.dynamic.sql` in the `DynamicData/`
-  root. The file concatenates the per-entity batches in topological order (preserving
-  the original `PRINT`/`GO` batching) so operators can run a single replay script.
-  Enable this via `--dynamic-insert-mode single-file` (CLI) or `dynamicData.insertMode`
-  in configuration.
-
-Regardless of the mode, the scripts replay the full entity dataset—including rows that
-also appear in the static seed catalog—so lower environments can be hydrated quickly.
-They are not imported into SSDT; instead, schedule them as a deployment pipeline step:
-
-1. After the dacpac publish, execute the dynamic scripts via `sqlcmd`, `SqlPackage` post
-   scripts, or a runbook. A simple example:
-
-   ```bash
-   for script in "$(jq -r '.Stages[] | select(.Name=="dynamic-insert").Artifacts.scripts' \
-     out/full-export/full-export.manifest.json | tr ';' '\n')"; do
-     sqlcmd -S "$SQLSERVER" -d "$DB" -i "$script"
-   done
-   ```
-
-2. When using Azure DevOps or GitHub Actions, treat the dynamic folder as a published
-   artifact so operations can rerun the inserts after refreshing lower environments.
-3. The load harness (`tools/FullExportLoadHarness`) accepts the same list of scripts to
-   validate timing and locking before the production rollout.
+The exporter no longer emits `DynamicData` insert scripts or a `dynamic-insert` stage in
+the manifest. Earlier iterations produced replayable INSERT/MERGE bundles under
+`<build-out>/DynamicData`, but this surface has been retired in favor of the bootstrap
+snapshot and static seed pipeline. Existing automation that expected `build.dynamicInsertRoot`
+should treat it as optional and tolerate `null`/absent values.
 
 ### 3. Consume manifest metadata from automation
 
@@ -317,9 +292,8 @@ The `full-export.manifest.json` file provides stable keys for orchestration:
 * `Stages[] | select(.Name=="static-seed").Artifacts.root` → base directory for
   static seeds plus `ordering` / `scriptCount` / `scripts` details for selective
   deployment.
-* `Stages[] | select(.Name=="dynamic-insert").Artifacts.root` → base directory for
-  dynamic inserts plus the `mode` / `ordering` / `scriptCount` / `scripts` metadata
-  that powers downstream scheduling.
+* `Stages[] | select(.Name=="dynamic-insert").Artifacts.root` → **legacy only**; no
+  longer populated now that `DynamicData` emission is deprecated.
 
 Keep both directories in the deployment artifact so subsequent runs can diff contents
 against previous releases or rerun seeds in disaster recovery scenarios.

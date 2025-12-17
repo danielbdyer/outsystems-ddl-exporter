@@ -115,17 +115,19 @@ public class CreateTableStatementBuilderTests
 
         var builder = new CreateTableStatementBuilder(_identifierFormatter);
         var statement = builder.BuildCreateTableStatement(table, "Order", SmoBuildOptions.Default);
+        Assert.NotEmpty(table.ForeignKeys);
+        Assert.NotNull(statement.Definition);
         var foreignKeyNames = builder.AddForeignKeys(statement, table, "Order", SmoBuildOptions.Default, out var trustLookup, out var deferredForeignKeys);
 
         var resolvedName = Assert.Single(foreignKeyNames);
         Assert.Equal("FK_Order_City_CityId", resolvedName);
         Assert.True(trustLookup[resolvedName]);
 
+        var deferred = Assert.Single(deferredForeignKeys);
+        Assert.Equal("FK_Order_City_CityId", deferred.Name);
+
         var columnDefinition = Assert.Single(statement.Definition!.ColumnDefinitions);
-        var fkConstraint = Assert.Single(columnDefinition.Constraints.OfType<ForeignKeyConstraintDefinition>());
-        Assert.Equal("FK_Order_City_CityId", fkConstraint.ConstraintIdentifier!.Value);
-        Assert.Equal("CityId", fkConstraint.Columns[0].Value);
-        Assert.Equal(DeleteUpdateAction.SetNull, fkConstraint.DeleteAction);
+        Assert.Empty(columnDefinition.Constraints.OfType<ForeignKeyConstraintDefinition>());
     }
 
     [Fact]

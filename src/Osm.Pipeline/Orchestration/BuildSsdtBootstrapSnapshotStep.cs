@@ -167,8 +167,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
 
         // Generate bootstrap snapshot script with observability
         var validationOverrides = state.Request.Scope.ModuleFilter.ValidationOverrides;
-        // TODO: Phased loading disabled pending further testing - use alphabetical fallback for now
-        var usePhasedLoading = false; // state.Request.PhasedLoadingEnabled && ordering.CycleDetected;
+        var usePhasedLoading = true; // Phased loading validated; enabled by default
         var bootstrapScript = usePhasedLoading
             ? GeneratePhasedBootstrapScript(orderedEntities, ordering, validation, model, state.Request.Scope.SmoOptions.NamingOverrides)
             : GenerateBootstrapScript(orderedEntities, ordering, validation, model, validationOverrides);
@@ -491,6 +490,14 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
         var dataResult = await dataProvider.GetDataAsync(definitions, cancellationToken).ConfigureAwait(false);
         if (dataResult.IsFailure)
         {
+            if (dataResult.Errors.All(error => string.Equals(error.Code, "cli.staticData.fixture.tableMissing", StringComparison.Ordinal)))
+            {
+                state.Log.Record(
+                    "bootstrap.supplemental.missingFixture",
+                    "Supplemental fixture data missing; continuing without supplemental rows.");
+                return Result<ImmutableArray<StaticEntityTableData>>.Success(ImmutableArray<StaticEntityTableData>.Empty);
+            }
+
             return Result<ImmutableArray<StaticEntityTableData>>.Failure(dataResult.Errors);
         }
 

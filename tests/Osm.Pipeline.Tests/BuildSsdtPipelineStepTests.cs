@@ -518,7 +518,7 @@ public class BuildSsdtPipelineStepTests
     }
 
     [Fact]
-    public async Task DynamicInsertStep_emits_single_file_when_requested()
+    public async Task DynamicInsertStep_is_deprecated_and_skips_emission()
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
@@ -566,19 +566,12 @@ public class BuildSsdtPipelineStepTests
         Assert.True(dynamicStateResult.IsSuccess);
         var dynamicState = dynamicStateResult.Value;
         Assert.Equal(DynamicInsertOutputMode.SingleFile, dynamicState.DynamicInsertOutputMode);
-        var scriptPath = Assert.Single(dynamicState.DynamicInsertScriptPaths);
-        Assert.Equal("DynamicData.all.dynamic.sql", Path.GetFileName(scriptPath));
-        Assert.True(File.Exists(scriptPath));
-
-        var content = await File.ReadAllTextAsync(scriptPath);
-        Assert.Contains("-- Consolidated dynamic entity MERGE replay script", content);
-        Assert.Contains("PHASE 1", content, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("PHASE 2", content, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("MERGE", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dynamicState.DynamicInsertScriptPaths);
+        Assert.False(dynamicState.DynamicInsertTopologicalOrderApplied);
     }
 
     [Fact]
-    public async Task DynamicInsertStep_uses_topological_order_for_sanitized_dataset()
+    public async Task DynamicInsertStep_reports_skip_when_dataset_present()
     {
         using var output = new TempDirectory();
         var fixture = CreateSanitizedDynamicFixture();
@@ -592,8 +585,8 @@ public class BuildSsdtPipelineStepTests
 
         Assert.True(result.IsSuccess);
         var state = result.Value;
-        Assert.True(state.DynamicInsertTopologicalOrderApplied);
-        Assert.NotEmpty(state.DynamicInsertScriptPaths);
+        Assert.False(state.DynamicInsertTopologicalOrderApplied);
+        Assert.Empty(state.DynamicInsertScriptPaths);
     }
 
     [Fact]

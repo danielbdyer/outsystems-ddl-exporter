@@ -2,48 +2,6 @@
 
 > Use this quick checklist before starting implementation work to confirm the pipeline can build and test end-to-end on the current machine or CI agent.
 
-0. **Install the expected .NET SDK (one-time per environment)**
-   - The repo now pins `.NET` via [`global.json`](../global.json) to **SDK `9.0.305`**. Install that exact preview release so `dotnet` refuses to run older TFMs and the build keeps access to the C# 13 preview compiler. When the `global.json` changes, re-run the helper script below with the updated version string.
-   - Run the helper script below to install the pinned SDK toolchain in a deterministic location and persist the required environment variables:
-
-```bash
-#!/bin/bash
-set -e
-
-# Define the version of .NET you want to install
-DOTNET_VERSION="9.0.305"
-
-echo "🚧 Installing .NET SDK $DOTNET_VERSION (from global.json) to /root/.dotnet"
-
-# Step 1: Install prerequisites
-sudo apt-get update
-sudo apt-get install -y wget
-
-# Step 2: Download and run the official installer
-wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh
-chmod +x dotnet-install.sh
-./dotnet-install.sh --channel "$DOTNET_VERSION" --install-dir /root/.dotnet
-
-# Step 3: Export and persist environment variables
-export DOTNET_ROOT=/root/.dotnet
-export PATH=/root/.dotnet:$PATH
-
-# Print them for verification
-echo "📌 Environment variables set:"
-echo "DOTNET_ROOT=$DOTNET_ROOT"
-echo "PATH=$PATH"
-
-# Persist to .bashrc so it's available in future shells
-echo 'export DOTNET_ROOT=/root/.dotnet' >> ~/.bashrc
-echo 'export PATH=/root/.dotnet:$PATH' >> ~/.bashrc
-
-# Step 4: Confirm installation
-echo "✅ Installed .NET version:"
-dotnet --version
-
-echo "✅ .NET SDK $DOTNET_VERSION setup complete"
-```
-
 1. **Validate tooling availability**
    - `dotnet --info` (ensure .NET 9 SDK—or aligned global.json version—is installed and selected).
    - `dotnet --list-sdks` (optional sanity: confirm expected SDK version is discoverable).
@@ -58,6 +16,7 @@ echo "✅ .NET SDK $DOTNET_VERSION setup complete"
 4. **Run the full automated test suite**
    - `dotnet test OutSystemsModelToSql.sln -c Release --no-build`
    - The SQL Server integration suites (`tests/Osm.Etl.Integration.Tests` and `tests/Osm.Pipeline.Integration.Tests`) spin up containers via DotNet.Testcontainers. Ensure Docker is available locally before running these projects; if it is not, skip them and record the limitation in your status notes.
+   - **If you have trouble running the test suite:** Running tests in Codex CLI will require named pipes, which will require a pipe server inside your sandbox. Ensure you always run those commands with `with_escalated_permissions: true` on the `shell` tool call and include a one-sentence justification (e.g., "Need network access for npm install/build"). Ensure to include the `with_escalated_permissions` for all builds, restores, migrations, installs, tests, etc where network access is required otherwise the command will hang.
 
 5. **(Optional) Smoke the CLI with fixtures**
    - `dotnet run --project src/Osm.Cli -- --in tests/Fixtures/model.edge-case.json` *(uses the edge-case fixture to exercise ingestion summary).* 
