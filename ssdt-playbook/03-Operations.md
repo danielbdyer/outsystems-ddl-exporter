@@ -6,15 +6,15 @@ How to classify, execute, and review database changes.
 
 Start here to understand what tier your change is:
 
-- [Dimension Framework](13-Dimension-Framework.md) — How to classify any change
-- [Ownership Tiers](14-Ownership-Tiers.md) — Who owns what level of risk
-- [SSDT Mechanism Axis](15-SSDT-Mechanism-Axis.md) — Declarative, scripted, or multi-phase
+- [Dimension Framework](03-Operations/13-Dimension-Framework.md) — How to classify any change
+- [Ownership Tiers](03-Operations/14-Ownership-Tiers.md) — Who owns what level of risk
+- [SSDT Mechanism Axis](03-Operations/15-SSDT-Mechanism-Axis.md) — Declarative, scripted, or multi-phase
 
 ## Operation Reference
 
 Detailed "how to" for every operation type:
 
-📁 [Operation Reference](16-Operation-Reference/index.md)
+📁 [Operation Reference](03-Operations/16-Operation-Reference.md)
 - Entities (Tables)
 - Attributes (Columns)
 - Keys and References
@@ -30,7 +30,7 @@ Detailed "how to" for every operation type:
 
 When changes require multiple releases:
 
-📁 [Multi-Phase Patterns](17-Multi-Phase-Patterns/index.md)
+📁 [Multi-Phase Patterns](03-Operations/17-Multi-Phase-Patterns.md)
 - Explicit Type Conversion
 - NULL → NOT NULL
 - Identity Property Changes
@@ -41,8 +41,8 @@ When changes require multiple releases:
 
 ## Decision Aids & Anti-Patterns
 
-- [Decision Aids](18-Decision-Aids.md) — Flowcharts, checklists, quick references
-- [Anti-Patterns Gallery](19-Anti-Patterns-Gallery.md) — Common mistakes to avoid
+- [Decision Aids](03-Operations/18-Decision-Aids.md) — Flowcharts, checklists, quick references
+- [Anti-Patterns Gallery](03-Operations/19-Anti-Patterns-Gallery.md) — Common mistakes to avoid
 
 ## Reading Path
 
@@ -53,4 +53,4 @@ When changes require multiple releases:
 
 ---
 
-Previous: [Foundations](../02-Foundations/index.md) | Next: [Process](../04-Process/index.md)
+Previous: [Foundations](02-Foundations.md) | Next: [Process](04-Process.md)
