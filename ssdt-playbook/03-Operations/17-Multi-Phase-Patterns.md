@@ -27,6 +27,8 @@ Each pattern in this section provides:
 - [17.04: FK with Orphan Data](17-Multi-Phase-Patterns/17.04-FK-with-Orphan-Data.md) — Add foreign key when orphan rows exist
 - [17.05: Safe Column Removal](17-Multi-Phase-Patterns/17.05-Safe-Column-Removal.md) — Four-phase deprecation workflow
 - [17.06: Table Split](17-Multi-Phase-Patterns/17.06-Table-Split.md) — Vertical partitioning with data migration
+- [17.07: Table Merge](17-Multi-Phase-Patterns/17.07-Table-Merge.md) — Denormalization with data migration
+- [17.08: Schema Migration with Backward Compatibility](17-Multi-Phase-Patterns/17.08-Schema-Migration-Backward-Compatibility.md) — Maintaining compatibility during breaking changes
 - [17.09: CDC Table Change](17-Multi-Phase-Patterns/17.09-CDC-Table-Change.md) — Schema changes on CDC-enabled tables
 
 ---
