@@ -1,0 +1,93 @@
+# SSDT Playbook: File Ordering Preservation
+
+This file preserves the intended ordering of playbook files for Azure DevOps Wiki.
+Azure DevOps Wikis do not sort by name - order must be maintained manually.
+
+After removing numbering from filenames, use this document to restore the correct order.
+
+---
+
+
+## 01-Orientation
+
+- 01-Start-Here.md
+- 02-The-Big-Picture.md
+- 03-The-Translation-Layer.md
+
+## 02-Foundations
+
+- 04-State-Based-Modeling-vs-Imperative-Migrations.md
+- 05-Anatomy-of-an-SSDT-Project.md
+- 06-Pre-Deployment-and-Post-Deployment-Scripts.md
+- 07-Idempotency-101.md
+- 08-Referential-Integrity-Basics.md
+- 09-The-Refactorlog-and-Rename-Discipline.md
+- 10-SSDT-Deployment-Safety.md
+- 11-Multi-Phase-Evolution.md
+- 12-CDC-and-Schema-Evolution.md
+
+## 03-Operations
+
+- 13-Dimension-Framework.md
+- 14-Ownership-Tiers.md
+- 15-SSDT-Mechanism-Axis.md
+- 16-Operation-Reference.md
+- 17-Multi-Phase-Patterns.md
+- 18-Decision-Aids.md
+- 19-Anti-Patterns-Gallery.md
+
+### 03-Operations/16-Operation-Reference
+
+- 16.01-Entities-Tables.md
+- 16.02-Attributes-Columns.md
+- 16.03-Keys-and-References.md
+- 16.04-Indexes.md
+- 16.05-Lookup-Tables.md
+- 16.06-Constraints.md
+- 16.07-Structural-Changes.md
+- 16.08-Views-and-Abstraction.md
+- 16.09-Audit-and-Temporal.md
+- 16.10-Quick-Lookup.md
+- 16.11-Cross-Reference.md
+
+### 03-Operations/17-Multi-Phase-Patterns
+
+- 17.01-Explicit-Type-Conversion.md
+- 17.02-Null-to-Not-Null.md
+- 17.03-Identity-Property.md
+- 17.04-FK-with-Orphan-Data.md
+- 17.05-Safe-Column-Removal.md
+- 17.06-Table-Split.md
+- 17.07-Table-Merge.md
+- 17.08-Schema-Migration-Backward-Compatibility.md
+- 17.09-CDC-Table-Change.md
+
+## 04-Process
+
+- 20-The-OutSystems-External-Entities-Workflow.md
+- 21-Local-Development-Setup.md
+- 22-The-ChangeRelease-Process.md
+- 23-The-PR-Template.md
+- 24-Troubleshooting-Playbook.md
+- 25-Escalation-Paths.md
+- 26-Capability-Development.md
+
+## 05-Reference
+
+- 27-SSDT-Standards.md
+- 28-Templates.md
+- 29-CDC-Table-Registry.md
+- 30-Glossary.md
+- 31-Resources.md
+- 32-Contribution-Guidelines.md
+- 33-Changelog.md
+
+### 05-Reference/28-Templates
+
+- 28.01-New-Table.md
+- 28.02-Migration-Block.md
+- 28.03-Seed-Data.md
+- 28.04-Migration-Tracking.md
+- 28.05-Validation.md
+- 28.06-CDC-Scripts.md
+- 28.07-Incident-Report.md
