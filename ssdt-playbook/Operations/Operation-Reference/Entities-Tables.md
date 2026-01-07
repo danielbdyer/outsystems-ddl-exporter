@@ -73,8 +73,8 @@ Verbatim — the table doesn't exist, so SSDT creates it.
 | CDC enablement | New tables aren't CDC-enabled automatically. If this table needs audit tracking, add CDC enablement to post-deployment. |
 
 **Related:**
-- Template: [28.1 New Table Template](../../05-Reference/28-Templates/28.01-New-Table.md)
-- If CDC needed: [12. CDC and Schema Evolution](../../02-Foundations/12-CDC-and-Schema-Evolution.md)
+- Template: [28.1 New Table Template](../../Reference/Templates/New-Table.md)
+- If CDC needed: [12. CDC and Schema Evolution](../../Foundations/CDC-and-Schema-Evolution.md)
 
 ---
 

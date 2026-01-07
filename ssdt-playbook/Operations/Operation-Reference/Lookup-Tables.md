@@ -74,7 +74,7 @@ WHEN NOT MATCHED THEN
 | FK dependencies | Seed parent tables before child tables. |
 
 **Related:**
-- Template: [28.03 Seed Data](../../05-Reference/28-Templates/28.03-Seed-Data.md)
+- Template: [28.03 Seed Data](../../Reference/Templates/Seed-Data.md)
 
 ---
 
