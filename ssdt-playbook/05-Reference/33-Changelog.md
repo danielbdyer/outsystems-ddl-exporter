@@ -43,8 +43,3 @@ Team migrating to SSDT-managed External Entities needs comprehensive guidance.
 **Author:** Danny
 
 ---
-
-Absolutely. The Operation Reference deserves to be the crown jewel — the place where everything converges. Let me build it with the full weight of what we've developed.
-
----
-
