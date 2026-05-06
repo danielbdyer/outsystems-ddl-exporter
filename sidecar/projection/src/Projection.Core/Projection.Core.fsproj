@@ -16,6 +16,7 @@
     <Compile Include="Profile.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
+    <Compile Include="Passes/VisibilityMask.fs" />
   </ItemGroup>
 
 </Project>

@@ -14,9 +14,12 @@ type TransformKind =
     /// derivation reason lives in the SsKey itself; this tag merely
     /// flags the transform's category.
     | Created
-    /// The pass masked (withheld) a node from the surface — e.g., a
-    /// visibility-policy pass dropping a kind from exposure.
-    | Removed
+    /// The pass masked (withheld) a node from the surface. The `reason`
+    /// names the predicate (or rule) that fired. This is the convention
+    /// for filtering passes: when a node is removed, the lineage event
+    /// records *which* rule fired, so a downstream reader can answer
+    /// "why is this kind missing?" by reading the trail.
+    | Removed of reason: string
     /// The pass attached or rewrote metadata (modality marks, type
     /// correspondences). The detail string carries human-readable context;
     /// it is not consumed structurally.
