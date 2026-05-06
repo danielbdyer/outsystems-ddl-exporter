@@ -95,7 +95,7 @@ let ``structural: a physically-nullable non-PK attribute without overrides yield
           Name         = Name.create "Optional" |> Result.value
           Type         = Text
           Column       = { ColumnName = "OPTIONAL"; IsNullable = true }
-          IsPrimaryKey = false }
+          IsPrimaryKey = false; IsMandatory = false }
     let decision = decideOnFixture nullable (mkConfig 0.0m false [])
     Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)
 
@@ -133,7 +133,7 @@ let ``enforces: true for EnforceNotNull, false for KeepNullable`` () =
           Name         = Name.create "T" |> Result.value
           Type         = Text
           Column       = { ColumnName = "T"; IsNullable = true }
-          IsPrimaryKey = false }
+          IsPrimaryKey = false; IsMandatory = false }
     let cfg = mkConfig 0.0m false []
     Assert.True (NullabilityRules.enforces (decideOnFixture pkAttr cfg))
     Assert.False(NullabilityRules.enforces (decideOnFixture nullable cfg))
@@ -216,3 +216,117 @@ let ``outcome: NullabilityOutcome variants round-trip`` () =
     Assert.Equal<NullabilityOutcome>(
         NullabilityOutcome.RequireOperatorApproval (MandatoryButHasNullsBeyondBudget (12L, 100L, 0.05m)),
         NullabilityOutcome.RequireOperatorApproval (MandatoryButHasNullsBeyondBudget (12L, 100L, 0.05m)))
+
+// ---------------------------------------------------------------------------
+// IsMandatory branches (activated 2026-05-10) — V1 mandatory-driven
+// signal hierarchy. The structural commitment is that mandatory
+// signals fire only when the attribute's IsMandatory flag is true;
+// physically nullable, non-PK, non-mandatory attributes still go to
+// KeepNullable(NoTighteningSignal).
+// ---------------------------------------------------------------------------
+
+let private mkMandatoryAttr (key: string) (isNullable: bool) : Attribute =
+    { SsKey        = SsKey.original key |> Result.value
+      Name         = Name.create "M" |> Result.value
+      Type         = Text
+      Column       = { ColumnName = "M"; IsNullable = isNullable }
+      IsPrimaryKey = false
+      IsMandatory  = true }
+
+let private mkColProfile (attrKey: SsKey) (rowCount: int64) (nullCount: int64) : ColumnProfile =
+    let probe =
+        ProbeStatus.create System.DateTimeOffset.UnixEpoch rowCount Succeeded
+        |> Result.value
+    { AttributeKey         = attrKey
+      RowCount             = rowCount
+      NullCount            = nullCount
+      NullCountProbeStatus = probe }
+
+[<Fact>]
+let ``mandatory: profile absent ⇒ EnforceNotNull(LogicalMandatoryNoProfile)`` () =
+    let attr = mkMandatoryAttr "OS_ATTR_M_NoProfile" true
+    let cfg = mkConfig 0.0m false []
+    let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
+    Assert.Equal(
+        NullabilityOutcome.EnforceNotNull LogicalMandatoryNoProfile,
+        decision.Outcome)
+
+[<Fact>]
+let ``mandatory: profile shows zero nulls ⇒ EnforceNotNull(LogicalMandatoryNoNulls)`` () =
+    let attr = mkMandatoryAttr "OS_ATTR_M_NoNulls" true
+    let profile = { Profile.empty with Columns = [ mkColProfile attr.SsKey 100L 0L ] }
+    let cfg = mkConfig 0.0m false []
+    let decision = NullabilityRules.evaluate "test" cfg attr profile
+    Assert.Equal(
+        NullabilityOutcome.EnforceNotNull (LogicalMandatoryNoNulls 100L),
+        decision.Outcome)
+
+[<Fact>]
+let ``mandatory: profile shows nulls within budget ⇒ EnforceNotNull(LogicalMandatoryWithinBudget)`` () =
+    let attr = mkMandatoryAttr "OS_ATTR_M_WithinBudget" true
+    // 4 nulls / 100 rows = 4%; budget 5% — within budget.
+    let profile = { Profile.empty with Columns = [ mkColProfile attr.SsKey 100L 4L ] }
+    let cfg = mkConfig 0.05m false []
+    let decision = NullabilityRules.evaluate "test" cfg attr profile
+    Assert.Equal(
+        NullabilityOutcome.EnforceNotNull (LogicalMandatoryWithinBudget (4L, 100L, 0.05m)),
+        decision.Outcome)
+
+[<Fact>]
+let ``mandatory: nulls beyond budget + relaxation forbidden ⇒ RequireOperatorApproval`` () =
+    let attr = mkMandatoryAttr "OS_ATTR_M_BeyondBudget" true
+    // 12 nulls / 100 rows = 12%; budget 5% — beyond budget.
+    let profile = { Profile.empty with Columns = [ mkColProfile attr.SsKey 100L 12L ] }
+    // AllowMandatoryRelaxation = false (Cautious-equivalent default).
+    let cfg = mkConfig 0.05m false []
+    let decision = NullabilityRules.evaluate "test" cfg attr profile
+    Assert.Equal(
+        NullabilityOutcome.RequireOperatorApproval
+            (MandatoryButHasNullsBeyondBudget (12L, 100L, 0.05m)),
+        decision.Outcome)
+
+[<Fact>]
+let ``mandatory: nulls beyond budget + relaxation allowed ⇒ KeepNullable(RelaxedUnderEvidence)`` () =
+    let attr = mkMandatoryAttr "OS_ATTR_M_Relaxed" true
+    let profile = { Profile.empty with Columns = [ mkColProfile attr.SsKey 100L 12L ] }
+    // AllowMandatoryRelaxation = true.
+    let cfg = mkConfig 0.05m true []
+    let decision = NullabilityRules.evaluate "test" cfg attr profile
+    Assert.Equal(
+        NullabilityOutcome.KeepNullable
+            (RelaxedUnderEvidence (12L, 100L, 0.05m)),
+        decision.Outcome)
+
+[<Fact>]
+let ``mandatory: PK takes precedence over IsMandatory`` () =
+    // A PK column is structurally NOT NULL regardless of IsMandatory.
+    let attr =
+        { mkMandatoryAttr "OS_ATTR_M_AsPk" false with
+            IsPrimaryKey = true }
+    let cfg = mkConfig 0.0m false []
+    let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
+    Assert.Equal(NullabilityOutcome.EnforceNotNull PrimaryKey, decision.Outcome)
+
+[<Fact>]
+let ``mandatory: PhysicallyNotNull takes precedence over IsMandatory`` () =
+    let attr = mkMandatoryAttr "OS_ATTR_M_PhysNotNull" false
+    let cfg = mkConfig 0.0m false []
+    let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
+    Assert.Equal(NullabilityOutcome.EnforceNotNull PhysicallyNotNull, decision.Outcome)
+
+[<Fact>]
+let ``mandatory: override takes precedence over IsMandatory`` () =
+    let attr = mkMandatoryAttr "OS_ATTR_M_Override" true
+    let cfg =
+        mkConfig 0.0m false
+            [ { AttributeKey = attr.SsKey; Action = OverrideAction.KeepNullable } ]
+    let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
+    Assert.Equal(NullabilityOutcome.KeepNullable OperatorOverride, decision.Outcome)
+
+[<Fact>]
+let ``mandatory: requiresApproval helper fires for the conflict outcome`` () =
+    let attr = mkMandatoryAttr "OS_ATTR_M_Conflict" true
+    let profile = { Profile.empty with Columns = [ mkColProfile attr.SsKey 100L 12L ] }
+    let cfg = mkConfig 0.05m false []
+    let decision = NullabilityRules.evaluate "test" cfg attr profile
+    Assert.True(NullabilityRules.requiresApproval decision)

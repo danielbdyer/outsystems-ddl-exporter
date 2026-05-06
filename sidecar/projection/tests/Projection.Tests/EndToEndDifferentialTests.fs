@@ -61,7 +61,7 @@ let private parentKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true } ]
+            IsPrimaryKey = true; IsMandatory = false } ]
       References = [] }
 
 let private childKind : Kind =
@@ -75,14 +75,14 @@ let private childKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true }
+            IsPrimaryKey = true; IsMandatory = false }
           { SsKey        = childParentFkKey
             Name         = mkName "ParentId"
             Type         = Integer
             // FK column is nullable in the V1 fixture — exercises the
             // KeepNullable(NoTighteningSignal) branch.
             Column       = { ColumnName = "PARENTID"; IsNullable = true }
-            IsPrimaryKey = false } ]
+            IsPrimaryKey = false; IsMandatory = false } ]
       References = [
           { SsKey           = childToParentRefKey
             Name            = mkName "Parent"
@@ -103,12 +103,12 @@ let private countryKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true }
+            IsPrimaryKey = true; IsMandatory = false }
           { SsKey        = countryNameKey
             Name         = mkName "Name"
             Type         = Text
             Column       = { ColumnName = "NAME"; IsNullable = false }
-            IsPrimaryKey = false } ]
+            IsPrimaryKey = false; IsMandatory = false } ]
       References = [] }
 
 let private endToEndCatalog : Catalog =

@@ -108,12 +108,21 @@ type ReferenceAction =
 /// `EntitySeedDeterminizer` (see ADMIRE.md) needs PK columns to drive
 /// row-order normalization, and the eventual `Projection.Targets.SSDT`
 /// FK emitter needs PK columns to resolve target-side references.
+///
+/// `IsMandatory` flags whether the source model declares this attribute
+/// as logically mandatory — V1's OutSystems model carries this as a
+/// metadata flag distinct from physical NOT NULL. The flag drives
+/// `NullabilityRules`'s mandatory signal hierarchy. Added under
+/// "IR grows under evidence" (DECISIONS.md, 2026-05-10): the
+/// `NullabilityEvaluator` end-to-end test (session 6) surfaced the gap;
+/// V2 closes it here so the V1 mandatory branches can fire.
 type Attribute = {
     SsKey        : SsKey
     Name         : Name
     Type         : PrimitiveType
     Column       : ColumnRealization
     IsPrimaryKey : bool
+    IsMandatory  : bool
 }
 
 

@@ -47,17 +47,17 @@ let customer : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true }
+          IsPrimaryKey = true; IsMandatory = false }
         { SsKey        = customerNameKey
           Name         = name "Name"
           Type         = Text
           Column       = { ColumnName = "NAME"; IsNullable = false }
-          IsPrimaryKey = false }
+          IsPrimaryKey = false; IsMandatory = false }
         { SsKey        = customerTenantKey
           Name         = name "TenantId"
           Type         = Integer
           Column       = { ColumnName = "TENANT_ID"; IsNullable = false }
-          IsPrimaryKey = false }
+          IsPrimaryKey = false; IsMandatory = false }
     ]
     References = []
 }
@@ -82,12 +82,12 @@ let order : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true }
+          IsPrimaryKey = true; IsMandatory = false }
         { SsKey        = orderCustomerFkKey
           Name         = name "CustomerId"
           Type         = Integer
           Column       = { ColumnName = "CUSTOMER_ID"; IsNullable = false }
-          IsPrimaryKey = false }
+          IsPrimaryKey = false; IsMandatory = false }
     ]
     References = [
         { SsKey           = orderRefToCustomer
@@ -136,17 +136,17 @@ let country : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true }
+          IsPrimaryKey = true; IsMandatory = false }
         { SsKey        = countryCodeKey
           Name         = name "Code"
           Type         = Text
           Column       = { ColumnName = "CODE"; IsNullable = false }
-          IsPrimaryKey = false }
+          IsPrimaryKey = false; IsMandatory = false }
         { SsKey        = countryLabelKey
           Name         = name "Label"
           Type         = Text
           Column       = { ColumnName = "LABEL"; IsNullable = false }
-          IsPrimaryKey = false }
+          IsPrimaryKey = false; IsMandatory = false }
     ]
     References = []
 }

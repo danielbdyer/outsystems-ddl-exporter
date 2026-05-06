@@ -117,7 +117,7 @@ let private parentKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true } ]
+            IsPrimaryKey = true; IsMandatory = false } ]
       References = [] }
 
 let private childKind : Kind =
@@ -131,12 +131,12 @@ let private childKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true }
+            IsPrimaryKey = true; IsMandatory = false }
           { SsKey        = childParentFkKey
             Name         = mkName "ParentId"
             Type         = Integer
             Column       = { ColumnName = "PARENTID"; IsNullable = true }
-            IsPrimaryKey = false } ]
+            IsPrimaryKey = false; IsMandatory = false } ]
       References = [
           { SsKey           = childToParentRefKey
             Name            = mkName "Parent"

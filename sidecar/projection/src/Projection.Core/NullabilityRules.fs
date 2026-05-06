@@ -142,12 +142,6 @@ module NullabilityRules =
               Outcome        = outcome
               InterventionId = interventionId }
 
-        // Profile parameter is consumed once IsMandatory lands on
-        // Attribute (the planned IR refinement that lets the mandatory
-        // branch fire). Until then, the profile is referenced only to
-        // keep the function's signature stable across that refinement.
-        ignore profile
-
         // 1. Operator override — absolute.
         if NullabilityTighteningConfig.shouldKeepNullable attribute.SsKey config then
             mkDecision (NullabilityOutcome.KeepNullable OperatorOverride)
@@ -157,42 +151,38 @@ module NullabilityRules =
         // 3. Physical NOT NULL — structural.
         elif not attribute.Column.IsNullable then
             mkDecision (NullabilityOutcome.EnforceNotNull PhysicallyNotNull)
+        // 4. Logical mandatory — V2 IR refinement (DECISIONS 2026-05-10).
+        //    Profile-driven; consults the column's null counts and the
+        //    intervention's null budget.
+        elif attribute.IsMandatory then
+            match Profile.tryFindColumn attribute.SsKey profile with
+            | None ->
+                // Profile absent — trust the logical schema.
+                mkDecision (NullabilityOutcome.EnforceNotNull LogicalMandatoryNoProfile)
+            | Some col ->
+                let allowed = decimal col.RowCount * config.NullBudget
+                let observed = decimal col.NullCount
+                if col.NullCount = 0L then
+                    mkDecision
+                        (NullabilityOutcome.EnforceNotNull
+                            (LogicalMandatoryNoNulls col.RowCount))
+                elif observed <= allowed then
+                    mkDecision
+                        (NullabilityOutcome.EnforceNotNull
+                            (LogicalMandatoryWithinBudget
+                                (col.NullCount, col.RowCount, config.NullBudget)))
+                elif config.AllowMandatoryRelaxation then
+                    mkDecision
+                        (NullabilityOutcome.KeepNullable
+                            (RelaxedUnderEvidence
+                                (col.NullCount, col.RowCount, config.NullBudget)))
+                else
+                    mkDecision
+                        (NullabilityOutcome.RequireOperatorApproval
+                            (MandatoryButHasNullsBeyondBudget
+                                (col.NullCount, col.RowCount, config.NullBudget)))
         else
-            // The remaining decisions depend on the logical-mandatory
-            // flag and (if mandatory) profile evidence. V2 currently
-            // has no IsMandatory field on Attribute; that's a planned
-            // IR refinement landing under "IR grows under evidence"
-            // when a real V1 fixture surfaces a mandatory column V2
-            // cannot represent. For now, a physically nullable, non-PK
-            // attribute without an override has no mandatory marker —
-            // KeepNullable.
-            //
-            // When IsMandatory lands on Attribute, the branches below
-            // wire in. The logic is preserved here as commented
-            // pseudocode so the migration is transparent:
-            //
-            //   match Profile.tryFindColumn attribute.SsKey profile with
-            //   | None ->
-            //       mkDecision (NullabilityOutcome.EnforceNotNull
-            //                       LogicalMandatoryNoProfile)
-            //   | Some col ->
-            //       let allowed = decimal col.RowCount * config.NullBudget
-            //       let observed = decimal col.NullCount
-            //       if col.NullCount = 0L then
-            //           mkDecision (NullabilityOutcome.EnforceNotNull
-            //                          (LogicalMandatoryNoNulls col.RowCount))
-            //       elif observed <= allowed then
-            //           mkDecision (NullabilityOutcome.EnforceNotNull
-            //                          (LogicalMandatoryWithinBudget
-            //                              (col.NullCount, col.RowCount, config.NullBudget)))
-            //       elif config.AllowMandatoryRelaxation then
-            //           mkDecision (NullabilityOutcome.KeepNullable
-            //                          (RelaxedUnderEvidence
-            //                              (col.NullCount, col.RowCount, config.NullBudget)))
-            //       else
-            //           mkDecision (NullabilityOutcome.RequireOperatorApproval
-            //                          (MandatoryButHasNullsBeyondBudget
-            //                              (col.NullCount, col.RowCount, config.NullBudget)))
+            // 5. No tightening signal fires.
             mkDecision (NullabilityOutcome.KeepNullable NoTighteningSignal)
 
 

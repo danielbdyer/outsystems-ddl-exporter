@@ -72,6 +72,7 @@ module JsonEmitter =
         w.WriteString("column",    a.Column.ColumnName)
         w.WriteBoolean("nullable", a.Column.IsNullable)
         w.WriteBoolean("primaryKey", a.IsPrimaryKey)
+        w.WriteBoolean("mandatory", a.IsMandatory)
         w.WriteEndObject()
 
     let private writeReference (w: Utf8JsonWriter) (r: Reference) : unit =

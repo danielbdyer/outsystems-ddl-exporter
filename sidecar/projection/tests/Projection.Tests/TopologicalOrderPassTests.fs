@@ -318,10 +318,10 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true }
+            IsPrimaryKey = true; IsMandatory = false }
           { SsKey = attrFk; Name = mkName "Fk"; Type = Integer
             Column = { ColumnName = "FK"; IsNullable = false }
-            IsPrimaryKey = false } ]
+            IsPrimaryKey = false; IsMandatory = false } ]
       References = [
           { SsKey = mkKey fkKey
             Name = mkName "ToOther"
@@ -371,10 +371,10 @@ let private kindWithRef
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true }
+            IsPrimaryKey = true; IsMandatory = false }
           { SsKey = attrFk; Name = mkName "Fk"; Type = Integer
             Column = { ColumnName = "FK"; IsNullable = sourceAttrNullable }
-            IsPrimaryKey = false } ]
+            IsPrimaryKey = false; IsMandatory = false } ]
       References = [
           { SsKey = mkKey refKey
             Name = mkName "ToOther"
@@ -392,7 +392,7 @@ let private noRefKind (kindKey: string) : Kind =
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true } ]
+            IsPrimaryKey = true; IsMandatory = false } ]
       References = [] }
 
 // ---------------------------------------------------------------------------
