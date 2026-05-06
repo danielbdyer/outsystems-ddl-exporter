@@ -224,16 +224,24 @@ type NumericDistribution = {
 /// Empirical evidence about an attribute's value distribution.
 /// **First IR extension surfacing V1 absence as the gap**
 /// (ADMIRE.md 2026-05-12 — V2-growth admire mode). Closed DU; new
-/// variants (Numeric, Temporal, ...) land under "IR grows under
-/// evidence" as their first consumers arrive.
+/// variants land under "IR grows under evidence" as their first
+/// consumers arrive.
 ///
-/// Currently single-variant — `Categorical`. The `Numeric` variant
-/// arrives in session 10 commit 2 (alongside this comment's update);
-/// temporal range / density, joint distributions, and other variants
-/// arrive in later sessions.
+/// Variants:
+///
+///   - `Categorical` (session 9): per-value frequency evidence for
+///     attributes with small / moderate vocabularies. Truncation
+///     contract: `IsTruncated = false ⇒ DistinctCount =
+///     Frequencies.Length`.
+///   - `Numeric` (session 10): percentile + range evidence for
+///     numeric-domain attributes. Monotonicity contract:
+///     `Min ≤ P25 ≤ P50 ≤ P75 ≤ P95 ≤ P99 ≤ Max`.
+///
+/// Future variants (Temporal, Joint) arrive in subsequent sessions.
 [<RequireQualifiedAccess>]
 type AttributeDistribution =
     | Categorical of CategoricalDistribution
+    | Numeric     of NumericDistribution
 
 
 [<RequireQualifiedAccess>]
@@ -436,13 +444,26 @@ module Profile =
 
     /// Look up a categorical distribution by attribute identity.
     /// Returns `None` if no distribution evidence is registered for
-    /// the attribute, OR if the registered evidence is a non-Categorical
-    /// variant (when Numeric / Temporal land in subsequent sessions,
-    /// this helper distinguishes them).
+    /// the attribute, or if the registered evidence is a different
+    /// variant (e.g., Numeric).
     let tryFindCategorical (attributeKey: SsKey) (p: Profile) : CategoricalDistribution option =
         p.Distributions
         |> List.tryPick (fun d ->
             match d with
             | AttributeDistribution.Categorical cat when cat.AttributeKey = attributeKey ->
                 Some cat
+            | AttributeDistribution.Categorical _ -> None
+            | AttributeDistribution.Numeric _ -> None)
+
+    /// Look up a numeric distribution by attribute identity. Returns
+    /// `None` if no distribution evidence is registered for the
+    /// attribute, or if the registered evidence is a different
+    /// variant (e.g., Categorical).
+    let tryFindNumeric (attributeKey: SsKey) (p: Profile) : NumericDistribution option =
+        p.Distributions
+        |> List.tryPick (fun d ->
+            match d with
+            | AttributeDistribution.Numeric num when num.AttributeKey = attributeKey ->
+                Some num
+            | AttributeDistribution.Numeric _ -> None
             | AttributeDistribution.Categorical _ -> None)

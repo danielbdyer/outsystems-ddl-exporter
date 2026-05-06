@@ -381,3 +381,119 @@ let ``numeric helpers: isDegenerate is true when Min equals Max`` () =
 [<Fact>]
 let ``numeric: sampleSizeFloor is 5`` () =
     Assert.Equal(5L, NumericDistribution.sampleSizeFloor)
+
+// ---------------------------------------------------------------------------
+// AttributeDistribution.Numeric variant — DU integration.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``AttributeDistribution.Numeric round-trips`` () =
+    let probe = succeededProbe 100L
+    let num =
+        NumericDistribution.create
+            countryCodeKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    Assert.Equal<AttributeDistribution>(
+        AttributeDistribution.Numeric num,
+        AttributeDistribution.Numeric num)
+
+// ---------------------------------------------------------------------------
+// Profile.tryFindNumeric — lookup by attribute identity.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``tryFindNumeric: returns the registered distribution`` () =
+    let probe = succeededProbe 100L
+    let num =
+        NumericDistribution.create
+            countryCodeKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    let profile =
+        { Profile.empty with
+            Distributions = [ AttributeDistribution.Numeric num ] }
+    Assert.Equal<NumericDistribution option>(
+        Some num,
+        Profile.tryFindNumeric countryCodeKey profile)
+
+[<Fact>]
+let ``tryFindNumeric: returns None for unknown attribute`` () =
+    let probe = succeededProbe 100L
+    let num =
+        NumericDistribution.create
+            countryCodeKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    let profile =
+        { Profile.empty with
+            Distributions = [ AttributeDistribution.Numeric num ] }
+    Assert.Equal<NumericDistribution option>(
+        None,
+        Profile.tryFindNumeric customerNameKey profile)
+
+[<Fact>]
+let ``tryFindNumeric: returns None on Profile.empty`` () =
+    Assert.Equal<NumericDistribution option>(
+        None,
+        Profile.tryFindNumeric countryCodeKey Profile.empty)
+
+// ---------------------------------------------------------------------------
+// Cross-variant lookup discipline — Categorical lookup ignores Numeric
+// distributions (and vice versa). The variants share the
+// AttributeKey-keying space without colliding.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``cross-variant: tryFindCategorical does not return Numeric distributions`` () =
+    let probe = succeededProbe 100L
+    let num =
+        NumericDistribution.create
+            countryCodeKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    let profile =
+        { Profile.empty with
+            Distributions = [ AttributeDistribution.Numeric num ] }
+    Assert.Equal<CategoricalDistribution option>(
+        None,
+        Profile.tryFindCategorical countryCodeKey profile)
+
+[<Fact>]
+let ``cross-variant: tryFindNumeric does not return Categorical distributions`` () =
+    let probe = succeededProbe 3L
+    let cat =
+        CategoricalDistribution.create
+            countryCodeKey [ "CA", 1L; "MX", 1L; "US", 1L ] 3L false probe
+        |> Result.value
+    let profile =
+        { Profile.empty with
+            Distributions = [ AttributeDistribution.Categorical cat ] }
+    Assert.Equal<NumericDistribution option>(
+        None,
+        Profile.tryFindNumeric countryCodeKey profile)
+
+// ---------------------------------------------------------------------------
+// Coexistence — Categorical + Numeric distributions on different
+// attributes cleanly co-inhabit a single Profile.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``coexistence: Categorical and Numeric distributions on different attributes coexist in one Profile`` () =
+    let catProbe = succeededProbe 3L
+    let numProbe = succeededProbe 100L
+    let cat =
+        CategoricalDistribution.create
+            countryCodeKey [ "CA", 1L; "MX", 1L; "US", 1L ] 3L false catProbe
+        |> Result.value
+    let num =
+        NumericDistribution.create
+            customerNameKey 0m 10m 25m 50m 90m 99m 100m 100L numProbe
+        |> Result.value
+    let profile =
+        { Profile.empty with
+            Distributions = [
+                AttributeDistribution.Categorical cat
+                AttributeDistribution.Numeric num
+            ] }
+    Assert.Equal<CategoricalDistribution option>(Some cat, Profile.tryFindCategorical countryCodeKey profile)
+    Assert.Equal<NumericDistribution option>    (Some num, Profile.tryFindNumeric customerNameKey profile)
+    // Cross-shape lookups still return None.
+    Assert.Equal<CategoricalDistribution option>(None, Profile.tryFindCategorical customerNameKey profile)
+    Assert.Equal<NumericDistribution option>    (None, Profile.tryFindNumeric countryCodeKey profile)

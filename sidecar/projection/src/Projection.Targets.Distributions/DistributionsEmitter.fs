@@ -82,6 +82,12 @@ module DistributionsEmitter =
     let private writeDistribution (w: Utf8JsonWriter) (d: AttributeDistribution) : unit =
         match d with
         | AttributeDistribution.Categorical cat -> writeCategorical w cat
+        // Numeric rendering lands in session 10 commit 4. Until then
+        // the variant is wireable through the IR but not surfaced by
+        // the emitter — a documented intermediate state. Tests in
+        // commit 2 verify the variant exists; commit 4 wires the
+        // rendering and replaces this placeholder.
+        | AttributeDistribution.Numeric _ -> ()
 
     let private writeAttribute
         (w: Utf8JsonWriter)
