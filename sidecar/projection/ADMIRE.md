@@ -823,6 +823,346 @@ V2 should add (V1 lacks coverage for these):
 
 ---
 
+## 2026-05-11 — `ForeignKeyEvaluator` (`src/Osm.Validation/Tightening/ForeignKeyEvaluator.cs`)
+
+**Status:** admired (placement decided)
+
+**Significance.** The fifth V1 admire migration; the **third
+`TighteningIntervention` variant** lands the registered-intervention
+flavor at N=3 instances and tests the freshly-codified strategy
+layer (DECISIONS 2026-05-11) on its central case. If the codification
+holds for ForeignKey without strain, the registered-intervention
+sub-pattern is empirically validated.
+
+### What it does (algebraic terms)
+
+For each foreign-key reference in the model, decides whether to
+create the FK constraint in DDL, and if so whether to script it
+WITH NOCHECK (suppresses constraint validation against existing data
+during creation). Iterates (entity × attribute × column-coordinate),
+filters to references (`Attribute.Reference.IsReference`), consults
+profile evidence (`ForeignKeyReality` keyed by ColumnCoordinate),
+applies V1's signal hierarchy, returns a `ForeignKeyDecision`.
+
+V1's decision shape:
+
+```csharp
+record ForeignKeyDecision(
+    ColumnCoordinate Column,
+    bool CreateConstraint,
+    bool ScriptWithNoCheck,
+    ImmutableArray<string> Rationales)
+```
+
+Two booleans (`CreateConstraint × ScriptWithNoCheck`) plus
+free-form rationale strings. The four (CreateConstraint,
+ScriptWithNoCheck) combinations:
+
+  - `(true, false)` — straight enforce: constraint created normally.
+  - `(true, true)` — Cautious-mode workaround: constraint created
+    WITH NOCHECK because orphans or Ignore-rule prevent normal
+    validation but the policy still wants the relationship recorded.
+  - `(false, *)` — do not enforce; ScriptWithNoCheck is irrelevant.
+
+### V2 placement
+
+**Pure pass in `Projection.Core.Passes`, producing an
+emitter-consumable `ForeignKeyDecisionSet` value per A32**, mirroring
+`NullabilityPass` / `UniqueIndexPass`'s shape with **per-reference
+granularity**. The pattern is by now established: the closed DU
+`TighteningIntervention` gains a third variant
+(`ForeignKey of id * ForeignKeyTighteningConfig`); each pass driver
+filters to its variant via wildcard pattern; registered interventions
+fan out into per-record decisions.
+
+Following the codified strategy layer (DECISIONS 2026-05-11):
+
+  - **Algebra in `ForeignKeyPass`** (sibling of `NullabilityPass`,
+    `UniqueIndexPass`). Walks `Catalog → Module → Kind → Reference`,
+    fans out over registered ForeignKey interventions, calls into the
+    rules module per (reference × intervention), accumulates
+    decisions, emits Annotated lineage events.
+  - **Domain in `ForeignKeyRules`** (sibling of `NullabilityRules`,
+    `UniqueIndexRules` in `Projection.Core/Strategies/`). Pure
+    function: `(interventionId, config, kind, reference, profile) →
+    ForeignKeyDecision`. Honors V1's signal hierarchy.
+  - **Typed seam.** `evaluate` mirrors the shape established by
+    `NullabilityRules` and `UniqueIndexRules`. The strategy layer
+    codification's registered-intervention sub-pattern fits without
+    revision, validating the codification.
+
+### Inputs and outputs (V2 IR)
+
+Consumes:
+
+  - **Catalog** — `Reference.SsKey`, `Reference.SourceAttribute`,
+    `Reference.TargetKind`, `Reference.OnDelete`. The (source kind,
+    target kind) pair is needed for cross-schema / cross-catalog
+    detection — but V2's `Catalog` does **not** currently model
+    catalog (database) names; `Kind.Physical.Schema` is the only
+    realization metadata. **IR refinement decision** in commit 5: do
+    we add `Catalog.Catalog` (the database-name field, V1's
+    `EntityModel.Catalog`)? See "IR refinement question" below.
+  - **Policy** — `TighteningPolicy.Interventions` filtered to
+    `ForeignKey` variants. `ForeignKeyTighteningConfig` carries
+    V1's five toggles verbatim:
+
+```fsharp
+type ForeignKeyTighteningConfig = {
+    EnableCreation                : bool   // V1: ForeignKeyOptions.EnableCreation
+    AllowCrossSchema              : bool   // V1: AllowCrossSchema
+    AllowCrossCatalog             : bool   // V1: AllowCrossCatalog
+    TreatMissingDeleteRuleAsIgnore: bool   // V1: TreatMissingDeleteRuleAsIgnore
+    AllowNoCheckCreation          : bool   // V1: AllowNoCheckCreation
+}
+```
+
+  - **Profile** — `Profile.ForeignKeys` (`ForeignKeyReality` list)
+    keyed by `ReferenceKey : SsKey`. V2's profile already carries
+    `HasOrphan`, `OrphanCount`, `IsNoCheck`, `ProbeStatus` — the V1
+    fields map directly. The `Profile.tryFindForeignKey` helper
+    already exists in V2 (Profile.fs).
+
+Produces (per A32):
+
+```fsharp
+type ForeignKeyEvidence =
+    /// Database already enforces this constraint — V1's
+    /// HasDatabaseConstraint = true. Trusted regardless of profile;
+    /// the constraint exists, V2's job is to record it in DDL.
+    | DatabaseConstraintPresent
+    /// Profile probe succeeded; no orphans observed; eligible
+    /// under cross-schema / cross-catalog gates and EnableCreation.
+    | NoEvidenceObstacle of probeRowCount: int64
+    /// V1's Cautious-mode workaround: orphans or Ignore-rule
+    /// observed, but caller has AllowNoCheckCreation=true and
+    /// EnableCreation=true. Constraint created with NoCheck flag;
+    /// validation deferred. (Maps V1's CreateConstraint=true,
+    /// ScriptWithNoCheck=true.)
+    | ScriptWithNoCheck of orphanCount: int64
+
+type ForeignKeyKeepReason =
+    /// EnableCreation=false. Caller chose not to create FK
+    /// constraints; gate reported, no domain reasoning.
+    | PolicyDisabled
+    /// Profile observed orphans and AllowNoCheckCreation=false.
+    | DataHasOrphans of orphanCount: int64
+    /// AllowCrossSchema=false and the FK crosses schemas.
+    | CrossSchemaBlocked
+    /// AllowCrossCatalog=false and the FK crosses catalogs.
+    | CrossCatalogBlocked
+    /// Delete rule = "Ignore" (or missing + TreatMissingAsIgnore);
+    /// V1 does not enforce these by default.
+    | DeleteRuleIgnored
+    /// Profile probe did not succeed (FallbackTimeout / Cancelled /
+    /// AmbiguousMapping); evidence missing; V2 collapsed-mode
+    /// default declines to enforce.
+    | EvidenceMissing
+
+[<RequireQualifiedAccess>]
+type ForeignKeyOutcome =
+    | EnforceConstraint of evidence: ForeignKeyEvidence
+    | DoNotEnforce      of reason:   ForeignKeyKeepReason
+
+type ForeignKeyDecision = {
+    ReferenceKey   : SsKey
+    Outcome        : ForeignKeyOutcome
+    InterventionId : string
+}
+
+type ForeignKeyDecisionSet = {
+    Decisions : ForeignKeyDecision list
+}
+```
+
+V2 adopts **binary outcome with structured evidence** (mirrors
+UniqueIndexOutcome's shape; V1's `(CreateConstraint,
+ScriptWithNoCheck)` two-boolean shape collapses cleanly into the
+binary form because `ScriptWithNoCheck=true` only matters when
+`CreateConstraint=true` — folding it into the
+`EnforceConstraint(ScriptWithNoCheck _)` evidence variant captures
+the semantic without inflating the outcome to ternary).
+
+### IR refinement question: cross-catalog detection
+
+V1's evaluator distinguishes **cross-schema** (different
+SchemaName) from **cross-catalog** (different database / catalog
+name). V2's `Catalog.PhysicalRealization` carries `Schema` and
+`Table` only. Three options:
+
+  1. **Defer cross-catalog detection.** V2's first-fixture milestone
+     is single-database; cross-catalog is speculative for the
+     synthetic fixtures. The strategy returns `CrossCatalogBlocked`
+     only when `AllowCrossCatalog=false` AND a future IR field
+     surfaces it. Today the rule is unreachable. Maps to "IR grows
+     under evidence" — wait for the V1↔V2 adapter to surface a
+     cross-catalog fixture, then add the IR field.
+  2. **Add `Catalog : string option` to `PhysicalRealization`.**
+     Small refinement; unblocks cross-catalog detection now.
+     Speculative until a fixture forces it.
+  3. **Synthesize from `Schema`.** Treat `dbo` differently from
+     `dbo.Other` etc. V1 doesn't do this; not honest.
+
+**Recommendation:** option 1 — defer. The V2 admire-then-extract
+discipline says: implement what V1 forces; defer what V1 needs but
+V2 hasn't surfaced yet. The cross-catalog rule lands as a `_` →
+`Some kind` branch with a TODO when the fixture arrives.
+
+Commit 5 will encode this: `ForeignKeyRules.evaluate` includes the
+cross-schema branch (live; `Kind.Physical.Schema` exists) and a
+`CrossCatalogBlocked` keep-reason variant in the DU (so the shape is
+ready); the rule that produces it is unreachable today and emits a
+documented `Annotated` lineage event ("cross-catalog detection
+deferred — IR refinement pending real fixture").
+
+### Existing test coverage
+
+V1 tests live at `tests/Osm.Validation.Tests/Policy/ForeignKeyEvaluatorTests.cs`:
+
+| V1 test | File:line | Category | Asserts | V2 translation |
+|---|---|---|---|---|
+| `Should_Block_CrossSchema_Constraint_When_Overrides_Disallow` | ForeignKeyEvaluatorTests.cs:14 | scenario | cross-schema FK + AllowCrossSchema=false ⇒ CreateConstraint=false, CrossSchema rationale | **Behavioral** — V2 `DoNotEnforce(CrossSchemaBlocked)` |
+| `Should_Create_Constraint_When_Eligible_And_Creation_Enabled` | ForeignKeyEvaluatorTests.cs:75 | scenario | clean profile, EnableCreation=true ⇒ CreateConstraint=true, PolicyEnableCreation rationale | **Behavioral** — V2 `EnforceConstraint(NoEvidenceObstacle _)` |
+| `TreatMissingDeleteRuleAsIgnore_AllowsCreation` | ForeignKeyEvaluatorTests.cs:140 | scenario | missing DeleteRule + TreatMissingAsIgnore=true ⇒ DeleteRuleIgnore rationale (does not block creation when otherwise eligible) | **Behavioral** — V2 evaluates `DeleteRuleIgnored` only when blocking; combined with eligibility it doesn't block. Translation requires care: V1's rationale-as-string shape emits `DELETE_RULE_IGNORE` even when the constraint is created, which V2 doesn't preserve (rationales are evidence DUs, not informational tags) — surface as **Skip with rationale** if the test depends on the string-level emission |
+| `CautiousMode_WithOrphans_ScriptsWithNoCheck` | ForeignKeyEvaluatorTests.cs:208 | scenario | Cautious + orphans + AllowNoCheckCreation=true ⇒ CreateConstraint=true, ScriptWithNoCheck=true | **Behavioral** — V2 `EnforceConstraint(ScriptWithNoCheck orphanCount)` |
+
+V2 should add (V1 lacks coverage for these):
+
+  - Profile probe missing / unreliable ⇒ `EvidenceMissing` outcome
+    (V2's collapsed-mode strict default; V1 implicitly falls through
+    to `EnableCreation` gate).
+  - Multiple ForeignKey interventions registered ⇒ fan-out per
+    (reference × intervention).
+  - Coexistence with NullabilityPass and UniqueIndexPass ⇒ the
+    closed-DU dispatcher continues to filter correctly with three
+    variants.
+  - `CrossCatalogBlocked` is currently unreachable; add a
+    documented Skip case with rationale tracking the IR refinement
+    deferral.
+
+### Migration path
+
+1. **`ForeignKeyTighteningConfig` + `TighteningIntervention.ForeignKey`
+   variant** (commit 5 type additions). Policy.fs extends. Closed
+   DU forces `TighteningIntervention.id` and the variant filters
+   in `TighteningPolicy.{nullability,uniqueIndex}Interventions` to
+   handle the third variant. The compiler will surface every
+   incomplete dispatcher; fix each as the closed DU intends.
+2. **`ForeignKeyRules` module** (commit 5 domain layer; lands in
+   `Projection.Core/Strategies/`). Pure per-reference decider;
+   structured evidence/reason DUs as defined above.
+3. **`ForeignKeyPass` driver** (commit 5 algebra layer; lands in
+   `Projection.Core/Passes/`). Mirrors NullabilityPass / UniqueIndexPass:
+   `run : Catalog -> Policy -> Profile -> Lineage<ForeignKeyDecisionSet>`.
+   Observable identity on empty policy; fan-out over (reference ×
+   intervention); Annotated lineage events.
+4. **Test coverage**: per-reference decisions; multi-intervention
+   fan-out; observable identity; differential parity against V1's
+   four tests (three Behavioral, one Skip-with-rationale for the
+   DeleteRuleIgnore string-emission divergence); coexistence with
+   NullabilityPass / UniqueIndexPass.
+
+### Edges / risks
+
+  - **Reference-to-target physical resolution.** V1's
+    `ForeignKeyTargetIndex` resolves references to target
+    `EntityModel`s by a side table built from the model. V2's
+    `Reference.TargetKind : SsKey` plus `Catalog.tryFindKind`
+    expresses the same lookup directly. The cross-schema check
+    needs both endpoints' `Physical.Schema`; the rule reads the
+    target via `Catalog.tryFindKind`. If the target is missing
+    (broken reference), the rule's behavior is **defer to a
+    `MissingTarget` keep-reason** — surface it explicitly rather
+    than silently failing.
+  - **String-level rationale parity.** V1's rationale is
+    `ImmutableArray<string>` with V1-specific tag strings
+    (`DELETE_RULE_IGNORE`, `DATA_HAS_ORPHANS`, etc.). V2's outcome
+    is a structured DU; the lineage event's `Annotated` detail
+    string is the human-readable summary, not a machine-parseable
+    tag. Differential parity tests that check rationale strings
+    are Skip cases; tests that check decision booleans are
+    Behavioral.
+  - **`_mode` parameter in V1 conflicts with V2's mode-collapse.**
+    V1's `ForeignKeyEvaluator` constructor takes a `TighteningMode`
+    and uses `mode == Cautious` to gate the WITH NOCHECK path
+    (line 159). V2 collapsed `TighteningMode` (DECISIONS 2026-05-09);
+    the WITH NOCHECK path is gated by `AllowNoCheckCreation` instead.
+    Per "V1↔V2 name mapping" precedent, document the rename in
+    DECISIONS when commit 5 lands.
+  - **Adapter-vestigial fields.** V1's `ColumnCoordinate` and
+    `EntityContext` plumbing are V1's IR shape, not V2's. The
+    V1↔V2 adapter (when it lands for FK) drops these at the
+    boundary; V2 uses `Reference.SsKey` directly. This is the
+    third instance of the vestigial-fields-die-at-the-adapter
+    convention (DECISIONS 2026-05-10).
+
+### Cross-strategy observation: evidence-shape generalization
+
+Three registered-intervention strategies now consume Profile
+evidence:
+
+| Strategy | Profile evidence consumed | Decision context |
+|---|---|---|
+| Nullability | `Profile.Columns` (per-`AttributeKey`) | `Attribute` |
+| UniqueIndex | `Profile.UniqueCandidates` (single) + `CompositeUniqueCandidates` (composite) | `Kind × Index` |
+| ForeignKey  | `Profile.ForeignKeys` (per-`ReferenceKey`) | `Kind × Reference` |
+
+The shape across all three is:
+
+```
+evaluate :
+    interventionId ->
+    config         ->          (* strategy-specific *)
+    'context       ->          (* IR slice: Attribute | (Kind × Index) | (Kind × Reference) *)
+    Profile        ->
+    'decision                  (* strategy-specific *)
+```
+
+The `Profile` parameter is uniform; the `'context` slice and
+`'decision` shape are strategy-specific. **This is starting to
+suggest a generic `StrategyEvaluator<'context, 'config, 'decision>`
+type alias at the strategy-layer level** — a shared
+evidence-consumption discipline that names the three-input shape
+explicitly.
+
+**Surfacing, not pre-deciding.** Three instances at the same shape
+is empirical; the question is whether the generalization earns its
+place when the migration ships. Possible outcomes after commit 5:
+
+  - **Codification fits without strain** ⇒ the generic shape is
+    real; defer extracting the alias until N=4 forces it (same
+    discipline as the registry deferral).
+  - **Codification fits but the alias would clarify the seam** ⇒
+    extract the alias as a sibling commit in this session; document
+    the rationale in DECISIONS.
+  - **Codification fits with the alias forcing awkward 'context
+    parameterization** ⇒ the shape is not as uniform as it appears;
+    record the failed generalization as a tracked observation
+    pending a fourth instance.
+
+The recommendation is to write `ForeignKeyRules.evaluate` with the
+**same concrete signature** as `NullabilityRules.evaluate` and
+`UniqueIndexRules.evaluate` — three positional arguments before
+the `Profile` — and observe whether the shape feels uniform or
+forced after the implementation lands. The reflection commit
+(commit 6) is the natural place to record the verdict.
+
+### Future Profile enrichment notes
+
+ForeignKey is the third decision strategy whose Profile slice is
+narrowly typed (one record per reference). Future strategies may
+consume **richer** profile evidence — distributions, cardinality,
+joint statistics across attributes, sequence/temporal evidence. The
+strategy-layer codification accommodates this naturally (the
+`Profile` parameter is generic across strategies; new fields land
+under "IR grows under evidence"); the evidence-shape generalization
+above (`StrategyEvaluator<...>`) would also support richer Profile
+shapes without revision. Logging the connection here so the
+rich-profiling sessions (the user's planned post-strategy-layer
+work) inherit the strategy-layer's foundation.
+
+---
+
 ## 2026-05-07 — `EntityDependencySorter` (`src/Osm.Emission/Seeds/EntityDependencySorter.cs`)
 
 **Status:** admired (placement decided)
