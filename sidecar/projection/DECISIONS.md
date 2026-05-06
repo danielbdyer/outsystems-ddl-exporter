@@ -672,3 +672,49 @@ passes. `symmetricClosure` is the template; future passes follow.
 in the surface?" without dropping into source code. Convention is
 silent (no enforcement mechanism beyond review) but cheap to follow
 once seen.
+
+## 2026-05-09 — Adapter language choice: F# for IR-conversion, C# reserved for foreign-API I/O
+
+**Status:** decided
+**Context:** Session 5 commit 3 was originally intended as the first
+C# adapter (`Projection.Adapters.Sql/Static.cs`), per the V2 handoff's
+"C# at the boundary" framing. Implementation hit F# interop friction —
+F# `Result<'a>` and discriminated unions consumed from C# require
+verbose `NewSuccess` / `NewFailure` factories and pattern-matching
+through nested case classes, costing readability without earning
+anything for an adapter whose only foreign API is `System.Text.Json`
+(which both languages handle equally well).
+**Decision:** Adapter language is decided per-adapter, by which side of
+the seam the foreign API sits on:
+
+- **F# adapters** for **IR-conversion adapters** — adapters whose job
+  is to coerce one shape into another, with no native-API dependencies
+  beyond `System.*`. Examples: V1 JSON ↔ V2 IR (this commit), V1
+  Profile JSON ↔ V2 Profile (future), DACPAC schema ↔ V2 IR (future,
+  if the DACPAC parsing API is comfortable from F#).
+- **C# adapters** for **foreign-API I/O adapters** — adapters whose
+  job is to talk to an external system whose .NET API is OOP-flavored
+  and lives on the C# side: SQL Server connections (ADO.NET, Dapper,
+  Entity Framework), HTTP servers (ASP.NET / Hot Chocolate), DACPAC
+  building (DacFx — *if* its API turns out to be unfriendly from F#),
+  external authorization frameworks. C# is the right side of the
+  language seam when the native API is the cost; F# `Result<'a>`
+  interop is awkward from C# but the `Result.bind` / `Result.map`
+  composition stays inside the F# core where it belongs.
+
+The seam stays at the language boundary, not at the project boundary.
+A `Projection.Adapters.<Foreign>` project may be C# or F# depending on
+its native API; the namespace pattern is preserved either way.
+
+**Reasoning / consequences:** F# for IR conversion keeps
+`Result.bind` / `Result.map` composition natural at the boundary;
+short-circuit semantics on adapter failures look identical to F# core
+code. C# for foreign-API I/O keeps the boundary readable when the
+native API is OOP-shaped. Future agents reading this entry decide
+adapter language by asking "what's the native API?" — IR shapes are
+F#-native; SQL/HTTP/DACPAC are C#-native.
+
+The session 5 commit 3 adapter (`Projection.Adapters.Sql/Static.fs`)
+is the canonical pattern for IR-conversion adapters; the future
+SQL-I/O adapter when it arrives will be the canonical pattern for
+foreign-API I/O adapters.

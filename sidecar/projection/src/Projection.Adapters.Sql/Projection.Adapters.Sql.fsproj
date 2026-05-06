@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Projection.Adapters.Sql</RootNamespace>
+    <AssemblyName>Projection.Adapters.Sql</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Static.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
+  </ItemGroup>
+
+</Project>

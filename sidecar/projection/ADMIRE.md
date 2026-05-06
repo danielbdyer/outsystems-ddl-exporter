@@ -58,9 +58,21 @@ over time. Read top-to-bottom for chronological order.
 
 ## 2026-05-06 — `EntitySeedDeterminizer` (`src/Osm.Emission/Seeds/EntitySeedDeterminizer.cs`)
 
-**Status:** admired (placement decided); pure-core sort half **extracted**
-in V2 as `Projection.Core.Passes.NormalizeStaticPopulations` (commit 5,
-session 3). Boundary cell-coercion still pending the Catalog Reader.
+**Status:** **extracted (differential confirmed)** — V2's `Projection.
+Core.Passes.NormalizeStaticPopulations` plus `Projection.Adapters.Sql.
+Static` jointly satisfy V1's behavioral contract on the
+`static-entities.edge-case.json` fixture (session 5 commit 3). The
+embedded V1 fixture content is the V2 contract; the V1 file remains the
+source of truth for V1 itself, and any V1-fixture change requires a
+deliberate V2 expectation update.
+
+Pure-core sort half extracted as `NormalizeStaticPopulations` in
+session 3 (commit 5). Boundary cell-coercion shipped as
+`Projection.Adapters.Sql.Static` in session 5 (commit 3) — F# adapter
+(see DECISIONS 2026-05-09 on adapter language choice). Type-aware
+comparison V1 did at the C# level collapses to canonical
+invariant-culture strings at the boundary; the pure pass operates on
+those strings.
 
 ### What it does (algebraic terms)
 
