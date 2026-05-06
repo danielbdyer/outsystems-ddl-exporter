@@ -124,16 +124,55 @@ type UniqueIndexTighteningConfig = {
 }
 
 
+/// V1's foreign-key tightening intervention. Carries V1's
+/// `ForeignKeyOptions` shape verbatim (five boolean toggles — V1's
+/// FK configuration is plain enable/allow gates with no thresholds
+/// or override lists; the V1↔V2 admire (ADMIRE.md 2026-05-11)
+/// confirms this).
+///
+/// V1's `_mode == Cautious` gate on the WITH NOCHECK path
+/// (ForeignKeyEvaluator.cs:159) is collapsed in V2 because V2 has
+/// no TighteningMode (DECISIONS 2026-05-09). The semantic is
+/// preserved by `AllowNoCheckCreation` — the caller registering
+/// the intervention chooses whether the WITH NOCHECK fallback is
+/// allowed.
+type ForeignKeyTighteningConfig = {
+    /// Should FK constraints be created at all?
+    /// V1's `ForeignKeyOptions.EnableCreation`.
+    EnableCreation                 : bool
+    /// May an FK cross schema boundaries?
+    /// V1's `ForeignKeyOptions.AllowCrossSchema`.
+    AllowCrossSchema               : bool
+    /// May an FK cross catalog (database) boundaries? V2's IR does
+    /// not yet model catalog names (`PhysicalRealization` carries
+    /// `Schema` and `Table` only); this toggle is reachable through
+    /// the DU's keep-reason variant but the rule is unreachable
+    /// today (ADMIRE.md 2026-05-11 — IR refinement deferred).
+    AllowCrossCatalog              : bool
+    /// Treat a missing DeleteRule as if it were "Ignore" (V1's
+    /// `TreatMissingDeleteRuleAsIgnore`). V2's `Reference.OnDelete`
+    /// is a closed DU and cannot be missing; this toggle is preserved
+    /// for V1 parity but currently unreachable from V2's IR (the
+    /// V1↔V2 adapter would resolve missing rules to `OnDelete.NoAction`
+    /// at the boundary, which is what V1 effectively does).
+    TreatMissingDeleteRuleAsIgnore : bool
+    /// May the constraint be created WITH NOCHECK when orphans or
+    /// Ignore-rules would otherwise block it? V1's
+    /// `AllowNoCheckCreation` plus the (now collapsed) Cautious mode.
+    AllowNoCheckCreation           : bool
+}
+
+
 /// One tightening intervention. The DU is closed; new intervention
-/// kinds (FK enforcement, type tightening, etc.) land as new variants
-/// when admire passes surface the need.
+/// kinds (type tightening, view-column tightening, etc.) land as
+/// new variants when admire passes surface the need.
 ///
 /// Every intervention carries an `Id` — a stable string identifier the
 /// caller chooses (e.g., `"v1-cautious-nullability"`,
-/// `"v1-style-uniqueness"`). The Id appears in lineage events emitted
-/// by passes that fire this intervention; audit consumers can ask
-/// "which intervention changed this column / index" and the trail
-/// answers structurally.
+/// `"v1-style-uniqueness"`, `"v1-style-fk"`). The Id appears in
+/// lineage events emitted by passes that fire this intervention;
+/// audit consumers can ask "which intervention changed this column
+/// / index / reference" and the trail answers structurally.
 type TighteningIntervention =
     /// V1's nullability tightening — the
     /// `NullabilityEvaluator` migration's natural form.
@@ -143,6 +182,11 @@ type TighteningIntervention =
     /// Decides per-index, not per-attribute (the structural divergence
     /// from Nullability; ADMIRE.md 2026-05-10).
     | UniqueIndex of id: string * config: UniqueIndexTighteningConfig
+    /// V1's foreign-key tightening — the `ForeignKeyEvaluator`
+    /// migration's natural form. Decides per-reference (the third
+    /// granularity, after per-attribute and per-index; ADMIRE.md
+    /// 2026-05-11).
+    | ForeignKey of id: string * config: ForeignKeyTighteningConfig
 
 
 /// Tightening axis. A registry of zero or more named interventions.
@@ -286,6 +330,28 @@ module UniqueIndexTighteningConfig =
 
 
 [<RequireQualifiedAccess>]
+module ForeignKeyTighteningConfig =
+
+    /// Construct a `ForeignKeyTighteningConfig`. No validation
+    /// required — every field is a boolean. Carries no defaults; the
+    /// caller registering the intervention chooses every value
+    /// explicitly per V2's strict-default discipline (DECISIONS
+    /// 2026-05-09 — Tightening as a registry of named interventions).
+    let create
+        (enableCreation: bool)
+        (allowCrossSchema: bool)
+        (allowCrossCatalog: bool)
+        (treatMissingDeleteRuleAsIgnore: bool)
+        (allowNoCheckCreation: bool)
+        : ForeignKeyTighteningConfig =
+        { EnableCreation                 = enableCreation
+          AllowCrossSchema               = allowCrossSchema
+          AllowCrossCatalog              = allowCrossCatalog
+          TreatMissingDeleteRuleAsIgnore = treatMissingDeleteRuleAsIgnore
+          AllowNoCheckCreation           = allowNoCheckCreation }
+
+
+[<RequireQualifiedAccess>]
 module TighteningIntervention =
 
     /// The intervention's stable identifier. Recorded in lineage events
@@ -298,6 +364,7 @@ module TighteningIntervention =
         match intervention with
         | Nullability (id, _) -> id
         | UniqueIndex (id, _) -> id
+        | ForeignKey  (id, _) -> id
 
 
 [<RequireQualifiedAccess>]
@@ -350,6 +417,25 @@ module TighteningPolicy =
             match intervention with
             | UniqueIndex (id, cfg) -> Some (id, cfg)
             | _                     -> None)
+
+    /// Find a ForeignKey intervention's config by intervention id.
+    /// Returns `None` if no ForeignKey intervention has that id (or
+    /// if no ForeignKey intervention is registered at all).
+    let tryFindForeignKey (id: string) (policy: TighteningPolicy) : ForeignKeyTighteningConfig option =
+        policy.Interventions
+        |> List.tryPick (fun intervention ->
+            match intervention with
+            | ForeignKey (i, cfg) when i = id -> Some cfg
+            | _                               -> None)
+
+    /// All registered ForeignKey interventions, paired with their ids,
+    /// in registration order.
+    let foreignKeyInterventions (policy: TighteningPolicy) : (string * ForeignKeyTighteningConfig) list =
+        policy.Interventions
+        |> List.choose (fun intervention ->
+            match intervention with
+            | ForeignKey (id, cfg) -> Some (id, cfg)
+            | _                    -> None)
 
 
 [<RequireQualifiedAccess>]

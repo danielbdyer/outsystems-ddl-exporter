@@ -19,6 +19,7 @@
     <Compile Include="Strategies/CycleResolution.fs" />
     <Compile Include="Strategies/NullabilityRules.fs" />
     <Compile Include="Strategies/UniqueIndexRules.fs" />
+    <Compile Include="Strategies/ForeignKeyRules.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
     <Compile Include="Passes/VisibilityMask.fs" />
@@ -28,6 +29,7 @@
     <Compile Include="Passes/TopologicalOrderPass.fs" />
     <Compile Include="Passes/NullabilityPass.fs" />
     <Compile Include="Passes/UniqueIndexPass.fs" />
+    <Compile Include="Passes/ForeignKeyPass.fs" />
   </ItemGroup>
 
 </Project>

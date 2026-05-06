@@ -32,6 +32,8 @@
     <Compile Include="NullabilityPassTests.fs" />
     <Compile Include="UniqueIndexRulesTests.fs" />
     <Compile Include="UniqueIndexPassTests.fs" />
+    <Compile Include="ForeignKeyRulesTests.fs" />
+    <Compile Include="ForeignKeyPassTests.fs" />
     <Compile Include="ProfileSnapshotAdapterTests.fs" />
     <Compile Include="EndToEndDifferentialTests.fs" />
     <Compile Include="V1NullabilityParityTests.fs" />
