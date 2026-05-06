@@ -1416,3 +1416,150 @@ preserves the thinking — the next agent encountering a fourth
 registered-intervention pass driver doesn't reinvent the analysis;
 they read this entry, see the threshold, and decide based on the
 same empirical criterion.
+
+## 2026-05-11 — Strategy-layer codification: empirical verdict after the fourth instance
+
+**Status:** decided (codification confirmed, with refinements)
+**Context:** Session 8's codification of the strategy layer
+(2026-05-11 entries above) was promoted from implicit to explicit
+based on three instances (CycleResolution, NullabilityRules,
+UniqueIndexRules). The fourth instance (ForeignKeyRules +
+ForeignKeyPass) was implemented under the freshly-codified pattern
+to test whether the codification holds without strain. Per the
+user's session-8 brief: "If the codification held for ForeignKey
+without strain, the registered-intervention sub-pattern is
+empirically validated. If it didn't, the codification needs
+revision." This entry records the verdict.
+
+**Verdict.** **The deep-shape codification held.** All five core
+predictions carried over to ForeignKey without revision:
+
+| Codification prediction | ForeignKey outcome |
+|---|---|
+| Pure functions of IR fields | ✓ `ForeignKeyRules.evaluate` is pure; reads Catalog/Profile/config; no I/O |
+| Typed function-type seam | ✓ `evaluate` is the seam; `ForeignKeyPass` calls into it via the same shape |
+| Structured rationale DUs cover decision space | ✓ Three DUs (Evidence, KeepReason, Outcome); 13 variants total exhaustively covering V1's signal hierarchy |
+| Lineage fires only on actual decisions | ✓ Observable identity on empty policy preserved; Annotated events on decisions |
+| Module name advertises domain | ✓ `<Domain>Rules` suffix; lives in `Strategies/` folder |
+
+The pattern is empirically validated at the third
+registered-intervention instance.
+
+**Refinements surfaced.** Three findings the codification did not
+anticipate; each is worth recording as a refinement.
+
+### Refinement 1: KeepReason DUs at namespace level need `RequireQualifiedAccess` when case names overlap
+
+**The friction.** `UniqueIndexKeepReason.PolicyDisabled` and
+`ForeignKeyKeepReason.PolicyDisabled` share a case name (similarly
+`EvidenceMissing`). With both DUs at the `Projection.Core` namespace
+level and neither carrying `[<RequireQualifiedAccess>]`, F#
+ambiguity-resolution picks one — and in `ForeignKeyRulesTests.fs`,
+it picked the wrong one, generating compile errors. The fix was
+qualifying every collision site with the type prefix
+(`ForeignKeyKeepReason.PolicyDisabled`).
+
+**The codification refinement.** When a strategy's KeepReason DU
+shares case names with another strategy's KeepReason DU (a real
+risk because `PolicyDisabled`, `EvidenceMissing`, and similar
+generic names will recur across strategies), the codification
+should add `[<RequireQualifiedAccess>]` to the KeepReason DU. The
+rationale is the same as for `NullabilityOutcome` (DECISIONS
+2026-05-09 — case-name conflict with `OverrideAction.KeepNullable`):
+`RequireQualifiedAccess` keeps semantically-clean names while
+preventing ambiguity.
+
+**Action item (deferred).** Retroactively applying
+`RequireQualifiedAccess` to `UniqueIndexKeepReason` and
+`ForeignKeyKeepReason` (and `NullabilityEvidence` /
+`KeepNullableReason` if their case names ever clash) would touch
+tests and rules modules alike. Defer the refactor; capture the
+discipline here as a forward rule for future strategies. When a new
+strategy's KeepReason DU is written, it lands with
+`RequireQualifiedAccess`. When any current KeepReason DU is next
+substantively modified, retrofit `RequireQualifiedAccess` as part
+of that change.
+
+### Refinement 2: `'context` is variable-arity across strategies
+
+**The observation.** The cross-strategy generalization the user
+flagged in commit 4's admire entry is empirically real, but the
+`'context` slice that flows into each strategy's `evaluate` varies
+in arity:
+
+| Strategy | `'context` slice | Why |
+|---|---|---|
+| Nullability | `Attribute` | Per-attribute decision, no cross-record reasoning |
+| UniqueIndex | `Kind × Index` | Composite-unique candidates need the kind to disambiguate |
+| ForeignKey | `Kind × Reference × Catalog` | FK decisions reach across kinds (target lookup, cross-schema check) |
+
+ForeignKey takes the **catalog itself** as an argument, which the
+other two do not. This is a structural difference: FK decisions are
+the first instance of a strategy that **reaches across the catalog**
+rather than deciding locally per-record. The codification's
+predicted uniform `(interventionId, config, context, profile) →
+decision` shape is technically uniform if `context` is allowed to be
+any tuple — but the practical signatures differ because what
+`context` *means* differs.
+
+**The codification refinement.** Strategy modules within the
+registered-intervention sub-pattern share the *signature shape*
+`(interventionId, config, ...record-or-record-bundle..., profile) →
+decision`, where the record-or-record-bundle is *whatever IR
+context the rule needs*. The codification's prediction of a
+**uniform single-context** signature was too narrow; the prediction
+of a **uniform shape** (named arguments, fixed positions for
+`interventionId` first and `profile` last) holds.
+
+**Generic alias deferred.** The cross-strategy alias
+`type StrategyEvaluator<'context, 'config, 'decision> = string * 'config * 'context * Profile -> 'decision`
+would absorb all three signatures with `'context` as `Attribute`,
+`Kind * Index`, or `Kind * Reference * Catalog` respectively. At
+N=3 the alias is aesthetic; at N=4 (when a fourth
+registered-intervention strategy lands), the alias earns its place
+as a way to name the shape and make composition primitives
+(`fanOut`, `fallback`, etc.) typeable. Defer; the threshold is
+explicit.
+
+### Refinement 3: Audit dividend on `MissingTarget`
+
+**The observation.** V2's `ForeignKeyKeepReason.MissingTarget` has
+no V1 counterpart — V1's `ForeignKeyEvaluator` silently skips
+references to missing targets. Surfacing the missing target as an
+explicit keep-reason produces an audit-trail entry V1 lacked: every
+FK decision now has a structured reason, even the "no decision"
+cases. This is the same audit-dividend pattern that surfaced in the
+2026-05-09 entry "Annotated events with documented skip reasons" —
+applied to the strategy layer's outcome DUs rather than to lineage
+events.
+
+**The codification refinement.** Where a V1 component silently
+skips work, V2's strategy module **should surface the skip as a
+named keep-reason variant** in the outcome DU. The audit chain
+gains a structured reason; the algebra gains a total decision
+function (every input produces a decision); the V1↔V2 differential
+gains a skip-with-rationale Behavioral assertion rather than a
+ghost in V1's code. Three instances now: SymmetricClosure (Annotated
+skip events on the lineage trail), NullabilityEvaluator (Skip cases
+on V1 parity tests where V2 diverges), ForeignKeyEvaluator
+(MissingTarget keep-reason variant). The pattern's general; the
+codification absorbs it as a fourth core prediction:
+**total decisions, named skips.**
+
+**Reasoning / consequences.** The codification was descriptive
+(three instances at session start) and is now empirically validated
+(four instances at session end). Three refinements landed — none
+of them invalidated the deep shape; each one strengthened the
+codification by surfacing a non-obvious detail. The codification
+now reads as: pure functions, typed seam, structured rationale DUs
+(KeepReasons under `RequireQualifiedAccess`), lineage events on
+actual decisions, module name advertising the domain, total
+decisions with named skips. Future strategy migrations have a
+sharper rubric.
+
+The user's session-8 framing ("the test of whether session 8
+succeeded is whether the fourth strategy migration fits cleanly")
+is empirically met. Session 9+ rich-profiling and Faker-style
+emission inherit a strategy layer that is named, observable in the
+file system, codified with documented refinements, and validated
+on its central case.
