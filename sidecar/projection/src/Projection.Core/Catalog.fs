@@ -100,11 +100,20 @@ type ReferenceAction =
 
 
 /// A scalar attribute on a kind.
+///
+/// `IsPrimaryKey` flags whether this attribute participates in its kind's
+/// primary key. Composite primary keys are expressed by flagging multiple
+/// attributes on the same kind. This field was added under the discipline
+/// "IR grows under evidence" (see DECISIONS.md): the V1 admire pass on
+/// `EntitySeedDeterminizer` (see ADMIRE.md) needs PK columns to drive
+/// row-order normalization, and the eventual `Projection.Targets.SSDT`
+/// FK emitter needs PK columns to resolve target-side references.
 type Attribute = {
-    SsKey  : SsKey
-    Name   : Name
-    Type   : PrimitiveType
-    Column : ColumnRealization
+    SsKey        : SsKey
+    Name         : Name
+    Type         : PrimitiveType
+    Column       : ColumnRealization
+    IsPrimaryKey : bool
 }
 
 
@@ -160,6 +169,12 @@ module Kind =
     /// attribute orderings, modality marks, or any other field. Encodes
     /// A4 as a function: structural equality of kinds is by SsKey only.
     let byIdentity (a: Kind) (b: Kind) : bool = a.SsKey = b.SsKey
+
+    /// The attributes flagged `IsPrimaryKey` on this kind, in the order
+    /// they appear. May be empty for kinds without a declared PK; may
+    /// contain multiple entries for composite-key kinds.
+    let primaryKey (k: Kind) : Attribute list =
+        k.Attributes |> List.filter (fun a -> a.IsPrimaryKey)
 
 
 [<RequireQualifiedAccess>]

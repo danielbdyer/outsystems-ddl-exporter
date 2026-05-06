@@ -91,8 +91,8 @@ module RawTextEmitter =
             sprintf "%s.%s" (quote k.Physical.Schema) (quote k.Physical.Table)
         sb.Append("CREATE TABLE ").Append(qualified).AppendLine(" (") |> ignore
         // Trailing inline comment makes commas tricky; emit each line as
-        // "<column-decl><sep>  -- <name> (<sskey>)" with sep being "," for
-        // all but the last line.
+        // "<column-decl><sep>  -- <name> (<sskey>)[ PK]" with sep being
+        // "," for all but the last line.
         let lastIdx = k.Attributes.Length - 1
         k.Attributes
         |> List.iteri (fun i a ->
@@ -100,9 +100,10 @@ module RawTextEmitter =
             let typ = defaultSqlType a.Type
             let nullness = if a.Column.IsNullable then "NULL" else "NOT NULL"
             let sep = if i < lastIdx then "," else ""
+            let pkTag = if a.IsPrimaryKey then " PK" else ""
             sb.Append("    ").Append(name).Append(' ').Append(typ).Append(' ').Append(nullness)
                 .Append(sep).Append("  -- ").Append(Name.value a.Name).Append(" (").Append(rootKey a.SsKey).Append(')')
-                .AppendLine() |> ignore)
+                .Append(pkTag).AppendLine() |> ignore)
         sb.AppendLine(");") |> ignore
 
     /// Render the FK constraints from a kind's references. The target
@@ -126,13 +127,14 @@ module RawTextEmitter =
                 |> Option.defaultValue "<missing-source-column>"
             match Catalog.tryFindKind r.TargetKind catalog with
             | Some target ->
-                // Synthetic-milestone hack: the fixture names every PK
-                // attribute "Id". Real PK resolution is policy-driven and
-                // arrives when Policy lands as a structured input.
-                let pkName = Name.create "Id" |> Result.value
+                // PK resolved from the IR's IsPrimaryKey marker (Attribute
+                // refinement landed alongside the EntitySeedDeterminizer
+                // admire). For composite PKs, the first PK attribute wins
+                // here — composite-FK semantics arrive when a real V1
+                // fixture has them.
                 let targetPk =
                     target.Attributes
-                    |> List.tryFind (fun a -> a.Name = pkName)
+                    |> List.tryFind (fun a -> a.IsPrimaryKey)
                     |> Option.map (fun a -> a.Column.ColumnName)
                     |> Option.defaultValue "<missing-target-pk>"
                 sb.Append("    FOREIGN KEY (").Append(quote sourceColumn).AppendLine(")")

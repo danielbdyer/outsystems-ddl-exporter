@@ -43,18 +43,21 @@ let customer : Kind = {
     Modality = [ TenantScoped ]
     Physical = { Schema = "dbo"; Table = "OSUSR_S1S_CUSTOMER" }
     Attributes = [
-        { SsKey = customerIdAttrKey
-          Name  = name "Id"
-          Type  = Integer
-          Column = { ColumnName = "ID"; IsNullable = false } }
-        { SsKey = customerNameKey
-          Name  = name "Name"
-          Type  = Text
-          Column = { ColumnName = "NAME"; IsNullable = false } }
-        { SsKey = customerTenantKey
-          Name  = name "TenantId"
-          Type  = Integer
-          Column = { ColumnName = "TENANT_ID"; IsNullable = false } }
+        { SsKey        = customerIdAttrKey
+          Name         = name "Id"
+          Type         = Integer
+          Column       = { ColumnName = "ID"; IsNullable = false }
+          IsPrimaryKey = true }
+        { SsKey        = customerNameKey
+          Name         = name "Name"
+          Type         = Text
+          Column       = { ColumnName = "NAME"; IsNullable = false }
+          IsPrimaryKey = false }
+        { SsKey        = customerTenantKey
+          Name         = name "TenantId"
+          Type         = Integer
+          Column       = { ColumnName = "TENANT_ID"; IsNullable = false }
+          IsPrimaryKey = false }
     ]
     References = []
 }
@@ -75,14 +78,16 @@ let order : Kind = {
     Modality = []
     Physical = { Schema = "dbo"; Table = "OSUSR_S1S_ORDER" }
     Attributes = [
-        { SsKey = orderIdAttrKey
-          Name  = name "Id"
-          Type  = Integer
-          Column = { ColumnName = "ID"; IsNullable = false } }
-        { SsKey = orderCustomerFkKey
-          Name  = name "CustomerId"
-          Type  = Integer
-          Column = { ColumnName = "CUSTOMER_ID"; IsNullable = false } }
+        { SsKey        = orderIdAttrKey
+          Name         = name "Id"
+          Type         = Integer
+          Column       = { ColumnName = "ID"; IsNullable = false }
+          IsPrimaryKey = true }
+        { SsKey        = orderCustomerFkKey
+          Name         = name "CustomerId"
+          Type         = Integer
+          Column       = { ColumnName = "CUSTOMER_ID"; IsNullable = false }
+          IsPrimaryKey = false }
     ]
     References = [
         { SsKey           = orderRefToCustomer
@@ -127,18 +132,21 @@ let country : Kind = {
     Modality = [ Static countryPopulations ]
     Physical = { Schema = "dbo"; Table = "OSUSR_S1S_COUNTRY" }
     Attributes = [
-        { SsKey = countryIdAttrKey
-          Name  = name "Id"
-          Type  = Integer
-          Column = { ColumnName = "ID"; IsNullable = false } }
-        { SsKey = countryCodeKey
-          Name  = name "Code"
-          Type  = Text
-          Column = { ColumnName = "CODE"; IsNullable = false } }
-        { SsKey = countryLabelKey
-          Name  = name "Label"
-          Type  = Text
-          Column = { ColumnName = "LABEL"; IsNullable = false } }
+        { SsKey        = countryIdAttrKey
+          Name         = name "Id"
+          Type         = Integer
+          Column       = { ColumnName = "ID"; IsNullable = false }
+          IsPrimaryKey = true }
+        { SsKey        = countryCodeKey
+          Name         = name "Code"
+          Type         = Text
+          Column       = { ColumnName = "CODE"; IsNullable = false }
+          IsPrimaryKey = false }
+        { SsKey        = countryLabelKey
+          Name         = name "Label"
+          Type         = Text
+          Column       = { ColumnName = "LABEL"; IsNullable = false }
+          IsPrimaryKey = false }
     ]
     References = []
 }

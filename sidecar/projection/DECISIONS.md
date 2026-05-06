@@ -478,3 +478,22 @@ that motivated it.
 **Reasoning / consequences:** The IR stays small. Future readers can
 read every field's justification by following the comment back to the
 ADMIRE entry or test. Speculative complexity has nowhere to land.
+
+## 2026-05-07 — IR refinement: `IsPrimaryKey` on `Attribute`
+
+**Status:** decided
+**Refines:** the IR shape introduced in commit 4 of session 1.
+**Context:** The `EntitySeedDeterminizer` admire entry (ADMIRE.md, 2026-05-06)
+identified PK-column knowledge as a structural prerequisite for the
+extracted `NormalizeStaticPopulations` pass. The synthetic-milestone
+`RawTextEmitter` was using a name-based hack (assume the PK attribute
+is named "Id") to resolve FK target columns; that hack is now retired.
+**Decision:** Add `IsPrimaryKey : bool` to `Attribute`. Composite primary
+keys are expressed by flagging multiple attributes on the same kind.
+`Kind.primaryKey` returns the PK attributes in declaration order.
+**Reasoning / consequences:** First IR refinement under the
+"IR grows under evidence" discipline — motivated by a concrete admire
+pass and a concrete emitter need, not by speculation. The synthetic
+fixture marks each Id attribute as the PK; the JsonEmitter surfaces
+`primaryKey` alongside `nullable` for every attribute; the SSDT
+RawTextEmitter tags PK columns with " PK" in the inline comment.

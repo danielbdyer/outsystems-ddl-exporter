@@ -13,6 +13,44 @@ open Projection.Tests.Fixtures
 // validation is independent of SsKey validation.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// IsPrimaryKey on Attribute — IR refinement (see DECISIONS.md "IR grows
+// under evidence" and ADMIRE.md EntitySeedDeterminizer entry).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Kind.primaryKey returns PK-flagged attributes in declaration order`` () =
+    // Customer's PK is its Id attribute (single-column PK).
+    let pk = Kind.primaryKey customer
+    Assert.Equal(1, pk.Length)
+    Assert.Equal(customerIdAttrKey, pk.[0].SsKey)
+
+[<Fact>]
+let ``Kind.primaryKey returns an empty list when no attribute is flagged`` () =
+    let stripped =
+        { customer with
+            Attributes =
+                customer.Attributes
+                |> List.map (fun a -> { a with IsPrimaryKey = false }) }
+    Assert.Empty(Kind.primaryKey stripped)
+
+[<Fact>]
+let ``Kind.primaryKey supports composite primary keys`` () =
+    // Synthesize a composite-PK kind by flagging two attributes.
+    let composite =
+        { customer with
+            Attributes =
+                customer.Attributes
+                |> List.map (fun a -> { a with IsPrimaryKey = true }) }
+    Assert.Equal(customer.Attributes.Length, (Kind.primaryKey composite).Length)
+
+[<Fact>]
+let ``fixture: every kind has exactly one PK attribute (Id)`` () =
+    for k in Catalog.allKinds sampleCatalog do
+        let pk = Kind.primaryKey k
+        Assert.Equal(1, pk.Length)
+        Assert.Equal("Id", Name.value pk.[0].Name)
+
 [<Fact>]
 let ``A2: SsKey and Name are independently constructed and validated`` () =
     Assert.True(Result.isFailure (SsKey.original ""))

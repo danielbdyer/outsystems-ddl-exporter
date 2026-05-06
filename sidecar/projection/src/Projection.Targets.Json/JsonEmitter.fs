@@ -66,11 +66,12 @@ module JsonEmitter =
 
     let private writeAttribute (w: Utf8JsonWriter) (a: Attribute) : unit =
         w.WriteStartObject()
-        w.WriteString("ssKey",   renderSsKey a.SsKey)
-        w.WriteString("name",    Name.value a.Name)
-        w.WriteString("type",    primitiveString a.Type)
-        w.WriteString("column",  a.Column.ColumnName)
+        w.WriteString("ssKey",     renderSsKey a.SsKey)
+        w.WriteString("name",      Name.value a.Name)
+        w.WriteString("type",      primitiveString a.Type)
+        w.WriteString("column",    a.Column.ColumnName)
         w.WriteBoolean("nullable", a.Column.IsNullable)
+        w.WriteBoolean("primaryKey", a.IsPrimaryKey)
         w.WriteEndObject()
 
     let private writeReference (w: Utf8JsonWriter) (r: Reference) : unit =
