@@ -88,10 +88,15 @@ let ``A4: Catalog.tryFindKind returns None for an unknown SsKey`` () =
 
 [<Property>]
 let ``A5: derived(parent, reason) is deterministic`` (s: NonEmptyString) =
-    let parent = SsKey.original s.Get |> Result.value
-    let d1 = SsKey.derived parent "inverse" |> Result.value
-    let d2 = SsKey.derived parent "inverse" |> Result.value
-    d1 = d2
+    // FsCheck's NonEmptyString allows whitespace-only strings, which
+    // SsKey.original rightly rejects. Skip those samples; the property
+    // holds on the meaningful domain of non-blank identifiers.
+    if System.String.IsNullOrWhiteSpace s.Get then true
+    else
+        let parent = SsKey.original s.Get |> Result.value
+        let d1 = SsKey.derived parent "inverse" |> Result.value
+        let d2 = SsKey.derived parent "inverse" |> Result.value
+        d1 = d2
 
 [<Fact>]
 let ``A5: derived keys preserve traceability to the root original`` () =

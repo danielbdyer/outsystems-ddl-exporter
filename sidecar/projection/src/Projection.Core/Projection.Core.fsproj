@@ -13,6 +13,7 @@
     <Compile Include="Result.fs" />
     <Compile Include="Identity.fs" />
     <Compile Include="Catalog.fs" />
+    <Compile Include="Profile.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
   </ItemGroup>
