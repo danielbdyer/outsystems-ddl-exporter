@@ -58,7 +58,9 @@ over time. Read top-to-bottom for chronological order.
 
 ## 2026-05-06 — `EntitySeedDeterminizer` (`src/Osm.Emission/Seeds/EntitySeedDeterminizer.cs`)
 
-**Status:** admired (placement decided)
+**Status:** admired (placement decided); pure-core sort half **extracted**
+in V2 as `Projection.Core.Passes.NormalizeStaticPopulations` (commit 5,
+session 3). Boundary cell-coercion still pending the Catalog Reader.
 
 ### What it does (algebraic terms)
 
@@ -120,6 +122,49 @@ A future pass that *invents* canonical row identifiers (where the source
 provided none) would emit `Created` events with derived `SsKey`s; the
 determinizer itself only reorders.
 
+### Existing test coverage
+
+V1 tests EntitySeedDeterminizer **indirectly** through integration and
+golden-file tests; no direct unit tests on the comparer logic exist.
+The eight observable invocations and their V2 translations:
+
+| V1 test | File:line | Category | Asserts | V2 translation |
+|---|---|---|---|---|
+| `BuildSsdtPipeline_MatchesEdgeCaseFixtures` | `tests/Osm.Etl.Integration.Tests/EmissionPipelineTests.cs:25` | golden-file (integration) | end-to-end pipeline emits seed SQL matching `Fixtures/emission/edge-case/Seeds/AppCore/StaticEntities.seed.sql` after normalization | **Differential** — runs once Catalog Reader can ingest V1 fixture; meanwhile the F# `contract: a perturbed catalog normalizes to the canonical form` carries the invariant |
+| `BuildSsdtPipeline_WithRenamesMatchesFixtures` | same:132 | golden-file | as above with naming overrides | **Differential** — same gating |
+| `StaticSeedStep_generates_seed_scripts` | `tests/Osm.Pipeline.Tests/BuildSsdtPipelineStepTests.cs:175` | step-level | normalized seeds reach the script generator | **Behavioral** — covered by V2 integration with `Π_SSDT.RawTextEmitter` (later) |
+| `StaticSeedStep_OrdersTablesByForeignKeyDependencies` | same:214 | step-level | row ordering survives downstream FK ordering | **Differential** — when `EntityDependencySorter` lands in V2 |
+| `StaticSeedStep_emits_master_seed_when_enabled` | same:321 | step-level | normalized seeds feed both per-module and master files | **Behavioral** — emission-config concern, not normalizer |
+| `StaticSeedStep_disambiguates_colliding_sanitized_module_names` | same:389 | step-level | normalizer is independent of module naming | **Behavioral** — covered by `non-Static kinds pass through structurally unchanged` |
+| `Generate_ProducesMergeBlocksForEachRow` | `tests/Osm.Emission.Tests/StaticEntitySeedScriptGeneratorTests.cs:16` | unit (downstream) | generator assumes normalized input; no row-order assertion of its own | **Skip** — V2 covers row ordering directly via the property tests in `NormalizeStaticPopulationsTests.fs` |
+| `Generate_OrdersTablesUsingForeignKeyDependencies` | same:141 | unit (downstream) | FK ordering of tables, not row ordering | **Skip** — concern of the future ordering pass, not this normalizer |
+
+V1 invariants now defended in V2 by `NormalizeStaticPopulationsTests.fs`:
+
+- **Idempotence** — `contract: idempotent on the synthetic fixture` and
+  `contract: idempotent on a perturbed catalog`.
+- **Determinism (T1)** — `T1: NormalizeStaticPopulations is deterministic`
+  (output and trail both byte-stable across repeat runs).
+- **PK-ordered totality** — `contract: rows are sorted by Identifier`.
+- **Identity preservation** — `A4: pass neither invents nor drops kind
+  SsKeys` and `A4: pass neither invents nor drops static-row Identifiers`.
+- **Static-only effect** — `non-Static kinds pass through structurally
+  unchanged` plus `A25: only Static-bearing kinds emit Touched events`.
+- **Edge cases V1 missed** — empty-population, single-row, already-canonical
+  (none of these are tested in V1; FsCheck-amplified property test
+  `property: row order in input does not affect output order` covers
+  the combinatorial space).
+- **Cardinality** — `cardinality preserved: same modules / kinds /
+  attributes / references / modality marks`.
+
+Differential testing (V1 vs V2 on shared golden fixtures
+`tests/Fixtures/emission/edge-case/Seeds/AppCore/StaticEntities.seed.sql`
+and the matrix-temporal variant) lands when the Catalog Reader exists
+to coerce V1 fixture inputs into V2 form. Until then the contract is
+defended by property-based and behavioral tests; the V1 fixtures are
+the gold standard and the differential check is a follow-on commit
+once the boundary adapter is in place.
+
 ### Migration path
 
 1. **Catalog Reader, static-data branch.** A new C# function in the
@@ -127,10 +172,8 @@ determinizer itself only reorders.
    `Static populations`: each row's `Identifier` becomes an `SsKey`
    built from the row's PK column values (canonicalized through invariant
    culture); each cell becomes a string keyed by the V2 attribute `Name`.
-   The PK column set must be marked on `Attribute` in the IR — currently
-   absent, so this introduces a small IR refinement: an
-   `IsPrimaryKey : bool` field on `Attribute`. Synthetic fixture and
-   tests update accordingly.
+   The PK column set was added in commit 4 of session 3 (`IsPrimaryKey`
+   on `Attribute`).
 2. **F# pass.** `NormalizeStaticPopulations.run : Catalog -> Lineage<Catalog>`,
    one of the standard endofunctors. Idempotent on canonical input,
    normalizing on perturbed input — the same pattern as

@@ -22,6 +22,7 @@
     <Compile Include="PolicyTests.fs" />
     <Compile Include="VisibilityMaskTests.fs" />
     <Compile Include="NamingMorphismTests.fs" />
+    <Compile Include="NormalizeStaticPopulationsTests.fs" />
     <Compile Include="RawTextEmitterTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
   </ItemGroup>
