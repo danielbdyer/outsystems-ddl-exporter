@@ -138,8 +138,36 @@ type Reference = {
 }
 
 
+/// A schema-level index on a kind. Carries identity, name, the
+/// participating attribute SsKeys (in declaration order; composite
+/// indexes have multiple), `IsUnique` (does the source treat this index
+/// as a uniqueness constraint), and `IsPrimaryKey` (is this the kind's
+/// primary-key index — V1 treats the PK as a unique index, but V2
+/// distinguishes them at the structural level).
+///
+/// Added under "IR grows under evidence" (DECISIONS.md, 2026-05-10):
+/// the V1 `UniqueIndexDecisionOrchestrator` admire (ADMIRE.md
+/// 2026-05-10) requires per-index decisions; the synthetic milestone
+/// covered PK + FK only and didn't model unique indexes. V2's
+/// `UniqueIndexRules` + `UniqueIndexPass` (session 7 commit 5) consume
+/// this field; emitters that render `CREATE UNIQUE INDEX` walk it.
+///
+/// V1 `Index.Columns` includes both key columns and "included"
+/// (non-key) columns; V2's `Columns` carries only key columns. The
+/// V1↔V2 adapter (when it lands) drops included columns at the
+/// boundary per the 2026-05-10 vestigial-fields convention.
+type Index = {
+    SsKey        : SsKey
+    Name         : Name
+    Columns      : SsKey list
+    IsUnique     : bool
+    IsPrimaryKey : bool
+}
+
+
 /// A kind: the schema-level entity type. Carries identity, name, origin,
-/// modality marks, physical realization, attributes, and references (A8).
+/// modality marks, physical realization, attributes, references, and
+/// indexes (A8).
 type Kind = {
     SsKey      : SsKey
     Name       : Name
@@ -148,6 +176,7 @@ type Kind = {
     Physical   : PhysicalRealization
     Attributes : Attribute list
     References : Reference list
+    Indexes    : Index list
 }
 
 

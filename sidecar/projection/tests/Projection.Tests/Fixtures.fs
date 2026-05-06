@@ -60,6 +60,7 @@ let customer : Kind = {
           IsPrimaryKey = false; IsMandatory = false }
     ]
     References = []
+    Indexes    = []
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +97,7 @@ let order : Kind = {
           TargetKind      = customerKey
           OnDelete        = NoAction }
     ]
+    Indexes = []
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +151,7 @@ let country : Kind = {
           IsPrimaryKey = false; IsMandatory = false }
     ]
     References = []
+    Indexes    = []
 }
 
 // ---------------------------------------------------------------------------

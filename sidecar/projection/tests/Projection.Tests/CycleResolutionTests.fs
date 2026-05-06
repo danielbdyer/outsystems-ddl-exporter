@@ -37,7 +37,7 @@ let private kindWith (a: Attribute) : Kind =
       Modality   = []
       Physical   = { Schema = "dbo"; Table = "owner" }
       Attributes = [ a ]
-      References = [] }
+      References = []; Indexes = [] }
 
 [<Fact>]
 let ``classify: nullable + NoAction = Weak`` () =

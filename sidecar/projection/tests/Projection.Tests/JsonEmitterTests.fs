@@ -166,6 +166,7 @@ let ``string escaping handles double quotes and backslashes`` () =
         Physical = { Schema = "dbo"; Table = "T" }
         Attributes = []
         References = []
+        Indexes    = []
     }
     let troubleModule : Module = {
         SsKey = SsKey.original "OS_MOD_Trouble" |> Result.value

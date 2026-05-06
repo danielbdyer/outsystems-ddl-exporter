@@ -327,7 +327,8 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
             Name = mkName "ToOther"
             SourceAttribute = attrFk
             TargetKind = targetKey
-            OnDelete = NoAction } ] }
+            OnDelete = NoAction } ]
+      Indexes = [] }
 
 [<Fact>]
 let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
@@ -380,7 +381,8 @@ let private kindWithRef
             Name = mkName "ToOther"
             SourceAttribute = attrFk
             TargetKind = targetKey
-            OnDelete = onDelete } ] }
+            OnDelete = onDelete } ]
+      Indexes = [] }
 
 let private noRefKind (kindKey: string) : Kind =
     let attrId = mkKey (kindKey + "_Id")
@@ -393,7 +395,7 @@ let private noRefKind (kindKey: string) : Kind =
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
             IsPrimaryKey = true; IsMandatory = false } ]
-      References = [] }
+      References = []; Indexes = [] }
 
 // ---------------------------------------------------------------------------
 // V1 contract: SortByForeignKeys_AutoDetectsAsymmetricAuditCycle.

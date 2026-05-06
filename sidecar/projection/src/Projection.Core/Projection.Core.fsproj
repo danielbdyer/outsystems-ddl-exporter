@@ -18,6 +18,7 @@
     <Compile Include="TopologicalOrder.fs" />
     <Compile Include="CycleResolution.fs" />
     <Compile Include="NullabilityRules.fs" />
+    <Compile Include="UniqueIndexRules.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
     <Compile Include="Passes/VisibilityMask.fs" />
@@ -26,6 +27,7 @@
     <Compile Include="Passes/SymmetricClosure.fs" />
     <Compile Include="Passes/TopologicalOrderPass.fs" />
     <Compile Include="Passes/NullabilityPass.fs" />
+    <Compile Include="Passes/UniqueIndexPass.fs" />
   </ItemGroup>
 
 </Project>

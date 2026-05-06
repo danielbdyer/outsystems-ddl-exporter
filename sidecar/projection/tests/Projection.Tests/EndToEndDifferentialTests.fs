@@ -62,7 +62,7 @@ let private parentKind : Kind =
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
             IsPrimaryKey = true; IsMandatory = false } ]
-      References = [] }
+      References = []; Indexes = [] }
 
 let private childKind : Kind =
     { SsKey    = childKindKey
@@ -88,7 +88,8 @@ let private childKind : Kind =
             Name            = mkName "Parent"
             SourceAttribute = childParentFkKey
             TargetKind      = parentKindKey
-            OnDelete        = NoAction } ] }
+            OnDelete        = NoAction } ]
+      Indexes = [] }
 
 let private countryKind : Kind =
     { SsKey    = countryKindKey
@@ -109,7 +110,7 @@ let private countryKind : Kind =
             Type         = Text
             Column       = { ColumnName = "NAME"; IsNullable = false }
             IsPrimaryKey = false; IsMandatory = false } ]
-      References = [] }
+      References = []; Indexes = [] }
 
 let private endToEndCatalog : Catalog =
     { Modules = [

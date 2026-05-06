@@ -110,20 +110,39 @@ type NullabilityTighteningConfig = {
 }
 
 
+/// V1's unique-index tightening intervention. Carries the V1
+/// `TighteningOptions.Uniqueness` shape verbatim (two boolean toggles —
+/// no NullBudget, no Overrides — V1's UniqueIndex configuration is
+/// minimal; the V1↔V2 admire (ADMIRE.md 2026-05-10) confirms this).
+type UniqueIndexTighteningConfig = {
+    /// Should single-column unique constraints be enforced?
+    /// V1's `UniquenessOptions.EnforceSingleColumnUnique`.
+    EnforceSingleColumnUnique : bool
+    /// Should composite (multi-column) unique constraints be enforced?
+    /// V1's `UniquenessOptions.EnforceMultiColumnUnique`.
+    EnforceMultiColumnUnique  : bool
+}
+
+
 /// One tightening intervention. The DU is closed; new intervention
-/// kinds (FK enforcement, unique enforcement, type tightening, etc.)
-/// land as new variants when admire passes surface the need.
+/// kinds (FK enforcement, type tightening, etc.) land as new variants
+/// when admire passes surface the need.
 ///
 /// Every intervention carries an `Id` — a stable string identifier the
 /// caller chooses (e.g., `"v1-cautious-nullability"`,
-/// `"per-tenant-overrides-2026-05"`). The Id appears in lineage
-/// events emitted by passes that fire this intervention; audit
-/// consumers can ask "which intervention changed this column" and
-/// the trail answers structurally.
+/// `"v1-style-uniqueness"`). The Id appears in lineage events emitted
+/// by passes that fire this intervention; audit consumers can ask
+/// "which intervention changed this column / index" and the trail
+/// answers structurally.
 type TighteningIntervention =
     /// V1's nullability tightening — the
     /// `NullabilityEvaluator` migration's natural form.
     | Nullability of id: string * config: NullabilityTighteningConfig
+    /// V1's unique-index tightening — the
+    /// `UniqueIndexDecisionOrchestrator` migration's natural form.
+    /// Decides per-index, not per-attribute (the structural divergence
+    /// from Nullability; ADMIRE.md 2026-05-10).
+    | UniqueIndex of id: string * config: UniqueIndexTighteningConfig
 
 
 /// Tightening axis. A registry of zero or more named interventions.
@@ -246,13 +265,39 @@ module NullabilityTighteningConfig =
 
 
 [<RequireQualifiedAccess>]
+module UniqueIndexTighteningConfig =
+
+    /// The default — both toggles off. V2's strict default: no
+    /// interventions fire by default. The caller registering the
+    /// intervention chooses the toggles explicitly.
+    let empty : UniqueIndexTighteningConfig =
+        { EnforceSingleColumnUnique = false
+          EnforceMultiColumnUnique  = false }
+
+    /// Construct a `UniqueIndexTighteningConfig`. No validation
+    /// required — both fields are booleans with no out-of-range
+    /// possibility.
+    let create
+        (enforceSingleColumnUnique: bool)
+        (enforceMultiColumnUnique: bool)
+        : UniqueIndexTighteningConfig =
+        { EnforceSingleColumnUnique = enforceSingleColumnUnique
+          EnforceMultiColumnUnique  = enforceMultiColumnUnique }
+
+
+[<RequireQualifiedAccess>]
 module TighteningIntervention =
 
     /// The intervention's stable identifier. Recorded in lineage events
-    /// when the intervention fires.
+    /// when the intervention fires. The pattern-match here is
+    /// compiler-checked exhaustive; adding a new
+    /// `TighteningIntervention` variant will fail this function until
+    /// a new branch is added — a small algebraic reward for the closed
+    /// DU.
     let id (intervention: TighteningIntervention) : string =
         match intervention with
         | Nullability (id, _) -> id
+        | UniqueIndex (id, _) -> id
 
 
 [<RequireQualifiedAccess>]
@@ -284,7 +329,27 @@ module TighteningPolicy =
         policy.Interventions
         |> List.choose (fun intervention ->
             match intervention with
-            | Nullability (id, cfg) -> Some (id, cfg))
+            | Nullability (id, cfg) -> Some (id, cfg)
+            | _                     -> None)
+
+    /// Find a UniqueIndex intervention's config by intervention id.
+    /// Returns `None` if no UniqueIndex intervention has that id (or
+    /// if no UniqueIndex intervention is registered at all).
+    let tryFindUniqueIndex (id: string) (policy: TighteningPolicy) : UniqueIndexTighteningConfig option =
+        policy.Interventions
+        |> List.tryPick (fun intervention ->
+            match intervention with
+            | UniqueIndex (i, cfg) when i = id -> Some cfg
+            | _                                -> None)
+
+    /// All registered UniqueIndex interventions, paired with their ids,
+    /// in registration order.
+    let uniqueIndexInterventions (policy: TighteningPolicy) : (string * UniqueIndexTighteningConfig) list =
+        policy.Interventions
+        |> List.choose (fun intervention ->
+            match intervention with
+            | UniqueIndex (id, cfg) -> Some (id, cfg)
+            | _                     -> None)
 
 
 [<RequireQualifiedAccess>]

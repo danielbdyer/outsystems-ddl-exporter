@@ -66,7 +66,7 @@ let private buildCatalog (mandatoryColumnIsNullable: bool) (mandatoryColumnIsMan
                 Column       = { ColumnName = "MANDATORY"; IsNullable = mandatoryColumnIsNullable }
                 IsPrimaryKey = false
                 IsMandatory  = mandatoryColumnIsMandatory } ]
-          References = [] }
+          References = []; Indexes = [] }
     { Modules = [
         { SsKey = mkKey "OS_MOD_Sample"
           Name  = mkName "Sample"

@@ -118,7 +118,7 @@ let private parentKind : Kind =
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
             IsPrimaryKey = true; IsMandatory = false } ]
-      References = [] }
+      References = []; Indexes = [] }
 
 let private childKind : Kind =
     { SsKey    = childKindKey
@@ -142,7 +142,8 @@ let private childKind : Kind =
             Name            = mkName "Parent"
             SourceAttribute = childParentFkKey
             TargetKind      = parentKindKey
-            OnDelete        = NoAction } ] }
+            OnDelete        = NoAction } ]
+      Indexes = [] }
 
 let private microFkCatalog : Catalog =
     { Modules = [

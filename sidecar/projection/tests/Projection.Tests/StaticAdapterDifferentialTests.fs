@@ -75,7 +75,7 @@ let private cityKind : Kind =
             Column       = { ColumnName = "ISACTIVE"; IsNullable = false }
             IsPrimaryKey = false; IsMandatory = false }
       ]
-      References = [] }
+      References = []; Indexes = [] }
 
 let private cityCatalog : Catalog =
     { Modules = [
