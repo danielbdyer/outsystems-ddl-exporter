@@ -1575,3 +1575,149 @@ fourth duplicated inlining, and the generic alias either surfaces
 as a useful naming for the four observed signatures or remains
 aesthetic. Recording the shared trigger so the next migration
 agent doesn't decide the two questions in isolation.
+
+## 2026-05-12 — Rich-profiling session 9: surfacings beyond the original plan
+
+**Status:** decided (operating discipline; future-session direction)
+**Context:** Session 9 opened the rich-profiling vector — Profile
+gains its first distribution evidence type, validated end-to-end
+through a sibling Π. The session-9 brief laid out a six-commit
+shape; what arrived along with the planned work was a small set of
+findings that reshape sessions 10+ and the architecture's claims.
+The reflection commit's job is to write them down.
+
+**Finding 1: V1 is the empty-set source for distribution evidence.**
+The biggest realization. Before session 9 we treated "V1 has the
+shape; V2 expresses it cleanly" as the migration archetype. V1's
+profiling is *entirely* binary-question outcomes — nulls /
+duplicates / orphans, yes/no plus a count. There is **no V1
+distribution evidence to migrate.** This is the first admire entry
+that surfaces V1 absence as the gap, not V1 logic to lift.
+
+The architectural consequence: rich profiling is **not a migration,
+it's growth.** V2 is now extending its capability beyond V1's
+substrate, with V2-defined JSON shapes, V2-only adapters, and
+V2-only consumers. Future evidence types (numeric distributions,
+temporal density, joint statistics) follow the same template — no
+V1 source to mirror; the V2 boundary is data the V2 shape itself
+prescribes. This reframes the multi-session arc: sessions 10+ are
+expanding the algebra into territory V1 never reached, not
+migrating V1 work.
+
+**Finding 2: Π signature variation is a real architectural axis.**
+SSDT and JSON take `Catalog -> string`. Distributions takes
+`Catalog -> Profile -> string`. The variation isn't an
+inconsistency; it's a refinement of A18 (no policy parameter on Π).
+The three substantive inputs are Catalog, Policy, Profile (A6); a
+Π consumes whichever subset of `Catalog × Profile` it needs,
+**but never Policy** — Policy lives in passes, not emitters. The
+three-emitter empirical evidence:
+
+| Π | Signature | Inputs consumed |
+|---|---|---|
+| RawTextEmitter (SSDT) | `Catalog -> string` | Catalog only |
+| JsonEmitter | `Catalog -> string` | Catalog only |
+| DistributionsEmitter | `Catalog -> Profile -> string` | Catalog × Profile |
+
+This parallels the strategy-layer finding from session 8 (refinement
+2: the `'context` slice into `evaluate` is variable-arity across
+strategies). Same pattern, same empirical resolution: the deep
+shape (no policy; pure function of substantive inputs) holds; the
+practical signatures differ because what each Π *consumes* differs.
+Future Π — Faker, anomaly reports, etc. — pick the signature that
+matches their consumption pattern.
+
+**Finding 3: Composition via `Result.bind` is the right granularity
+for sibling adapters.** Two adapters, both pure functions of
+`Catalog * JSON-string * Profile -> Result<Profile>`. The caller
+composes them in any order:
+
+```fsharp
+ProfileSnapshot.attach catalog snapshotJson
+|> Result.bind (ProfileStatistics.attach catalog distributionsJson)
+```
+
+Or reverse, or interleaved, or with intermediate transformations.
+At N=2 adapters the explicit `Result.bind` is cheap and visible.
+A top-level orchestrator earns its place when N≥3 adapters all
+need to compose with the same predictable order; for now the
+explicit composition documents itself. The session-8 composition-
+vocabulary deferral discipline applies symmetrically to adapters.
+
+**Finding 4: Truncation contracts are structural commitments, not
+ad-hoc validation.** `CategoricalDistribution.create` enforces
+"`IsTruncated = false ⇒ DistinctCount = Frequencies.Length`" —
+the structural meaning of "I observed every distinct value." The
+`IsTruncated` flag distinguishes "captured all 3" from "captured
+3 of N." Without this discipline, downstream consumers (the
+eventual anomaly strategy, the Faker emitter) would have no way
+to distinguish complete from partial vocabularies. The validation
+is small; the consumer-side benefit is structural — pattern-match
+on the flag, get the contract.
+
+Future evidence types inherit the discipline: every distribution
+DU variant carries a structural answer to "is this evidence
+complete or sampled?" Numeric histograms will have an analogous
+flag; temporal evidence may have its own ("date-range observed
+in full" vs "sampled within range"). Codify in the second
+distribution variant's design (session 10).
+
+**Finding 5: First-consumer smallness validates the architecture
+better than first-consumer ambition would have.** DistributionsEmitter
+is small — ~200 lines. Building it as a sibling Π rather than a
+one-off formatter cost almost nothing extra (the file structure,
+the project setup, the test discipline) and bought the
+empirically-validated claim that emission is parameterized over the
+enriched IR for the third time. The user's framing was prescient:
+"the discipline of building it as one matters more than its size."
+Future sessions follow this rule — when a new evidence type's first
+consumer is a diagnostic, build it as a sibling Π regardless of size.
+
+**Finding 6: The closed-DU `AttributeDistribution` shape absorbs
+new variants cleanly, with one expected friction.** Adding `Numeric`
+and `Temporal` variants in sessions 10+ extends the DU and the
+adapter's `Kind` dispatch and the emitter's `match` arms. The F#
+incomplete-match warning fires when there's only one variant (as it
+did when implementing `tryFindCategorical`); the workaround is a
+defensive second branch (`AttributeDistribution.Categorical _ ->
+None`). When the second variant lands, the second branch becomes a
+real `Numeric _ -> ...` case and the friction disappears. Document
+the workaround so session 10 understands why the redundant-looking
+branch exists.
+
+**Direction signals for sessions 10+.**
+
+  - **Numeric distribution shape question.** Histograms (binned
+    counts), percentiles (5/25/50/75/95), or range (min/max)? Or
+    all three? The choice is the design question for session 10's
+    admire. Recommendation: percentile + range as the foundational
+    shape (smaller; more useful for synthetic generation),
+    histograms as a follow-up if a real consumer demands.
+  - **First substantive consumer of a distribution.** Session 11's
+    proposed work is the first distribution-aware strategy
+    (e.g., a uniqueness strategy that consults distinct-count to
+    distinguish "candidate uniqueness" from "spurious uniqueness").
+    Per "each evidence type lands when its first consumer arrives,"
+    session 11's strategy choice validates whether the evidence
+    shape is fit for purpose. If the strategy's logic doesn't fit
+    cleanly into the codified strategy layer with the new evidence
+    type, the codification gets refinement #4.
+  - **The shared trigger from session 8 still holds.** Session 11
+    is the projected cash-out point for both the composition
+    vocabulary deferral and the generic `StrategyEvaluator` alias.
+    Three deferred decisions converge there; the session-11 agent
+    inherits a sharp empirical setup.
+  - **Faker emitter waits for the third evidence type.** A
+    synthetic generator needs at least categorical + numeric
+    + cardinality to produce plausible data. Faker is session 12+
+    work; sessions 10 and 11 lay the foundation.
+
+**Reasoning / consequences.** Session 9's job was "extend and
+consume." It did that, but it also surfaced the V1-empty-source
+framing, the Π-signature-variation refinement, the truncation-
+contract discipline, and the small-first-consumer validation —
+findings the session-9 brief didn't anticipate but that will shape
+sessions 10+. Recording them here means the next agent starts with
+the empirical context, not the original plan; the same reflective
+discipline that made session 8's codification empirically validated
+applies here to the rich-profiling agenda.
