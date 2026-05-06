@@ -25,6 +25,7 @@
     <Compile Include="Passes/NormalizeStaticPopulations.fs" />
     <Compile Include="Passes/SymmetricClosure.fs" />
     <Compile Include="Passes/TopologicalOrderPass.fs" />
+    <Compile Include="Passes/NullabilityPass.fs" />
   </ItemGroup>
 
 </Project>
