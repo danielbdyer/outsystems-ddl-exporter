@@ -230,7 +230,27 @@ once the boundary adapter is in place.
 
 ## 2026-05-09 — `NullabilityEvaluator` (`src/Osm.Validation/Tightening/NullabilityEvaluator.cs`)
 
-**Status:** admired (placement decided)
+**Status:** **extracted (differential confirmed)** — V2's
+`Projection.Core.NullabilityRules` + `Projection.Core.Passes.NullabilityPass`
++ `Projection.Adapters.Sql.ProfileSnapshot` jointly carry V1's
+`NullabilityEvaluator` semantics into V2. Five of V1's eight test
+scenarios translate as Behavioral parity assertions in
+`V1NullabilityParityTests.fs` (session 7 commit 3); three are explicit
+Skip cases naming intentional V2 divergences (Aggressive mode collapsed
+per DECISIONS 2026-05-09; opportunity-stream wire-up pending the
+Diagnostics writer). The end-to-end differential test in
+`EndToEndDifferentialTests.fs` (session 6 commit 6) validates the
+three-input projection through both adapters.
+
+The `IsMandatory` IR refinement (session 7 commit 2) closed the gap
+surfaced empirically by the milestone test; the V1 mandatory-driven
+branches now fire and are covered by tests.
+
+Third use of the canonical "extracted (differential confirmed)" status
+string. The first was `EntitySeedDeterminizer` (sort half, session 5);
+the second is implicit in this same status; this is the first
+*decision-producing* V1 transform fully migrated. Future ADMIRE
+entries reaching this state use the same phrase.
 
 **Significance:** This is the first V1 transform that consumes `Profile`
 (empirical evidence). The admire entry does two things at once —

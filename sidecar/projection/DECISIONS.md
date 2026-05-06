@@ -1180,3 +1180,44 @@ flight rather than ship past them.
 
 This is not a flagship principle but a worked-example observation:
 the practice gets better the more it gets used.
+
+## 2026-05-10 — Second decision-producing V1 transform fully migrated; status string in use
+
+**Status:** decided (worked-example marker)
+**Context:** V2's third "extracted (differential confirmed)" status
+lights up: `NullabilityEvaluator` joins `EntitySeedDeterminizer` as a
+fully-migrated V1 component. Five of V1's eight test scenarios pass
+as Behavioral parity assertions in V2; three are explicit Skip cases
+documenting intentional V2 divergences (Aggressive mode collapsed;
+opportunity-stream pending Diagnostics writer).
+
+**Decision:** Mark the moment. `NullabilityEvaluator`'s ADMIRE entry
+reaches `extracted (differential confirmed)`. The status string is
+canonical; future ADMIRE entries that achieve this state use the same
+phrase. The convention from DECISIONS 2026-05-09 (Pattern setters
+explicitly named in ADMIRE.md) is paying out: readers can scan
+ADMIRE.md and see at a glance which V1 components have been
+empirically validated against V2.
+
+**The differential-with-skips pattern.** When V2 diverges from V1
+deliberately (collapsed Aggressive mode; structured Diagnostics
+writer instead of inline opportunities), the parity test names the
+divergence as a Skip case with explicit rationale. This preserves
+two invariants:
+
+  1. The migration is **honest** — V2 doesn't pretend to match V1
+     where it deliberately doesn't. The skip case is the divergence
+     made visible.
+  2. The discipline is **constructive** — adding the V2 equivalent
+     of a skipped V1 case (e.g., when an Aggressive-equivalent
+     intervention arrives, or the Diagnostics writer lands) is a
+     mechanical activation: remove the `Skip = "..."` argument and
+     write the V2 assertion. The skip is a forward-pointing TODO,
+     not a permanent gap.
+
+**Reasoning / consequences:** The third use of the status string
+makes the convention canonical by repetition (per the
+2026-05-09 — Pattern setters discipline). Future ADMIRE entries that
+reach `extracted (differential confirmed)` follow the same
+differential-with-skips pattern: 100% V1 contract under V2's
+expressible cases; explicit Skip-with-rationale for V2 divergences.

@@ -32,6 +32,7 @@
     <Compile Include="NullabilityPassTests.fs" />
     <Compile Include="ProfileSnapshotAdapterTests.fs" />
     <Compile Include="EndToEndDifferentialTests.fs" />
+    <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="RawTextEmitterTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
   </ItemGroup>
