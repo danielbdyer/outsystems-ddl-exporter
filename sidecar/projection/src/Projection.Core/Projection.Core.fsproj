@@ -21,6 +21,7 @@
     <Compile Include="Passes/VisibilityMask.fs" />
     <Compile Include="Passes/NamingMorphism.fs" />
     <Compile Include="Passes/NormalizeStaticPopulations.fs" />
+    <Compile Include="Passes/SymmetricClosure.fs" />
   </ItemGroup>
 
 </Project>
