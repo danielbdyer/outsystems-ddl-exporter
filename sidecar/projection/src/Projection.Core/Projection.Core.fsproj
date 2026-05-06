@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Placeholder.fs" />
+    <Compile Include="Result.fs" />
   </ItemGroup>
 
 </Project>

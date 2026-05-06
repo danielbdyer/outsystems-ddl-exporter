@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <Compile Include="ScaffoldingTests.fs" />
+    <Compile Include="ResultTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
