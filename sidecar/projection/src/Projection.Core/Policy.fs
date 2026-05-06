@@ -124,6 +124,25 @@ type UniqueIndexTighteningConfig = {
 }
 
 
+/// V2's per-attribute distribution-driven uniqueness inference
+/// configuration. The first **distribution-aware** strategy
+/// configuration (ADMIRE.md 2026-05-13). Hybrid mode:
+/// uniqueness-domain inheritance from V1 + per-attribute
+/// distribution-driven inference V1 cannot perform.
+///
+/// V1 has no analog; V1 collects no Categorical distribution
+/// evidence per ADMIRE.md 2026-05-12. Configuration shape is
+/// V2-defined.
+type CategoricalUniquenessConfig = {
+    /// Don't suggest uniqueness for vocabularies smaller than this.
+    /// A binary attribute (`distinctCount = 2`) is rarely meaningful
+    /// as unique; a single-value attribute (`distinctCount = 1`) is
+    /// pathological. Caller chooses the floor; the algebra reports
+    /// what the caller chose.
+    MinDistinctCountForUniqueness : int64
+}
+
+
 /// V1's foreign-key tightening intervention. Carries V1's
 /// `ForeignKeyOptions` shape verbatim (five boolean toggles — V1's
 /// FK configuration is plain enable/allow gates with no thresholds
@@ -187,6 +206,14 @@ type TighteningIntervention =
     /// granularity, after per-attribute and per-index; ADMIRE.md
     /// 2026-05-11).
     | ForeignKey of id: string * config: ForeignKeyTighteningConfig
+    /// V2's per-attribute distribution-driven uniqueness inference —
+    /// the first **distribution-aware** strategy (ADMIRE.md
+    /// 2026-05-13). Hybrid-mode admire: V1's UniqueIndexEvaluator
+    /// covers the uniqueness concept per-index based on binary
+    /// HasDuplicate evidence; this strategy adds per-attribute
+    /// inference based on richer Categorical distribution evidence.
+    /// The fourth registered-intervention variant.
+    | CategoricalUniqueness of id: string * config: CategoricalUniquenessConfig
 
 
 /// Tightening axis. A registry of zero or more named interventions.
@@ -330,6 +357,27 @@ module UniqueIndexTighteningConfig =
 
 
 [<RequireQualifiedAccess>]
+module CategoricalUniquenessConfig =
+
+    let private negativeFloor =
+        ValidationError.create
+            "categoricalUniquenessConfig.minDistinctCountForUniqueness.negative"
+            "MinDistinctCountForUniqueness must be non-negative."
+
+    /// Construct a `CategoricalUniquenessConfig`. Validates
+    /// `MinDistinctCountForUniqueness >= 0`. Caller chooses the
+    /// floor explicitly per V2's strict-default discipline
+    /// (DECISIONS 2026-05-09 — Tightening as a registry of named
+    /// interventions).
+    let create (minDistinctCountForUniqueness: int64) : Result<CategoricalUniquenessConfig> =
+        if minDistinctCountForUniqueness < 0L then
+            Result.failureOf negativeFloor
+        else
+            Result.success
+                { MinDistinctCountForUniqueness = minDistinctCountForUniqueness }
+
+
+[<RequireQualifiedAccess>]
 module ForeignKeyTighteningConfig =
 
     /// Construct a `ForeignKeyTighteningConfig`. No validation
@@ -362,9 +410,10 @@ module TighteningIntervention =
     /// DU.
     let id (intervention: TighteningIntervention) : string =
         match intervention with
-        | Nullability (id, _) -> id
-        | UniqueIndex (id, _) -> id
-        | ForeignKey  (id, _) -> id
+        | Nullability           (id, _) -> id
+        | UniqueIndex           (id, _) -> id
+        | ForeignKey            (id, _) -> id
+        | CategoricalUniqueness (id, _) -> id
 
 
 [<RequireQualifiedAccess>]
@@ -436,6 +485,24 @@ module TighteningPolicy =
             match intervention with
             | ForeignKey (id, cfg) -> Some (id, cfg)
             | _                    -> None)
+
+    /// Find a CategoricalUniqueness intervention's config by id.
+    /// Returns `None` if no matching intervention is registered.
+    let tryFindCategoricalUniqueness (id: string) (policy: TighteningPolicy) : CategoricalUniquenessConfig option =
+        policy.Interventions
+        |> List.tryPick (fun intervention ->
+            match intervention with
+            | CategoricalUniqueness (i, cfg) when i = id -> Some cfg
+            | _                                          -> None)
+
+    /// All registered CategoricalUniqueness interventions, paired with
+    /// their ids, in registration order.
+    let categoricalUniquenessInterventions (policy: TighteningPolicy) : (string * CategoricalUniquenessConfig) list =
+        policy.Interventions
+        |> List.choose (fun intervention ->
+            match intervention with
+            | CategoricalUniqueness (id, cfg) -> Some (id, cfg)
+            | _                               -> None)
 
 
 [<RequireQualifiedAccess>]

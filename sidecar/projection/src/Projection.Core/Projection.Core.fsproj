@@ -20,6 +20,7 @@
     <Compile Include="Strategies/NullabilityRules.fs" />
     <Compile Include="Strategies/UniqueIndexRules.fs" />
     <Compile Include="Strategies/ForeignKeyRules.fs" />
+    <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
     <Compile Include="Passes/VisibilityMask.fs" />
