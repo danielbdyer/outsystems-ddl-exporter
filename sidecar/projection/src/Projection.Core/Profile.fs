@@ -129,6 +129,111 @@ module ForeignKeyReality =
     let isClean (r: ForeignKeyReality) : bool = not r.HasOrphan
 
 
+/// Categorical value frequencies — for attributes whose values are
+/// drawn from a small or moderate vocabulary. The first
+/// `AttributeDistribution` variant; landed in session 9 commit 2 as
+/// the foundational rich-profiling evidence type (ADMIRE.md
+/// 2026-05-12). Captures observed distinct values with their
+/// occurrence counts. Truncation is explicit (the probe may have
+/// capped the vocabulary at a configured limit).
+///
+/// `Frequencies` is sorted alphabetically by value at the IR level;
+/// the adapter sorts on parse so consumers see deterministic
+/// ordering regardless of probe-result order. Determinism matters
+/// for T1 byte-identity (the same enrichment must produce the same
+/// emitter output).
+type CategoricalDistribution = {
+    /// Identity of the Attribute whose distribution this is.
+    AttributeKey  : SsKey
+    /// Observed values with their occurrence counts. Sorted
+    /// alphabetically by value for determinism.
+    Frequencies   : (string * int64) list
+    /// Total distinct values observed (≥ Frequencies.Length when
+    /// truncated; equal when not).
+    DistinctCount : int64
+    /// True iff the probe capped the vocabulary at a limit;
+    /// `Frequencies` is then a prefix of the full distribution.
+    IsTruncated   : bool
+    /// Probe metadata.
+    ProbeStatus   : ProbeStatus
+}
+
+
+/// Empirical evidence about an attribute's value distribution.
+/// **First instance of an evidence type V1 does not collect**
+/// (ADMIRE.md 2026-05-12 — V1 absence to fill). Closed DU; new
+/// variants (Numeric, Temporal, ...) land under "IR grows under
+/// evidence" as their first consumers arrive.
+///
+/// Currently single-variant — `Categorical`. Numeric histograms /
+/// percentiles, temporal range / density, and joint distributions
+/// arrive as new variants in subsequent sessions per the
+/// rich-profiling agenda.
+[<RequireQualifiedAccess>]
+type AttributeDistribution =
+    | Categorical of CategoricalDistribution
+
+
+[<RequireQualifiedAccess>]
+module CategoricalDistribution =
+
+    let private negativeDistinctCount =
+        ValidationError.create
+            "categoricalDistribution.distinctCount.negative"
+            "DistinctCount must be non-negative."
+
+    let private negativeFrequencyCount =
+        ValidationError.create
+            "categoricalDistribution.frequencyCount.negative"
+            "Per-value occurrence counts must be non-negative."
+
+    let private truncationContradiction =
+        ValidationError.create
+            "categoricalDistribution.truncation.contradiction"
+            "DistinctCount cannot exceed Frequencies.Length when IsTruncated is false."
+
+    /// Construct a `CategoricalDistribution`. Validates:
+    ///   - `DistinctCount ≥ 0`
+    ///   - every per-value count is non-negative
+    ///   - `IsTruncated = false` ⇒ `DistinctCount = Frequencies.Length`
+    ///     (full vocabulary observed; the truncation flag must agree)
+    /// Sorts `Frequencies` alphabetically by value to enforce
+    /// determinism at the IR level.
+    let create
+        (attributeKey: SsKey)
+        (frequencies: (string * int64) list)
+        (distinctCount: int64)
+        (isTruncated: bool)
+        (probeStatus: ProbeStatus)
+        : Result<CategoricalDistribution> =
+        if distinctCount < 0L then
+            Result.failureOf negativeDistinctCount
+        elif frequencies |> List.exists (fun (_, c) -> c < 0L) then
+            Result.failureOf negativeFrequencyCount
+        elif (not isTruncated) && distinctCount <> int64 (List.length frequencies) then
+            Result.failureOf truncationContradiction
+        else
+            let sorted = frequencies |> List.sortBy fst
+            Result.success
+                { AttributeKey  = attributeKey
+                  Frequencies   = sorted
+                  DistinctCount = distinctCount
+                  IsTruncated   = isTruncated
+                  ProbeStatus   = probeStatus }
+
+    /// Total observed value occurrences (sum of frequency counts).
+    /// May be less than the kind's `RowCount` when the probe sampled
+    /// a subset; consumers compare against `ProbeStatus.SampleSize`
+    /// to interpret coverage.
+    let totalObservations (d: CategoricalDistribution) : int64 =
+        d.Frequencies |> List.sumBy snd
+
+    /// True iff the distribution captures every distinct value the
+    /// probe observed (no truncation).
+    let isComplete (d: CategoricalDistribution) : bool =
+        not d.IsTruncated
+
+
 /// Empirical evidence aggregate. The third substantive input to
 /// `Project = Π ∘ E` per the V2-amended A6. Independent of Catalog and
 /// Policy per A34: this record references no Catalog or Policy types,
@@ -137,11 +242,16 @@ module ForeignKeyReality =
 ///
 /// `Profile.empty` is a first-class value; use cases that consume no
 /// evidence (extract-model, schema-only) pass it as a no-op input.
+///
+/// **Distributions field added session 9** (ADMIRE.md 2026-05-12) —
+/// rich-profiling evidence V1 does not collect. Empty by default;
+/// populated by the V2-only `ProfileStatistics` sibling adapter.
 type Profile = {
     Columns                   : ColumnProfile list
     UniqueCandidates          : UniqueCandidateProfile list
     CompositeUniqueCandidates : CompositeUniqueCandidateProfile list
     ForeignKeys               : ForeignKeyReality list
+    Distributions             : AttributeDistribution list
 }
 
 [<RequireQualifiedAccess>]
@@ -154,6 +264,7 @@ module Profile =
         UniqueCandidates          = []
         CompositeUniqueCandidates = []
         ForeignKeys               = []
+        Distributions             = []
     }
 
     /// True iff the profile contains no observations of any kind.
@@ -162,6 +273,7 @@ module Profile =
         && List.isEmpty p.UniqueCandidates
         && List.isEmpty p.CompositeUniqueCandidates
         && List.isEmpty p.ForeignKeys
+        && List.isEmpty p.Distributions
 
     /// Look up a column profile by attribute identity. `None` if absent.
     let tryFindColumn (attributeKey: SsKey) (p: Profile) : ColumnProfile option =
@@ -174,3 +286,16 @@ module Profile =
     /// Look up a single-column uniqueness probe by attribute identity.
     let tryFindUnique (attributeKey: SsKey) (p: Profile) : UniqueCandidateProfile option =
         p.UniqueCandidates |> List.tryFind (fun u -> u.AttributeKey = attributeKey)
+
+    /// Look up a categorical distribution by attribute identity.
+    /// Returns `None` if no distribution evidence is registered for
+    /// the attribute, OR if the registered evidence is a non-Categorical
+    /// variant (when Numeric / Temporal land in subsequent sessions,
+    /// this helper distinguishes them).
+    let tryFindCategorical (attributeKey: SsKey) (p: Profile) : CategoricalDistribution option =
+        p.Distributions
+        |> List.tryPick (fun d ->
+            match d with
+            | AttributeDistribution.Categorical cat when cat.AttributeKey = attributeKey ->
+                Some cat
+            | AttributeDistribution.Categorical _ -> None)

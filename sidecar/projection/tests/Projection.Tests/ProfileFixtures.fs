@@ -128,4 +128,5 @@ let sampleProfile : Profile = {
     UniqueCandidates          = [ countryCodeUniqueCandidate ]
     CompositeUniqueCandidates = []
     ForeignKeys               = [ orderCustomerFkReality ]
+    Distributions             = []
 }

@@ -371,7 +371,15 @@ module ProfileSnapshot =
                                 { Columns                   = columns
                                   UniqueCandidates          = unique
                                   CompositeUniqueCandidates = composite
-                                  ForeignKeys               = fkReality }))))
+                                  ForeignKeys               = fkReality
+                                  // Distributions populated by the
+                                  // ProfileStatistics sibling adapter
+                                  // (session 9 commit 3); this V1
+                                  // adapter leaves the field empty
+                                  // because V1 collects no
+                                  // distribution evidence (ADMIRE.md
+                                  // 2026-05-12).
+                                  Distributions             = [] }))))
         with
         | :? JsonException as ex ->
             Result.failureOf

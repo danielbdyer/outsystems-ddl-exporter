@@ -1,0 +1,221 @@
+module Projection.Tests.AttributeDistributionTests
+
+open System
+open Xunit
+open Projection.Core
+open Projection.Tests.Fixtures
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+let private succeededProbe (sample: int64) : ProbeStatus =
+    ProbeStatus.create DateTimeOffset.UnixEpoch sample Succeeded
+    |> Result.value
+
+// ---------------------------------------------------------------------------
+// CategoricalDistribution.create — validation surface.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``create: valid full distribution succeeds`` () =
+    let probe = succeededProbe 3L
+    let result =
+        CategoricalDistribution.create
+            countryCodeKey
+            [ "CA", 1L; "MX", 1L; "US", 1L ]
+            3L
+            false
+            probe
+    match result with
+    | Success cat ->
+        Assert.Equal(countryCodeKey, cat.AttributeKey)
+        Assert.Equal(3L, cat.DistinctCount)
+        Assert.False(cat.IsTruncated)
+    | Failure errs ->
+        Assert.Fail(sprintf "Expected success, got %A" errs)
+
+[<Fact>]
+let ``create: rejects negative DistinctCount`` () =
+    let probe = succeededProbe 3L
+    let result =
+        CategoricalDistribution.create
+            countryCodeKey
+            [ "CA", 1L ]
+            -1L
+            true
+            probe
+    match result with
+    | Success _ -> Assert.Fail "Expected failure for negative DistinctCount"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "categoricalDistribution.distinctCount.negative")
+
+[<Fact>]
+let ``create: rejects negative per-value count`` () =
+    let probe = succeededProbe 3L
+    let result =
+        CategoricalDistribution.create
+            countryCodeKey
+            [ "CA", -1L ]
+            1L
+            false
+            probe
+    match result with
+    | Success _ -> Assert.Fail "Expected failure for negative per-value count"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "categoricalDistribution.frequencyCount.negative")
+
+[<Fact>]
+let ``create: rejects truncation contradiction (not truncated but DistinctCount > Frequencies.Length)`` () =
+    let probe = succeededProbe 100L
+    let result =
+        CategoricalDistribution.create
+            countryCodeKey
+            [ "CA", 1L; "MX", 1L ]   // 2 frequencies
+            10L                        // claims 10 distinct
+            false                      // but not truncated → contradiction
+            probe
+    match result with
+    | Success _ -> Assert.Fail "Expected truncation contradiction failure"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "categoricalDistribution.truncation.contradiction")
+
+[<Fact>]
+let ``create: accepts truncated distribution where DistinctCount > Frequencies.Length`` () =
+    let probe = succeededProbe 1000L
+    let result =
+        CategoricalDistribution.create
+            countryCodeKey
+            [ "CA", 100L; "MX", 100L; "US", 100L ]
+            195L         // observed total distinct, capped at top 3
+            true
+            probe
+    match result with
+    | Success cat ->
+        Assert.Equal(195L, cat.DistinctCount)
+        Assert.True(cat.IsTruncated)
+        Assert.Equal(3, List.length cat.Frequencies)
+    | Failure errs ->
+        Assert.Fail(sprintf "Expected success, got %A" errs)
+
+[<Fact>]
+let ``create: sorts Frequencies alphabetically by value for determinism`` () =
+    let probe = succeededProbe 3L
+    // Pass values in non-alphabetical order; expect alphabetical
+    // ordering on the constructed value.
+    let result =
+        CategoricalDistribution.create
+            countryCodeKey
+            [ "US", 1L; "CA", 1L; "MX", 1L ]
+            3L
+            false
+            probe
+    match result with
+    | Success cat ->
+        let values = cat.Frequencies |> List.map fst
+        Assert.Equal<string list>([ "CA"; "MX"; "US" ], values)
+    | Failure errs ->
+        Assert.Fail(sprintf "Expected success, got %A" errs)
+
+// ---------------------------------------------------------------------------
+// totalObservations / isComplete helpers.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``totalObservations: sums per-value counts`` () =
+    let probe = succeededProbe 12L
+    let cat =
+        CategoricalDistribution.create
+            countryCodeKey
+            [ "CA", 3L; "MX", 4L; "US", 5L ]
+            3L false probe
+        |> Result.value
+    Assert.Equal(12L, CategoricalDistribution.totalObservations cat)
+
+[<Fact>]
+let ``isComplete: false when truncated, true when not`` () =
+    let probe = succeededProbe 100L
+    let truncated =
+        CategoricalDistribution.create
+            countryCodeKey [ "A", 50L ] 5L true probe
+        |> Result.value
+    let full =
+        CategoricalDistribution.create
+            countryCodeKey [ "A", 50L ] 1L false probe
+        |> Result.value
+    Assert.False(CategoricalDistribution.isComplete truncated)
+    Assert.True (CategoricalDistribution.isComplete full)
+
+// ---------------------------------------------------------------------------
+// Profile.tryFindCategorical — lookup by attribute identity.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``tryFindCategorical: returns the registered distribution`` () =
+    let probe = succeededProbe 3L
+    let cat =
+        CategoricalDistribution.create
+            countryCodeKey [ "CA", 1L; "MX", 1L; "US", 1L ]
+            3L false probe
+        |> Result.value
+    let profile =
+        { Profile.empty with
+            Distributions = [ AttributeDistribution.Categorical cat ] }
+    let result = Profile.tryFindCategorical countryCodeKey profile
+    Assert.Equal<CategoricalDistribution option>(Some cat, result)
+
+[<Fact>]
+let ``tryFindCategorical: returns None for unknown attribute`` () =
+    let probe = succeededProbe 3L
+    let cat =
+        CategoricalDistribution.create
+            countryCodeKey [ "CA", 1L ] 1L false probe
+        |> Result.value
+    let profile =
+        { Profile.empty with
+            Distributions = [ AttributeDistribution.Categorical cat ] }
+    let result = Profile.tryFindCategorical customerNameKey profile
+    Assert.Equal<CategoricalDistribution option>(None, result)
+
+[<Fact>]
+let ``tryFindCategorical: returns None on Profile.empty`` () =
+    let result = Profile.tryFindCategorical countryCodeKey Profile.empty
+    Assert.Equal<CategoricalDistribution option>(None, result)
+
+// ---------------------------------------------------------------------------
+// Profile.empty / Profile.isEmpty — Distributions is part of the empty
+// commitment.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Profile.empty has no Distributions`` () =
+    Assert.Empty(Profile.empty.Distributions)
+
+[<Fact>]
+let ``Profile.isEmpty: false when only Distributions has content`` () =
+    let probe = succeededProbe 3L
+    let cat =
+        CategoricalDistribution.create countryCodeKey [ "CA", 1L ] 1L false probe
+        |> Result.value
+    let profile =
+        { Profile.empty with
+            Distributions = [ AttributeDistribution.Categorical cat ] }
+    Assert.False(Profile.isEmpty profile)
+
+[<Fact>]
+let ``Profile.isEmpty: true on Profile.empty`` () =
+    Assert.True(Profile.isEmpty Profile.empty)
+
+// ---------------------------------------------------------------------------
+// AttributeDistribution DU round-trip.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``AttributeDistribution.Categorical round-trips`` () =
+    let probe = succeededProbe 3L
+    let cat =
+        CategoricalDistribution.create countryCodeKey [ "CA", 1L ] 1L false probe
+        |> Result.value
+    Assert.Equal<AttributeDistribution>(
+        AttributeDistribution.Categorical cat,
+        AttributeDistribution.Categorical cat)
