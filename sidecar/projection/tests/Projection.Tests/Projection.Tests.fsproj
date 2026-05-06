@@ -42,6 +42,7 @@
     <Compile Include="RawTextEmitterTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
+    <Compile Include="RichProfilingEndToEndTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
