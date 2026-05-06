@@ -265,14 +265,18 @@ let ``Tarjan: BreakableEdges is empty in v2 (resolver pending v3)`` () =
     Assert.Empty(scc.BreakableEdges)
 
 [<Fact>]
-let ``Tarjan: SCC reason names "SCC detected"`` () =
+let ``Tarjan: SCC reason explains why the cycle stayed unresolved`` () =
+    // The synthetic fixture uses non-nullable FK columns on both sides
+    // of the back-reference, so the resolver classifies both edges as
+    // Other and refuses to break either one. The Reason field records
+    // the class of failure.
     let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
     let result = TopologicalOrderPass.run cyclic
     let scc = result.Value.Cycles |> List.head
-    Assert.Contains("SCC detected", scc.Reason)
+    Assert.Contains("Weak edge", scc.Reason)
 
 // ---------------------------------------------------------------------------
 // Property: post-symmetric-closure SCC enumeration is permutation-invariant
@@ -342,6 +346,177 @@ let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
     let secondScc = result.Value.Cycles.[1]
     Assert.Equal<Set<SsKey>>(Set.ofList [ mkKey "A"; mkKey "B" ], Set.ofList firstScc.Members)
     Assert.Equal<Set<SsKey>>(Set.ofList [ mkKey "C"; mkKey "D" ], Set.ofList secondScc.Members)
+
+// ---------------------------------------------------------------------------
+// Edge classification (commit 6).
+//
+// Build a tiny catalog where the source attribute's IsNullable and the
+// reference's OnDelete combine to produce each EdgeStrength variant.
+// ---------------------------------------------------------------------------
+
+let private kindWithRef
+    (kindKey: string)
+    (refKey: string)
+    (targetKey: SsKey)
+    (sourceAttrNullable: bool)
+    (onDelete: ReferenceAction)
+    : Kind =
+    let attrId = mkKey (kindKey + "_Id")
+    let attrFk = mkKey (kindKey + "_Fk")
+    { SsKey = mkKey kindKey
+      Name = mkName kindKey
+      Origin = OsNative
+      Modality = []
+      Physical = { Schema = "dbo"; Table = kindKey }
+      Attributes = [
+          { SsKey = attrId; Name = mkName "Id"; Type = Integer
+            Column = { ColumnName = "ID"; IsNullable = false }
+            IsPrimaryKey = true }
+          { SsKey = attrFk; Name = mkName "Fk"; Type = Integer
+            Column = { ColumnName = "FK"; IsNullable = sourceAttrNullable }
+            IsPrimaryKey = false } ]
+      References = [
+          { SsKey = mkKey refKey
+            Name = mkName "ToOther"
+            SourceAttribute = attrFk
+            TargetKind = targetKey
+            OnDelete = onDelete } ] }
+
+let private noRefKind (kindKey: string) : Kind =
+    let attrId = mkKey (kindKey + "_Id")
+    { SsKey = mkKey kindKey
+      Name = mkName kindKey
+      Origin = OsNative
+      Modality = []
+      Physical = { Schema = "dbo"; Table = kindKey }
+      Attributes = [
+          { SsKey = attrId; Name = mkName "Id"; Type = Integer
+            Column = { ColumnName = "ID"; IsNullable = false }
+            IsPrimaryKey = true } ]
+      References = [] }
+
+// ---------------------------------------------------------------------------
+// V1 contract: SortByForeignKeys_AutoDetectsAsymmetricAuditCycle.
+//
+// V1 fixture: Parent and Audit, where:
+//   Parent → Audit (non-nullable, NoAction)  [Other / Strong]
+//   Audit  → Parent (nullable, NoAction)     [Weak]
+//
+// V1 expectation: the resolver auto-detects the asymmetry, removes the
+// Weak edge (Audit → Parent), and topologically sorts the result. After
+// resolution Parent precedes Audit.
+//
+// V2 contract: same observable behavior; lifted from the V1 admire
+// scout report's test inventory.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``V1 contract: asymmetric-2-cycle auto-resolves via Weak edge`` () =
+    // V1 fixture (translated to V2 owner->target reference convention):
+    //   "Parent → Audit (non-nullable)" — V1 calls Parent the parent here,
+    //     meaning Audit has a non-nullable FK to Parent. In V2: Audit has
+    //     the reference; source attribute non-nullable; strength = Other.
+    //   "Audit → Parent (nullable)" — V1 calls Audit the parent here,
+    //     meaning Parent has a nullable FK to Audit. In V2: Parent has
+    //     the reference; source attribute nullable; strength = Weak.
+    //
+    // Resolver breaks the Weak edge (Parent's FK to Audit). What remains:
+    // Audit's FK to Parent — so Parent precedes Audit in the order.
+    let parent = kindWithRef "Parent" "ParentFkToAudit" (mkKey "Audit") true NoAction   // Weak
+    let audit  = kindWithRef "Audit"  "AuditFkToParent" (mkKey "Parent") false NoAction // Other
+    let cyclic : Catalog =
+        { Modules = [
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ] } ] }
+    let result = TopologicalOrderPass.run cyclic
+    // Resolver succeeds — Mode is Topological, not Alphabetical.
+    Assert.Equal(Topological, result.Value.Mode)
+    // Parent precedes Audit (matching V1's expected order).
+    Assert.True(TopologicalOrder.precedes (mkKey "Parent") (mkKey "Audit") result.Value)
+    // The CycleDiagnostic records the SCC and the broken edge.
+    Assert.Equal(1, result.Value.Cycles.Length)
+    let diag = result.Value.Cycles |> List.head
+    Assert.Equal<Set<SsKey>>(
+        Set.ofList [ mkKey "Parent"; mkKey "Audit" ],
+        Set.ofList diag.Members)
+    Assert.Equal(1, diag.BreakableEdges.Length)
+    // The broken edge is the Weak one — Parent's FK to Audit, in V2's
+    // (source, target) orientation.
+    Assert.Equal((mkKey "Parent", mkKey "Audit"), diag.BreakableEdges.[0])
+    Assert.Contains("auto-resolved", diag.Reason)
+
+[<Fact>]
+let ``resolver: 2-cycle with no Weak edges remains unresolved`` () =
+    // Both edges non-nullable + NoAction = Other / Other. No weak edge.
+    let parent = kindWithRef "Parent" "ParentRef" (mkKey "Audit") false NoAction
+    let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") false NoAction
+    let cyclic : Catalog =
+        { Modules = [
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ] } ] }
+    let result = TopologicalOrderPass.run cyclic
+    Assert.Equal(Alphabetical, result.Value.Mode)
+    let diag = result.Value.Cycles |> List.head
+    Assert.Empty(diag.BreakableEdges)
+    Assert.Contains("no Weak edge", diag.Reason)
+
+[<Fact>]
+let ``resolver: 2-cycle with two Weak edges remains unresolved`` () =
+    // Both edges nullable + NoAction = Weak / Weak. Resolver refuses
+    // to choose; cycle is unresolved.
+    let parent = kindWithRef "Parent" "ParentRef" (mkKey "Audit") true NoAction
+    let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") true NoAction
+    let cyclic : Catalog =
+        { Modules = [
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ] } ] }
+    let result = TopologicalOrderPass.run cyclic
+    Assert.Equal(Alphabetical, result.Value.Mode)
+    let diag = result.Value.Cycles |> List.head
+    Assert.Empty(diag.BreakableEdges)
+    Assert.Contains("multiple Weak edges", diag.Reason)
+
+[<Fact>]
+let ``resolver: 3-cycle remains unresolved (current resolver handles 2-cycles only)`` () =
+    let a = kindWithRef "A" "AtoB" (mkKey "B") true NoAction
+    let b = kindWithRef "B" "BtoC" (mkKey "C") true NoAction
+    let c = kindWithRef "C" "CtoA" (mkKey "A") true NoAction
+    let cyclic : Catalog =
+        { Modules = [
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ] } ] }
+    let result = TopologicalOrderPass.run cyclic
+    Assert.Equal(Alphabetical, result.Value.Mode)
+    let diag = result.Value.Cycles |> List.head
+    Assert.Equal(3, diag.Members.Length)
+    Assert.Contains("size 3", diag.Reason)
+
+[<Fact>]
+let ``resolver: Cascade edges are never broken`` () =
+    // Cascade is structural — even if the Cascade source attribute is
+    // nullable, the strength is Cascade, not Weak. With the asymmetric
+    // partner non-nullable, no edge is Weak; the cycle is unresolved.
+    let parent = kindWithRef "Parent" "ParentRef" (mkKey "Audit") true ReferenceAction.Cascade
+    let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") false NoAction
+    let cyclic : Catalog =
+        { Modules = [
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ] } ] }
+    let result = TopologicalOrderPass.run cyclic
+    Assert.Equal(Alphabetical, result.Value.Mode)
+    let diag = result.Value.Cycles |> List.head
+    Assert.Empty(diag.BreakableEdges)
+
+[<Fact>]
+let ``resolver: resolved cycles still appear in Cycles for audit`` () =
+    // Even when the resolver succeeds, CycleDiagnostic stays in Cycles
+    // so consumers can audit which cycles existed and which edges were
+    // broken to fix them.
+    let parent = kindWithRef "Parent" "ParentRef" (mkKey "Audit") false NoAction
+    let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") true NoAction
+    let cyclic : Catalog =
+        { Modules = [
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ] } ] }
+    let result = TopologicalOrderPass.run cyclic
+    Assert.Equal(Topological, result.Value.Mode)
+    Assert.NotEmpty(result.Value.Cycles)
+    let diag = result.Value.Cycles |> List.head
+    Assert.Equal(1, diag.BreakableEdges.Length)
 
 // ---------------------------------------------------------------------------
 // Lineage discipline — A23 + A25.

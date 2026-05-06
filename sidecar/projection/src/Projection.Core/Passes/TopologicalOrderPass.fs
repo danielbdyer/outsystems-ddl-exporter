@@ -33,8 +33,14 @@ module TopologicalOrderPass =
     ///
     /// v1 — Kahn's only; cycles produce a single generic CycleDiagnostic.
     /// v2 — Adds Tarjan's SCC enumeration; one CycleDiagnostic per SCC.
+    /// v3 — Adds edge classification (Weak / Cascade / Other) and the
+    ///       asymmetric-2-cycle resolver. 2-member SCCs with exactly
+    ///       one Weak edge auto-resolve; the broken edge is recorded in
+    ///       `CycleDiagnostic.BreakableEdges`. 2-member SCCs with 0 or
+    ///       multiple Weak edges, and SCCs of size >= 3, remain
+    ///       unresolved — Mode falls back to Alphabetical.
     [<Literal>]
-    let version : int = 2
+    let version : int = 3
 
     [<Literal>]
     let private passName : string = "topologicalOrder"
@@ -56,11 +62,17 @@ module TopologicalOrderPass =
     // -----------------------------------------------------------------------
 
     type private Graph = {
-        Nodes        : SsKey list                       // sorted by SsKey
-        Adjacency    : Map<SsKey, SsKey list>           // (parent → children)
-        Indegree     : Map<SsKey, int>
-        Edges        : (SsKey * SsKey) list             // (source, target) FK edges
-        MissingEdges : (SsKey * SsKey) list             // (source, target) where target absent
+        Nodes              : SsKey list                       // sorted by SsKey
+        Adjacency          : Map<SsKey, SsKey list>           // (parent → children)
+        Indegree           : Map<SsKey, int>
+        Edges              : (SsKey * SsKey) list             // (source, target) FK edges
+        MissingEdges       : (SsKey * SsKey) list             // (source, target) where target absent
+        ClassifiedEdges    : Map<(SsKey * SsKey), EdgeStrength>
+            // Keyed by (source, target) — the FK orientation, not the
+            // precedence orientation. Strengths come from
+            // `CycleResolution.classify` (a V1-flavored domain rule);
+            // the algebra here is unchanged if a different classifier
+            // is plugged in.
     }
 
     let private buildGraph (c: Catalog) : Graph =
@@ -85,6 +97,7 @@ module TopologicalOrderPass =
             refs
             |> List.fold (fun (st: Graph) r ->
                 let edge = (k.SsKey, r.TargetKind)
+                let strength = CycleResolution.classify k r
                 if Set.contains r.TargetKind presentKeys then
                     let children =
                         Map.tryFind r.TargetKind st.Adjacency
@@ -96,18 +109,20 @@ module TopologicalOrderPass =
                     let updatedIndegree =
                         st.Indegree |> Map.add k.SsKey (currentIndegree + 1)
                     { st with
-                        Adjacency = updatedAdjacency
-                        Indegree  = updatedIndegree
-                        Edges     = edge :: st.Edges }
+                        Adjacency       = updatedAdjacency
+                        Indegree        = updatedIndegree
+                        Edges           = edge :: st.Edges
+                        ClassifiedEdges = Map.add edge strength st.ClassifiedEdges }
                 else
                     { st with MissingEdges = edge :: st.MissingEdges }) state
 
         let initial =
-            { Nodes        = nodes
-              Adjacency    = initialAdjacency
-              Indegree     = initialIndegree
-              Edges        = []
-              MissingEdges = [] }
+            { Nodes           = nodes
+              Adjacency       = initialAdjacency
+              Indegree        = initialIndegree
+              Edges           = []
+              MissingEdges    = []
+              ClassifiedEdges = Map.empty }
 
         let scanned = sortedKinds |> List.fold folder initial
 
@@ -230,6 +245,87 @@ module TopologicalOrderPass =
         |> List.sortBy (fun c -> c |> List.head)
 
     // -----------------------------------------------------------------------
+    // Resolver integration.
+    //
+    // The algebra here is: enumerate SCCs (Tarjan); ask the
+    // domain-supplied resolver which FK edges to break per SCC; remove
+    // the precedence-graph edges; re-run Kahn. The choice of resolver
+    // is V1-flavored domain policy and lives in `CycleResolution`. This
+    // pass currently uses `CycleResolution.asymmetric2CycleStrategy`;
+    // pluggable resolvers arrive when an admire pass surfaces a need
+    // (e.g., manual cycle overrides for known fixtures).
+    // -----------------------------------------------------------------------
+
+    type private ResolverOutcome = {
+        RemovedPrecedenceEdges : Set<SsKey * SsKey>  // (parent, child) precedence
+        ResolvedDiagnostics    : CycleDiagnostic list
+        UnresolvedDiagnostics  : CycleDiagnostic list
+    }
+
+    let private internalEdgesOf
+        (members: SsKey list)
+        (classified: Map<(SsKey * SsKey), EdgeStrength>)
+        : ((SsKey * SsKey) * EdgeStrength) list =
+        // All (source, target) pairs where both endpoints are in the
+        // SCC. Sorted by edge tuple for deterministic output.
+        [ for a in members do
+            for b in members do
+                if a <> b then
+                    match Map.tryFind (a, b) classified with
+                    | Some s -> yield (a, b), s
+                    | None   -> () ]
+        |> List.sortBy fst
+
+    let private applyResolver
+        (resolver: CycleResolution.Resolver)
+        (graph: Graph)
+        (sccs: SsKey list list)
+        : ResolverOutcome =
+        let mutable removed : Set<SsKey * SsKey> = Set.empty
+        let resolved = ResizeArray<CycleDiagnostic>()
+        let unresolved = ResizeArray<CycleDiagnostic>()
+
+        for scc in sccs do
+            let internalEdges = internalEdgesOf scc graph.ClassifiedEdges
+            let step = resolver scc internalEdges
+            if List.isEmpty step.EdgesToBreak then
+                unresolved.Add(
+                    { Members        = scc
+                      BreakableEdges = []
+                      Reason         = step.Reason })
+            else
+                for (source, target) in step.EdgesToBreak do
+                    // Translate FK orientation (source, target) to
+                    // precedence orientation (parent=target, child=source).
+                    removed <- Set.add (target, source) removed
+                resolved.Add(
+                    { Members        = scc
+                      BreakableEdges = step.EdgesToBreak
+                      Reason         = step.Reason })
+
+        { RemovedPrecedenceEdges = removed
+          ResolvedDiagnostics    = resolved |> List.ofSeq
+          UnresolvedDiagnostics  = unresolved |> List.ofSeq }
+
+    /// Build a reduced graph by removing precedence-graph edges. Used to
+    /// re-run Kahn after the resolver breaks weak edges.
+    let private reduceGraph (graph: Graph) (toRemove: Set<SsKey * SsKey>) : Graph =
+        if Set.isEmpty toRemove then graph
+        else
+            let reducedAdjacency =
+                graph.Adjacency
+                |> Map.map (fun parent children ->
+                    children
+                    |> List.filter (fun child -> not (Set.contains (parent, child) toRemove)))
+            let reducedIndegree =
+                toRemove
+                |> Set.fold (fun indeg (_, child) ->
+                    let current = Map.tryFind child indeg |> Option.defaultValue 0
+                    Map.add child (max 0 (current - 1)) indeg)
+                    graph.Indegree
+            { graph with Adjacency = reducedAdjacency; Indegree = reducedIndegree }
+
+    // -----------------------------------------------------------------------
     // The pass.
     // -----------------------------------------------------------------------
 
@@ -260,27 +356,66 @@ module TopologicalOrderPass =
                   ] }
             else
                 // Cycle present. Run Tarjan's SCC on the unprocessed
-                // residue to enumerate the strongly connected components;
-                // each non-trivial SCC becomes a CycleDiagnostic. Cycle
-                // resolution (asymmetric-2-cycle resolver) lands in the
-                // next pass version.
+                // residue, then ask the asymmetric-2-cycle resolver
+                // which Weak edges it's willing to break.
                 let sccs = tarjanScc unprocessed graph.Adjacency
-                let cycles =
-                    sccs
-                    |> List.map (fun members ->
-                        { Members        = members
-                          BreakableEdges = []
-                          Reason         = "SCC detected; resolver pending next pass version" })
-                let alphabeticalAll = graph.Nodes  // already sorted
-                { Mode         = Alphabetical
-                  Order        = alphabeticalAll
-                  Edges        = graph.Edges
-                  MissingEdges = graph.MissingEdges
-                  Cycles       = cycles
-                  Diagnostics  = [
-                      sprintf "topologicalOrder v%d: %d SCC(s) detected, %d nodes unprocessed; alphabetical fallback"
-                          version cycles.Length unprocessed.Length
-                  ] }
+                let resolution =
+                    applyResolver CycleResolution.asymmetric2CycleStrategy graph sccs
+
+                if List.isEmpty resolution.UnresolvedDiagnostics then
+                    // Every SCC resolved. Re-run Kahn on the reduced graph.
+                    let reduced = reduceGraph graph resolution.RemovedPrecedenceEdges
+                    let resorted, residue = kahnSort reduced
+                    if List.isEmpty residue then
+                        { Mode         = Topological
+                          Order        = resorted
+                          Edges        = graph.Edges
+                          MissingEdges = graph.MissingEdges
+                          // Resolved cycles stay in Cycles for audit —
+                          // they record the SCCs found and the edges
+                          // broken to resolve them.
+                          Cycles       = resolution.ResolvedDiagnostics
+                          Diagnostics  = [
+                              sprintf "topologicalOrder v%d: %d cycle(s) auto-resolved via Weak-edge removal"
+                                  version resolution.ResolvedDiagnostics.Length
+                          ] }
+                    else
+                        // Defensive: removing the resolver's chosen edges
+                        // should always make the graph acyclic, but if a
+                        // bug or unforeseen graph shape leaves residue
+                        // we degrade gracefully.
+                        let leftover = tarjanScc residue reduced.Adjacency
+                        let leftoverDiagnostics =
+                            leftover
+                            |> List.map (fun members ->
+                                { Members        = members
+                                  BreakableEdges = []
+                                  Reason         = "residual SCC after resolver; please report" })
+                        { Mode         = Alphabetical
+                          Order        = graph.Nodes
+                          Edges        = graph.Edges
+                          MissingEdges = graph.MissingEdges
+                          Cycles       = resolution.ResolvedDiagnostics @ leftoverDiagnostics
+                          Diagnostics  = [
+                              sprintf "topologicalOrder v%d: resolver left residue; alphabetical fallback"
+                                  version
+                          ] }
+                else
+                    // At least one SCC the resolver can't handle. Fall
+                    // back to alphabetical; record both the resolved and
+                    // unresolved diagnostics so callers can audit.
+                    let alphabeticalAll = graph.Nodes
+                    { Mode         = Alphabetical
+                      Order        = alphabeticalAll
+                      Edges        = graph.Edges
+                      MissingEdges = graph.MissingEdges
+                      Cycles       = resolution.ResolvedDiagnostics @ resolution.UnresolvedDiagnostics
+                      Diagnostics  = [
+                          sprintf "topologicalOrder v%d: %d resolved, %d unresolved; alphabetical fallback"
+                              version
+                              resolution.ResolvedDiagnostics.Length
+                              resolution.UnresolvedDiagnostics.Length
+                      ] }
 
         let events = graph.Nodes |> List.map touchedEvent
         Lineage.tellMany events (Lineage.ofValue result)

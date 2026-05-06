@@ -22,29 +22,11 @@ type OrderingMode =
     | JunctionDeferred
 
 
-/// Classifies a reference's strength for cycle-resolution purposes
-/// (per the V1 `EntityDependencySorter` admire entry, 2026-05-07).
-/// `RequireQualifiedAccess` because `Cascade` clashes with
-/// `ReferenceAction.Cascade` — these are conceptually different
-/// (one configures the reference; the other classifies the edge).
-///
-/// `Weak`    — the source attribute is nullable and `OnDelete` is
-///              `NoAction` or `SetNull`. The reference can be broken
-///              without losing referential semantics; the asymmetric-
-///              2-cycle resolver prefers these as the breakable edge.
-///
-/// `Cascade` — `OnDelete` is `Cascade`. The reference is structural;
-///              breaking it changes the data semantics. Never broken by
-///              the auto-resolver.
-///
-/// `Other`   — the source attribute is not nullable, and `OnDelete` is
-///              `NoAction`, `SetNull`, or `Restrict`. Breaking it would
-///              orphan rows. Never broken by the auto-resolver.
-[<RequireQualifiedAccess>]
-type EdgeStrength =
-    | Weak
-    | Cascade
-    | Other
+// `EdgeStrength` lives in `CycleResolution.fs` (V2 audit, 2026-05-08):
+// edge-strength classification is a V1-flavored domain rule about which
+// FK edges are safe to break, not pure graph algebra. Keeping it
+// alongside the classifier and resolver makes the algebra/domain split
+// visible at the file level.
 
 
 /// Diagnostic for a strongly-connected component the resolver could not

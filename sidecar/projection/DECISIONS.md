@@ -551,3 +551,34 @@ which passes ran. Passes that observe but don't transform (e.g.,
 `canonicalizeIdentity`'s sweep) emit `Touched` events explicitly —
 that's a different convention because the *act of observing* is
 itself the contract.
+
+## 2026-05-08 — Algebra/domain split: edge classification lives in CycleResolution
+
+**Status:** decided
+**Context:** Pre-commit audit on session-4 commits 4–6 (Kahn's, Tarjan's,
+edge classification + asymmetric-2-cycle resolver). Commits 4 and 5 are
+pure graph-theory algorithms with no V1 business logic. Commit 6's
+`classifyEdge` and the resolver heuristic, however, are V1-flavored
+domain rules — the `Weak | Cascade | Other` taxonomy and the
+"break exactly one Weak edge in a 2-cycle" strategy are V1's
+EntityDependencySorter conventions, lifted but not algebraically forced.
+Embedding them inside `TopologicalOrderPass` mixed graph algebra with
+domain interpretation.
+**Decision:** Extract `EdgeStrength`, `classify`, and the resolver
+strategies (`asymmetric2CycleStrategy`, `neverResolve`) into a new
+`CycleResolution` module. The pass calls into `CycleResolution`; the
+algebra (graph build, Kahn's, Tarjan's, "remove edges and re-sort") is
+free of domain rules. The `CycleResolution.Resolver` type
+(`SsKey list -> ((SsKey * SsKey) * EdgeStrength) list -> ResolutionStep`)
+is the seam — call sites can pass any conforming function; the
+algebra doesn't know which strategy is in use.
+**Reasoning / consequences:** When V2 admits a non-RDBMS catalog or a
+new resolver strategy (manual cycle overrides, MFAS, deferred
+junctions), the new logic lands in `CycleResolution` (or a sibling
+module) without touching the algebra. `TopologicalOrderPass` currently
+passes `CycleResolution.asymmetric2CycleStrategy` as the resolver;
+making it a pass-level parameter is deferred until the second resolver
+strategy actually lands (per "IR grows under evidence"). The audit
+itself is the kind of thing the discipline is designed to surface;
+preserving the resulting algebra/domain split in code keeps the
+algebra small.
