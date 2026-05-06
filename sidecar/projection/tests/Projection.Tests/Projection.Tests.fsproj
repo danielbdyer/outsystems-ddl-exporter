@@ -36,6 +36,7 @@
     <Compile Include="ForeignKeyRulesTests.fs" />
     <Compile Include="ForeignKeyPassTests.fs" />
     <Compile Include="ProfileSnapshotAdapterTests.fs" />
+    <Compile Include="ProfileStatisticsAdapterTests.fs" />
     <Compile Include="EndToEndDifferentialTests.fs" />
     <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="RawTextEmitterTests.fs" />

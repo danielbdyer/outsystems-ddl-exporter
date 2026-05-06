@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="Static.fs" />
     <Compile Include="ProfileSnapshot.fs" />
+    <Compile Include="ProfileStatistics.fs" />
   </ItemGroup>
 
   <ItemGroup>
