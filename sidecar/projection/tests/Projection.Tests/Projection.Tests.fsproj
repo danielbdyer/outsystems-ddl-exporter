@@ -21,6 +21,7 @@
     <Compile Include="ProfileTests.fs" />
     <Compile Include="PolicyTests.fs" />
     <Compile Include="VisibilityMaskTests.fs" />
+    <Compile Include="NamingMorphismTests.fs" />
     <Compile Include="RawTextEmitterTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
   </ItemGroup>

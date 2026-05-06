@@ -18,6 +18,7 @@
     <Compile Include="Lineage.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
     <Compile Include="Passes/VisibilityMask.fs" />
+    <Compile Include="Passes/NamingMorphism.fs" />
   </ItemGroup>
 
 </Project>
