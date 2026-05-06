@@ -20,6 +20,7 @@
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
     <Compile Include="PolicyTests.fs" />
+    <Compile Include="TopologicalOrderTests.fs" />
     <Compile Include="VisibilityMaskTests.fs" />
     <Compile Include="NamingMorphismTests.fs" />
     <Compile Include="NormalizeStaticPopulationsTests.fs" />

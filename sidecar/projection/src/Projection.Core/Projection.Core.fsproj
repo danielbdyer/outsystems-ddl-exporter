@@ -15,6 +15,7 @@
     <Compile Include="Catalog.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="Policy.fs" />
+    <Compile Include="TopologicalOrder.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
     <Compile Include="Passes/VisibilityMask.fs" />
