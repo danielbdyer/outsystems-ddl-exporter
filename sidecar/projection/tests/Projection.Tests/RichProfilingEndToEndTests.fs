@@ -324,3 +324,145 @@ let ``invariant: V1 ProfileSnapshot.attach does not populate Distributions`` () 
         ProfileSnapshot.attach endToEndCatalog snapshotJson
         |> Result.value
     Assert.Empty(snapshotOnly.Distributions)
+
+// ---------------------------------------------------------------------------
+// Session 10 milestone — both distribution variants flowing through the
+// end-to-end pipeline.
+//
+// V1 JSON (snapshot)         V2-only JSON (Categorical + Numeric)
+//      |                                |
+// ProfileSnapshot.attach    ProfileStatistics.attach
+//      |                                |
+//      +---------> Profile <------------+
+//                     |
+// Catalog ------------+--> DistributionsEmitter.emit
+//
+// If this passes: the closed-DU expansion held under the second
+// variant; both variants coexist; the emitter renders both
+// correctly; sibling commutativity preserves across all three Pi
+// (SSDT, JSON, Distributions) on the now-larger Profile shape.
+// ---------------------------------------------------------------------------
+
+let private mixedDistributionsJson = """
+{
+  "distributions": [
+    { "Schema": "dbo", "Table": "OSUSR_R9_COUNTRY", "Column": "NAME",
+      "Kind": "Categorical",
+      "DistinctCount": 4, "IsTruncated": false,
+      "Frequencies": [
+        { "Value": "Canada", "Count": 3 },
+        { "Value": "Mexico", "Count": 2 },
+        { "Value": "Spain",  "Count": 4 },
+        { "Value": "United States", "Count": 3 }
+      ],
+      "ProbeStatus": { "CapturedAtUtc": "2026-05-12T00:00:00Z",
+                       "SampleSize": 12, "Outcome": "Succeeded" } },
+    { "Schema": "dbo", "Table": "OSUSR_R9_PARENT", "Column": "ID",
+      "Kind": "Numeric",
+      "Min": 1, "P25": 125, "P50": 250, "P75": 375, "P95": 475, "P99": 495, "Max": 500,
+      "SampleSize": 500,
+      "ProbeStatus": { "CapturedAtUtc": "2026-05-13T00:00:00Z",
+                       "SampleSize": 500, "Outcome": "Succeeded" } }
+  ]
+}
+"""
+
+let private enrichedProfileBothVariants () : Profile =
+    ProfileSnapshot.attach endToEndCatalog snapshotJson
+    |> Result.bind (ProfileStatistics.attach endToEndCatalog mixedDistributionsJson)
+    |> Result.value
+
+[<Fact>]
+let ``MILESTONE 10: Categorical + Numeric coexist in a single enriched profile`` () =
+    let profile = enrichedProfileBothVariants ()
+    Assert.Equal(2, profile.Distributions.Length)
+    // Per-attribute lookups by variant succeed where evidence is
+    // registered, return None elsewhere.
+    Assert.True(Profile.tryFindCategorical countryNameKey profile |> Option.isSome)
+    Assert.True(Profile.tryFindNumeric parentIdKey profile |> Option.isSome)
+    // Cross-variant lookups return None (the discipline holds).
+    Assert.True(Profile.tryFindNumeric countryNameKey profile |> Option.isNone)
+    Assert.True(Profile.tryFindCategorical parentIdKey profile |> Option.isNone)
+
+[<Fact>]
+let ``MILESTONE 10: V1 evidence is preserved when both variants are layered`` () =
+    let profile = enrichedProfileBothVariants ()
+    // V1-derived fields unchanged from session 9's milestone.
+    Assert.Equal(2, profile.Columns.Length)
+    Assert.Empty(profile.UniqueCandidates)
+    Assert.Empty(profile.ForeignKeys)
+
+[<Fact>]
+let ``MILESTONE 10: DistributionsEmitter renders both variants end-to-end`` () =
+    let profile = enrichedProfileBothVariants ()
+    let output = DistributionsEmitter.emit endToEndCatalog profile
+    use doc = JsonDocument.Parse output
+    let root = doc.RootElement
+    let countryNameRoot = SsKey.rootOriginal countryNameKey
+    let parentIdRoot    = SsKey.rootOriginal parentIdKey
+    let mutable foundCat = false
+    let mutable foundNum = false
+    for m in root.GetProperty("modules").EnumerateArray() do
+        for k in m.GetProperty("kinds").EnumerateArray() do
+            for a in k.GetProperty("attributes").EnumerateArray() do
+                let ssKey = a.GetProperty("ssKey").GetString()
+                if ssKey = countryNameRoot then
+                    let dist = a.GetProperty("distribution")
+                    Assert.Equal(JsonValueKind.Object, dist.ValueKind)
+                    Assert.Equal("Categorical", dist.GetProperty("kind").GetString())
+                    foundCat <- true
+                if ssKey = parentIdRoot then
+                    let dist = a.GetProperty("distribution")
+                    Assert.Equal(JsonValueKind.Object, dist.ValueKind)
+                    Assert.Equal("Numeric", dist.GetProperty("kind").GetString())
+                    Assert.Equal(500m, dist.GetProperty("max").GetDecimal())
+                    foundNum <- true
+    Assert.True(foundCat, "Country.NAME categorical not rendered end-to-end")
+    Assert.True(foundNum, "Parent.ID numeric not rendered end-to-end")
+
+[<Fact>]
+let ``MILESTONE 10: T1 byte-determinism holds across the now-larger Profile shape`` () =
+    let runOnce () =
+        let profile = enrichedProfileBothVariants ()
+        DistributionsEmitter.emit endToEndCatalog profile
+    let outputs = [ for _ in 1 .. 10 -> runOnce () ]
+    Assert.All(outputs, fun s -> Assert.Equal(List.head outputs, s))
+
+[<Fact>]
+let ``MILESTONE 10: T11 sibling commutativity preserved across all three Pi with both variants`` () =
+    let profile = enrichedProfileBothVariants ()
+    let ssdt   = RawTextEmitter.emit endToEndCatalog
+    let json   = JsonEmitter.emit endToEndCatalog
+    let distrs = DistributionsEmitter.emit endToEndCatalog profile
+    for k in Catalog.allKinds endToEndCatalog do
+        let root = SsKey.rootOriginal k.SsKey
+        Assert.Contains(root, ssdt)
+        Assert.Contains(root, json)
+        Assert.Contains(root, distrs)
+
+[<Fact>]
+let ``MILESTONE 10: monotonicity violation in fixture surfaces as adapter error`` () =
+    // Verifies the structural-commitment-via-construction-validation
+    // pattern's reach: a bad fixture (P50 > P75) does not silently
+    // produce a degenerate Profile. The adapter rejects it; the
+    // pipeline halts; the diagnostic carries the smart constructor's
+    // error code.
+    let badJson = """
+    {
+      "distributions": [
+        { "Schema": "dbo", "Table": "OSUSR_R9_PARENT", "Column": "ID",
+          "Kind": "Numeric",
+          "Min": 1, "P25": 125, "P50": 400, "P75": 200, "P95": 475, "P99": 495, "Max": 500,
+          "SampleSize": 500,
+          "ProbeStatus": { "CapturedAtUtc": "2026-05-13T00:00:00Z",
+                           "SampleSize": 500, "Outcome": "Succeeded" } }
+      ]
+    }
+    """
+    let result =
+        ProfileSnapshot.attach endToEndCatalog snapshotJson
+        |> Result.bind (ProfileStatistics.attach endToEndCatalog badJson)
+    match result with
+    | Success _ -> Assert.Fail "Expected failure on monotonicity violation"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
