@@ -219,3 +219,165 @@ let ``AttributeDistribution.Categorical round-trips`` () =
     Assert.Equal<AttributeDistribution>(
         AttributeDistribution.Categorical cat,
         AttributeDistribution.Categorical cat)
+
+// ---------------------------------------------------------------------------
+// NumericDistribution.create — structural-commitment validation surface
+// (AXIOMS.md 2026-05-12 — structural-commitment-via-construction-validation).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``numeric create: monotonic percentiles + adequate sample size succeeds`` () =
+    let probe = succeededProbe 100L
+    let result =
+        NumericDistribution.create
+            countryCodeKey
+            0m   // Min
+            10m  // P25
+            25m  // P50
+            50m  // P75
+            90m  // P95
+            99m  // P99
+            100m // Max
+            100L // SampleSize
+            probe
+    match result with
+    | Success dist ->
+        Assert.Equal(countryCodeKey, dist.AttributeKey)
+        Assert.Equal(0m, dist.Min)
+        Assert.Equal(50m, dist.P75)
+        Assert.Equal(100m, dist.Max)
+        Assert.Equal(100L, dist.SampleSize)
+    | Failure errs ->
+        Assert.Fail(sprintf "Expected success, got %A" errs)
+
+[<Fact>]
+let ``numeric create: degenerate Min=Max=all-percentiles succeeds`` () =
+    // A column where every observation is the same value. The
+    // monotonicity chain holds with equalities; the contract permits.
+    let probe = succeededProbe 50L
+    let result =
+        NumericDistribution.create
+            countryCodeKey
+            42m 42m 42m 42m 42m 42m 42m
+            50L
+            probe
+    match result with
+    | Success dist ->
+        Assert.True(NumericDistribution.isDegenerate dist)
+    | Failure errs ->
+        Assert.Fail(sprintf "Expected success, got %A" errs)
+
+[<Fact>]
+let ``numeric create: rejects sample size below floor of 5`` () =
+    let probe = succeededProbe 4L
+    let result =
+        NumericDistribution.create
+            countryCodeKey
+            0m 1m 2m 3m 4m 5m 10m
+            4L
+            probe
+    match result with
+    | Success _ -> Assert.Fail "Expected failure for SampleSize < 5"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "numericDistribution.sampleSize.belowFloor")
+
+[<Fact>]
+let ``numeric create: rejects negative sample size`` () =
+    let probe = succeededProbe 5L
+    let result =
+        NumericDistribution.create
+            countryCodeKey
+            0m 1m 2m 3m 4m 5m 10m
+            -1L
+            probe
+    match result with
+    | Success _ -> Assert.Fail "Expected failure for negative SampleSize"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "numericDistribution.sampleSize.negative")
+
+[<Fact>]
+let ``numeric create: rejects out-of-order percentiles (P50 > P75)`` () =
+    let probe = succeededProbe 100L
+    let result =
+        NumericDistribution.create
+            countryCodeKey
+            0m 10m 50m 30m 90m 99m 100m  // P50=50 > P75=30 — violates monotonicity
+            100L
+            probe
+    match result with
+    | Success _ -> Assert.Fail "Expected failure for non-monotonic percentiles"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
+
+[<Fact>]
+let ``numeric create: rejects Min greater than P25`` () =
+    let probe = succeededProbe 100L
+    let result =
+        NumericDistribution.create
+            countryCodeKey
+            10m 5m 25m 50m 90m 99m 100m  // Min=10 > P25=5
+            100L
+            probe
+    match result with
+    | Success _ -> Assert.Fail "Expected failure: Min > P25"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
+
+[<Fact>]
+let ``numeric create: rejects P99 greater than Max`` () =
+    let probe = succeededProbe 100L
+    let result =
+        NumericDistribution.create
+            countryCodeKey
+            0m 10m 25m 50m 90m 99m 50m  // Max=50 < P99=99
+            100L
+            probe
+    match result with
+    | Success _ -> Assert.Fail "Expected failure: P99 > Max"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
+
+// ---------------------------------------------------------------------------
+// Helpers — interQuartileRange, observedRange, isDegenerate.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``numeric helpers: interQuartileRange returns P75 minus P25`` () =
+    let probe = succeededProbe 100L
+    let dist =
+        NumericDistribution.create
+            countryCodeKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    Assert.Equal(40m, NumericDistribution.interQuartileRange dist)
+
+[<Fact>]
+let ``numeric helpers: observedRange returns Max minus Min`` () =
+    let probe = succeededProbe 100L
+    let dist =
+        NumericDistribution.create
+            countryCodeKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    Assert.Equal(100m, NumericDistribution.observedRange dist)
+
+[<Fact>]
+let ``numeric helpers: isDegenerate is true when Min equals Max`` () =
+    let probe = succeededProbe 50L
+    let degenerate =
+        NumericDistribution.create
+            countryCodeKey 7m 7m 7m 7m 7m 7m 7m 50L probe
+        |> Result.value
+    let normal =
+        NumericDistribution.create
+            countryCodeKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    Assert.True (NumericDistribution.isDegenerate degenerate)
+    Assert.False(NumericDistribution.isDegenerate normal)
+
+// ---------------------------------------------------------------------------
+// sampleSizeFloor literal — surfaces the named constant for readers and
+// future maintainers.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``numeric: sampleSizeFloor is 5`` () =
+    Assert.Equal(5L, NumericDistribution.sampleSizeFloor)

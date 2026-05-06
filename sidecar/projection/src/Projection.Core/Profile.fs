@@ -159,16 +159,78 @@ type CategoricalDistribution = {
 }
 
 
+/// Numeric percentile + range evidence — for attributes whose values
+/// are drawn from a numeric domain (Integer / Decimal). The second
+/// `AttributeDistribution` variant; landed in session 10 commit 2 per
+/// the rich-profiling agenda (ADMIRE.md 2026-05-12).
+///
+/// Captures the value range (`Min`, `Max`) plus a fixed set of
+/// percentiles (P25, P50, P75, P95, P99). Histograms-as-binned-counts
+/// are deliberately **not** included; the percentile + range shape is
+/// robust to long tails (real-world numeric data is rarely uniform)
+/// and supports the next consumers (Faker-style synthesis bounding
+/// the synthesis space, anomaly detection comparing observed values
+/// against percentile cutoffs). Histogram-as-third-variant lands later
+/// if a consumer demands it (ADMIRE.md 2026-05-12 — IR grows under
+/// evidence).
+///
+/// **Structural-commitment-via-construction-validation**
+/// (AXIOMS.md 2026-05-12 — recognized operational principle).
+/// `NumericDistribution.create` enforces:
+///
+///   - **Monotonicity chain.** `Min ≤ P25 ≤ P50 ≤ P75 ≤ P95 ≤ P99 ≤ Max`.
+///     Percentiles must be sorted (a degenerate distribution where
+///     `Min = Max` collapses to all-equal, which is permitted; an
+///     out-of-order percentile is rejected).
+///   - **Sample size floor.** `SampleSize ≥ 5`. With fewer than five
+///     observations, the percentiles are degenerate (one or more
+///     percentile boundaries coincide with the same observation) and
+///     the consumer cannot reason meaningfully about them. The floor
+///     is empirical, not statistical sufficiency — it's the smallest
+///     count that makes each percentile a distinct boundary.
+///   - **Sample size non-negativity.** Required by `ProbeStatus`
+///     already, but `NumericDistribution.SampleSize` is a separate
+///     field carrying its own non-negativity check for clarity.
+///
+/// Every constructed `NumericDistribution` value satisfies these
+/// contracts; consumers pattern-match without re-validating.
+type NumericDistribution = {
+    /// Identity of the Attribute whose distribution this is.
+    AttributeKey : SsKey
+    /// Smallest observed value.
+    Min          : decimal
+    /// 25th percentile (lower quartile).
+    P25          : decimal
+    /// 50th percentile (median).
+    P50          : decimal
+    /// 75th percentile (upper quartile).
+    P75          : decimal
+    /// 95th percentile.
+    P95          : decimal
+    /// 99th percentile.
+    P99          : decimal
+    /// Largest observed value.
+    Max          : decimal
+    /// Number of observations the percentiles were drawn from. Lets
+    /// consumers reason about confidence — high `SampleSize` means
+    /// the percentiles are stable estimates; low `SampleSize` means
+    /// they may shift with additional observations.
+    SampleSize   : int64
+    /// Probe metadata.
+    ProbeStatus  : ProbeStatus
+}
+
+
 /// Empirical evidence about an attribute's value distribution.
-/// **First instance of an evidence type V1 does not collect**
-/// (ADMIRE.md 2026-05-12 — V1 absence to fill). Closed DU; new
+/// **First IR extension surfacing V1 absence as the gap**
+/// (ADMIRE.md 2026-05-12 — V2-growth admire mode). Closed DU; new
 /// variants (Numeric, Temporal, ...) land under "IR grows under
 /// evidence" as their first consumers arrive.
 ///
-/// Currently single-variant — `Categorical`. Numeric histograms /
-/// percentiles, temporal range / density, and joint distributions
-/// arrive as new variants in subsequent sessions per the
-/// rich-profiling agenda.
+/// Currently single-variant — `Categorical`. The `Numeric` variant
+/// arrives in session 10 commit 2 (alongside this comment's update);
+/// temporal range / density, joint distributions, and other variants
+/// arrive in later sessions.
 [<RequireQualifiedAccess>]
 type AttributeDistribution =
     | Categorical of CategoricalDistribution
@@ -232,6 +294,91 @@ module CategoricalDistribution =
     /// probe observed (no truncation).
     let isComplete (d: CategoricalDistribution) : bool =
         not d.IsTruncated
+
+
+[<RequireQualifiedAccess>]
+module NumericDistribution =
+
+    let private sampleSizeBelowFloor =
+        ValidationError.create
+            "numericDistribution.sampleSize.belowFloor"
+            "SampleSize must be at least 5 — fewer observations make percentile boundaries degenerate."
+
+    let private sampleSizeNegative =
+        ValidationError.create
+            "numericDistribution.sampleSize.negative"
+            "SampleSize must be non-negative."
+
+    let private percentilesNonMonotonic =
+        ValidationError.create
+            "numericDistribution.percentiles.nonMonotonic"
+            "Percentiles must be monotonically non-decreasing: Min <= P25 <= P50 <= P75 <= P95 <= P99 <= Max."
+
+    /// The minimum sample size that makes every percentile a distinct
+    /// boundary. Below this floor the percentiles coincide with each
+    /// other and the consumer cannot reason meaningfully about them.
+    [<Literal>]
+    let sampleSizeFloor : int64 = 5L
+
+    /// Construct a `NumericDistribution`. Validates the structural
+    /// commitments documented on the type:
+    ///
+    ///   - `SampleSize ≥ 0`
+    ///   - `SampleSize ≥ sampleSizeFloor` (= 5)
+    ///   - `Min ≤ P25 ≤ P50 ≤ P75 ≤ P95 ≤ P99 ≤ Max`
+    ///
+    /// Returns `Result<NumericDistribution>`; every successful value
+    /// satisfies the contract by construction. Consumers
+    /// pattern-match without re-validating.
+    let create
+        (attributeKey: SsKey)
+        (min: decimal)
+        (p25: decimal)
+        (p50: decimal)
+        (p75: decimal)
+        (p95: decimal)
+        (p99: decimal)
+        (max: decimal)
+        (sampleSize: int64)
+        (probeStatus: ProbeStatus)
+        : Result<NumericDistribution> =
+        if sampleSize < 0L then
+            Result.failureOf sampleSizeNegative
+        elif sampleSize < sampleSizeFloor then
+            Result.failureOf sampleSizeBelowFloor
+        elif not (min <= p25 && p25 <= p50 && p50 <= p75
+                  && p75 <= p95 && p95 <= p99 && p99 <= max) then
+            Result.failureOf percentilesNonMonotonic
+        else
+            Result.success
+                { AttributeKey = attributeKey
+                  Min          = min
+                  P25          = p25
+                  P50          = p50
+                  P75          = p75
+                  P95          = p95
+                  P99          = p99
+                  Max          = max
+                  SampleSize   = sampleSize
+                  ProbeStatus  = probeStatus }
+
+    /// Inter-quartile range (P75 - P25). Convenience for consumers
+    /// that reason about spread; pure derivation, no caching.
+    let interQuartileRange (d: NumericDistribution) : decimal =
+        d.P75 - d.P25
+
+    /// Range of observed values (Max - Min). The full extent of the
+    /// distribution; consumers compare against `interQuartileRange` to
+    /// reason about tail-heaviness.
+    let observedRange (d: NumericDistribution) : decimal =
+        d.Max - d.Min
+
+    /// True iff every percentile coincides with `Min` (or
+    /// equivalently with `Max`, since the monotonicity contract
+    /// holds). A degenerate distribution where every observation was
+    /// the same value.
+    let isDegenerate (d: NumericDistribution) : bool =
+        d.Min = d.Max
 
 
 /// Empirical evidence aggregate. The third substantive input to
