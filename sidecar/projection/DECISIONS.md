@@ -2282,3 +2282,137 @@ The strategy layer's codification is more thoroughly named after
 session 11 than after session 8 — `fanOut` and `StrategyEvaluator`
 are the new vocabulary. Future strategy migrations have less to
 re-invent and more to inherit.
+
+## 2026-05-13 — Session 11 reflection: codification's third real test passed; forward signals for session 12
+
+**Status:** decided (operating discipline; session 12 hand-off)
+**Context:** Session 11's job was the codification's third real
+test — the first distribution-aware strategy
+(`CategoricalUniqueness`) under the codified strategy layer +
+the cash-out of two deferred decisions from session 8 (composition
+vocabulary; generic alias). The session-11 brief asked whether
+distribution-aware decision logic would stress the structured-
+rationale DU pattern in a way binary-evidence patterns didn't.
+This entry records the answer and forward signals.
+
+**Did the codification's third real test pass?** Yes. The
+codification absorbed the new evidence type, the new strategy, the
+new pass driver, the composition primitive, and the generic alias
+— without revision. Empirical record:
+
+| Axis | Outcome |
+|---|---|
+| Closed-DU expansion (4th `TighteningIntervention` variant) | Clean — only `TighteningIntervention.id` needed exhaustiveness update; per-variant filter helpers used wildcard fall-through; closed-DU expansion empirical-test discipline (DECISIONS 2026-05-13) holds for the third time (after session 9's IsMandatory variant + session 10's Numeric variant) |
+| Strategy-layer codification (4th instance) | All five core predictions held (pure functions, typed seam, structured rationale DUs, lineage discipline, `<Domain>Rules` naming + total decisions with named skips). No fourth refinement needed |
+| Composition vocabulary cash-out (`fanOut`) | Earned its place at four consumers; codified; pass drivers now ~10 lines each instead of ~20 |
+| Generic alias cash-out (`StrategyEvaluator`) | Earned its place; named the canonical shape; honored "uniform signature shape but variable arity context" (session-8 refinement 2) by adapting `ForeignKey`'s extra catalog argument via closure rather than forcing surgery |
+| End-to-end milestone | All 585 tests pass; Categorical evidence flows through ProfileSnapshot.attach + ProfileStatistics.attach into the enriched Profile, the strategy decides per-attribute, the pass produces the decision set with full lineage discipline, sibling-Π commutativity preserved, T1 byte-determinism holds |
+
+**Did distribution-aware decision logic stress the rationale DU
+pattern?** Less than the user's brief anticipated. Three
+observations:
+
+1. **Confidence didn't surface as a separate dimension.** The
+   user's forward note (session-10 brief) speculated that
+   distribution-aware strategies might want a confidence concept
+   alongside structured rationale ("this column's distribution
+   suggests X with confidence Y"). For `CategoricalUniqueness`,
+   confidence was implicitly modeled by the keep-reason variants
+   themselves — `EvidenceMissing`, `VocabularyTruncated`,
+   `DistinctCountBelowThreshold`, `DuplicatesObserved` are
+   discrete bands of confidence (none / unsafe / insufficient /
+   contradicted). The single positive variant (`EveryValueDistinct`)
+   is itself a high-confidence signal. The DU absorbed the
+   confidence spectrum without needing a separate scalar.
+2. **Continuous evidence still discretized in the rationale DU.**
+   `CategoricalDistribution.DistinctCount` is `int64` (continuous
+   in the unbounded sense) but the strategy's decision flattens it
+   to "above threshold" / "below threshold" / "matches total." The
+   continuous evidence informs which discrete variant fires; the
+   rationale DU stays discrete. This held for binary-evidence
+   strategies and continues to hold here. If a future strategy
+   wants to expose a numeric confidence score (e.g., "this is 80%
+   likely to be unique based on coverage"), the variant gains a
+   `confidence: decimal` field rather than the DU shape changing.
+3. **Truncation as a first-class concern.** The strategy
+   distinguishes `VocabularyTruncated` from `EvidenceMissing` —
+   truncation is a known unknown (we have evidence but it's a
+   prefix); evidence-missing is an unknown unknown (probe didn't
+   succeed). This is finer than V1's binary "did the probe
+   succeed" framing. Distribution-aware strategies have richer
+   evidence; the rationale DU absorbs the richness without needing
+   a confidence scalar.
+
+**Verdict on the user's hypothesis:** the rationale DU pattern is
+expressive enough for distribution-aware decisions at this
+granularity. If a future strategy returns a numeric confidence
+score (e.g., a Bayesian prior on "this column is unique"), it
+likely lives as a field on the variant rather than as a separate
+DU axis. Don't pre-decide; surface when the use case arrives.
+
+**Forward signals for session 12 (Faker direction).**
+
+  - **Two evidence types + four strategies** is the architectural
+    state at session 11's close. Per session-9's "session 12+ for
+    Faker holds" framing, the synthetic-data emitter is now
+    plausible — categorical for low-cardinality, numeric for
+    measurements, plus the strategy layer to drive the synthesis
+    decisions.
+  - **Faker as the third sibling Π that consumes Profile.** The
+    Distributions emitter (session 9) consumed Profile for
+    diagnostic output; Faker would consume Profile for synthetic
+    *data* output. A18 amended (DECISIONS 2026-05-12) holds: Faker
+    takes `(Catalog, Profile)`, not Policy. The synthesis
+    parameters that *might* feel like policy (e.g., row-count
+    target, deterministic seed) are emission configuration, which
+    by A18 amended must live in a pass's output that Faker
+    consumes — so a `SynthesisPlan` value produced by a future
+    pass (or a Plan emitter parameter that doesn't qualify as
+    Policy under the amended A18). Defer the architectural
+    question; surface when the Faker work begins.
+  - **Cardinality strategies likely for session 12 or beyond.**
+    The session-10 brief listed cardinality-aware FK as a
+    candidate; `CategoricalUniqueness` covered the per-attribute
+    cardinality reasoning. Cross-attribute cardinality reasoning
+    (the FK case) is a natural follow-up but not pressing.
+  - **Joint distributions and temporal density** remain in the
+    rich-profiling agenda (ADMIRE.md 2026-05-12). Faker's quality
+    benefits from each; neither is required for a first cut.
+    Session 12 picks one or proceeds without and accepts the
+    limitations.
+
+**Findings beyond the brief:**
+
+  - **The `fanOut` extraction was a clean win.** Four pass drivers
+    became thin wrappers; behavior preserved exactly (570
+    pre-existing tests still pass after the refactor); the
+    canonical iteration logic now lives in one place. The
+    two-consumer threshold discipline (DECISIONS 2026-05-13)
+    proved itself: extracting at four consumers gave both DRY and
+    the empirical evidence that the abstraction was right.
+  - **The `StrategyEvaluator` alias is documentary, not
+    enforcement.** A type alias in F# doesn't constrain consumers
+    that don't ascribe to it. The alias names the canonical shape
+    for documentation and discoverability; structural enforcement
+    happens at the `FanOutConfig.Evaluate` boundary. This
+    distinction matters for future authors — write your evaluate
+    against `StrategyEvaluator<...>` to get a compile-time check;
+    the alias is opt-in.
+  - **The "hybrid mode" admire works.** First admire under the
+    three-mode framework (DECISIONS 2026-05-13). The boundary
+    between V1-migration share (uniqueness domain inheritance) and
+    V2-growth share (per-attribute distribution-driven inference)
+    was clear; the admire's structure made the boundary visible;
+    the test discipline (V2-only contract tests) followed
+    naturally.
+
+**Reasoning / consequences.** Session 11's job was validation
+under pressure, and the codification + the rich-profiling vector
+both passed. The strategy layer is now more thoroughly named
+(`fanOut`, `StrategyEvaluator`) and more thoroughly tested (third
+real test of the codification + first distribution-aware
+consumer). Session 12 inherits a layered architecture where the
+strategy infrastructure is solid; the rich-profiling foundation
+has two evidence types operational; and the next big move — Faker
+or third evidence type or cross-attribute strategies — has clean
+empirical context to choose from. Hold the cadence.

@@ -3,6 +3,7 @@ module Projection.Tests.RichProfilingEndToEndTests
 open System.Text.Json
 open Xunit
 open Projection.Core
+open Projection.Core.Passes
 open Projection.Adapters.Sql
 open Projection.Targets.Distributions
 open Projection.Targets.Json
@@ -466,3 +467,138 @@ let ``MILESTONE 10: monotonicity violation in fixture surfaces as adapter error`
     | Success _ -> Assert.Fail "Expected failure on monotonicity violation"
     | Failure errs ->
         Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
+
+// ---------------------------------------------------------------------------
+// Session 11 milestone — first distribution-aware strategy flowing through
+// the end-to-end pipeline.
+//
+// V1 JSON (snapshot)         V2-only JSON (Categorical evidence)
+//      |                                |
+// ProfileSnapshot.attach    ProfileStatistics.attach
+//      |                                |
+//      +---------> Profile <------------+
+//                     |
+// Catalog -- Policy --+--> CategoricalUniquenessPass
+//                                  |
+//                                  v
+//                       CategoricalUniquenessDecisionSet
+//
+// If this passes: the codification's third real test holds end-to-end.
+// Distribution evidence drives a strategy decision through the full
+// pipeline; the closed DU's fourth variant + the codified pattern
+// + the fanOut primitive + the StrategyEvaluator alias all carry
+// the load.
+// ---------------------------------------------------------------------------
+
+let private uniquenessProfileJson = """
+{
+  "distributions": [
+    { "Schema": "dbo", "Table": "OSUSR_R9_COUNTRY", "Column": "NAME",
+      "Kind": "Categorical",
+      "DistinctCount": 4, "IsTruncated": false,
+      "Frequencies": [
+        { "Value": "Canada", "Count": 1 },
+        { "Value": "Mexico", "Count": 1 },
+        { "Value": "Spain",  "Count": 1 },
+        { "Value": "United States", "Count": 1 }
+      ],
+      "ProbeStatus": { "CapturedAtUtc": "2026-05-13T00:00:00Z",
+                       "SampleSize": 4, "Outcome": "Succeeded" } }
+  ]
+}
+"""
+
+let private profileForCategoricalUniqueness () : Profile =
+    ProfileSnapshot.attach endToEndCatalog snapshotJson
+    |> Result.bind (ProfileStatistics.attach endToEndCatalog uniquenessProfileJson)
+    |> Result.value
+
+let private categoricalUniquenessConfig =
+    CategoricalUniquenessConfig.create 2L |> Result.value
+
+let private uniquenessPolicy =
+    { Policy.empty with
+        Tightening =
+            { Interventions =
+                [ CategoricalUniqueness ("v2-distrib", categoricalUniquenessConfig) ] } }
+
+[<Fact>]
+let ``MILESTONE 11: CategoricalUniquenessPass produces SuggestUnique end-to-end on rich-profiling fixture`` () =
+    let profile = profileForCategoricalUniqueness ()
+    let lineage =
+        CategoricalUniquenessPass.run endToEndCatalog uniquenessPolicy profile
+    // Country.NAME has 4 distinct values, all unique in the sample
+    // ⇒ SuggestUnique(EveryValueDistinct (4, 4)).
+    let countryNameDecision =
+        lineage.Value.Decisions
+        |> List.find (fun d -> d.AttributeKey = countryNameKey)
+    Assert.Equal(
+        CategoricalUniquenessOutcome.SuggestUnique
+            (EveryValueDistinct (4L, 4L)),
+        countryNameDecision.Outcome)
+
+[<Fact>]
+let ``MILESTONE 11: every attribute lacking Categorical evidence surfaces as DoNotSuggest(NoCategoricalEvidence)`` () =
+    let profile = profileForCategoricalUniqueness ()
+    let lineage =
+        CategoricalUniquenessPass.run endToEndCatalog uniquenessPolicy profile
+    // Every attribute except Country.NAME has no Categorical evidence
+    // ⇒ DoNotSuggest(NoCategoricalEvidence).
+    let withoutCountryName =
+        lineage.Value.Decisions
+        |> List.filter (fun d -> d.AttributeKey <> countryNameKey)
+    Assert.All(withoutCountryName, fun d ->
+        Assert.Equal(
+            CategoricalUniquenessOutcome.DoNotSuggest
+                CategoricalUniquenessKeepReason.NoCategoricalEvidence,
+            d.Outcome))
+
+[<Fact>]
+let ``MILESTONE 11: lineage discipline carries through the fanOut primitive`` () =
+    let profile = profileForCategoricalUniqueness ()
+    let lineage =
+        CategoricalUniquenessPass.run endToEndCatalog uniquenessPolicy profile
+    // One Annotated event per decision; pass version + name carried.
+    Assert.Equal(lineage.Value.Decisions.Length, lineage.Trail.Length)
+    Assert.All(lineage.Trail, fun e ->
+        Assert.Equal(CategoricalUniquenessPass.version, e.PassVersion)
+        Assert.Equal("categoricalUniqueness", e.PassName)
+        match e.TransformKind with
+        | Annotated _ -> ()
+        | other -> Assert.Fail(sprintf "Expected Annotated, got %A" other))
+
+[<Fact>]
+let ``MILESTONE 11: five-strategy coexistence holds end-to-end on the rich-profiling fixture`` () =
+    let profile = profileForCategoricalUniqueness ()
+    let nullCfg =
+        NullabilityTighteningConfig.create 0.0m false []
+        |> Result.value
+    let uniqCfg = UniqueIndexTighteningConfig.create true true
+    let fkCfg =
+        ForeignKeyTighteningConfig.create true true false false true
+    let policy =
+        { Policy.empty with
+            Tightening =
+                { Interventions =
+                    [ Nullability           ("null-1",  nullCfg)
+                      UniqueIndex           ("uniq-1",  uniqCfg)
+                      ForeignKey            ("fk-1",    fkCfg)
+                      CategoricalUniqueness ("cu-1",    categoricalUniquenessConfig) ] } }
+    // Each pass filters its own variant; produces decisions only
+    // tagged with its registered intervention id.
+    let nullLineage = NullabilityPass.run endToEndCatalog policy profile
+    let uniqLineage = UniqueIndexPass.run endToEndCatalog policy profile
+    let fkLineage   = ForeignKeyPass.run   endToEndCatalog policy profile
+    let cuLineage   = CategoricalUniquenessPass.run endToEndCatalog policy profile
+    Assert.All(nullLineage.Value.Decisions, fun d -> Assert.Equal("null-1", d.InterventionId))
+    Assert.All(uniqLineage.Value.Decisions, fun d -> Assert.Equal("uniq-1", d.InterventionId))
+    Assert.All(fkLineage.Value.Decisions,   fun d -> Assert.Equal("fk-1",   d.InterventionId))
+    Assert.All(cuLineage.Value.Decisions,   fun d -> Assert.Equal("cu-1",   d.InterventionId))
+
+[<Fact>]
+let ``MILESTONE 11: T1 byte-determinism holds for the new strategy`` () =
+    let profile = profileForCategoricalUniqueness ()
+    let r1 = CategoricalUniquenessPass.run endToEndCatalog uniquenessPolicy profile
+    let r2 = CategoricalUniquenessPass.run endToEndCatalog uniquenessPolicy profile
+    Assert.Equal<CategoricalUniquenessDecisionSet>(r1.Value, r2.Value)
+    Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
