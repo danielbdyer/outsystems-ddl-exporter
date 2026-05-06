@@ -122,7 +122,7 @@ let ``NullabilityTighteningConfig.create rejects NullBudget above 1`` () =
 [<Fact>]
 let ``NullabilityTighteningConfig.create captures every field`` () =
     let overrides =
-        [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
+        [ { AttributeKey = customerNameKey; Action = OverrideAction.KeepNullable } ]
     let cfg =
         NullabilityTighteningConfig.create 0.05m true overrides
         |> Result.value
@@ -138,7 +138,7 @@ let ``NullabilityTighteningConfig.create captures every field`` () =
 let ``shouldKeepNullable returns true for an attribute with a KeepNullable override`` () =
     let cfg =
         NullabilityTighteningConfig.create 0.0m false
-            [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
+            [ { AttributeKey = customerNameKey; Action = OverrideAction.KeepNullable } ]
         |> Result.value
     Assert.True(NullabilityTighteningConfig.shouldKeepNullable customerNameKey cfg)
 
@@ -153,7 +153,7 @@ let ``shouldKeepNullable returns false when no overrides registered`` () =
 let ``shouldKeepNullable returns false for a different attribute's override`` () =
     let cfg =
         NullabilityTighteningConfig.create 0.0m false
-            [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
+            [ { AttributeKey = customerNameKey; Action = OverrideAction.KeepNullable } ]
         |> Result.value
     Assert.False(NullabilityTighteningConfig.shouldKeepNullable customerIdAttrKey cfg)
 

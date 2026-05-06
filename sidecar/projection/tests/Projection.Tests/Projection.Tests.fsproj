@@ -28,6 +28,7 @@
     <Compile Include="TopologicalOrderPassTests.fs" />
     <Compile Include="CycleResolutionTests.fs" />
     <Compile Include="StaticAdapterDifferentialTests.fs" />
+    <Compile Include="NullabilityRulesTests.fs" />
     <Compile Include="RawTextEmitterTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
   </ItemGroup>

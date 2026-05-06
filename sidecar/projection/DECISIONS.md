@@ -877,3 +877,109 @@ and the refactor landed before push. The discipline pays off when
 findings land in code; deferring this to a later session would
 have shipped the wrong shape and forced a more expensive amendment
 later.
+
+## 2026-05-09 — NullabilityOutcome shape: ternary with structured rationale (the V1↔masterwork choice precedent)
+
+**Status:** decided
+**Context:** The first deliberate V1↔masterwork architectural choice
+V2 has made. V1 represents nullability decisions as
+`(MakeNotNull: bool, RequiresRemediation: bool, Rationales: string[])`
+— a binary primary outcome plus a remediation flag plus free-form
+string rationales. The masterwork prescribes a ternary
+`NullabilityOutcome = EnforceNotNull | KeepNullable |
+RequireOperatorApproval` with a single string `Rationale` and a
+`Risk` enum. Both have costs: V1's binary scrubs context the
+operator-approval case actually needs; the masterwork's strings
+require text parsing for downstream consumers.
+**Decision:** Adopt the **masterwork's ternary outcome** with V2's
+**structured rationale at the type level**. Each variant carries a
+typed rationale value:
+
+```fsharp
+type NullabilityOutcome =
+    | EnforceNotNull of evidence: NullabilityEvidence
+    | KeepNullable of reason: KeepNullableReason
+    | RequireOperatorApproval of conflict: NullabilityConflict
+```
+
+The rationale DUs (`NullabilityEvidence`, `KeepNullableReason`,
+`NullabilityConflict`) are closed and structured. Lineage chains and
+emitter consumers pattern-match on rationale rather than parsing
+strings.
+
+**Reasoning / consequences:** The structural rationale is more honest
+than V1's binary-plus-remediation (which scrubs context the
+operator-approval case actually needs) and more rigorous than the
+masterwork's ternary (which uses free-form strings). The cost is
+three small DUs; the benefit is type-checked rationale at every
+consumer site — an emitter that handles
+`MandatoryButHasNullsBeyondBudget` knows the exact data it has, no
+string parsing.
+
+**Precedent.** This is the first time V2 has made an architectural
+choice between V1 and the masterwork shapes. The principle the
+choice sets: **V2 doesn't inherit from one source by default; it
+picks based on what serves the algebra and the codebase.** Future
+similar choices (FK decision shape, unique decision shape, type
+decision shape — all coming when their admire passes land) follow
+the same principle. Where V1's shape serves better, take V1's.
+Where the masterwork's shape serves better, take the masterwork's.
+Where neither is right, refine V2's own.
+
+## 2026-05-09 — Observable-identity-on-empty-policy as structural commitment
+
+**Status:** decided (structural commitment, not just a default)
+**Context:** Per the plugin/intervention refactor (DECISIONS
+2026-05-09 — Tightening as a registry of named interventions),
+`TighteningPolicy.empty` carries zero interventions and produces zero
+decisions when a pass runs against it. This is V2's strict default —
+no system alterations unless the caller explicitly registers an
+intervention. The structural form of this rule is observable
+identity: a pass running against `Policy.empty` returns an empty
+output and emits no events.
+**Decision:** Promote the rule from "default behavior" to
+**structural commitment**. Every V2 pass that consumes Policy must
+satisfy:
+
+  *Observable identity on empty policy.* For a pass `p` taking
+  `(Catalog, Policy, Profile)` and returning `Lineage<Output>`:
+    - `p (catalog, Policy.empty, profile)` returns
+      `{ Value = empty-output; Trail = [] }`.
+    - The Catalog is unchanged (passes that produce values rather
+      than transforming the catalog return their `empty-output`).
+    - No lineage events are emitted (no `Touched`, no `Annotated`,
+      no `Created`, no `Removed`).
+
+This is the V2 algebraic property the masterwork's "warn, don't
+auto-fix" principle compiles down to. Future passes adopt the
+commitment by construction; tests verify it explicitly.
+
+**Reasoning / consequences:** "V2 takes no action on empty policy"
+is a structural property the type system + tests can guarantee, not
+a convention reviewers must remember to check. Future agents
+reading this entry inherit the rule for any new pass; the rule
+becomes a compiler-checkable obligation as more passes adopt the
+ProjectionInput-shaped signature.
+
+## 2026-05-09 — V1→V2 name mapping: `AllowCautiousNullabilityRelaxation` → `AllowMandatoryRelaxation`
+
+**Status:** decided (documentation; not a code change)
+**Context:** During the mode-collapse refactor, V1's
+`AllowCautiousNullabilityRelaxation` was renamed to
+`AllowMandatoryRelaxation` in V2. The rename names the semantic
+("permit mandatory→nullable relaxation under evidence pressure")
+rather than the now-collapsed Cautious mode that was the V1 flag's
+referent.
+**Decision:** Record the mapping here so the V1↔V2 grep-bridge
+exists at the documentation layer. Migration scripts, debugging
+sessions, and future agents tracing V1 behavior to V2 can follow
+the rename through this entry.
+
+| V1 name                                  | V2 name                    |
+|------------------------------------------|----------------------------|
+| `AllowCautiousNullabilityRelaxation`     | `AllowMandatoryRelaxation` |
+
+This entry pairs with the broader V1↔V2 vocabulary mapping in the
+2026-05-06 — General names in the pure core entry; this is the
+nullability-specific rename. Future renames at the rules-module
+level land here as additional rows.
