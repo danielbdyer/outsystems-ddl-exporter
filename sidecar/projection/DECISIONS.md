@@ -1,6 +1,6 @@
 # DECISIONS
 
-Append-only log of resolved questions during sidecar development. Each entry
+Append-only log of resolved questions during V2 development. Each entry
 captures the decision, the reasoning, and (where applicable) the axiom or
 theorem it serves. Future readers — including future agents and Danny —
 should be able to reconstruct context from this log without spelunking
@@ -13,6 +13,11 @@ Format:
     **Context:** ...
     **Decision:** ...
     **Reasoning / consequences:** ...
+
+Entries are append-only. Earlier entries are preserved as historical
+artifacts even when later entries refine or supersede them. Where an
+earlier decision is amended, the amendment names the prior entry by date
+and title rather than rewriting it.
 
 ---
 
@@ -151,3 +156,205 @@ ValidationError list`. `ValidationError` is a record with `Code` (e.g.,
 `"sskey.empty"`), `Message`, `Metadata` map. `Bind`, `Map`, `Ensure`
 operators preserved. Error codes follow the trunk's
 `"category.subject.problem"` lower-dot convention.
+
+## 2026-05-06 — V2 mandate (supersedes the sidecar framing)
+
+**Status:** decided
+**Context:** What was originally framed as a self-contained sidecar
+experiment is elevated to V2 of the codebase. V2 is the foundation V1
+will eventually orbit around via an admire-and-extract migration. The
+folder path stays at `sidecar/projection/` to preserve cherry-pick
+history; the conceptual frame upgrades.
+**Decision:** The pure F# core under `sidecar/projection/` is V2's spine.
+V1 (the existing C# implementation in the rest of the trunk) continues to
+operate untouched. V2 is additive. Each V1 component will eventually be
+admired (read carefully, categorized algebraically, placed) and extracted
+(brought into V2 as a pure pass, an adapter at a port, or a split
+between the two).
+**Reasoning / consequences:** README is reframed. AXIOMS.md gains a V2
+Amendments section (preserving the original A1–A31 / T1–T10 numbering).
+ADMIRE.md is created as the append-only log of V1 admirations and their
+V2 placements.
+
+## 2026-05-06 — UAT-Users dual-mode collapses to "passes feed emitters"
+
+**Status:** decided
+**Resolves:** Q1 from the V2 handoff reply.
+**Context:** V1's UAT-Users transform is dual-mode: discovery in Stage 3,
+application in either Stage 5 (INSERT pre-transform) or Stage 6 (UPDATE
+post-load). The masterwork frames this as a special case; the algebraic
+spec was silent on it. The decomposition flagged it as a tension point.
+**Decision:** Discovery is one E-pass producing a `UserRemapContext`
+value attached to the enriched IR. Application is two sibling Π's: an
+INSERT-mode Π that consumes catalog + context to emit pre-transformed
+INSERTs, and an UPDATE-mode Π that consumes the context alone to emit
+standalone CASE-WHEN UPDATEs. Both Π's read the same enriched IR; each
+chooses which subset of attached values it consumes.
+**Reasoning / consequences:** The dual-mode framing collapses to a
+canonical algebraic principle: **passes may produce values consumed by
+emitters, not just by other passes.** This becomes new axiom A32. It is
+the canonical answer for any future "discover something at one stage,
+use it at another" pattern.
+
+## 2026-05-06 — Policy is three orthogonal axes
+
+**Status:** decided
+**Resolves:** Q2.
+**Context:** The decomposition's three-dimensional decomposition
+refinement (Selection / Emission / Insertion) and the masterwork's
+bounded-context partitioning pointed at the same structure. The
+algebraic spec had Policy as a single opaque aggregate.
+**Decision:** Policy is a structured F# record with three named axes:
+
+```fsharp
+type Policy = {
+    Selection : SelectionPolicy
+    Emission  : EmissionPolicy
+    Insertion : InsertionPolicy
+}
+```
+
+Each axis is its own value type with its own validation. The three are
+orthogonal: changing one does not constrain the others. AXIOMS.md
+amendment to A12 records the structural commitment.
+**Reasoning / consequences:** The three axes become the canonical place
+to ask "where does this configuration belong?" Type system makes the
+axes discoverable and resists drift.
+
+## 2026-05-06 — Diagnostics live in a writer parallel to Lineage
+
+**Status:** decided
+**Resolves:** Q3.
+**Context:** The masterwork prescribes three diagnostic channels
+(operator / auditor / developer) orthogonal to domain logic.
+**Decision:** `Lineage<'a>` remains the foundational, content-addressable,
+constitutive provenance writer. A separate `Diagnostics<'a>` writer
+(name TBD) carries human-consumable telemetry; near-term it is
+single-channel, structured emission. The three-channel split arrives
+when a real consumer asks for differentiated output.
+**Reasoning / consequences:** Lineage and diagnostics have different
+lifetimes, consumers, verbosity, and audiences. Conflating them would
+either bloat lineage with operator-text or force diagnostics into
+lineage's structural constraints.
+
+## 2026-05-06 — Profile is a third substantive input
+
+**Status:** decided — real algebraic amendment
+**Resolves:** Q3.5.
+**Context:** Both the decomposition and the masterwork demand profile
+evidence (null counts, orphan FK rates, uniqueness violations) feed
+policy decisions. The original "three aggregates, only three" framing
+(A6) cannot absorb this — Profile is empirical evidence, distinct from
+structural truth (Catalog) and operator intent (Policy).
+**Decision:** Amend the algebra. The system has **three substantive
+inputs** — Catalog, Policy, Profile — and **one temporal dimension** —
+Lifecycle. Together they fully determine the projection.
+
+```fsharp
+type ProjectionInput = {
+    Catalog : Catalog
+    Policy  : Policy
+    Profile : Profile  // may be Profile.empty for use cases needing no evidence
+}
+```
+
+`E : (Catalog, Policy, Profile) → EnrichedCatalog`. Passes that do not
+need profile evidence ignore it and behave identically as if the input
+were `Profile.empty`. Passes that need it (the eventual nullability and
+FK evaluators) accept it as a parameter.
+**Reasoning / consequences:** A6 is amended. A12 (policy as data)
+remains intact but composed alongside Profile. A17 (Project = Π ∘ E) is
+amended to specify E's signature. T1 (determinism) extends to the
+triple. New axiom A34 names Profile's independence from Catalog and
+Policy. AXIOMS.md records all four amendments.
+
+## 2026-05-06 — General names in the pure core; V1↔V2 mapping at the boundary
+
+**Status:** decided
+**Resolves:** Q4.
+**Context:** V1 uses domain-prescriptive names (`EntityModel`,
+`ModuleModel`, `OsmModel`) the masterwork calls "ontological law." The
+algebra is source-agnostic and uses general names (`Kind`, `Module`,
+`Catalog`).
+**Decision:** Pure core uses general algebraic names. Boundary
+adapters translate. The mapping is documented in the README and
+preserved here for cherry-pick context:
+
+| V1 (`Osm.Domain`)   | V2 (`Projection.Core`) | Notes                          |
+|---------------------|------------------------|--------------------------------|
+| `OsmModel`          | `Catalog`              | top-level aggregate            |
+| `ModuleModel`       | `Module`               | coproduct cell                 |
+| `EntityModel`       | `Kind`                 | the schema-level entity type   |
+| `AttributeModel`    | `Attribute`            | scalar property                |
+| `RelationshipModel` | `Reference`            | directional FK edge            |
+| `EntityName`        | wrapped in `SsKey`     | identity, type-distinguished   |
+| `TableName`         | `PhysicalRealization`  | physical projection            |
+| `ProfileSnapshot`   | `Profile`              | empirical evidence             |
+
+**On identity (`SsKey` vs `EntityName`):** V2 `SsKey` wraps whatever V1
+supplies as canonical identity. For OutSystems, that is `EntityName` —
+the logical name, stable across rename-to-database. It is **not**
+`PhysicalTableName`, which can change when the database is migrated.
+The principle is portable: identity is whatever survives the source's
+most aggressive refactoring. When DACPAC support arrives, identity is
+DACPAC's most stable identifier, wrapped in `SsKey`.
+**Reasoning / consequences:** Algebra in the core stays clean. The
+mapping is a forcing function for future translations: when DACPAC
+support arrives, the question "how does DACPAC's `TableDefinition` map
+to V2's `Kind`?" has a place to live. If the mapping grows large, it
+graduates to its own `MAPPING.md`.
+
+## 2026-05-06 — Transform registry deferred until N≥4 passes
+
+**Status:** decided
+**Resolves:** Q5.
+**Context:** The masterwork prescribes a TransformRegistry with explicit
+ordering constraints, discoverability, and startup validation. Today V2
+has one pass.
+**Decision:** Continue with `>>` composition for the next two or three
+passes. Graduate to the registry when:
+- composition with `>>` starts to feel fragile, or
+- ordering rationale begins accumulating in code comments rather than
+  in types, or
+- `N` (number of passes) reaches four.
+
+Migration when it arrives is mechanical: each pass becomes a
+`RegisteredTransform`, ordering constraints get declared, the
+composition site changes from `pass1 >> pass2 >> pass3` to a registry
+configuration.
+**Reasoning / consequences:** The registry's complexity earns its keep
+when the load is there. Until then, `>>` composition is more legible.
+
+## 2026-05-06 — Schema vs Data ordering law promoted to A33
+
+**Status:** decided
+**Context:** Masterwork §14 (lines 946–956) prescribes that schema
+emission uses deterministic (alphabetical) ordering, while data emission
+uses topological (FK-dependency-safe) ordering. The algebraic spec was
+silent on this distinction.
+**Decision:** Promote the rule to a V2 axiom (A33). The F# type system
+encodes it: a schema-emission configuration cannot accept a topological-
+order input, and vice versa. AXIOMS.md records the law. Implementation
+arrives when the first emission pass that takes ordering as input does.
+**Reasoning / consequences:** Schema artifacts must produce reproducible
+diffs (alphabetical ordering survives every refactor). Data artifacts
+must respect FK constraints (topological ordering prevents reference
+violations). Mismatching the two is a class of subtle bugs the type
+system can prevent at compile time.
+
+## 2026-05-06 — Multi-spine state pattern is endorsed but not yet built
+
+**Status:** decided (deferred implementation)
+**Context:** Masterwork §15 (lines 795–949) prescribes multiple typed
+"spines" (`ExtractionSpine`, `SchemaSpine`, `FullPipelineSpine`) so that
+different use cases consume only the stages they need, without bloating
+one mega-state.
+**Decision:** Bless the pattern as the V2 framing for use-case-specific
+state types. Build spines as evidence demands — not in the next handful
+of commits, but when the algebra needs to express a use case where
+"there is no Profile" or "there is no Apply" is a structural fact.
+**Reasoning / consequences:** Avoids type bloat. Allows the type
+system to prevent illegal compositions (an extract-model spine cannot
+reach Apply). Held against premature spine-explosion: build one spine
+first; introduce a second when the first one starts collecting optional
+fields that are mandatory only in one mode.

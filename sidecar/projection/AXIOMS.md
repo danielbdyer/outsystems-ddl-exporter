@@ -320,3 +320,178 @@ Comments at non-obvious code sites cite the law:
 A test failure points at a specific axiom; a code reviewer can verify a
 pass against the law it claims to satisfy. The discipline costs nothing and
 pays compound interest.
+
+---
+
+# V2 Amendments
+
+V2 reading of the masterwork (`docs/architecture/domain-model-constitution.md`)
+and the decomposition (`docs/architecture/entity-pipeline-unification-v2.md`)
+surfaced refinements to four original axioms and added three new ones.
+
+The discipline: original numbering is preserved as a historical artifact of
+the V1 algebraic spec. Amendments are recorded here with their rationale.
+New axioms are appended (A32–A34, T11). Code comments and test names
+should cite the **amended** form when both exist; the original form is the
+formal lineage of the amendment.
+
+## A6 amended (2026-05-06) — three substantive inputs, one temporal dimension
+
+**Original (V1):** "Three aggregates, only three. The system has three
+substantive degrees of freedom: Catalog, Policy, Lifecycle."
+
+**Amended (V2):** The system has **three substantive inputs** — Catalog,
+Policy, and Profile — and **one temporal dimension** — Lifecycle. Together
+they fully determine the projection.
+
+  - **Catalog** is structural truth — what kinds exist.
+  - **Policy** is operator intent — three orthogonal axes (see A12 amended).
+  - **Profile** is empirical evidence — what the data actually shows.
+  - **Lifecycle** is time — the partial order under which all three evolve.
+
+Profile cannot be folded into Catalog (structure vs. evidence) or Policy
+(intent vs. fact). It earns its place by changing on a different timescale
+and originating from a different source.
+
+  *Enforcement.* `ProjectionInput = { Catalog; Policy; Profile }` in F#;
+  `Profile.empty` is a valid value for use cases that consume no evidence.
+  *Property test.* See A34 (Profile is independent).
+
+## A12 amended (2026-05-06) — Policy has three orthogonal axes
+
+**Original (V1):** "Policy is data. The Policy aggregate is a static
+configuration value: auditable, diffable, version-controllable."
+
+**Amended (V2):** Policy is data **with three orthogonal axes** — Selection
+(which kinds participate), Emission (what artifacts are produced), Insertion
+(how artifacts are applied). Each axis is its own structured value; the
+three are composed in a single record. Changing one axis does not constrain
+the others.
+
+  *Enforcement.* `Policy = { Selection; Emission; Insertion }` in F#; each
+  axis a value type with its own validation.
+  *Property test.* `policyAxesAreOrthogonal` — perturbing one axis does not
+  alter the output of passes that read the other two.
+
+## A17 amended (2026-05-06) — E's signature
+
+**Original (V1):** "Project = Π ∘ E."
+
+**Amended (V2):** `Project = Π ∘ E`, where
+`E : (Catalog, Policy, Profile) → EnrichedCatalog`. Π consumes the
+EnrichedCatalog and produces target-surface artifacts; some Π's may also
+consume specific value-typed payloads attached to nodes by E (see A32).
+
+  *Enforcement.* Pass signatures specify the inputs they consume; passes
+  that need profile evidence accept `Profile` explicitly.
+
+## T1 amended (2026-05-06) — determinism extends to the triple
+
+**Original (V1):** "Determinism. `Project` is a pure function: same catalog,
+same policy, same surface."
+
+**Amended (V2):** `Project` is a pure function on the triple
+`(catalog, policy, profile) → surface`. Same triple, same surface,
+bit-identical. Refresh on an unchanged triple is idempotent.
+
+  *Property test.* `T1: Project is deterministic on (catalog, policy, profile)`.
+
+---
+
+## A32 (new, 2026-05-06) — Passes may produce values consumed by emitters
+
+Passes are not restricted to producing values consumed by other passes. A
+pass may attach a value-typed payload to the EnrichedCatalog (or alongside
+it) that an emitter (Π) chooses to consume. Π is not restricted to
+consuming only the structural skeleton; it may consume specific values
+attached by E.
+
+The masterwork's "dual-mode transform" framing (UAT-Users discovery in
+Stage 3, application in Stage 5 INSERT or Stage 6 UPDATE) collapses to this
+principle. Discovery is one E-pass producing a `UserRemapContext` value.
+Application is two sibling Π's: an INSERT-mode Π consuming `(catalog,
+context)` to emit pre-transformed INSERTs, and an UPDATE-mode Π consuming
+`(context)` alone to emit standalone UPDATEs.
+
+This becomes the canonical answer for any future "discover something at
+one stage, use it at another" pattern. There is no special case; there is
+the algebra working correctly.
+
+  *Enforcement.* The EnrichedCatalog (or a sibling ProjectionContext value)
+  carries pass-attached values; Π's signature names the values it consumes.
+  *Property test.* `A32: discovered value visible to emitter`. Concretely
+  for UAT-Users when implemented: discovery pass produces the same
+  `UserRemapContext` regardless of which Π consumes it; both Π's agree on
+  identity correspondences (a special case of T4).
+
+## A33 (new, 2026-05-06) — Schema-Data Ordering Law
+
+Schema emission uses **deterministic ordering** (alphabetical by SsKey or
+stable canonical order); data emission uses **topological ordering**
+(FK-dependency-safe). The two ordering disciplines are distinct and the
+type system must forbid mismatches: a schema-emission configuration cannot
+accept a topological-order input, and vice versa for data emission.
+
+Rationale: schema artifacts must produce reproducible diffs (alphabetical
+ordering survives every refactor; .sqlproj files stay clean). Data
+artifacts must respect FK constraints (topological ordering prevents
+reference violations on apply). Mismatching the two produces either fragile
+diffs (topological in schema) or constraint violations (deterministic in
+data).
+
+  *Enforcement.* Two ordering value types — `DeterministicOrder` and
+  `TopologicalOrder` — are not interchangeable. Emission configs accept
+  one or the other, not both.
+  *Property test.* Type-level: `SchemaEmissionConfig` cannot type-check
+  with a `TopologicalOrder`; `DataEmissionConfig` cannot type-check with
+  a `DeterministicOrder`.
+
+## A34 (new, 2026-05-06) — Profile is independent of Catalog and Policy
+
+Profile is structurally independent of Catalog and Policy. Changes to
+Profile do not induce changes to either. Passes that do not consume Profile
+are unaffected by it (their output is identical for `Profile.empty` as for
+any populated Profile). Passes that consume Profile (e.g., the eventual
+nullability evaluator, the FK enforcement evaluator) declare their
+dependency in their type signature.
+
+Profile carries no back-references to Catalog or Policy. If a future
+schema tempts a `profile.entityId` or a `profile.policyMode` field, that
+is coupling; resist it. Profile is indexed by coordinate at the boundary,
+not at the IR level.
+
+  *Enforcement.* `Profile` record references no Catalog or Policy types.
+  *Property test.* `A34: passes that do not read Profile produce identical
+  output for Profile.empty and any Profile`.
+
+---
+
+## T11 (new, 2026-05-06) — Sibling Π's commute on shared E-attached values
+
+A specialization of T4 (Sibling functor commutativity) for A32. When two
+Π's consume different subsets of values produced by a shared E, their
+outputs agree on the values they share. Concretely: if Π_A consumes
+`(catalog, X)` and Π_B consumes `(X)` from the same enriched catalog, then
+both Π's see the same `X` and any structural correspondence keyed by `X`
+holds in both surfaces.
+
+  *Property test.* `T11: sibling Pi's agree on shared E-attached values`.
+
+---
+
+# Conventions and history
+
+The original A1–A31 / T1–T10 numbering reflects the V1 algebraic spec as
+read at scaffold time. V2 amendments are listed above with explicit
+rationale; new axioms continue the original numbering. Future amendments
+should follow the same discipline:
+
+1. Preserve original numbering and original text.
+2. Append the amendment under "## A<n> amended (date) — short title" with
+   the new statement and the rationale.
+3. Append new axioms / theorems by continuing the numbering (A32, A33, ...).
+4. Code and test names cite the amended form by default; the original is
+   the lineage of the amendment, not the rule.
+
+The axioms have a history. The history is part of how the system tells its
+truth across time.
