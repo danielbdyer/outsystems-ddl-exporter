@@ -41,6 +41,7 @@
     <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="RawTextEmitterTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
+    <Compile Include="DistributionsEmitterTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -55,6 +56,7 @@
     <ProjectReference Include="..\..\src\Projection.Core\Projection.Core.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Targets.Json\Projection.Targets.Json.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
   </ItemGroup>
 
