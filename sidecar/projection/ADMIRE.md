@@ -214,3 +214,194 @@ once the boundary adapter is in place.
   `StaticRow` (every row has the same `Values` map keys), this fallback
   is unreachable; document and drop in the V2 pass.
 
+---
+
+## 2026-05-07 — `EntityDependencySorter` (`src/Osm.Emission/Seeds/EntityDependencySorter.cs`)
+
+**Status:** admired (placement decided)
+
+### What it does (algebraic terms)
+
+Takes a collection of static entity tables plus an OSM model and
+produces a topologically sorted ordering of the tables — children after
+parents, with explicit cycle handling. Implements Kahn's algorithm for
+the topological sort and Tarjan's algorithm for strongly connected
+components (cycle detection). When cycles are detected, attempts to
+auto-resolve by classifying edges as Weak (nullable + NoAction/SetNull)
+vs Cascade vs Other; if the graph contains exactly one weak edge in a
+2-cycle ("asymmetric audit cycle"), removes it; if not, falls back to
+alphabetical ordering. Optional manual cycle-resolution overrides via
+`CircularDependencyOptions`. Optional junction-table deferral when bridge
+tables (2+ FKs) need to be emitted last. Returns an immutable result
+record with the ordering, mode flag, edge counts, and SCC diagnostics.
+
+Pure with one explicit side-effect channel: callers may pass a mutable
+`ICollection<string>` to receive diagnostic messages.
+
+### V2 placement
+
+**Pure pass in `Projection.Core.Passes`** — but **producing an A32
+emitter-consumable value, not a structural change to the catalog.**
+
+The masterwork's §16 (Topological Order Law) makes ordering a property
+of the data emission, not of the schema. Schema emission uses
+deterministic (alphabetical) ordering per A33; data emission consumes
+the topological ordering. So:
+
+- The pass `Projection.Core.Passes.TopologicalOrder.run` takes the full
+  `Catalog` and produces a `TopologicalOrder` value carrying the sorted
+  kind list, the edge classification, the cycle diagnostics, and the
+  ordering mode.
+- The `Catalog` itself is **not** restructured — kinds keep their
+  declaration order. The ordering is metadata, consumed by emitters
+  that need it.
+- This is a textbook A32 instance: one pass produces a value
+  (`TopologicalOrder`) that multiple Π's consume — the (eventual) data-
+  emission Π reads it for INSERT order; the diagnostics Π reads it for
+  cycle reporting; the schema-emission Π ignores it (per A33).
+
+The pass operates on the **full** selected catalog (per masterwork §16:
+sort always sees all selected kinds; emission filters afterward), not
+on a per-modality subset. This eliminates the V1 "scoped sort" pathology
+(decomposition Vector 3, lines 1727–1803).
+
+### Inputs and outputs (V2 IR)
+
+Consumes:
+
+- `Catalog` — kinds + their references (the FK edges).
+- `Policy.Selection` — to know which kinds participate (sort runs on
+  the selected subset, but **all** selected kinds, never sub-scoped to
+  static-only).
+- `Policy.Insertion` — informs the emission consumer; not consumed by
+  the sort itself.
+- A future `OrderingPolicy` axis (probably under `EmissionPolicy`)
+  carries the manual cycle overrides equivalent to V1's
+  `CircularDependencyOptions`.
+
+Produces (as an emitter-consumable value, A32):
+
+```fsharp
+type TopologicalOrder = {
+    Mode             : OrderingMode
+    Order            : Kind list                     // sorted, FK-safe
+    Edges            : (SsKey * SsKey) list          // (source, target)
+    MissingEdges     : (SsKey * SsKey) list          // FKs to absent kinds
+    Cycles           : CycleDiagnostic list          // SCCs that survived
+    Diagnostics      : string list                   // human-readable trace
+}
+
+and OrderingMode = Topological | Alphabetical | JunctionDeferred
+
+and CycleDiagnostic = {
+    Members         : SsKey list
+    BreakableEdges  : (SsKey * SsKey) list
+    Reason          : string                         // e.g. "no weak edge in 3-cycle"
+}
+```
+
+The pass also emits one `Touched` lineage event per kind it considered
+(per A25), and `Annotated` events for cycle-resolution actions.
+
+### Existing test coverage
+
+`tests/Osm.Emission.Tests/EntityDependencySorterTests.cs` has eight
+example-based tests. Translated:
+
+| V1 test | Lines | Category | Asserts | V2 translation |
+|---|---|---|---|---|
+| `SortByForeignKeys_ParentsPrecedeChildren` | 14–96 | basic FK ordering | parent before child; EdgeCount=1, NodeCount=2 | **Property** — `forall acyclic graph: every (parent, child) edge has parentIndex < childIndex` |
+| `SortByForeignKeys_ReportsEdgesAfterMetadataEnrichment` | 98–204 | edge-detection | edges only counted when ActualConstraints carries column metadata | **Behavioral** — V2 derives edges from `Reference.SourceAttribute` / `TargetKind` directly; the V1 metadata-enrichment dance disappears (boundary cleans it up) |
+| `SortByForeignKeys_ReportsMissingEdgesWhenReferencedTableAbsent` | 206–263 | missing-edge | absent parent ⇒ MissingEdgeCount=1, sort proceeds | **Property** — `forall graph with N missing edges: TopologicalOrder.MissingEdges.Length = N` |
+| `SortByForeignKeys_DetectsCyclesAndAppliesFallback` | 265–367 | symmetric cycle | bidirectional FKs ⇒ Mode=Alphabetical, CycleDetected=true | **Behavioral** — re-expressed in F#; verifies symmetric-cycle fallback to alphabetical |
+| `SortByForeignKeys_AutoDetectsAsymmetricAuditCycle` | 369–483 | asymmetric cycle | one weak edge in 2-cycle ⇒ auto-broken, Mode=Topological | **Property** — `forall 2-cycle with exactly one weak edge: cycle resolved, weak edge appears in Cycles[].BreakableEdges` |
+| `SortByForeignKeys_SkipsAutoDetectionWhenManualCyclesExist` | 485–624 | manual cycle config | manual ordering overrides auto-detection; diagnostics confirm "skipping automatic" | **Behavioral** — V2 OrderingPolicy explicitly opts into manual mode |
+| `SortByForeignKeys_ResolvesSanitizedEffectiveNames` | 626–712 | naming overrides | physical-name FKs resolve via NamingOverrideOptions | **Skip / Boundary** — V2 keeps logical-name resolution in the IR via SsKey; this V1 concern is handled by the Catalog Reader before the sort sees the input |
+| `SortByForeignKeys_DefersJunctionTablesWhenEdgesMissing` | 714–843 | junction deferral | bridge table with 2 FKs ⇒ deferred to end when option set | **Behavioral** — V2 OrderingPolicy.DeferJunctions flag; same observable behavior |
+
+V2 invariants the property tests will defend (some lifted from V1's
+example tests, some new):
+
+- `every emitted kind appears exactly once in the output order` (V1
+  implicit; V2 explicit FsCheck).
+- `acyclic graphs always produce Mode = Topological` (V1 not asserted
+  as a property; V2 explicit).
+- `asymmetric cycles with exactly one weak edge always resolve via the
+  weak edge` (V1 tested with one example; V2 sweeps the combinatorial
+  space).
+- `manual cycle ordering takes precedence over auto-detection`.
+- `MissingEdges count is exact and round-trips through serialization`.
+- `dictionary iteration order does not perturb the output` — see
+  Edges/risks below; this is the most important V2 property because
+  V1's correctness depends on it implicitly.
+
+Differential testing against the V1 fixtures (the small "Parent /
+Child / Audit / Bridge" graphs constructed inline in the V1 test file)
+lands when the C# Catalog Reader can ingest the equivalent V2 form;
+until then property + behavioral tests carry the contract.
+
+### Migration path
+
+1. **Define `TopologicalOrder` and `OrderingPolicy` value types** in
+   `Projection.Core` (the value Π consumes is part of the IR's surface
+   even though it's not part of the catalog itself).
+2. **Port Kahn's algorithm** as a pure F# function over the
+   `(Kind list, (SsKey * SsKey) list)` graph extracted from the catalog.
+3. **Port Tarjan's SCC** as a pure F# function — no global state, no
+   recursion-stack reliance; an explicit stack-based implementation is
+   easier to reason about.
+4. **Edge classification** (Weak / Cascade / Other) — derive from the
+   `Reference.OnDelete` discriminant plus the source attribute's
+   `Column.IsNullable`. Strictly local; pure.
+5. **Cycle resolver** — start with the V1 algorithm (asymmetric-2-cycle
+   detection only); add the heuristic feedback-arc-set search later if
+   real fixtures need it. Defer the V1 `MaxCombinationsToTry` complexity
+   until evidence demands it.
+6. **Junction-table heuristic** — port last; flagged below as a real
+   risk because V1's heuristic has false positives.
+7. **Diagnostics** — return as a list of strings on `TopologicalOrder`,
+   never as a side effect (see Edges/risks).
+8. **Sequencing.** This pass lands after `Policy` gains an `Ordering`
+   axis (which carries the manual cycle config); the value type
+   `TopologicalOrder` lands first so it can be round-tripped through
+   tests before the algorithm is wired.
+
+### Edges / risks
+
+- **Dictionary iteration order is load-bearing in V1.** V1 relies on
+  C# `Dictionary<K,V>`'s insertion-order iteration. `OsmModel.Modules`
+  → `Entities` → `Relationships` is iterated without an explicit sort,
+  and Kahn's `InsertSorted` uses a `ReadyQueueComparer` that breaks
+  ties by name only as a fallback. V2 must enforce stable iteration
+  (sort kinds and references by `SsKey` before graph construction) and
+  add a property test sweeping shuffled inputs. **This is the highest-
+  leverage V2 improvement on V1.**
+- **Single-constraint assumption.** V1's `ActualConstraints[0]` ignores
+  any subsequent constraints on the same relationship (line 889). V2
+  classifies all constraints; if they disagree on edge strength the
+  pass emits a diagnostic naming the disagreement.
+- **Missing edges do not block sorting.** V1 tolerates FKs to absent
+  tables (alphabetical fallback). V2 should tolerate them too —
+  partial exports rely on this — but the `MissingEdges` field on
+  `TopologicalOrder` makes the tolerance explicit and auditable.
+- **Junction-table heuristic has false positives.** V1 flags a table
+  as a junction if it has 2+ non-PK FK columns. A 3-column table with
+  ID + 2 FKs + a `CreatedDate` matches but isn't a junction. V2
+  should let `OrderingPolicy` carry an explicit junction-table SsKey
+  set; the heuristic becomes a fallback.
+- **Diagnostics as side-effect channel.** V1 mutates a caller-supplied
+  `ICollection<string>`. V2 returns diagnostics as a value — purity
+  preserved; observability unchanged.
+- **Case-insensitive name comparison hard-coded.** V1's `TableKeyComparer`
+  is case-insensitive (SQL Server convention). V2 keys by `SsKey`
+  which is case-sensitive at the type level — the right call, since
+  identity should not depend on case.
+- **`SCCs` returned as table-name strings.** V1 returns SCC members as
+  strings, requiring callers to look up entities by name. V2 returns
+  `SsKey list list` directly — strongly typed, unambiguous, no lookup.
+- **Cycle-resolution combinatorial blowup.** V1's
+  `FindMinimumFeedbackArcSet` caps at 50,000 combinations and bails to
+  "remove all weak edges." For V2's synthetic milestone the simple
+  asymmetric-2-cycle resolver is enough; the heuristic search arrives
+  when a real fixture has a 3+ node cycle.
+
