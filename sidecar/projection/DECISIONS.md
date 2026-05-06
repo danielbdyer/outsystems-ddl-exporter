@@ -2108,3 +2108,96 @@ question from reopening when the next numeric evidence type lands.
 The choice is small but load-bearing for T1; making it canonical
 saves the next agent a deliberation cycle and ensures consistency
 across the rich-profiling agenda's growth.
+
+## 2026-05-13 — Composition vocabulary cash-out: `fanOut` codified, four others deferred
+
+**Status:** decided (deferred-decisions cash-out, session-8 trigger)
+**Context:** Session 8 sketched five strategy-composition primitives
+(`fanOut`, `fallback`, `accumulate`, `wrap`, `lift`) and deferred
+implementation pending the two-consumer threshold (DECISIONS
+2026-05-11 — composition vocabulary sketch). Session 11's fourth
+registered-intervention strategy (`CategoricalUniqueness`) fired
+the trigger condition. This entry records the cash-out per the
+empirical pattern across all four pass drivers.
+
+**Empirical state at the trigger:**
+
+| Primitive | Consumers | Verdict | Disposition |
+|---|---|---|---|
+| `fanOut` | **4** (Nullability, UniqueIndex, ForeignKey, CategoricalUniqueness) | Threshold met by wide margin | **Codified** in `Projection.Core/Strategies/Composition.fs` |
+| `fallback` | 0 | No strategy falls back to another | Deferred |
+| `accumulate` | 0 | No strategy aggregates across other strategies | Deferred |
+| `wrap` | 0 | No instrumented strategies | Deferred |
+| `lift` | 0 | No context translation needed | Deferred |
+
+**Decision: codify `fanOut`; defer the other four.** The
+two-consumer threshold (DECISIONS 2026-05-13 — emergent primitives)
+is the test; `fanOut` passes by a wide margin (4 consumers); the
+others have no consumers and stay deferred until their first one
+arrives.
+
+**`fanOut` shape.** A `FanOutConfig<'context, 'config, 'decision,
+'decisionSet>` record carries the strategy-specific functions
+(intervention filter, sorted-context enumerator, evaluate seam,
+empty decision set, decision-set wrapper, lineage event builder).
+The `fanOut` function is the canonical iteration discipline:
+observable identity on empty policy; per-(context × intervention)
+fan-out; one event per decision; deterministic ordering; lineage
+emission via `Lineage.tellMany`.
+
+**Refactoring impact.** All four pass drivers refactored to
+delegate to `Composition.fanOut`. The `run` functions become thin
+wrappers that construct the FanOutConfig (capturing strategy-specific
+context like `ForeignKeyRules.evaluate`'s catalog parameter via
+closure) and invoke the primitive. Pass-driver behavior unchanged
+(all 570 tests still pass after the refactor); 8 new tests in
+`CompositionTests.fs` exercise the primitive directly via a
+synthetic minimal strategy.
+
+**Why the four others stay deferred:**
+
+  - **`fallback`**: every strategy returns a *total* decision (one
+    of the closed-DU outcome variants for every input combination
+    — the "total decisions, named skips" core prediction from
+    session-8 codification refinement 3). No strategy needs a
+    fallback because no strategy ever returns "no decision."
+    `fallback` becomes useful when a strategy can refuse to decide
+    and another picks up — currently no consumer.
+  - **`accumulate`**: the closed `TighteningIntervention` DU keeps
+    each strategy's decision set independent. A pass that produces
+    a unified per-attribute annotation by merging Nullability +
+    CategoricalUniqueness decisions (e.g., a "column metadata"
+    annotation pass) would need `accumulate`. No such pass exists.
+  - **`wrap`**: per-strategy lineage subtrails / instrumentation /
+    timing is not yet a need. Lineage discipline lives in the pass
+    driver via `BuildEvent`; per-strategy diagnostics
+    (`ProfilingInsight`-style) are not yet modeled in V2.
+  - **`lift`**: every strategy operates on its natural context
+    (`Attribute`, `Index`, `Reference`). No strategy's logic is
+    reused across different context shapes. The eventual scenario
+    — a Nullability-style strategy applied to view columns as a
+    Kind variant — doesn't exist because views aren't yet in V2.
+
+**Forward triggers:**
+
+  - `fallback` ships when a strategy's `evaluate` returns
+    `Outcome.Defer` (or equivalent "no opinion" variant) and a
+    second strategy picks up.
+  - `accumulate` ships when the second pass needs to consume
+    multiple-strategy decisions at once.
+  - `wrap` ships when per-strategy diagnostics emerge as a real
+    concern (likely tied to the eventual `Diagnostics` writer
+    monad).
+  - `lift` ships when a strategy is reused across different IR
+    granularities (e.g., a Nullability rule on view columns).
+
+**Reasoning / consequences.** The codification of `fanOut`
+empirically validates the strategy-layer codification's
+ergonomics. The four pass drivers are now mechanically uniform:
+they construct configuration records and delegate to one canonical
+primitive. The deferral discipline (DECISIONS 2026-05-13 — emergent
+primitives) gets its first real test: four candidates were
+considered together; one was extracted; four were deferred with
+explicit forward triggers. Future composition primitives follow
+the same protocol — count consumers; codify when the threshold
+hits; defer with forward triggers when it doesn't.

@@ -97,15 +97,17 @@ module ForeignKeyPass =
     /// Iteration order is deterministic: kinds by `SsKey`, references
     /// by `SsKey`, interventions by registration order.
     let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<ForeignKeyDecisionSet> =
-        let interventions = TighteningPolicy.foreignKeyInterventions policy.Tightening
-        if List.isEmpty interventions then
-            // Observable identity — no decisions, no events.
-            Lineage.ofValue ForeignKeyRules.emptyDecisionSet
-        else
-            let decisions =
-                [ for (kind, reference) in sortedReferences catalog do
-                    for (interventionId, config) in interventions do
-                        yield ForeignKeyRules.evaluate interventionId config kind reference catalog profile ]
-            let events = decisions |> List.map decisionEvent
-            Lineage.tellMany events
-                (Lineage.ofValue { Decisions = decisions })
+        // ForeignKey's evaluate takes the catalog as an additional
+        // input (cross-attribute reach for target-kind lookup, schema
+        // comparison). The closure captures it from the enclosing
+        // scope; the FanOutConfig sees the uniform 4-arg shape.
+        let fanOutConfig : Composition.FanOutConfig<Kind * Reference, _, _, _> = {
+            InterventionFilter = TighteningPolicy.foreignKeyInterventions
+            SortedContexts     = sortedReferences
+            Evaluate           = fun id cfg (kind, reference) prof ->
+                ForeignKeyRules.evaluate id cfg kind reference catalog prof
+            EmptyDecisionSet   = ForeignKeyRules.emptyDecisionSet
+            WrapDecisions      = fun decisions -> { Decisions = decisions }
+            BuildEvent         = decisionEvent
+        }
+        Composition.fanOut fanOutConfig catalog policy profile

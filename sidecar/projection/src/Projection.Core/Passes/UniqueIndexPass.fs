@@ -97,15 +97,13 @@ module UniqueIndexPass =
     /// Iteration order is deterministic: kinds by `SsKey`, indexes by
     /// `SsKey`, interventions by registration order.
     let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<UniqueIndexDecisionSet> =
-        let interventions = TighteningPolicy.uniqueIndexInterventions policy.Tightening
-        if List.isEmpty interventions then
-            // Observable identity — no decisions, no events.
-            Lineage.ofValue UniqueIndexRules.emptyDecisionSet
-        else
-            let decisions =
-                [ for (kind, index) in sortedIndexes catalog do
-                    for (interventionId, config) in interventions do
-                        yield UniqueIndexRules.evaluate interventionId config kind index profile ]
-            let events = decisions |> List.map decisionEvent
-            Lineage.tellMany events
-                (Lineage.ofValue { Decisions = decisions })
+        let fanOutConfig : Composition.FanOutConfig<Kind * Index, _, _, _> = {
+            InterventionFilter = TighteningPolicy.uniqueIndexInterventions
+            SortedContexts     = sortedIndexes
+            Evaluate           = fun id cfg (kind, index) prof ->
+                UniqueIndexRules.evaluate id cfg kind index prof
+            EmptyDecisionSet   = UniqueIndexRules.emptyDecisionSet
+            WrapDecisions      = fun decisions -> { Decisions = decisions }
+            BuildEvent         = decisionEvent
+        }
+        Composition.fanOut fanOutConfig catalog policy profile

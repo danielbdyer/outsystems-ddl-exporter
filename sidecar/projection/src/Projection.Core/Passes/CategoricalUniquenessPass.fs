@@ -104,17 +104,13 @@ module CategoricalUniquenessPass =
     /// by `SsKey`, attributes by `SsKey`, interventions by
     /// registration order.
     let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<CategoricalUniquenessDecisionSet> =
-        let interventions =
-            TighteningPolicy.categoricalUniquenessInterventions policy.Tightening
-        if List.isEmpty interventions then
-            // Observable identity — no decisions, no events.
-            Lineage.ofValue CategoricalUniquenessRules.emptyDecisionSet
-        else
-            let decisions =
-                [ for (_kind, attribute) in sortedAttributes catalog do
-                    for (interventionId, config) in interventions do
-                        yield CategoricalUniquenessRules.evaluate
-                            interventionId config attribute profile ]
-            let events = decisions |> List.map decisionEvent
-            Lineage.tellMany events
-                (Lineage.ofValue { Decisions = decisions })
+        let fanOutConfig : Composition.FanOutConfig<Kind * Attribute, _, _, _> = {
+            InterventionFilter = TighteningPolicy.categoricalUniquenessInterventions
+            SortedContexts     = sortedAttributes
+            Evaluate           = fun id cfg (_kind, attr) prof ->
+                CategoricalUniquenessRules.evaluate id cfg attr prof
+            EmptyDecisionSet   = CategoricalUniquenessRules.emptyDecisionSet
+            WrapDecisions      = fun decisions -> { Decisions = decisions }
+            BuildEvent         = decisionEvent
+        }
+        Composition.fanOut fanOutConfig catalog policy profile

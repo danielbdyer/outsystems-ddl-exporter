@@ -22,6 +22,7 @@
     <Compile Include="Strategies/ForeignKeyRules.fs" />
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
     <Compile Include="Lineage.fs" />
+    <Compile Include="Strategies/Composition.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
     <Compile Include="Passes/VisibilityMask.fs" />
     <Compile Include="Passes/NamingMorphism.fs" />

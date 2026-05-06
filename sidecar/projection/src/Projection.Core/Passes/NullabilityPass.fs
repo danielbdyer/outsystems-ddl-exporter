@@ -73,31 +73,29 @@ module NullabilityPass =
             |> List.sortBy (fun a -> a.SsKey)
             |> List.map (fun a -> k, a))
 
-    /// Run the NullabilityPass.
+    /// Run the NullabilityPass via the canonical `Composition.fanOut`
+    /// primitive (DECISIONS 2026-05-13 — composition vocabulary
+    /// codification). The pass driver is now a thin wrapper that
+    /// constructs the `FanOutConfig` and delegates iteration /
+    /// accumulation / lineage discipline to the canonical primitive.
     ///
-    /// **Observable identity on empty policy.** When the policy has no
-    /// Nullability interventions registered, the result is the empty
-    /// decision set with an empty trail. No work is done; no events are
-    /// emitted; the catalog is not consulted. This is V2's strict
-    /// default (DECISIONS 2026-05-09).
+    /// **Observable identity on empty policy.** Preserved by
+    /// `Composition.fanOut`; when no Nullability interventions are
+    /// registered, the catalog is not consulted, no decisions are
+    /// produced, no events are emitted.
     ///
-    /// **Decision composition.** When interventions are registered, the
-    /// pass emits one `NullabilityDecision` per
-    /// (attribute × intervention) pair, plus one `Annotated` lineage
-    /// event per decision. Iteration order is deterministic: kinds by
-    /// `SsKey`, attributes by `SsKey`, interventions by registration
-    /// order.
+    /// **Decision composition.** Preserved: one decision per
+    /// (attribute × intervention); one `Annotated` event per decision;
+    /// deterministic iteration (kinds by `SsKey`, attributes by
+    /// `SsKey`, interventions by registration order).
     let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<NullabilityDecisionSet> =
-        let interventions = TighteningPolicy.nullabilityInterventions policy.Tightening
-        if List.isEmpty interventions then
-            // Observable identity on empty policy — no decisions, no
-            // events. The catalog is unread; the profile is unread.
-            Lineage.ofValue NullabilityRules.emptyDecisionSet
-        else
-            let decisions =
-                [ for (_kind, attribute) in sortedAttributes catalog do
-                    for (interventionId, config) in interventions do
-                        yield NullabilityRules.evaluate interventionId config attribute profile ]
-            let events = decisions |> List.map decisionEvent
-            Lineage.tellMany events
-                (Lineage.ofValue { Decisions = decisions })
+        let fanOutConfig : Composition.FanOutConfig<Kind * Attribute, _, _, _> = {
+            InterventionFilter = TighteningPolicy.nullabilityInterventions
+            SortedContexts     = sortedAttributes
+            Evaluate           = fun id cfg (_kind, attr) prof ->
+                NullabilityRules.evaluate id cfg attr prof
+            EmptyDecisionSet   = NullabilityRules.emptyDecisionSet
+            WrapDecisions      = fun decisions -> { Decisions = decisions }
+            BuildEvent         = decisionEvent
+        }
+        Composition.fanOut fanOutConfig catalog policy profile

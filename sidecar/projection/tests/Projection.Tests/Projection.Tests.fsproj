@@ -37,6 +37,7 @@
     <Compile Include="ForeignKeyPassTests.fs" />
     <Compile Include="CategoricalUniquenessRulesTests.fs" />
     <Compile Include="CategoricalUniquenessPassTests.fs" />
+    <Compile Include="CompositionTests.fs" />
     <Compile Include="ProfileSnapshotAdapterTests.fs" />
     <Compile Include="ProfileStatisticsAdapterTests.fs" />
     <Compile Include="EndToEndDifferentialTests.fs" />
