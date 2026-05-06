@@ -1352,3 +1352,303 @@ until then property + behavioral tests carry the contract.
   asymmetric-2-cycle resolver is enough; the heuristic search arrives
   when a real fixture has a 3+ node cycle.
 
+---
+
+## 2026-05-12 — V1 profiling depth (`src/Osm.Pipeline/Profiling/SqlDataProfiler.cs`, `src/Osm.Domain/Profiling/*.cs`)
+
+**Status:** admired (gap analysis; no V1 component to migrate)
+
+**Significance.** The first admire entry that surfaces **V1 absence
+to fill, not V1 logic to migrate**. Every prior admire (six entries)
+named a V1 component whose behavior V2 carries forward. This entry
+maps what V1 collects, what V1 doesn't, and what V2 needs in order
+to support the next vector — distribution-aware strategies and
+Faker-style synthesis. The V2 extensions land under "IR grows under
+evidence" with V2 as the sole evidence source; the V1 boundary
+adapter remains unchanged because there is no V1 evidence to adapt.
+
+### What V1 collects (the inventory)
+
+V1's `ProfileSnapshot` aggregates four evidence kinds. Read the
+shape literally — what V1 captures is exactly what V1's strategies
+consume; nothing more.
+
+**`ColumnProfile`** (`src/Osm.Domain/Profiling/ColumnProfile.cs`):
+captures **null-presence evidence only**. Per-column fields:
+
+  - `Schema`, `Table`, `Column` — physical coordinate (V2 resolves
+    to `AttributeKey` at the boundary).
+  - `IsNullablePhysical`, `IsComputed`, `IsPrimaryKey`,
+    `IsUniqueKey`, `DefaultDefinition` — catalog metadata
+    redundantly carried in profile evidence. V2's adapter elides
+    these (DECISIONS 2026-05-10 vestigial-fields convention).
+  - `RowCount`, `NullCount` — the only quantitative evidence. The
+    null fraction supports V1's nullability-tightening signal
+    hierarchy.
+  - `NullCountStatus` — probe metadata.
+  - `NullRowSample` — operational diagnostic ("show me 5 rows that
+    have NULL in this column"); not IR.
+
+**`UniqueCandidateProfile`**: `HasDuplicate : bool` plus probe
+status. **Single boolean.** No cardinality, no distinct count, no
+duplicate count.
+
+**`CompositeUniqueCandidateProfile`**: same shape — a single
+boolean. V1 lacked probe status here (V2 added it as a session-2
+fix; DECISIONS 2026-05-09).
+
+**`ForeignKeyReality`**: `HasOrphan : bool`, `OrphanCount : int64`,
+`IsNoCheck : bool`, plus probe status and an `OrphanSample`
+(operational diagnostic).
+
+**The pattern.** Every V1 profile evidence is a **uniform
+binary-question outcome**: "are there nulls?", "are there
+duplicates?", "are there orphans?" — yes/no plus a single count.
+V1's profiling pipeline is structurally one-dimensional: it runs
+binary-evidence probes, not statistical surveys.
+
+### What V1 does NOT collect (the gaps)
+
+V1's profile contains **zero distribution evidence**. Specifically
+absent:
+
+  - **Cardinality.** No distinct-count per attribute. (V1 can
+    answer "are values unique?" via `HasDuplicate` but not "how
+    many distinct values are there?")
+  - **Value frequencies.** No per-value count for categorical
+    attributes. ("How many rows have status='Active'?" is
+    unanswerable from V1's profile.)
+  - **Histograms / percentiles.** No quantile data for numeric
+    attributes. ("What's the median order amount? P95?" — absent.)
+  - **Range.** No min/max captured per attribute (numeric or
+    temporal). ("What's the date range of CreatedAt?" — absent.)
+  - **Pattern recognition.** No string-format evidence (common
+    prefixes, lengths, regex shape). ("Are these emails valid?" —
+    unanswerable.)
+  - **Joint / cross-attribute statistics.** No correlation between
+    attributes within a kind, no joint distribution across
+    FK-connected attributes. ("Does Customer.Country correlate with
+    Customer.PreferredLanguage?" — absent.)
+  - **Sequence / temporal evidence.** No gap analysis for sequential
+    IDs, no growth-curve density for time-keyed data. ("Are there
+    gaps in the ID sequence?" — absent.)
+
+V1's strategies (NullabilityEvaluator, UniqueIndexDecisionOrchestrator,
+ForeignKeyEvaluator) reason exclusively over the binary-question
+outcomes. There is no V1 strategy that consumes distributions
+because V1 does not produce them.
+
+### What V1 collects that's adequate
+
+  - `RowCount` per column — sufficient as a denominator for null
+    budgets. V2 reuses unchanged.
+  - `NullCount` per column — sufficient for the V1 mandatory-relax
+    signal hierarchy. V2 reuses unchanged.
+  - `HasDuplicate` per unique candidate — sufficient for V1's
+    binary uniqueness decision. V2 reuses unchanged.
+  - `HasOrphan` + `OrphanCount` per FK — sufficient for V1's
+    binary FK decision plus the WITH NOCHECK fallback. V2 reuses
+    unchanged.
+  - `ProbeStatus` everywhere — sufficient for V2's evidence-missing
+    keep-reason variants. V2 reuses unchanged (and added it for
+    composites in session 2).
+
+### What V2 needs (the rich-profiling agenda)
+
+The vector the user named at session-9 framing: distribution-aware
+strategies and Faker-style synthesis. Each requires evidence V1
+doesn't collect. The agenda for the next several sessions:
+
+| Evidence type | First consumer | Driving need | Session target |
+|---|---|---|---|
+| Categorical value frequencies | Distribution-report Π | Synthetic generation; cardinality-aware tightening | **session 9 (this session)** |
+| Numeric histograms / percentiles | Distribution-report Π → anomaly strategy | Numeric synthetic generation; outlier detection | session 10 |
+| Range (min/max) per numeric / temporal | Synthetic generator (Faker Π) | Plausible synthetic numeric/temporal values | session 10–11 |
+| Cardinality (distinct count) | Tightening strategies | Distribution-aware uniqueness reasoning | session 11+ |
+| Joint distributions across FK pairs | Faker Π | Coherent synthetic data across relationships | session 12+ |
+| Sequential / temporal density | Faker Π; growth-aware strategies | Plausible synthetic sequences | later |
+
+The discipline applied: **each evidence type lands when its first
+consumer arrives**, not speculatively. Categorical frequencies
+land first because they are structurally simplest, broadly
+applicable, and the obvious foundational evidence for synthetic
+generation. The remaining types follow as their consumers surface.
+
+### V2 extension shape (the architectural plan)
+
+**Profile aggregate gains a new field.** V2's `Profile` record
+acquires a `Distributions : AttributeDistribution list` field,
+keyed by `AttributeKey : SsKey`. The first variant of
+`AttributeDistribution` carries categorical value frequencies; new
+variants land under "IR grows under evidence" as additional
+evidence types arrive (numeric histograms, etc.). Closed DU keeps
+the consumer-side pattern-match exhaustive.
+
+**The DU shape (commit 2 will land this).**
+
+```fsharp
+/// Empirical evidence about an attribute's value distribution.
+/// Categorical / numeric / temporal variants land as their
+/// consumers arrive (per IR-grows-under-evidence). Session 9
+/// commits the categorical case only; numeric and temporal
+/// follow in subsequent sessions.
+type AttributeDistribution =
+    /// Categorical value frequencies — for attributes whose
+    /// values are drawn from a small or moderate vocabulary.
+    /// Captures observed distinct values with their occurrence
+    /// counts. Truncation is explicit (the probe may have capped
+    /// the vocabulary at a configured limit).
+    | Categorical of CategoricalDistribution
+
+type CategoricalDistribution = {
+    AttributeKey  : SsKey
+    Frequencies   : (string * int64) list
+        /// Sorted by SsKey-style discipline: alphabetical by
+        /// value to ensure deterministic ordering.
+    DistinctCount : int64
+        /// Total distinct values observed (≥ Frequencies.Length
+        /// when truncated).
+    IsTruncated   : bool
+        /// True iff the probe capped the vocabulary at a limit;
+        /// `Frequencies` is a prefix of the full distribution.
+    ProbeStatus   : ProbeStatus
+}
+```
+
+**Adapter shape (commit 3 question).** Two options:
+
+  1. **Sibling adapter `ProfileStatistics.attach`.** The session-9
+     adapter consumes a V2-defined JSON shape with a top-level
+     `distributions` array. V1's `ProfileSnapshot` JSON remains
+     untouched; `ProfileSnapshot.attach` continues to populate
+     null/duplicate/orphan evidence as today; `ProfileStatistics.attach`
+     populates the new field. Two adapters, composed at the
+     boundary.
+  2. **Extend `ProfileSnapshot.attach`.** Add a new `distributions`
+     branch to the existing parser. Single adapter; the V1 fixture
+     gains an optional new top-level array.
+
+**Recommendation: option 1 (sibling adapter).** The rationale:
+V1 has no equivalent JSON shape to mirror; a sibling adapter
+visibly separates "V1-derived evidence" from "V2-only evidence" at
+the file-system level (same architectural-vector-as-folder
+discipline that the strategy layer absorbed in session 8); future
+adapters for additional V2-only evidence (numeric histograms, etc.)
+slot in cleanly as siblings without bloating the V1 adapter.
+
+**First consumer: a sibling Π.** Per the user's session-9 framing,
+the consumer is built as a sibling functor — `Projection.Targets.Distributions`
+(or a smaller name to be decided) — that takes the enriched IR
+(`Catalog × Profile`) and emits a distribution report. The
+emitter validates that distribution evidence flows through V2's
+emission discipline (sibling-Π commutativity holds: SSDT/JSON/Distributions
+all consume the same enriched IR).
+
+### Inputs and outputs (V2 IR)
+
+**Consumes (commit 2 minimum):** A V2-defined JSON shape carrying
+per-attribute categorical value frequencies. JSON shape (proposed):
+
+```
+{ "distributions": [
+    { "Schema": "dbo", "Table": "OSUSR_S1S_COUNTRY", "Column": "CODE",
+      "Kind": "Categorical",
+      "DistinctCount": 3,
+      "IsTruncated": false,
+      "Frequencies": [
+        { "Value": "CA", "Count": 1 },
+        { "Value": "MX", "Count": 1 },
+        { "Value": "US", "Count": 1 } ],
+      "ProbeStatus": { "CapturedAtUtc": "...", "SampleSize": 3,
+                       "Outcome": "Succeeded" } } ] }
+```
+
+**Produces (commit 4 first consumer):** A textual / JSON
+distribution report — for each attribute with categorical evidence,
+the observed vocabulary, distinct count, and truncation status.
+The format is the consumer's choice; the emitter is a sibling Π,
+not a side-effect formatter. Consumers downstream of session 9
+include the eventual Faker emitter (which uses the frequency
+distribution to weight synthetic value generation), an anomaly-
+detection strategy (which compares observed vocabulary against
+expected bounds), and a distribution-aware uniqueness strategy
+(which tightens differently when distinct count approaches row
+count vs. when it doesn't).
+
+### Existing test coverage
+
+V1 has no tests for distribution evidence because V1 collects none.
+The V2 extension lands without V1 contracts to honor. The session-9
+test discipline is therefore:
+
+  - **V2-only contract tests** for the new evidence type — round-trip
+    JSON ↔ IR; deterministic ordering of frequencies; truncation
+    handling; probe-status integration.
+  - **End-to-end differential tests** (commit 5) — a real V1 fixture
+    augmented with V2-only distribution data, validated through the
+    sibling Π. The differential here is structural (output shape
+    matches expected shape on a known fixture), not contract
+    (V1 has no contract).
+  - **Sibling-Π commutativity** — the existing T4 / T11 tests already
+    cover SSDT and JSON; session 9's Distributions Π joins them, and
+    the same enrichment-yields-same-content claim applies.
+
+### Migration path (rich profiling, multi-session)
+
+  1. **Session 9 (this session).** Categorical value frequencies as
+     the first evidence extension; `ProfileStatistics` sibling
+     adapter; `Projection.Targets.Distributions` sibling Π;
+     end-to-end differential test on a small fixture.
+  2. **Session 10 (proposed).** Numeric histograms and percentiles
+     as the second evidence extension; same shape (closed DU
+     extends; adapter parses new variant; consumer extends).
+  3. **Session 11 (proposed).** Cardinality / range as third
+     evidence type; first distribution-aware strategy migration
+     (e.g., a uniqueness strategy that consults distinct count).
+     This session is also the projected cash-out point for the
+     two strategy-layer deferrals (composition vocabulary, generic
+     `StrategyEvaluator` alias) per the shared trigger logged in
+     DECISIONS 2026-05-11.
+  4. **Session 12+ (proposed).** Joint distributions; Faker-style
+     synthetic emitter as a sibling Π. Ships when the supporting
+     evidence has accumulated and the algebra has been validated
+     end-to-end on real-fixture data.
+
+### Edges / risks
+
+  - **No V1 source for the new evidence.** The session-9 adapter
+    consumes a V2-defined JSON shape. No real-database profiler
+    populates it yet; that's session 10+ work (extending the
+    SqlDataProfiler equivalent, or building a V2-native one). For
+    session 9 the test fixtures synthesize distribution data
+    directly. This is the first IR extension that does **not**
+    pass through the V1↔V2 boundary; document the precedent.
+  - **Truncation handling is the principal risk.** Categorical
+    distributions for high-cardinality attributes (e.g., textual
+    free-form fields) blow up if the probe doesn't cap the
+    vocabulary. The DU's `IsTruncated` flag is the structural
+    answer; the probe configuration (which lives on the adapter,
+    not in the IR) decides where to cap. Document the truncation
+    contract clearly so consumers know the difference between
+    "distinct count ≤ Frequencies.Length" (full data) and
+    "distinct count > Frequencies.Length" (truncated, draw caution).
+  - **Determinism of ordering.** Frequency lists are sorted
+    alphabetically by value to keep T1 byte-identity intact across
+    repeat invocations and across different probe-result orders.
+    Sort discipline is the pass-author's job (the rules consume
+    the IR, not the JSON); the adapter sorts on parse.
+  - **Distribution-aware strategies as the next inflection.** The
+    point of the rich-profiling agenda is to enable strategies that
+    reason about distributions, not just about presence/absence.
+    When the first distribution-aware strategy lands (session 11+),
+    the strategy-layer codification should hold without revision —
+    distribution evidence is just a richer Profile shape, and
+    strategies consume Profile generically. If the codification
+    surfaces a strain at that moment, it's a third opportunity to
+    refine.
+  - **The diagnostic emitter is small but architecturally
+    significant.** Building it as a sibling Π (not a one-off
+    formatter) preserves the algebra's claim that emission is
+    parameterized over the catalog. The discipline matters more
+    than the size.
+

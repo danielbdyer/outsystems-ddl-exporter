@@ -1563,3 +1563,15 @@ is empirically met. Session 9+ rich-profiling and Faker-style
 emission inherit a strategy layer that is named, observable in the
 file system, codified with documented refinements, and validated
 on its central case.
+
+**Shared trigger across the two deferrals.** The composition
+vocabulary deferral (the 2026-05-11 sketch entry) and the generic
+`StrategyEvaluator` alias deferral (refinement 2 above) now have a
+single shared cash-out point: the **next registered-intervention
+strategy migration** (the fifth strategy module overall, the fourth
+registered-intervention instance). At that moment both questions
+are decided empirically — `fanOut` either earns its place from a
+fourth duplicated inlining, and the generic alias either surfaces
+as a useful naming for the four observed signatures or remains
+aesthetic. Recording the shared trigger so the next migration
+agent doesn't decide the two questions in isolation.
