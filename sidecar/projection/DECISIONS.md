@@ -358,3 +358,62 @@ system to prevent illegal compositions (an extract-model spine cannot
 reach Apply). Held against premature spine-explosion: build one spine
 first; introduce a second when the first one starts collecting optional
 fields that are mandatory only in one mode.
+
+## 2026-05-06 — Built-ins first; no hand-rolled serialization
+
+**Status:** decided (operating discipline)
+**Context:** Session 2 introduced `Projection.Targets.Json.JsonEmitter`
+as a hand-rolled string-concat serializer. This was a shortcut: F# has
+multiple real JSON options (built-in `System.Text.Json.Utf8JsonWriter`,
+`FSharp.SystemTextJson`, `Thoth.Json.Net`), and reinventing serialization
+adds risk (escaping, encoding, ordering corners) without algebraic
+benefit. Caught and called out in review.
+**Decision:** Default to built-in libraries for I/O / serialization /
+parsing concerns. Hand-rolling is justified only when the algebra
+demands a representation no library exposes (e.g., a deliberate canonical
+text form for visual diffing, like the SSDT raw-text emitter — see the
+adjacent decision). When in doubt, log the choice in DECISIONS.md
+*before* writing the code.
+**Reasoning / consequences:** The pure core stays small. Library code
+absorbs the corners we don't need to own. Future agents read this entry
+and avoid the same shortcut. The discipline is named explicitly so it
+can be invoked on review without re-litigating each instance.
+
+## 2026-05-06 — Π_Json now uses System.Text.Json.Utf8JsonWriter
+
+**Status:** decided
+**Resolves:** the hand-rolled JSON regression flagged in review.
+**Context:** `JsonEmitter.fs` shipped in commit 5 as hand-rolled string
+concatenation with bespoke UTF-8 escaping.
+**Decision:** Rewrite using `System.Text.Json.Utf8JsonWriter` (built-in
+to .NET, no third-party dep). Property order is the order of writes
+(stable). Pretty-print uses `Indented = true` plus an explicit
+`NewLine = "\n"` so output is byte-deterministic across platforms (T1).
+**Reasoning / consequences:** Less code, fewer bugs, no escaping
+corners we don't want to own. `JsonEmitter.version` bumped to 2 to
+distinguish hand-rolled (v1) from library-backed (v2) output in any
+already-cached snapshots. Existing tests survive the format change
+because they assert structural properties (parseable, contains roots,
+modality is a JSON array) rather than byte-exact form.
+
+## 2026-05-06 — DacFx integration deferred to first real-fixture milestone
+
+**Status:** decided (refines the 2026-05-06 — Π_SSDT decision)
+**Context:** The same review that flagged hand-rolled JSON asked why
+Π_SSDT does not use DacFx now. Honest answer: Π_SSDT raw text is the
+algebraic claim made human-legible (T1 byte-determinism is eyeballed; T8
+diffability of snapshots is read directly). DacFx-built `.dacpac`
+artifacts are zip archives of XML schemas: legible only through DacFx
+itself. The raw-text emitter is doing real work as a debug oracle.
+**Decision:** Keep `Projection.Targets.SSDT.RawTextEmitter` as a
+debug / diff-oracle sibling Π. When the first real-fixture milestone
+arrives (session 3+, when the C# Catalog Reader admits real OutSystems
+metadata), add `Projection.Targets.SSDT.DacpacEmitter` as a third sibling
+Π built on `Microsoft.SqlServer.DacFx`. Tests at that point assert
+sibling-functor commutativity (T4 / T11) across all three: same
+enriched IR ⇒ identity-consistent surfaces in raw text, JSON, and
+DACPAC bytes.
+**Reasoning / consequences:** No premature dependency on DacFx; no
+giving up the human-readable diff oracle. The migration is additive —
+real-fixture work introduces DacFx alongside, not replacing, the raw-
+text emitter.

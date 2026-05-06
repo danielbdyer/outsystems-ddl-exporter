@@ -1,62 +1,31 @@
 namespace Projection.Targets.Json
 
+open System.IO
 open System.Text
+open System.Text.Json
 open Projection.Core
 
-/// The second sibling Π for V2. Emits the catalog as JSON text. Together
-/// with `Projection.Targets.SSDT.RawTextEmitter` this demonstrates the
-/// sibling-functor factoring: same enriched IR, two surfaces, identity
-/// preserved across both (T4 / T11).
+/// The second sibling Π for V2. Emits the catalog as JSON text.
 ///
-/// Π is mechanical (A18): no policy parameter. Hand-rolled JSON keeps
-/// the algebra visible and avoids serializer-driven ordering surprises;
-/// for production-grade JSON consumption, a future commit may swap in
-/// `System.Text.Json` with a stable property ordering.
+/// Implementation uses the built-in `System.Text.Json.Utf8JsonWriter`
+/// (no third-party dependency). Property order is determined by the
+/// order of writes — explicit and stable. Pretty-print indentation and
+/// newline are pinned for cross-platform deterministic output (T1).
 [<RequireQualifiedAccess>]
 module JsonEmitter =
 
     [<Literal>]
-    let version : int = 1
+    let version : int = 2
 
     // -----------------------------------------------------------------------
-    // String escaping per RFC 8259. Hand-rolled because the value space
-    // here is small (catalog identifiers, names, small string values).
+    // Synthetic-milestone string forms for DUs. These belong in Policy
+    // when Policy lands; for now they are constants here so Π stays
+    // mechanical (A18).
     // -----------------------------------------------------------------------
-
-    let private escape (s: string) : string =
-        let sb = StringBuilder(s.Length + 2)
-        sb.Append('"') |> ignore
-        for c in s do
-            match c with
-            | '"'  -> sb.Append("\\\"")    |> ignore
-            | '\\' -> sb.Append("\\\\")    |> ignore
-            | '\n' -> sb.Append("\\n")     |> ignore
-            | '\r' -> sb.Append("\\r")     |> ignore
-            | '\t' -> sb.Append("\\t")     |> ignore
-            | c when c < ' ' -> sb.AppendFormat("\\u{0:x4}", int c) |> ignore
-            | c -> sb.Append(c) |> ignore
-        sb.Append('"') |> ignore
-        sb.ToString()
-
-    let private bool (b: bool) : string = if b then "true" else "false"
-
-    // -----------------------------------------------------------------------
-    // Indented writer state. The emitter writes pretty-printed JSON with
-    // two-space indents so the output is human-diffable. The pretty-print
-    // is deterministic: identical input ⇒ identical output, byte for byte.
-    // -----------------------------------------------------------------------
-
-    let private indent (level: int) : string =
-        System.String(' ', level * 2)
 
     let private renderSsKey (key: SsKey) : string =
-        // For the synthetic milestone we render the root identifier. Derived
-        // keys are flagged so consumers can distinguish them.
         let root = SsKey.rootOriginal key
-        if SsKey.isDerived key then
-            sprintf "%s [derived]" root
-        else
-            root
+        if SsKey.isDerived key then sprintf "%s [derived]" root else root
 
     let private originString (o: Origin) : string =
         match o with
@@ -83,101 +52,100 @@ module JsonEmitter =
         | SetNull  -> "SetNull"
         | Restrict -> "Restrict"
 
+    let private modalityString (m: ModalityMark) : string =
+        match m with
+        | Static rows   -> sprintf "Static(%d)" rows.Length
+        | TenantScoped  -> "TenantScoped"
+        | SoftDeletable -> "SoftDeletable"
+
     // -----------------------------------------------------------------------
-    // Per-element renderers. Each takes a depth so indentation is stable.
+    // Per-element writers. Each takes the writer and an IR node and emits
+    // a JSON object / array. Writers are passed the catalog when needed
+    // (none of these need it for the synthetic milestone).
     // -----------------------------------------------------------------------
 
-    let private renderModalityArray (sb: StringBuilder) (depth: int) (marks: ModalityMark list) : unit =
-        if List.isEmpty marks then
-            sb.Append("[]") |> ignore
-        else
-            sb.AppendLine("[") |> ignore
-            marks
-            |> List.iteri (fun i m ->
-                let label =
-                    match m with
-                    | Static rows  -> sprintf "Static(%d)" rows.Length
-                    | TenantScoped  -> "TenantScoped"
-                    | SoftDeletable -> "SoftDeletable"
-                sb.Append(indent (depth + 1)).Append(escape label) |> ignore
-                if i < marks.Length - 1 then sb.AppendLine(",") |> ignore
-                else sb.AppendLine() |> ignore)
-            sb.Append(indent depth).Append("]") |> ignore
+    let private writeAttribute (w: Utf8JsonWriter) (a: Attribute) : unit =
+        w.WriteStartObject()
+        w.WriteString("ssKey",   renderSsKey a.SsKey)
+        w.WriteString("name",    Name.value a.Name)
+        w.WriteString("type",    primitiveString a.Type)
+        w.WriteString("column",  a.Column.ColumnName)
+        w.WriteBoolean("nullable", a.Column.IsNullable)
+        w.WriteEndObject()
 
-    let private renderAttribute (sb: StringBuilder) (depth: int) (a: Attribute) : unit =
-        sb.AppendLine("{") |> ignore
-        sb.Append(indent (depth + 1)).Append("\"ssKey\": ").Append(escape (renderSsKey a.SsKey)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"name\": ").Append(escape (Name.value a.Name)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"type\": ").Append(escape (primitiveString a.Type)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"column\": ").Append(escape a.Column.ColumnName).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"nullable\": ").AppendLine(bool a.Column.IsNullable)
-        |> ignore
-        sb.Append(indent depth).Append("}") |> ignore
+    let private writeReference (w: Utf8JsonWriter) (r: Reference) : unit =
+        w.WriteStartObject()
+        w.WriteString("ssKey",           renderSsKey r.SsKey)
+        w.WriteString("name",            Name.value r.Name)
+        w.WriteString("sourceAttribute", renderSsKey r.SourceAttribute)
+        w.WriteString("targetKind",      renderSsKey r.TargetKind)
+        w.WriteString("onDelete",        actionString r.OnDelete)
+        w.WriteEndObject()
 
-    let private renderReference (sb: StringBuilder) (depth: int) (r: Reference) : unit =
-        sb.AppendLine("{") |> ignore
-        sb.Append(indent (depth + 1)).Append("\"ssKey\": ").Append(escape (renderSsKey r.SsKey)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"name\": ").Append(escape (Name.value r.Name)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"sourceAttribute\": ").Append(escape (renderSsKey r.SourceAttribute)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"targetKind\": ").Append(escape (renderSsKey r.TargetKind)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"onDelete\": ").AppendLine(escape (actionString r.OnDelete))
-        |> ignore
-        sb.Append(indent depth).Append("}") |> ignore
+    let private writeModality (w: Utf8JsonWriter) (marks: ModalityMark list) : unit =
+        w.WriteStartArray()
+        for m in marks do w.WriteStringValue(modalityString m)
+        w.WriteEndArray()
 
-    let private renderArrayOf<'T> (sb: StringBuilder) (depth: int) (items: 'T list) (renderItem: StringBuilder -> int -> 'T -> unit) : unit =
-        if List.isEmpty items then
-            sb.Append("[]") |> ignore
-        else
-            sb.AppendLine("[") |> ignore
-            items
-            |> List.iteri (fun i item ->
-                sb.Append(indent (depth + 1)) |> ignore
-                renderItem sb (depth + 1) item
-                if i < items.Length - 1 then sb.AppendLine(",") |> ignore
-                else sb.AppendLine() |> ignore)
-            sb.Append(indent depth).Append("]") |> ignore
+    let private writePhysical (w: Utf8JsonWriter) (p: PhysicalRealization) : unit =
+        w.WriteStartObject()
+        w.WriteString("schema", p.Schema)
+        w.WriteString("table",  p.Table)
+        w.WriteEndObject()
 
-    let private renderKind (sb: StringBuilder) (depth: int) (k: Kind) : unit =
-        sb.AppendLine("{") |> ignore
-        sb.Append(indent (depth + 1)).Append("\"ssKey\": ").Append(escape (renderSsKey k.SsKey)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"name\": ").Append(escape (Name.value k.Name)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"origin\": ").Append(escape (originString k.Origin)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"modality\": ")
-        |> ignore
-        renderModalityArray sb (depth + 1) k.Modality
-        sb.AppendLine(",") |> ignore
-        sb.Append(indent (depth + 1)).Append("\"physical\": { \"schema\": ")
-            .Append(escape k.Physical.Schema).Append(", \"table\": ")
-            .Append(escape k.Physical.Table).AppendLine(" },")
-        |> ignore
-        sb.Append(indent (depth + 1)).Append("\"attributes\": ") |> ignore
-        renderArrayOf sb (depth + 1) k.Attributes renderAttribute
-        sb.AppendLine(",") |> ignore
-        sb.Append(indent (depth + 1)).Append("\"references\": ") |> ignore
-        renderArrayOf sb (depth + 1) k.References renderReference
-        sb.AppendLine() |> ignore
-        sb.Append(indent depth).Append("}") |> ignore
+    let private writeKind (w: Utf8JsonWriter) (k: Kind) : unit =
+        w.WriteStartObject()
+        w.WriteString("ssKey",  renderSsKey k.SsKey)
+        w.WriteString("name",   Name.value k.Name)
+        w.WriteString("origin", originString k.Origin)
+        w.WritePropertyName("modality"); writeModality w k.Modality
+        w.WritePropertyName("physical"); writePhysical w k.Physical
+        w.WritePropertyName("attributes")
+        w.WriteStartArray()
+        for a in k.Attributes do writeAttribute w a
+        w.WriteEndArray()
+        w.WritePropertyName("references")
+        w.WriteStartArray()
+        for r in k.References do writeReference w r
+        w.WriteEndArray()
+        w.WriteEndObject()
 
-    let private renderModule (sb: StringBuilder) (depth: int) (m: Module) : unit =
-        sb.AppendLine("{") |> ignore
-        sb.Append(indent (depth + 1)).Append("\"ssKey\": ").Append(escape (renderSsKey m.SsKey)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"name\": ").Append(escape (Name.value m.Name)).AppendLine(",")
-            .Append(indent (depth + 1)).Append("\"kinds\": ")
-        |> ignore
-        renderArrayOf sb (depth + 1) m.Kinds renderKind
-        sb.AppendLine() |> ignore
-        sb.Append(indent depth).Append("}") |> ignore
+    let private writeModule (w: Utf8JsonWriter) (m: Module) : unit =
+        w.WriteStartObject()
+        w.WriteString("ssKey", renderSsKey m.SsKey)
+        w.WriteString("name",  Name.value m.Name)
+        w.WritePropertyName("kinds")
+        w.WriteStartArray()
+        for k in m.Kinds do writeKind w k
+        w.WriteEndArray()
+        w.WriteEndObject()
+
+    // -----------------------------------------------------------------------
+    // Public surface.
+    // -----------------------------------------------------------------------
+
+    let private writerOptions : JsonWriterOptions =
+        // Indented + pinned LF newline so output is deterministic across
+        // platforms (T1). IndentCharacter / IndentSize default to two
+        // spaces, which matches the rest of the V2 documentation style.
+        let mutable opts = JsonWriterOptions()
+        opts.Indented <- true
+        opts.NewLine <- "\n"
+        opts
 
     /// Emit the catalog as JSON text. Output is deterministic: byte-
     /// identical for byte-identical input (T1).
     let emit (catalog: Catalog) : string =
-        let sb = StringBuilder(2048)
-        sb.AppendLine("{") |> ignore
-        sb.Append(indent 1).Append("\"emitter\": \"Projection.Targets.Json\",")
-            .AppendLine() |> ignore
-        sb.Append(indent 1).Append("\"version\": ").Append(version).AppendLine(",") |> ignore
-        sb.Append(indent 1).Append("\"modules\": ") |> ignore
-        renderArrayOf sb 1 catalog.Modules renderModule
-        sb.AppendLine() |> ignore
-        sb.Append("}") |> ignore
-        sb.ToString()
+        use stream = new MemoryStream()
+        do
+            use writer = new Utf8JsonWriter(stream, writerOptions)
+            writer.WriteStartObject()
+            writer.WriteString("emitter", "Projection.Targets.Json")
+            writer.WriteNumber("version", version)
+            writer.WritePropertyName("modules")
+            writer.WriteStartArray()
+            for m in catalog.Modules do writeModule writer m
+            writer.WriteEndArray()
+            writer.WriteEndObject()
+            writer.Flush()
+        Encoding.UTF8.GetString(stream.ToArray())
