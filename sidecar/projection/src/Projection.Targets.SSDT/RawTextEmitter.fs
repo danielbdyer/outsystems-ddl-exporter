@@ -73,6 +73,7 @@ module RawTextEmitter =
         let typ = defaultSqlType a.Type
         let nullness = if a.Column.IsNullable then "NULL" else "NOT NULL"
         sb.Append("    ").Append(name).Append(' ').Append(typ).Append(' ').Append(nullness)
+            .Append("  -- ").Append(Name.value a.Name).Append(" (").Append(rootKey a.SsKey).Append(')')
         |> ignore
 
     let private renderKindHeader (sb: StringBuilder) (k: Kind) : unit =
@@ -89,12 +90,19 @@ module RawTextEmitter =
         let qualified =
             sprintf "%s.%s" (quote k.Physical.Schema) (quote k.Physical.Table)
         sb.Append("CREATE TABLE ").Append(qualified).AppendLine(" (") |> ignore
+        // Trailing inline comment makes commas tricky; emit each line as
+        // "<column-decl><sep>  -- <name> (<sskey>)" with sep being "," for
+        // all but the last line.
         let lastIdx = k.Attributes.Length - 1
         k.Attributes
         |> List.iteri (fun i a ->
-            renderAttribute sb a
-            if i < lastIdx then sb.AppendLine(",") |> ignore
-            else sb.AppendLine() |> ignore)
+            let name = quote a.Column.ColumnName
+            let typ = defaultSqlType a.Type
+            let nullness = if a.Column.IsNullable then "NULL" else "NOT NULL"
+            let sep = if i < lastIdx then "," else ""
+            sb.Append("    ").Append(name).Append(' ').Append(typ).Append(' ').Append(nullness)
+                .Append(sep).Append("  -- ").Append(Name.value a.Name).Append(" (").Append(rootKey a.SsKey).Append(')')
+                .AppendLine() |> ignore)
         sb.AppendLine(");") |> ignore
 
     /// Render the FK constraints from a kind's references. The target

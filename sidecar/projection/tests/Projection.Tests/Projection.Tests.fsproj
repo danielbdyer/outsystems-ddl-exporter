@@ -21,6 +21,7 @@
     <Compile Include="ProfileTests.fs" />
     <Compile Include="VisibilityMaskTests.fs" />
     <Compile Include="RawTextEmitterTests.fs" />
+    <Compile Include="JsonEmitterTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,6 +35,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Projection.Core\Projection.Core.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Targets.Json\Projection.Targets.Json.fsproj" />
   </ItemGroup>
 
 </Project>

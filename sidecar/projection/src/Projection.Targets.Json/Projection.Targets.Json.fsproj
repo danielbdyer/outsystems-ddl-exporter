@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Projection.Targets.Json</RootNamespace>
+    <AssemblyName>Projection.Targets.Json</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="JsonEmitter.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
+  </ItemGroup>
+
+</Project>
