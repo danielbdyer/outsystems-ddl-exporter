@@ -1931,3 +1931,180 @@ extension) carried over. Session 11 inherits a strategy layer and
 a rich-profiling foundation that have both been empirically
 validated; the deferred decisions from session 8 cash out there.
 Hold the cadence.
+
+## 2026-05-13 — Closed-DU expansion: empirical confirmation, not a foregone conclusion
+
+**Status:** decided (operating discipline; future-author trust signal)
+**Context:** Session 10 added the second variant
+(`Numeric of NumericDistribution`) to `AttributeDistribution`. The
+expansion was clean — five sites required updates, F# enforced
+exhaustiveness on three of them, two were deliberate non-matches,
+no surprises. The session-10 reflection logged this as an empirical
+record. This entry promotes it from a single-session finding to a
+trust signal future authors can rely on.
+
+**Decision:** **A clean closed-DU expansion is evidence, not
+inevitability.** When the second variant lands without forcing a
+DU reshape, splitting, or new-context threading through old call
+sites, the seam was positioned correctly — the codification works
+the way it claims. Future authors absorb the conventions
+(`AttributeKey`-as-first-field for `AttributeDistribution`; the
+analogous patterns elsewhere in V2) and trust that adding a third
+variant follows the same shape.
+
+**The empirical test for "well-positioned seam":**
+
+  1. Adding a new variant requires updates **only** at sites that
+     pattern-match on the DU. F# exhaustiveness errors are the
+     compiler's enforcement.
+  2. The new variant uses the **same shape of construction
+     validation** as existing variants (smart constructor returning
+     `Result<'a>`, structural-commitment invariants).
+  3. The new variant uses the **same shape of consumer dispatch**
+     in adapters and emitters (string-Kind branch in adapters;
+     match-arm in emitters).
+  4. **No callers outside the variant's own module need to change**
+     to support the new variant beyond the exhaustiveness updates.
+     If a caller's logic needs reshaping, the seam is wrong.
+
+If a future variant addition violates any of these — e.g., the new
+variant doesn't share the `AttributeKey` convention; the
+construction validation has fundamentally different shape; consumers
+need to thread new context through old sites — surface the
+divergence and consider whether to refactor the DU before
+proceeding.
+
+**Reasoning / consequences.** The codification (DECISIONS
+2026-05-11) made the strategy layer's shape explicit; this entry
+makes the closed-DU expansion's empirical-test discipline explicit.
+Together they let future agents work confidently inside the
+patterns rather than re-deriving them from first principles. If the
+patterns ever stop working, the discipline above is how the next
+agent notices.
+
+## 2026-05-13 — Emergent primitives earn their place through multi-consumer demand
+
+**Status:** decided (operating discipline)
+**Context:** Session 10 surfaced `Profile.tryFindDistribution` as a
+useful variant-agnostic lookup helper that wasn't in the original
+plan. It was added because the emitter needed it; future Π
+(Faker, anomaly reports) and future strategies will likely reuse
+it. The session-10 reflection (Finding 1) noted it as a small
+example of a real principle worth naming.
+
+**Decision:** **A primitive earns its place when a second consumer
+needs it, not when the first one does.** This is the same threshold
+the strategy-layer codification (DECISIONS 2026-05-11) and the
+composition vocabulary deferral (DECISIONS 2026-05-11) both apply.
+Generalize the discipline:
+
+  - **First consumer** of a hypothetical helper: write the inline
+    code. The cost of duplication-of-one is lower than the cost of
+    speculative abstraction.
+  - **Second consumer**: extract the helper. The duplication is now
+    real; the abstraction's shape is empirically grounded; the
+    third consumer (when it arrives) lands cleanly into the
+    extraction.
+  - **N-th consumer** (where N >= 3): the helper is canonical; new
+    consumers reuse without question.
+
+The principle is implicit in "IR grows under evidence" applied to
+helper extraction; making it explicit gives reviewers a clean test
+for "should I extract this?" and authors a clean test for "is this
+ready to be extracted?" The answer in both cases: count consumers,
+not anticipated callers.
+
+**Worked examples in V2:**
+
+  - `Profile.tryFindCategorical` (session 9): extracted because the
+    emitter and the (eventual) strategy layer both needed it. Two
+    consumers established at session 9.
+  - `Profile.tryFindDistribution` (session 10): extracted because
+    the emitter's variant-agnostic lookup pattern was the natural
+    shape for the second variant. Two consumers anticipated; today
+    only the emitter uses it. Borderline at extraction time, but
+    the pattern's reuse path is clear (Faker emitter, anomaly
+    strategies).
+  - `fanOut` composition primitive (deferred): inlined in two pass
+    drivers (NullabilityPass, UniqueIndexPass) at session 7; a
+    third (ForeignKeyPass) at session 8. Threshold met; cash-out
+    in session 11.
+  - `StrategyEvaluator` alias (deferred): three strategies share
+    the signature shape; cash-out in session 11.
+
+**Counter-examples:**
+
+  - The strategy registry mechanism (deferred at session 8): zero
+    consumers have demanded it. Defer until N=4-6 strategies make
+    the registry's lookup-by-name pattern useful.
+  - Faker emitter (deferred to session 12+): the synthetic
+    generator consumes evidence types that don't yet all exist.
+    The "consumers" for distribution evidence today are the
+    diagnostic emitter and (future) strategies; Faker waits.
+
+**Reasoning / consequences.** Naming the principle prevents two
+common failure modes: speculative abstraction (extracting on the
+first consumer because "we might need it") and speculative
+deferral (refusing to extract on the second consumer because "two
+isn't enough yet"). Two consumers is the threshold; it's
+empirically grounded; future authors can apply it without
+re-litigating.
+
+## 2026-05-13 — Decimal is the default for continuous statistical evidence
+
+**Status:** decided (precedent)
+**Context:** Session 10 chose `decimal` over `float` (or `double`)
+for the percentile values in `NumericDistribution`. The choice was
+made on session-10 commit 1 with brief rationale; the milestone
+test (session-10 commit 5) validated it end-to-end with byte-
+identical determinism across repeats. The session-10 reflection
+flagged this as a small precision call worth marking as a
+precedent.
+
+**Decision:** **`decimal` is V2's default representation for
+continuous statistical evidence.** New numeric evidence types
+(temporal density bins, joint distribution coordinates, future
+statistical primitives) use `decimal` unless the consumer has a
+real reason to deviate.
+
+**Rationale:**
+
+  1. **Determinism across platforms.** `decimal` is a
+     fixed-precision type with deterministic arithmetic across
+     hosts; T1 byte-identity (a load-bearing V2 commitment, A17
+     amended) requires this. `float` arithmetic varies subtly
+     with CPU / runtime / compiler; bit-identical output is not
+     guaranteed.
+  2. **Exact representation of source values.** V2 attributes are
+     `Integer` or `Decimal` at the IR level; both convert to
+     `decimal` exactly. `float`/`double` introduce silent
+     precision drift on integer values exceeding 2^53 and on
+     decimal values that are not powers-of-two fractions.
+  3. **Consistency with existing V2 numeric use.** V2's
+     `NullBudget : decimal`, the existing numeric configuration,
+     uses `decimal`. Distribution evidence consumed by the same
+     algebra should use the same representation.
+
+**When to deviate:** if a future consumer has structural reasons
+that demand floating-point (e.g., interfacing with a downstream
+numerical library that accepts only `double`), the deviation is
+a documented exception in DECISIONS, not a silent re-litigation.
+The default holds; the exception is explicit.
+
+**Worked precedent:**
+
+  - `NumericDistribution.{Min, P25, P50, P75, P95, P99, Max}`:
+    `decimal`. Session 10 commit 1.
+  - Future temporal evidence with continuous date/time values:
+    consider `DateTimeOffset` for the date component (deterministic
+    string roundtrip is the existing V2 convention from
+    `ProbeStatus.CapturedAtUtc`); use `decimal` for any derived
+    statistical scalar.
+  - Future joint-distribution coordinates: `decimal × decimal` for
+    paired numeric attributes.
+
+**Reasoning / consequences.** Marking the precedent prevents the
+question from reopening when the next numeric evidence type lands.
+The choice is small but load-bearing for T1; making it canonical
+saves the next agent a deliberation cycle and ensures consistency
+across the rich-profiling agenda's growth.
