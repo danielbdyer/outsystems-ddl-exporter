@@ -1652,3 +1652,340 @@ test discipline is therefore:
     parameterized over the catalog. The discipline matters more
     than the size.
 
+---
+
+## 2026-05-13 — `CategoricalUniqueness` (per-attribute distribution-driven uniqueness inference)
+
+**Status:** admired (placement decided) — **hybrid mode**
+(DECISIONS 2026-05-13 — admire spectrum).
+
+**Significance.** The fourth registered-intervention strategy under
+the codified strategy layer (DECISIONS 2026-05-11), and the first
+that consumes **distribution evidence** rather than binary-question
+outcomes (nulls / duplicates / orphans). Session 11's job
+(per the user's framing) is the codification's third real test —
+this entry's strategy choice is the empirical input that decides
+the test's pressure.
+
+**Why this candidate.** Three options surfaced from session 10's
+reflection (categorical-aware uniqueness, numeric-bounded mandatory,
+cardinality-aware FK). I chose categorical-aware uniqueness because
+it surfaces the most architectural variation while keeping the
+evidence shape simple enough to test the codification cleanly:
+
+  - **Per-attribute granularity for a uniqueness-style decision.**
+    The existing `UniqueIndex` strategy decides per-index. This
+    strategy decides per-attribute. Two strategies in the same
+    *conceptual domain* (uniqueness) with different *granularities*
+    is a real architectural variation — does the codification
+    accommodate this without strain?
+  - **Single Categorical evidence lookup per attribute.** No
+    cross-attribute reach (cardinality-aware FK has that
+    complexity); no need for a new evidence variant (numeric-bounded
+    mandatory needs the Numeric variant). The evidence shape is
+    the smallest first-distribution-consumer can be.
+  - **Hybrid mode admire is honest.** V1's `UniqueIndexEvaluator`
+    covers the uniqueness concept (per-index decision based on
+    `HasDuplicate` booleans). V2 adds the per-attribute
+    distribution-driven inference V1 can't perform — V1 collects
+    no distinct-count evidence per attribute. The boundary between
+    inheritance and growth is clear.
+
+### Hybrid-mode admire (per the three-mode framework)
+
+#### What V1 gives (the V1-migration share)
+
+**V1 component:** `UniqueIndexEvaluator` /
+`UniqueIndexDecisionOrchestrator`
+(`src/Osm.Validation/Tightening/UniqueIndexDecisionOrchestrator.cs`,
+already migrated as session-7's `UniqueIndexRules`).
+
+**What carries over conceptually:**
+
+  - **The uniqueness domain.** "Should this column / set of columns
+    be considered a unique candidate?" is a question V1 answers
+    per-index; V2 answers per-attribute (additionally) at session 11.
+  - **The signal-hierarchy discipline.** V1's evaluator orders its
+    signals (already-unique → policy-disabled → profile evidence).
+    V2's CategoricalUniqueness inherits the discipline:
+    no-evidence → evidence-missing → distinct-count-below-threshold →
+    distinct-count-equals-observations → suggest-unique.
+  - **The structured rationale convention.** V1's
+    `UniqueIndexEvidence` and `UniqueIndexKeepReason` DUs (V2's
+    re-expression of V1's free-form rationale strings) provide the
+    template; V2's `CategoricalUniquenessEvidence` and
+    `CategoricalUniquenessKeepReason` mirror the shape with
+    distribution-specific variants.
+
+**What does NOT carry over:**
+
+  - **Per-index granularity.** V1's evaluator iterates indexes;
+    V2's CategoricalUniqueness iterates attributes. They overlap
+    in domain but not in iteration shape.
+  - **`HasDuplicate` boolean evidence.** V1's evaluator reads a
+    binary "are there duplicates?" probe outcome. V2's
+    CategoricalUniqueness reads richer Categorical evidence
+    (distinct-count + total observations + truncation flag).
+
+#### What V2 grows (the V2-growth share)
+
+  - **Per-attribute uniqueness inference.** V1 has no analog. The
+    inference: an attribute whose Categorical distribution shows
+    `distinctCount = totalObservations` (every observation is a
+    unique value, not just duplicate-free) is empirically a unique
+    column under the observed sample. The signal is *stronger* than
+    V1's "no duplicates observed" because it requires the full
+    vocabulary to be distinct, not just unobserved-duplicates.
+  - **Distribution-driven evidence consumption.** First strategy
+    that reads `Profile.Distributions` (specifically Categorical).
+    Tests whether the codification's `evaluate` shape accommodates
+    the new evidence type.
+  - **Truncation-awareness.** When the underlying Categorical
+    distribution is truncated (`IsTruncated = true`), the
+    distinct-count is a lower bound — the column's full vocabulary
+    extends beyond what was observed. The strategy must distinguish
+    this from "complete vocabulary observed" cases.
+
+### What it does (algebraic terms)
+
+For each attribute on each kind, decides whether to suggest the
+attribute as a unique-candidate based on Categorical distribution
+evidence. Per (attribute × intervention), reads
+`Profile.tryFindCategorical attributeKey`; applies the V2 signal
+hierarchy; produces a `CategoricalUniquenessDecision`.
+
+**The signal hierarchy:**
+
+  1. **No Categorical evidence registered for the attribute** ⇒
+     `DoNotSuggest(NoCategoricalEvidence)`.
+  2. **Probe outcome unreliable** ⇒
+     `DoNotSuggest(EvidenceMissing)`.
+  3. **Distribution truncated** (vocabulary capped at probe limit)
+     ⇒ `DoNotSuggest(VocabularyTruncated)` — without the full
+     vocabulary the inference is unsafe.
+  4. **`distinctCount < MinDistinctCountForUniqueness`** ⇒
+     `DoNotSuggest(DistinctCountBelowThreshold)` — vocabulary too
+     small to merit a unique suggestion (a binary attribute is
+     rarely meaningfully unique).
+  5. **`distinctCount < totalObservations`** ⇒
+     `DoNotSuggest(DuplicatesObserved)` — repeats present.
+  6. **Otherwise** ⇒ `SuggestUnique(EveryValueDistinct)` — every
+     observation distinct, vocabulary above floor, evidence
+     complete.
+
+### V2 placement
+
+**Pure pass in `Projection.Core.Passes`, producing an
+emitter-consumable `CategoricalUniquenessDecisionSet` value per
+A32**, mirroring the four existing strategy passes (Nullability,
+UniqueIndex, ForeignKey at session 8; this is the fourth). The
+fourth registered-intervention strategy under the closed
+`TighteningIntervention` DU.
+
+  - **Algebra in `CategoricalUniquenessPass`** (sibling of the
+    existing four passes in `Projection.Core/Passes/`). Walks
+    `Catalog → Module → Kind → Attribute`, fans out over registered
+    CategoricalUniqueness interventions, calls into the rules
+    module per (attribute × intervention), accumulates decisions,
+    emits Annotated lineage events.
+  - **Domain in `CategoricalUniquenessRules`** (sibling of
+    existing four rules modules in
+    `Projection.Core/Strategies/`). Pure function:
+    `(interventionId, config, attribute, profile) →
+    CategoricalUniquenessDecision`. Honors V2 signal hierarchy.
+  - **Typed seam.** `evaluate` mirrors the existing pattern
+    (`NullabilityRules.evaluate`, `UniqueIndexRules.evaluate`,
+    `ForeignKeyRules.evaluate`). The fourth instance — the
+    deferred `StrategyEvaluator<'context, 'config, 'decision>`
+    alias decision (DECISIONS 2026-05-11) cashes out here. Per
+    the shared trigger.
+
+### Inputs and outputs (V2 IR)
+
+**Consumes:**
+
+  - **Catalog** — `Attribute.SsKey` for keying decisions; no
+    structural fields.
+  - **Policy** — `TighteningPolicy.Interventions` filtered to
+    `CategoricalUniqueness` variants. Configuration:
+
+```fsharp
+type CategoricalUniquenessConfig = {
+    /// Don't suggest uniqueness for vocabularies smaller than this.
+    /// A binary attribute (distinctCount = 2) is rarely meaningful
+    /// as unique; a single-value attribute (distinctCount = 1) is
+    /// pathological. Default suggestion: 2 (the algebra forbids
+    /// degenerate cases below).
+    MinDistinctCountForUniqueness : int64
+}
+```
+
+  - **Profile** — `Profile.tryFindCategorical attribute.SsKey`. The
+    only evidence consumed; no other Profile fields read.
+
+**Produces (per A32):**
+
+```fsharp
+type CategoricalUniquenessEvidence =
+    /// Distinct-count equals total observations; vocabulary is
+    /// fully distinct under the observed sample. The strongest
+    /// V2 unique-candidate signal — stronger than V1's
+    /// "no duplicates observed" because it requires the full
+    /// vocabulary to be distinct.
+    | EveryValueDistinct of
+        distinctCount: int64 *
+        totalObservations: int64
+
+[<RequireQualifiedAccess>]
+type CategoricalUniquenessKeepReason =
+    /// No Categorical distribution evidence registered for this
+    /// attribute.
+    | NoCategoricalEvidence
+    /// Categorical evidence's probe didn't succeed reliably.
+    | EvidenceMissing
+    /// `IsTruncated = true` — vocabulary cap hit; full distinct
+    /// count not observed. Inference would be unsafe.
+    | VocabularyTruncated
+    /// `distinctCount < MinDistinctCountForUniqueness`. Vocabulary
+    /// too small to merit a unique suggestion.
+    | DistinctCountBelowThreshold of
+        distinctCount: int64 *
+        threshold: int64
+    /// `distinctCount < totalObservations` — repeats observed.
+    | DuplicatesObserved of
+        distinctCount: int64 *
+        totalObservations: int64
+
+[<RequireQualifiedAccess>]
+type CategoricalUniquenessOutcome =
+    | SuggestUnique of evidence: CategoricalUniquenessEvidence
+    | DoNotSuggest  of reason: CategoricalUniquenessKeepReason
+
+type CategoricalUniquenessDecision = {
+    AttributeKey   : SsKey
+    Outcome        : CategoricalUniquenessOutcome
+    InterventionId : string
+}
+
+type CategoricalUniquenessDecisionSet = {
+    Decisions : CategoricalUniquenessDecision list
+}
+```
+
+`KeepReason` carries `[<RequireQualifiedAccess>]` per the
+session-8 codification refinement 1 (case names like
+`EvidenceMissing` recur across strategies; qualification
+disambiguates).
+
+### Existing test coverage
+
+**V1 test coverage:** none directly. V1's
+`UniqueIndexDecisionOrchestratorTests` cover per-index uniqueness;
+no V1 test covers per-attribute distribution-driven uniqueness
+inference because V1 lacks the evidence (V1 collects no Categorical
+distribution data per ADMIRE.md 2026-05-12).
+
+**V2-only contract tests** for the new strategy:
+
+  - Signal hierarchy at each branch (no evidence; unreliable probe;
+    truncated vocabulary; below-threshold; duplicates observed;
+    suggest-unique).
+  - Decision metadata (AttributeKey carries; InterventionId carries).
+  - Helpers (`enforces`-equivalent: `suggestsUnique`).
+  - Determinism / reflexivity properties.
+  - DU round-trip.
+  - Closed-DU exhaustiveness on `KeepReason` after future variants
+    arrive.
+
+**End-to-end milestone (commit 6):**
+
+  - Three-input projection (Catalog × Policy × Profile) where
+    Profile carries Categorical evidence on a known attribute.
+  - Verify: pass produces correct decision per the signal hierarchy.
+  - Verify: lineage trail carries Annotated events with the
+    intervention id and outcome category.
+  - Verify: coexistence with the other four strategies (Nullability,
+    UniqueIndex, ForeignKey, plus this one) on a mixed policy — the
+    closed-DU dispatcher continues to filter correctly with five
+    variants registered.
+
+### Migration path
+
+  1. **`CategoricalUniquenessConfig` + `TighteningIntervention.CategoricalUniqueness`
+     variant** (commit 2 type additions). Policy.fs extends. Closed
+     DU forces `TighteningIntervention.id` and the per-variant
+     filters to gain the fourth case. F# enforces.
+  2. **`CategoricalUniquenessRules` module** (commit 2 domain
+     layer; lands in `Projection.Core/Strategies/`). Pure
+     per-attribute decider; structured evidence/reason DUs as
+     defined above; smart constructor for `Config` if any
+     validation invariants emerge (likely just
+     `MinDistinctCountForUniqueness >= 1`).
+  3. **`CategoricalUniquenessPass` driver** (commit 3 algebra
+     layer; lands in `Projection.Core/Passes/`). Mirrors
+     existing four passes:
+     `run : Catalog -> Policy -> Profile -> Lineage<CategoricalUniquenessDecisionSet>`.
+     Observable identity on empty policy; fan-out over (attribute
+     × intervention); Annotated lineage events.
+  4. **Composition vocabulary decision** (commit 4). With four
+     registered-intervention pass drivers, evaluate which
+     composition primitives have surfaced two or more times. Codify
+     what's earned; defer what hasn't. Per the
+     two-consumer-threshold discipline (DECISIONS 2026-05-13).
+  5. **`StrategyEvaluator` alias decision** (commit 5). Four
+     strategies share the signature shape; if the fourth fits
+     exactly, the generalization is canonical. If it diverges,
+     defer per the same discipline.
+  6. **End-to-end milestone + reflection** (commit 6). Real fixture
+     data; sibling-strategy coexistence; reflection on the
+     codification's third real test.
+
+### Edges / risks
+
+  - **Per-attribute vs per-index granularity tension.** This
+    strategy decides per-attribute; the existing UniqueIndex
+    strategy decides per-index. An attribute that this strategy
+    flags as `SuggestUnique` and that participates in an index
+    that UniqueIndex flags as `EnforceUnique` is doubly-confirmed.
+    An attribute flagged `SuggestUnique` that does NOT participate
+    in any unique index is a candidate for index creation —
+    interesting downstream signal but not this strategy's concern.
+    The strategies coexist; downstream emitters / strategies can
+    correlate.
+  - **Truncated vocabulary as a hard skip.** A truncated
+    Categorical distribution might still satisfy
+    `distinctCount = totalObservations` for the *observed sample*
+    while missing values from the full population. The strategy
+    declines to suggest in this case — the inference is unsafe
+    without the full vocabulary. Operators who want to override
+    this for a specific known-bounded vocabulary can do so via
+    a future override-list config field (deferred until a real
+    fixture demands).
+  - **`MinDistinctCountForUniqueness` floor.** Set conservatively
+    in the configuration. A binary attribute (`distinctCount = 2`)
+    might be a meaningful unique key in some domains (e.g., a
+    single-row toggle table); the floor is a default, not a
+    forbidden zone — the caller's config chooses.
+  - **No V1 differential test.** V1 has no analog. The session-11
+    test discipline is V2-only contract tests + end-to-end milestone
+    on V2-defined fixture data. Same shape as the rich-profiling
+    extension (session 9 / 10).
+
+### Cross-strategy observation: the deferred decisions converge here
+
+Session 11 carries the cash-out trigger for two deferred decisions
+from session 8 (DECISIONS 2026-05-11). With this fourth
+registered-intervention strategy:
+
+  1. **Composition vocabulary**: `fanOut`-style iteration is now
+     inlined in four pass drivers. The threshold (DECISIONS
+     2026-05-13 — emergent primitives) is met.
+  2. **Generic `StrategyEvaluator` alias**: four strategies share
+     the `(interventionId, config, context, profile) → decision`
+     shape. The cross-strategy generalization can be empirically
+     validated.
+
+Commits 4 and 5 decide both. Per the user's session-11 brief and
+the shared-trigger discipline (DECISIONS 2026-05-11), they cash
+out together rather than in isolation.
+
