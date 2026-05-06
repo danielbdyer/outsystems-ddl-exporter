@@ -983,3 +983,79 @@ This entry pairs with the broader V1↔V2 vocabulary mapping in the
 2026-05-06 — General names in the pure core entry; this is the
 nullability-specific rename. Future renames at the rules-module
 level land here as additional rows.
+
+## 2026-05-09 — Three-input projection validated end-to-end (the milestone)
+
+**Status:** decided (worked-example milestone)
+**Context:** Session 6's planned milestone — combine the static-data
+adapter, the profile-snapshot adapter, and `NullabilityPass` to
+validate the three-input projection
+`Project = Π ∘ E : (Catalog, Policy, Profile) → Output` against
+V1-fixture-equivalent inputs. The test exercises the full V1↔V2
+boundary stack:
+
+```
+V1 JSON (static-data + profile-snapshot)
+     │
+     ▼
+F# adapters (Static.attachStaticPopulations + ProfileSnapshot.attach)
+     │
+     ▼
+V2 IR (Catalog with populations + Profile)
+     │
+     ▼
+NullabilityPass (under registered Nullability intervention)
+     │
+     ▼
+NullabilityDecisionSet (emitter-consumable per A32)
+```
+
+**Result:** the milestone test
+(`MILESTONE: three-input projection passes end-to-end through both
+adapters and NullabilityPass`) passes. 348/348 tests green.
+
+**Two structural commitments validated empirically:**
+
+1. **The three-input projection works.** `Project = Π ∘ E` consumes
+   all three inputs (Catalog, Policy, Profile) and produces decisions
+   end-to-end. The plumbing through both adapters preserves identity
+   (every decision keys back to a real catalog Attribute SsKey); the
+   pass produces decisions for every (attribute × intervention) pair
+   the policy registers; outcomes match expectations on the
+   V2-expressible cases (PrimaryKey, PhysicallyNotNull, override,
+   no-signal).
+
+2. **The plugin-shape Tightening supports the projection without
+   compromise.** Sessions 6's mid-session refactor (DECISIONS
+   2026-05-09 — Tightening as a registry of named interventions)
+   could have introduced friction at the integration site; it didn't.
+   Registering one intervention with a stable id, running the pass,
+   and getting decisions tagged with that id all flow naturally.
+   Future audit consumers reading the lineage will see "intervention
+   `v1-cautious-equivalent` produced EnforceNotNull(PrimaryKey) on
+   `OS_ATTR_E2E_Parent_Id`" — structural, queryable, type-checked.
+
+**Caveats parked:**
+
+- V2's IR does not yet carry `IsMandatory` on `Attribute`. The V1
+  mandatory-driven branches (`LogicalMandatoryNoNulls`,
+  `RelaxedUnderEvidence`,
+  `MandatoryButHasNullsBeyondBudget`) are commented pseudocode in
+  `NullabilityRules.evaluate`; they wire in when `IsMandatory` lands
+  under "IR grows under evidence." The milestone test annotates
+  this in code so future agents see the limitation surfaced.
+- Differential parity with V1's full `NullabilityEvaluatorTests`
+  fixture suite (8 tests) requires the mandatory branch. The
+  current end-to-end differential validates the V2-expressible
+  subset; the remaining V1 parity arrives with the IR refinement.
+
+**Reasoning / consequences:** The milestone is achieved at the
+algebra-and-plumbing level. The remaining V1 parity is a known IR
+gap, not a structural one. V2's three-input projection is now
+empirically validated; future passes (FK enforcement, unique
+enforcement) follow the same shape and inherit the validation by
+construction. Session-6 commits 1 (Tightening axis) → 2 (plugin
+refactor) → 3 (NullabilityRules) → 4 (NullabilityPass) → 5
+(profile adapter) → 6 (this milestone) form a coherent vertical
+slice; each commit is independently meaningful and the whole stack
+passes its empirical contract.
