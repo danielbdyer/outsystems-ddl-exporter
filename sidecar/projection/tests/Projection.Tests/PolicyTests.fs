@@ -8,23 +8,31 @@ open Projection.Tests.Fixtures
 open Projection.Tests.ProfileFixtures
 
 // ---------------------------------------------------------------------------
-// A12 amended: Policy is composed of three named axes. The signature is
-// the test — adding a fourth field would break compilation here. The
-// runtime checks pin axis-empty defaults for documentation.
+// A12 amended (V2 2026-05-09): Policy is composed of FOUR named axes.
+// The signature is the test — adding a fifth field would break compilation
+// here. The Tightening axis was added under "IR grows under evidence" when
+// the NullabilityEvaluator admire surfaced the need (DECISIONS 2026-05-09).
+// The original three-axis history is preserved in the AXIOMS amendment;
+// these tests are the V2 expectation.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``A12: Policy.empty has Selection=IncludeAll, Emission=schemaOnly, Insertion=SchemaOnly`` () =
-    Assert.Equal<SelectionPolicy>(IncludeAll, Policy.empty.Selection)
-    Assert.Equal<EmissionPolicy>(EmissionPolicy.schemaOnly, Policy.empty.Emission)
-    Assert.Equal<InsertionPolicy>(SchemaOnly, Policy.empty.Insertion)
+let ``A12 (V2 2026-05-09): Policy.empty pins all four axes at empty defaults`` () =
+    Assert.Equal<SelectionPolicy>(IncludeAll,                Policy.empty.Selection)
+    Assert.Equal<EmissionPolicy>(EmissionPolicy.schemaOnly,  Policy.empty.Emission)
+    Assert.Equal<InsertionPolicy>(SchemaOnly,                Policy.empty.Insertion)
+    Assert.Equal<TighteningPolicy>(TighteningPolicy.empty,   Policy.empty.Tightening)
 
 [<Fact>]
-let ``A12: each axis has its own empty default`` () =
+let ``A12 (V2 2026-05-09): each axis has its own empty default`` () =
     Assert.Equal<SelectionPolicy>(IncludeAll,                            SelectionPolicy.empty)
     Assert.Equal<EmissionPolicy>({ EmitSchema = true; EmitData = false; EmitDiagnostics = false },
                                   EmissionPolicy.empty)
     Assert.Equal<InsertionPolicy>(SchemaOnly,                            InsertionPolicy.empty)
+    Assert.Equal<TighteningMode>(Cautious,                               TighteningPolicy.empty.Mode)
+    Assert.Equal(0.0m,                                                   TighteningPolicy.empty.NullBudget)
+    Assert.False(TighteningPolicy.empty.AllowCautiousRelaxation)
+    Assert.Empty(TighteningPolicy.empty.Overrides)
 
 // ---------------------------------------------------------------------------
 // A12 orthogonality: changing one axis does not alter the helpers of the
@@ -50,6 +58,104 @@ let ``A12: changing Selection does not affect Emission flags`` () =
     let p1 = { Policy.empty with Selection = IncludeOnly (Set.singleton customerKey) }
     let p2 = { Policy.empty with Selection = ExcludeOnly (Set.singleton customerKey) }
     Assert.Equal(p1.Emission, p2.Emission)
+
+// ---------------------------------------------------------------------------
+// A12 (V2 2026-05-09): Tightening orthogonality with the other three axes.
+// Three new pairs land here.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``A12: changing Tightening does not affect SelectionPolicy.isSelected`` () =
+    let aggressive =
+        TighteningPolicy.create Aggressive 0.1m false []
+        |> Result.value
+    let p1 = { Policy.empty with Tightening = aggressive }
+    let p2 = Policy.empty
+    Assert.Equal(SelectionPolicy.isSelected customerKey p1.Selection,
+                 SelectionPolicy.isSelected customerKey p2.Selection)
+
+[<Fact>]
+let ``A12: changing Tightening does not affect Emission flags`` () =
+    let aggressive =
+        TighteningPolicy.create Aggressive 0.1m false []
+        |> Result.value
+    let p1 = { Policy.empty with Tightening = aggressive }
+    let p2 = Policy.empty
+    Assert.Equal(p1.Emission, p2.Emission)
+
+[<Fact>]
+let ``A12: changing Tightening does not affect Insertion`` () =
+    let aggressive =
+        TighteningPolicy.create Aggressive 0.1m false []
+        |> Result.value
+    let p1 = { Policy.empty with Tightening = aggressive }
+    let p2 = Policy.empty
+    Assert.Equal<InsertionPolicy>(p1.Insertion, p2.Insertion)
+
+[<Fact>]
+let ``A12: changing Selection does not affect Tightening`` () =
+    let p1 = { Policy.empty with Selection = IncludeOnly (Set.singleton customerKey) }
+    let p2 = { Policy.empty with Selection = ExcludeOnly (Set.singleton customerKey) }
+    Assert.Equal<TighteningPolicy>(p1.Tightening, p2.Tightening)
+
+// ---------------------------------------------------------------------------
+// TighteningPolicy.create — validates NullBudget range.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``TighteningPolicy.create accepts NullBudget in [0, 1]`` () =
+    Assert.True(Result.isSuccess (TighteningPolicy.create Cautious 0.0m false []))
+    Assert.True(Result.isSuccess (TighteningPolicy.create Cautious 0.5m false []))
+    Assert.True(Result.isSuccess (TighteningPolicy.create Cautious 1.0m false []))
+
+[<Fact>]
+let ``TighteningPolicy.create rejects NullBudget below 0`` () =
+    let r = TighteningPolicy.create Cautious -0.1m false []
+    Assert.True(Result.isFailure r)
+
+[<Fact>]
+let ``TighteningPolicy.create rejects NullBudget above 1`` () =
+    let r = TighteningPolicy.create Cautious 1.1m false []
+    Assert.True(Result.isFailure r)
+
+[<Fact>]
+let ``TighteningPolicy.create captures every field`` () =
+    let overrides =
+        [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
+    let p =
+        TighteningPolicy.create EvidenceGated 0.05m true overrides
+        |> Result.value
+    Assert.Equal<TighteningMode>(EvidenceGated, p.Mode)
+    Assert.Equal(0.05m,                          p.NullBudget)
+    Assert.True(p.AllowCautiousRelaxation)
+    Assert.Equal(1, p.Overrides.Length)
+
+// ---------------------------------------------------------------------------
+// TighteningPolicy.shouldKeepNullable — override lookup.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``shouldKeepNullable returns true for an attribute with a KeepNullable override`` () =
+    let overrides =
+        [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
+    let p =
+        TighteningPolicy.create Cautious 0.0m false overrides
+        |> Result.value
+    Assert.True(TighteningPolicy.shouldKeepNullable customerNameKey p)
+
+[<Fact>]
+let ``shouldKeepNullable returns false for an attribute without an override`` () =
+    let p = TighteningPolicy.empty
+    Assert.False(TighteningPolicy.shouldKeepNullable customerNameKey p)
+
+[<Fact>]
+let ``shouldKeepNullable returns false for a different attribute's override`` () =
+    let overrides =
+        [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
+    let p =
+        TighteningPolicy.create Cautious 0.0m false overrides
+        |> Result.value
+    Assert.False(TighteningPolicy.shouldKeepNullable customerIdAttrKey p)
 
 // ---------------------------------------------------------------------------
 // SelectionPolicy.isSelected exhaustively tested across the three variants.

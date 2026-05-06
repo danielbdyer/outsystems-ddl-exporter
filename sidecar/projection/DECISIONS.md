@@ -718,3 +718,97 @@ The session 5 commit 3 adapter (`Projection.Adapters.Sql/Static.fs`)
 is the canonical pattern for IR-conversion adapters; the future
 SQL-I/O adapter when it arrives will be the canonical pattern for
 foreign-API I/O adapters.
+
+## 2026-05-09 — Policy.Tightening as fourth top-level axis (worked example: structural commitments are defaults)
+
+**Status:** decided
+**Context:** The session-2 commitment to a three-axis Policy
+(Selection / Emission / Insertion) was right at the time given the
+evidence. The session-5 `NullabilityEvaluator` admire pass surfaced
+configuration that does not fit any of the three axes: tightening
+mode, null budget, cautious-relaxation toggle, override list. These
+inputs control *what shape of decision gets produced*, not which kinds
+participate, what artifacts are emitted, or how data is applied.
+Trying to fit them into one of the existing axes would be artificial
+and lossy.
+**Decision:** Add `Tightening` as a fourth orthogonal Policy axis.
+`TighteningPolicy` carries `Mode` (`Cautious | EvidenceGated |
+Aggressive`), `NullBudget` (decimal in [0, 1]), `AllowCautiousRelaxation`
+(bool), and `Overrides` (list of `TighteningOverride` keyed by SsKey
+per A4). AXIOMS A12 receives a second amendment (2026-05-09 — four
+orthogonal axes) preserving the three-axis history; the original
+amendment from 2026-05-06 is the lineage, not the rule.
+**Reasoning / consequences:** This is a worked example of a principle
+worth naming explicitly: **structural commitments are defaults, not
+promises.** The three-axis claim was a default given the evidence
+available at session 2; it grew when a real pass forced it to. The
+discipline is "IR grows under evidence" applied at the policy-shape
+level, exactly as it has applied at the data-shape level. Future
+agents reading this entry should expect their own structural
+commitments to refine when consumers demand it, and should not
+defend earlier commitments against pressure from real evidence.
+
+The amendment cadence — three axes (session 2) → four axes
+(session 6) — is itself a worked example: the architecture refined
+in flight three times across five sessions (Kahn's permutation
+invariance, CycleResolution extraction, language rule supersession),
+each driven by evidence rather than by speculation. The four-axis
+amendment is the fourth and the first at the policy-shape level
+rather than the implementation level.
+
+## 2026-05-09 — Adapter language rule supersedes the original "F# core / C# shell" framing
+
+**Status:** decided (supersedes the 2026-05-06 — F# is introduced for the algebraic core entry's framing)
+**Context:** The original V2 handoff partitioned languages by
+algebra-vs-I/O — F# for the pure core, C# at the imperative shell.
+Session 5 commit 3 (the static-data adapter) showed this partition
+is too coarse: the JSON-parsing adapter is "shell" by the original
+framing but its native API is `System.Text.Json`, which both
+languages handle equally well. Forcing C# created interop friction
+without earning anything.
+**Decision:** **Adapter language is decided per-adapter, by which
+side of the seam the foreign API sits on.** F# adapters for
+IR-conversion concerns whose only foreign dependencies are
+`System.*` (JSON parsing, byte-array hashing, etc.). C# adapters for
+foreign-API concerns whose .NET API is OOP-flavored (SQL Server
+connections, ASP.NET / Hot Chocolate, DACPAC building, external
+authorization). The seam is at the language boundary; the project
+boundary follows from API alignment, not from a pre-imposed
+algebra/shell partition.
+
+This rule supersedes the original framing as the canonical statement.
+The earlier entry remains for historical context; future agents
+applying the rule should consult this entry first.
+
+**Reasoning / consequences:** The refined rule was Danny's
+formulation in the session-5 review. It is sharper than the original:
+language alignment with native API maximizes readability on each
+side of the seam. F# `Result.bind` / `Result.map` composition stays
+natural at IR-conversion boundaries; OOP-flavored .NET APIs stay
+natural at SQL-I/O boundaries. The seam is honest about what
+actually crosses; the project naming follows from where the seam
+falls, not from a pre-imposed partition.
+
+## 2026-05-09 — Pattern setters explicitly named in ADMIRE.md
+
+**Status:** decided (operational discipline; observation from session 5)
+**Context:** Session 5 shipped two canonical patterns:
+`EntitySeedDeterminizer` (the "split" pattern, with status `extracted
+(differential confirmed)` as the marker for completed migrations);
+`Projection.Adapters.Sql.Static` (the IR-conversion adapter pattern).
+Both have ADMIRE entries; both have explicit canonical-string statuses;
+future agents can scan ADMIRE.md and see at a glance what shape to copy
+and what state each migration is in.
+**Decision:** Continue this naming explicitly as ADMIRE entries land.
+Each new V1 component admire identifies whether its V2 placement is a
+**copy of an existing canonical pattern** (cite the earlier ADMIRE
+entry by date/title) or a **new pattern setter** (mark the status
+explicitly as canonical). After the second confirming instance of a
+pattern, the pattern is a shape, not a one-off.
+
+**Reasoning / consequences:** "Make the laws visible" applied at the
+operational level. Future readers can scan for status strings —
+`admired (placement decided)`, `extracted (differential confirmed)`,
+`extracted (full coverage)` — and understand the migration arc at a
+glance. The corpus accumulates value over time precisely because
+patterns get named when they emerge.

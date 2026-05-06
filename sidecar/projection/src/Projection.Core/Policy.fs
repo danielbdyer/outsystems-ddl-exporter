@@ -35,16 +35,81 @@ type InsertionPolicy =
     | TruncateAndInsert
 
 
-/// The three-axis policy aggregate (A12 amended). Each axis is its own
-/// structured value; the three are composed in a single record. Changing
-/// one axis does not constrain the others. `Policy.empty` is the
-/// no-policy default — schema-only emission, no selection filter, no
-/// insertion semantics — and is a first-class input for use cases that
-/// need none of the axes.
+/// Tightening axis (A12 amended 2026-05-09). The fourth orthogonal Policy
+/// axis. Tightening is genuinely orthogonal to Selection / Emission /
+/// Insertion — it controls *what shape of constraint decisions* gets
+/// produced, independent of which kinds participate, what artifacts are
+/// emitted, or how data is applied. Surfaced under the
+/// "IR grows under evidence" discipline by the `NullabilityEvaluator`
+/// admire (ADMIRE.md, 2026-05-09); see DECISIONS for the worked example.
+///
+/// Three modes capture V1's `TighteningMode` enum verbatim. Mode names
+/// are part of V2's vocabulary; future modes can be added when admire
+/// passes surface them.
+type TighteningMode =
+    /// Conservative — only structural signals (PK, physical NOT NULL,
+    /// logical Mandatory) drive tightening. FK and Unique signals are
+    /// telemetry-only.
+    | Cautious
+    /// FK and Unique signals drive tightening only when their probe
+    /// succeeded (RequiresEvidence: true).
+    | EvidenceGated
+    /// All signals drive tightening; missing probe outcomes flag
+    /// remediation rather than withhold the signal.
+    | Aggressive
+
+
+/// One row of the override table. Keyed by attribute identity (per A4)
+/// rather than by (module, entity, attribute) names — the V2 boundary
+/// resolves V1's name-keyed overrides to SsKey before they reach the
+/// pure core.
+type TighteningOverride = {
+    AttributeKey : SsKey
+    Action       : OverrideAction
+}
+
+/// What an override does. V2 starts with the single action V1 actually
+/// uses — keep the column nullable, bypassing the entire signal
+/// hierarchy. Future actions extend the DU when admire passes surface
+/// them (e.g., force-not-null, require-operator-approval); the new
+/// variants land under "IR grows under evidence."
+and OverrideAction =
+    /// Force the column to remain nullable; bypass signal evaluation
+    /// entirely. Operator-approved escape hatch; rationale recorded as
+    /// `NullabilityOverride`.
+    | KeepNullable
+
+
+/// Tightening axis. Carries the policy inputs `NullabilityEvaluator`
+/// (and any future tightening-flavored pass) needs.
+type TighteningPolicy = {
+    /// Which signal-set composition rule applies.
+    Mode                       : TighteningMode
+    /// Permitted null fraction — `allowed = RowCount * NullBudget`.
+    /// Range [0, 1]; enforced at construction by `TighteningPolicy.create`.
+    NullBudget                 : decimal
+    /// In Cautious mode, may a column whose model declares mandatory
+    /// be relaxed to nullable when profile evidence shows nulls? Default
+    /// false — Cautious blocks relaxation by default, flagging
+    /// remediation; setting true permits the relaxation.
+    AllowCautiousRelaxation    : bool
+    /// Operator-approved overrides. Each override bypasses the signal
+    /// hierarchy entirely for its target attribute.
+    Overrides                  : TighteningOverride list
+}
+
+
+/// The four-axis policy aggregate (A12 amended 2026-05-09). Each axis is
+/// its own structured value; the four are composed in a single record.
+/// Changing one axis does not constrain the others. `Policy.empty` is
+/// the no-policy default — schema-only emission, every kind selected,
+/// no insertion semantics, Cautious tightening with zero null budget —
+/// and is a first-class input for use cases that need none of the axes.
 type Policy = {
-    Selection : SelectionPolicy
-    Emission  : EmissionPolicy
-    Insertion : InsertionPolicy
+    Selection  : SelectionPolicy
+    Emission   : EmissionPolicy
+    Insertion  : InsertionPolicy
+    Tightening : TighteningPolicy
 }
 
 
@@ -114,15 +179,58 @@ module InsertionPolicy =
 
 
 [<RequireQualifiedAccess>]
+module TighteningPolicy =
+
+    let private nullBudgetOutOfRange =
+        ValidationError.create
+            "tighteningPolicy.nullBudget.outOfRange"
+            "NullBudget must be in [0, 1]."
+
+    /// The empty Tightening policy: Cautious mode, zero null budget,
+    /// relaxation forbidden, no overrides. The default for use cases
+    /// that consume no profile evidence — `NullabilityPass` running on
+    /// `Policy.empty` is structurally valid; it produces conservative
+    /// decisions (only PK / PhysicalNotNull / Mandatory signals fire,
+    /// and Mandatory requires zero observed nulls).
+    let empty : TighteningPolicy =
+        { Mode                    = Cautious
+          NullBudget              = 0.0m
+          AllowCautiousRelaxation = false
+          Overrides               = [] }
+
+    /// Construct a `TighteningPolicy`. Validates `NullBudget` ∈ [0, 1].
+    let create
+        (mode: TighteningMode)
+        (nullBudget: decimal)
+        (allowCautiousRelaxation: bool)
+        (overrides: TighteningOverride list)
+        : Result<TighteningPolicy> =
+        if nullBudget < 0.0m || nullBudget > 1.0m then
+            Result.failureOf nullBudgetOutOfRange
+        else
+            Result.success
+                { Mode                    = mode
+                  NullBudget              = nullBudget
+                  AllowCautiousRelaxation = allowCautiousRelaxation
+                  Overrides               = overrides }
+
+    /// True iff there's a `KeepNullable` override for the given attribute.
+    let shouldKeepNullable (attributeKey: SsKey) (policy: TighteningPolicy) : bool =
+        policy.Overrides
+        |> List.exists (fun o -> o.AttributeKey = attributeKey && o.Action = KeepNullable)
+
+
+[<RequireQualifiedAccess>]
 module Policy =
 
-    /// The empty policy: schema-only emission, every kind selected, no
-    /// insertion semantics. A valid input for any pass; passes that
-    /// consume Policy must produce sensible behavior on `Policy.empty`.
+    /// The empty policy: every axis at its empty default. A valid input
+    /// for any pass; passes that consume Policy must produce sensible
+    /// behavior on `Policy.empty`.
     let empty : Policy =
-        { Selection = SelectionPolicy.empty
-          Emission  = EmissionPolicy.empty
-          Insertion = InsertionPolicy.empty }
+        { Selection  = SelectionPolicy.empty
+          Emission   = EmissionPolicy.empty
+          Insertion  = InsertionPolicy.empty
+          Tightening = TighteningPolicy.empty }
 
 
 [<RequireQualifiedAccess>]
@@ -137,3 +245,4 @@ module ProjectionInput =
     /// True iff the input is in the "no policy, no profile" minimal form.
     let isMinimal (input: ProjectionInput) : bool =
         input.Policy = Policy.empty && Profile.isEmpty input.Profile
+

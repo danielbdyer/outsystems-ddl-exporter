@@ -362,16 +362,41 @@ and originating from a different source.
 **Original (V1):** "Policy is data. The Policy aggregate is a static
 configuration value: auditable, diffable, version-controllable."
 
-**Amended (V2):** Policy is data **with three orthogonal axes** — Selection
-(which kinds participate), Emission (what artifacts are produced), Insertion
-(how artifacts are applied). Each axis is its own structured value; the
-three are composed in a single record. Changing one axis does not constrain
-the others.
+**Amended (V2 2026-05-06):** Policy is data **with three orthogonal axes** —
+Selection (which kinds participate), Emission (what artifacts are produced),
+Insertion (how artifacts are applied). Each axis is its own structured
+value; the three are composed in a single record. Changing one axis does
+not constrain the others.
 
   *Enforcement.* `Policy = { Selection; Emission; Insertion }` in F#; each
   axis a value type with its own validation.
   *Property test.* `policyAxesAreOrthogonal` — perturbing one axis does not
   alter the output of passes that read the other two.
+
+## A12 amended again (2026-05-09) — Policy has four orthogonal axes
+
+**Prior amendment (2026-05-06):** three axes — Selection, Emission, Insertion.
+
+**Amended (V2 2026-05-09):** Policy is data **with four orthogonal axes** —
+Selection, Emission, Insertion, **Tightening**. The Tightening axis was
+surfaced under "IR grows under evidence" (DECISIONS 2026-05-09) when the
+`NullabilityEvaluator` admire pass identified the need — tightening is
+genuinely orthogonal to the other three, controlling *what shape of
+constraint decisions* gets produced, independent of which kinds
+participate, what artifacts are emitted, or how data is applied.
+
+  *Enforcement.* `Policy = { Selection; Emission; Insertion; Tightening }`
+  in F#; `TighteningPolicy = { Mode; NullBudget; AllowCautiousRelaxation;
+  Overrides }`. `TighteningPolicy.create` validates `NullBudget ∈ [0, 1]`.
+  *Property test.* Pairwise orthogonality of all four axes — perturbing
+  any one does not alter helpers of the other three.
+
+**On amendment discipline.** The three-axis amendment from 2026-05-06 was
+right at the time given the evidence; the fourth axis arrives because a
+real pass (`NullabilityPass`) needs it. Both amendments are preserved
+above, in chronological order. Code and tests cite the most recent
+amendment as the V2 contract; earlier amendments are the lineage of the
+amendment, not the rule. Future amendments follow this discipline.
 
 ## A17 amended (2026-05-06) — E's signature
 
