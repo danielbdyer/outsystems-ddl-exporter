@@ -31,6 +31,7 @@
     <Compile Include="Passes/NullabilityPass.fs" />
     <Compile Include="Passes/UniqueIndexPass.fs" />
     <Compile Include="Passes/ForeignKeyPass.fs" />
+    <Compile Include="Passes/CategoricalUniquenessPass.fs" />
   </ItemGroup>
 
 </Project>
