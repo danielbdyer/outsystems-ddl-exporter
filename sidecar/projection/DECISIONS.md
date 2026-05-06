@@ -1782,3 +1782,152 @@ glance which entries are migrations and which are growth, and the
 test discipline expectations follow accordingly. The session-9
 admire stands as the V2-growth template; future V2-growth admires
 follow its structure.
+
+## 2026-05-13 — Session 10 reflection: closed-DU expansion validated; forward signals
+
+**Status:** decided (operating discipline; session 11 hand-off)
+**Context:** Session 10's job was to land the second
+`AttributeDistribution` variant (Numeric) end-to-end through every
+layer of the rich-profiling pipeline. The session-9 reflection
+asked whether the closed DU's seam was positioned correctly; the
+session-10 brief framed adding the second variant as the
+codification's "first real test." This entry records the answer
+and the forward signals for session 11.
+
+**Did the closed DU accommodate the second variant cleanly?** Yes.
+The exhaustiveness checks lit up exactly where the codification
+predicted, and the variant addition required updates at exactly
+the sites a closed DU promises. The friction was zero on the
+structural axis; the rough edges that surfaced are minor
+operational concerns, not architectural ones.
+
+**Empirical record of the closed-DU expansion.** Adding
+`Numeric of NumericDistribution` to `AttributeDistribution`
+required updates at:
+
+  1. `Profile.tryFindCategorical` — F# exhaustiveness error;
+     added `Numeric _ -> None` branch.
+  2. `Profile.tryFindNumeric` — new helper, structurally symmetric
+     to its categorical sibling.
+  3. `Profile.tryFindDistribution` — *new* variant-agnostic helper
+     that emerged as the natural lookup primitive for the
+     emitter. Returns the first registered distribution by key,
+     regardless of variant. Useful primitive; consumers (Faker,
+     anomaly strategies) will reuse it.
+  4. `DistributionsEmitter.writeDistribution` — F# exhaustiveness
+     error; added `Numeric -> writeNumeric` branch.
+  5. `ProfileStatistics.parseDistribution` — string-dispatch on
+     "Kind" field; added "Numeric" branch alongside "Categorical".
+     Coordinate resolution shared (single-function dispatch held).
+
+Five sites; five updates; F# enforcement at the compile level on
+sites 1, 2, and 4; deliberate update at sites 3 and 5. No
+surprises. The codification's prediction (closed-DU expansion is
+clean when the seams are positioned at the variant level, not at
+the consumer level) held.
+
+**Findings beyond the plan.**
+
+1. **`Profile.tryFindDistribution` is a useful primitive that
+   wasn't in the brief.** When adding the variant to the emitter,
+   I reached for a variant-agnostic lookup rather than a chain of
+   per-variant lookups. The helper emerged because the emitter
+   doesn't care which variant the IR carries — it just needs to
+   render whatever's there. Future Π (Faker, anomaly reports) and
+   future strategies (distribution-aware tightening) will likely
+   want the same primitive. The pattern: per-variant helpers for
+   consumers that care about the shape; variant-agnostic helper
+   for consumers that just need to dispatch.
+2. **Variants currently share an `AttributeKey` field convention.**
+   Both `CategoricalDistribution` and `NumericDistribution` carry
+   `AttributeKey : SsKey` as their first field. This convention
+   lets `tryFindDistribution` extract the key uniformly via a
+   small private helper (`distributionKey`). If a future variant
+   diverges (e.g., `JointDistribution` keyed by *two* attributes),
+   the variant-agnostic lookup needs revision — the key isn't a
+   single SsKey anymore. Document the convention so the next
+   variant author knows the implicit rule and can surface a
+   refactor if their variant breaks it.
+3. **Intermediate-state commits worked but require discipline.**
+   Between commit 2 (variant added with placeholder rendering)
+   and commit 4 (real rendering), the emitter silently dropped
+   numeric data. The placeholder was documented and tests
+   confirmed the eventual fix — but the intermediate state was
+   technically incorrect. Future variant additions should weigh
+   atomic-but-incomplete (this session's approach) against
+   bundle-everything-in-one-commit. The split approach is more
+   reviewable and surfaces F# exhaustiveness issues at the right
+   moment; the bundled approach lands the working feature
+   sooner. No forced choice; surface the trade-off.
+4. **Decimal as the percentile value type was right.** No
+   floating-point drift surfaced; T1 byte-determinism held across
+   repeats. The choice was made on session 10's first commit
+   based on V2's existing decimal use; the milestone validates it
+   end-to-end.
+
+**The structural-commitment pattern's reach validated.**
+`NumericDistribution.create` rejects monotonicity violations at
+construction. The adapter's `Result.bind` chain surfaces the
+rejection as an adapter error. The end-to-end test confirms a bad
+fixture halts the pipeline with the constructor's error code, not
+a silent degenerate Profile. The full pipeline trusts that every
+`NumericDistribution` value satisfies the contract because every
+path to its existence checked it. The pattern (AXIOMS.md
+2026-05-12) compounds: every layer downstream gets cheaper to
+write because invariants ride on every value.
+
+**Forward signals for session 11.**
+
+  - **The deferred-decisions cash-out trigger fires.** Session 11's
+    first distribution-aware strategy is the fourth
+    registered-intervention strategy (after Nullability,
+    UniqueIndex, ForeignKey). Both deferred decisions from
+    session 8 cash out together: the composition vocabulary
+    (`fanOut`, `fallback`, etc.) and the generic
+    `StrategyEvaluator` alias. The shared trigger discipline
+    documented in DECISIONS 2026-05-11 should be honored —
+    decide both questions empirically when the migration ships,
+    not in isolation.
+  - **The codified strategy layer's third real test.** Session 11's
+    strategy migration uses the codification (DECISIONS 2026-05-11)
+    as its rubric. Three previous registered-intervention strategies
+    (Nullability, UniqueIndex, ForeignKey) validated the codification
+    on session-8 evidence types (null counts, duplicate booleans,
+    orphan flags). Session 11's strategy validates it on
+    distribution evidence — a structurally richer Profile slice.
+    If the codification's `evaluate` shape accommodates the new
+    evidence type without revision, the codification's reach
+    extends to rich profiling.
+  - **Distribution-aware strategy candidates.** Several substantive
+    options for session 11's strategy migration:
+      - Categorical-aware uniqueness: distinct-count vs row-count
+        heuristic for "candidate uniqueness" vs "spurious
+        uniqueness." Per-attribute decision; consumes
+        Categorical evidence.
+      - Numeric-bounded mandatory check: an attribute with a
+        narrow numeric range (P95 / P99 close to Max) might
+        warrant a tighter constraint than a wide-tailed one.
+      - Cardinality-aware FK: when the FK target's distinct
+        values are below a threshold, the FK should perhaps be
+        held to a stricter standard.
+    Session 11's admire selects one (probably the categorical
+    one — simplest seam, most testable).
+  - **The closed-DU shape continues to hold.** Adding numeric
+    didn't reveal a need for refactoring. Adding the third variant
+    in a future session is the same shape: extend
+    `AttributeDistribution`, update `tryFindDistribution` and
+    `parseDistribution` and `writeDistribution`, write a
+    smart constructor with structural-commitment validation,
+    extend the milestone test. The pattern's repeatable.
+
+**Reasoning / consequences.** Session 10's job was extension; the
+discipline it tested was whether session 9's foundations would
+support a second variant. They did. The closed-DU codification
+(implicit before, explicit after session 8) absorbed the variant
+without revision. The structural-commitment pattern's reach
+extended through the full pipeline. The composition discipline
+(`Result.bind` for adapter chaining; sibling-Π for emitter
+extension) carried over. Session 11 inherits a strategy layer and
+a rich-profiling foundation that have both been empirically
+validated; the deferred decisions from session 8 cash out there.
+Hold the cadence.
