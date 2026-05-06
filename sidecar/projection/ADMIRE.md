@@ -598,6 +598,231 @@ property + behavioral coverage carries the contract first.
 
 ---
 
+## 2026-05-10 — `UniqueIndexDecisionOrchestrator` (`src/Osm.Validation/Tightening/UniqueIndexDecisionOrchestrator.cs`)
+
+**Status:** admired (placement decided)
+
+**Significance.** The fourth V1 admire migration. Crucially, the
+**second `TighteningIntervention` variant** — the closed DU
+`TighteningIntervention | Nullability of ... | UniqueIndex of ...`
+forces compiler-checked exhaustiveness across consumers and
+empirically tests whether the pass-driver seam was positioned
+correctly when Nullability landed alone.
+
+### What it does (algebraic terms)
+
+For each unique index in the model — single-column or composite —
+decides whether to enforce uniqueness in DDL. Iterates
+(module × entity × index), delegates per-index decision to a
+`UniqueIndexDecisionStrategy` (which loads policy + profile evidence),
+and distributes the resulting `UniqueIndexDecision` back to the
+constituent column builders (composite indexes fan out; single-column
+indexes are 1:1).
+
+V1's decision shape is **binary** (no ternary): `EnforceUnique: bool`,
+`RequiresRemediation: bool`, `Rationales: ImmutableArray<string>`.
+V1 has no `RequireOperatorApproval` outcome — the matrix lookup in
+`TighteningPolicyMatrix.UniqueIndexes` always resolves to a binary
+decision plus a remediation flag.
+
+### V2 placement
+
+**Pure pass in `Projection.Core.Passes`, producing an
+emitter-consumable `UniqueIndexDecisionSet` value per A32**, mirroring
+`NullabilityPass`'s shape but with **per-index granularity** rather
+than per-attribute. The closed DU `TighteningIntervention` gains a
+second variant; the pass driver branches on the variant and
+dispatches to the appropriate iteration shape.
+
+Following the algebra/domain split (DECISIONS 2026-05-09):
+
+  - **Algebra in the pass driver.** The driver pattern-matches on
+    `TighteningIntervention`: `Nullability` walks attributes,
+    `UniqueIndex` walks indexes. Each variant has its own iteration
+    shape; the closed DU forces the dispatcher to handle both
+    exhaustively.
+  - **Domain in `UniqueIndexRules`** (new module, alongside
+    `CycleResolution` and `NullabilityRules`). The per-index decider:
+    given a `UniqueIndexTighteningConfig`, a `Kind`, an `Index`, and a
+    `Profile`, return a `UniqueIndexDecision`.
+  - **Typed seam between them.** A `Decider` type in
+    `UniqueIndexRules` mirrors `NullabilityRules.evaluate`'s shape but
+    operates on `Index` rather than `Attribute`.
+
+### IR refinement required: `Index` on `Kind`
+
+V2's `Catalog` does not yet model `Index` as a structural concept.
+The synthetic milestone covered PK + FK only; unique indexes weren't
+needed. UniqueIndex migration forces the IR refinement:
+
+```fsharp
+type Index = {
+    SsKey      : SsKey
+    Name       : Name
+    Columns    : SsKey list      // attribute SsKeys, in declaration order
+    IsUnique   : bool
+    IsPrimaryKey : bool           // V1's PK is also an index
+}
+
+type Kind = {
+    ...
+    Indexes : Index list           // new field
+}
+```
+
+The `Index` value type lives at namespace level (alongside
+`Attribute`, `Reference`). `Kind` gains an `Indexes` field. The
+`IsUnique` flag controls whether `UniqueIndexRules` evaluates this
+index; the `IsPrimaryKey` flag distinguishes the PK from secondary
+unique indexes (V1 treats both as unique, but the PK is structurally
+separate).
+
+This refinement lands in commit 5 alongside the rules module and
+pass — **per "IR grows under evidence,"** not speculatively.
+
+### Inputs and outputs (V2 IR)
+
+Consumes:
+
+  - **Catalog** — `Kind.Indexes`, `Index.Columns` (resolves to
+    `Kind.Attributes` for column-level metadata if needed),
+    `Index.IsUnique`.
+  - **Policy** — `TighteningPolicy.Interventions` filtered to
+    `UniqueIndex` variants. `UniqueIndexTighteningConfig` carries
+    `EnforceSingleColumnUnique : bool` and
+    `EnforceMultiColumnUnique : bool` — V1's two boolean toggles
+    captured verbatim. No NullBudget; no Overrides (V1 has none).
+  - **Profile** — `Profile.UniqueCandidates` (single-column; keyed by
+    AttributeKey), `Profile.CompositeUniqueCandidates` (multi-column;
+    keyed by KindKey + AttributeKey list), `ProbeStatus` for both.
+
+Produces (per A32):
+
+```fsharp
+type UniqueIndexEvidence =
+    | PhysicalUnique
+    | SingleColumnClean
+    | CompositeClean
+    | DuplicatesAbsent of probeRowCount: int64
+
+type UniqueIndexKeepReason =
+    | PolicyDisabled                                  // EnforceSingleColumnUnique = false (or composite)
+    | DataHasDuplicates of duplicateCount: int64
+    | EvidenceMissing                                  // probe outcome ≠ Succeeded
+
+[<RequireQualifiedAccess>]
+type UniqueIndexOutcome =
+    | EnforceUnique of evidence: UniqueIndexEvidence
+    | DoNotEnforce of reason: UniqueIndexKeepReason
+
+type UniqueIndexDecision = {
+    IndexKey       : SsKey
+    Outcome        : UniqueIndexOutcome
+    InterventionId : string
+}
+
+type UniqueIndexDecisionSet = {
+    Decisions : UniqueIndexDecision list
+}
+```
+
+V2 adopts **binary outcome with structured evidence** (V1's binary
+shape; V2's typed rationale per the V1↔masterwork principle from
+DECISIONS 2026-05-09 — the principle pays out without forcing a
+ternary where V1 has none).
+
+### Existing test coverage
+
+V1 tests live at:
+- `tests/Osm.Validation.Tests/Policy/UniqueIndexDecisionOrchestratorTests.cs`
+- `tests/Osm.Validation.Tests/Policy/UniqueIndexDecisionStrategyTests.cs`
+
+| V1 test | File:line | Category | Asserts | V2 translation |
+|---|---|---|---|---|
+| `Evaluate_CreatesUniqueDecisionsAndOpportunities` | UniqueIndexDecisionOrchestratorTests.cs:16–76 | integration | orchestrator distributes decisions to column builders; opportunities created for remediation cases | **Behavioral** — V2 `UniqueIndexPass.run` produces `UniqueIndexDecisionSet`; opportunities pending Diagnostics writer (skip with rationale) |
+| `PhysicalUniqueWithDuplicatesStillEnforcesInEvidenceMode` | UniqueIndexDecisionStrategyTests.cs:14–32 | scenario | physically-unique index + profile duplicates ⇒ EnforceUnique=true | **Property** — V2 `EnforceUnique(PhysicalUnique)` regardless of profile evidence |
+| `AggressiveModeWithoutEvidenceRequiresRemediation` | UniqueIndexDecisionStrategyTests.cs:34–52 | scenario | Aggressive + missing profile ⇒ EnforceUnique=true + RequiresRemediation=true | **Skip** — V2 has no Aggressive mode (collapsed; arrives as new variant when demand surfaces) |
+| `EvidenceModeTreatsOnDiskUniqueAsPhysicalReality` | UniqueIndexDecisionStrategyTests.cs:54–91 | scenario | OnDisk.Kind = UniqueIndex + empty profile ⇒ EnforceUnique=true | **Property** — V2 physical reality overrides missing profile |
+| `EvidenceModeTreatsIncludedColumnsAsSingleColumnIndex` | UniqueIndexDecisionStrategyTests.cs:93–130 | edge case | included columns (non-key) don't count toward composite classification | **Behavioral** — V2 `Index.Columns` carries only key columns; included columns are physical-realization metadata, elided at the boundary (V1 vestigial-fields convention) |
+
+V2 should add (V1 lacks coverage for these):
+- Composite-unique scenarios (V1's tests are mostly single-column).
+- Policy-disabled gates (`EnforceSingleColumnUnique = false`,
+  `EnforceMultiColumnUnique = false`).
+- Interaction with NullabilityPass (a unique column that is also
+  nullable — does the unique decision affect the nullability
+  decision?).
+
+### Migration path
+
+1. **`Index` on `Kind` IR refinement** (commit 5 setup) — small
+   addition; updates fixtures with empty `Indexes = []` defaults.
+   Documented in DECISIONS as the third IR refinement under "grows
+   under evidence" (after `IsPrimaryKey` in session 3 and
+   `IsMandatory` in session 7 commit 2).
+2. **`UniqueIndexTighteningConfig` + `TighteningIntervention.UniqueIndex`
+   variant** (commit 5 type additions). `Policy.fs` extends. Closed
+   DU forces all consumers to pattern-match exhaustively; compiler
+   surfaces incomplete dispatchers.
+3. **`UniqueIndexRules` module** (commit 5 domain layer). Pure
+   per-index decider; structured evidence/reason DUs.
+4. **Pass driver dispatch** (commit 5 algebra layer). Refactor
+   `NullabilityPass.run` (or introduce a higher-level
+   `TighteningPass` driver) that pattern-matches on
+   `TighteningIntervention` and dispatches to the appropriate
+   iteration shape. The closed DU seam is empirically tested here:
+   if the dispatcher feels forced, surface it.
+5. **Test coverage**: per-index decisions; composite fan-out;
+   policy-disabled gates; physical-unique override; differential
+   parity against V1's tests (where V2 expresses them).
+
+### Edges / risks
+
+- **Per-index granularity vs. per-attribute granularity.** V1's
+  composite index decision fans out to its constituent columns
+  via builder side effects (lines 49–62 of orchestrator). V2's
+  `UniqueIndexDecision` is per-index; the consumer (an emitter
+  rendering `CREATE UNIQUE INDEX (col1, col2)`) knows it walks the
+  index's columns. Fan-out is a consumer concern, not a decision
+  concern — the decision is one per index, period.
+- **Included columns are vestigial at V2's boundary.** V1's
+  `Index.Columns` includes both key and "included" (non-key)
+  columns; V1 filters during evaluation. V2's `Index.Columns`
+  holds only key columns; the V1↔V2 adapter (when it lands) drops
+  V1's included-columns metadata at the boundary, consistent with
+  the 2026-05-10 vestigial-fields convention.
+- **Closed DU dispatcher complexity.** When the third
+  `TighteningIntervention` variant arrives (FK enforcement? Type
+  tightening?), the pattern-match grows. If the dispatcher's
+  cyclomatic complexity becomes load-bearing, refactor to a
+  per-variant driver module (`NullabilityPass`, `UniqueIndexPass`,
+  ...) called from a thin top-level dispatcher. The decision point:
+  when the dispatcher has more than three variants and the per-
+  variant logic exceeds ~10 lines, split.
+- **Profile coverage gap on composites.** V1's
+  `CompositeUniqueCandidateProfile` lacks a per-attribute null
+  count for the composite (only `HasDuplicate`). V2's profile
+  carries `ProbeStatus` for composites (a session-2 V2 fix); the
+  Cleanup/Duplicate distinction is binary. Decisions that depend
+  on null-distribution within a composite are not expressible from
+  V1 evidence alone — surface to operators if the distinction
+  matters.
+- **Interaction with NullabilityPass.** A column that is both
+  unique-candidate and nullable: V1's `NullabilityEvaluator` may
+  tighten it via the unique signal; V1's `UniqueIndexDecisionOrchestrator`
+  decides on the index. They are independent in V1's signal
+  hierarchy. V2 preserves the independence — `NullabilityPass` and
+  `UniqueIndexPass` produce separate decision sets; an emitter
+  consumes both and resolves any conflict at the artifact level.
+- **No override mechanism in V1.** V1 has nullability overrides
+  but no unique-index overrides. V2 inherits this — the
+  `UniqueIndexTighteningConfig` carries no override list. If a
+  real V1 fixture surfaces a need (e.g., "skip uniqueness for this
+  specific index"), it arrives under "IR grows under evidence" as
+  an `Overrides` field on the config.
+
+---
+
 ## 2026-05-07 — `EntityDependencySorter` (`src/Osm.Emission/Seeds/EntityDependencySorter.cs`)
 
 **Status:** admired (placement decided)
