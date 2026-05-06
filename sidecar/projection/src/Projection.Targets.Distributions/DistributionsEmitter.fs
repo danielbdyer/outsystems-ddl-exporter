@@ -35,10 +35,15 @@ module DistributionsEmitter =
 
     /// Pass version. Bump when:
     /// - the JSON output shape changes
-    /// - new distribution variants land (Numeric, Temporal)
+    /// - new distribution variants land (Numeric, Temporal, ...)
     /// - the determinism contract changes
+    ///
+    /// v1 (session 9): Categorical rendering only.
+    /// v2 (session 10): Numeric rendering added; closed DU dispatch
+    ///                  in `writeDistribution` becomes exhaustive on
+    ///                  the two-variant DU.
     [<Literal>]
-    let version : int = 1
+    let version : int = 2
 
     [<Literal>]
     let private emitterName : string = "Projection.Targets.Distributions"
@@ -79,15 +84,25 @@ module DistributionsEmitter =
         writeProbeStatus w cat.ProbeStatus
         w.WriteEndObject()
 
+    let private writeNumeric (w: Utf8JsonWriter) (num: NumericDistribution) : unit =
+        w.WriteStartObject()
+        w.WriteString("kind", "Numeric")
+        w.WriteNumber("min", num.Min)
+        w.WriteNumber("p25", num.P25)
+        w.WriteNumber("p50", num.P50)
+        w.WriteNumber("p75", num.P75)
+        w.WriteNumber("p95", num.P95)
+        w.WriteNumber("p99", num.P99)
+        w.WriteNumber("max", num.Max)
+        w.WriteNumber("sampleSize", num.SampleSize)
+        w.WritePropertyName("probe")
+        writeProbeStatus w num.ProbeStatus
+        w.WriteEndObject()
+
     let private writeDistribution (w: Utf8JsonWriter) (d: AttributeDistribution) : unit =
         match d with
         | AttributeDistribution.Categorical cat -> writeCategorical w cat
-        // Numeric rendering lands in session 10 commit 4. Until then
-        // the variant is wireable through the IR but not surfaced by
-        // the emitter — a documented intermediate state. Tests in
-        // commit 2 verify the variant exists; commit 4 wires the
-        // rendering and replaces this placeholder.
-        | AttributeDistribution.Numeric _ -> ()
+        | AttributeDistribution.Numeric     num -> writeNumeric w num
 
     let private writeAttribute
         (w: Utf8JsonWriter)
@@ -98,10 +113,14 @@ module DistributionsEmitter =
         w.WriteString("ssKey", renderSsKey a.SsKey)
         w.WriteString("name", Name.value a.Name)
         w.WriteString("column", a.Column.ColumnName)
-        match Profile.tryFindCategorical a.SsKey profile with
-        | Some cat ->
+        // Variant-agnostic lookup; the emitter renders whatever
+        // distribution variant the IR carries. The closed DU's
+        // exhaustiveness on `writeDistribution` ensures every variant
+        // has a writer; future variants land as new branches there.
+        match Profile.tryFindDistribution a.SsKey profile with
+        | Some dist ->
             w.WritePropertyName("distribution")
-            writeCategorical w cat
+            writeDistribution w dist
         | None ->
             w.WriteNull("distribution")
         w.WriteEndObject()
@@ -146,30 +165,39 @@ module DistributionsEmitter =
     /// byte-identical across repeat invocations on the same input
     /// (T1).
     ///
-    /// Output shape (pinned at version 1):
+    /// Output shape (pinned at version 2):
     ///
     ///   ```
     ///   { "emitter": "Projection.Targets.Distributions",
-    ///     "version": 1,
-    ///     "modules": [
-    ///       { "ssKey": "OS_MOD_Sales", "name": "Sales",
-    ///         "kinds": [
-    ///           { "ssKey": "OS_KIND_Country", ...,
-    ///             "attributes": [
-    ///               { "ssKey": "OS_ATTR_Country_Code", "name": "Code",
-    ///                 "column": "CODE",
-    ///                 "distribution": {
-    ///                   "kind": "Categorical",
-    ///                   "distinctCount": 3, "isTruncated": false,
-    ///                   "frequencies": [
-    ///                     { "value": "CA", "count": 1 }, ... ],
-    ///                   "probe": { ... } } } ] } ] } ] }
+    ///     "version": 2,
+    ///     "modules": [ { "ssKey": "...", "name": "...",
+    ///       "kinds": [ { ...,
+    ///         "attributes": [
+    ///           { "ssKey": "...", "name": "...", "column": "...",
+    ///             "distribution": null }              // no evidence
+    ///           { "ssKey": "...", "name": "...", "column": "...",
+    ///             "distribution": {                    // categorical
+    ///               "kind": "Categorical",
+    ///               "distinctCount": 3, "isTruncated": false,
+    ///               "frequencies": [ { "value": "...", "count": 1 }, ... ],
+    ///               "probe": { ... } } }
+    ///           { "ssKey": "...", "name": "...", "column": "...",
+    ///             "distribution": {                    // numeric
+    ///               "kind": "Numeric",
+    ///               "min": 0, "p25": 10, "p50": 25, "p75": 50,
+    ///               "p95": 90, "p99": 99, "max": 100,
+    ///               "sampleSize": 100,
+    ///               "probe": { ... } } } ] } ] } ] }
     ///   ```
     ///
     /// Determinism: indented; cross-platform `\n` newline; sibling
     /// elements sorted by SsKey at every level. Profile lookups go
-    /// through `Profile.tryFindCategorical`; attributes without
-    /// distribution evidence emit `"distribution": null`.
+    /// through `Profile.tryFindDistribution` (variant-agnostic);
+    /// attributes without distribution evidence emit
+    /// `"distribution": null`. Per-variant rendering is dispatched
+    /// from `writeDistribution` over the closed DU — adding a new
+    /// variant requires extending that dispatch and the smart
+    /// constructor for the variant's structural commitments.
     let emit (catalog: Catalog) (profile: Profile) : string =
         use stream = new MemoryStream()
         let options =

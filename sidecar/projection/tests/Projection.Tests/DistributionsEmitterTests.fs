@@ -191,3 +191,99 @@ let ``A18 amended: DistributionsEmitter.emit takes no policy parameter`` () =
 let ``output uses LF line endings (no CR)`` () =
     let output = DistributionsEmitter.emit sampleCatalog profileWithCountryCode
     Assert.DoesNotContain("\r", output)
+
+// ---------------------------------------------------------------------------
+// Numeric rendering — landed in session 10 commit 4.
+// ---------------------------------------------------------------------------
+
+let private customerTenantNumeric : NumericDistribution =
+    NumericDistribution.create
+        customerTenantKey
+        1m 2m 3m 4m 8m 9m 10m
+        100L
+        (succeededProbe 100L)
+    |> Result.value
+
+let private profileWithNumeric : Profile =
+    { Profile.empty with
+        Distributions = [ AttributeDistribution.Numeric customerTenantNumeric ] }
+
+[<Fact>]
+let ``Customer.TenantId attribute renders the numeric distribution`` () =
+    let output = DistributionsEmitter.emit sampleCatalog profileWithNumeric
+    use doc = JsonDocument.Parse output
+    let root = doc.RootElement
+    let target = SsKey.rootOriginal customerTenantKey
+    let mutable found = false
+    for m in root.GetProperty("modules").EnumerateArray() do
+        for k in m.GetProperty("kinds").EnumerateArray() do
+            for a in k.GetProperty("attributes").EnumerateArray() do
+                if a.GetProperty("ssKey").GetString() = target then
+                    found <- true
+                    let dist = a.GetProperty("distribution")
+                    Assert.Equal(JsonValueKind.Object, dist.ValueKind)
+                    Assert.Equal("Numeric", dist.GetProperty("kind").GetString())
+                    Assert.Equal(1m, dist.GetProperty("min").GetDecimal())
+                    Assert.Equal(4m, dist.GetProperty("p75").GetDecimal())
+                    Assert.Equal(10m, dist.GetProperty("max").GetDecimal())
+                    Assert.Equal(100L, dist.GetProperty("sampleSize").GetInt64())
+    Assert.True(found, "Customer.TenantId not found in output")
+
+[<Fact>]
+let ``numeric rendering: every percentile and the sample size are present`` () =
+    let output = DistributionsEmitter.emit sampleCatalog profileWithNumeric
+    use doc = JsonDocument.Parse output
+    let root = doc.RootElement
+    let target = SsKey.rootOriginal customerTenantKey
+    for m in root.GetProperty("modules").EnumerateArray() do
+        for k in m.GetProperty("kinds").EnumerateArray() do
+            for a in k.GetProperty("attributes").EnumerateArray() do
+                if a.GetProperty("ssKey").GetString() = target then
+                    let dist = a.GetProperty("distribution")
+                    // Each percentile field must be present.
+                    Assert.True(dist.TryGetProperty("min").Equals(true) |> ignore; true)
+                    for fieldName in [ "min"; "p25"; "p50"; "p75"; "p95"; "p99"; "max"; "sampleSize" ] do
+                        let mutable elem = Unchecked.defaultof<JsonElement>
+                        Assert.True(
+                            dist.TryGetProperty(fieldName, &elem),
+                            sprintf "Numeric distribution missing field '%s'" fieldName)
+                    Assert.Equal(JsonValueKind.Object, dist.GetProperty("probe").ValueKind)
+
+[<Fact>]
+let ``mixed Categorical + Numeric on different attributes both render`` () =
+    let mixed =
+        { Profile.empty with
+            Distributions = [
+                AttributeDistribution.Categorical countryCodeCategorical
+                AttributeDistribution.Numeric customerTenantNumeric
+            ] }
+    let output = DistributionsEmitter.emit sampleCatalog mixed
+    use doc = JsonDocument.Parse output
+    let root = doc.RootElement
+    let countryCode = SsKey.rootOriginal countryCodeKey
+    let customerTenant = SsKey.rootOriginal customerTenantKey
+    let mutable foundCat = false
+    let mutable foundNum = false
+    for m in root.GetProperty("modules").EnumerateArray() do
+        for k in m.GetProperty("kinds").EnumerateArray() do
+            for a in k.GetProperty("attributes").EnumerateArray() do
+                let ssKey = a.GetProperty("ssKey").GetString()
+                let dist = a.GetProperty("distribution")
+                if ssKey = countryCode then
+                    foundCat <- true
+                    Assert.Equal("Categorical", dist.GetProperty("kind").GetString())
+                if ssKey = customerTenant then
+                    foundNum <- true
+                    Assert.Equal("Numeric", dist.GetProperty("kind").GetString())
+    Assert.True(foundCat, "Country.Code categorical not found")
+    Assert.True(foundNum, "Customer.TenantId numeric not found")
+
+[<Fact>]
+let ``numeric rendering is byte-deterministic across repeats`` () =
+    let outputs =
+        [ for _ in 1 .. 10 -> DistributionsEmitter.emit sampleCatalog profileWithNumeric ]
+    Assert.All(outputs, fun s -> Assert.Equal(List.head outputs, s))
+
+[<Fact>]
+let ``emitter version is 2 after numeric rendering lands`` () =
+    Assert.Equal(2, DistributionsEmitter.version)

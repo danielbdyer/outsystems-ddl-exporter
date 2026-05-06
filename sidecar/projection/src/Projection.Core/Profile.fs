@@ -467,3 +467,24 @@ module Profile =
                 Some num
             | AttributeDistribution.Numeric _ -> None
             | AttributeDistribution.Categorical _ -> None)
+
+    /// Look up *any* distribution evidence for an attribute, regardless
+    /// of variant. Returns the first registered distribution whose key
+    /// matches; `None` if no distribution evidence at all. Useful for
+    /// consumers (the Distributions emitter is the first) that need to
+    /// render whatever evidence exists without committing to one
+    /// variant.
+    ///
+    /// When an attribute carries multiple distribution variants (an
+    /// unusual case but not prevented at the type level), the first
+    /// match in `Distributions` order wins. Callers that care about
+    /// a specific variant should use `tryFindCategorical` /
+    /// `tryFindNumeric` instead.
+    let private distributionKey (d: AttributeDistribution) : SsKey =
+        match d with
+        | AttributeDistribution.Categorical cat -> cat.AttributeKey
+        | AttributeDistribution.Numeric num     -> num.AttributeKey
+
+    let tryFindDistribution (attributeKey: SsKey) (p: Profile) : AttributeDistribution option =
+        p.Distributions
+        |> List.tryFind (fun d -> distributionKey d = attributeKey)
