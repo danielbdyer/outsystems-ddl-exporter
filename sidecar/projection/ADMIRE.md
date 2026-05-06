@@ -216,6 +216,356 @@ once the boundary adapter is in place.
 
 ---
 
+## 2026-05-09 — `NullabilityEvaluator` (`src/Osm.Validation/Tightening/NullabilityEvaluator.cs`)
+
+**Status:** admired (placement decided)
+
+**Significance:** This is the first V1 transform that consumes `Profile`
+(empirical evidence). The admire entry does two things at once —
+documents the V1 component, and validates that V2's `Profile` aggregate
+is workable in practice. The V2 form will be the first real exercise of
+the three-input projection `(Catalog, Policy, Profile)`.
+
+### What it does (algebraic terms)
+
+For each attribute on each kind, decides whether the surface should
+emit `NOT NULL` and whether downstream emission should be blocked
+pending data remediation. The decision composes five evidence signals
+(primary key, physical-not-null, foreign-key support, unique-clean,
+logical-mandatory) under a tightening **mode** (Cautious /
+EvidenceGated / Aggressive) that determines which signals participate
+and which require profile evidence to fire. A null-budget threshold
+allows a configurable percentage of nulls without disqualifying
+tightening. Operator overrides bypass the entire decision tree.
+
+The decision is pure — same `(catalog, policy, profile)` triple
+produces the same `NullabilityDecision` for every column, with a full
+`SignalEvaluation` trace showing which signals fired and why.
+
+### V2 placement
+
+**Pure pass in `Projection.Core.Passes`, producing an emitter-consumable
+`NullabilityDecisionSet` value per A32** (paralleling `TopologicalOrder`).
+The catalog itself is **not** modified — nullability decisions are
+metadata that emitters consume; the catalog's structural truth (logical
+`IsMandatory`, physical `IsNullable`) remains the source.
+
+Following the algebra/domain split (DECISIONS 2026-05-09):
+
+  - **Algebra in the pass.** Walk every kind × attribute, look up
+    profile evidence, look up policy overrides, apply the decision
+    function, accumulate `NullabilityDecision` values into a
+    `NullabilityDecisionSet`, emit lineage events.
+  - **Domain in `NullabilityRules` (new module, alongside
+    `CycleResolution`).** The signal hierarchy, threshold formula
+    (`allowed = rowCount * nullBudget`), mode-specific composition
+    rules (which signals participate in which mode), and rationale
+    taxonomy. V1's `TighteningPolicyMatrix` is the source for the
+    mode/signal matrix.
+  - **Typed seam between them.** A `Decider` type
+    (`Kind -> Attribute -> Catalog -> Policy -> Profile -> NullabilityDecision`)
+    is the seam. The pass is parameterized over decider; the default
+    decider implements V1's signal-hierarchy rules.
+
+### Inputs and outputs (V2 IR)
+
+Consumes:
+
+  - **Catalog** — `Kind.Attributes[].IsMandatory`, `IsPrimaryKey`,
+    `Reference` (FK metadata + `OnDelete`), `Column.IsNullable` (the
+    physical-NOT-NULL signal), plus the kind's `PhysicalRealization`
+    for coordinate resolution.
+  - **Policy** — `Tightening.Mode` (`Cautious | EvidenceGated |
+    Aggressive`), `Tightening.NullBudget` (decimal 0.0–1.0),
+    `Tightening.AllowCautiousNullabilityRelaxation` (bool),
+    `Tightening.NullabilityOverrides` (list of `(SsKey * Outcome)`
+    entries — V2 keys by SsKey, not by name+coordinate, per A4).
+  - **Profile** — `ColumnProfile.NullCount`, `RowCount`,
+    `NullCountProbeStatus.Outcome`; `UniqueCandidateProfile.HasDuplicate`,
+    `ProbeStatus.Outcome`; `ForeignKeyReality.HasOrphan`, `OrphanCount`,
+    `ProbeStatus.Outcome`. Profile lookups are by `SsKey` (the V2
+    boundary already resolves physical coordinates to identities).
+
+Produces (emitter-consumable, A32):
+
+```fsharp
+type NullabilityDecisionSet = {
+    Decisions       : NullabilityDecision list
+    SynthesizedAtUtc: DateTimeOffset  // for audit; not part of equality
+}
+
+and NullabilityDecision = {
+    AttributeKey      : SsKey
+    MakeNotNull       : bool
+    RequiresRemediation : bool
+    Rationales        : Rationale list
+    Trace             : SignalEvaluation option
+}
+```
+
+### The Profile-consumption pattern in detail
+
+This section earns its weight: the algebra's first three-input exercise
+has to honor V1's subtleties without smoothing them over.
+
+**Signal hierarchy (the algebra):**
+
+1. **PrimaryKey** — true iff `Attribute.IsPrimaryKey`. No profile
+   needed.
+2. **PhysicalNotNull** — true iff `Column.IsNullable = false`. No
+   profile needed.
+3. **ForeignKeySupport** — true iff the FK is enforced or can be safely
+   created (no orphans, target present, delete rule acceptable).
+   Reads `ForeignKeyReality`.
+4. **UniqueClean** — true iff a unique constraint covers the column
+   with no observed duplicates. Reads `UniqueCandidateProfile`.
+5. **LogicalMandatory** — true iff `IsMandatory` AND
+   `(profile absent OR NullCount within budget)`. Reads `ColumnProfile`.
+
+The mode determines which signals participate:
+
+  - **Cautious** — only signals 1, 2, 5 (no profile-driven tightening).
+  - **EvidenceGated** — signals 1, 2, 5 always; 3, 4 only when their
+    probe succeeded (`RequiresEvidence: true`).
+  - **Aggressive** — all five always; signals 3, 4 contribute even
+    without evidence, but mark `RequiresRemediation` when evidence is
+    missing (`AddsRemediationWhenEvidenceMissing: true`).
+
+**Null-budget formula:**
+
+`allowed = RowCount × NullBudget`. If `NullCount ≤ allowed`, the
+column passes the null-budget gate. Configurable; lives in
+`Policy.Tightening.NullBudget`. Default is conservative (e.g., `0.05`
+allows up to 5% nulls).
+
+**Probe-outcome gating:**
+
+V1 trusts only `ProbeOutcome.Succeeded` and `TrustedConstraint`
+(line 17, `NullEvidenceSignal.cs`). Any other outcome
+(`FallbackTimeout`, `Cancelled`, `AmbiguousMapping`) is treated as
+"no evidence" — the signal does not fire. This is **conservative by
+design**: probe failure ⇒ no support for tightening. V2 must preserve
+this.
+
+**Override precedence:**
+
+Lines 139–170 (`NullabilityEvaluator.cs`): if an override applies, the
+entire decision is replaced with `MakeNotNull = false`,
+`RequiresRemediation = false`, and rationales are scrubbed and
+replaced with `NullabilityOverride`. **Overrides are absolute** —
+they bypass signal evaluation entirely. V2 must preserve this; it is
+the operator-approved escape hatch and emitter consumers depend on
+the override never silently re-enabling NOT NULL.
+
+**Missing-evidence default:**
+
+A column whose profile is absent from the lookup is treated as
+"profile missing." The Mandatory signal still fires on
+`IsMandatory = true` (logical schema is trustworthy without
+empirical confirmation), but the rationale set includes
+`ProfileMissing` rather than `DataNoNulls`. Downstream consumers can
+distinguish the two.
+
+**Subtle: cross-column non-dependency.**
+
+Each column's decision is independent. V1 does **not** cross-reference
+profile evidence between columns (e.g., "if column A has nulls, column
+B becomes less aggressive"). Composite-unique evidence is pre-aggregated
+into the four ISet collections before NullabilityEvaluator sees it.
+
+### The masterwork's PolicyDecisionSet shape question
+
+The masterwork (constitution §3, lines 320–384) prescribes a
+**ternary** outcome:
+
+```fsharp
+type NullabilityOutcome =
+    | EnforceNotNull              // model + profile agree
+    | KeepNullable                // profile shows nulls
+    | RequireOperatorApproval     // conflict — operator must decide
+```
+
+V1 actually uses a **binary + remediation flag**:
+
+```csharp
+record NullabilityDecision(
+    ColumnCoordinate Column,
+    bool MakeNotNull,
+    bool RequiresRemediation,
+    ImmutableArray<string> Rationales,
+    SignalEvaluation? Trace);
+```
+
+V1's `RequiresRemediation = true` carries the semantics of
+`RequireOperatorApproval` but is more flexible: a decision can be
+`MakeNotNull = true` with `RequiresRemediation = true` (V1 says
+"tighten, but block emission until data is fixed"), which the
+masterwork's three-way DU cannot express directly.
+
+**V2 design choice (don't pre-decide; surface for the V2 builder):**
+
+Three plausible V2 shapes:
+
+1. **Inherit V1's binary + remediation** — closest to the working code,
+   preserves the "tighten but require remediation" combination. Loses
+   the ubiquitous-language clarity of `EnforceNotNull / KeepNullable /
+   RequireOperatorApproval`.
+2. **Adopt the masterwork's ternary** — aligns with the bounded
+   contexts; loses the "tighten + remediate" combination unless that
+   becomes a fourth variant or an additional flag on `EnforceNotNull`.
+3. **Hybrid with structured rationale**:
+   ```fsharp
+   type NullabilityDecision = {
+       Outcome          : NullabilityOutcome  // ternary
+       RequiresRemediation : bool             // additional flag
+       Rationales       : Rationale list      // structured DU, not strings
+       Trace            : SignalEvaluation option
+   }
+   ```
+   The `Rationale` becomes a DU (`DataNoNulls | DataHasNulls of float
+   | NullBudgetEpsilon | ProfileMissing | ForeignKeyEnforced |
+   DataHasOrphans of int64 | NullabilityOverride | ...`) rather than a
+   string array. Type-safe; self-documenting; tests assert on
+   structured rationales rather than substring-matching strings.
+
+I lean (3) for V2 — gain ubiquitous-language alignment, gain
+type-safety on rationales, keep the "tighten + remediate" expressivity
+V1 needs. **Surface for Danny's call.**
+
+**Threshold configuration:**
+
+Lives in `Policy.Tightening.NullBudget` per V1. V2 should keep it
+global (per-policy, not per-column). When a real fixture surfaces a
+need for per-attribute thresholds, refine.
+
+**Evidence-supports / evidence-missing / evidence-contradicts:**
+
+V1 distinguishes via rationale codes: `DataNoNulls` (supports),
+`ProfileMissing` (missing), `DataHasNulls` (contradicts). V2's
+`Rationale` DU should preserve this trichotomy explicitly — emitter
+consumers may want to behave differently in each case.
+
+### Existing test coverage
+
+V1's tests are at `tests/Osm.Validation.Tests/NullabilityEvaluatorTests.cs`.
+8 example-based tests, no Theory tests. V2 should add Theory tests for
+the threshold boundaries V1 misses.
+
+| V1 test | Lines | Category | Asserts | V2 translation |
+|---|---|---|---|---|
+| `EvidenceGated_Should_Tighten_MandatoryColumn_When_NullBudgetNotExceeded` | 16 | null-budget threshold | 4/100 nulls + budget 5% ⇒ MakeNotNull=true; rationales include `DataNoNulls`, `NullBudgetEpsilon` | **Behavioral** — same shape in F#; assert structural rationale list |
+| `EvidenceGated_Should_StayNullable_When_MandatoryColumn_Has_Nulls` | 54 | null-budget threshold | 12/100 nulls + budget 5% ⇒ MakeNotNull=false; rationale includes `DataHasNulls` | **Behavioral** — V2 mirrors |
+| `Cautious_Should_Block_MandatoryRelaxation_When_FlagDisabled` | 92 | mode-specific override | Cautious + AllowRelax=false + mandatory + nulls ⇒ MakeNotNull=true, RequiresRemediation=true; rationale `CautiousRelaxationDisabled` | **Behavioral** — V2 mirrors mode logic |
+| `Cautious_Should_Allow_MandatoryRelaxation_When_FlagEnabled` | 133 | mode toggle | Cautious + AllowRelax=true ⇒ MakeNotNull=false; no `CautiousRelaxationDisabled` | **Behavioral** |
+| `Aggressive_Should_Flag_Remediation_When_UniqueSignal_Exceeds_NullBudget` | 172 | aggressive + remediation | Aggressive + unique + 20/100 nulls ⇒ MakeNotNull=true, RequiresRemediation=true | **Behavioral** — exercises the "tighten + remediate" combination |
+| `Analyze_Should_Create_Remediation_Opportunity_When_Data_Has_Nulls` | 209 | opportunity generation | `Analyze()` populates builder with remediation opportunity | **Skip / out-of-scope** — opportunities are V1's reporting concern; V2 separates Diagnostics from NullabilityDecisionSet |
+| `Analyze_Should_Skip_Opportunity_For_Intentional_Nullability` | 260 | opportunity filtering | Non-mandatory column ⇒ no opportunity | **Skip** — same reason |
+| `NullabilityOverride_Should_Keep_Column_Nullable` | 309 | policy override | Override rule ⇒ MakeNotNull=false; rationale `NullabilityOverride` | **Behavioral** — V2 mirrors override absoluteness |
+
+V2 should add:
+
+  - **Property**: `forall NullBudget ∈ [0.0, 1.0], any (Catalog,
+    Profile) where every NullCount = 0 ⇒ MakeNotNull = true on every
+    mandatory column`. The trivial case bound below the threshold.
+  - **Property**: `forall (Catalog, Policy, Profile), the decision is
+    deterministic — same triple ⇒ same NullabilityDecisionSet`
+    (T1-extended).
+  - **Property**: `overrides are absolute — for any column with a
+    matching override, MakeNotNull = false regardless of every other
+    field`.
+  - **Behavioral**: probe-outcome gating — `Outcome = FallbackTimeout
+    ⇒ profile-driven signals do not fire`.
+  - **Behavioral**: missing-profile default — column absent from
+    `Profile.Columns ⇒ rationale = ProfileMissing` (not equivalent to
+    `DataNoNulls`).
+  - **Behavioral**: physical-not-null signal — `Column.IsNullable =
+    false ⇒ S2 fires regardless of mode`.
+
+Differential testing against V1's `NullabilityEvaluatorTests` fixtures
+lands when the C# adapter for evidence ingestion exists; the V1 tests
+construct fixtures inline rather than from JSON files, so the V2
+differential needs an inline-fixture bridge in the test harness. Lower
+priority than the static-data adapter (session 5 commit 3); the
+property + behavioral coverage carries the contract first.
+
+### Migration path
+
+1. **`Rationale` DU.** V2's first decision: structured rationales
+   replacing V1's string codes. Lives in `NullabilityRules` module;
+   exposed as part of the `NullabilityDecision` shape. Property tests
+   assert on the DU rather than substring-matching strings.
+2. **`Policy.Tightening` axis.** New sub-record on `Policy` (extending
+   the three-axis A12 structure with a fourth domain — or embedding
+   under one of the existing axes; the V2 builder decides). Carries
+   `Mode`, `NullBudget`, `AllowCautiousRelaxation`, `Overrides`. Lands
+   when `NullabilityPass` lands.
+3. **`NullabilityRules` module.** Algebra/domain split: signal
+   definitions, mode/signal matrix, threshold formula, rationale
+   constructors. V1's `TighteningPolicyMatrix` is the source.
+4. **`NullabilityPass`.** Pure F# pass in `Projection.Core.Passes`.
+   Walks attributes, applies the decider, emits `Touched` (per
+   attribute scanned) and `Annotated` events (per attribute with a
+   non-trivial decision). Output is `Lineage<NullabilityDecisionSet>`.
+5. **C# / F# adapter for evidence ingestion.** When real V1
+   `ProfileSnapshot` JSON arrives, an adapter (likely F#, by analogy
+   with the static-data adapter — DECISIONS to be appended on the
+   language choice) coerces to V2's `Profile`. The V1 fixture format
+   is documented in the masterwork (§3 / lines 221–303) and in
+   `Osm.Json.ProfileSnapshotDeserializer`.
+6. **Sequencing.** Lands after the static-data adapter (which proves
+   the pattern); after Policy gains the Tightening axis; then
+   `NullabilityRules`; then `NullabilityPass`; then a
+   `Profile`-ingestion adapter; then the differential test against
+   V1's fixtures.
+
+### Edges / risks
+
+- **Dictionary iteration determinism.** V1 iterates `_columnProfiles`
+  (`IReadOnlyDictionary`) without explicit ordering. .NET 5+ preserves
+  insertion order, but this is not an asserted contract. **V2 must
+  enforce SsKey-sorted iteration** in `NullabilityPass` — same lesson
+  as the `EntityDependencySorter` (DECISIONS 2026-05-08).
+- **Mutable ISet inputs.** V1's four pre-computed unique-verdict ISets
+  are stored as `ISet<ColumnCoordinate>`, not `ImmutableHashSet`.
+  Caller mutation after construction would corrupt the evaluator. V2
+  must accept immutable inputs only; the F# type system handles this
+  by default.
+- **Magic mode hardcoding.** Modes are an enum; their signal-matrix is
+  hardcoded in `TighteningPolicyMatrix`. Adding a new mode requires
+  C# code changes. V2 can either preserve the hardcoded matrix
+  (simpler) or expose it as data (`Policy.Tightening.ModeMatrix : Map`)
+  for runtime configurability. **Preserve the hardcoded matrix until
+  evidence forces parameterization.**
+- **TrustedConstraint semantics undocumented.** `ProbeOutcome.TrustedConstraint`
+  is treated as equivalent to `Succeeded` in V1 but the meaning is
+  nowhere documented. Best guess: "we didn't probe; the constraint
+  was trusted." V2 should clarify in the `ProbeOutcome` DU
+  documentation what each variant means.
+- **NullCount sample-vs-population ambiguity.** V1's null-budget
+  formula assumes `RowCount` is the actual table count, not a sample.
+  If `ColumnProfile` ever carries sampled stats, the formula becomes
+  wrong. V2's `Profile` should document this assumption explicitly,
+  or carry a `SampleFactor` field if sampling enters scope.
+- **Override scrubbing of remediation flags.** V1 lines 163–170: when
+  an override applies, `RequiresRemediation` is set to false and
+  conflict rationales are scrubbed. This is **operator approval as
+  workaround, not solution** — V2 must document this so operators
+  understand overrides mask data-quality issues without solving them.
+- **Conditional-signals visibility is mode-dependent.** V1's logic
+  (lines 116–127) only evaluates `dataTrace` if the conditional
+  signal codes are satisfied. In Cautious mode, FK and Unique signals
+  are TelemetryOnly and never appear in `dataTrace`. **The presence
+  of evidence in rationales is mode-dependent.** V2's `Trace` field
+  should preserve this visibility or surface it explicitly.
+- **Silent FK-target absence handling.** V1's `ForeignKeySupportSignal`
+  silently treats a missing FK target as "cannot tighten." V2 should
+  either log a `Diagnostics` warning at the boundary (the FK target
+  was absent — the Catalog is incomplete) or fail the pass. Silent
+  degradation of evidence is the kind of thing the contract-testing
+  audit (DECISIONS 2026-05-08) is meant to catch.
+
+---
+
 ## 2026-05-07 — `EntityDependencySorter` (`src/Osm.Emission/Seeds/EntityDependencySorter.cs`)
 
 **Status:** admired (placement decided)
