@@ -2201,3 +2201,84 @@ considered together; one was extracted; four were deferred with
 explicit forward triggers. Future composition primitives follow
 the same protocol — count consumers; codify when the threshold
 hits; defer with forward triggers when it doesn't.
+
+## 2026-05-13 — Generic StrategyEvaluator alias cash-out: codified
+
+**Status:** decided (deferred-decisions cash-out, session-8 trigger)
+**Context:** The second of two deferred decisions converging at
+session 11 (DECISIONS 2026-05-11 — shared trigger). The first
+(composition vocabulary) cashed out as `Composition.fanOut`. This
+entry decides the second: the generic
+`StrategyEvaluator<'context, 'config, 'decision>` alias.
+
+**Empirical state at the trigger.** Four registered-intervention
+strategies' `evaluate` signatures, mapped against the candidate
+shape `string × 'config × 'context × Profile → 'decision`:
+
+| Strategy | Natural rules-module signature | Fits the shape? |
+|---|---|---|
+| `NullabilityRules.evaluate` | `string -> NullabilityTighteningConfig -> Attribute -> Profile -> NullabilityDecision` | **Exactly** (with `'context = Attribute`) |
+| `UniqueIndexRules.evaluate` | `string -> UniqueIndexTighteningConfig -> Kind -> Index -> Profile -> UniqueIndexDecision` | **With minor argument-tupling** (`'context = Kind × Index`) |
+| `ForeignKeyRules.evaluate` | `string -> ForeignKeyTighteningConfig -> Kind -> Reference -> Catalog -> Profile -> ForeignKeyDecision` | **With closure-adaptation** (catalog captured by `FanOutConfig.Evaluate` lambda; `'context = Kind × Reference`) |
+| `CategoricalUniquenessRules.evaluate` | `string -> CategoricalUniquenessConfig -> Attribute -> Profile -> CategoricalUniquenessDecision` | **Exactly** (with `'context = Attribute`) |
+
+3 of 4 strategies fit the shape exactly or with minor tupling. 1
+of 4 (ForeignKey) has an extra argument that adapts cleanly via
+closure when constructing the FanOutConfig. The shape is real;
+the divergence is handled mechanically; the codification's
+"uniform signature shape but variable arity context" finding from
+session-8 refinement 2 holds.
+
+**Decision: codify the alias.** Per the discipline (DECISIONS
+2026-05-13 — emergent primitives), the fourth empirical
+confirmation earns the alias. Lands as
+`type StrategyEvaluator<'context, 'config, 'decision> =
+ string -> 'config -> 'context -> Profile -> 'decision` in
+`Projection.Core/Strategies/Composition.fs`.
+
+**What the alias does:**
+
+  - **Names the canonical shape.** The four-input
+    `(interventionId, config, context, profile)` shape is now
+    nameable in code and conversation. Future strategy authors
+    have a target signature.
+  - **Types the `Composition.FanOutConfig.Evaluate` field.** The
+    field becomes `StrategyEvaluator<'context, 'config, 'decision>`
+    rather than the inline arrow type. Documentation and
+    discoverability improve; behavior is unchanged.
+  - **Lets future strategies declare conformance.** A new strategy's
+    rules module can write
+    `let evaluate : StrategyEvaluator<MyContext, MyConfig, MyDecision> = fun id cfg ctx prof -> ...`
+    and get a compile-time check that the shape is preserved.
+
+**What the alias doesn't do:**
+
+  - **It doesn't force every rules module to refactor.**
+    `ForeignKeyRules.evaluate` continues to take `Catalog` as a
+    separate argument (its natural shape, given that FK decisions
+    need cross-attribute reach for target-kind lookup). The
+    FanOutConfig.Evaluate lambda closes over the catalog and
+    adapts to the alias's shape. The "uniform signature shape but
+    variable arity context" principle (session-8 refinement 2) is
+    honored explicitly.
+  - **It doesn't introduce structural enforcement beyond
+    FanOutConfig.** The alias is documentary unless a strategy
+    author chooses to type its `evaluate` against it.
+
+**What might force a future revision.** If a fifth strategy's
+evaluate genuinely cannot adapt to this shape (e.g., needs an
+asynchronous context, returns multiple decisions per invocation,
+or consumes a Diagnostics writer in addition to Profile), the
+alias gets revisited. Per the codification discipline (DECISIONS
+2026-05-11 — empirical verdict), divergence is a tell, not a
+defeat.
+
+**Reasoning / consequences.** Both deferred decisions from
+session 8 have now cashed out. Composition vocabulary: `fanOut`
+codified, four others deferred with forward triggers. Generic
+alias: `StrategyEvaluator` codified as a type-level name for the
+shape that's already enforced at the `FanOutConfig` boundary.
+The strategy layer's codification is more thoroughly named after
+session 11 than after session 8 — `fanOut` and `StrategyEvaluator`
+are the new vocabulary. Future strategy migrations have less to
+re-invent and more to inherit.

@@ -30,6 +30,48 @@ namespace Projection.Core
 /// reference; if any of them ever ships its first consumer, the
 /// extraction lands when the second consumer arrives, not the
 /// first.
+/// The canonical strategy-evaluator shape — a function from
+/// `(interventionId, config, context, profile)` to a decision.
+/// **Codified at session 11 commit 5** as the second
+/// deferred-decisions cash-out from session 8 (DECISIONS 2026-05-11
+/// — generic StrategyEvaluator alias deferred). The shape was
+/// observed across three strategies at session 7 (Nullability,
+/// UniqueIndex, ForeignKey); the fourth (CategoricalUniqueness,
+/// session 11) fits exactly. Per the discipline (DECISIONS
+/// 2026-05-13 — emergent primitives), the fourth empirical
+/// confirmation earns the alias.
+///
+/// **What the alias does.** Names the canonical four-input shape
+/// that every registered-intervention strategy's evaluate function
+/// conforms to (sometimes via lambda adaptation when the rules
+/// module's natural signature has an extra argument like
+/// `ForeignKeyRules.evaluate`'s catalog parameter). The
+/// `Composition.FanOutConfig.Evaluate` field is typed as this
+/// alias; future strategy authors typing their evaluate function
+/// against this alias get a compile-time check that the shape is
+/// preserved.
+///
+/// **What the alias doesn't do.** It doesn't force every rules
+/// module to change its signature. `ForeignKeyRules.evaluate`
+/// continues to take `Catalog` as a separate argument (its natural
+/// shape, given that FK decisions need cross-attribute reach for
+/// target-kind lookup); the FanOutConfig.Evaluate lambda closes
+/// over the catalog and adapts to the alias's shape. This honors
+/// "uniform signature shape but variable arity context"
+/// (DECISIONS 2026-05-11 — codification refinement 2): the alias
+/// names the shape; the rules modules' natural signatures need
+/// not all match it pointwise.
+///
+/// **What might force a future revision.** If a fifth strategy's
+/// evaluate genuinely cannot adapt to this shape (e.g., needs an
+/// asynchronous context, or returns multiple decisions per
+/// invocation), the alias gets revisited. Per the codification
+/// discipline (DECISIONS 2026-05-11 — empirical verdict on the
+/// strategy layer), divergence is a tell, not a defeat.
+type StrategyEvaluator<'context, 'config, 'decision> =
+    string -> 'config -> 'context -> Profile -> 'decision
+
+
 [<RequireQualifiedAccess>]
 module Composition =
 
@@ -45,11 +87,12 @@ module Composition =
     ///     strategy's granularity (per-attribute, per-index,
     ///     per-reference, ...) in deterministic order. The four
     ///     existing strategies use SsKey ordering at every level.
-    ///   - `Evaluate`: the strategy's typed seam — the rules
-    ///     module's `evaluate` function. Strategies whose evaluate
-    ///     needs additional context (e.g., `ForeignKeyRules.evaluate`
-    ///     takes catalog) close over it via a lambda when
-    ///     constructing the FanOutConfig.
+    ///   - `Evaluate`: the strategy's typed seam, conforming to the
+    ///     `StrategyEvaluator<'context, 'config, 'decision>` alias.
+    ///     Strategies whose rules module exposes additional context
+    ///     (e.g., `ForeignKeyRules.evaluate`'s catalog parameter)
+    ///     close over it via a lambda when constructing the
+    ///     FanOutConfig.
     ///   - `EmptyDecisionSet`: V2's strict-default value when no
     ///     interventions are registered. Returned wrapped in
     ///     `Lineage.ofValue` (no events; no work).
@@ -62,7 +105,7 @@ module Composition =
     type FanOutConfig<'context, 'config, 'decision, 'decisionSet> = {
         InterventionFilter : TighteningPolicy -> (string * 'config) list
         SortedContexts     : Catalog -> 'context list
-        Evaluate           : string -> 'config -> 'context -> Profile -> 'decision
+        Evaluate           : StrategyEvaluator<'context, 'config, 'decision>
         EmptyDecisionSet   : 'decisionSet
         WrapDecisions      : 'decision list -> 'decisionSet
         BuildEvent         : 'decision -> LineageEvent

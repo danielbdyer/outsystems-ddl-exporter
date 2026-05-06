@@ -198,3 +198,27 @@ let ``fanOut: empty-policy path does not consult the catalog or profile`` () =
             SortedContexts = fun _ -> failwith "should not be called" }
     let lineage = Composition.fanOut exploding sampleCatalog Policy.empty Profile.empty
     Assert.Equal<SyntheticDecisionSet>(syntheticEmptyDecisionSet, lineage.Value)
+
+// ---------------------------------------------------------------------------
+// StrategyEvaluator alias — codified at session 11 commit 5.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``StrategyEvaluator alias names the canonical four-input shape`` () =
+    // Type-level test: the alias's signature must accept any function
+    // matching string -> 'config -> 'context -> Profile -> 'decision.
+    // The synthetic evaluate from above conforms; assignment compiles.
+    let _ : StrategyEvaluator<Kind * Attribute, SyntheticConfig, SyntheticDecision> =
+        syntheticEvaluate
+    Assert.True(true)
+
+[<Fact>]
+let ``StrategyEvaluator alias is the type of FanOutConfig.Evaluate`` () =
+    // Type-level test: the field must accept any function conforming
+    // to StrategyEvaluator. Assignment compiles iff the alias and the
+    // field share the same shape.
+    let evaluatorAsAlias : StrategyEvaluator<Kind * Attribute, SyntheticConfig, SyntheticDecision> =
+        syntheticEvaluate
+    let _ : Composition.FanOutConfig<Kind * Attribute, SyntheticConfig, SyntheticDecision, SyntheticDecisionSet> =
+        { syntheticConfig with Evaluate = evaluatorAsAlias }
+    Assert.True(true)
