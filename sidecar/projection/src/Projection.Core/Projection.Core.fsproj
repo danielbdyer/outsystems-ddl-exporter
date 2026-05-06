@@ -22,6 +22,7 @@
     <Compile Include="Passes/NamingMorphism.fs" />
     <Compile Include="Passes/NormalizeStaticPopulations.fs" />
     <Compile Include="Passes/SymmetricClosure.fs" />
+    <Compile Include="Passes/TopologicalOrderPass.fs" />
   </ItemGroup>
 
 </Project>
