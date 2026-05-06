@@ -1059,3 +1059,124 @@ refactor) → 3 (NullabilityRules) → 4 (NullabilityPass) → 5
 (profile adapter) → 6 (this milestone) form a coherent vertical
 slice; each commit is independently meaningful and the whole stack
 passes its empirical contract.
+
+## 2026-05-10 — Milestone (re-marked): the algebra is now operational
+
+**Status:** decided (worked-example milestone, marked deliberately)
+**Context:** Session 6 commit 6 ran the three-input projection
+end-to-end through both adapters and `NullabilityPass` against real
+V1 fixture data; the test passes. This entry re-marks the moment
+clearly, separately from the commit-level milestone entry.
+
+**What it is.** The first execution of `Project = Π ∘ E` on the
+triple `(Catalog, Policy, Profile)` end-to-end against V1-derived
+inputs. Two adapters convert V1 JSON to V2 IR; the policy registers a
+Nullability intervention; the pass produces a structured
+`NullabilityDecisionSet`. The plumbing is empirical, not
+hypothetical.
+
+**What it validates.** The three-input projection works in practice
+— identity preserved across the boundary; profile evidence flows
+into per-attribute decisions; intervention id threaded through to
+lineage; outcomes match expectations on the V2-expressible cases.
+The plugin-shape Tightening (DECISIONS 2026-05-09) supports the
+projection without compromise — the mid-session refactor is
+empirically vindicated.
+
+**What it does not yet validate.** V2's IR does not yet carry
+`IsMandatory` on `Attribute`. The V1 mandatory-driven branches
+(`LogicalMandatoryNoNulls`, `RelaxedUnderEvidence`,
+`MandatoryButHasNullsBeyondBudget`) are pseudocode in
+`NullabilityRules.evaluate`, awaiting the IR refinement under "IR
+grows under evidence." Full V1 parity with V1's eight
+`NullabilityEvaluatorTests` requires this. The honest frame for the
+parity gap: a known IR refinement, not a structural one.
+
+**The phase change.** This is the moment the algebra stops being a
+structural claim and becomes an operational fact. The properties
+the axioms promised — A6's three substantive inputs, A12's policy
+axes, A17's `Project = Π ∘ E`, A32's emitter-consumable values, the
+2026-05-09 observable-identity-on-empty-policy commitment — are
+demonstrated, not just claimed. Future agents reading this log
+should identify session 6 commit 6 as the inflection point.
+
+## 2026-05-10 — IR-conversion adapter pattern: the adapter is where V1's vestigial fields die
+
+**Status:** decided (operational discipline; observation from session 6)
+**Context:** Two F# IR-conversion adapters now share a shape:
+`Projection.Adapters.Sql.Static.attachStaticPopulations` (session 5)
+and `Projection.Adapters.Sql.ProfileSnapshot.attach` (session 6).
+The pattern is canonical not because it was prescribed but because
+it was repeated and confirmed.
+
+The shared shape:
+- Signature: `Catalog -> string -> Result<Catalog>` (or returning a
+  built value type like `Profile`).
+- JSON parsing via `System.Text.Json`.
+- Embedded V1 fixture content as the V2 contract; the test fails
+  loudly if V1's JSON shape changes without a matched V2 expectation
+  update.
+- Silent skip for unresolvable rows (the catalog's selection is the
+  contract, not the JSON's).
+- Result-typed return; never throws across the seam.
+- F# language for IR conversion (per the 2026-05-09 adapter language
+  rule).
+
+**Decision (the additional convention this entry names):** **The
+adapter is the place V1's vestigial fields die.** V2's IR carries
+only what V2 uses. V1's serialized data formats may include fields
+V2 does not model (catalog metadata embedded in profile JSON;
+operational sample arrays; redundant copies of catalog facts).
+The adapter:
+
+  - **Drops** V1 fields V2 does not model. Examples from session 6's
+    `ProfileSnapshot` adapter: V1's
+    `IsNullablePhysical`/`IsComputed`/`IsPrimaryKey`/`IsUniqueKey`/
+    `DefaultDefinition` are catalog metadata in V2 (lives on
+    `Attribute`/`Column`); the adapter ignores V1's redundant copies
+    and trusts the V2 catalog. V1's `NullSample`/`OrphanSample` are
+    operational diagnostics; V2 elides them.
+  - **Synthesizes** V1 fields V2 demands but V1 lacks. Example:
+    V1's `CompositeUniqueCandidateProfile` has no `ProbeStatus`; V2
+    requires it for evidence-vs-no-evidence distinguishability, so
+    the adapter synthesizes a default `Succeeded` probe at
+    `UnixEpoch`. If a real V1 fixture surfaces a meaningful
+    distinction, the adapter learns the field; until then, the
+    synthesized default flows through.
+  - **Names** the divergences in code comments. Each drop /
+    synthesis carries a comment so future readers can audit the
+    boundary's choices without surprise.
+
+**Reasoning / consequences:** V2's IR stays small. V1's
+serialization quirks don't propagate into the algebra. Adapters
+that deviate without justification (carry V1 fields that V2 does
+not use; or fail to synthesize fields V2 demands) are flagged in
+review. Future IR-conversion adapters (UniqueIndex, FK enforcement,
+type tightening — coming in subsequent sessions) inherit this
+convention by construction.
+
+## 2026-05-10 — Audit discipline operates at design-time, not just commit-time
+
+**Status:** observed (operating discipline reflection)
+**Context:** Sessions 4–6 produced four audit-driven course
+corrections:
+
+  - Session 4: Kahn's permutation invariance (commit 4).
+  - Session 4: CycleResolution algebra/domain split (commit 6).
+  - Session 5: C# → F# language pivot (commit 3).
+  - Session 6: Plugin/intervention refactor of Tightening (commit 2).
+
+The first three caught issues mid-session as the work progressed.
+The fourth — session 6's plugin refactor — caught something at the
+level of *initial design intent* and reshaped the work before the
+flat-record commit was pushed. The default-as-intervention smell
+was a problem in the work's premise, not its execution.
+**Decision:** Mark the observation. The audit discipline is
+beginning to operate at design-time, not just commit-time. The
+practice deepens with use; future agents reading this log should
+expect their own audits to surface premise-level findings, not
+only execution-level ones, and should plan to act on them in
+flight rather than ship past them.
+
+This is not a flagship principle but a worked-example observation:
+the practice gets better the more it gets used.
