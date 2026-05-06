@@ -45,9 +45,10 @@ open Projection.Core
 /// ProfileSnapshot.attach.
 ///
 /// `Kind` is the discriminator string for which `AttributeDistribution`
-/// variant to construct. Currently the only legal value is
-/// `"Categorical"`; future variants land here as new branches when
-/// numeric histograms / temporal density / etc. arrive.
+/// variant to construct. Legal values: `"Categorical"` (session 9),
+/// `"Numeric"` (session 10). Future variants land here as new
+/// branches when temporal density / joint distributions / etc.
+/// arrive.
 [<RequireQualifiedAccess>]
 module ProfileStatistics =
 
@@ -177,9 +178,62 @@ module ProfileStatistics =
                         Some (AttributeDistribution.Categorical cat))))
 
     // -----------------------------------------------------------------------
+    // Numeric-variant parser. Same shape as parseCategorical:
+    // resolve coordinate; parse fixed fields; smart-construct;
+    // wrap in DU. Returns Result<AttributeDistribution option> —
+    // Some on resolved + valid; None on unresolved coordinate.
+    //
+    // V2 input shape:
+    //
+    //   { "Schema", "Table", "Column",
+    //     "Kind": "Numeric",
+    //     "Min", "P25", "P50", "P75", "P95", "P99", "Max",
+    //     "SampleSize",
+    //     "ProbeStatus": { ... } }
+    //
+    // The smart constructor (NumericDistribution.create) enforces
+    // monotonicity (Min ≤ P25 ≤ … ≤ P99 ≤ Max) and the sample-size
+    // floor (≥ 5). Bad fixtures fail loudly through the Result chain.
+    // -----------------------------------------------------------------------
+
+    let private parseNumeric
+        (attrIndex: Map<string * string * string, SsKey>)
+        (element: JsonElement)
+        : Result<AttributeDistribution option> =
+        let schema =
+            element.GetProperty("Schema").GetString()
+            |> Option.ofObj |> Option.defaultValue ""
+        let table =
+            element.GetProperty("Table").GetString()
+            |> Option.ofObj |> Option.defaultValue ""
+        let column =
+            element.GetProperty("Column").GetString()
+            |> Option.ofObj |> Option.defaultValue ""
+        match Map.tryFind (schema, table, column) attrIndex with
+        | None -> Result.success None
+        | Some attributeKey ->
+            let min        = element.GetProperty("Min").GetDecimal()
+            let p25        = element.GetProperty("P25").GetDecimal()
+            let p50        = element.GetProperty("P50").GetDecimal()
+            let p75        = element.GetProperty("P75").GetDecimal()
+            let p95        = element.GetProperty("P95").GetDecimal()
+            let p99        = element.GetProperty("P99").GetDecimal()
+            let max        = element.GetProperty("Max").GetDecimal()
+            let sampleSize = element.GetProperty("SampleSize").GetInt64()
+            element.GetProperty("ProbeStatus")
+            |> parseProbeStatus
+            |> Result.bind (fun probe ->
+                NumericDistribution.create
+                    attributeKey min p25 p50 p75 p95 p99 max sampleSize probe
+                |> Result.map (fun num ->
+                    Some (AttributeDistribution.Numeric num)))
+
+    // -----------------------------------------------------------------------
     // Distribution-kind dispatcher. Dispatches on the JSON's `Kind`
-    // field; new variants (Numeric, Temporal) land as additional
-    // branches in subsequent sessions.
+    // field. **Single function with internal dispatch** (per the
+    // session-10 framing — splitting into attachCategoricals /
+    // attachNumerics would duplicate coordinate resolution). Future
+    // variants (Temporal, Joint) land as additional branches here.
     // -----------------------------------------------------------------------
 
     let private parseDistribution
@@ -193,11 +247,13 @@ module ProfileStatistics =
         match kindRaw with
         | "Categorical" ->
             parseCategorical attrIndex element
+        | "Numeric" ->
+            parseNumeric attrIndex element
         | other ->
             Result.failureOf
                 (ValidationError.create
                     "profileStatisticsAdapter.distribution.kind.unknown"
-                    (sprintf "Unknown distribution Kind '%s'. Currently supported: Categorical." other))
+                    (sprintf "Unknown distribution Kind '%s'. Currently supported: Categorical, Numeric." other))
 
     // -----------------------------------------------------------------------
     // Public surface.

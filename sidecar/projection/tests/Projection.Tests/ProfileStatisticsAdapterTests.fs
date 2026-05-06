@@ -156,14 +156,16 @@ let ``attach: rejects unparseable JSON`` () =
 
 [<Fact>]
 let ``attach: rejects unknown distribution Kind`` () =
+    // "Temporal" is the placeholder for an unknown Kind — legal Kinds
+    // as of session 10 are "Categorical" and "Numeric"; Temporal
+    // arrives in a future session.
     let unknownKindJson = """
     {
       "distributions": [
         {
           "Schema": "dbo", "Table": "OSUSR_S1S_COUNTRY", "Column": "CODE",
-          "Kind": "Numeric",
-          "DistinctCount": 0, "IsTruncated": false,
-          "Frequencies": [],
+          "Kind": "Temporal",
+          "Min": 0, "Max": 0,
           "ProbeStatus": {
             "CapturedAtUtc": "2026-05-12T00:00:00Z", "SampleSize": 0, "Outcome": "Succeeded"
           }
@@ -176,6 +178,161 @@ let ``attach: rejects unknown distribution Kind`` () =
     | Success _ -> Assert.Fail "Expected failure on unknown Kind"
     | Failure errs ->
         Assert.Contains(errs, fun e -> e.Code = "profileStatisticsAdapter.distribution.kind.unknown")
+
+// ---------------------------------------------------------------------------
+// Numeric distribution parsing — landed in session 10 commit 3.
+// ---------------------------------------------------------------------------
+
+let private validNumericJson = """
+{
+  "distributions": [
+    {
+      "Schema": "dbo",
+      "Table": "OSUSR_S1S_COUNTRY",
+      "Column": "CODE",
+      "Kind": "Numeric",
+      "Min": 0,
+      "P25": 10,
+      "P50": 25,
+      "P75": 50,
+      "P95": 90,
+      "P99": 99,
+      "Max": 100,
+      "SampleSize": 100,
+      "ProbeStatus": {
+        "CapturedAtUtc": "2026-05-13T00:00:00Z",
+        "SampleSize": 100,
+        "Outcome": "Succeeded"
+      }
+    }
+  ]
+}
+"""
+
+[<Fact>]
+let ``attach numeric: parses numeric distribution and resolves to AttributeKey`` () =
+    let result = ProfileStatistics.attach sampleCatalog validNumericJson Profile.empty
+    match result with
+    | Failure errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
+    | Success profile ->
+        match profile.Distributions with
+        | [ AttributeDistribution.Numeric num ] ->
+            Assert.Equal(countryCodeKey, num.AttributeKey)
+            Assert.Equal(0m,   num.Min)
+            Assert.Equal(50m,  num.P75)
+            Assert.Equal(100m, num.Max)
+            Assert.Equal(100L, num.SampleSize)
+        | other ->
+            Assert.Fail(sprintf "Expected one Numeric, got %A" other)
+
+[<Fact>]
+let ``attach numeric: monotonicity violation surfaces as construction error`` () =
+    // P50 (50) > P75 (30) — violates the monotonicity contract enforced
+    // by NumericDistribution.create. The smart constructor's failure
+    // propagates through the adapter via Result.bind.
+    let nonMonotonicJson = """
+    {
+      "distributions": [
+        {
+          "Schema": "dbo", "Table": "OSUSR_S1S_COUNTRY", "Column": "CODE",
+          "Kind": "Numeric",
+          "Min": 0, "P25": 10, "P50": 50, "P75": 30, "P95": 90, "P99": 99, "Max": 100,
+          "SampleSize": 100,
+          "ProbeStatus": {
+            "CapturedAtUtc": "2026-05-13T00:00:00Z", "SampleSize": 100, "Outcome": "Succeeded"
+          }
+        }
+      ]
+    }
+    """
+    let result = ProfileStatistics.attach sampleCatalog nonMonotonicJson Profile.empty
+    match result with
+    | Success _ -> Assert.Fail "Expected failure on non-monotonic percentiles"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
+
+[<Fact>]
+let ``attach numeric: sample size below floor surfaces as construction error`` () =
+    let belowFloorJson = """
+    {
+      "distributions": [
+        {
+          "Schema": "dbo", "Table": "OSUSR_S1S_COUNTRY", "Column": "CODE",
+          "Kind": "Numeric",
+          "Min": 0, "P25": 1, "P50": 2, "P75": 3, "P95": 4, "P99": 5, "Max": 6,
+          "SampleSize": 4,
+          "ProbeStatus": {
+            "CapturedAtUtc": "2026-05-13T00:00:00Z", "SampleSize": 4, "Outcome": "Succeeded"
+          }
+        }
+      ]
+    }
+    """
+    let result = ProfileStatistics.attach sampleCatalog belowFloorJson Profile.empty
+    match result with
+    | Success _ -> Assert.Fail "Expected failure on SampleSize < floor"
+    | Failure errs ->
+        Assert.Contains(errs, fun e -> e.Code = "numericDistribution.sampleSize.belowFloor")
+
+[<Fact>]
+let ``attach numeric: silently skips coordinates absent from the catalog`` () =
+    // Same catalog-is-the-contract discipline as Categorical and
+    // ProfileSnapshot.attach.
+    let unknownCoordJson = """
+    {
+      "distributions": [
+        {
+          "Schema": "dbo", "Table": "OSUSR_NONEXISTENT", "Column": "GHOST",
+          "Kind": "Numeric",
+          "Min": 0, "P25": 10, "P50": 20, "P75": 30, "P95": 40, "P99": 50, "Max": 60,
+          "SampleSize": 100,
+          "ProbeStatus": {
+            "CapturedAtUtc": "2026-05-13T00:00:00Z", "SampleSize": 100, "Outcome": "Succeeded"
+          }
+        }
+      ]
+    }
+    """
+    let result = ProfileStatistics.attach sampleCatalog unknownCoordJson Profile.empty
+    match result with
+    | Failure errs -> Assert.Fail(sprintf "Expected silent skip, got %A" errs)
+    | Success profile ->
+        Assert.Empty(profile.Distributions)
+
+[<Fact>]
+let ``attach numeric: coexists with categorical in a single attach call`` () =
+    // The single-function dispatch handles both variants in one
+    // `distributions` array.
+    let mixedJson = """
+    {
+      "distributions": [
+        { "Schema": "dbo", "Table": "OSUSR_S1S_COUNTRY", "Column": "CODE",
+          "Kind": "Categorical",
+          "DistinctCount": 3, "IsTruncated": false,
+          "Frequencies": [
+            { "Value": "CA", "Count": 1 },
+            { "Value": "MX", "Count": 1 },
+            { "Value": "US", "Count": 1 }
+          ],
+          "ProbeStatus": { "CapturedAtUtc": "2026-05-12T00:00:00Z",
+                           "SampleSize": 3, "Outcome": "Succeeded" } },
+        { "Schema": "dbo", "Table": "OSUSR_S1S_CUSTOMER", "Column": "TENANT_ID",
+          "Kind": "Numeric",
+          "Min": 1, "P25": 2, "P50": 3, "P75": 4, "P95": 8, "P99": 9, "Max": 10,
+          "SampleSize": 100,
+          "ProbeStatus": { "CapturedAtUtc": "2026-05-13T00:00:00Z",
+                           "SampleSize": 100, "Outcome": "Succeeded" } }
+      ]
+    }
+    """
+    let result = ProfileStatistics.attach sampleCatalog mixedJson Profile.empty
+    match result with
+    | Failure errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
+    | Success profile ->
+        Assert.Equal(2, profile.Distributions.Length)
+        // Both lookups succeed, on their respective attributes.
+        Assert.True (Profile.tryFindCategorical countryCodeKey profile |> Option.isSome)
+        Assert.True (Profile.tryFindNumeric customerTenantKey profile |> Option.isSome)
 
 [<Fact>]
 let ``attach: rejects probe outcome the V2 DU doesn't support`` () =
