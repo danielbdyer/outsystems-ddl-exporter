@@ -1221,3 +1221,118 @@ makes the convention canonical by repetition (per the
 reach `extracted (differential confirmed)` follow the same
 differential-with-skips pattern: 100% V1 contract under V2's
 expressible cases; explicit Skip-with-rationale for V2 divergences.
+
+## 2026-05-11 — Strategy layer: a named architectural vector
+
+**Status:** decided (operating discipline)
+**Context:** Three V1 components have been migrated under the
+algebra/domain split (DECISIONS 2026-05-09 — Algebra/domain split
+pattern): `EntityDependencySorter` produced `CycleResolution`
+(session 4); `NullabilityEvaluator` produced `NullabilityRules`
+(session 6); `UniqueIndexDecisionOrchestrator` produced
+`UniqueIndexRules` (session 7). Each migration lifted V1's domain
+reasoning out of the algebra and named it as a sibling module. The
+*shape* of these modules has now stabilized through repetition, and
+the moment to codify it as a first-class architectural concern has
+arrived — before a fourth instance lands and the implicit convention
+drifts.
+
+The lesson from the previous "Algebra/domain split pattern (generalizable)"
+entry is that the canonical shape is observable in code, not just in
+prose. With three instances the shape is empirically real; the cost
+of codifying now is low; the cost of codifying after six instances
+is rewriting six modules to fit. This entry promotes the strategy
+layer from implicit convention to named architectural vector.
+
+**Decision:** **Strategy** is a named architectural concern within
+`Projection.Core`, distinct from but adjacent to the algebraic core.
+Strategy modules carry domain-specific decision logic that the
+algebra invokes through a typed seam. The canonical shape of a
+strategy module:
+
+1. **Pure functions of IR fields.** No I/O, no mutable state, no
+   external context. The strategy reads `Catalog`, `Policy`, and
+   `Profile` fields and returns decisions. Determinism follows from
+   purity.
+2. **A typed function-type alias is the seam.** The pass that
+   consumes the strategy calls into it through a named function type
+   (e.g., `Resolver`, `evaluate`); the algebra knows nothing about
+   how the decision is made. New strategies plug in by conforming
+   to the seam without rewriting the algebra.
+3. **Structured rationale DUs cover the decision space.** Each
+   variant of the outcome DU carries the evidence or reason for the
+   decision at the type level. Lineage events emit a textual summary
+   for grep-ability; the structured outcome lives in the decision
+   set for downstream pattern-matching. Free-form rationale strings
+   are an anti-pattern (see CycleResolution caveat below).
+4. **Lineage events fire only on actual decisions.** When a
+   strategy makes no decision (registry empty, intervention not
+   registered, structural commitment to inaction), no events are
+   emitted. The `Annotated`-with-skip-reason convention (DECISIONS
+   2026-05-09) covers conditional cases that still warrant a trail
+   entry.
+5. **The module name advertises the domain.** `<Domain>Rules` for
+   per-record deciders (`NullabilityRules`, `UniqueIndexRules`,
+   future `ForeignKeyRules`); domain-named modules for non-record
+   strategies (`CycleResolution`). The `Rules` suffix is the
+   recognizable shape for registered-intervention strategies; other
+   suffixes are admissible when the call pattern differs.
+
+**Two strategy flavors observed.** The three current modules split
+into two flavors that share the deep shape but differ in call
+pattern:
+
+- **Registered-intervention strategies** (`NullabilityRules`,
+  `UniqueIndexRules`): invoked through registry iteration over a
+  `TighteningIntervention` variant, one decision per (record ×
+  intervention) pair, intervention-id flowing through every
+  decision. The pass driver fans out over the registry; the
+  strategy's `evaluate` decides each pair.
+- **Structural strategies** (`CycleResolution`): invoked from
+  inside a pass at structurally-determined moments (per-FK-edge
+  classification during graph construction; per-SCC resolver
+  application during cycle handling). No registry; no
+  intervention-id. The seam is a function type the pass passes
+  through.
+
+Both flavors honor the deep shape; the call pattern is what differs.
+Future strategy modules pick the flavor that matches their domain.
+
+**Worked examples.**
+
+| Module | Flavor | Seam | Decision DU | Status |
+|---|---|---|---|---|
+| `CycleResolution` | structural | `Resolver` (`SsKey list -> ((SsKey * SsKey) * EdgeStrength) list -> ResolutionStep`); `classify` | `EdgeStrength`; `ResolutionStep` (free-form `Reason`) | extracted |
+| `NullabilityRules` | registered-intervention | `evaluate : interventionId -> config -> Attribute -> Profile -> NullabilityDecision` | `NullabilityOutcome` ternary with `NullabilityEvidence` / `KeepNullableReason` / `NullabilityConflict` | extracted (differential confirmed) |
+| `UniqueIndexRules` | registered-intervention | `evaluate : interventionId -> config -> Kind -> Index -> Profile -> UniqueIndexDecision` | `UniqueIndexOutcome` binary with `UniqueIndexEvidence` / `UniqueIndexKeepReason` | extracted |
+
+**CycleResolution caveat.** `CycleResolution.ResolutionStep.Reason`
+is a free-form string ("auto-resolved by removing weak edge", "SCC
+has no Weak edge to break", etc.). This predates the
+structured-rationale-DU convention and is grandfathered; when
+`CycleResolution` is next substantively touched (e.g., when a second
+resolver strategy lands per the 2026-05-08 pluggability deferral),
+migrate `Reason` to a structured DU mirroring `NullabilityRules`'s
+approach. Logging the migration as a TODO here rather than
+performing it now keeps session 8 focused on codification.
+
+**Registry deferred.** A registry mechanism for strategy
+discoverability (a top-level `Strategies : Strategy list` axis;
+plug-in loading; cross-strategy composition combinators) is the
+next promotion candidate when N grows past 4–6. At N=3 the registry
+is overkill — each strategy's call site is named explicitly and the
+seam is its type. Recording the deferral here so the next agent
+reading this entry doesn't build the registry under "IR grows under
+evidence" and finds it unjustified at the time of writing.
+
+**Reasoning / consequences:** Strategy is now nameable in code and
+in conversation as a first-class concern. New V1 admire migrations
+that surface domain-decision logic land into a named layer with a
+recognized shape; reviewers can ask "what's the seam, what's the
+DU, where's the algebra" and expect a structurally-honest answer.
+The pattern's empirical basis (three instances) supports the
+codification; future instances either fit the codification or
+surface a revision. The codification is descriptive, not
+prescriptive; if a strategy doesn't fit, the question is whether
+the codification or the strategy is wrong, and either answer is
+interesting.
