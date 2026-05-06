@@ -582,3 +582,93 @@ strategy actually lands (per "IR grows under evidence"). The audit
 itself is the kind of thing the discipline is designed to surface;
 preserving the resulting algebra/domain split in code keeps the
 algebra small.
+
+## 2026-05-09 — Algebra/domain split pattern (generalizable)
+
+**Status:** decided (operating discipline)
+**Context:** Session 4 commit 6 split V1's edge classification and
+asymmetric-2-cycle resolver out of `TopologicalOrderPass` into a
+sibling `CycleResolution` module. The *shape* of that refactor is
+generalizable; `EntityDependencySorter` is unlikely to be the only
+place V1 entangled structural algorithm with domain rules.
+**Decision:** Adopt the following canonical shape for any V1
+component whose logic mixes graph algebra / structural transformation
+with domain interpretation rules:
+
+1. **Algebra in the pass.** The pass file in `Projection.Core.Passes`
+   contains only the structural algorithm — graph traversal,
+   composition, identity preservation, lineage emission. No domain
+   rules; no V1-flavored interpretation of IR fields.
+2. **Domain in a named module.** A sibling module (e.g.,
+   `CycleResolution`, `NullabilityRules`, ...) named for the domain
+   concern carries the V1 rules — taxonomies, classification
+   functions, named strategies. The module name advertises that
+   domain logic lives here, not algebra.
+3. **Typed seam between them.** A function-type alias (e.g.,
+   `Resolver`, `Classifier`) is the seam. Call sites pass any
+   conforming function; the algebra knows nothing about which
+   strategy is in use. Pluggable-as-pass-parameter is deferred
+   until the second strategy actually arrives — the seam exists,
+   the dispatch does not, "IR grows under evidence" applied to
+   extensibility rather than data shape.
+
+Apply this shape to future admire-and-extract migrations whenever
+the V1 component mixes structural algorithm with domain
+interpretation. The named-module sibling makes the algebra/domain
+boundary visible at the file level; the typed seam keeps the
+algebra honest while permitting future strategies without
+rewriting the pass.
+
+**Reasoning / consequences:** The pattern is canonical, not
+ad-hoc. Future agents read this entry and recognize the shape;
+reviewers can ask "what's the algebra here, what's the domain,
+where's the seam" of any V1-derived pass and expect a clean answer.
+
+## 2026-05-09 — Audits surface things not on the agenda
+
+**Status:** decided (operating disposition)
+**Context:** Session 4 produced two findings neither were planned:
+the Dictionary-iteration-order invariant (commit 4) and the
+algebra/domain split that prompted commit 6's pre-commit refactor.
+Both required acting on what surfaced rather than shipping what was
+planned.
+**Decision:** Treat audits as an exploratory practice, not a
+checkbox. When pre-commit reflection (or a property test, or a
+reviewer's question) surfaces something second-order — a hidden
+contract, a domain rule embedded in algebra, a latent V1 dependency
+— the right response is to act on the finding before shipping,
+even when it expands the commit's scope. Logging the finding in
+DECISIONS *and* shipping the original work unchanged is the
+checkbox-audit failure mode. Avoid it.
+
+**Reasoning / consequences:** Audit dividends compound when
+findings land in code; they evaporate when findings land only in
+notes. The discipline pays off because the practice acts on what it
+finds. Future agents reading this entry should expect their own
+audits to produce findings that reshape work in flight, and should
+budget time to honor those findings rather than defer them.
+
+## 2026-05-09 — Annotated events with documented skip reasons (silent convention)
+
+**Status:** decided (silent operating convention)
+**Context:** The symmetric-closure pass (session 4 commit 3) uses
+`Annotated` lineage events to record skip cases — when an inverse
+isn't added because the target kind is absent or has no primary key.
+The `detail` string names *why* the skip happened. Reading the trail
+recovers the reason without re-running the pass.
+**Decision:** Adopt the convention silently for any future pass with
+skip cases. The pattern: a pass scans every node it could
+transform; for nodes it processes, emit the appropriate transform
+event; for nodes it skips, emit `Annotated` with a documented
+detail string (e.g., `"skipped: target has no primary key"`,
+`"skipped: precondition X not met"`). The lineage chain becomes
+forensically useful for absences as well as presences.
+
+Idempotence-twice-over plus documented skip reasons is the
+recognizable shape for closure-flavored and conditional-application
+passes. `symmetricClosure` is the template; future passes follow.
+
+**Reasoning / consequences:** The trail answers "why isn't node X
+in the surface?" without dropping into source code. Convention is
+silent (no enforcement mechanism beyond review) but cheap to follow
+once seen.
