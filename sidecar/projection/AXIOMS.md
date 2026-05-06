@@ -504,6 +504,101 @@ holds in both surfaces.
 
 ---
 
+## A18 amended (2026-05-12) — Π consumes evidence subsets, never Policy
+
+**Empirical refinement** surfaced by `DistributionsEmitter` (the third Π;
+DECISIONS 2026-05-12). The original A18 (E carries all configuration; Π
+carries none) prohibited Policy from flowing into Π. The amendment makes
+explicit which inputs **are** available to Π and codifies the asymmetry
+the algebra now relies on:
+
+  **A Π consumes whichever subset of `Catalog × Profile` it needs, but
+  never `Policy`.** SSDT and JSON take `Catalog -> string`; Distributions
+  takes `Catalog -> Profile -> string`; future Π (Faker, anomaly reports)
+  consume whichever subset their output requires. The closed denial:
+  Policy is never a Π input.
+
+The architectural reasoning, not just the rule:
+
+  - **Catalog and Profile are evidence the system holds.** Catalog is
+    structural evidence (kinds, attributes, references — what exists).
+    Profile is empirical evidence (null counts, distributions, orphan
+    realities — what was observed).
+  - **Policy is intent the operator supplies.** Policy says "tighten under
+    these gates," "select these kinds," "emit these artifacts." Intent is
+    not evidence; it does not flow into projection.
+  - **Π's are projections of evidence.** A Π takes the evidence the system
+    holds and renders it as a target surface. The render is mechanical
+    relative to the evidence; the evidence is the contract.
+  - **E's are interpretations of evidence under intent.** Passes
+    (NullabilityPass, UniqueIndexPass, etc.) consume Policy because their
+    job is to apply operator intent to the evidence — produce a decision
+    that depends on what the operator chose. Π does not decide; it
+    surfaces.
+
+Future Π authors who reach for Policy should pause and ask whether the
+work is really projection or really enrichment. If the operator's intent
+is shaping the output, the work belongs in a pass; the pass produces
+emitter-consumable values (per A32) that Π then surfaces. The denial is
+load-bearing.
+
+  *Enforcement.* Type-level — Π modules' `emit` signatures cannot accept
+  `Policy`. Compiler-checked by every existing Π:
+  `RawTextEmitter.emit : Catalog -> string`,
+  `JsonEmitter.emit : Catalog -> string`,
+  `DistributionsEmitter.emit : Catalog -> Profile -> string`.
+  *Property test.* `A18 amended: emitter signatures take no Policy
+  parameter`.
+
+---
+
+## Operational principle: structural-commitment-via-construction-validation
+
+**Recognized primitive** surfaced by the truncation-contract finding
+(DECISIONS 2026-05-12). Across V2's IR, certain invariants the type
+system cannot express directly are enforced by `create` smart-constructors
+that reject inputs violating the invariant. The invariant becomes
+structural rather than runtime — every value that exists carries the
+contract because every path to its existence checked it.
+
+Recognized instances:
+
+  - **A4 — Identity equality is structural.** `SsKey` equality is by
+    content; `SsKey.original` validates and rejects malformed inputs.
+  - **A22 — Snapshots are content-addressed.** Snapshot identity is
+    derived; the constructor enforces the derivation.
+  - **A34 — Profile independence.** `Profile` references no Catalog or
+    Policy types; the type system rejects accidental coupling.
+  - **CategoricalDistribution.create (2026-05-12).** `IsTruncated = false
+    ⇒ DistinctCount = Frequencies.Length`; `DistinctCount ≥ 0`; per-value
+    counts are non-negative. Every constructed value satisfies the
+    truncation contract.
+  - **NumericDistribution.create (2026-05-13, session 10).** Percentiles
+    are monotonically non-decreasing; `Min ≤ P25 ≤ ... ≤ P99 ≤ Max`;
+    sample size meets the percentile-set's confidence floor.
+
+The pattern's shape:
+
+1. Identify an invariant a value type ought to carry but cannot express
+   purely at the type level.
+2. Make the constructor a smart constructor that returns `Result<'a>` and
+   rejects every input violating the invariant.
+3. Document the invariant on the type so callers know the contract.
+4. Consumers downstream pattern-match without re-validating; the
+   invariant rides on every value.
+
+Future evidence types that arrive under "IR grows under evidence" should
+adopt the pattern as the default. Every distribution variant carries its
+own integrity rules; every constructor enforces them; the algebra's
+reliability compounds because every value carries its own truth.
+
+  *Convention.* Every smart constructor returning `Result<'a>` is an
+  instance of this pattern. Code reviewers can ask "what invariants does
+  this `create` enforce?" of any such constructor and expect a complete
+  answer.
+
+---
+
 # Conventions and history
 
 The original A1–A31 / T1–T10 numbering reflects the V1 algebraic spec as

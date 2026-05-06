@@ -1721,3 +1721,64 @@ sessions 10+. Recording them here means the next agent starts with
 the empirical context, not the original plan; the same reflective
 discipline that made session 8's codification empirically validated
 applies here to the rich-profiling agenda.
+
+## 2026-05-13 — Admire entries fall on a spectrum (V1-migration / V2-growth / hybrid)
+
+**Status:** decided (operating discipline)
+**Context:** Up through session 8, every admire entry surfaced V1
+logic to migrate, V1 fields to absorb, V1 contracts to honor — the
+"V1 has the shape; V2 expresses it cleanly" archetype. Session 9's
+rich-profiling admire (ADMIRE.md 2026-05-12) was the first that
+surfaced V1 *absence* as the gap and V2 architectural growth as
+the work. The session-9 reflection (DECISIONS 2026-05-12 Finding
+1) named this as a reframe of the migration discipline.
+
+**Decision:** Admire entries fall on a three-mode spectrum, named
+by what V1 contributes:
+
+  1. **V1-migration mode.** V1 has the logic; V2 expresses it
+     cleanly. The admire entry's "Existing test coverage" section
+     is rich (V1 tests categorized as Behavioral / Property /
+     Differential / Skip). The migration completes when V2
+     satisfies V1's contracts. Examples:
+     `EntitySeedDeterminizer`, `NullabilityEvaluator`,
+     `UniqueIndexDecisionOrchestrator`, `EntityDependencySorter`,
+     `ForeignKeyEvaluator`. Every admire through session 8 was
+     this mode.
+  2. **V2-growth mode.** V1 has nothing; V2 extends. The "Existing
+     test coverage" section is structurally absent — V1 has no
+     contracts to honor — and replaced by a "what V2 needs and
+     why" section plus V2-only contract tests. The migration is
+     not migration but architectural growth, validated by
+     end-to-end consumption rather than V1 differential.
+     Example: rich profiling (session 9, ADMIRE.md 2026-05-12).
+  3. **Hybrid mode.** V1 has partial coverage; V2 extends beyond
+     it. The admire splits into "what V1 gives us" (with the
+     V1-migration test discipline) and "what V2 adds" (with the
+     V2-growth shape). When numeric distributions arrive in
+     session 10 they would technically be hybrid — V1 has *zero*
+     numeric evidence (a strict subset of the rich-profiling
+     admire's gap analysis), so they cleanly inherit the V2-growth
+     mode of the parent admire.
+
+**Future admire entries name their mode at the top.** The mode
+tells readers which template to use:
+
+  - V1-migration: original ADMIRE format (What it does → V2
+    placement → Inputs/outputs → Existing test coverage →
+    Migration path → Edges).
+  - V2-growth: extended format (What V1 collects → What V1 doesn't
+    → What V2 needs → V2 extension shape → V2-only tests →
+    Multi-session agenda → Edges).
+  - Hybrid: both sections, side-by-side; the boundary between V1
+    coverage and V2 extension explicit.
+
+**Reasoning / consequences.** Naming the modes explicitly does
+two things. First, it lets future admire authors pick the right
+template upfront rather than discovering the mismatch midway.
+Second, it makes the V1-vs-V2 boundary structural at the
+documentation level — readers can scan ADMIRE.md and see at a
+glance which entries are migrations and which are growth, and the
+test discipline expectations follow accordingly. The session-9
+admire stands as the V2-growth template; future V2-growth admires
+follow its structure.
