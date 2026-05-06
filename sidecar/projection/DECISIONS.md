@@ -1336,3 +1336,83 @@ surface a revision. The codification is descriptive, not
 prescriptive; if a strategy doesn't fit, the question is whether
 the codification or the strategy is wrong, and either answer is
 interesting.
+
+## 2026-05-11 — Strategy composition vocabulary (sketch, deferred)
+
+**Status:** sketched (not implemented)
+**Context:** Each pass driver that consumes a strategy implements
+the iteration/accumulation/lineage discipline ad hoc. With three
+strategy modules and two pass drivers (NullabilityPass,
+UniqueIndexPass) using nearly the same fan-out shape, the
+composition logic has now been duplicated twice. Before the third
+duplication ships (`ForeignKeyPass`), the question is whether a
+small composition vocabulary belongs at the strategy layer.
+
+**Sketch (proposal, not implementation).** The composition primitives
+that would land into a `Projection.Core.Strategies.Composition`
+module if and when the cost-benefit clears:
+
+1. **`fanOut`** — registry iteration. Given a list of `(id, config)`
+   pairs and a `decide : id -> config -> 'context -> 'decision`
+   function, produce `'decision list` over a list of contexts.
+   Currently inlined in NullabilityPass and UniqueIndexPass via list
+   comprehension. The vocabulary exists; it's been duplicated; it's
+   short enough that duplication has not yet been painful. The
+   primitive earns its place when N=3+ pass drivers iterate the same
+   way, or when a fourth axis of variation lands (e.g., decision
+   weights, conditional invocation, ordering preferences) that would
+   force the inlined version to grow into a function anyway.
+2. **`fallback`** — chained strategy. Given strategies A and B, run
+   A; if it returns a "no decision" / default outcome, run B.
+   Currently no use case in the codebase — every strategy returns a
+   total decision (every variant of every outcome DU is meaningful).
+   Speculative until a partial strategy lands (e.g., manual override
+   sets that fall back to evidence-driven decisions when the
+   override is absent).
+3. **`accumulate`** — multi-strategy aggregation. Given strategies
+   A and B that both return decisions, produce a combined decision
+   set with both flowed through. Currently the registry already does
+   this implicitly: multiple registered interventions of the same
+   variant fan out into separate decisions per intervention. The
+   primitive earns its place when cross-variant aggregation arrives
+   (e.g., a pass that consumes both Nullability and UniqueIndex
+   decisions to produce a unified column-level annotation).
+4. **`wrap`** — instrumented strategy. Decorate a strategy with
+   logging / lineage / telemetry. Currently the lineage-event
+   discipline is inlined into each pass driver; lineage is therefore
+   not strategy-scoped but pass-scoped (correct for passes that
+   coordinate multiple strategies). The primitive earns its place
+   if strategies become independently observable — e.g., per-strategy
+   lineage subtrails, per-strategy diagnostics — which is not yet
+   the case.
+5. **`lift`** — context translation. Given a strategy that decides
+   on context type `'a`, produce one that decides on `'b` via a
+   `'b -> 'a` projection. Currently every strategy already operates
+   on its natural context (`Attribute`, `Index`, `Reference`); no
+   need for a generalization. The primitive earns its place when a
+   strategy is reused across different IR shapes (e.g., applying the
+   same nullability rules to view columns as well as table columns,
+   if views land as a Kind variant).
+
+**Decision:** **Sketch, defer implementation.** None of the
+primitives have N≥2 forced uses today — `fanOut` is the closest
+(N=2 inlined instances, soon N=3 with ForeignKey), but the inlined
+form is 4 lines and the function form would be 6 lines including
+type annotation. The argument for landing `fanOut` now is mostly
+aesthetic; the argument for deferring is "IR grows under evidence"
+applied to the strategy layer itself.
+
+The right cue to revisit: when a fourth registered-intervention
+strategy lands (the fifth strategy module overall, after
+ForeignKeyRules), the `fanOut` duplication crosses the threshold
+where a function helps more than it costs. Then `fanOut` lands as
+the first composition primitive; the others follow as their use
+cases arrive.
+
+**Reasoning / consequences:** Codifying the composition vocabulary
+in advance of need would be the same speculative-architecture
+failure mode the registry deferral sidesteps. Recording the sketch
+preserves the thinking — the next agent encountering a fourth
+registered-intervention pass driver doesn't reinvent the analysis;
+they read this entry, see the threshold, and decide based on the
+same empirical criterion.
