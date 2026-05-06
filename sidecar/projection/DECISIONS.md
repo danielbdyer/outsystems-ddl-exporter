@@ -417,3 +417,64 @@ DACPAC bytes.
 giving up the human-readable diff oracle. The migration is additive —
 real-fixture work introduces DacFx alongside, not replacing, the raw-
 text emitter.
+
+## 2026-05-07 — Contract testing is the V1↔V2 bridge
+
+**Status:** decided (operating discipline)
+**Context:** V1's existing tests encode behavioral contracts empirically
+— "given X, the implementation produces Y." When V2 implements
+equivalent functionality through F# passes and Π emitters, those tests
+become the validation that the migration is faithful. The algebra
+explains *why* the tests should pass; the tests confirm V1 and V2 are
+equivalent compositions on the migrated subset.
+**Decision:** Every V1→V2 migration uses one or more of three contract-
+testing forms:
+
+1. **Differential / golden-file.** Run V1 and V2 against shared
+   fixtures; compare outputs. Strongest possible evidence; appropriate
+   when the output shapes match (e.g., both emit textual SQL).
+2. **Property-based.** Lift V1's example-based assertions into
+   universally-quantified F# properties. Both implementations are
+   obligated to satisfy them; FsCheck runs against V2 and accumulates
+   confidence with every fuzz case. The right form for invariants like
+   "deterministic", "idempotent", "FK target precedes source."
+3. **Behavioral re-expression.** Some V1 tests test C# specifics
+   (mocking, class-level concerns) that don't translate cleanly. These
+   get rewritten in F# against V2's API; behavior preserved, encoding
+   shifts.
+
+When V1 and V2 disagree, the divergence is diagnostic, not a failure
+mode. Three possibilities:
+
+- V2 is wrong → fix V2.
+- V1 was buggy → V1's test was encoding a bug; V2 corrects it; the
+  test is updated and the divergence is logged here as an improvement.
+- V2 is intentionally different → V2 made an explicit algebraic
+  refinement V1 didn't have; the test is updated and the divergence is
+  logged here.
+
+**Reasoning / consequences:** Migration becomes constructive: "did we
+migrate this correctly?" has a yes/no answer. ADMIRE.md gains an
+"Existing test coverage" section per entry, listing each V1 test, what
+it asserts, and which form translates it into V2. The discipline is
+named here so reviewers can invoke it without re-litigating each
+migration.
+
+## 2026-05-07 — IR grows under evidence, not speculation
+
+**Status:** decided (operating discipline)
+**Context:** Several V2 commits will refine the IR: `IsPrimaryKey` on
+`Attribute` (justified by the `EntitySeedDeterminizer` admire); future
+`IsForeignKeyTarget` or richer `Reference` shape (likely justified by
+`EntityDependencySorter` admire); column-level metadata (computed,
+default expression) when admire passes surface real fixtures that need
+them.
+**Decision:** The IR grows when an admire pass surfaces a structural
+need from a V1 component being migrated, OR when a property test
+discovers an invariant the IR cannot currently express. It does **not**
+grow speculatively — "we might want this someday" is not a justification.
+Every IR refinement carries a comment naming the admire entry or test
+that motivated it.
+**Reasoning / consequences:** The IR stays small. Future readers can
+read every field's justification by following the comment back to the
+ADMIRE entry or test. Speculative complexity has nowhere to land.

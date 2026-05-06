@@ -12,6 +12,12 @@ this document records:
 - **V2 placement** — pure pass in `Projection.Core.Passes`, adapter at a
   port in `Projection.Adapters.*`, or a split with the boundary explicitly
   named.
+- **Existing test coverage** — the V1 tests that protect this component,
+  what they assert, and how each translates into V2 testing
+  (property-based, differential, behavioral re-expression, or skip with
+  logged exception). The migration is complete when V2 satisfies V1's
+  tests (or the exceptions are logged in `DECISIONS.md`). See the
+  contract-testing entry in `DECISIONS.md` for the discipline.
 - **Migration path** — how V1's behavior gets carried into V2. Where the
   C# logic lives. What test fixtures it needs. What compatibility
   considerations apply.
@@ -34,6 +40,12 @@ over time. Read top-to-bottom for chronological order.
 
     ### Inputs and outputs (V2 IR)
     one paragraph naming the V2 IR fields consumed and produced.
+
+    ### Existing test coverage
+    table form, one row per V1 test method. Columns: test name, file:line,
+    category (FK ordering / cycle detection / determinism / ...), what it
+    asserts in plain English, V2 translation (Property / Differential /
+    Behavioral / Skip with rationale).
 
     ### Migration path
     paragraph or two on the carry-across. Test fixtures, compatibility,
