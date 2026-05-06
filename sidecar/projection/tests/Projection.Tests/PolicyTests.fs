@@ -24,15 +24,13 @@ let ``A12 (V2 2026-05-09): Policy.empty pins all four axes at empty defaults`` (
     Assert.Equal<TighteningPolicy>(TighteningPolicy.empty,   Policy.empty.Tightening)
 
 [<Fact>]
-let ``A12 (V2 2026-05-09): each axis has its own empty default`` () =
-    Assert.Equal<SelectionPolicy>(IncludeAll,                            SelectionPolicy.empty)
-    Assert.Equal<EmissionPolicy>({ EmitSchema = true; EmitData = false; EmitDiagnostics = false },
-                                  EmissionPolicy.empty)
-    Assert.Equal<InsertionPolicy>(SchemaOnly,                            InsertionPolicy.empty)
-    Assert.Equal<TighteningMode>(Cautious,                               TighteningPolicy.empty.Mode)
-    Assert.Equal(0.0m,                                                   TighteningPolicy.empty.NullBudget)
-    Assert.False(TighteningPolicy.empty.AllowCautiousRelaxation)
-    Assert.Empty(TighteningPolicy.empty.Overrides)
+let ``A12 (V2 2026-05-09): TighteningPolicy.empty has zero interventions`` () =
+    // Per the plugin/intervention refactor (DECISIONS 2026-05-09):
+    // empty TighteningPolicy means no interventions registered ⇒
+    // no tightening decisions produced. V2 introduces no alterations
+    // unless an intervention is explicitly registered.
+    Assert.Empty(TighteningPolicy.empty.Interventions)
+    Assert.True(TighteningPolicy.isEmpty TighteningPolicy.empty)
 
 // ---------------------------------------------------------------------------
 // A12 orthogonality: changing one axis does not alter the helpers of the
@@ -61,34 +59,39 @@ let ``A12: changing Selection does not affect Emission flags`` () =
 
 // ---------------------------------------------------------------------------
 // A12 (V2 2026-05-09): Tightening orthogonality with the other three axes.
-// Three new pairs land here.
+// Three new pairs land here. Tightening is exercised via a registered
+// nullability intervention rather than a flat config — empty
+// TighteningPolicy means no intervention runs.
 // ---------------------------------------------------------------------------
+
+let private sampleNullabilityIntervention () : TighteningIntervention =
+    let cfg =
+        NullabilityTighteningConfig.create 0.1m false []
+        |> Result.value
+    Nullability ("test-nullability", cfg)
 
 [<Fact>]
 let ``A12: changing Tightening does not affect SelectionPolicy.isSelected`` () =
-    let aggressive =
-        TighteningPolicy.create Aggressive 0.1m false []
-        |> Result.value
-    let p1 = { Policy.empty with Tightening = aggressive }
+    let withIntervention =
+        { Interventions = [ sampleNullabilityIntervention () ] }
+    let p1 = { Policy.empty with Tightening = withIntervention }
     let p2 = Policy.empty
     Assert.Equal(SelectionPolicy.isSelected customerKey p1.Selection,
                  SelectionPolicy.isSelected customerKey p2.Selection)
 
 [<Fact>]
 let ``A12: changing Tightening does not affect Emission flags`` () =
-    let aggressive =
-        TighteningPolicy.create Aggressive 0.1m false []
-        |> Result.value
-    let p1 = { Policy.empty with Tightening = aggressive }
+    let withIntervention =
+        { Interventions = [ sampleNullabilityIntervention () ] }
+    let p1 = { Policy.empty with Tightening = withIntervention }
     let p2 = Policy.empty
     Assert.Equal(p1.Emission, p2.Emission)
 
 [<Fact>]
 let ``A12: changing Tightening does not affect Insertion`` () =
-    let aggressive =
-        TighteningPolicy.create Aggressive 0.1m false []
-        |> Result.value
-    let p1 = { Policy.empty with Tightening = aggressive }
+    let withIntervention =
+        { Interventions = [ sampleNullabilityIntervention () ] }
+    let p1 = { Policy.empty with Tightening = withIntervention }
     let p2 = Policy.empty
     Assert.Equal<InsertionPolicy>(p1.Insertion, p2.Insertion)
 
@@ -99,63 +102,103 @@ let ``A12: changing Selection does not affect Tightening`` () =
     Assert.Equal<TighteningPolicy>(p1.Tightening, p2.Tightening)
 
 // ---------------------------------------------------------------------------
-// TighteningPolicy.create — validates NullBudget range.
+// NullabilityTighteningConfig.create — validates NullBudget range.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``TighteningPolicy.create accepts NullBudget in [0, 1]`` () =
-    Assert.True(Result.isSuccess (TighteningPolicy.create Cautious 0.0m false []))
-    Assert.True(Result.isSuccess (TighteningPolicy.create Cautious 0.5m false []))
-    Assert.True(Result.isSuccess (TighteningPolicy.create Cautious 1.0m false []))
+let ``NullabilityTighteningConfig.create accepts NullBudget in [0, 1]`` () =
+    Assert.True(Result.isSuccess (NullabilityTighteningConfig.create 0.0m false []))
+    Assert.True(Result.isSuccess (NullabilityTighteningConfig.create 0.5m false []))
+    Assert.True(Result.isSuccess (NullabilityTighteningConfig.create 1.0m false []))
 
 [<Fact>]
-let ``TighteningPolicy.create rejects NullBudget below 0`` () =
-    let r = TighteningPolicy.create Cautious -0.1m false []
-    Assert.True(Result.isFailure r)
+let ``NullabilityTighteningConfig.create rejects NullBudget below 0`` () =
+    Assert.True(Result.isFailure (NullabilityTighteningConfig.create -0.1m false []))
 
 [<Fact>]
-let ``TighteningPolicy.create rejects NullBudget above 1`` () =
-    let r = TighteningPolicy.create Cautious 1.1m false []
-    Assert.True(Result.isFailure r)
+let ``NullabilityTighteningConfig.create rejects NullBudget above 1`` () =
+    Assert.True(Result.isFailure (NullabilityTighteningConfig.create 1.1m false []))
 
 [<Fact>]
-let ``TighteningPolicy.create captures every field`` () =
+let ``NullabilityTighteningConfig.create captures every field`` () =
     let overrides =
         [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
-    let p =
-        TighteningPolicy.create EvidenceGated 0.05m true overrides
+    let cfg =
+        NullabilityTighteningConfig.create 0.05m true overrides
         |> Result.value
-    Assert.Equal<TighteningMode>(EvidenceGated, p.Mode)
-    Assert.Equal(0.05m,                          p.NullBudget)
-    Assert.True(p.AllowCautiousRelaxation)
-    Assert.Equal(1, p.Overrides.Length)
+    Assert.Equal(0.05m, cfg.NullBudget)
+    Assert.True(cfg.AllowMandatoryRelaxation)
+    Assert.Equal(1, cfg.Overrides.Length)
 
 // ---------------------------------------------------------------------------
-// TighteningPolicy.shouldKeepNullable — override lookup.
+// NullabilityTighteningConfig.shouldKeepNullable — override lookup.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
 let ``shouldKeepNullable returns true for an attribute with a KeepNullable override`` () =
-    let overrides =
-        [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
-    let p =
-        TighteningPolicy.create Cautious 0.0m false overrides
+    let cfg =
+        NullabilityTighteningConfig.create 0.0m false
+            [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
         |> Result.value
-    Assert.True(TighteningPolicy.shouldKeepNullable customerNameKey p)
+    Assert.True(NullabilityTighteningConfig.shouldKeepNullable customerNameKey cfg)
 
 [<Fact>]
-let ``shouldKeepNullable returns false for an attribute without an override`` () =
-    let p = TighteningPolicy.empty
-    Assert.False(TighteningPolicy.shouldKeepNullable customerNameKey p)
+let ``shouldKeepNullable returns false when no overrides registered`` () =
+    let cfg =
+        NullabilityTighteningConfig.create 0.0m false []
+        |> Result.value
+    Assert.False(NullabilityTighteningConfig.shouldKeepNullable customerNameKey cfg)
 
 [<Fact>]
 let ``shouldKeepNullable returns false for a different attribute's override`` () =
-    let overrides =
-        [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
-    let p =
-        TighteningPolicy.create Cautious 0.0m false overrides
+    let cfg =
+        NullabilityTighteningConfig.create 0.0m false
+            [ { AttributeKey = customerNameKey; Action = KeepNullable } ]
         |> Result.value
-    Assert.False(TighteningPolicy.shouldKeepNullable customerIdAttrKey p)
+    Assert.False(NullabilityTighteningConfig.shouldKeepNullable customerIdAttrKey cfg)
+
+// ---------------------------------------------------------------------------
+// TighteningPolicy registry — interventions are named and retrievable.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``TighteningPolicy.empty contains no interventions`` () =
+    Assert.True(TighteningPolicy.isEmpty TighteningPolicy.empty)
+    Assert.Empty(TighteningPolicy.empty.Interventions)
+    Assert.Empty(TighteningPolicy.nullabilityInterventions TighteningPolicy.empty)
+
+[<Fact>]
+let ``TighteningPolicy.tryFindNullability finds a registered intervention by id`` () =
+    let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
+    let policy = { Interventions = [ Nullability ("v1-style", cfg) ] }
+    let found = TighteningPolicy.tryFindNullability "v1-style" policy
+    Assert.True(Option.isSome found)
+    Assert.Equal(0.05m, (Option.get found).NullBudget)
+
+[<Fact>]
+let ``TighteningPolicy.tryFindNullability returns None for an unknown id`` () =
+    let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
+    let policy = { Interventions = [ Nullability ("v1-style", cfg) ] }
+    Assert.Equal(None, TighteningPolicy.tryFindNullability "missing" policy)
+
+[<Fact>]
+let ``TighteningPolicy.nullabilityInterventions returns ids in registration order`` () =
+    let cfgA = NullabilityTighteningConfig.create 0.0m false [] |> Result.value
+    let cfgB = NullabilityTighteningConfig.create 0.1m false [] |> Result.value
+    let policy =
+        { Interventions =
+            [ Nullability ("alpha", cfgA)
+              Nullability ("beta",  cfgB) ] }
+    let ids =
+        TighteningPolicy.nullabilityInterventions policy
+        |> List.map fst
+    Assert.Equal<string list>([ "alpha"; "beta" ], ids)
+
+[<Fact>]
+let ``TighteningIntervention.id returns the intervention's stable identifier`` () =
+    let cfg = NullabilityTighteningConfig.create 0.0m false [] |> Result.value
+    let intervention = Nullability ("registered-id", cfg)
+    Assert.Equal("registered-id", TighteningIntervention.id intervention)
 
 // ---------------------------------------------------------------------------
 // SelectionPolicy.isSelected exhaustively tested across the three variants.

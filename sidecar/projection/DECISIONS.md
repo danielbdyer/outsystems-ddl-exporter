@@ -812,3 +812,68 @@ operational level. Future readers can scan for status strings —
 `extracted (full coverage)` — and understand the migration arc at a
 glance. The corpus accumulates value over time precisely because
 patterns get named when they emerge.
+
+## 2026-05-09 — Tightening as a registry of named interventions; modes collapsed
+
+**Status:** decided (refines the 2026-05-09 — Policy.Tightening as fourth top-level axis entry)
+**Context:** The first commit of this session shipped `TighteningPolicy`
+as a flat record with a `Mode` field defaulting to `Cautious`, a
+`NullBudget` defaulting to `0.0`, and an `AllowCautiousRelaxation`
+toggle. Reviewed pre-push: even those defaults are themselves
+*interventions* — `Cautious` mode produces decisions when
+`NullabilityPass` runs; the empty policy was not actually empty.
+The end goal: "no unknown alterations to the system; all
+interventions stubbed as plugins, clearly identified and trackable."
+Concurrent observation: V1 has only ever used `Cautious` mode in
+production; the `EvidenceGated` and `Aggressive` variants are
+unused.
+**Decision:** Two refinements, applied together:
+
+1. **Plugin/intervention model.** `TighteningPolicy` is a registry of
+   zero or more named `TighteningIntervention` values. Empty registry
+   = no interventions = no decisions produced. Each intervention
+   carries a stable `Id` chosen by the caller (e.g.,
+   `"v1-style-nullability"`, `"per-tenant-overrides-2026-05"`); the
+   id appears in lineage events when the intervention fires, so
+   audit consumers answer "which intervention changed this column?"
+   structurally. The `TighteningIntervention` DU is closed; new
+   intervention kinds (FK enforcement, unique enforcement, type
+   tightening) land as new variants when admire passes surface them.
+
+2. **Modes collapsed.** Per Danny's observation that V1 only ever
+   uses `Cautious` mode, `TighteningMode` is removed from V2
+   entirely. `NullabilityTighteningConfig` carries
+   `NullBudget` + `AllowMandatoryRelaxation` + `Overrides` only — no
+   mode field. If a real second mode lands later, it returns as a
+   field or as a new intervention variant, motivated by evidence.
+   Rename: V1's `AllowCautiousNullabilityRelaxation` becomes
+   V2's `AllowMandatoryRelaxation`, naming the semantic ("permit
+   mandatory→nullable relaxation under evidence") rather than the
+   collapsed mode.
+
+**Reasoning / consequences:** Two principles in evidence:
+
+- **Defaults that intervene are themselves an intervention.** The
+  prior shape's `Cautious` default would have caused
+  `NullabilityPass` to produce decisions silently when the caller
+  set `Policy.empty`. V2's strict default is to do nothing.
+- **Unused variants are speculative complexity.** V1's three modes
+  cost no maintenance in V1 because V1 isn't being refactored. They
+  cost real complexity in V2 — three code paths, three test cases,
+  three rationale-set composition rules — for no current consumer.
+  Collapsing to one mode ("IR grows under evidence") leaves the
+  algebra room to grow back into multiple modes when demand is real.
+
+This entry refines the prior session-6 entry on Tightening; the two
+should be read together. The DU-per-intervention shape is the
+canonical pattern for any future "pluggable behavior" axis on Policy
+— next time something feels like a registry of named operations,
+this is the template.
+
+**Worked-example dimension.** This refinement is itself a worked
+example of "audits surface things not on the agenda" — the prior
+commit was reviewed, the default-as-intervention smell was caught,
+and the refactor landed before push. The discipline pays off when
+findings land in code; deferring this to a later session would
+have shipped the wrong shape and forced a more expensive amendment
+later.
