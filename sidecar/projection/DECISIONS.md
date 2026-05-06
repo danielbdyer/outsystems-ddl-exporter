@@ -497,3 +497,57 @@ pass and a concrete emitter need, not by speculation. The synthetic
 fixture marks each Id attribute as the PK; the JsonEmitter surfaces
 `primaryKey` alongside `nullable` for every attribute; the SSDT
 RawTextEmitter tags PK columns with " PK" in the inline comment.
+
+## 2026-05-08 — Contract testing surfaces V1 latent bugs as well as V1 intent
+
+**Status:** decided (operating discipline; worked example)
+**Context:** The contract-testing discipline (2026-05-07) framed V1
+tests as oracles for V2 migration. A natural read of that framing is
+"V2 must reproduce V1." The truth is more useful: contract testing
+surfaces V1's *implicit* contracts as well as its explicit ones, and
+some of the implicit ones are latent bugs.
+**Worked example.** While preparing the second admire entry
+(`EntityDependencySorter`, 2026-05-07), the scout surfaced that V1's
+correctness depends on `Dictionary<K,V>` insertion-order iteration in
+the CLR. That dependency is nowhere in V1's tests; it is a load-bearing
+implementation detail no contract documents. A V2 property test
+sweeping shuffled inputs catches the dependency and pins it as a real
+V2 invariant: `TopologicalOrder.run is invariant under input
+permutation`. The diagnostic moves the constraint from "implicit
+behavior of the CLR happens to give V1 the result it wants" to
+"V2 actively guarantees this." The result is V2 is more robust than V1
+on this axis, by virtue of the discipline catching the gap.
+**Decision:** Treat divergences from V1's *implicit* behaviors with
+the same algebraic-conversation rigor as divergences from V1's
+*explicit* tests. The three categories from the contract-testing
+entry (V2 wrong / V1 buggy / V2 intentionally different) extend to
+implicit contracts: when V2's property test surfaces a behavior V1
+relied on but didn't assert, the question is the same — is V2's
+codification a fix, a refinement, or a regression?
+**Reasoning / consequences:** Contract testing is a dividend, not just
+a cost. Future agents reading this entry see the discipline pay out,
+not just impose a discipline tax. Worked examples accrue here as
+sessions surface them.
+
+## 2026-05-08 — Lineage events fire only on actual change
+
+**Status:** decided (silent operating convention)
+**Context:** The `namingMorphism` pass (session 2, commit 3) emits
+`Renamed` lineage events only when the morphism produced a different
+name; no-op morphisms produce empty trails. The convention reads in
+code naturally and keeps lineage chains forensically meaningful —
+every event is a real transformation, not noise from passes that
+happened to run.
+**Decision:** Adopt the convention silently for any pass that has a
+no-op case. The pattern: a pass runs over every node, but emits an
+event only when its work actually changed something. `namingMorphism`
+is the template; future renaming-flavored passes (policy-driven
+sanitization, schema-prefix injection, identifier collision
+resolution) follow.
+**Reasoning / consequences:** Lineage is provenance, not progress
+reporting. A `Renamed` event in the trail means a name actually
+changed; reading the trail is a forensic exercise, not a tally of
+which passes ran. Passes that observe but don't transform (e.g.,
+`canonicalizeIdentity`'s sweep) emit `Touched` events explicitly —
+that's a different convention because the *act of observing* is
+itself the contract.
