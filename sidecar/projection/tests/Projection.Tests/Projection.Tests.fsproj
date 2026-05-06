@@ -13,6 +13,8 @@
   <ItemGroup>
     <Compile Include="ScaffoldingTests.fs" />
     <Compile Include="ResultTests.fs" />
+    <Compile Include="Fixtures.fs" />
+    <Compile Include="CatalogTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
