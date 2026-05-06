@@ -200,6 +200,150 @@ let ``cycle: at least one CycleDiagnostic is emitted`` () =
     Assert.NotEmpty(result.Value.Cycles)
 
 // ---------------------------------------------------------------------------
+// Tarjan's SCC enumeration (commit 5).
+//
+// A 2-cycle (Customer ↔ Order) produces exactly one SCC of two members.
+// A 3-cycle (A → B → C → A) produces exactly one SCC of three members.
+// Disjoint cycles produce multiple SCCs, sorted by smallest member.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Tarjan: 2-cycle produces one SCC with both members`` () =
+    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let cyclic =
+        sampleCatalog
+        |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
+    let result = TopologicalOrderPass.run cyclic
+    Assert.Equal(1, result.Value.Cycles.Length)
+    let scc = result.Value.Cycles |> List.head
+    Assert.Equal<Set<SsKey>>(
+        Set.ofList [ customerKey; orderKey ],
+        Set.ofList scc.Members)
+
+[<Fact>]
+let ``Tarjan: SCC members are sorted by SsKey within the diagnostic`` () =
+    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let cyclic =
+        sampleCatalog
+        |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
+    let result = TopologicalOrderPass.run cyclic
+    let scc = result.Value.Cycles |> List.head
+    Assert.Equal<SsKey list>(scc.Members, List.sort scc.Members)
+
+[<Fact>]
+let ``Tarjan: Country (no cycle) is not in any SCC`` () =
+    // The 2-cycle is Customer↔Order; Country has no FK at all.
+    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let cyclic =
+        sampleCatalog
+        |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
+    let result = TopologicalOrderPass.run cyclic
+    let allSccMembers =
+        result.Value.Cycles
+        |> List.collect (fun c -> c.Members)
+        |> Set.ofList
+    Assert.DoesNotContain(countryKey, allSccMembers)
+
+[<Fact>]
+let ``Tarjan: deterministic — same cyclic input produces same SCC list`` () =
+    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let cyclic =
+        sampleCatalog
+        |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
+    let r1 = TopologicalOrderPass.run cyclic
+    let r2 = TopologicalOrderPass.run cyclic
+    Assert.Equal<CycleDiagnostic list>(r1.Value.Cycles, r2.Value.Cycles)
+
+[<Fact>]
+let ``Tarjan: BreakableEdges is empty in v2 (resolver pending v3)`` () =
+    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let cyclic =
+        sampleCatalog
+        |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
+    let result = TopologicalOrderPass.run cyclic
+    let scc = result.Value.Cycles |> List.head
+    Assert.Empty(scc.BreakableEdges)
+
+[<Fact>]
+let ``Tarjan: SCC reason names "SCC detected"`` () =
+    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let cyclic =
+        sampleCatalog
+        |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
+    let result = TopologicalOrderPass.run cyclic
+    let scc = result.Value.Cycles |> List.head
+    Assert.Contains("SCC detected", scc.Reason)
+
+// ---------------------------------------------------------------------------
+// Property: post-symmetric-closure SCC enumeration is permutation-invariant
+// (the V2 contract under cyclic input as well as acyclic).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``contract: SCC enumeration is invariant under input permutation`` () =
+    let withInverses =
+        sampleCatalog
+        |> SymmetricClosure.run
+        |> fun lineage -> lineage.Value
+    let permuted =
+        { Modules =
+            withInverses.Modules
+            |> List.map (fun m -> { m with Kinds = List.rev m.Kinds })
+            |> List.rev }
+    let r1 = (TopologicalOrderPass.run withInverses).Value
+    let r2 = (TopologicalOrderPass.run permuted).Value
+    Assert.Equal<CycleDiagnostic list>(r1.Cycles, r2.Cycles)
+
+// ---------------------------------------------------------------------------
+// Three-disjoint cycles fixture exercises multi-SCC enumeration. (Built
+// from scratch — synthetic fixture has only one cycle once symmetric
+// closure runs.)
+// ---------------------------------------------------------------------------
+
+let private mkKey s = SsKey.original s |> Result.value
+let private mkName s = Name.create s |> Result.value
+
+let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Kind =
+    let attrId = mkKey (kindKey + "_Id")
+    let attrFk = mkKey (kindKey + "_Fk")
+    { SsKey = mkKey kindKey
+      Name = mkName kindKey
+      Origin = OsNative
+      Modality = []
+      Physical = { Schema = "dbo"; Table = kindKey }
+      Attributes = [
+          { SsKey = attrId; Name = mkName "Id"; Type = Integer
+            Column = { ColumnName = "ID"; IsNullable = false }
+            IsPrimaryKey = true }
+          { SsKey = attrFk; Name = mkName "Fk"; Type = Integer
+            Column = { ColumnName = "FK"; IsNullable = false }
+            IsPrimaryKey = false } ]
+      References = [
+          { SsKey = mkKey fkKey
+            Name = mkName "ToOther"
+            SourceAttribute = attrFk
+            TargetKind = targetKey
+            OnDelete = NoAction } ] }
+
+[<Fact>]
+let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
+    // Build A↔B and C↔D as two separate 2-cycles.
+    let a = kindWithFk "A" "RefA" (mkKey "B")
+    let b = kindWithFk "B" "RefB" (mkKey "A")
+    let c = kindWithFk "C" "RefC" (mkKey "D")
+    let d = kindWithFk "D" "RefD" (mkKey "C")
+    let twoCycles : Catalog =
+        { Modules = [
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c; d ] } ] }
+    let result = TopologicalOrderPass.run twoCycles
+    Assert.Equal(2, result.Value.Cycles.Length)
+    // SCCs are sorted by smallest member; A-B comes before C-D.
+    let firstScc  = result.Value.Cycles.[0]
+    let secondScc = result.Value.Cycles.[1]
+    Assert.Equal<Set<SsKey>>(Set.ofList [ mkKey "A"; mkKey "B" ], Set.ofList firstScc.Members)
+    Assert.Equal<Set<SsKey>>(Set.ofList [ mkKey "C"; mkKey "D" ], Set.ofList secondScc.Members)
+
+// ---------------------------------------------------------------------------
 // Lineage discipline — A23 + A25.
 // ---------------------------------------------------------------------------
 

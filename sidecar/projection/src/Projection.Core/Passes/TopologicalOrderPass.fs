@@ -30,8 +30,11 @@ module TopologicalOrderPass =
     /// - cycle detection / resolution semantics change
     /// - the alphabetical-fallback ordering rule changes
     /// - the Edges / MissingEdges definition changes
+    ///
+    /// v1 — Kahn's only; cycles produce a single generic CycleDiagnostic.
+    /// v2 — Adds Tarjan's SCC enumeration; one CycleDiagnostic per SCC.
     [<Literal>]
-    let version : int = 1
+    let version : int = 2
 
     [<Literal>]
     let private passName : string = "topologicalOrder"
@@ -158,6 +161,75 @@ module TopologicalOrderPass =
         sorted, unprocessed
 
     // -----------------------------------------------------------------------
+    // Tarjan's strongly-connected-components algorithm.
+    //
+    // Operates on the precedence graph restricted to a node subset (the
+    // unprocessed residue from Kahn's). Returns SCCs of size >= 2 — single
+    // nodes without self-loops are trivially their own SCC and not
+    // reported as cycles.
+    //
+    // Output is deterministic: members within each SCC are sorted by
+    // SsKey; SCCs are sorted by their smallest member's SsKey.
+    // -----------------------------------------------------------------------
+
+    let private tarjanScc (nodes: SsKey list) (adjacency: Map<SsKey, SsKey list>) : SsKey list list =
+        let nodeSet = Set.ofList nodes
+        let mutable index = 0
+        let mutable indices : Map<SsKey, int> = Map.empty
+        let mutable lowlinks : Map<SsKey, int> = Map.empty
+        let mutable onStack : Set<SsKey> = Set.empty
+        let stack = ResizeArray<SsKey>()
+        let components = ResizeArray<SsKey list>()
+
+        // Children restricted to the subset under analysis. Sorted by
+        // SsKey so DFS order is deterministic.
+        let childrenOf (v: SsKey) : SsKey list =
+            Map.tryFind v adjacency
+            |> Option.defaultValue []
+            |> List.filter (fun w -> Set.contains w nodeSet)
+            |> List.sort
+
+        let rec strongConnect (v: SsKey) : unit =
+            indices  <- Map.add v index indices
+            lowlinks <- Map.add v index lowlinks
+            index    <- index + 1
+            stack.Add(v)
+            onStack <- Set.add v onStack
+            for w in childrenOf v do
+                if not (Map.containsKey w indices) then
+                    strongConnect w
+                    let lw = Map.find w lowlinks
+                    let lv = Map.find v lowlinks
+                    lowlinks <- Map.add v (min lv lw) lowlinks
+                elif Set.contains w onStack then
+                    let iw = Map.find w indices
+                    let lv = Map.find v lowlinks
+                    lowlinks <- Map.add v (min lv iw) lowlinks
+            if Map.find v lowlinks = Map.find v indices then
+                let comp = ResizeArray<SsKey>()
+                let mutable popping = true
+                while popping do
+                    let w = stack.[stack.Count - 1]
+                    stack.RemoveAt(stack.Count - 1)
+                    onStack <- Set.remove w onStack
+                    comp.Add(w)
+                    if w = v then popping <- false
+                components.Add(comp |> List.ofSeq |> List.sort)
+
+        for v in nodes do
+            if not (Map.containsKey v indices) then
+                strongConnect v
+
+        // Filter to non-trivial SCCs (size >= 2). Single-node SCCs
+        // without self-loops are not cycles. Self-loops would require
+        // explicit detection — not present in the synthetic milestone;
+        // adds when a real fixture surfaces them.
+        components
+        |> Seq.filter (fun c -> List.length c >= 2)
+        |> Seq.toList
+        |> List.sortBy (fun c -> c |> List.head)
+
+    // -----------------------------------------------------------------------
     // The pass.
     // -----------------------------------------------------------------------
 
@@ -187,22 +259,27 @@ module TopologicalOrderPass =
                           version graph.Nodes.Length graph.Edges.Length graph.MissingEdges.Length
                   ] }
             else
-                // Cycle present — fall back to alphabetical ordering and
-                // emit a generic diagnostic. SCC enumeration arrives in
-                // the next pass version (Tarjan's commit).
+                // Cycle present. Run Tarjan's SCC on the unprocessed
+                // residue to enumerate the strongly connected components;
+                // each non-trivial SCC becomes a CycleDiagnostic. Cycle
+                // resolution (asymmetric-2-cycle resolver) lands in the
+                // next pass version.
+                let sccs = tarjanScc unprocessed graph.Adjacency
+                let cycles =
+                    sccs
+                    |> List.map (fun members ->
+                        { Members        = members
+                          BreakableEdges = []
+                          Reason         = "SCC detected; resolver pending next pass version" })
                 let alphabeticalAll = graph.Nodes  // already sorted
-                let cycle =
-                    { Members        = unprocessed
-                      BreakableEdges = []
-                      Reason         = "cycle detected; SCC enumeration pending next pass version" }
                 { Mode         = Alphabetical
                   Order        = alphabeticalAll
                   Edges        = graph.Edges
                   MissingEdges = graph.MissingEdges
-                  Cycles       = [ cycle ]
+                  Cycles       = cycles
                   Diagnostics  = [
-                      sprintf "topologicalOrder v%d: cycle detected, %d nodes unprocessed; alphabetical fallback"
-                          version unprocessed.Length
+                      sprintf "topologicalOrder v%d: %d SCC(s) detected, %d nodes unprocessed; alphabetical fallback"
+                          version cycles.Length unprocessed.Length
                   ] }
 
         let events = graph.Nodes |> List.map touchedEvent
