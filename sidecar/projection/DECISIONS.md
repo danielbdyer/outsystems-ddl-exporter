@@ -3163,3 +3163,148 @@ that produced two operating-discipline entries before producing
 substantive infrastructure. Both were named because both could
 recur. Future agents inherit the disciplines and the false starts
 together.
+
+## 2026-05-13 — Named accessors for stacked types whose nested access loses self-description
+
+**Status:** decided (operating discipline; smell-fix codification; preserves the false start)
+**Context:** Session 14 commit 5 migrated `UniqueIndexPass.run` from
+`Lineage<UniqueIndexDecisionSet>` to
+`Lineage<Diagnostics<UniqueIndexDecisionSet>>` per the pass
+return-type codification (`DECISIONS 2026-05-13` — pass return-type
+codification). The migration's first cut updated test sites with
+the literal access pattern `lineage.Value.Value.Decisions`. During
+the work, the user surfaced the question: "is `lineage.Value.Value`
+a code smell in that it's not self-descriptive?" The answer is yes,
+and the disposition generalizes.
+
+**The false start preserved.** The mechanical migration produced
+~14 call sites of the form `lineage.Value.Value.Decisions`. Each
+read forces the reader to count `.Value` projections to know which
+writer they land in. The first `.Value` strips the outer `Lineage`
+wrapper; the second strips the inner `Diagnostics` wrapper; the
+third reaches `.Decisions` on the underlying `UniqueIndexDecisionSet`.
+F# infers the types correctly, but the consumer expression encodes
+no semantic intent — `Value` of a `Lineage<...>` and `Value` of a
+`Diagnostics<...>` share a name, and the reader has to know the
+field-naming convention to disambiguate.
+
+The smell is real. The smell test that names it:
+
+  **Would a reader of this expression need the type definition open
+  in another window to know which level they're on?**
+
+If yes, the access pattern is not self-descriptive and the
+discipline is to provide named accessors that name the intent at
+each level.
+
+**Decision:** **Stacked types deserve named accessors at call sites
+where nested access loses self-description.** Whenever a stacked
+writer (or any nested type) creates a `.Field.Field` access pattern
+at multiple consumer sites, and the structural shape requires the
+reader to count nesting levels to know which level they're on, the
+discipline is to provide module-level accessors that name what's
+being reached for.
+
+**The pattern shape:**
+
+```
+module <DualOrStackedType> =
+    let <intentName1>  : <Stacked<'a>> -> <X>  = ...
+    let <intentName2>  : <Stacked<'a>> -> <Y>  = ...
+    let payload        : <Stacked<'a>> -> 'a   = ...   (the deep value, named)
+```
+
+For the dual writer `Lineage<Diagnostics<'a>>` (this commit's
+example), the helpers are:
+
+  - `LineageDiagnostics.payload      : Lineage<Diagnostics<'a>> -> 'a`
+  - `LineageDiagnostics.entries      : Lineage<Diagnostics<'a>> -> DiagnosticEntry list`
+  - `LineageDiagnostics.diagnostics  : Lineage<Diagnostics<'a>> -> Diagnostics<'a>`
+  - `m.Trail` stays as-is (single Field at the outer level; already
+    self-descriptive — the smell is specifically about nested
+    repetition, not single access)
+
+Domain-named shortcuts compose cleanly with the generic helpers.
+`UniqueIndexPass.decisionsOf` delegates to
+`LineageDiagnostics.payload`; the domain shortcut reads more
+clearly than the generic accessor at consumer sites
+(`UniqueIndexPass.decisionsOf lineage` over
+`LineageDiagnostics.payload lineage`), but both are self-descriptive
+and the underlying structure is asserted in one place.
+
+**Where the discipline applies (and where it does not):**
+
+  - **Applies:** consumer sites that read through a stacked type to
+    a deep value. The named accessor declares intent.
+  - **Does not apply:** structural assertion tests for the writer
+    itself. `LineageDiagnostics.payload` is *defined* as
+    `m.Value.Value`; the test that asserts the helper does what it
+    claims must read `m.Value.Value` directly to verify the helper.
+    Reaching past the helper at a structural-test site is the test's
+    purpose.
+  - **Does not apply:** single-level access where the field name is
+    unambiguous in context (`m.Trail` for `Lineage<...>`,
+    `m.Entries` for `Diagnostics<...>` — single Field access at the
+    outer layer is self-descriptive).
+
+**The general smell test, restated:**
+
+  - One `.Field` access: usually self-descriptive; the field name
+    carries the intent.
+  - Two `.Field.Field` of the same name: smell; the reader counts
+    levels to know which writer they're on.
+  - Two `.Field.OtherField` of different names: usually fine; the
+    second name disambiguates.
+  - Three or more `.Field`: smell regardless of name uniqueness;
+    nested access at depth loses structural intent even when each
+    name is distinct.
+
+The boundary is not an exact line; the test is whether a reader can
+tell, from the expression alone, what's being reached for.
+
+**Pairs with the pass return-type codification.** Honest signatures
++ readable consumers is the joint commitment. The pass return-type
+codification (`DECISIONS 2026-05-13` — pass return-type) says:
+*change the type signature when the production grows.* This entry
+says: *provide named accessors when the new type's consumer pattern
+loses self-description.* Together, the two disciplines keep both
+the type system and the call sites honest.
+
+**Why the false start is preserved.** The same temptation will
+recur: future agents migrating to a stacked type will produce
+`.Value.Value` access patterns by default, and the smell will read
+as "F# being F#" rather than as a discipline gap. This entry exists
+so the next agent recognizes the smell as soluble and not as a
+language artifact. The named-accessor discipline applies; the smell
+test is the trigger.
+
+**A meta-pattern across session 14 entries.** This is the third
+operating discipline session 14 has produced — alongside the
+audit-discipline refinement (`DECISIONS 2026-05-13` —
+contract-vs-implementation cross-reference) and the pass
+return-type codification. All three followed the same pattern:
+
+  1. The discipline surfaced during substantive work, not as a
+     planned discipline-codification effort.
+  2. The discipline was named and recorded *with the false start
+     preserved*, so future agents recognize the temptation when it
+     recurs.
+  3. The substantive work continued under the new discipline before
+     the commit shipped.
+
+This meta-pattern itself is worth naming: **disciplines emerge from
+the work, not from speculation about the work.** Audit-during-
+validation (`DECISIONS 2026-05-09`) is the upstream discipline; the
+three session-14 entries are downstream consequences of operating
+that discipline at a chapter-open. Future chapters that operate
+audit-during-validation should expect to produce disciplines of
+this shape; recording them with their false starts is the
+convention this session establishes.
+
+**Reasoning / consequences.** The named-accessor discipline is now
+named, codified, and discoverable from any call site that imports
+`Projection.Core`. Future stacked-type designs (a third-channel
+Diagnostics split when it lands; future writer compositions; deeply
+nested IR records) inherit the convention: provide named accessors
+at the consumer surface whenever the structural shape requires
+counted projections at call sites.
