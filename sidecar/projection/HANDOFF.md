@@ -105,7 +105,14 @@ Per `CHAPTER_2_CLOSE.md`, the chapter-3 priorities are:
 
 3. **Open the chapter you choose** with a chapter-open document naming the strategic-frame axes (`DECISIONS 2026-05-15` shape; the OSSYS chapter is the worked example). Multi-session chapters earn this discipline at chapter open.
 
-The two pre-scope subagent reports (#4 DacpacEmitter; #5 SnapshotRowsets) live in `CHAPTER_2_CLOSE.md` as chapter-open inputs.
+The two pre-scope subagent reports live as standalone chapter-open input documents adjacent to this letter:
+
+  - **`CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`** — subagent #4's full report on the DacpacEmitter chapter (DacFx API surface; IR-to-DacFx impedance map; Π architectural fit; canary chapter dependencies; recommended sequencing; eight risks/open questions).
+  - **`CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md`** — subagent #5's full report on the SnapshotRowsets chapter (V1 rowset shape with field-by-field lossiness map; multi-rowset deserialization architecture; DTO shape questions; integration with `CatalogReader.parse`; class-of-lossiness coverage plan; coexistence with `SnapshotJson`; seven risks/open questions).
+
+`CHAPTER_2_CLOSE.md` carries summaries of both as part of the chapter-close synthesis; the standalone files have the full text.
+
+The chapter-2 close audit (subagent #3 — OSSYS chapter completeness) is preserved at **`CHAPTER_2_AUDIT_3_OSSYS_COMPLETENESS.md`** for reference.
 
 After the chapter-open scoping, the substantive work begins. Operate the chapter-mid-audit at every 3–5 substantive sessions; operate the chapter-close ritual at chapter close (eight items, including the V1-input-envelope walk for V1↔V2 translation chapters).
 
