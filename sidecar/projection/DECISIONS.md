@@ -2942,3 +2942,99 @@ support more weight than the one behind.
 Hold the spine.
 
 — Session 13 (the doc-hygiene chapter-open)
+
+## 2026-05-13 — Audit discipline refinement: contract-vs-implementation cross-reference
+
+**Status:** decided (audit-discipline operating principle; refinement of `DECISIONS 2026-05-09 — Audits surface things not on the agenda` and the `CHAPTER_CLOSE.md` audit-by-subagent verification approach)
+**Context:** Session 13's audit-during-validation produced a finding
+the chapter-close audit (session 12) had missed: priority-4 work
+("two missing TopologicalOrderPass tests") was actually feature-work
+("two un-built V2 contracts — no `OrderingPolicy` axis, no
+junction-table heuristic, `OrderingMode.JunctionDeferred` declared
+but never produced"). The miss was not random. The session-12 audit
+dispatched five parallel subagents against ADMIRE entries, V1 test
+coverage, V1 input/output contracts, doc drift, and build-graph
+hygiene — none of which cross-referenced ADMIRE-promised V2 contracts
+against the implementation modules to verify feature-completeness.
+The audit walked **contract → test** ("does the test exist?") but
+did not walk **contract → implementation** ("does the feature the
+test would assert exist?"). Both walks are needed; only one was done.
+
+**Decision:** **Any audit that walks a contract-vs-test
+cross-reference must also walk a contract-vs-implementation
+cross-reference.** Without it, audits systematically undercount the
+substantive backlog and present feature-work as test-work — exactly
+what session 12's priority-4 entry did.
+
+**The structural lesson generalizes.** ADMIRE entries promise V2
+contracts in three modes (V1-migration / V2-growth / hybrid;
+`DECISIONS 2026-05-13 — admire spectrum`). Each promised contract
+has three states the audit must distinguish:
+
+  | Contract → test? | Contract → implementation? | Diagnosis |
+  |---|---|---|
+  | Test exists | Implementation exists | Migrated; ADMIRE entry should be `extracted (differential confirmed)` |
+  | Test exists | No implementation | Test will fail; the implementation is the gap |
+  | No test | Implementation exists | Test gap; the audit's contract-vs-test walk catches this |
+  | No test | No implementation | **Feature gap** — the audit's contract-vs-test walk **misclassifies this as a test gap** unless implementation is also walked |
+
+The fourth row is the failure mode. Session 12 found the third row
+on UniqueIndex / ForeignKey / Topological skip-stub asymmetry
+(`CHAPTER_CLOSE.md §2.7`); session 13's skip-stub completion (commit
+4) addressed the test gaps. Session 13's TopologicalOrderPass
+finding was the fourth row — the implementation didn't exist; the
+contract-vs-test walk reported "missing test" because there was
+nothing to compare against.
+
+**Discipline going forward:**
+
+  1. **Chapter-close audits run two cross-references in parallel.**
+     One subagent walks ADMIRE-contracts × V2-tests; another walks
+     ADMIRE-contracts × V2-implementation. Findings are reported
+     against both axes; the tabular form above lets readers see
+     which row the finding falls into.
+  2. **Contract-vs-implementation walks check three things:**
+     module presence (does the named V2 module exist?), feature
+     presence (do the IR types and policy fields the contract
+     names exist?), and behavior presence (does the implementation
+     produce the named outcomes? — `OrderingMode.JunctionDeferred`
+     declared but never produced is the canonical anti-pattern).
+  3. **The result of the two walks combines into a single
+     priority-ranked findings list.** "Missing test, implementation
+     exists" is mechanical to fix (add the test; lock the
+     contract). "Missing implementation" is a substantive deferred
+     decision that needs DECISIONS-entry routing, not test-priority
+     ranking.
+
+**The fresh-agent observation.** This miss came from someone who
+had never read the code before. The session-12 chapter-close audit
+was conducted by an agent with eleven sessions of accumulated
+familiarity; the familiarity made the un-built `OrderingPolicy`
+axis invisible-because-known. Session 13's fresh agent (no prior
+context) cross-referenced ADMIRE → implementation as a normal part
+of orientation — there was no familiarity to elide. The general
+form: **fresh agents at chapter boundaries find things that the
+prior chapter's accumulated familiarity hid.**
+
+This argues for a structural disposition: chapter-close audits
+should explicitly include a "fresh-eye walk" — either by a subagent
+configured to ignore accumulated context, or by a fresh-agent
+review at the chapter boundary itself. Session 13's read-in served
+as a de facto fresh-eye walk; future chapter closes should make it
+deliberate.
+
+**Reasoning / consequences.** The audit-during-validation
+discipline (`DECISIONS 2026-05-09`) caught the priority-4 miss
+during session 13's work — exactly the failure mode it exists to
+catch. This entry refines the *chapter-close audit* protocol so the
+miss doesn't recur. The next chapter close (whenever it lands) will
+benefit: contract-vs-implementation walk runs alongside
+contract-vs-test walk; findings classify against the four-row
+table; fresh-eye review is structural rather than incidental.
+
+The Active deferrals index (`session 13 commit 5`) and this
+audit-discipline refinement are paired: the index makes deferred
+decisions visible across chapters; this refinement makes the
+distinction between deferred-test-work and deferred-feature-work
+visible within an audit. Both compound: the index catches silent
+trigger-fires; this discipline catches misclassified findings.
