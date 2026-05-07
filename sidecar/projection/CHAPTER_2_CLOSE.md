@@ -66,8 +66,7 @@ The arc has had three substantive sub-arcs:
     (re-defer with tighter trigger condition: real Catalog
     flowing end-to-end through pipeline exercising T11 sibling-Π
     commutativity; canary chapter is the natural locus).
-  - **9 MINOR findings** — split into two clusters; both roll to
-    chapter close synthesis.
+  - **9 MINOR findings** — split into two clusters; both addressed at session 25 commits 4–5.
     - *Index-snapshot drift cluster (4 items):* `SnapshotRowsets`
       and `LiveOssysConnection` variants missing from index;
       strategy registry count "6 strategy modules" stale (actual: 5);
@@ -95,6 +94,18 @@ The arc has had three substantive sub-arcs:
     discipline lesson with the Active-deferrals-scan refinement to
     chapter-mid-audit; the table-propagation cluster lands at
     chapter close.
+
+### From session 25's chapter-close audit (subagent #3 — OSSYS chapter completeness)
+
+**Full report at `CHAPTER_2_AUDIT_3_OSSYS_COMPLETENESS.md`.**
+Totals: 1 CRITICAL, 11 MINOR, 7 OPEN. CRITICAL (`onDisk`
+silent-drop) resolved at session 25 commit 1. MINOR cluster
+addressed at session 25 commits 4–6. OPEN resolved at session
+25 commit 7 (`DECISIONS 2026-05-21 — Chapter 2 close: OPEN-
+question resolutions`). The cross-cutting observation about
+silent drops clustering at the V1-input-envelope-not-walked
+surface produced the chapter-close ritual's eighth item
+(V1-input-envelope walk — codified at session 25 commit 3).
 
 ### From session 24's static-entity slice (implicit-coverage finding)
 
@@ -479,8 +490,9 @@ document.
 
 ### Subagent #4 pre-scope summary — DacpacEmitter chapter
 
-(Full report dispatched at session 25; key findings preserved
-here as the chapter-open input.)
+**Full report at `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`** (the
+chapter-3 chapter-open input for DacpacEmitter implementation).
+Key findings preserved here as the close synthesis:
 
 **The DacFx API surface.** Four classes V2 needs:
 `Microsoft.SqlServer.Dac.Model.TSqlModel` (model construction
@@ -549,8 +561,9 @@ handling; DacFx version pinning; PackageMetadata choices).
 
 ### Subagent #5 pre-scope summary — SnapshotRowsets chapter
 
-(Full report dispatched at session 25; key findings preserved
-here as the chapter-open input.)
+**Full report at `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md`** (the
+chapter-3 chapter-open input for SnapshotRowsets implementation).
+Key findings preserved here as the close synthesis:
 
 **V1 rowset shape.** V1's SQL extraction emits **23 rowsets**
 (`outsystems_metadata_rowsets.sql:956-1184`). Phase-1 rowsets

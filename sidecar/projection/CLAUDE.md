@@ -22,6 +22,13 @@ substantive surfaces are unchanged.
    state (25 translation rules), the three-class typology, the
    meta-codifications (chapter-mid-audit; trace-before-fixture;
    V1-envelope-walk), and the chapter-3 forward signals.
+   **Companion files at the projection root:**
+   `CHAPTER_2_AUDIT_3_OSSYS_COMPLETENESS.md` (subagent #3's
+   full audit report); `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`
+   (subagent #4's chapter-open input); and
+   `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` (subagent #5's
+   chapter-open input). The chapter-3 agent reads the pre-scope
+   documents at chapter-open.
 3. **`CHAPTER_1_CLOSE.md`** — chapter-1 close synthesis (sessions
    1–12). Read for historical context. Some priorities listed
    there have been resolved by chapter 2 (Diagnostics writer
